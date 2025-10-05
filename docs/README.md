@@ -2,6 +2,17 @@
 
 Welcome to the Kastor documentation! Kastor is a comprehensive Kotlin library for working with RDF (Resource Description Framework) data, providing both low-level RDF operations and high-level domain object mapping.
 
+## Why "Kastor"?
+
+The name **Kastor** is a tribute to [Castor](http://www.castor.org/), the pioneering Java XML data binding framework developed by Exolab. Castor was one of the first frameworks to bridge the gap between object-oriented programming and structured data formats, making it easier for developers to work with XML data in Java applications.
+
+Just as Castor revolutionized XML data binding in Java, Kastor aims to bring the same level of developer experience to RDF and semantic web technologies in Kotlin. The "K" in Kastor represents:
+
+- **Kotlin** - Our chosen language for modern, expressive, and type-safe development
+- **Knowledge** - The semantic web's focus on knowledge representation and reasoning
+
+Kastor honors Castor's legacy while embracing the future of semantic technologies and the Kotlin ecosystem.
+
 ## Table of Contents
 
 - [Kastor RDF](kastor/README.md) - Core RDF functionality
