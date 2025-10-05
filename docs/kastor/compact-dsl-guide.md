@@ -30,6 +30,18 @@ val name = iri("http://example.org/name")
 val age = iri("http://example.org/age")
 person[name] = "Alice"
 person[age] = 30
+
+// With QNames (requires prefix mapping)
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    person["foaf:name"] = "Alice"
+    person["foaf:age"] = 30
+    person["dcterms:email"] = "alice@example.com"
+}
 ```
 
 **Benefits:**
@@ -50,6 +62,18 @@ person has friend with bob
 // With IRI predicates
 val name = iri("http://example.org/name")
 person has name with "Alice"
+
+// With QNames (requires prefix mapping)
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    person has "foaf:name" with "Alice"
+    person has "foaf:age" with 30
+    person has "dcterms:email" with "alice@example.com"
+}
 ```
 
 **Benefits:**
@@ -86,6 +110,18 @@ The minus operator (`-`) provides intuitive syntax for creating multiple triples
 person - name - "Alice"
 person - age - 30
 person - email - "alice@example.com"
+
+// With QNames (requires prefix mapping)
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    person - "foaf:name" - "Alice"
+    person - "foaf:age" - 30
+    person - "dcterms:email" - "alice@example.com"
+}
 
 // Multiple individual triples using values() function
 person - FOAF.knows - values(friend1, friend2, friend3)
@@ -303,6 +339,46 @@ repo.add {
 }
 ```
 
+## 🏷️ QName Support with Prefix Mappings
+
+Use QNames for cleaner, more readable code with prefix mappings:
+
+```kotlin
+repo.add {
+    // Configure prefix mappings
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcat" to "http://www.w3.org/ns/dcat#"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    
+    // Use QNames with all syntax styles
+    person - "foaf:name" - "Alice"                    // Minus operator
+    person["foaf:age"] = 30                           // Bracket syntax
+    person has "dcat:keyword" with "example"          // Natural language
+    
+    // Mix QNames and full IRIs
+    person - "foaf:knows" - iri("http://example.org/bob")
+    person - "http://example.org/customProp" - "value"
+    
+    // Create IRIs from QNames
+    val nameIri = qname("foaf:name")
+    person - nameIri - "Alice"
+    
+    // Add single prefix mapping
+    prefix("schema", "http://schema.org/")
+    person - "schema:name" - "Alice"
+}
+```
+
+**Benefits of QNames:**
+- **Readability**: Shorter, more readable predicates and types
+- **Maintainability**: Change namespace in one place
+- **Consistency**: Standard RDF prefix notation
+- **Flexibility**: Mix with full IRIs when needed
+
 ## 🎯 Minus Operator Deep Dive
 
 The minus operator (`-`) provides a powerful and intuitive way to create RDF triples, especially when dealing with multiple values.
@@ -315,6 +391,18 @@ person - name - "Alice"
 person - age - 30
 person - email - "alice@example.com"
 person - friend - bob
+
+// With QNames
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    person - "foaf:name" - "Alice"
+    person - "foaf:age" - 30
+    person - "dcterms:email" - "alice@example.com"
+}
 ```
 
 ### Multiple Individual Triples (Curly Braces)
@@ -556,17 +644,21 @@ repo.add {
 - Start with **natural language syntax** for clarity
 - Use **full IRIs** to understand what you're creating
 - Gradually adopt **ultra-compact syntax** for simple data
+- Use **QNames** once you understand the basics
 
 ### For Experienced Developers
 - Use **ultra-compact syntax** for bulk operations
 - Create **custom vocabulary objects** for your domain
+- Use **QNames with prefix mappings** for cleaner code
 - Mix styles based on context and readability
 
 ### For Teams
 - Establish **consistent vocabulary objects** for your domain
+- Use **consistent prefix mappings** across the codebase
 - Document **custom vocabulary extensions**
 - Use **natural language** for complex relationships
 - Use **compact syntax** for simple properties
+- Use **QNames** for standard vocabularies (FOAF, DC, etc.)
 
 ## 🎉 Conclusion
 
@@ -576,9 +668,12 @@ The Kastor RDF API provides a **vocabulary-agnostic** core API that works with a
 - **Natural language**: `person has name with "Alice"` (most explicit)
 - **Generic infix**: `person has name with "Alice"` (natural flow)
 - **Minus operator**: `person - name - "Alice"` (clean and familiar)
+- **QNames**: `person - "foaf:name" - "Alice"` (cleaner with prefix mappings)
 - **Multiple values**: `person - FOAF.knows - values(f1, f2, f3)` (intuitive collections)
 - **RDF Lists**: `person - FOAF.mbox - list("e1", "e2")` (proper RDF semantics)
 
 The new **`values()` and `list()`** functions make it even easier to work with multiple values, following common programming conventions. Use `values()` for individual triples and `list()` for proper RDF Lists.
+
+**QName support** with prefix mappings provides cleaner, more readable code while maintaining full compatibility with existing syntax. Use `prefixes { }` blocks to configure mappings and `qname()` to create IRIs from QNames.
 
 Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.

@@ -65,6 +65,48 @@ val triple = triple(person1, nameProperty, personName)
 val tripleDsl = person1 has nameProperty with personName
 ```
 
+### Working with QNames
+
+Use QNames for cleaner, more readable code with prefix mappings:
+
+```kotlin
+import com.geoknoesis.kastor.rdf.*
+
+val repo = Rdf.memory()
+
+// Add data using QNames
+repo.add {
+    // Configure prefix mappings
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    
+    // Use QNames with different syntax styles
+    person - "rdf:type" - "foaf:Person"              // Minus operator
+    person["foaf:name"] = "Alice Johnson"             // Bracket syntax
+    person has "foaf:age" with 30                     // Natural language
+    person has "dcterms:description" with "A person"  // Mixed vocabularies
+    
+    // Create IRIs from QNames
+    val nameIri = qname("foaf:name")
+    person - nameIri - "Alice"
+    
+    // Mix QNames and full IRIs
+    person - "foaf:knows" - iri("http://example.org/bob")
+    person - "http://example.org/customProp" - "value"
+}
+```
+
+**Benefits of QNames:**
+- **Readability**: Shorter, more readable predicates and types
+- **Maintainability**: Change namespace in one place
+- **Consistency**: Standard RDF prefix notation
+- **Flexibility**: Mix with full IRIs when needed
+
 **Benefits of strongly typed literals:**
 - **Type safety**: Prevents invalid combinations (e.g., language + datatype)
 - **Clarity**: Intent is explicit in the function name

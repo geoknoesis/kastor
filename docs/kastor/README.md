@@ -35,6 +35,7 @@ Kastor RDF is the **most elegant RDF API for Kotlin**, designed to make RDF deve
 - **📊 Graph Operations** - Named graph management
 - **📈 Comprehensive Statistics** - Detailed repository insights
 - **🎨 Multiple DSL Syntax Styles** - Choose what feels natural to you
+- **🏷️ QName Support** - Use prefixes for cleaner, more readable code
 - **🔧 Advanced Configuration** - Fine-tune repository behavior
 
 ## 🚀 Quick Start
@@ -174,6 +175,36 @@ person -> ("http://example.org/person/age" to 30)
 // 5. Convenience functions (explicit)
 triple(person, name, "Alice")
 triple(person, "http://example.org/person/age", 30)
+```
+
+### 🏷️ QName Support with Prefix Mappings
+
+Use QNames for cleaner, more readable code:
+
+```kotlin
+repo.add {
+    // Configure prefix mappings
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcat" to "http://www.w3.org/ns/dcat#"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    
+    // Use QNames with all syntax styles
+    person - "foaf:name" - "Alice"                    // Minus operator
+    person["foaf:age"] = 30                           // Bracket syntax
+    person has "dcat:keyword" with "example"          // Natural language
+    
+    // Mix QNames and full IRIs
+    person - "foaf:knows" - iri("http://example.org/bob")
+    person - "http://example.org/customProp" - "value"
+    
+    // Create IRIs from QNames
+    val nameIri = qname("foaf:name")
+    person - nameIri - "Alice"
+}
 ```
 
 ### ⚡ Performance Monitoring

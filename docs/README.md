@@ -19,12 +19,17 @@ Welcome to the Kastor documentation! Kastor is a comprehensive Kotlin library fo
 // Create a repository
 val repo = Rdf.memory()
 
-// Add RDF data
+// Add RDF data using QNames
 repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    }
+    
     val person = iri("http://example.org/person")
-    person - RDF.type - FOAF.Person
-    person - FOAF.name - "John Doe"
-    person - FOAF.age - 30
+    person - "rdf:type" - "foaf:Person"
+    person - "foaf:name" - "John Doe"
+    person - "foaf:age" - 30
 }
 
 // Query the data
@@ -189,12 +194,17 @@ dependencies {
 // Create repository
 val repo = Rdf.memory()
 
-// Add data
+// Add data using QNames
 repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    }
+    
     val person = iri("http://example.org/person")
-    person - RDF.type - FOAF.Person
-    person - FOAF.name - "John Doe"
-    person - FOAF.knows - iri("http://example.org/friend")
+    person - "rdf:type" - "foaf:Person"
+    person - "foaf:name" - "John Doe"
+    person - "foaf:knows" - iri("http://example.org/friend")
 }
 
 // Query data
