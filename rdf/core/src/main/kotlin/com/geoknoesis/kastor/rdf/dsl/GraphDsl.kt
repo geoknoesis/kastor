@@ -60,9 +60,13 @@ class GraphDsl {
     /**
      * Ultra-compact bracket syntax: person["name"] = "Alice"
      * Supports QNames: person["foaf:name"] = "Alice"
+     * Supports Turtle-style "a" alias: person["a"] = "foaf:Person"
      */
     operator fun RdfResource.set(predicate: String, value: Any) {
-        val predicateIri = resolveIri(predicate)
+        val predicateIri = when (predicate) {
+            "a" -> RDF.type  // Turtle-style alias for rdf:type
+            else -> resolveIri(predicate)
+        }
         val obj = when (value) {
             is String -> Literal(value, XSD.string)
             is Int -> Literal(value.toString(), XSD.integer)
@@ -107,6 +111,22 @@ class GraphDsl {
     }
     
     /**
+     * Natural language syntax: person `is` "foaf:Person"
+     * Alias for person has "rdf:type" with "foaf:Person"
+     */
+    infix fun RdfResource.`is`(typeQName: String): SubjectAndPredicate {
+        return SubjectAndPredicate(this, RDF.type)
+    }
+    
+    /**
+     * Natural language syntax: person `is` FOAF.Person
+     * Alias for person has RDF.type with FOAF.Person
+     */
+    infix fun RdfResource.`is`(typeIri: Iri): SubjectAndPredicate {
+        return SubjectAndPredicate(this, RDF.type)
+    }
+    
+    /**
      * Natural language syntax: person has FOAF.name with "Alice"
      */
     infix fun SubjectAndPredicate.with(value: Any) {
@@ -132,9 +152,13 @@ class GraphDsl {
     
     /**
      * Minus operator syntax with QName: person - "foaf:name" - "Alice"
+     * Also supports Turtle-style "a" alias for rdf:type: person - "a" - "foaf:Person"
      */
     infix operator fun RdfResource.minus(predicateQName: String): SubjectPredicateChain {
-        val predicate = resolveIri(predicateQName)
+        val predicate = when (predicateQName) {
+            "a" -> RDF.type  // Turtle-style alias for rdf:type
+            else -> resolveIri(predicateQName)
+        }
         return SubjectPredicateChain(this, predicate)
     }
     

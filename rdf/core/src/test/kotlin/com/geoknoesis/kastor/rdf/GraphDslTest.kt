@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.RDFS
+import com.geoknoesis.kastor.rdf.vocab.RDF
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -310,5 +311,119 @@ class GraphDslTest {
         assertEquals("Bob", (friendName!!.obj as Literal).lexical, "Friend name should be Bob")
         assertEquals("Sample Document", (documentTitle!!.obj as Literal).lexical, "Document title should be correct")
         assertEquals("Complex Node", (bnodeLabel!!.obj as Literal).lexical, "Blank node label should be correct")
+    }
+
+    @Test
+    fun `create graph with turtle-style a alias works`() {
+        val graph = Rdf.graph {
+            val person = iri("http://example.org/person")
+            val document = iri("http://example.org/document")
+
+            // Turtle-style "a" alias for rdf:type
+            person["a"] = "foaf:Person"
+            document["a"] = "dcterms:Dataset"
+            
+            // Also test with minus operator
+            person - "a" - "foaf:Agent"
+        }
+
+        assertEquals(3, graph.size(), "Graph should have 3 triples")
+        
+        val allTriples = graph.getTriples()
+        val typeTriples = allTriples.filter { it.predicate == RDF.type }
+        
+        assertEquals(3, typeTriples.size, "Should have 3 type triples")
+        
+        // Verify the objects are properly resolved
+        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
+        
+        val documentTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/document") }
+        assertEquals(1, documentTypeTriples.size, "Document should have 1 type declaration")
+    }
+
+    @Test
+    fun `create graph with natural language is alias works`() {
+        val graph = Rdf.graph {
+            val person = iri("http://example.org/person")
+            val document = iri("http://example.org/document")
+
+            // Natural language "is" alias for rdf:type
+            person `is` "foaf:Person" with "foaf:Person"
+            document `is` "dcterms:Dataset" with "dcterms:Dataset"
+            
+            // Also test with IRI
+            person `is` FOAF.Agent with FOAF.Agent
+        }
+
+        assertEquals(3, graph.size(), "Graph should have 3 triples")
+        
+        val allTriples = graph.getTriples()
+        val typeTriples = allTriples.filter { it.predicate == RDF.type }
+        
+        assertEquals(3, typeTriples.size, "Should have 3 type triples")
+        
+        // Verify the objects are properly resolved
+        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
+        
+        val documentTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/document") }
+        assertEquals(1, documentTypeTriples.size, "Document should have 1 type declaration")
+    }
+
+    @Test
+    fun `create graph with mixed a and is aliases works`() {
+        val graph = Rdf.graph {
+            val person = iri("http://example.org/person")
+            val organization = iri("http://example.org/org")
+
+            // Mix different type declaration styles
+            person["a"] = "foaf:Person"  // Turtle-style
+            person `is` "foaf:Agent" with "foaf:Agent"  // Natural language
+            organization - "a" - "foaf:Organization"  // Minus operator with a
+            organization has RDF.type with "foaf:Agent"  // Traditional has/with
+        }
+
+        assertEquals(4, graph.size(), "Graph should have 4 triples")
+        
+        val allTriples = graph.getTriples()
+        val typeTriples = allTriples.filter { it.predicate == RDF.type }
+        
+        assertEquals(4, typeTriples.size, "Should have 4 type triples")
+        
+        // Verify all type declarations are present
+        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
+        
+        val orgTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/org") }
+        assertEquals(2, orgTypeTriples.size, "Organization should have 2 type declarations")
+    }
+
+    @Test
+    fun `create graph with a alias and other properties works`() {
+        val graph = Rdf.graph {
+            val person = iri("http://example.org/person")
+
+            // Use a alias along with other properties
+            person["a"] = "foaf:Person"
+            person[FOAF.name] = "Alice"
+            person[FOAF.age] = 30
+            person - "a" - "foaf:Agent"  // Multiple type declarations
+        }
+
+        assertEquals(4, graph.size(), "Graph should have 4 triples")
+        
+        val allTriples = graph.getTriples()
+        val typeTriples = allTriples.filter { it.predicate == RDF.type }
+        val nameTriples = allTriples.filter { it.predicate == FOAF.name }
+        val ageTriples = allTriples.filter { it.predicate == FOAF.age }
+        
+        assertEquals(2, typeTriples.size, "Should have 2 type triples")
+        assertEquals(1, nameTriples.size, "Should have 1 name triple")
+        assertEquals(1, ageTriples.size, "Should have 1 age triple")
+        
+        // Verify the name and age values
+        assertEquals("Alice", (nameTriples.first().obj as Literal).lexical, "Name should be Alice")
+        assertEquals("30", (ageTriples.first().obj as Literal).lexical, "Age should be 30")
     }
 }

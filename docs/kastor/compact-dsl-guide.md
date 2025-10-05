@@ -41,6 +41,10 @@ repo.add {
     person["foaf:name"] = "Alice"
     person["foaf:age"] = 30
     person["dcterms:email"] = "alice@example.com"
+    
+    // Turtle-style "a" alias for rdf:type
+    person["a"] = "foaf:Person"
+    document["a"] = "dcterms:Dataset"
 }
 ```
 
@@ -73,6 +77,10 @@ repo.add {
     person has "foaf:name" with "Alice"
     person has "foaf:age" with 30
     person has "dcterms:email" with "alice@example.com"
+    
+    // Natural language "is" alias for rdf:type
+    person `is` "foaf:Person" with "foaf:Person"
+    document `is` "dcterms:Dataset" with "dcterms:Dataset"
 }
 ```
 
@@ -121,6 +129,10 @@ repo.add {
     person - "foaf:name" - "Alice"
     person - "foaf:age" - 30
     person - "dcterms:email" - "alice@example.com"
+    
+    // Turtle-style "a" alias for rdf:type
+    person - "a" - "foaf:Person"
+    document - "a" - "dcterms:Dataset"
 }
 
 // Multiple individual triples using values() function
@@ -338,6 +350,102 @@ repo.add {
     person name "Alice"  // Uses your custom vocabulary
 }
 ```
+
+## 🎯 Type Declaration Aliases
+
+Kastor provides convenient aliases for declaring RDF types, making your code more readable and familiar:
+
+### Turtle-Style "a" Alias
+
+The `"a"` alias is a Turtle-style shortcut for `rdf:type`:
+
+```kotlin
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    val document = iri("http://example.org/document")
+    
+    // Turtle-style "a" alias for rdf:type
+    person["a"] = "foaf:Person"           // Bracket syntax
+    document - "a" - "dcterms:Dataset"    // Minus operator syntax
+}
+```
+
+### Natural Language "is" Alias
+
+The `is` keyword provides natural language syntax for type declarations:
+
+```kotlin
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    val document = iri("http://example.org/document")
+    
+    // Natural language "is" alias for rdf:type
+    person `is` "foaf:Person" with "foaf:Person"        // With QName
+    document `is` FOAF.Agent with FOAF.Agent            // With IRI
+}
+```
+
+### Mixed Type Declaration Styles
+
+You can mix different type declaration styles in the same code:
+
+```kotlin
+repo.add {
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "dcterms" to "http://purl.org/dc/terms/"
+    }
+    
+    val person = iri("http://example.org/person")
+    val organization = iri("http://example.org/org")
+    
+    // Mix different type declaration styles
+    person["a"] = "foaf:Person"                    // Turtle-style
+    person `is` "foaf:Agent" with "foaf:Agent"      // Natural language
+    organization - "a" - "foaf:Organization"      // Minus operator with a
+    organization has RDF.type with "foaf:Agent"   // Traditional has/with
+    
+    // Add other properties
+    person[FOAF.name] = "Alice"
+    organization[FOAF.name] = "ACME Corp"
+}
+```
+
+### Type Declaration Comparison
+
+| Style | Example | Pros | Cons |
+|-------|---------|------|------|
+| **Turtle "a" (Bracket)** | `person["a"] = "foaf:Person"` | Concise, familiar to Turtle users | Less explicit |
+| **Turtle "a" (Minus)** | `person - "a" - "foaf:Person"` | Consistent with minus operator | Less explicit |
+| **Natural "is"** | `person is "foaf:Person" with "foaf:Person"` | Most explicit, natural language | More verbose |
+| **Traditional** | `person has RDF.type with "foaf:Person"` | Explicit, clear intent | Most verbose |
+
+### When to Use Each Style
+
+**Use Turtle "a" when:**
+- You're familiar with Turtle syntax
+- You want the most concise type declarations
+- You're working with standard vocabularies
+
+**Use natural "is" when:**
+- You want the most explicit and readable code
+- You're working with complex type hierarchies
+- You want self-documenting code
+
+**Use traditional has/with when:**
+- You want to be explicit about using `rdf:type`
+- You're working with custom or less common vocabularies
+- You want consistency with other property declarations
 
 ## 🏷️ QName Support with Prefix Mappings
 
@@ -669,11 +777,14 @@ The Kastor RDF API provides a **vocabulary-agnostic** core API that works with a
 - **Generic infix**: `person has name with "Alice"` (natural flow)
 - **Minus operator**: `person - name - "Alice"` (clean and familiar)
 - **QNames**: `person - "foaf:name" - "Alice"` (cleaner with prefix mappings)
+- **Type aliases**: `person["a"] = "foaf:Person"` or `person `is` "foaf:Person" with "foaf:Person"` (Turtle-style and natural language)
 - **Multiple values**: `person - FOAF.knows - values(f1, f2, f3)` (intuitive collections)
 - **RDF Lists**: `person - FOAF.mbox - list("e1", "e2")` (proper RDF semantics)
 
 The new **`values()` and `list()`** functions make it even easier to work with multiple values, following common programming conventions. Use `values()` for individual triples and `list()` for proper RDF Lists.
 
 **QName support** with prefix mappings provides cleaner, more readable code while maintaining full compatibility with existing syntax. Use `prefixes { }` blocks to configure mappings and `qname()` to create IRIs from QNames.
+
+**Type declaration aliases** make RDF type declarations more intuitive and familiar. Use `"a"` for Turtle-style syntax (`person["a"] = "foaf:Person"`) or `is` for natural language syntax (`person `is` "foaf:Person" with "foaf:Person"`).
 
 Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.

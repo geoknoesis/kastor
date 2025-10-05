@@ -35,6 +35,7 @@ class SubjectPropertyDsl(private val subject: RdfResource) {
     fun dateCreated(value: Any) = addProperty(DCTERMS.date, value)
     fun description(value: Any) = addProperty(DCTERMS.description, value)
     fun type(value: Any) = addProperty(RDF.type, value)
+    fun a(value: Any) = addProperty(RDF.type, value)  // Turtle-style alias for rdf:type
     fun label(value: Any) = addProperty(RDFS.label, value)
     fun comment(value: Any) = addProperty(RDFS.comment, value)
     fun subClassOf(value: Any) = addProperty(RDFS.subClassOf, value)
@@ -64,6 +65,7 @@ class SubjectPropertyDsl(private val subject: RdfResource) {
     fun dateCreated(vararg values: Any) = addMultipleProperties(DCTERMS.date, values)
     fun description(vararg values: Any) = addMultipleProperties(DCTERMS.description, values)
     fun type(vararg values: Any) = addMultipleProperties(RDF.type, values)
+    fun a(vararg values: Any) = addMultipleProperties(RDF.type, values)  // Turtle-style alias for rdf:type
     fun label(vararg values: Any) = addMultipleProperties(RDFS.label, values)
     fun comment(vararg values: Any) = addMultipleProperties(RDFS.comment, values)
     fun subClassOf(vararg values: Any) = addMultipleProperties(RDFS.subClassOf, values)
