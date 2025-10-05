@@ -323,20 +323,23 @@ class GraphDslTest {
             person["a"] = "foaf:Person"
             document["a"] = "dcterms:Dataset"
             
-            // Also test with minus operator
+            // Also test with minus operator (quoted)
             person - "a" - "foaf:Agent"
+            
+            // And bare "a" (unquoted)
+            person - a() - "foaf:Agent"
         }
 
-        assertEquals(3, graph.size(), "Graph should have 3 triples")
+        assertEquals(4, graph.size(), "Graph should have 4 triples")
         
         val allTriples = graph.getTriples()
         val typeTriples = allTriples.filter { it.predicate == RDF.type }
         
-        assertEquals(3, typeTriples.size, "Should have 3 type triples")
+        assertEquals(4, typeTriples.size, "Should have 4 type triples")
         
         // Verify the objects are properly resolved
         val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
-        assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
+        assertEquals(3, personTypeTriples.size, "Person should have 3 type declarations")
         
         val documentTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/document") }
         assertEquals(1, documentTypeTriples.size, "Document should have 1 type declaration")
@@ -345,15 +348,20 @@ class GraphDslTest {
     @Test
     fun `create graph with natural language is alias works`() {
         val graph = Rdf.graph {
+            prefixes {
+                put("foaf", "http://xmlns.com/foaf/0.1/")
+                put("dcterms", "http://purl.org/dc/terms/")
+            }
+            
             val person = iri("http://example.org/person")
             val document = iri("http://example.org/document")
 
             // Natural language "is" alias for rdf:type
-            person `is` "foaf:Person" with "foaf:Person"
-            document `is` "dcterms:Dataset" with "dcterms:Dataset"
+            person `is` "foaf:Person"
+            document `is` "dcterms:Dataset"
             
             // Also test with IRI
-            person `is` FOAF.Agent with FOAF.Agent
+            person `is` FOAF.Agent
         }
 
         assertEquals(3, graph.size(), "Graph should have 3 triples")
@@ -374,12 +382,17 @@ class GraphDslTest {
     @Test
     fun `create graph with mixed a and is aliases works`() {
         val graph = Rdf.graph {
+            prefixes {
+                put("foaf", "http://xmlns.com/foaf/0.1/")
+                put("dcterms", "http://purl.org/dc/terms/")
+            }
+            
             val person = iri("http://example.org/person")
             val organization = iri("http://example.org/org")
 
             // Mix different type declaration styles
             person["a"] = "foaf:Person"  // Turtle-style
-            person `is` "foaf:Agent" with "foaf:Agent"  // Natural language
+            person `is` "foaf:Agent"   // Natural language
             organization - "a" - "foaf:Organization"  // Minus operator with a
             organization has RDF.type with "foaf:Agent"  // Traditional has/with
         }

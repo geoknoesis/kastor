@@ -3,7 +3,13 @@ package com.geoknoesis.kastor.rdf.examples
 import com.geoknoesis.kastor.rdf.*
 
 fun main() {
-    println("=== QName DSL Example ===\n")
+    println("=== QName DSL Example with Smart QName Detection ===\n")
+    
+    // This example demonstrates smart QName detection in object position:
+    // - QNames with declared prefixes → IRIs
+    // - Full IRIs → IRIs  
+    // - Strings without colons → string literals
+    // - Undeclared prefixes → string literals (safe fallback)
     
     // Create a repository and use QNames with prefix mappings
     val repo = Rdf.memory()
@@ -16,18 +22,23 @@ fun main() {
             put("dcterms", "http://purl.org/dc/terms/")
         }
         
-        // Use QNames with minus operator
+        // Use QNames with minus operator and smart QName detection
         val catalog = iri("http://example.org/catalog")
         catalog - "dcterms:title" - "My Data Catalog"
         catalog - "dcterms:description" - "A catalog of datasets"
-        catalog - "dcat:dataset" - iri("http://example.org/dataset1")
+        catalog - "dcat:dataset" - "http://example.org/dataset1"  // Full IRI → IRI
         catalog - "dcat:dataset" - iri("http://example.org/dataset2")
         
-        // Use QNames with bracket syntax
+        // Use QNames with bracket syntax and smart QName detection
         val person = iri("http://example.org/person")
         person["foaf:name"] = "Alice"
         person["foaf:age"] = 30
-        person["foaf:knows"] = iri("http://example.org/bob")
+        person["foaf:knows"] = "http://example.org/bob"  // Full IRI → IRI
+        
+        // Smart QName detection in object position
+        person - "foaf:knows" - "foaf:Person"        // QName with declared prefix → IRI
+        person - "foaf:homepage" - "http://example.org/profile"  // Full IRI → IRI
+        person - "foaf:note" - "unknown:Person"      // Undeclared prefix → string literal
         
         // Use QNames with natural language syntax
         val bob = iri("http://example.org/bob")

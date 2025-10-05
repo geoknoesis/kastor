@@ -29,9 +29,6 @@ abstract class OntologyGenerationTask : DefaultTask() {
     @get:Input
     abstract val contextPath: Property<String>
     
-    @get:Input
-    @get:Optional
-    abstract val targetPackage: Property<String>
     
     @get:Input
     @get:Optional
@@ -168,8 +165,8 @@ abstract class OntologyGenerationTask : DefaultTask() {
         
         val shaclFile = resolveFile(shaclPath.get())
         val contextFile = resolveFile(contextPath.get())
-        val basePackage = targetPackage.getOrElse("com.example.generated")
-        val interfacePackage = interfacePackage.getOrElse(basePackage)
+        val basePackage = interfacePackage.getOrElse("com.example.generated")
+        val actualInterfacePackage = interfacePackage.getOrElse(basePackage)
         val wrapperPackage = wrapperPackage.getOrElse(basePackage)
         val vocabularyPackage = vocabularyPackage.getOrElse(basePackage)
         val generateInterfaces = generateInterfaces.getOrElse(true)
@@ -182,7 +179,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
         logger.info("SHACL file: ${shaclFile.absolutePath}")
         logger.info("Context file: ${contextFile.absolutePath}")
         logger.info("Base package: $basePackage")
-        logger.info("Interface package: $interfacePackage")
+        logger.info("Interface package: $actualInterfacePackage")
         logger.info("Wrapper package: $wrapperPackage")
         logger.info("Vocabulary package: $vocabularyPackage")
         logger.info("Generate interfaces: $generateInterfaces")
@@ -211,9 +208,9 @@ abstract class OntologyGenerationTask : DefaultTask() {
             logger.info("Generating code for class: $className")
             
             if (generateInterfaces) {
-                val interfaceDir = File(outputDir, interfacePackage.replace('.', '/'))
+                val interfaceDir = File(outputDir, actualInterfacePackage.replace('.', '/'))
                 interfaceDir.mkdirs()
-                val interfaceCode = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), interfacePackage)[className] ?: ""
+                val interfaceCode = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), actualInterfacePackage)[className] ?: ""
                 val interfaceFile = File(interfaceDir, "$className.kt")
                 interfaceFile.writeText(interfaceCode)
                 logger.info("Generated interface: ${interfaceFile.absolutePath}")

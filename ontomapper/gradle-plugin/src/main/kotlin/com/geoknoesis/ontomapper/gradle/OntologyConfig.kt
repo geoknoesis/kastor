@@ -25,12 +25,6 @@ class OntologyConfig {
      */
     var contextPath: String = ""
     
-    /**
-     * Target package name for generated interfaces and wrappers (legacy).
-     * @deprecated Use specific package properties instead
-     */
-    @Deprecated("Use interfacePackage, wrapperPackage, and vocabularyPackage instead")
-    var targetPackage: String = ""
     
     /**
      * Package name for generated interfaces.

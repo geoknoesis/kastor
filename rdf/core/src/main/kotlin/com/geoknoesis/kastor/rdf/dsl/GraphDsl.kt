@@ -16,7 +16,21 @@ class GraphDsl {
     val triples = mutableListOf<RdfTriple>()
     
     // Prefix mappings for QName resolution
-    private val prefixMappings = mutableMapOf<String, String>()
+    private val prefixMappings = mutableMapOf<String, String>().apply {
+        // Initialize with built-in prefixes for common vocabularies
+        putBuiltInPrefixes()
+    }
+    
+    /**
+     * Initialize built-in prefixes for common vocabularies.
+     */
+    private fun MutableMap<String, String>.putBuiltInPrefixes() {
+        put("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+        put("rdfs", "http://www.w3.org/2000/01/rdf-schema#")
+        put("owl", "http://www.w3.org/2002/07/owl#")
+        put("sh", "http://www.w3.org/ns/shacl#")
+        put("xsd", "http://www.w3.org/2001/XMLSchema#")
+    }
     
     // Bnode factory with counter for consistent naming
     private var bnodeCounter = 0
@@ -49,11 +63,85 @@ class GraphDsl {
     }
     
     /**
+     * Smart object creation with automatic QName detection.
+     * - If predicate is rdf:type: Always try to resolve as QName/IRI
+     * - If value looks like QName and prefix is declared: Resolve as IRI
+     * - Otherwise: Create string literal
+     */
+    internal fun createSmartObject(value: Any, predicate: Iri): RdfTerm {
+        return when (value) {
+            is String -> {
+                // Special case: rdf:type always resolves QNames/IRIs
+                if (predicate == RDF.type) {
+                    try {
+                        resolveIri(value)  // "foaf:Person" → IRI
+                    } catch (e: IllegalArgumentException) {
+                        Literal(value, XSD.string)  // Fallback to literal if resolution fails
+                    }
+                } else {
+                    // Smart QName detection for other predicates
+                    if (isFullIri(value)) {
+                        try {
+                            resolveIri(value)  // "http://example.org/friend" → IRI
+                        } catch (e: IllegalArgumentException) {
+                            Literal(value, XSD.string)  // Fallback to literal if resolution fails
+                        }
+                    } else if (looksLikeQName(value) && hasDeclaredPrefix(value)) {
+                        try {
+                            resolveIri(value)  // "foaf:Person" → IRI
+                        } catch (e: IllegalArgumentException) {
+                            Literal(value, XSD.string)  // Fallback to literal if resolution fails
+                        }
+                    } else {
+                        Literal(value, XSD.string)  // "Alice" → string literal
+                    }
+                }
+            }
+            is Int -> Literal(value.toString(), XSD.integer)
+            is Double -> Literal(value.toString(), XSD.double)
+            is Boolean -> Literal(value.toString(), XSD.boolean)
+            is RdfTerm -> value  // Already resolved (qname(), iri(), literal(), etc.)
+            else -> Literal(value.toString(), XSD.string)
+        }
+    }
+    
+    /**
+     * Check if a string is a full IRI (starts with http:// or https://).
+     */
+    private fun isFullIri(value: String): Boolean {
+        return value.startsWith("http://") || value.startsWith("https://")
+    }
+    
+    /**
+     * Check if a string looks like a QName (contains ':' but not a full IRI).
+     */
+    private fun looksLikeQName(value: String): Boolean {
+        return value.contains(':') && 
+               !value.startsWith("http://") && 
+               !value.startsWith("https://") &&
+               value.indexOf(':') > 0 && 
+               value.indexOf(':') < value.length - 1
+    }
+    
+    /**
+     * Check if a QName has a declared prefix.
+     */
+    private fun hasDeclaredPrefix(value: String): Boolean {
+        val prefix = value.substringBefore(':')
+        return prefixMappings.containsKey(prefix)
+    }
+    
+    /**
      * Create an IRI from a QName or full IRI string.
      */
     fun qname(iriOrQName: String): Iri {
         return resolveIri(iriOrQName)
     }
+    
+    /**
+     * Extension function to access bare "a" from DSL context
+     */
+    fun a(): String = "a"
     
     // === ULTRA-COMPACT SYNTAX ===
     
@@ -67,14 +155,7 @@ class GraphDsl {
             "a" -> RDF.type  // Turtle-style alias for rdf:type
             else -> resolveIri(predicate)
         }
-        val obj = when (value) {
-            is String -> Literal(value, XSD.string)
-            is Int -> Literal(value.toString(), XSD.integer)
-            is Double -> Literal(value.toString(), XSD.double)
-            is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value
-            else -> Literal(value.toString(), XSD.string)
-        }
+        val obj = createSmartObject(value, predicateIri)
         triples.add(RdfTriple(this, predicateIri, obj))
     }
     
@@ -82,14 +163,7 @@ class GraphDsl {
      * Ultra-compact bracket syntax with IRI predicate: person[name] = "Alice"
      */
     operator fun RdfResource.set(predicate: Iri, value: Any) {
-        val obj = when (value) {
-            is String -> Literal(value, XSD.string)
-            is Int -> Literal(value.toString(), XSD.integer)
-            is Double -> Literal(value.toString(), XSD.double)
-            is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value
-            else -> Literal(value.toString(), XSD.string)
-        }
+        val obj = createSmartObject(value, predicate)
         triples.add(RdfTriple(this, predicate, obj))
     }
     
@@ -112,32 +186,26 @@ class GraphDsl {
     
     /**
      * Natural language syntax: person `is` "foaf:Person"
-     * Alias for person has "rdf:type" with "foaf:Person"
+     * Directly creates a type triple without requiring 'with'
      */
-    infix fun RdfResource.`is`(typeQName: String): SubjectAndPredicate {
-        return SubjectAndPredicate(this, RDF.type)
+    infix fun RdfResource.`is`(typeQName: String) {
+        val typeIri = resolveIri(typeQName)
+        triples.add(RdfTriple(this, RDF.type, typeIri))
     }
     
     /**
      * Natural language syntax: person `is` FOAF.Person
-     * Alias for person has RDF.type with FOAF.Person
+     * Directly creates a type triple without requiring 'with'
      */
-    infix fun RdfResource.`is`(typeIri: Iri): SubjectAndPredicate {
-        return SubjectAndPredicate(this, RDF.type)
+    infix fun RdfResource.`is`(typeIri: Iri) {
+        triples.add(RdfTriple(this, RDF.type, typeIri))
     }
     
     /**
      * Natural language syntax: person has FOAF.name with "Alice"
      */
     infix fun SubjectAndPredicate.with(value: Any) {
-        val obj = when (value) {
-            is String -> Literal(value, XSD.string)
-            is Int -> Literal(value.toString(), XSD.integer)
-            is Double -> Literal(value.toString(), XSD.double)
-            is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value
-            else -> Literal(value.toString(), XSD.string)
-        }
+        val obj = createSmartObject(value, predicate)
         triples.add(RdfTriple(subject, predicate, obj))
     }
     
@@ -153,6 +221,7 @@ class GraphDsl {
     /**
      * Minus operator syntax with QName: person - "foaf:name" - "Alice"
      * Also supports Turtle-style "a" alias for rdf:type: person - "a" - "foaf:Person"
+     * And bare "a": person - a - "foaf:Person"
      */
     infix operator fun RdfResource.minus(predicateQName: String): SubjectPredicateChain {
         val predicate = when (predicateQName) {
@@ -166,14 +235,7 @@ class GraphDsl {
      * Minus operator syntax: person - FOAF.name - "Alice"
      */
     infix operator fun SubjectPredicateChain.minus(value: Any) {
-        val obj = when (value) {
-            is String -> Literal(value, XSD.string)
-            is Int -> Literal(value.toString(), XSD.integer)
-            is Double -> Literal(value.toString(), XSD.double)
-            is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value
-            else -> Literal(value.toString(), XSD.string)
-        }
+        val obj = createSmartObject(value, predicate)
         triples.add(RdfTriple(subject, predicate, obj))
     }
     
@@ -182,14 +244,7 @@ class GraphDsl {
      */
     infix operator fun <T> SubjectPredicateChain.minus(values: Array<T>) {
         values.forEach { value ->
-            val obj = when (value) {
-                is String -> Literal(value, XSD.string)
-                is Int -> Literal(value.toString(), XSD.integer)
-                is Double -> Literal(value.toString(), XSD.double)
-                is Boolean -> Literal(value.toString(), XSD.boolean)
-                is RdfTerm -> value
-                else -> Literal(value.toString(), XSD.string)
-            }
+            val obj = createSmartObject(value as Any, predicate)
             triples.add(RdfTriple(subject, predicate, obj))
         }
     }
@@ -201,14 +256,7 @@ class GraphDsl {
      */
     infix operator fun SubjectPredicateChain.minus(values: MultipleIndividualValues) {
         values.values.forEach { value ->
-            val obj = when (value) {
-                is String -> Literal(value, XSD.string)
-                is Int -> Literal(value.toString(), XSD.integer)
-                is Double -> Literal(value.toString(), XSD.double)
-                is Boolean -> Literal(value.toString(), XSD.boolean)
-                is RdfTerm -> value
-                else -> Literal(value.toString(), XSD.string)
-            }
+            val obj = createSmartObject(value, predicate)
             triples.add(RdfTriple(subject, predicate, obj))
         }
     }
@@ -229,14 +277,7 @@ class GraphDsl {
     infix operator fun SubjectPredicateChain.minus(pair: Pair<*, *>) {
         val values = listOf(pair.first, pair.second)
         values.forEach { value ->
-            val obj = when (value) {
-                is String -> Literal(value, XSD.string)
-                is Int -> Literal(value.toString(), XSD.integer)
-                is Double -> Literal(value.toString(), XSD.double)
-                is Boolean -> Literal(value.toString(), XSD.boolean)
-                is RdfTerm -> value
-                else -> Literal(value.toString(), XSD.string)
-            }
+            val obj = createSmartObject(value as Any, predicate)
             triples.add(RdfTriple(subject, predicate, obj))
         }
     }
@@ -248,14 +289,7 @@ class GraphDsl {
     infix operator fun SubjectPredicateChain.minus(triple: Triple<*, *, *>) {
         val values = listOf(triple.first, triple.second, triple.third)
         values.forEach { value ->
-            val obj = when (value) {
-                is String -> Literal(value, XSD.string)
-                is Int -> Literal(value.toString(), XSD.integer)
-                is Double -> Literal(value.toString(), XSD.double)
-                is Boolean -> Literal(value.toString(), XSD.boolean)
-                is RdfTerm -> value
-                else -> Literal(value.toString(), XSD.string)
-            }
+            val obj = createSmartObject(value as Any, predicate)
             triples.add(RdfTriple(subject, predicate, obj))
         }
     }
@@ -299,7 +333,7 @@ class GraphDsl {
         /**
          * Helper function to create RDF Lists from Kotlin lists.
          */
-        private fun createRdfList(values: List<Any>): RdfTerm {
+        internal fun createRdfList(values: List<Any>): RdfTerm {
             if (values.isEmpty()) {
                 return RDF.nil
             }

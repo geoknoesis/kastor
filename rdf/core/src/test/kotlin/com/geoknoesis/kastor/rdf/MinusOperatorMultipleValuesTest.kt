@@ -192,8 +192,8 @@ class MinusOperatorMultipleValuesTest {
         assertEquals(2, homepageTriples.size, "Should have 2 homepage properties")
         
         val homepageObjects = homepageTriples.map { it.obj }
-        assertTrue(homepageObjects.contains(Literal("http://alice.com", XSD.string)), "Should have alice.com homepage")
-        assertTrue(homepageObjects.contains(Literal("http://alice.blog.com", XSD.string)), "Should have alice.blog.com homepage")
+        assertTrue(homepageObjects.contains(iri("http://alice.com")), "Should have alice.com homepage as IRI (smart QName detection)")
+        assertTrue(homepageObjects.contains(iri("http://alice.blog.com")), "Should have alice.blog.com homepage as IRI (smart QName detection)")
     }
 
     @Test

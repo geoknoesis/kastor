@@ -36,7 +36,6 @@ class OntoMapperPlugin : Plugin<Project> {
                     // Configure the task with ontology-specific values
                     task.shaclPath.set(ontologyConfig.shaclPath)
                     task.contextPath.set(ontologyConfig.contextPath)
-                    task.targetPackage.set(ontologyConfig.targetPackage)
                     task.interfacePackage.set(ontologyConfig.interfacePackage)
                     task.wrapperPackage.set(ontologyConfig.wrapperPackage)
                     task.vocabularyPackage.set(ontologyConfig.vocabularyPackage)
@@ -62,31 +61,6 @@ class OntoMapperPlugin : Plugin<Project> {
                 }
             }
             
-            // Legacy support: if no ontologies are configured, use legacy properties
-            if (extension.ontologies?.isEmpty() != false) {
-                if (extension.shaclPath.isNotEmpty() && extension.contextPath.isNotEmpty()) {
-                    project.tasks.register("generateOntologyLegacy", OntologyGenerationTask::class.java) { task ->
-                        task.group = "ontomapper"
-                        task.description = "Generate domain interfaces and wrappers from legacy configuration"
-                        
-                        task.shaclPath.set(extension.shaclPath)
-                        task.contextPath.set(extension.contextPath)
-                        task.targetPackage.set(extension.targetPackage)
-                        task.interfacePackage.set(extension.interfacePackage)
-                        task.wrapperPackage.set(extension.wrapperPackage)
-                        task.vocabularyPackage.set(extension.vocabularyPackage)
-                        task.generateInterfaces.set(extension.generateInterfaces)
-                        task.generateWrappers.set(extension.generateWrappers)
-                        task.generateVocabulary.set(extension.generateVocabulary)
-                        task.vocabularyName.set(extension.vocabularyName)
-                        task.vocabularyNamespace.set(extension.vocabularyNamespace)
-                        task.vocabularyPrefix.set(extension.vocabularyPrefix)
-                        task.outputDirectory.set(project.file(extension.outputDirectory))
-                    }
-                    
-                    mainTask.configure { it.dependsOn("generateOntologyLegacy") }
-                }
-            }
             
             // Make the main generation task run before compileKotlin
             project.tasks.named("compileKotlin") { compileTask ->

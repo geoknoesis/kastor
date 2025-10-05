@@ -33,6 +33,7 @@ person[age] = 30
 
 // With QNames (requires prefix mapping)
 repo.add {
+    // Built-in prefixes: rdf, rdfs, owl, sh, xsd (no need to declare!)
     prefixes {
         "foaf" to "http://xmlns.com/foaf/0.1/"
         "dcterms" to "http://purl.org/dc/terms/"
@@ -42,9 +43,15 @@ repo.add {
     person["foaf:age"] = 30
     person["dcterms:email"] = "alice@example.com"
     
-    // Turtle-style "a" alias for rdf:type
+    // Turtle-style "a" alias for rdf:type (uses built-in rdf prefix)
     person["a"] = "foaf:Person"
     document["a"] = "dcterms:Dataset"
+    
+    // Smart QName detection with built-in prefixes
+    person - "rdf:type" - "rdfs:Class"           // Built-in prefixes → IRIs
+    person - "foaf:knows" - "foaf:Person"        // Custom prefix → IRI
+    person - "rdfs:label" - "Alice"              // Built-in prefix + string literal
+    person - "foaf:homepage" - "http://example.org"  // Full IRI → IRI
 }
 ```
 
@@ -79,8 +86,8 @@ repo.add {
     person has "dcterms:email" with "alice@example.com"
     
     // Natural language "is" alias for rdf:type
-    person `is` "foaf:Person" with "foaf:Person"
-    document `is` "dcterms:Dataset" with "dcterms:Dataset"
+    person `is` "foaf:Person"
+    document `is` "dcterms:Dataset"
 }
 ```
 
@@ -299,6 +306,137 @@ repo.add {
 | **Minus Operator (RDF Seq)** | `person - FOAF.knows - seq(f1, f2, f3)` | RDF Seq container | Requires seq() function |
 | **Minus Operator (RDF Alt)** | `person - FOAF.mbox - alt("e1", "e2")` | RDF Alt container | Requires alt() function |
 
+## 🧠 Smart QName Detection
+
+Kastor automatically detects and resolves QNames in object position, making the DSL more intuitive and reducing the need for explicit type annotations:
+
+### How It Works
+
+```kotlin
+repo.add {
+    prefixes {
+        put("foaf", "http://xmlns.com/foaf/0.1/")
+        put("rdfs", "http://www.w3.org/2000/01/rdf-schema#")
+    }
+    
+    val person = iri("http://example.org/person")
+    
+    // ✅ Smart: QName with declared prefix → IRI
+    person - "foaf:knows" - "foaf:Person"        // → <http://xmlns.com/foaf/0.1/Person>
+    person - "rdfs:subClassOf" - "foaf:Agent"    // → <http://xmlns.com/foaf/0.1/Agent>
+    
+    // ✅ Smart: Full IRI → IRI
+    person - "foaf:homepage" - "http://example.org/profile"  // → <http://example.org/profile>
+    
+    // ✅ Smart: String without colon → string literal
+    person - "foaf:name" - "Alice"               // → "Alice"^^xsd:string
+    person - "foaf:age" - 30                     // → "30"^^xsd:integer
+    
+    // ✅ Smart: Undeclared prefix → string literal (safe fallback)
+    person - "foaf:note" - "unknown:Person"      // → "unknown:Person"^^xsd:string
+    
+    // ✅ Special case: rdf:type always resolves QNames
+    person["a"] = "foaf:Person"                  // → <http://xmlns.com/foaf/0.1/Person>
+    person `is` "foaf:Agent"                     // → <http://xmlns.com/foaf/0.1/Agent>
+}
+```
+
+### Detection Rules
+
+1. **Full IRIs** (`http://...` or `https://...`) → Always resolved as IRIs
+2. **QNames with declared prefixes** (`foaf:Person`) → Resolved as IRIs
+3. **Strings without colons** (`Alice`) → Created as string literals
+4. **QNames with undeclared prefixes** (`unknown:Person`) → Created as string literals (safe fallback)
+5. **rdf:type special case** → Always attempts QName resolution first
+
+### Explicit Control
+
+When you need explicit control over the object type, use the dedicated functions:
+
+```kotlin
+// Explicit QName resolution
+person - "foaf:knows" - qname("foaf:Person")    // → <http://xmlns.com/foaf/0.1/Person>
+
+// Explicit string literal
+person - "foaf:name" - literal("foaf:Person")   // → "foaf:Person"^^xsd:string
+
+// Explicit IRI
+person - "foaf:homepage" - iri("http://example.org")  // → <http://example.org>
+
+// Language-tagged literals
+person - "foaf:name" - lang("Alice", "en")      // → "Alice"@en
+
+// Typed literals
+person - "foaf:age" - typed("30", XSD.integer)  // → "30"^^xsd:integer
+```
+
+### Benefits
+
+- ✅ **Intuitive**: Follows Turtle conventions for QName resolution
+- ✅ **Safe**: Undeclared prefixes become string literals (no errors)
+- ✅ **Explicit when needed**: Use dedicated functions for precise control
+- ✅ **Backward compatible**: Existing code continues to work
+- ✅ **Less verbose**: Reduces need for explicit `qname()` calls
+
+## 🏗️ Built-in Prefixes
+
+Kastor comes with built-in prefixes for the most common vocabularies, so you don't need to declare them:
+
+### Available Built-in Prefixes
+
+| Prefix | Namespace | Description |
+|--------|-----------|-------------|
+| `rdf` | `http://www.w3.org/1999/02/22-rdf-syntax-ns#` | RDF Core vocabulary |
+| `rdfs` | `http://www.w3.org/2000/01/rdf-schema#` | RDF Schema vocabulary |
+| `owl` | `http://www.w3.org/2002/07/owl#` | Web Ontology Language |
+| `sh` | `http://www.w3.org/ns/shacl#` | Shapes Constraint Language |
+| `xsd` | `http://www.w3.org/2001/XMLSchema#` | XML Schema datatypes |
+
+### Usage Examples
+
+```kotlin
+repo.add {
+    // No need to declare built-in prefixes!
+    val person = iri("http://example.org/person")
+    
+    // Use built-in prefixes directly
+    person["rdf:type"] = "rdfs:Class"              // → <http://www.w3.org/2000/01/rdf-schema#Class>
+    person - "rdfs:label" - "Person Class"         // → "Person Class"^^xsd:string
+    person - "owl:sameAs" - "http://example.org/person2"  // → <http://example.org/person2>
+    person - "sh:targetClass" - "rdfs:Class"       // → <http://www.w3.org/2000/01/rdf-schema#Class>
+    
+    // Mix with custom prefixes
+    prefixes {
+        "foaf" to "http://xmlns.com/foaf/0.1/"
+    }
+    person - "foaf:name" - "Alice"                 // Custom prefix
+    person - "rdfs:comment" - "A person"           // Built-in prefix
+}
+```
+
+### Override Built-in Prefixes
+
+You can override built-in prefixes if needed:
+
+```kotlin
+repo.add {
+    prefixes {
+        "rdf" to "http://example.org/custom-rdf#"  // Override built-in rdf prefix
+        "foaf" to "http://xmlns.com/foaf/0.1/"     // Custom prefix
+    }
+    
+    val resource = iri("http://example.org/resource")
+    resource["rdf:type"] = "rdf:CustomType"  // Uses custom namespace
+}
+```
+
+### Benefits
+
+- ✅ **Zero configuration**: Common prefixes work out of the box
+- ✅ **Less verbose**: No need to declare standard prefixes
+- ✅ **Overridable**: Can customize prefixes when needed
+- ✅ **Standards compliant**: Uses official namespace URIs
+
 ## 🎯 Optional Vocabulary Extensions
 
 For domain-specific compact syntax, you can optionally import vocabulary extensions:
@@ -371,7 +509,8 @@ repo.add {
     
     // Turtle-style "a" alias for rdf:type
     person["a"] = "foaf:Person"           // Bracket syntax
-    document - "a" - "dcterms:Dataset"    // Minus operator syntax
+    document - "a" - "dcterms:Dataset"    // Minus operator with quotes
+    person - a - "foaf:Agent"             // Minus operator without quotes
 }
 ```
 
@@ -390,8 +529,8 @@ repo.add {
     val document = iri("http://example.org/document")
     
     // Natural language "is" alias for rdf:type
-    person `is` "foaf:Person" with "foaf:Person"        // With QName
-    document `is` FOAF.Agent with FOAF.Agent            // With IRI
+    person `is` "foaf:Person"        // With QName
+    document `is` FOAF.Agent            // With IRI
 }
 ```
 
@@ -411,8 +550,9 @@ repo.add {
     
     // Mix different type declaration styles
     person["a"] = "foaf:Person"                    // Turtle-style
-    person `is` "foaf:Agent" with "foaf:Agent"      // Natural language
-    organization - "a" - "foaf:Organization"      // Minus operator with a
+    person `is` "foaf:Agent"                         // Natural language
+    organization - "a" - "foaf:Organization"      // Minus operator with quotes
+    organization - a - "foaf:Agent"                // Minus operator without quotes
     organization has RDF.type with "foaf:Agent"   // Traditional has/with
     
     // Add other properties
@@ -427,7 +567,7 @@ repo.add {
 |-------|---------|------|------|
 | **Turtle "a" (Bracket)** | `person["a"] = "foaf:Person"` | Concise, familiar to Turtle users | Less explicit |
 | **Turtle "a" (Minus)** | `person - "a" - "foaf:Person"` | Consistent with minus operator | Less explicit |
-| **Natural "is"** | `person is "foaf:Person" with "foaf:Person"` | Most explicit, natural language | More verbose |
+| **Natural "is"** | `person `is` "foaf:Person"` | Most explicit, natural language | Clean and direct |
 | **Traditional** | `person has RDF.type with "foaf:Person"` | Explicit, clear intent | Most verbose |
 
 ### When to Use Each Style
@@ -777,7 +917,7 @@ The Kastor RDF API provides a **vocabulary-agnostic** core API that works with a
 - **Generic infix**: `person has name with "Alice"` (natural flow)
 - **Minus operator**: `person - name - "Alice"` (clean and familiar)
 - **QNames**: `person - "foaf:name" - "Alice"` (cleaner with prefix mappings)
-- **Type aliases**: `person["a"] = "foaf:Person"` or `person `is` "foaf:Person" with "foaf:Person"` (Turtle-style and natural language)
+- **Type aliases**: `person["a"] = "foaf:Person"`, `person - a - "foaf:Person"`, or `person `is` "foaf:Person"` (Turtle-style and natural language)
 - **Multiple values**: `person - FOAF.knows - values(f1, f2, f3)` (intuitive collections)
 - **RDF Lists**: `person - FOAF.mbox - list("e1", "e2")` (proper RDF semantics)
 
@@ -785,6 +925,6 @@ The new **`values()` and `list()`** functions make it even easier to work with m
 
 **QName support** with prefix mappings provides cleaner, more readable code while maintaining full compatibility with existing syntax. Use `prefixes { }` blocks to configure mappings and `qname()` to create IRIs from QNames.
 
-**Type declaration aliases** make RDF type declarations more intuitive and familiar. Use `"a"` for Turtle-style syntax (`person["a"] = "foaf:Person"`) or `is` for natural language syntax (`person `is` "foaf:Person" with "foaf:Person"`).
+**Type declaration aliases** make RDF type declarations more intuitive and familiar. Use `"a"` for Turtle-style syntax (`person["a"] = "foaf:Person"`, `person - a - "foaf:Person"`) or `is` for natural language syntax (`person `is` "foaf:Person"`).
 
 Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.

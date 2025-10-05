@@ -22,6 +22,7 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **Serialization** - RDF/XML, Turtle, JSON-LD, and other formats
 - **Transactions** - ACID transactions for data consistency
 - **Graph Isomorphism** - Advanced blank node comparison algorithms
+- **Intuitive DSL** - Turtle-style "a" and natural language "is" aliases for rdf:type
 
 ### OntoMapper (High-Level)
 - **Domain Interfaces** - Pure Kotlin interfaces with no RDF dependencies
@@ -47,7 +48,21 @@ repo.add {
     }
     
     val person = iri("http://example.org/person")
-    person - "rdf:type" - "foaf:Person"
+    
+    // Turtle-style "a" alias for rdf:type
+    person["a"] = "foaf:Person"
+    person - a - "foaf:Agent"      // Without quotes
+    person - "a" - "foaf:Agent"    // With quotes
+    
+    // Natural language "is" alias for rdf:type
+    person `is` "foaf:Agent"
+    
+    // Smart QName detection in object position
+    person - "foaf:knows" - "foaf:Person"        // QName with declared prefix → IRI
+    person - "foaf:name" - "Alice"               // String without colon → string literal
+    person - "foaf:homepage" - "http://example.org"  // Full IRI → IRI
+    
+    // Traditional syntax (still works)
     person - "foaf:name" - "John Doe"
     person - "foaf:age" - 30
 }
@@ -81,6 +96,106 @@ val person: Person = personRef.asType()
 
 // Use domain object
 println("Name: ${person.name}, Age: ${person.age}")
+```
+
+## Smart QName Detection
+
+Kastor automatically detects and resolves QNames in object position, making the DSL more intuitive:
+
+```kotlin
+repo.add {
+    // Built-in prefixes: rdf, rdfs, owl, sh, xsd (no need to declare!)
+    prefixes {
+        put("foaf", "http://xmlns.com/foaf/0.1/")
+    }
+    
+    val person = iri("http://example.org/person")
+    
+    // ✅ Smart: QName with declared prefix → IRI
+    person - "foaf:knows" - "foaf:Person"        // → <http://xmlns.com/foaf/0.1/Person>
+    person - "rdfs:subClassOf" - "foaf:Agent"    // → <http://xmlns.com/foaf/0.1/Agent>
+    
+    // ✅ Smart: Full IRI → IRI
+    person - "foaf:homepage" - "http://example.org/profile"  // → <http://example.org/profile>
+    
+    // ✅ Smart: String without colon → string literal
+    person - "foaf:name" - "Alice"               // → "Alice"^^xsd:string
+    person - "foaf:age" - 30                     // → "30"^^xsd:integer
+    
+    // ✅ Smart: Undeclared prefix → string literal (safe fallback)
+    person - "foaf:note" - "unknown:Person"      // → "unknown:Person"^^xsd:string
+    
+    // ✅ Special case: rdf:type always resolves QNames
+    person["a"] = "foaf:Person"                  // → <http://xmlns.com/foaf/0.1/Person>
+    person `is` "foaf:Agent"                     // → <http://xmlns.com/foaf/0.1/Agent>
+}
+```
+
+### Explicit Control
+
+When you need explicit control, use the dedicated functions:
+
+```kotlin
+// Explicit QName resolution
+person - "foaf:knows" - qname("foaf:Person")    // → <http://xmlns.com/foaf/0.1/Person>
+
+// Explicit string literal
+person - "foaf:name" - literal("foaf:Person")   // → "foaf:Person"^^xsd:string
+
+// Explicit IRI
+person - "foaf:homepage" - iri("http://example.org")  // → <http://example.org>
+
+// Language-tagged literals
+person - "foaf:name" - lang("Alice", "en")      // → "Alice"@en
+
+// Typed literals
+person - "foaf:age" - typed("30", XSD.integer)  // → "30"^^xsd:integer
+```
+
+## Built-in Prefixes
+
+Kastor comes with built-in prefixes for the most common vocabularies, so you don't need to declare them:
+
+```kotlin
+repo.add {
+    // ✅ Built-in prefixes available immediately:
+    // rdf:   → http://www.w3.org/1999/02/22-rdf-syntax-ns#
+    // rdfs:  → http://www.w3.org/2000/01/rdf-schema#
+    // owl:   → http://www.w3.org/2002/07/owl#
+    // sh:    → http://www.w3.org/ns/shacl#
+    // xsd:   → http://www.w3.org/2001/XMLSchema#
+    
+    val person = iri("http://example.org/person")
+    
+    // Use built-in prefixes directly - no declaration needed!
+    person["rdf:type"] = "rdfs:Class"              // → <http://www.w3.org/2000/01/rdf-schema#Class>
+    person - "rdfs:label" - "Person Class"         // → "Person Class"^^xsd:string
+    person - "owl:sameAs" - "http://example.org/person2"  // → <http://example.org/person2>
+    person - "sh:targetClass" - "rdfs:Class"       // → <http://www.w3.org/2000/01/rdf-schema#Class>
+    
+    // Mix with custom prefixes
+    prefixes {
+        put("foaf", "http://xmlns.com/foaf/0.1/")
+    }
+    person - "foaf:name" - "Alice"                 // Custom prefix
+    person - "rdfs:comment" - "A person"           // Built-in prefix
+}
+```
+
+### Override Built-in Prefixes
+
+You can override built-in prefixes if needed:
+
+```kotlin
+repo.add {
+    prefixes {
+        put("rdf", "http://example.org/custom-rdf#")  // Override built-in rdf prefix
+        put("foaf", "http://xmlns.com/foaf/0.1/")     // Custom prefix
+    }
+    
+    val resource = iri("http://example.org/resource")
+    resource["rdf:type"] = "rdf:CustomType"  // Uses custom namespace
+}
 ```
 
 ## Installation

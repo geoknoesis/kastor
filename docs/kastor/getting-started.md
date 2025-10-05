@@ -86,7 +86,11 @@ repo.add {
     val person = iri("http://example.org/person")
     
     // Use QNames with different syntax styles
-    person - "rdf:type" - "foaf:Person"              // Minus operator
+    person["a"] = "foaf:Person"                       // Turtle-style "a" alias
+    person - "a" - "foaf:Agent"                      // With quotes
+    person - a - "foaf:Agent"                        // Without quotes
+    person `is` "foaf:Agent"        // Natural language "is" alias
+    person - "rdf:type" - "foaf:Person"              // Traditional minus operator
     person["foaf:name"] = "Alice Johnson"             // Bracket syntax
     person has "foaf:age" with 30                     // Natural language
     person has "dcterms:description" with "A person"  // Mixed vocabularies

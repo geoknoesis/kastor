@@ -38,7 +38,16 @@ repo.add {
     }
     
     val person = iri("http://example.org/person")
-    person - "rdf:type" - "foaf:Person"
+    
+    // Turtle-style "a" alias for rdf:type
+    person["a"] = "foaf:Person"
+    person - "a" - "foaf:Agent"    // With quotes
+    person - a - "foaf:Agent"      // Without quotes
+    
+    // Natural language "is" alias for rdf:type
+    person `is` "foaf:Agent"
+    
+    // Traditional syntax (still works)
     person - "foaf:name" - "John Doe"
     person - "foaf:age" - 30
 }
@@ -109,6 +118,7 @@ println("Name: ${person.name}, Age: ${person.age}")
 - **SPARQL Support** - Query language for RDF data
 - **Serialization** - RDF/XML, Turtle, JSON-LD, and other formats
 - **Transactions** - ACID transactions for data consistency
+- **Intuitive DSL** - Turtle-style "a" and natural language "is" aliases for rdf:type
 
 ### OntoMapper (High-Level)
 - **Domain Interfaces** - Pure Kotlin interfaces with no RDF dependencies
@@ -213,7 +223,16 @@ repo.add {
     }
     
     val person = iri("http://example.org/person")
-    person - "rdf:type" - "foaf:Person"
+    
+    // Turtle-style "a" alias for rdf:type
+    person["a"] = "foaf:Person"
+    person - "a" - "foaf:Agent"    // With quotes
+    person - a - "foaf:Agent"      // Without quotes
+    
+    // Natural language "is" alias for rdf:type
+    person `is` "foaf:Agent"
+    
+    // Traditional syntax (still works)
     person - "foaf:name" - "John Doe"
     person - "foaf:knows" - iri("http://example.org/friend")
 }

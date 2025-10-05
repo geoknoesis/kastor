@@ -63,8 +63,8 @@ class TurtleStyleBasicTest {
         
         repo.add {
             prefixes {
-                "foaf" to "http://xmlns.com/foaf/0.1/"
-                "dcterms" to "http://purl.org/dc/terms/"
+                put("foaf", "http://xmlns.com/foaf/0.1/")
+                put("dcterms", "http://purl.org/dc/terms/")
             }
             
             val person = iri("http://example.org/person")
@@ -74,12 +74,21 @@ class TurtleStyleBasicTest {
             person["a"] = "foaf:Person"
             document["a"] = "dcterms:Dataset"
             
-            // Also test with minus operator
+            // Also test with minus operator (quoted)
             person - "a" - "foaf:Agent"
+            
+            // And bare "a" (unquoted)
+            println("About to call a(): ${a()}")
+            val result = person - a() - "foaf:Agent"
+            println("Result of person - a() - 'foaf:Agent': $result")
         }
         
         val allTriples = repo.defaultGraph.getTriples()
-        assertEquals(3, allTriples.size, "Should have 3 triples")
+        println("Actual triples: ${allTriples.size}")
+        allTriples.forEach { triple ->
+            println("  ${triple.subject} ${triple.predicate} ${triple.obj}")
+        }
+        assertEquals(3, allTriples.size, "Should have 3 unique triples (person - a - foaf:Agent creates same triple twice)")
         
         val typeTriples = allTriples.filter { it.predicate == RDF.type }
         assertEquals(3, typeTriples.size, "Should have 3 type triples")
@@ -93,19 +102,19 @@ class TurtleStyleBasicTest {
         
         repo.add {
             prefixes {
-                "foaf" to "http://xmlns.com/foaf/0.1/"
-                "dcterms" to "http://purl.org/dc/terms/"
+                put("foaf", "http://xmlns.com/foaf/0.1/")
+                put("dcterms", "http://purl.org/dc/terms/")
             }
             
             val person = iri("http://example.org/person")
             val document = iri("http://example.org/document")
             
             // Natural language "is" alias for rdf:type
-            person `is` "foaf:Person" with "foaf:Person"
-            document `is` "dcterms:Dataset" with "dcterms:Dataset"
+            person `is` "foaf:Person"
+            document `is` "dcterms:Dataset"
             
             // Also test with IRI
-            person `is` FOAF.Agent with FOAF.Agent
+            person `is` FOAF.Agent
         }
         
         val allTriples = repo.defaultGraph.getTriples()
@@ -123,8 +132,8 @@ class TurtleStyleBasicTest {
         
         repo.add {
             prefixes {
-                "foaf" to "http://xmlns.com/foaf/0.1/"
-                "dcterms" to "http://purl.org/dc/terms/"
+                put("foaf", "http://xmlns.com/foaf/0.1/")
+                put("dcterms", "http://purl.org/dc/terms/")
             }
             
             val person = iri("http://example.org/person")
@@ -132,7 +141,7 @@ class TurtleStyleBasicTest {
             
             // Mix different type declaration styles
             person["a"] = "foaf:Person"  // Turtle-style
-            person `is` "foaf:Agent" with "foaf:Agent"  // Natural language
+            person `is` "foaf:Agent"  // Natural language
             organization - "a" - "foaf:Organization"  // Minus operator with a
             organization has RDF.type with "foaf:Agent"  // Traditional has/with
             
