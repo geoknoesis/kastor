@@ -1,0 +1,59 @@
+{
+  "@context": {
+    "dcat": "http://www.w3.org/ns/dcat#",
+    "dcterms": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    
+    "Catalog": "dcat:Catalog",
+    "Dataset": "dcat:Dataset",
+    "Distribution": "dcat:Distribution",
+    "Agent": "foaf:Agent",
+    
+    "title": {
+      "@id": "dcterms:title",
+      "@type": "xsd:string"
+    },
+    "description": {
+      "@id": "dcterms:description",
+      "@type": "xsd:string"
+    },
+    "publisher": {
+      "@id": "dcterms:publisher",
+      "@type": "@id"
+    },
+    "dataset": {
+      "@id": "dcat:dataset",
+      "@type": "@id"
+    },
+    "distribution": {
+      "@id": "dcat:distribution",
+      "@type": "@id"
+    },
+    "downloadURL": {
+      "@id": "dcat:downloadURL",
+      "@type": "xsd:anyURI"
+    },
+    "mediaType": {
+      "@id": "dcat:mediaType",
+      "@type": "xsd:string"
+    },
+    "format": {
+      "@id": "dcterms:format",
+      "@type": "xsd:string"
+    },
+    "keyword": {
+      "@id": "dcterms:keyword",
+      "@type": "xsd:string"
+    },
+    "name": {
+      "@id": "foaf:name",
+      "@type": "xsd:string"
+    },
+    "homepage": {
+      "@id": "foaf:homepage",
+      "@type": "xsd:anyURI"
+    }
+  }
+}

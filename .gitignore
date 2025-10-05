@@ -1,0 +1,707 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# VS Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Kotlin
+*.kotlin_module
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# KSP
+build/generated/
+
+# Test results
+test-results/
+test-output/
+
+# Generated sources (keep structure but ignore content)
+!**/src/main/kotlin/**/generated/
+!**/src/test/kotlin/**/generated/
+
+# Local configuration files
+local.properties
+gradle.properties.local
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Documentation build
+docs/_build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Project specific
+# Generated ontology files (keep examples but ignore generated)
+!samples/**/ontologies/
+!**/ontologies/*.shacl.ttl
+!**/ontologies/*.context.jsonld
+!**/ontologies/*.rdf
+!**/ontologies/*.ttl
+!**/ontologies/*.owl
+
+# Generated code from OntoMapper
+**/generated/
+!samples/**/src/main/kotlin/**/generated/
+
+# Local test files
+test-*.kt
+test-*.jar
+
+# IDE specific
+*.swp
+*.swo
+*~
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.project
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# External tool builders
+.externalToolBuilders/
+
+# Locally stored "Eclipse launch configurations"
+*.launch
+
+# PyDev specific (Python IDE for Eclipse)
+*.pydevproject
+
+# CDT-specific (C/C++ Development Tooling)
+.cproject
+
+# CDT- autotools
+.autotools
+
+# Java annotation processor (APT)
+.factorypath
+
+# PDT-specific (PHP Development Tools)
+.buildpath
+
+# sbteclipse plugin
+.target
+
+# Tern plugin
+.tern-project
+
+# TeXlipse plugin
+.texlipse
+
+# STS (Spring Tool Suite)
+.springBeans
+
+# Code Recommenders
+.recommenders/
+
+# Annotation Processing
+.apt_generated/
+.apt_generated_test/
+
+# Scala IDE specific (Scala & Java IDE for Eclipse)
+.cache-main
+.scala_dependencies
+.worksheet
+
+# Gradle
+.gradle
+build/
+
+# Ignore Gradle GUI config
+gradle-app.setting
+
+# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
+!gradle-wrapper.jar
+
+# Cache of project
+.gradletasknamecache
+
+# # Work around https://youtrack.jetbrains.com/issue/IDEA-116898
+# gradle/wrapper/gradle-wrapper.properties
+
+# VS Code specific
+.vscode/
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must end with two \r
+Icon
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump file
+*.stackdump
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Linux
+*~
+
+# temporary files which can be created if a process still has a handle open of a deleted file
+.fuse_hidden*
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+# .nfs files are created when an open file is removed but is still being accessed
+.nfs*
+
+# Project specific ignores
+# Keep ontology files but ignore generated content
+!**/ontologies/
+**/ontologies/generated/
+
+# Keep sample configurations
+!samples/**/build.gradle.kts
+!samples/**/README.md
+
+# Ignore local test outputs
+test-output/
+test-results/
+
+# Keep documentation structure
+!docs/
+!**/*.md
+
+# Ignore local development files
+dev-*.kt
+local-*.properties
+*.local
+
+# Keep important configuration files
+!gradle.properties
+!settings.gradle.kts
+!build.gradle.kts
+!gradle/libs.versions.toml
+
+# Ignore build artifacts but keep source
+!**/src/main/kotlin/
+!**/src/test/kotlin/
+!**/src/main/resources/
+!**/src/test/resources/
+
+# Ignore generated test files
+build/generated/sources/test/
+
+# Keep example ontology files
+!samples/**/ontologies/*.ttl
+!samples/**/ontologies/*.jsonld
+!samples/**/ontologies/*.rdf
+!samples/**/ontologies/*.owl
+
+# Ignore temporary build files
+**/build/tmp/
+**/build/reports/
+**/build/test-results/
+
+# Keep important project files
+!README.md
+!LICENSE
+!CONTRIBUTING.md
+!CHANGELOG.md
+!VERSION
+
+# Ignore local environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep CI/CD configuration
+!.github/
+!.gitlab-ci.yml
+!Jenkinsfile
+!Dockerfile
+!docker-compose.yml
+
+# Ignore package manager files (if any)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Keep important project metadata
+!project.properties
+!gradle-wrapper.properties
+!gradle-wrapper.jar
+
+# Ignore local development databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Keep test data but ignore generated test outputs
+!**/test-data/
+**/test-output/
+
+# Ignore performance profiling files
+*.prof
+*.hprof
+
+# Keep important configuration but ignore local overrides
+!application.properties
+!application.yml
+!application.yaml
+application-local.properties
+application-local.yml
+application-local.yaml
+
+# Ignore local IDE run configurations
+.idea/runConfigurations/
+*.run
+
+# Keep important scripts but ignore temporary ones
+!scripts/
+!gradlew
+!gradlew.bat
+scripts/temp/
+scripts/local/
+
+# Ignore local documentation builds
+docs/build/
+docs/_build/
+site/
+
+# Keep important documentation
+!docs/**/*.md
+!docs/**/*.rst
+!docs/**/*.txt
+
+# Ignore local backup files
+*.backup
+*.bak
+*.orig
+*.rej
+
+# Keep important license and legal files
+!LICENSE*
+!COPYING*
+!NOTICE*
+!PATENTS*
+
+# Ignore local development tools
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# Keep important project structure
+!src/
+!libs/
+!modules/
+
+# Ignore local development environment
+dev/
+local/
+temp/
+tmp/
+
+# Keep important build configuration
+!build.gradle
+!build.gradle.kts
+!settings.gradle
+!settings.gradle.kts
+
+# Ignore local development databases and caches
+.cache/
+.local/
+.cache-main/
+
+# Keep important project files
+!pom.xml
+!build.xml
+!Makefile
+!CMakeLists.txt
+
+# Ignore local development logs
+*.log
+logs/
+*.out
+*.err
+
+# Keep important configuration files
+!config/
+!conf/
+!etc/
+
+# Ignore local development tools
+.tooling/
+.tools/
+.dev-tools/
+
+# Keep important project metadata
+!VERSION
+!CHANGELOG
+!RELEASE_NOTES
+
+# Ignore local development environment
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Keep important project structure
+!src/
+!lib/
+!libs/
+!bin/
+!scripts/
+
+# Ignore local development files
+dev-*
+local-*
+temp-*
+test-*
+
+# Keep important project files
+!README*
+!CONTRIBUTING*
+!LICENSE*
+!COPYING*
+
+# Ignore local development environment
+.local/
+.cache/
+.temp/
+.tmp/
+
+# Keep important project structure
+!docs/
+!examples/
+!samples/
+!tests/
+!test/
+
+# Ignore local development files
+*.local
+*.dev
+*.test
+*.prod
+
+# Keep important project files
+!*.md
+!*.txt
+!*.rst
+!*.adoc
+
+# Ignore local development environment
+dev/
+local/
+temp/
+tmp/
+
+# Keep important project structure
+!src/
+!lib/
+!libs/
+!bin/
+!scripts/
+
+# Ignore local development files
+dev-*
+local-*
+temp-*
+test-*
+
+# Keep important project files
+!README*
+!CONTRIBUTING*
+!LICENSE*
+!COPYING*
+
+# Ignore local development environment
+.local/
+.cache/
+.temp/
+.tmp/
+
+# Keep important project structure
+!docs/
+!examples/
+!samples/
+!tests/
+!test/
+
+# Ignore local development files
+*.local
+*.dev
+*.test
+*.prod
+
+# Keep important project files
+!*.md
+!*.txt
+!*.rst
+!*.adoc

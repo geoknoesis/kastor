@@ -1,0 +1,41 @@
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://example.org/foaf#PersonShape>
+    a sh:NodeShape ;
+    sh:targetClass foaf:Person ;
+    sh:property [
+        sh:path foaf:name ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path foaf:mbox ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path foaf:knows ;
+        sh:class foaf:Person ;
+        sh:minCount 0 ;
+    ] .
+
+<http://example.org/foaf#DocumentShape>
+    a sh:NodeShape ;
+    sh:targetClass foaf:Document ;
+    sh:property [
+        sh:path foaf:title ;
+        sh:datatype xsd:string ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path foaf:primaryTopic ;
+        sh:class foaf:Person ;
+        sh:minCount 0 ;
+        sh:maxCount 1 ;
+    ] .

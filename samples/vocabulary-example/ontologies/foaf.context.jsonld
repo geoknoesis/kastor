@@ -1,0 +1,27 @@
+{
+  "@context": {
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "Person": "foaf:Person",
+    "Document": "foaf:Document",
+    "name": {
+      "@id": "foaf:name",
+      "@type": "xsd:string"
+    },
+    "mbox": {
+      "@id": "foaf:mbox",
+      "@type": "xsd:string"
+    },
+    "knows": {
+      "@id": "foaf:knows",
+      "@type": "@id"
+    },
+    "title": {
+      "@id": "foaf:title",
+      "@type": "xsd:string"
+    },
+    "primaryTopic": {
+      "@id": "foaf:primaryTopic",
+      "@type": "@id"
+    }
+  }
+}

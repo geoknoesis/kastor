@@ -1,0 +1,31 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "Person": "schema:Person",
+    "PostalAddress": "schema:PostalAddress",
+    "name": {
+      "@id": "schema:name",
+      "@type": "xsd:string"
+    },
+    "email": {
+      "@id": "schema:email",
+      "@type": "xsd:string"
+    },
+    "address": {
+      "@id": "schema:address",
+      "@type": "@id"
+    },
+    "streetAddress": {
+      "@id": "schema:streetAddress",
+      "@type": "xsd:string"
+    },
+    "addressLocality": {
+      "@id": "schema:addressLocality",
+      "@type": "xsd:string"
+    },
+    "addressCountry": {
+      "@id": "schema:addressCountry",
+      "@type": "xsd:string"
+    }
+  }
+}
