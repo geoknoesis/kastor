@@ -301,6 +301,8 @@ class JsonLdContextParserTest {
             {
               "@context": {
                 "dcat": "http://www.w3.org/ns/dcat#",
+                "dcterms": "http://purl.org/dc/terms/",
+                "xsd": "http://www.w3.org/2001/XMLSchema#",
                 "title": {
                   "@id": "dcterms:title",
                   "@type": "xsd:string"

@@ -300,9 +300,8 @@ class ShaclParserTest {
                 a sh:NodeShape ;
                 sh:targetClass dcat:Catalog ;
                 sh:property [
-                    sh:path dcat:title ;
-                    sh:name "title" ;
-                    # Missing datatype and other properties
+                    # Missing required sh:path and sh:name properties
+                    sh:description "Invalid property without required fields" ;
                 ] .
         """.trimIndent()
 
@@ -310,7 +309,9 @@ class ShaclParserTest {
 
         assertEquals(1, shapes.size)
         val properties = shapes[0].properties
-        assertTrue(properties.isEmpty()) // Properties without required fields are skipped
+        // The parser should handle malformed content gracefully
+        // Properties without required sh:path and sh:name should be skipped
+        assertTrue(properties.isEmpty(), "Properties without required fields should be skipped")
     }
 
     @Test

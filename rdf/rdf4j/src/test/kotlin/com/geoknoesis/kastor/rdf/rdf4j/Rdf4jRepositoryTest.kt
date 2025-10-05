@@ -19,7 +19,7 @@ class Rdf4jRepositoryTest {
 
     val result = repo.query("SELECT ?s WHERE { ?s ?p ?o }")
     assertEquals(1, result.count())
-    assertEquals(s, result.first().get("s"))
+    assertEquals(s, result.first()?.get("s"))
 
     val g = repo.construct("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
     assertEquals(1, g.size)

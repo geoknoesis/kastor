@@ -217,15 +217,15 @@ class OntologyProcessorEndToEndTest {
         val wrappers = wrapperGenerator.generateWrappers(ontologyModel, "com.example.test")
 
         // Verify generated code structure
-        val simpleCatalogInterface = interfaces["SimpleCatalog"]
+        val simpleCatalogInterface = interfaces["Catalog"]
         assertNotNull(simpleCatalogInterface)
-        assertTrue(simpleCatalogInterface!!.contains("interface SimpleCatalog {"))
+        assertTrue(simpleCatalogInterface!!.contains("interface Catalog {"))
         assertTrue(simpleCatalogInterface.contains("val title: String"))
         assertTrue(simpleCatalogInterface.contains("val description: String"))
 
-        val simpleCatalogWrapper = wrappers["SimpleCatalogWrapper"]
+        val simpleCatalogWrapper = wrappers["CatalogWrapper"]
         assertNotNull(simpleCatalogWrapper)
-        assertTrue(simpleCatalogWrapper!!.contains("internal class SimpleCatalogWrapper("))
+        assertTrue(simpleCatalogWrapper!!.contains("internal class CatalogWrapper("))
         assertTrue(simpleCatalogWrapper.contains("override val title: String by lazy {"))
         assertTrue(simpleCatalogWrapper.contains("override val description: String by lazy {"))
 
@@ -244,7 +244,7 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogInterface.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper has proper registry entry
-        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[SimpleCatalog::class.java] = { handle -> SimpleCatalogWrapper(handle) }"))
+        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }"))
 
         // Verify that generated wrapper has proper known predicates
         assertTrue(simpleCatalogWrapper.contains("private val known: Set<Iri> = setOf("))

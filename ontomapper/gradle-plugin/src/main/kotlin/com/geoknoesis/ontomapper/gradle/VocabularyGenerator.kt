@@ -42,11 +42,11 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         logger.info("Generating vocabulary for $vocabularyName")
         
         // Parse SHACL shapes
-        val shapes = shaclParser.parse(FileInputStream(shaclFile))
+        val shapes = shaclParser.parseShacl(FileInputStream(shaclFile))
         logger.info("Parsed ${shapes.size} SHACL shapes")
         
         // Parse JSON-LD context
-        val context = contextParser.parse(FileInputStream(contextFile))
+        val context = contextParser.parseContext(FileInputStream(contextFile))
         logger.info("Parsed context with ${context.prefixes.size} prefixes")
         
         // Extract vocabulary terms
@@ -74,15 +74,15 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         
         // Extract classes from SHACL shapes
         shapes.forEach { shape ->
-            val className = context.typeMappings[shape.targetClassIri] 
-                ?: shape.targetClassIri.substringAfterLast('#').substringAfterLast('/')
+            val className = context.typeMappings[shape.targetClass] 
+                ?: shape.targetClass.substringAfterLast('#').substringAfterLast('/')
             
             if (className.isNotEmpty()) {
                 classes.add(VocabularyTerm(
                     name = className,
-                    iri = shape.targetClassIri,
+                    iri = shape.targetClass,
                     type = TermType.CLASS,
-                    description = shape.description
+                    description = ""
                 ))
             }
         }
@@ -111,13 +111,13 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         // Extract properties from SHACL shapes
         shapes.forEach { shape ->
             shape.properties.forEach { property ->
-                val propertyName = context.propertyMappings[property.pathIri]
-                    ?: property.pathIri.substringAfterLast('#').substringAfterLast('/')
+                val propertyName = context.propertyMappings[property.path]?.id
+                    ?: property.path.substringAfterLast('#').substringAfterLast('/')
                 
                 if (propertyName.isNotEmpty()) {
                     properties.add(VocabularyTerm(
                         name = propertyName,
-                        iri = property.pathIri,
+                        iri = property.path,
                         type = TermType.PROPERTY,
                         description = property.description
                     ))
@@ -126,10 +126,10 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         }
         
         // Extract additional properties from context
-        context.propertyMappings.forEach { (iri, name) ->
+        context.propertyMappings.forEach { (iri, property) ->
             if (!properties.any { it.iri == iri }) {
                 properties.add(VocabularyTerm(
-                    name = name,
+                    name = property.id,
                     iri = iri,
                     type = TermType.PROPERTY,
                     description = null

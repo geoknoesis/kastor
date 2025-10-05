@@ -85,16 +85,22 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     
     override fun getStatistics(): RepositoryStatistics {
         return RepositoryStatistics(
-            totalTriples = 0L,
+            tripleCount = 0L,
             graphCount = 1,
-            lastModified = System.currentTimeMillis(),
-            sizeBytes = 0L,
-            indexStats = emptyMap()
+            memoryUsage = 0L,
+            diskUsage = 0L,
+            lastModified = System.currentTimeMillis()
         )
     }
     
     override fun getPerformanceMonitor(): PerformanceMonitor {
-        return PerformanceMonitor()
+        return PerformanceMonitor(
+            queryCount = 0L,
+            averageQueryTime = 0.0,
+            totalQueryTime = 0L,
+            cacheHitRate = 0.0,
+            memoryUsage = 0L
+        )
     }
     
     override fun isClosed(): Boolean = false
@@ -313,8 +319,7 @@ class SparqlResultSet(private val response: String) : QueryResult {
     // Simple implementation - in practice would parse SPARQL JSON results
     override fun iterator(): Iterator<BindingSet> = emptyList<BindingSet>().iterator()
     override fun toList(): List<BindingSet> = emptyList()
-    override fun firstOrNull(): BindingSet? = null
-    override fun first(): BindingSet = throw NoSuchElementException("No results")
+    override fun first(): BindingSet? = null
     override fun count(): Int = 0
-    override fun isEmpty(): Boolean = true
+    override fun asSequence(): Sequence<BindingSet> = emptySequence()
 }

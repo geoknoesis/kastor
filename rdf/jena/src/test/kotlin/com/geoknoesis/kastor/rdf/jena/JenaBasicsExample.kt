@@ -19,7 +19,7 @@ class JenaBasicsExample {
     // Simple SELECT
     val result = repo.query("SELECT ?s WHERE { ?s <urn:ex:p> ?o }")
     assertEquals(1, result.count())
-    assertEquals(s, result.first().get("s"))
+    assertEquals(s, result.first()?.get("s"))
 
     // CONSTRUCT and ASK
     val g = repo.construct("CONSTRUCT { ?s <urn:ex:p> ?o } WHERE { ?s <urn:ex:p> ?o }")

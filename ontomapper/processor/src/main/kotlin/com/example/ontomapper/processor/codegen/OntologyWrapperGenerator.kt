@@ -112,8 +112,12 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
                     else -> "String"
                 }
                 
-                if (property.maxCount == 1) {
-                    appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getConversionMethod(baseType)}.firstOrNull() ?: \"\"")
+                // Use single value method only if maxCount is exactly 1
+                val isSingleValue = property.maxCount == 1
+                
+                if (isSingleValue) {
+                    val defaultValue = getDefaultValue(baseType)
+                    appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getSingleValueConversionMethod(baseType)} ?: $defaultValue")
                 } else {
                     appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getConversionMethod(baseType)}")
                 }
@@ -129,6 +133,24 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
             "Double" -> ".mapNotNull { it.toDoubleOrNull() }"
             "Boolean" -> ".mapNotNull { it.toBooleanStrictOrNull() }"
             else -> ""
+        }
+    }
+
+    private fun getSingleValueConversionMethod(kotlinType: String): String {
+        return when (kotlinType) {
+            "Int" -> ".firstOrNull()?.toIntOrNull()"
+            "Double" -> ".firstOrNull()?.toDoubleOrNull()"
+            "Boolean" -> ".firstOrNull()?.toBooleanStrictOrNull()"
+            else -> ".firstOrNull()"
+        }
+    }
+
+    private fun getDefaultValue(kotlinType: String): String {
+        return when (kotlinType) {
+            "Int" -> "0"
+            "Double" -> "0.0"
+            "Boolean" -> "false"
+            else -> "\"\""
         }
     }
 
@@ -155,12 +177,12 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
             else -> "String" // Default to String for unknown types
         }
         
-        // Return as list if maxCount > 1 or maxCount is null (unbounded)
-        return if (property.maxCount == null || property.maxCount > 1) {
-            "List<$kotlinType>"
-        } else {
-            kotlinType
-        }
+                // Return as list if maxCount > 1 or maxCount is null (unbounded)
+                return if (property.maxCount == 1) {
+                    kotlinType
+                } else {
+                    "List<$kotlinType>"
+                }
     }
 
     private fun extractInterfaceName(classIri: String): String {

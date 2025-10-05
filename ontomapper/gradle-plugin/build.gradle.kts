@@ -6,13 +6,16 @@ plugins {
 
 dependencies {
     implementation(project(":ontomapper:processor"))
-    
+
     // Gradle API
     implementation(gradleApi())
-    
+
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
-    
+
+    // KSP
+    implementation("com.google.devtools.ksp:symbol-processing-api:1.9.10-1.0.13")
+
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)

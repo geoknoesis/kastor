@@ -8,104 +8,78 @@ import org.gradle.api.provider.Property
  * This class represents the configuration for generating code from
  * a single SHACL file and JSON-LD context file pair.
  */
-abstract class OntologyConfig {
+class OntologyConfig {
+    
+    /**
+     * Name of this ontology configuration.
+     */
+    var name: String = ""
     
     /**
      * Path to the SHACL file (relative to project root or resources).
      */
-    @get:org.gradle.api.tasks.Input
-    abstract val shaclPath: Property<String>
+    var shaclPath: String = ""
     
     /**
      * Path to the JSON-LD context file (relative to project root or resources).
      */
-    @get:org.gradle.api.tasks.Input
-    abstract val contextPath: Property<String>
+    var contextPath: String = ""
     
     /**
      * Target package name for generated interfaces and wrappers (legacy).
      * @deprecated Use specific package properties instead
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
     @Deprecated("Use interfacePackage, wrapperPackage, and vocabularyPackage instead")
-    abstract val targetPackage: Property<String>
+    var targetPackage: String = ""
     
     /**
      * Package name for generated interfaces.
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val interfacePackage: Property<String>
+    var interfacePackage: String = "interfaces"
     
     /**
      * Package name for generated wrappers.
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val wrapperPackage: Property<String>
+    var wrapperPackage: String = "wrappers"
     
     /**
      * Package name for generated vocabulary.
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val vocabularyPackage: Property<String>
+    var vocabularyPackage: String = "vocabulary"
     
     /**
      * Whether to generate domain interfaces (default: true).
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val generateInterfaces: Property<Boolean>
+    var generateInterfaces: Boolean = true
     
     /**
      * Whether to generate wrapper implementations (default: true).
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val generateWrappers: Property<Boolean>
+    var generateWrappers: Boolean = true
     
     /**
      * Output directory for generated files (default: build/generated/sources/ontomapper).
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val outputDirectory: Property<String>
+    var outputDirectory: String = "build/generated/sources/ontomapper"
     
     /**
      * Whether to generate vocabulary file (default: false).
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val generateVocabulary: Property<Boolean>
+    var generateVocabulary: Boolean = false
     
     /**
      * Name of the vocabulary (e.g., "DCAT").
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val vocabularyName: Property<String>
+    var vocabularyName: String = ""
     
     /**
      * Namespace URI for the vocabulary.
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val vocabularyNamespace: Property<String>
+    var vocabularyNamespace: String = ""
     
     /**
      * Prefix for the vocabulary (e.g., "dcat").
      */
-    @get:org.gradle.api.tasks.Input
-    @get:org.gradle.api.tasks.Optional
-    abstract val vocabularyPrefix: Property<String>
+    var vocabularyPrefix: String = ""
     
-    init {
-        // Set default values
-        generateInterfaces.convention(true)
-        generateWrappers.convention(true)
-        outputDirectory.convention("build/generated/sources/ontomapper")
-        generateVocabulary.convention(false)
-    }
 }

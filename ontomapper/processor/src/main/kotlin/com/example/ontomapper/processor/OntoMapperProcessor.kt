@@ -78,8 +78,15 @@ class OntoMapperProcessor(
                 
                 if (prefixesArgument != null) {
                     // Extract prefix mappings from the annotation
-                    // This is a simplified implementation - in practice, you'd need to handle
-                    // the array of Prefix annotations more carefully
+                    val prefixesArray = prefixesArgument.value as? List<*>
+                    prefixesArray?.forEach { prefixElement ->
+                        if (prefixElement is KSType) {
+                            // This is a Prefix annotation instance
+                            // We need to extract the name and namespace values
+                            // For now, we'll use a simplified approach
+                            logger.info("Found Prefix annotation: ${prefixElement}")
+                        }
+                    }
                     logger.info("Found PrefixMapping annotation on ${symbol}")
                 }
             }

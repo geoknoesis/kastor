@@ -186,17 +186,17 @@ class OntologyWrapperGeneratorTest {
         // Check int property
         assertTrue(testCode.contains("override val intProp: Int by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.mapNotNull { it.toIntOrNull() }.firstOrNull() ?: 0"))
+        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull() ?: 0"))
         
         // Check boolean property
         assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.mapNotNull { it.toBooleanStrictOrNull() }.firstOrNull() ?: false"))
+        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toBooleanStrictOrNull() ?: false"))
         
         // Check double property
         assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.mapNotNull { it.toDoubleOrNull() }.firstOrNull() ?: 0.0"))
+        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull() ?: 0.0"))
     }
 
     @Test

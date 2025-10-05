@@ -41,8 +41,8 @@ fun main() {
     // Print all triples
     println("Triples:")
     repo.getTriples().forEach { triple ->
-        println("  ${triple.subject.value}")
-        println("    ${triple.predicate.value}")
+        println("  ${triple.subject}")
+        println("    ${triple.predicate}")
         println("      ${triple.obj}")
     }
     println()
@@ -61,7 +61,7 @@ fun main() {
         employee - "schema:worksFor" - org
     }
     
-    println("Standalone graph has ${graph.size} triples")
+    println("Standalone graph has ${graph.getTriples().size} triples")
     println()
     
     // Use qname() function to create IRIs

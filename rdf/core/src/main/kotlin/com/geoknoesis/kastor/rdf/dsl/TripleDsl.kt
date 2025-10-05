@@ -253,6 +253,7 @@ class TripleDsl {
         }
     }
     
+    
     /**
      * Minus operator with curly braces for individual triples: person - FOAF.knows - {friend1, friend2, friend3}
      * Creates multiple individual triples.

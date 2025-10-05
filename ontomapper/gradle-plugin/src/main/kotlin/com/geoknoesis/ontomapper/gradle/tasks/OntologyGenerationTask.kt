@@ -4,9 +4,11 @@ import com.example.ontomapper.processor.codegen.InterfaceGenerator
 import com.example.ontomapper.processor.codegen.OntologyWrapperGenerator
 import com.example.ontomapper.processor.model.ShaclShape
 import com.example.ontomapper.processor.model.JsonLdContext
+import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.parsers.ShaclParser
 import com.example.ontomapper.processor.parsers.JsonLdContextParser
 import com.geoknoesis.ontomapper.gradle.VocabularyGenerator
+import com.google.devtools.ksp.processing.KSPLogger
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
@@ -70,90 +72,90 @@ abstract class OntologyGenerationTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
     
-    private val shaclParser = ShaclParser(object : com.google.devtools.ksp.processing.KSPLogger {
-        override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+    private val shaclParser = ShaclParser(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(msg)
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
         }
-        override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(msg)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val contextParser = JsonLdContextParser(object : com.google.devtools.ksp.processing.KSPLogger {
-        override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
-        }
-        override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
-        }
-        override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(msg)
-        }
-        override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(msg)
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
         }
         override fun exception(e: Throwable) {
             logger.error("Exception occurred", e)
         }
     })
     
-    private val interfaceGenerator = InterfaceGenerator(object : com.google.devtools.ksp.processing.KSPLogger {
-        override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+    private val contextParser = JsonLdContextParser(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(msg)
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
         }
-        override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(msg)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val wrapperGenerator = OntologyWrapperGenerator(object : com.google.devtools.ksp.processing.KSPLogger {
-        override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
-        }
-        override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
-        }
-        override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(msg)
-        }
-        override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(msg)
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
         }
         override fun exception(e: Throwable) {
             logger.error("Exception occurred", e)
         }
     })
     
-    private val vocabularyGenerator = VocabularyGenerator(object : com.google.devtools.ksp.processing.KSPLogger {
-        override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+    private val interfaceGenerator = InterfaceGenerator(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(msg)
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
         }
-        override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(msg)
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
         }
-        override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(msg)
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
+        }
+        override fun exception(e: Throwable) {
+            logger.error("Exception occurred", e)
+        }
+    })
+    
+    private val wrapperGenerator = OntologyWrapperGenerator(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
+        }
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
+        }
+        override fun exception(e: Throwable) {
+            logger.error("Exception occurred", e)
+        }
+    })
+    
+    private val vocabularyGenerator = VocabularyGenerator(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
+        }
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
         }
         override fun exception(e: Throwable) {
             logger.error("Exception occurred", e)
@@ -193,8 +195,8 @@ abstract class OntologyGenerationTask : DefaultTask() {
         }
         
         // Parse SHACL and JSON-LD context
-        val shaclShapes = shaclParser.parse(FileInputStream(shaclFile))
-        val jsonLdContext = contextParser.parse(FileInputStream(contextFile))
+        val shaclShapes = shaclParser.parseShacl(FileInputStream(shaclFile))
+        val jsonLdContext = contextParser.parseContext(FileInputStream(contextFile))
         
         logger.info("Parsed ${shaclShapes.size} SHACL shapes")
         
@@ -203,15 +205,15 @@ abstract class OntologyGenerationTask : DefaultTask() {
         
         // Generate interfaces and wrappers for each shape
         shaclShapes.forEach { shape ->
-            val className = jsonLdContext.typeMappings[shape.targetClassIri] 
-                ?: shape.targetClassIri.substringAfterLast('#').substringAfterLast('/')
+            val className = jsonLdContext.typeMappings[shape.targetClass] 
+                ?: shape.targetClass.substringAfterLast('#').substringAfterLast('/')
             
             logger.info("Generating code for class: $className")
             
             if (generateInterfaces) {
                 val interfaceDir = File(outputDir, interfacePackage.replace('.', '/'))
                 interfaceDir.mkdirs()
-                val interfaceCode = interfaceGenerator.generateInterface(shape, className, interfacePackage, jsonLdContext)
+                val interfaceCode = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), interfacePackage)[className] ?: ""
                 val interfaceFile = File(interfaceDir, "$className.kt")
                 interfaceFile.writeText(interfaceCode)
                 logger.info("Generated interface: ${interfaceFile.absolutePath}")
@@ -220,7 +222,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
             if (generateWrappers) {
                 val wrapperDir = File(outputDir, wrapperPackage.replace('.', '/'))
                 wrapperDir.mkdirs()
-                val wrapperCode = wrapperGenerator.generateWrapper(shape, className, wrapperPackage, jsonLdContext)
+                val wrapperCode = wrapperGenerator.generateWrappers(OntologyModel(listOf(shape), jsonLdContext), wrapperPackage)["${className}Wrapper"] ?: ""
                 val wrapperFile = File(wrapperDir, "${className}Wrapper.kt")
                 wrapperFile.writeText(wrapperCode)
                 logger.info("Generated wrapper: ${wrapperFile.absolutePath}")

@@ -38,8 +38,8 @@ class ShaclParser(private val logger: KSPLogger) {
         val prefixes = extractPrefixes(content)
         logger.info("Extracted prefixes: $prefixes")
         
-        // Find NodeShape definitions
-        val nodeShapePattern = """<([^>]+)>\s*a\s+sh:NodeShape\s*;.*?sh:targetClass\s+([^;\s]+)\s*;(.*?)(?=<[^>]+>\s*a\s+sh:NodeShape|$)""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        // Find NodeShape definitions - much simpler pattern
+        val nodeShapePattern = """<([^>]+)>\s*a\s+sh:NodeShape\s*;.*?sh:targetClass\s+([^;\s]+)\s*[.;]?(.*?)(?=<[^>]+>\s*a\s+sh:NodeShape|\.\s*$)""".toRegex(RegexOption.DOT_MATCHES_ALL)
         
         nodeShapePattern.findAll(content).forEach { matchResult ->
             val shapeIri = matchResult.groupValues[1]
@@ -86,7 +86,7 @@ class ShaclParser(private val logger: KSPLogger) {
         val properties = mutableListOf<ShaclProperty>()
         
         // Extract property constraints
-        val propertyPattern = """sh:property\s+\[(.*?)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val propertyPattern = """sh:property\s+\[(.*?)\](?=\s*[;.]|\s*$)""".toRegex(RegexOption.DOT_MATCHES_ALL)
         
         propertyPattern.findAll(propertiesBlock).forEach { matchResult ->
             val propertyBlock = matchResult.groupValues[1]
@@ -99,7 +99,8 @@ class ShaclParser(private val logger: KSPLogger) {
             val minCount = extractPropertyValue(propertyBlock, "sh:minCount")?.toIntOrNull()
             val maxCount = extractPropertyValue(propertyBlock, "sh:maxCount")?.toIntOrNull()
             
-            if (path != null && name != null) {
+            // Only add properties that have both path/name AND either datatype or targetClass
+            if (path != null && name != null && (datatype != null || targetClass != null)) {
                 properties.add(ShaclProperty(
                     path = path,
                     name = name,
@@ -116,7 +117,15 @@ class ShaclParser(private val logger: KSPLogger) {
     }
 
     private fun extractPropertyValue(block: String, property: String): String? {
-        val pattern = """$property\s+([^;\s]+)""".toRegex()
-        return pattern.find(block)?.groupValues?.get(1)
+        // Handle quoted strings and non-quoted values
+        val quotedPattern = """$property\s+"([^"]+)"\s*;""".toRegex()
+        val quotedMatch = quotedPattern.find(block)
+        if (quotedMatch != null) {
+            return quotedMatch.groupValues[1]
+        }
+        
+        // Handle non-quoted values
+        val unquotedPattern = """$property\s+([^;\s]+)""".toRegex()
+        return unquotedPattern.find(block)?.groupValues?.get(1)
     }
 }

@@ -40,7 +40,7 @@ class Rdf4jRepositoryAdditionalTests {
 
     val result = repo.query("SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:g:p> ?o } }")
     assertEquals(1, result.count())
-    assertEquals(s, result.first().get("s"))
+    assertEquals(s, result.first()?.get("s"))
   }
 
   @Test

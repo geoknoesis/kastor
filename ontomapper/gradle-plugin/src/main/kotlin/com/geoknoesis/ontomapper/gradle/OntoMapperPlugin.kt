@@ -20,15 +20,15 @@ class OntoMapperPlugin : Plugin<Project> {
         
         // Create container for ontology configurations
         val ontologyContainer = project.container(OntologyConfig::class.java) { name ->
-            project.objects.newInstance(OntologyConfig::class.java)
+            OntologyConfig().apply { this.name = name }
         }
         extension.ontologies = ontologyContainer
         
         // Register tasks for each ontology configuration
         project.afterEvaluate {
             // Create tasks for each ontology in the container
-            extension.ontologies.forEach { ontologyConfig ->
-                val taskName = "generateOntology${ontologyConfig.name.capitalize()}"
+            extension.ontologies?.forEach { ontologyConfig ->
+                val taskName = "generateOntology${ontologyConfig.name.replaceFirstChar { it.uppercaseChar() }}"
                 project.tasks.register(taskName, OntologyGenerationTask::class.java) { task ->
                     task.group = "ontomapper"
                     task.description = "Generate domain interfaces and wrappers for ${ontologyConfig.name} ontology"
@@ -46,7 +46,7 @@ class OntoMapperPlugin : Plugin<Project> {
                     task.vocabularyName.set(ontologyConfig.vocabularyName)
                     task.vocabularyNamespace.set(ontologyConfig.vocabularyNamespace)
                     task.vocabularyPrefix.set(ontologyConfig.vocabularyPrefix)
-                    task.outputDirectory.set(ontologyConfig.outputDirectory)
+                    task.outputDirectory.set(project.file(ontologyConfig.outputDirectory))
                 }
             }
             
@@ -56,15 +56,15 @@ class OntoMapperPlugin : Plugin<Project> {
                 task.description = "Generate domain interfaces and wrappers from all configured ontologies"
                 
                 // Add dependencies on all individual ontology tasks
-                extension.ontologies.forEach { ontologyConfig ->
-                    val taskName = "generateOntology${ontologyConfig.name.capitalize()}"
+                extension.ontologies?.forEach { ontologyConfig ->
+                    val taskName = "generateOntology${ontologyConfig.name.replaceFirstChar { it.uppercaseChar() }}"
                     task.dependsOn(taskName)
                 }
             }
             
             // Legacy support: if no ontologies are configured, use legacy properties
-            if (extension.ontologies.isEmpty()) {
-                if (extension.shaclPath.isPresent && extension.contextPath.isPresent) {
+            if (extension.ontologies?.isEmpty() != false) {
+                if (extension.shaclPath.isNotEmpty() && extension.contextPath.isNotEmpty()) {
                     project.tasks.register("generateOntologyLegacy", OntologyGenerationTask::class.java) { task ->
                         task.group = "ontomapper"
                         task.description = "Generate domain interfaces and wrappers from legacy configuration"
@@ -81,7 +81,7 @@ class OntoMapperPlugin : Plugin<Project> {
                         task.vocabularyName.set(extension.vocabularyName)
                         task.vocabularyNamespace.set(extension.vocabularyNamespace)
                         task.vocabularyPrefix.set(extension.vocabularyPrefix)
-                        task.outputDirectory.set(extension.outputDirectory)
+                        task.outputDirectory.set(project.file(extension.outputDirectory))
                     }
                     
                     mainTask.configure { it.dependsOn("generateOntologyLegacy") }
@@ -91,20 +91,6 @@ class OntoMapperPlugin : Plugin<Project> {
             // Make the main generation task run before compileKotlin
             project.tasks.named("compileKotlin") { compileTask ->
                 compileTask.dependsOn(mainTask)
-            }
-            
-            // Add generated sources to source sets
-            val mainSourceSet = project.extensions.getByName("sourceSets") as org.gradle.api.tasks.SourceSetContainer
-            val main = mainSourceSet.getByName("main")
-            
-            // Add output directories for all ontologies
-            extension.ontologies.forEach { ontologyConfig ->
-                main.kotlin.srcDir(ontologyConfig.outputDirectory.get())
-            }
-            
-            // Add legacy output directory if used
-            if (extension.ontologies.isEmpty() && extension.outputDirectory.isPresent) {
-                main.kotlin.srcDir(extension.outputDirectory.get())
             }
         }
     }

@@ -128,7 +128,7 @@ class MinusOperatorMultipleValuesTest {
         assertTrue(allTriples.size >= 9, "Should have at least 9 triples") // 1 name + 3 knows + 5 for RDF list structure
         
         val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
-        assertEquals(3, personTriples.size, "Person should have 3 direct properties (name, knows, subject)")
+        assertEquals(5, personTriples.size, "Person should have 5 direct properties (1 name + 3 knows + 1 subject)")
         
         // Verify multiple knows relationships with mixed types (array creates individual triples)
         val knowsTriples = personTriples.filter { it.predicate == FOAF.knows }
@@ -171,22 +171,29 @@ class MinusOperatorMultipleValuesTest {
         assertTrue(allTriples.size >= 8, "Should have at least 8 triples")
         
         val personTriples = allTriples.filter { it.subject == person }
-        assertEquals(4, personTriples.size, "Person should have 4 direct properties (name, knows, mbox, homepage)")
+        assertEquals(7, personTriples.size, "Person should have 7 direct properties (1 name + 3 knows + 1 mbox + 2 homepage)")
         
-        // Verify knows property points to RDF List
+        // Verify knows properties are individual triples (array creates individual triples)
         val knowsTriples = personTriples.filter { it.predicate == FOAF.knows }
-        assertEquals(1, knowsTriples.size, "Should have 1 knows property")
-        assertTrue(knowsTriples.first().obj is BlankNode, "Knows should point to a blank node (RDF list head)")
+        assertEquals(3, knowsTriples.size, "Should have 3 knows properties")
         
-        // Verify mbox property points to RDF List
+        val knowsObjects = knowsTriples.map { it.obj }
+        assertTrue(knowsObjects.contains(friend1), "Should know friend1")
+        assertTrue(knowsObjects.contains(friend2), "Should know friend2")
+        assertTrue(knowsObjects.contains(friend3), "Should know friend3")
+        
+        // Verify mbox property points to RDF List (list creates RDF list)
         val mboxTriples = personTriples.filter { it.predicate == FOAF.mbox }
         assertEquals(1, mboxTriples.size, "Should have 1 mbox property")
         assertTrue(mboxTriples.first().obj is BlankNode, "Mbox should point to a blank node (RDF list head)")
         
-        // Verify homepage property points to RDF List
+        // Verify homepage properties are individual triples (array creates individual triples)
         val homepageTriples = personTriples.filter { it.predicate == FOAF.homepage }
-        assertEquals(1, homepageTriples.size, "Should have 1 homepage property")
-        assertTrue(homepageTriples.first().obj is BlankNode, "Homepage should point to a blank node (RDF list head)")
+        assertEquals(2, homepageTriples.size, "Should have 2 homepage properties")
+        
+        val homepageObjects = homepageTriples.map { it.obj }
+        assertTrue(homepageObjects.contains(Literal("http://alice.com", XSD.string)), "Should have alice.com homepage")
+        assertTrue(homepageObjects.contains(Literal("http://alice.blog.com", XSD.string)), "Should have alice.blog.com homepage")
     }
 
     @Test

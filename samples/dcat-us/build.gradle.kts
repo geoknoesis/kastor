@@ -8,12 +8,12 @@ dependencies {
   implementation(project(":ontomapper:processor"))
   
   // Choose backend (Jena or RDF4J)
-  runtimeOnly(project(":rdf:jena"))
-  runtimeOnly(project(":ontomapper:validation-jena"))
+  implementation(project(":rdf:jena"))
+  implementation(project(":ontomapper:validation-jena"))
   
   // Alternative: RDF4J backend
-  // runtimeOnly(project(":rdf:rdf4j"))
-  // runtimeOnly(project(":ontomapper:validation-rdf4j"))
+  // implementation(project(":rdf:rdf4j"))
+  // implementation(project(":ontomapper:validation-rdf4j"))
   
   testImplementation(libs.kotlin.test)
   testImplementation(libs.junit.jupiter)
