@@ -1,5 +1,6 @@
 dependencies {
   api(project(":rdf:core"))
+  implementation(project(":rdf:reasoning"))
   implementation(libs.rdf4j.repository.api)
   implementation(libs.rdf4j.repository.sail)
   implementation(libs.rdf4j.sail.memory)

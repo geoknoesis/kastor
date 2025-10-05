@@ -8,11 +8,13 @@ dependencies {
   implementation(project(":rdf:jena"))
   implementation(project(":rdf:rdf4j"))
   implementation(project(":rdf:sparql"))
+  implementation(project(":rdf:reasoning"))
   
   testImplementation(project(":rdf:core"))
   testImplementation(project(":rdf:jena"))
   testImplementation(project(":rdf:rdf4j"))
   testImplementation(project(":rdf:sparql"))
+  testImplementation(project(":rdf:reasoning"))
   testImplementation(libs.junit.jupiter)
 }
 

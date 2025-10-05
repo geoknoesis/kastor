@@ -1,0 +1,2 @@
+# Default memory reasoner (always available)
+com.geoknoesis.kastor.rdf.reasoning.providers.MemoryReasonerProvider
