@@ -1,0 +1,105 @@
+root: ./docs
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
+
+variables:
+  # Project metadata
+  project_name: Kastor
+  project_description: A comprehensive Kotlin library for working with RDF data and domain object mapping
+  version: 0.1.0
+  author: GeoKnoesis
+  license: Apache License 2.0
+  
+  # Repository information
+  github_url: https://github.com/geoknoesis/kastor
+  issues_url: https://github.com/geoknoesis/kastor/issues
+  discussions_url: https://github.com/geoknoesis/kastor/discussions
+  
+  # Documentation links
+  kastor_docs: ./docs/kastor/README.md
+  ontomapper_docs: ./docs/ontomapper/README.md
+  
+  # Quick start examples
+  quick_start_kastor: |
+    ```kotlin
+    // Create a repository
+    val repo = Rdf.memory()
+    
+    // Add RDF data
+    repo.add {
+        val person = iri("http://example.org/person")
+        person - RDF.type - FOAF.Person
+        person - FOAF.name - "John Doe"
+        person - FOAF.age - 30
+    }
+    
+    // Query the data
+    val results = repo.query {
+        select("?name", "?age") where {
+            "?person" - RDF.type - FOAF.Person
+            "?person" - FOAF.name - "?name"
+            "?person" - FOAF.age - "?age"
+        }
+    }
+    ```
+    
+  quick_start_ontomapper: |
+    ```kotlin
+    // Define domain interface
+    @RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+    interface Person {
+        @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+        val name: String
+        
+        @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+        val age: Int
+    }
+    
+    // Materialize from RDF
+    val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
+    val person: Person = personRef.asType()
+    
+    // Use domain object
+    println("Name: ${person.name}, Age: ${person.age}")
+    ```
+
+plugins:
+  - search
+  - code
+  - copy-code-button
+  - expandable-chapters
+  - back-to-top-button
+  - github
+  - edit-link
+  - theme-default
+  - prism
+  - splitter
+
+pluginsConfig:
+  github:
+    url: https://github.com/geoknoesis/kastor
+  edit-link:
+    base: https://github.com/geoknoesis/kastor/edit/main/docs
+    label: Edit This Page
+  theme-default:
+    showLevel: true
+    styles:
+      website: styles/website.css
+
+pdf:
+  margin:
+    right: 62
+    left: 62
+    top: 56
+    bottom: 56
+  headerTemplate: |
+    <div style="font-size: 9px; margin-left: 1cm;">
+        <span class="title">{{title}}</span>
+    </div>
+  footerTemplate: |
+    <div style="font-size: 9px; margin: 0 auto;">
+        <span class="pageNumber"></span>
+    </div>
+  pageNumbers: true
