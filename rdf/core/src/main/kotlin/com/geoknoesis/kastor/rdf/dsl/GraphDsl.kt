@@ -15,18 +15,54 @@ import com.geoknoesis.kastor.rdf.vocab.OWL
 class GraphDsl {
     val triples = mutableListOf<RdfTriple>()
     
+    // Prefix mappings for QName resolution
+    private val prefixMappings = mutableMapOf<String, String>()
+    
     // Bnode factory with counter for consistent naming
     private var bnodeCounter = 0
     private fun nextBnode(prefix: String = "b"): BlankNode {
         return bnode("${prefix}${++bnodeCounter}")
     }
     
+    // === PREFIX MAPPING CONFIGURATION ===
+    
+    /**
+     * Configure prefix mappings for QName resolution.
+     */
+    fun prefixes(configure: MutableMap<String, String>.() -> Unit) {
+        prefixMappings.configure()
+    }
+    
+    /**
+     * Add a single prefix mapping.
+     */
+    fun prefix(name: String, namespace: String) {
+        prefixMappings[name] = namespace
+    }
+    
+    /**
+     * Resolve a QName or IRI string to an Iri object.
+     */
+    private fun resolveIri(iriOrQName: String): Iri {
+        val resolved = QNameResolver.resolve(iriOrQName, prefixMappings)
+        return iri(resolved)
+    }
+    
+    /**
+     * Create an IRI from a QName or full IRI string.
+     */
+    fun qname(iriOrQName: String): Iri {
+        return resolveIri(iriOrQName)
+    }
+    
     // === ULTRA-COMPACT SYNTAX ===
     
     /**
      * Ultra-compact bracket syntax: person["name"] = "Alice"
+     * Supports QNames: person["foaf:name"] = "Alice"
      */
     operator fun RdfResource.set(predicate: String, value: Any) {
+        val predicateIri = resolveIri(predicate)
         val obj = when (value) {
             is String -> Literal(value, XSD.string)
             is Int -> Literal(value.toString(), XSD.integer)
@@ -35,7 +71,7 @@ class GraphDsl {
             is RdfTerm -> value
             else -> Literal(value.toString(), XSD.string)
         }
-        triples.add(RdfTriple(this, Iri(predicate), obj))
+        triples.add(RdfTriple(this, predicateIri, obj))
     }
     
     /**
@@ -63,6 +99,14 @@ class GraphDsl {
     }
     
     /**
+     * Natural language syntax with QName: person has "foaf:name" with "Alice"
+     */
+    infix fun RdfResource.has(predicateQName: String): SubjectAndPredicate {
+        val predicate = resolveIri(predicateQName)
+        return SubjectAndPredicate(this, predicate)
+    }
+    
+    /**
      * Natural language syntax: person has FOAF.name with "Alice"
      */
     infix fun SubjectAndPredicate.with(value: Any) {
@@ -83,6 +127,14 @@ class GraphDsl {
      * Minus operator syntax: person - FOAF.name - "Alice"
      */
     infix operator fun RdfResource.minus(predicate: Iri): SubjectPredicateChain {
+        return SubjectPredicateChain(this, predicate)
+    }
+    
+    /**
+     * Minus operator syntax with QName: person - "foaf:name" - "Alice"
+     */
+    infix operator fun RdfResource.minus(predicateQName: String): SubjectPredicateChain {
+        val predicate = resolveIri(predicateQName)
         return SubjectPredicateChain(this, predicate)
     }
     
