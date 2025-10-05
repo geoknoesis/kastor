@@ -799,12 +799,12 @@ val catalogHandle = catalogRef.rdf
 val catalogWrapper = CatalogWrapper(catalogHandle)
 
 // Query with vocabularies from separate packages
-val results = repo.query {
-    select("?name") where {
-        "?person" - RDF.type - SCHEMA.Person
-        "?person" - SCHEMA.name - "?name"
+val results = repo.query("""
+    SELECT ?name WHERE {
+        ?person a <http://schema.org/Person> ;
+                <http://schema.org/name> ?name .
     }
-}
+""")
 ```
 
 ## Conclusion

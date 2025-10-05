@@ -28,13 +28,13 @@ repo.add {
 }
 
 // Query the data
-val results = repo.query {
-    select("?name", "?age") where {
-        "?person" - RDF.type - FOAF.Person
-        "?person" - FOAF.name - "?name"
-        "?person" - FOAF.age - "?age"
+val results = repo.query("""
+    SELECT ?name ?age WHERE {
+        ?person a <http://xmlns.com/foaf/0.1/Person> ;
+                <http://xmlns.com/foaf/0.1/name> ?name ;
+                <http://xmlns.com/foaf/0.1/age> ?age .
     }
-}
+""")
 ```
 
 ### Quick Start with OntoMapper
@@ -198,11 +198,11 @@ repo.add {
 }
 
 // Query data
-val results = repo.query {
-    select("?name") where {
-        "?person" - FOAF.name - "?name"
+val results = repo.query("""
+    SELECT ?name WHERE {
+        ?person <http://xmlns.com/foaf/0.1/name> ?name .
     }
-}
+""")
 ```
 
 ### Domain Object Mapping
