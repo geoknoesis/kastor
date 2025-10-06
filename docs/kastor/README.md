@@ -65,50 +65,29 @@ fun main() {
 ## 📚 Documentation Structure
 
 ### **Getting Started**
-- **[Getting Started Guide](getting-started.md)** - Complete setup and introduction
-- **[Quick Start Examples](quick-start.md)** - Copy-paste examples for immediate success
-- **[Hello World Tutorial](tutorials/hello-world.md)** - Step-by-step first program
+- **[Getting Started Guide](getting-started/README.md)** - Complete setup and introduction
+- **[Quick Start Examples](getting-started/quick-start.md)** - Copy-paste examples for immediate success
+- **[Hello World Tutorial](getting-started/hello-world.md)** - Step-by-step first program
 
-### **Core Concepts**
-- **[RDF Fundamentals](concepts/rdf-fundamentals.md)** - Understanding RDF basics
-- **[SPARQL Fundamentals](concepts/sparql-fundamentals.md)** - Query language introduction
-- **[Vocabularies](concepts/vocabularies.md)** - Working with RDF vocabularies
+### **Core Features**
+- **[DSL Guide](features/compact-dsl-guide.md)** - Natural language syntax
+- **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
+- **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints
+- **[RDF-star Support](features/rdf-star.md)** - Metadata about statements
 
-### **API Documentation**
-- **[Core API Reference](api/core-api.md)** - Complete API documentation
-- **[DSL Guide](api/compact-dsl-guide.md)** - Domain-specific language reference
-- **[Repository Manager](api/repository-manager.md)** - Multi-repository setup
-- **[Transactions](api/transactions.md)** - ACID transaction support
+### **Guides**
+- **[Provider Overview](guides/providers-overview.md)** - Available backends comparison
+- **[Performance Guide](guides/performance.md)** - Optimization strategies
+- **[Serialization Formats](guides/formats.md)** - RDF format support
+- **[Best Practices](guides/best-practices.md)** - Usage guidelines and patterns
+- **[Extending Kastor](guides/extending.md)** - Custom providers and plugins
 
-### **Backend Providers**
-- **[Provider Overview](providers/README.md)** - Available backends comparison
-- **[Memory Provider](providers/memory.md)** - In-memory storage
-- **[Jena Provider](providers/jena.md)** - Apache Jena integration
-- **[RDF4J Provider](providers/rdf4j.md)** - Eclipse RDF4J backend
-- **[SPARQL Provider](providers/sparql.md)** - Remote SPARQL endpoints
-
-### **Advanced Features**
-- **[Reasoning](reasoning.md)** - RDFS, OWL inference capabilities
-- **[SHACL Validation](shacl-validation.md)** - Data validation and constraints
-- **[Performance Guide](advanced/performance.md)** - Optimization strategies
-- **[Serialization Formats](advanced/formats.md)** - RDF format support
-
-### **Tutorials**
-- **[Hello World](tutorials/hello-world.md)** - Your first RDF program
-- **[Load and Query](tutorials/load-and-query.md)** - Data operations
-- **[Remote Endpoint](tutorials/remote-endpoint.md)** - SPARQL endpoint integration
-- **[Jena Bridge](tutorials/jena-bridge.md)** - Jena-specific features
-
-### **Reference**
-- **[DSL Reference](reference/dsl.md)** - Complete DSL syntax
-- **[Factory Patterns](reference/factory.md)** - Repository creation
-- **[Type System](reference/types.md)** - RDF type hierarchy
-- **[Repository API](reference/repository.md)** - Repository operations
-
-### **Best Practices & Support**
-- **[Best Practices](best-practices.md)** - Usage guidelines and patterns
-- **[FAQ](faq.md)** - Frequently asked questions
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+### **Resources**
+- **[Vocabularies](resources/vocabularies.md)** - Working with RDF vocabularies
+- **[RDF Fundamentals](resources/rdf-fundamentals.md)** - Understanding RDF basics
+- **[SPARQL Fundamentals](resources/sparql-fundamentals.md)** - Query language introduction
+- **[Troubleshooting](resources/troubleshooting.md)** - Common issues and solutions
+- **[FAQ](resources/faq.md)** - Frequently asked questions
 
 ## 🎯 Use Cases
 
@@ -202,29 +181,29 @@ val results = repo.query("""
 ## 🚀 Getting Started Paths
 
 ### **New to RDF?**
-1. [RDF Fundamentals](concepts/rdf-fundamentals.md) - Learn RDF basics
-2. [Getting Started Guide](getting-started.md) - Setup and first steps
-3. [Hello World Tutorial](tutorials/hello-world.md) - Your first program
-4. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
+1. [RDF Fundamentals](resources/rdf-fundamentals.md) - Learn RDF basics
+2. [Getting Started Guide](getting-started/README.md) - Setup and first steps
+3. [Hello World Tutorial](getting-started/hello-world.md) - Your first program
+4. [DSL Guide](features/compact-dsl-guide.md) - Natural language syntax
 
 ### **RDF Expert?**
-1. [Core API Reference](api/core-api.md) - Complete API documentation
-2. [Provider Comparison](providers/README.md) - Choose your backend
-3. [Performance Guide](advanced/performance.md) - Optimization strategies
-4. [Advanced Features](reasoning.md) - Reasoning and validation
+1. [Provider Overview](guides/providers-overview.md) - Choose your backend
+2. [Performance Guide](guides/performance.md) - Optimization strategies
+3. [Reasoning](features/reasoning.md) - RDFS, OWL inference capabilities
+4. [SHACL Validation](features/shacl-validation.md) - Data validation
 
 ### **Application Developer?**
-1. [Getting Started Guide](getting-started.md) - Quick setup
-2. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
-3. [Repository Manager](api/repository-manager.md) - Multi-repository setup
-4. [Best Practices](best-practices.md) - Production guidelines
+1. [Getting Started Guide](getting-started/README.md) - Quick setup
+2. [DSL Guide](features/compact-dsl-guide.md) - Natural language syntax
+3. [Provider Overview](guides/providers-overview.md) - Backend comparison
+4. [Best Practices](guides/best-practices.md) - Production guidelines
 
 ## 🌐 Community & Support
 
 - **[GitHub Repository](https://github.com/geoknoesis/kastor)** - Source code and issues
 - **[GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)** - Community support
 - **[Stack Overflow](https://stackoverflow.com/questions/tagged/kastor)** - Technical questions
-- **[FAQ](faq.md)** - Frequently asked questions
+- **[FAQ](resources/faq.md)** - Frequently asked questions
 
 ## 📄 License
 
@@ -232,4 +211,4 @@ Kastor is open source and available under the [MIT License](../LICENSE).
 
 ---
 
-**Ready to get started?** Check out the [Getting Started Guide](getting-started.md) or jump right into [Hello World](tutorials/hello-world.md)!
+**Ready to get started?** Check out the [Getting Started Guide](getting-started/README.md) or jump right into [Hello World](getting-started/hello-world.md)!
