@@ -183,6 +183,17 @@ class JenaRepository private constructor(
         return false // Jena Dataset doesn't have an isClosed property
     }
     
+    override fun getCapabilities(): ProviderCapabilities {
+        return ProviderCapabilities(
+            supportsInference = true,
+            supportsTransactions = true,
+            supportsNamedGraphs = true,
+            supportsUpdates = true,
+            supportsRdfStar = true,
+            maxMemoryUsage = Long.MAX_VALUE
+        )
+    }
+    
     override fun close() {
         dataset.close()
     }

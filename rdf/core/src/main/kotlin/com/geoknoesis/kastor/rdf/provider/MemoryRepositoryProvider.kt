@@ -24,6 +24,7 @@ class MemoryRepositoryProvider : RdfApiProvider {
             supportsTransactions = false,
             supportsNamedGraphs = false,
             supportsUpdates = false,
+            supportsRdfStar = true,
             maxMemoryUsage = Long.MAX_VALUE
         )
     }
@@ -122,6 +123,17 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         closed = true
         graphs.clear()
         defaultGraph.clear()
+    }
+    
+    override fun getCapabilities(): ProviderCapabilities {
+        return ProviderCapabilities(
+            supportsInference = false,
+            supportsTransactions = false,
+            supportsNamedGraphs = false,
+            supportsUpdates = false,
+            supportsRdfStar = true,
+            maxMemoryUsage = Long.MAX_VALUE
+        )
     }
     
     private fun estimateMemoryUsage(): Long {

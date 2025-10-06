@@ -34,6 +34,11 @@ class RdfSeqValues(val values: List<Any>)
 class RdfAltValues(val values: List<Any>)
 
 /**
+ * Container for RDF-star embedded triples.
+ */
+class RdfStarTriple(val subject: Any, val predicate: Any, val obj: Any)
+
+/**
  * Create multiple individual values using curly braces syntax: {value1, value2, value3}
  * Creates individual triples for each value.
  */
@@ -72,6 +77,17 @@ fun seq(vararg values: Any): RdfSeqValues {
  */
 fun alt(vararg values: Any): RdfAltValues {
     return RdfAltValues(values.toList())
+}
+
+/**
+ * Create an embedded triple for RDF-star using angle brackets syntax: <<subject predicate object>>
+ * This creates a quoted triple that can be used as a subject or object in other triples.
+ * 
+ * Note: This function only creates the embedded triple structure. The actual RdfTriple
+ * creation with TripleTerm will be handled by the DSL processing logic.
+ */
+fun embedded(subject: Any, predicate: Any, obj: Any): RdfStarTriple {
+    return RdfStarTriple(subject, predicate, obj)
 }
 
 /**
@@ -180,6 +196,25 @@ class TripleDsl {
             is Double -> Literal(value.toString(), XSD.double)
             is Boolean -> Literal(value.toString(), XSD.boolean)
             is RdfTerm -> value  // Already resolved (qname(), iri(), literal(), etc.)
+            is RdfStarTriple -> {
+                // Create an embedded triple for RDF-star
+                val embeddedSubject = createSmartObject(value.subject, predicate)
+                val embeddedPredicate = createSmartObject(value.predicate, predicate)
+                val embeddedObject = createSmartObject(value.obj, predicate)
+                
+                // Ensure subject and predicate are resources
+                val subjectResource = when (embeddedSubject) {
+                    is RdfResource -> embeddedSubject
+                    else -> throw IllegalArgumentException("RDF-star embedded triple subject must be a resource, got: ${embeddedSubject::class.simpleName}")
+                }
+                val predicateIri = when (embeddedPredicate) {
+                    is Iri -> embeddedPredicate
+                    else -> throw IllegalArgumentException("RDF-star embedded triple predicate must be an IRI, got: ${embeddedPredicate::class.simpleName}")
+                }
+                
+                val embeddedTriple = RdfTriple(subjectResource, predicateIri, embeddedObject)
+                TripleTerm(embeddedTriple)
+            }
             else -> Literal(value.toString(), XSD.string)
         }
     }

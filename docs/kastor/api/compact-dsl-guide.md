@@ -928,3 +928,133 @@ The new **`values()` and `list()`** functions make it even easier to work with m
 **Type declaration aliases** make RDF type declarations more intuitive and familiar. Use `"a"` for Turtle-style syntax (`person["a"] = "foaf:Person"`, `person - a - "foaf:Person"`) or `is` for natural language syntax (`person `is` "foaf:Person"`).
 
 Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.
+
+## 🌟 RDF-star Support
+
+RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples. This is useful for adding provenance, confidence scores, temporal information, and other metadata about statements.
+
+### **RDF-star Syntax**
+
+```kotlin
+val graph = Rdf.graph {
+    val alice = iri("http://example.org/alice")
+    val bob = iri("http://example.org/bob")
+    
+    // Basic facts
+    alice - FOAF.knows - bob
+    alice - FOAF.age - 30
+    
+    // RDF-star: Add metadata about statements
+    val aliceKnowsBob = embedded(alice, FOAF.knows, bob)
+    aliceKnowsBob - DCTERMS.source - "LinkedIn"
+    aliceKnowsBob - iri("http://example.org/confidence") - 0.95
+    aliceKnowsBob - DCTERMS.date - "2025-01-15"
+    
+    // RDF-star: Add temporal metadata about age
+    val aliceAge = embedded(alice, FOAF.age, 30)
+    aliceAge - DCTERMS.date - "2025-01-15"
+    aliceAge - iri("http://example.org/validUntil") - "2025-12-31"
+}
+```
+
+### **Embedded Triple Creation**
+
+The `embedded()` function creates a quoted triple that can be used as a subject or object:
+
+```kotlin
+// Method 1: Using variables
+val subject = iri("http://example.org/alice")
+val predicate = FOAF.knows
+val obj = iri("http://example.org/bob")
+val statement = embedded(subject, predicate, obj)
+
+// Method 2: Direct specification
+val statement2 = embedded(alice, FOAF.knows, bob)
+
+// Method 3: Using QNames
+val statement3 = embedded("http://example.org/alice", "foaf:name", "Alice")
+```
+
+### **Nested Metadata**
+
+RDF-star supports nested metadata - metadata about metadata:
+
+```kotlin
+val graph = Rdf.graph {
+    val alice = iri("http://example.org/alice")
+    
+    // First embedded triple
+    val aliceName = embedded(alice, FOAF.name, "Alice Johnson")
+    aliceName - DCTERMS.source - "Profile"
+    
+    // Metadata about the metadata
+    val metadataTriple = embedded(aliceName, DCTERMS.source, "Profile")
+    metadataTriple - iri("http://example.org/verified") - true
+    metadataTriple - DCTERMS.date - "2025-01-15"
+}
+```
+
+### **Provider Support**
+
+RDF-star support depends on the repository provider:
+
+```kotlin
+val repo = Rdf.memory()
+val capabilities = repo.getCapabilities()
+
+if (capabilities.supportsRdfStar) {
+    // Use RDF-star features
+    repo.add {
+        val statement = embedded(alice, FOAF.knows, bob)
+        statement - DCTERMS.source - "LinkedIn"
+    }
+} else {
+    println("RDF-star not supported by this provider")
+}
+```
+
+**Supported Providers:**
+- ✅ **Memory Provider**: Full RDF-star support
+- ✅ **Jena Provider**: Full RDF-star support
+- ✅ **RDF4J Provider**: Full RDF-star support
+- ❌ **SPARQL Provider**: Depends on endpoint support
+
+### **Use Cases**
+
+RDF-star is particularly useful for:
+
+- **Provenance**: Tracking the source of statements
+- **Confidence**: Adding confidence scores to statements
+- **Temporal Information**: Adding timestamps and validity periods
+- **Verification**: Recording verification status and methods
+- **Context**: Adding contextual information about statements
+
+```kotlin
+// Example: Scientific data with provenance and confidence
+val graph = Rdf.graph {
+    val result = iri("http://example.org/experiment1")
+    val temperature = embedded(result, iri("http://example.org/temperature"), 25.5)
+    
+    temperature - iri("http://example.org/instrument") - "Thermometer-123"
+    temperature - iri("http://example.org/confidence") - 0.98
+    temperature - DCTERMS.date - "2025-01-15T14:30:00Z"
+    temperature - iri("http://example.org/calibrated") - true
+}
+```
+
+### **Error Handling**
+
+The DSL validates embedded triples and throws meaningful errors:
+
+```kotlin
+try {
+    Rdf.graph {
+        // Error: Literal cannot be a subject
+        val invalid = embedded("Alice", FOAF.knows, bob)
+        invalid - DCTERMS.source - "Test"
+    }
+} catch (e: IllegalArgumentException) {
+    println("Error: ${e.message}")
+    // Output: "RDF-star embedded triple subject must be a resource, got: TypedLiteral"
+}
+```

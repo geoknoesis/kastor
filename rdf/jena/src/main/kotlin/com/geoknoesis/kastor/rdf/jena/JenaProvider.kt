@@ -46,6 +46,7 @@ class JenaProvider : RdfApiProvider {
             supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = true,
+            supportsRdfStar = true,
             maxMemoryUsage = Long.MAX_VALUE
         )
     }

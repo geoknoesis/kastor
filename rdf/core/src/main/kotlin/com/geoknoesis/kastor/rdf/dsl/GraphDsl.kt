@@ -101,6 +101,25 @@ class GraphDsl {
             is Double -> Literal(value.toString(), XSD.double)
             is Boolean -> Literal(value.toString(), XSD.boolean)
             is RdfTerm -> value  // Already resolved (qname(), iri(), literal(), etc.)
+            is RdfStarTriple -> {
+                // Create an embedded triple for RDF-star
+                val embeddedSubject = createSmartObject(value.subject, predicate)
+                val embeddedPredicate = createSmartObject(value.predicate, predicate)
+                val embeddedObject = createSmartObject(value.obj, predicate)
+                
+                // Ensure subject and predicate are resources
+                val subjectResource = when (embeddedSubject) {
+                    is RdfResource -> embeddedSubject
+                    else -> throw IllegalArgumentException("RDF-star embedded triple subject must be a resource, got: ${embeddedSubject::class.simpleName}")
+                }
+                val predicateIri = when (embeddedPredicate) {
+                    is Iri -> embeddedPredicate
+                    else -> throw IllegalArgumentException("RDF-star embedded triple predicate must be an IRI, got: ${embeddedPredicate::class.simpleName}")
+                }
+                
+                val embeddedTriple = RdfTriple(subjectResource, predicateIri, embeddedObject)
+                TripleTerm(embeddedTriple)
+            }
             else -> Literal(value.toString(), XSD.string)
         }
     }

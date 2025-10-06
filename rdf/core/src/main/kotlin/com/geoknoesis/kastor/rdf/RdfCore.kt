@@ -314,6 +314,11 @@ interface RdfRepository : Closeable {
      * Check if the repository is closed.
      */
     fun isClosed(): Boolean
+    
+    /**
+     * Get the capabilities of this repository.
+     */
+    fun getCapabilities(): ProviderCapabilities
 }
 
 // === QUERY RESULT INTERFACES ===
@@ -586,6 +591,7 @@ data class ProviderCapabilities(
     val supportsTransactions: Boolean = false,
     val supportsNamedGraphs: Boolean = false,
     val supportsUpdates: Boolean = false,
+    val supportsRdfStar: Boolean = false,
     val maxMemoryUsage: Long = Long.MAX_VALUE
 )
 

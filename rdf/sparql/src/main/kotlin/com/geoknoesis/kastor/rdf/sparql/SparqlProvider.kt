@@ -29,6 +29,7 @@ class SparqlProvider : RdfApiProvider {
             supportsTransactions = false,
             supportsNamedGraphs = false,
             supportsUpdates = false,
+            supportsRdfStar = false, // Depends on endpoint support
             maxMemoryUsage = Long.MAX_VALUE
         )
     }

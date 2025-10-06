@@ -18,9 +18,9 @@ Kastor uses a pluggable provider architecture that allows you to choose the best
 
 | Provider | Persistence | Performance | Memory Usage | Features | Best For |
 |----------|-------------|-------------|--------------|----------|----------|
-| **[Memory](memory.md)** | ❌ | ⭐⭐⭐⭐⭐ | High | Basic operations | Development, Testing |
-| **[Jena](jena.md)** | ✅ | ⭐⭐⭐⭐ | Medium | Full RDF support | Production, TDB2 |
-| **[RDF4J](rdf4j.md)** | ✅ | ⭐⭐⭐⭐ | Medium | Enterprise features | Production, Native |
+| **[Memory](memory.md)** | ❌ | ⭐⭐⭐⭐⭐ | High | Basic operations, RDF-star | Development, Testing |
+| **[Jena](jena.md)** | ✅ | ⭐⭐⭐⭐ | Medium | Full RDF support, RDF-star | Production, TDB2 |
+| **[RDF4J](rdf4j.md)** | ✅ | ⭐⭐⭐⭐ | Medium | Enterprise features, RDF-star | Production, Native |
 | **[SPARQL](sparql.md)** | ✅ | ⭐⭐⭐ | Low | Federation | Remote data, Web |
 
 ## 🚀 Quick Provider Selection
@@ -62,6 +62,7 @@ val repo = Rdf.factory {
 | **Transactions** | ✅ | ✅ | ✅ | ❌ |
 | **Inference** | ✅ | ✅ | ✅ | ✅ |
 | **SHACL Validation** | ✅ | ✅ | ✅ | ❌ |
+| **RDF-star Support** | ✅ | ✅ | ✅ | ❌ |
 | **Federation** | ❌ | ❌ | ❌ | ✅ |
 | **Persistence** | ❌ | ✅ | ✅ | ✅ |
 
@@ -153,6 +154,47 @@ val manager = Rdf.manager {
     
     // External data
     repository("external") { sparql("https://api.example.com/sparql") }
+}
+```
+
+## 🌟 RDF-star Support
+
+RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples.
+
+### **Supported Providers**
+- **Memory Provider**: ✅ Full RDF-star support
+- **Jena Provider**: ✅ Full RDF-star support  
+- **RDF4J Provider**: ✅ Full RDF-star support
+- **SPARQL Provider**: ❌ Depends on endpoint support
+
+### **RDF-star Usage Example**
+```kotlin
+val repo = Rdf.memory() // Memory provider supports RDF-star
+
+repo.add {
+    val alice = iri("http://example.org/alice")
+    val bob = iri("http://example.org/bob")
+    
+    // Basic fact
+    alice - FOAF.knows - bob
+    
+    // Metadata about the statement using RDF-star
+    val statement = embedded(alice, FOAF.knows, bob)
+    statement - DCTERMS.source - "LinkedIn"
+    statement - iri("http://example.org/confidence") - 0.95
+}
+```
+
+### **Checking RDF-star Support**
+```kotlin
+val repo = Rdf.memory()
+val capabilities = repo.getCapabilities()
+
+if (capabilities.supportsRdfStar) {
+    // Use RDF-star features
+    println("RDF-star is supported!")
+} else {
+    println("RDF-star is not supported by this provider")
 }
 ```
 

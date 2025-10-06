@@ -105,6 +105,17 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     
     override fun isClosed(): Boolean = false
     
+    override fun getCapabilities(): ProviderCapabilities {
+        return ProviderCapabilities(
+            supportsInference = false,
+            supportsTransactions = false,
+            supportsNamedGraphs = false,
+            supportsUpdates = false,
+            supportsRdfStar = false,
+            maxMemoryUsage = Long.MAX_VALUE
+        )
+    }
+    
     override fun close() {
         // Nothing to close for HTTP connections
     }

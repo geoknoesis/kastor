@@ -202,6 +202,17 @@ class Rdf4jRepository(private val repository: Repository) : RdfRepository {
     
     override fun isClosed(): Boolean = !repository.isInitialized
     
+    override fun getCapabilities(): ProviderCapabilities {
+        return ProviderCapabilities(
+            supportsInference = true,
+            supportsTransactions = true,
+            supportsNamedGraphs = true,
+            supportsUpdates = true,
+            supportsRdfStar = true,
+            maxMemoryUsage = Long.MAX_VALUE
+        )
+    }
+    
     override fun close() {
         repository.shutDown()
     }
