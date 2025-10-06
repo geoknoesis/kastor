@@ -1,317 +1,187 @@
-# Kastor Documentation
+# 📚 Kastor Documentation Hub
 
-Welcome to the Kastor documentation! Kastor is a comprehensive Kotlin library for working with RDF (Resource Description Framework) data, providing both low-level RDF operations and high-level domain object mapping.
+Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF framework that makes semantic web development accessible and powerful.
 
-## Why "Kastor"?
+## 🚀 Quick Start
 
-The name **Kastor** is a tribute to [Castor](http://www.castor.org/), the pioneering Java XML data binding framework developed by Exolab. Castor was one of the first frameworks to bridge the gap between object-oriented programming and structured data formats, making it easier for developers to work with XML data in Java applications.
+### New to Kastor?
+- **[Getting Started Guide](kastor/getting-started.md)** - 5-minute setup and first steps
+- **[Hello World Tutorial](kastor/tutorials/hello-world.md)** - Your first RDF program
+- **[Quick Start Examples](kastor/quick-start.md)** - Copy-paste examples
 
-Just as Castor revolutionized XML data binding in Java, Kastor aims to bring the same level of developer experience to RDF and semantic web technologies in Kotlin. The "K" in Kastor represents:
+### New to RDF?
+- **[RDF Fundamentals](kastor/concepts/rdf-fundamentals.md)** - Understanding RDF basics
+- **[SPARQL Fundamentals](kastor/concepts/sparql-fundamentals.md)** - Query language introduction
+- **[Vocabularies Guide](kastor/concepts/vocabularies.md)** - Working with RDF vocabularies
 
-- **Kotlin** - Our chosen language for modern, expressive, and type-safe development
-- **Knowledge** - The semantic web's focus on knowledge representation and reasoning
-
-Kastor honors Castor's legacy while embracing the future of semantic technologies and the Kotlin ecosystem.
-
-## Table of Contents
-
-- [Kastor RDF](kastor/README.md) - Core RDF functionality
-- [OntoMapper](ontomapper/README.md) - Domain object mapping
-- [Getting Started](#getting-started)
-- [Architecture Overview](#architecture-overview)
-- [Use Cases](#use-cases)
-- [Community](#community)
-
-## Getting Started
-
-### Quick Start with Kastor RDF
-
-```kotlin
-// Create a repository
-val repo = Rdf.memory()
-
-// Add RDF data using QNames
-repo.add {
-    prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-    }
-    
-    val person = iri("http://example.org/person")
-    
-    // Turtle-style "a" alias for rdf:type
-    person["a"] = "foaf:Person"
-    person - "a" - "foaf:Agent"    // With quotes
-    person - a - "foaf:Agent"      // Without quotes
-    
-    // Natural language "is" alias for rdf:type
-    person `is` "foaf:Agent"
-    
-    // Traditional syntax (still works)
-    person - "foaf:name" - "John Doe"
-    person - "foaf:age" - 30
-}
-
-// Query the data
-val results = repo.query("""
-    SELECT ?name ?age WHERE {
-        ?person a <http://xmlns.com/foaf/0.1/Person> ;
-                <http://xmlns.com/foaf/0.1/name> ?name ;
-                <http://xmlns.com/foaf/0.1/age> ?age .
-    }
-""")
-```
-
-### Quick Start with OntoMapper
-
-```kotlin
-// Define domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
-interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
-    val name: String
-    
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
-    val age: Int
-}
-
-// Materialize from RDF
-val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
-val person: Person = personRef.asType()
-
-// Use domain object
-println("Name: ${person.name}, Age: ${person.age}")
-```
-
-## Architecture Overview
+## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Kastor Ecosystem                        │
-├─────────────────────────────────────────────────────────────────┤
-│  OntoMapper (High-Level)                                       │
-│  ┌─────────────────┐    ┌──────────────────┐    ┌─────────────┐│
-│  │   Domain        │    │   OntoMapper     │    │   RDF       ││
-│  │   Interfaces    │◄──►│   Runtime        │◄──►│   Side-     ││
-│  │                 │    │                  │    │   Channel   ││
-│  │ • Pure Kotlin   │    │ • Materialization│    │             ││
-│  │ • No RDF deps   │    │ • Type mapping   │    │ • Extras    ││
-│  │ • Business logic│    │ • Validation     │    │ • Validation││
-│  └─────────────────┘    └──────────────────┘    └─────────────┘│
-├─────────────────────────────────────────────────────────────────┤
-│  Kastor RDF (Core)                                             │
-│  ┌─────────────────┐    ┌──────────────────┐    ┌─────────────┐│
-│  │   RDF Graph     │    │   Repository     │    │   Providers ││
-│  │                 │    │                  │    │             ││
-│  │ • Triples       │    │ • Graph mgmt     │    │ • Memory    ││
-│  │ • SPARQL        │    │ • Transactions   │    │ • Jena      ││
-│  │ • Serialization │    │ • Named graphs   │    │ • RDF4J     ││
-│  └─────────────────┘    └──────────────────┘    └─────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+Kastor Framework
+├── 📦 RDF Core          - Core RDF operations and DSL
+├── 🧠 Reasoning         - RDFS, OWL reasoning capabilities  
+├── ✅ SHACL Validation  - Data validation and constraints
+├── 🏷️ OntoMapper       - Code generation from ontologies
+└── 🔌 Providers         - Jena, RDF4J, SPARQL backends
 ```
 
-## Components
+## 📖 Documentation Structure
 
-### Kastor RDF (Core)
-- **Repository Management** - Multiple RDF backends (Memory, Jena, RDF4J, SPARQL)
-- **Graph Operations** - Triple storage, retrieval, and manipulation
-- **SPARQL Support** - Query language for RDF data
-- **Serialization** - RDF/XML, Turtle, JSON-LD, and other formats
-- **Transactions** - ACID transactions for data consistency
-- **Intuitive DSL** - Turtle-style "a" and natural language "is" aliases for rdf:type
+### **Core Modules**
 
-### OntoMapper (High-Level)
-- **Domain Interfaces** - Pure Kotlin interfaces with no RDF dependencies
-- **Automatic Materialization** - Convert RDF nodes to domain objects
-- **Type Safety** - Compile-time validation of property types
-- **RDF Side-Channel** - Access RDF power when needed
-- **Ontology Generation** - Generate code from SHACL and JSON-LD
+#### **RDF Core** (`rdf/core`)
+- **[API Reference](kastor/api/core-api.md)** - Complete API documentation
+- **[DSL Guide](kastor/api/compact-dsl-guide.md)** - Domain-specific language
+- **[Repository Management](kastor/api/repository-manager.md)** - Working with repositories
+- **[Transactions](kastor/api/transactions.md)** - ACID transaction support
 
-## Use Cases
+#### **Reasoning** (`rdf/reasoning`)
+- **[Reasoning Guide](kastor/reasoning.md)** - RDFS, OWL reasoning
+- **[Provider Architecture](kastor/reasoning.md#providers)** - Pluggable reasoners
+- **[Performance](kastor/reasoning.md#performance)** - Optimization strategies
 
-### 📊 **Data Catalogs**
-- DCAT (Data Catalog Vocabulary) compliance
-- Government open data portals
-- Enterprise data governance
+#### **SHACL Validation** (`rdf/shacl-validation`)
+- **[Validation Guide](kastor/shacl-validation.md)** - Data validation
+- **[Quick Start](kastor/shacl-validation.md#quick-start)** - Get started in minutes
+- **[Constraint Types](kastor/shacl-validation.md#constraint-types)** - Available constraints
 
-### 🏢 **Enterprise Integration**
-- RDF-based data lakes
-- Semantic web applications
-- Knowledge graphs
+#### **OntoMapper** (`ontomapper`)
+- **[Getting Started](ontomapper/tutorials/getting-started.md)** - Code generation basics
+- **[Core Concepts](ontomapper/tutorials/core-concepts.md)** - Architecture overview
+- **[Domain Modeling](ontomapper/tutorials/domain-modeling.md)** - Creating domain interfaces
+- **[Best Practices](ontomapper/best-practices.md)** - Usage guidelines
 
-### 🔬 **Research & Academia**
-- Scientific data management
-- Research data repositories
-- Ontology-driven applications
+### **Backend Providers**
 
-### 🌐 **Web Applications**
-- Linked data publishing
-- Semantic search
-- Content management systems
+#### **Memory Provider**
+- **[Memory Operations](kastor/providers/memory.md)** - In-memory storage
+- **[Performance Tips](kastor/providers/memory.md#performance)** - Optimization
 
-## Documentation Structure
+#### **Jena Provider**
+- **[Jena Integration](kastor/providers/jena.md)** - Apache Jena backend
+- **[TDB2 Storage](kastor/providers/jena.md#tdb2)** - Persistent storage
+- **[Fuseki Integration](kastor/providers/jena.md#fuseki)** - SPARQL endpoints
 
-### Kastor RDF Documentation
-- [Getting Started](kastor/getting-started.md) - Quick start guide
-- [Core API](kastor/core-api.md) - Repository and graph operations
-- [SPARQL Guide](kastor/sparql-fundamentals.md) - Query language tutorial
-- [Providers](kastor/providers.md) - Backend implementations
-- [Best Practices](kastor/best-practices.md) - Guidelines for effective usage
-- [API Reference](kastor/reference/) - Detailed API documentation
+#### **RDF4J Provider**
+- **[RDF4J Integration](kastor/providers/rdf4j.md)** - Eclipse RDF4J backend
+- **[Native Store](kastor/providers/rdf4j.md#native-store)** - Local storage
+- **[Remote Repositories](kastor/providers/rdf4j.md#remote)** - Network access
 
-### OntoMapper Documentation
-- [Getting Started](ontomapper/tutorials/getting-started.md) - Quick start guide
-- [Core Concepts](ontomapper/tutorials/core-concepts.md) - Understanding the architecture
-- [Domain Modeling](ontomapper/tutorials/domain-modeling.md) - Creating domain interfaces
-- [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Working with RDF side-channels
-- [Ontology Generation](ontomapper/tutorials/ontology-generation.md) - Generating code from SHACL/JSON-LD
-- [Best Practices](ontomapper/best-practices.md) - Guidelines for effective usage
-- [API Reference](ontomapper/reference/) - Detailed API documentation
+#### **SPARQL Provider**
+- **[Remote Endpoints](kastor/providers/sparql.md)** - SPARQL query service
+- **[Federation](kastor/providers/sparql.md#federation)** - Multi-endpoint queries
 
-## Installation
+## 🎯 Learning Paths
 
-### Gradle (Kotlin DSL)
+### **Beginner Path**
+1. [Getting Started](kastor/getting-started.md) - Setup and basics
+2. [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md) - Core concepts
+3. [Hello World](kastor/tutorials/hello-world.md) - First program
+4. [DSL Guide](kastor/api/compact-dsl-guide.md) - Natural language syntax
 
-```kotlin
-dependencies {
-    // Kastor RDF Core
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
-    
-    // OntoMapper
-    implementation("com.geoknoesis.kastor:ontomapper-runtime:0.1.0")
-    ksp("com.geoknoesis.kastor:ontomapper-processor:0.1.0")
-    
-    // Optional: Specific backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
-}
-```
+### **RDF Expert Path**
+1. [Core API](kastor/api/core-api.md) - Complete API reference
+2. [Provider Comparison](kastor/providers/README.md) - Backend selection
+3. [Performance Guide](kastor/performance.md) - Optimization
+4. [Advanced Patterns](kastor/advanced/README.md) - Enterprise usage
 
-### Maven
+### **Domain Modeling Path**
+1. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md) - Code generation
+2. [Domain Modeling](ontomapper/tutorials/domain-modeling.md) - Interface design
+3. [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Side-channel access
+4. [Validation](ontomapper/tutorials/validation.md) - Data quality
 
-```xml
-<dependencies>
-    <!-- Kastor RDF Core -->
-    <dependency>
-        <groupId>com.geoknoesis.kastor</groupId>
-        <artifactId>rdf-core</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-    
-    <!-- OntoMapper -->
-    <dependency>
-        <groupId>com.geoknoesis.kastor</groupId>
-        <artifactId>ontomapper-runtime</artifactId>
-        <version>0.1.0</version>
-    </dependency>
-</dependencies>
-```
+### **Enterprise Path**
+1. [Repository Management](kastor/api/repository-manager.md) - Multi-repository setup
+2. [Transactions](kastor/api/transactions.md) - ACID compliance
+3. [Reasoning](kastor/reasoning.md) - Inference capabilities
+4. [SHACL Validation](kastor/shacl-validation.md) - Data validation
+5. [Best Practices](kastor/best-practices.md) - Production guidelines
 
-## Examples
+## 🔧 Use Case Guides
 
-### Basic RDF Operations
+### **Data Catalogs**
+- [DCAT Examples](kastor/examples.md#dcat) - Data catalog modeling
+- [Ontology Generation](ontomapper/tutorials/ontology-generation.md) - Schema generation
+- [Validation](kastor/shacl-validation.md) - Data quality checks
 
-```kotlin
-// Create repository
-val repo = Rdf.memory()
+### **Knowledge Graphs**
+- [Graph Operations](kastor/api/core-api.md) - Triple management
+- [Reasoning](kastor/reasoning.md) - Inference and classification
+- [SPARQL Queries](kastor/concepts/sparql-fundamentals.md) - Complex queries
 
-// Add data using QNames
-repo.add {
-    prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-    }
-    
-    val person = iri("http://example.org/person")
-    
-    // Turtle-style "a" alias for rdf:type
-    person["a"] = "foaf:Person"
-    person - "a" - "foaf:Agent"    // With quotes
-    person - a - "foaf:Agent"      // Without quotes
-    
-    // Natural language "is" alias for rdf:type
-    person `is` "foaf:Agent"
-    
-    // Traditional syntax (still works)
-    person - "foaf:name" - "John Doe"
-    person - "foaf:knows" - iri("http://example.org/friend")
-}
+### **Web Applications**
+- [SPARQL Endpoints](kastor/providers/sparql.md) - Web service integration
+- [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Side-channel access
+- [Performance](kastor/performance.md) - Optimization strategies
 
-// Query data
-val results = repo.query("""
-    SELECT ?name WHERE {
-        ?person <http://xmlns.com/foaf/0.1/name> ?name .
-    }
-""")
-```
+### **Enterprise Integration**
+- [Repository Manager](kastor/api/repository-manager.md) - Multi-backend setup
+- [Transactions](kastor/api/transactions.md) - ACID transactions
+- [Validation](kastor/shacl-validation.md) - Data governance
 
-### Domain Object Mapping
+## 📚 Reference Materials
 
-```kotlin
-// Define domain interface with prefix mappings
-@PrefixMapping(
-    prefixes = [
-        Prefix("foaf", "http://xmlns.com/foaf/0.1/")
-    ]
-)
-@RdfClass(iri = "foaf:Person")
-interface Person {
-    @get:RdfProperty(iri = "foaf:name")
-    val name: String
-    
-    @get:RdfProperty(iri = "foaf:knows")
-    val knows: List<Person>
-}
+### **API References**
+- [Core API](kastor/api/core-api.md) - Complete RDF operations
+- [Repository API](kastor/api/repository-manager.md) - Repository management
+- [Reasoning API](kastor/reasoning.md#api-reference) - Inference operations
+- [Validation API](kastor/shacl-validation.md#api-reference) - SHACL validation
+- [OntoMapper API](ontomapper/reference/README.md) - Code generation
 
-// Materialize and use
-val person: Person = personRef.asType()
-println("Name: ${person.name}")
-println("Friends: ${person.knows.size}")
-```
+### **Configuration References**
+- [Provider Configuration](kastor/providers/README.md) - Backend setup
+- [Validation Configuration](kastor/shacl-validation.md#configuration) - SHACL options
+- [Reasoning Configuration](kastor/reasoning.md#configuration) - Inference options
+- [Gradle Configuration](ontomapper/tutorials/gradle-configuration.md) - Build setup
 
-### Ontology-Driven Generation
+### **Format References**
+- [Serialization Formats](kastor/formats.md) - RDF serialization
+- [Vocabulary References](kastor/concepts/vocabularies.md) - Common vocabularies
+- [SPARQL Reference](kastor/concepts/sparql-fundamentals.md) - Query language
 
-```kotlin
-// Generate from SHACL and JSON-LD
-@GenerateFromOntology(
-    shaclPath = "ontologies/foaf.shacl.ttl",
-    contextPath = "ontologies/foaf.context.jsonld",
-    packageName = "com.example.generated"
-)
-class OntologyGenerator
-```
+## 🛠️ Development Resources
 
-## Community
+### **Examples and Samples**
+- [Kastor Examples](kastor/examples.md) - Complete working examples
+- [OntoMapper Examples](ontomapper/examples/README.md) - Code generation samples
+- [Sample Applications](../samples/) - Full application examples
 
-### Getting Help
-- **Documentation** - Comprehensive guides and tutorials
-- **GitHub Issues** - Bug reports and feature requests
-- **GitHub Discussions** - Questions and community support
-- **Stack Overflow** - Use `kastor` and `ontomapper` tags
+### **Troubleshooting**
+- [FAQ](kastor/faq.md) - Frequently asked questions
+- [Troubleshooting Guide](kastor/troubleshooting.md) - Common issues
+- [Performance Issues](kastor/performance.md#troubleshooting) - Optimization problems
 
-### Contributing
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+### **Best Practices**
+- [Kastor Best Practices](kastor/best-practices.md) - Usage guidelines
+- [OntoMapper Best Practices](ontomapper/best-practices.md) - Code generation
+- [Performance Best Practices](kastor/performance.md) - Optimization strategies
 
-### Development Setup
+## 🌐 Community and Support
 
-```bash
-git clone https://github.com/geoknoesis/kastor.git
-cd kastor
-./gradlew build
-```
+### **Getting Help**
+- [GitHub Issues](https://github.com/geoknoesis/kastor/issues) - Bug reports and feature requests
+- [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions) - Questions and community
+- [Stack Overflow](https://stackoverflow.com/questions/tagged/kastor) - Technical questions
 
-## License
+### **Contributing**
+- [Contributing Guide](../CONTRIBUTING.md) - How to contribute
+- [Development Setup](../docs/development/README.md) - Local development
+- [Code of Conduct](../CODE_OF_CONDUCT.md) - Community guidelines
 
-Kastor is licensed under the [Apache License 2.0](LICENSE).
-
-## Acknowledgments
-
-- Built with [Kotlin](https://kotlinlang.org/)
-- Compatible with [Apache Jena](https://jena.apache.org/)
-- Compatible with [RDF4J](https://rdf4j.org/)
-- Supports [SHACL](https://www.w3.org/TR/shacl/) validation
-- Follows [RDF 1.1](https://www.w3.org/TR/rdf11-concepts/) specification
+### **External Resources**
+- [RDF 1.1 Specification](https://www.w3.org/TR/rdf11-concepts/) - W3C standard
+- [SPARQL 1.1 Specification](https://www.w3.org/TR/sparql11-query/) - Query language
+- [SHACL Specification](https://www.w3.org/TR/shacl/) - Validation language
+- [JSON-LD Specification](https://www.w3.org/TR/json-ld11/) - JSON serialization
 
 ---
 
-**Ready to get started?** Check out our [Kastor RDF Getting Started Guide](kastor/getting-started.md) or [OntoMapper Getting Started Guide](ontomapper/tutorials/getting-started.md)!
+## 🎯 Navigation Tips
+
+- **🔍 Search**: Use Ctrl+F to search within documentation
+- **📱 Mobile**: Documentation is responsive for mobile reading
+- **🔗 Links**: All internal links use relative paths for offline reading
+- **📖 Print**: Use browser print function for PDF generation
+
+**Need help finding something?** Check the [troubleshooting guide](kastor/troubleshooting.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!

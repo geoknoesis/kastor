@@ -8,55 +8,105 @@ This document provides a comprehensive overview of the Kastor documentation stru
 docs/
 ├── README.md                    # Main documentation hub
 ├── SUMMARY.md                   # This file
-├── kastor/                      # Kastor RDF Core documentation
-│   ├── README.md               # Kastor RDF overview
+├── kastor/                      # Kastor RDF Framework documentation
+│   ├── README.md               # Kastor overview
 │   ├── getting-started.md      # Quick start guide
-│   ├── core-api.md             # Core API documentation
-│   ├── sparql-fundamentals.md  # SPARQL tutorial
-│   ├── providers.md            # Backend implementations
+│   ├── quick-start.md          # Copy-paste examples
+│   ├── reasoning.md            # RDFS/OWL reasoning
+│   ├── shacl-validation.md     # SHACL validation
+│   ├── api/                    # Core API documentation
+│   │   ├── core-api.md         # Complete API reference
+│   │   ├── compact-dsl-guide.md # Domain-specific language
+│   │   ├── repository-manager.md # Repository management
+│   │   └── transactions.md     # Transaction support
+│   ├── concepts/               # Core concepts
+│   │   ├── rdf-fundamentals.md # RDF basics
+│   │   ├── sparql-fundamentals.md # SPARQL tutorial
+│   │   └── vocabularies.md     # RDF vocabularies
+│   ├── providers/              # Backend implementations
+│   │   ├── README.md           # Provider overview
+│   │   ├── memory.md           # In-memory storage
+│   │   ├── jena.md             # Apache Jena integration
+│   │   ├── rdf4j.md            # Eclipse RDF4J
+│   │   └── sparql.md           # Remote SPARQL endpoints
+│   ├── advanced/               # Advanced topics
+│   │   ├── performance.md      # Optimization strategies
+│   │   └── formats.md          # Serialization formats
+│   ├── examples/               # Working examples
+│   │   └── README.md           # Example catalog
+│   ├── tutorials/              # Step-by-step tutorials
+│   │   ├── hello-world.md      # First program
+│   │   ├── load-and-query.md   # Data operations
+│   │   ├── remote-endpoint.md  # SPARQL endpoints
+│   │   └── jena-bridge.md      # Jena integration
+│   ├── reference/              # Detailed references
+│   │   ├── dsl.md              # DSL reference
+│   │   ├── factory.md          # Factory patterns
+│   │   ├── repository.md       # Repository API
+│   │   └── types.md            # Type system
 │   ├── best-practices.md       # Usage guidelines
 │   ├── faq.md                  # Frequently asked questions
-│   ├── reference/              # API reference
-│   └── tutorials/              # Step-by-step tutorials
+│   └── troubleshooting.md      # Common issues
 └── ontomapper/                 # OntoMapper documentation
     ├── README.md               # OntoMapper overview
     ├── best-practices.md       # Usage guidelines
     ├── faq.md                  # Frequently asked questions
     ├── reference/              # API reference
-    └── tutorials/              # Step-by-step tutorials
+    │   ├── annotations.md      # Available annotations
+    │   ├── runtime.md          # Runtime functionality
+    │   └── validation.md       # Validation features
+    ├── tutorials/              # Step-by-step tutorials
+    │   ├── getting-started.md  # Quick start
+    │   ├── core-concepts.md    # Architecture overview
+    │   ├── domain-modeling.md  # Interface design
+    │   ├── rdf-integration.md  # RDF side-channels
+    │   ├── validation.md       # Data validation
+    │   ├── ontology-generation.md # Code generation
+    │   ├── advanced-usage.md   # Advanced patterns
+    │   ├── gradle-configuration.md # Build setup
+    │   └── prefix-mappings.md  # Namespace handling
+    └── examples/               # Working examples
+        └── README.md           # Example catalog
 ```
 
 ## 🎯 Key Topics
 
-### Kastor RDF Core
+### Kastor RDF Framework
 
 #### **Getting Started**
-- [Quick Start Guide](kastor/quick-start.md) - Get up and running in minutes
-- [Installation](kastor/installation.md) - Setup instructions
-- [Hello World](kastor/tutorials/hello-world.md) - Your first RDF program
+- [Getting Started Guide](kastor/getting-started.md) - Setup and introduction
+- [Quick Start Examples](kastor/quick-start.md) - Copy-paste examples
+- [Hello World Tutorial](kastor/tutorials/hello-world.md) - Your first RDF program
 
 #### **Core Concepts**
-- [RDF Fundamentals](kastor/rdf-fundamentals.md) - Understanding RDF basics
-- [Repository Management](kastor/repository-manager.md) - Working with repositories
-- [Graph Operations](kastor/core-api.md) - Triple storage and retrieval
+- [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md) - Understanding RDF basics
+- [SPARQL Fundamentals](kastor/concepts/sparql-fundamentals.md) - Query language basics
+- [Vocabularies](kastor/concepts/vocabularies.md) - RDF vocabularies and namespaces
 
-#### **Querying**
-- [SPARQL Fundamentals](kastor/sparql-fundamentals.md) - Query language basics
-- [Kastor Query DSL](kastor/kastor-query-dsl-tutorial.md) - Type-safe queries
-- [Load and Query](kastor/tutorials/load-and-query.md) - Practical examples
+#### **API Documentation**
+- [Core API Reference](kastor/api/core-api.md) - Complete API documentation
+- [DSL Guide](kastor/api/compact-dsl-guide.md) - Domain-specific language
+- [Repository Manager](kastor/api/repository-manager.md) - Multi-repository setup
+- [Transactions](kastor/api/transactions.md) - ACID transaction support
 
-#### **Backends**
-- [Providers Overview](kastor/providers.md) - Available backends
-- [Memory Provider](kastor/providers.md#memory) - In-memory storage
-- [Jena Provider](kastor/enhanced-jena.md) - Apache Jena integration
-- [RDF4J Provider](kastor/rdf4j-repository-management.md) - Eclipse RDF4J
-- [SPARQL Provider](kastor/tutorials/remote-endpoint.md) - Remote endpoints
+#### **Backend Providers**
+- [Provider Overview](kastor/providers/README.md) - Available backends
+- [Memory Provider](kastor/providers/memory.md) - In-memory storage
+- [Jena Provider](kastor/providers/jena.md) - Apache Jena integration
+- [RDF4J Provider](kastor/providers/rdf4j.md) - Eclipse RDF4J
+- [SPARQL Provider](kastor/providers/sparql.md) - Remote endpoints
 
-#### **Advanced Topics**
-- [Transactions](kastor/transactions.md) - ACID transactions
-- [Performance](kastor/performance.md) - Optimization strategies
-- [Formats](kastor/formats.md) - Serialization formats
-- [Vocabularies](kastor/vocabularies.md) - RDF vocabularies
+#### **Advanced Features**
+- [Reasoning](kastor/reasoning.md) - RDFS/OWL inference
+- [SHACL Validation](kastor/shacl-validation.md) - Data validation
+- [Performance](kastor/advanced/performance.md) - Optimization strategies
+- [Formats](kastor/advanced/formats.md) - Serialization formats
+
+#### **Tutorials**
+- [Hello World](kastor/tutorials/hello-world.md) - First program
+- [Load and Query](kastor/tutorials/load-and-query.md) - Data operations
+- [Remote Endpoint](kastor/tutorials/remote-endpoint.md) - SPARQL endpoints
+- [Jena Bridge](kastor/tutorials/jena-bridge.md) - Jena integration
 
 ### OntoMapper
 

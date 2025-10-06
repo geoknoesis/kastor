@@ -1,58 +1,36 @@
-# 🚀 Kastor RDF - The Most Elegant RDF API for Kotlin
+# Kastor RDF Framework
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-blue.svg)](https://kotlinlang.org)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)]()
+Kastor is a modern Kotlin RDF framework that makes semantic web development accessible, powerful, and enjoyable. Built with Kotlin-first design principles, it provides a natural language DSL, type-safe operations, and pluggable backends.
 
-> **The most elegant and modern RDF API for Kotlin** - designed with developer productivity and code elegance as top priorities.
+## 🌟 Features
 
-## 📖 Table of Contents
+### **Core Capabilities**
+- **Natural Language DSL**: `person has name with "Alice"` instead of verbose RDF APIs
+- **Type Safety**: Compile-time validation and type-safe query results
+- **Multiple Backends**: Jena, RDF4J, Memory, and SPARQL providers
+- **Modern Kotlin**: Leverages Kotlin's strengths with extension functions and sealed classes
+- **Performance**: Optimized for speed with streaming and parallel processing
 
-- [Why Kastor RDF?](#-why-kastor-rdf)
-- [Quick Start](#-quick-start)
-- [Key Features](#-key-features)
-- [Documentation](#-documentation)
-- [Examples](#-examples)
-- [Architecture](#-architecture)
-- [Performance](#-performance)
-- [Contributing](#-contributing)
-
-## ✨ Why Kastor RDF?
-
-Kastor RDF is the **most elegant RDF API for Kotlin**, designed to make RDF development enjoyable and productive. With its fluent interfaces, performance monitoring, batch operations, and comprehensive feature set, it's the best choice for modern RDF applications.
-
-### 🎯 What Makes It Special?
-
-- **🏭 Elegant Factory Methods** - Create repositories with minimal code
-- **🔧 Enhanced Configuration System** - Rich parameter metadata with validation
-- **🔄 Fluent Interface Operations** - Chain operations for readable code
-- **⚡ Performance Monitoring** - Built-in timing and statistics
-- **📦 Batch Operations** - Efficient bulk data processing
-- **🔍 Advanced Query Features** - Type-safe result processing
-- **💼 Transaction Operations** - Atomic operations with rollback
-- **🎯 Operator Overloads** - Natural triple creation syntax
-- **🛠️ Convenience Functions** - Minimal boilerplate code
-- **📊 Graph Operations** - Named graph management
-- **📈 Comprehensive Statistics** - Detailed repository insights
-- **🎨 Multiple DSL Syntax Styles** - Choose what feels natural to you
-- **🏷️ QName Support** - Use prefixes for cleaner, more readable code
-- **🔧 Advanced Configuration** - Fine-tune repository behavior
+### **Advanced Features**
+- **Reasoning**: RDFS, OWL-EL, OWL-RL, and OWL-DL inference
+- **SHACL Validation**: Data validation and constraint checking
+- **Transactions**: ACID compliance for data integrity
+- **Repository Management**: Multi-repository setup and federation
+- **OntoMapper Integration**: Code generation from ontologies
 
 ## 🚀 Quick Start
 
-### Installation
-
-Add to your `build.gradle.kts`:
+### 5-Minute Setup
 
 ```kotlin
+// Add to your build.gradle.kts
 dependencies {
-    implementation("com.geoknoesis:kastor-rdf-core:0.1.0")
-    implementation("com.geoknoesis:kastor-rdf-jena:0.1.0")  // Jena backend
-    implementation("com.geoknoesis:kastor-rdf-rdf4j:0.1.0")  // RDF4J backend
+    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0") // or rdf-rdf4j
 }
 ```
 
-### Basic Usage
+### Your First RDF Program
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
@@ -61,368 +39,197 @@ fun main() {
     // Create a repository
     val repo = Rdf.memory()
     
-    // Define vocabulary objects for clean organization
-    object PersonVocab {
-        val name = "http://example.org/person/name".toIri()
-        val age = "http://example.org/person/age".toIri()
-        val worksFor = "http://example.org/person/worksFor".toIri()
+    // Add some data using natural language DSL
+    repo.add {
+        val alice = iri("http://example.org/alice")
+        alice has name with "Alice Johnson"
+        alice has age with 30
+        alice has email with "alice@example.org"
+        alice is "http://xmlns.com/foaf/0.1/Person"
     }
     
-    // Add data using fluent interface
-    repo.fluent()
-        .add {
-            val alice = "http://example.org/person/alice".toResource()
-            val company = "http://example.org/company/tech".toResource()
-            
-            // Ultra-compact syntax
-            alice[PersonVocab.name] = "Alice Johnson"
-            alice[PersonVocab.age] = 30
-            alice[PersonVocab.worksFor] = company
-            
-            // Natural language syntax
-            alice has PersonVocab.name with "Alice"
-            alice has PersonVocab.age with 30
+    // Query the data
+    val results = repo.query("""
+        SELECT ?name ?age WHERE {
+            ?person foaf:name ?name .
+            ?person ex:age ?age .
         }
-        .query("SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }")
-        .forEach { binding ->
-            println("${binding.getString("name")} is ${binding.getInt("age")} years old")
-        }
+    """)
     
-    repo.close()
-}
-```
-
-## 🎯 Key Features
-
-### 🏭 Elegant Factory Methods
-
-Create repositories with minimal code and maximum clarity:
-
-```kotlin
-val repo = Rdf.memory()                    // Simple in-memory repository
-val persistentRepo = Rdf.persistent("data") // Persistent storage
-val inferenceRepo = Rdf.memoryWithInference() // With RDFS inference
-val customRepo = Rdf.factory {              // Custom configuration
-    type = "tdb2"
-    location = "custom-data"
-    inference = true
-    optimization = true
-}
-```
-
-### 🔧 Enhanced Configuration System
-
-Discover and validate configuration parameters with rich metadata:
-
-```kotlin
-// Get detailed parameter information
-val variant = RdfApiRegistry.getConfigVariant("jena:tdb2")
-variant?.parameters?.forEach { param ->
-    println("${param.name} (${param.type}): ${param.description}")
-    println("Examples: ${param.examples.joinToString(", ")}")
-}
-
-// Validate configuration before creating repository
-val requiredParams = RdfApiRegistry.getRequiredParameters("sparql")
-val missingParams = requiredParams.filter { param -> 
-    !config.params.containsKey(param.name) 
-}
-
-// Generate usage examples automatically
-val examples = requiredParams.map { param ->
-    param.examples.firstOrNull() ?: "\"value\""
-}
-```
-
-### 🔄 Fluent Interface Operations
-
-Chain operations together for elegant, readable code:
-
-```kotlin
-repo.fluent()
-    .add { /* add data */ }
-    .query("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }")
-    .forEach { /* process results */ }
-    .transaction { /* atomic operations */ }
-    .clear()
-    .statistics()
-```
-
-### 🎨 Multiple DSL Syntax Styles
-
-Choose the syntax that feels most natural to you:
-
-```kotlin
-val person = "http://example.org/person/alice".toResource()
-val name = "http://example.org/person/name".toIri()
-
-// 1. Ultra-compact syntax (most concise)
-person[name] = "Alice"
-person["http://example.org/person/age"] = 30
-
-// 2. Natural language syntax (most explicit)
-person has name with "Alice"
-person has "http://example.org/person/age" with 30
-
-// 3. Generic infix operator (natural flow)
-person has name with "Alice"
-person has "http://example.org/person/age" with 30
-
-// 4. Operator overloads (minimal syntax)
-person -> (name to "Alice")
-person -> ("http://example.org/person/age" to 30)
-
-// 5. Convenience functions (explicit)
-triple(person, name, "Alice")
-triple(person, "http://example.org/person/age", 30)
-```
-
-### 🏷️ QName Support with Prefix Mappings
-
-Use QNames for cleaner, more readable code:
-
-```kotlin
-repo.add {
-    // Configure prefix mappings
-    prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
-        "dcterms" to "http://purl.org/dc/terms/"
-    }
-    
-    val person = iri("http://example.org/person")
-    
-    // Use QNames with all syntax styles
-    person - "foaf:name" - "Alice"                    // Minus operator
-    person["foaf:age"] = 30                           // Bracket syntax
-    person has "dcat:keyword" with "example"          // Natural language
-    
-    // Mix QNames and full IRIs
-    person - "foaf:knows" - iri("http://example.org/bob")
-    person - "http://example.org/customProp" - "value"
-    
-    // Create IRIs from QNames
-    val nameIri = qname("foaf:name")
-    person - nameIri - "Alice"
-}
-```
-
-### ⚡ Performance Monitoring
-
-Monitor query and operation performance with built-in timing:
-
-```kotlin
-// Time query execution
-val (results, queryDuration) = repo.queryTimed("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""")
-println("Query executed in: $queryDuration")
-
-// Get comprehensive statistics
-println(repo.statisticsFormatted())
-```
-
-### 📦 Batch Operations
-
-Process large datasets efficiently:
-
-```kotlin
-// Add in batches for better performance
-repo.addBatch(batchSize = 1000) {
-    people.forEachIndexed { index, person ->
-        person[PersonVocab.name] = "Person ${index + 1}"
-        person[PersonVocab.age] = 20 + (index % 50)
+    results.forEach { binding ->
+        println("${binding.getString("name")} is ${binding.getInt("age")} years old")
     }
 }
 ```
 
-### 🔍 Advanced Query Features
+## 📚 Documentation Structure
 
-Type-safe query results with convenient access patterns:
+### **Getting Started**
+- **[Getting Started Guide](getting-started.md)** - Complete setup and introduction
+- **[Quick Start Examples](quick-start.md)** - Copy-paste examples for immediate success
+- **[Hello World Tutorial](tutorials/hello-world.md)** - Step-by-step first program
 
-```kotlin
-// Get first result directly
-val firstPerson = repo.queryFirst("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name } LIMIT 1
-""")
+### **Core Concepts**
+- **[RDF Fundamentals](concepts/rdf-fundamentals.md)** - Understanding RDF basics
+- **[SPARQL Fundamentals](concepts/sparql-fundamentals.md)** - Query language introduction
+- **[Vocabularies](concepts/vocabularies.md)** - Working with RDF vocabularies
 
-// Get results as a map
-val nameAgeMap = repo.queryMap(
-    sparql = "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }",
-    keySelector = { it.getString("name") ?: "Unknown" },
-    valueSelector = { it.getInt("age").toString() }
-)
+### **API Documentation**
+- **[Core API Reference](api/core-api.md)** - Complete API documentation
+- **[DSL Guide](api/compact-dsl-guide.md)** - Domain-specific language reference
+- **[Repository Manager](api/repository-manager.md)** - Multi-repository setup
+- **[Transactions](api/transactions.md)** - ACID transaction support
 
-// Get results as specific types
-val names: List<String> = repo.query("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""").mapAs()
-```
+### **Backend Providers**
+- **[Provider Overview](providers/README.md)** - Available backends comparison
+- **[Memory Provider](providers/memory.md)** - In-memory storage
+- **[Jena Provider](providers/jena.md)** - Apache Jena integration
+- **[RDF4J Provider](providers/rdf4j.md)** - Eclipse RDF4J backend
+- **[SPARQL Provider](providers/sparql.md)** - Remote SPARQL endpoints
 
-### 💼 Transaction Operations
+### **Advanced Features**
+- **[Reasoning](reasoning.md)** - RDFS, OWL inference capabilities
+- **[SHACL Validation](shacl-validation.md)** - Data validation and constraints
+- **[Performance Guide](advanced/performance.md)** - Optimization strategies
+- **[Serialization Formats](advanced/formats.md)** - RDF format support
 
-Atomic operations with automatic rollback:
+### **Tutorials**
+- **[Hello World](tutorials/hello-world.md)** - Your first RDF program
+- **[Load and Query](tutorials/load-and-query.md)** - Data operations
+- **[Remote Endpoint](tutorials/remote-endpoint.md)** - SPARQL endpoint integration
+- **[Jena Bridge](tutorials/jena-bridge.md)** - Jena-specific features
 
-```kotlin
-repo.transaction {
-    // All operations in this block are atomic
-    add {
-        val person = "http://example.org/person/atomic".toResource()
-        person[PersonVocab.name] = "Atomic Person"
-        person[PersonVocab.age] = 35
-    }
-    
-    // If any operation fails, all changes are rolled back
-}
-```
+### **Reference**
+- **[DSL Reference](reference/dsl.md)** - Complete DSL syntax
+- **[Factory Patterns](reference/factory.md)** - Repository creation
+- **[Type System](reference/types.md)** - RDF type hierarchy
+- **[Repository API](reference/repository.md)** - Repository operations
 
-## 📚 Documentation
-
-### 🚀 Getting Started
-- **[Quick Start Guide](quick-start.md)** - Get up and running in minutes
-- **[Getting Started](getting-started.md)** - Step-by-step introduction
-- **[Installation Guide](installation.md)** - Detailed setup instructions
-
-### 🔗 Interoperability
-- **[Jena Bridge](tutorials/jena-bridge.md)** - Seamless integration with Apache Jena
-
-### 🎯 Core Guides
-- **[Super Sleek API Guide](super-sleek-api-guide.md)** - Comprehensive feature showcase
-- **[Compact DSL Guide](compact-dsl-guide.md)** - Multiple syntax styles and DSL options
-- **[API Design Principles](api-design-principles.md)** - Design philosophy and principles
-
-### 📖 Fundamentals
-- **[RDF Fundamentals](rdf-fundamentals.md)** - Understanding RDF basics
-- **[SPARQL Fundamentals](sparql-fundamentals.md)** - Query language introduction
-- **[RDF Terms](rdfterms.md)** - Core RDF concepts and terminology
-
-### 🏗️ Architecture & Reference
-- **[Core API Reference](core-api.md)** - Core interfaces and types
-- **[Repository Management](repository-manager.md)** - Multi-repository operations
-- **[Provider Comparison](provider-comparison.md)** - Backend comparison
-- **[Providers](providers.md)** - Available RDF backends
-
-### 🎨 Advanced Topics
-- **[Vocabularies](vocabularies.md)** - Working with RDF vocabularies
-- **[Vocabularies Quick Reference](vocabularies-quickref.md)** - Common vocabularies
-- **[Vocabularies Index](vocabularies-index.md)** - Complete vocabulary reference
-- **[Transactions](transactions.md)** - Transaction management
-- **[Performance](performance.md)** - Optimization and performance tuning
-
-### 🛠️ Tutorials
-- **[Hello World Tutorial](tutorials/hello-world.md)** - Your first RDF application
-- **[Load and Query Tutorial](tutorials/load-and-query.md)** - Working with data
-- **[Remote Endpoint Tutorial](tutorials/remote-endpoint.md)** - Connecting to remote repositories
-
-### 📋 Reference
-- **[Factory Reference](reference/factory.md)** - Repository creation options
-- **[Repository Reference](reference/repository.md)** - Repository operations
-- **[Types Reference](reference/types.md)** - Core data types
-- **[Formats](formats.md)** - Supported RDF formats
-
-### 🔧 Development
-- **[Cookbook](cookbook.md)** - Common patterns and solutions
-- **[Examples](examples.md)** - Code examples and use cases
-- **[Extending](extending.md)** - Creating custom extensions
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+### **Best Practices & Support**
+- **[Best Practices](best-practices.md)** - Usage guidelines and patterns
 - **[FAQ](faq.md)** - Frequently asked questions
+- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
 
-### 📚 Additional Resources
-- **[Glossary](glossary.md)** - Key terms and definitions
-- **[Guides](guides.md)** - Additional learning resources
+## 🎯 Use Cases
 
-## 🎯 Examples
+### **Data Catalogs**
+Build comprehensive data catalogs with DCAT vocabulary support and validation.
 
-### 🚀 Comprehensive Examples
-- **[Super Sleek Example](examples/src/main/kotlin/com/geoknoesis/kastor/rdf/examples/SuperSleekExample.kt)** - Complete feature showcase
-- **[Ultra-Compact with Variables](examples/src/main/kotlin/com/geoknoesis/kastor/rdf/examples/UltraCompactWithVariablesExample.kt)** - Variable usage patterns
-- **[Vocabulary Agnostic](examples/src/main/kotlin/com/geoknoesis/kastor/rdf/examples/VocabularyAgnosticExample.kt)** - Core API without vocabulary assumptions
+```kotlin
+val catalog = Rdf.graph {
+    val dataset = iri("http://example.org/dataset1")
+    dataset is "http://www.w3.org/ns/dcat#Dataset"
+    dataset has title with "My Dataset"
+    dataset has description with "A sample dataset"
+    dataset has contactPoint with "admin@example.org"
+}
+```
 
-### 📖 Tutorial Examples
-- **Hello World** - Basic repository creation and data addition
-- **Load and Query** - Working with existing RDF data
-- **Remote Endpoint** - Connecting to SPARQL endpoints
+### **Knowledge Graphs**
+Create and query knowledge graphs with reasoning capabilities.
+
+```kotlin
+val graph = Rdf.graph {
+    val person = iri("http://example.org/alice")
+    val employee = iri("http://example.org/Employee")
+    
+    person is employee
+    employee subclassOf "http://xmlns.com/foaf/0.1/Person"
+}
+
+// Reasoning will infer that Alice is a Person
+val reasoner = RdfReasoning.reasoner(ReasonerType.RDFS)
+val result = reasoner.reason(graph)
+```
+
+### **Data Validation**
+Validate data quality with SHACL constraints.
+
+```kotlin
+val validator = ShaclValidation.validator()
+val report = validator.validate(dataGraph, shapesGraph)
+
+if (!report.isValid) {
+    report.violations.forEach { violation ->
+        println("Validation error: ${violation.message}")
+    }
+}
+```
+
+### **Web Applications**
+Integrate with SPARQL endpoints and build web services.
+
+```kotlin
+val repo = Rdf.factory {
+    sparql("https://dbpedia.org/sparql")
+}
+
+val results = repo.query("""
+    SELECT ?name WHERE {
+        ?person rdfs:label ?name .
+        ?person dbo:birthPlace <http://dbpedia.org/resource/Paris> .
+    } LIMIT 10
+""")
+```
 
 ## 🏗️ Architecture
 
-Kastor RDF is built with a modular architecture:
-
 ```
-kastor-rdf/
-├── core/           # Core API and interfaces
-├── jena/           # Apache Jena backend
-├── rdf4j/          # Eclipse RDF4J backend
-├── examples/       # Example applications
-└── docs/           # Documentation
+┌─────────────────────────────────────────────────────────────┐
+│                    Kastor RDF Framework                     │
+├─────────────────────────────────────────────────────────────┤
+│  Natural Language DSL  │  Type Safety  │  Modern Kotlin    │
+├─────────────────────────────────────────────────────────────┤
+│              Core API Layer (rdf-core)                     │
+├─────────────────────────────────────────────────────────────┤
+│  Reasoning  │  SHACL Validation  │  Repository Manager     │
+├─────────────────────────────────────────────────────────────┤
+│              Provider Layer (pluggable)                     │
+├─────────────────────────────────────────────────────────────┤
+│  Memory  │  Jena  │  RDF4J  │  SPARQL  │  Custom Providers │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 🔧 Core Components
+## 🔌 Backend Providers
 
-- **RdfRepository** - Main interface for RDF operations
-- **RdfGraph** - Named graph management
-- **TripleDsl** - Elegant triple creation DSL
-- **QueryResult** - Type-safe query results
-- **RepositoryManager** - Multi-repository operations
+| Provider | Use Case | Persistence | Performance | Features |
+|----------|----------|-------------|-------------|----------|
+| **Memory** | Development, Testing | ❌ | ⭐⭐⭐⭐⭐ | Fast, Simple |
+| **Jena** | Production, TDB2 | ✅ | ⭐⭐⭐⭐ | Full RDF support |
+| **RDF4J** | Production, Native | ✅ | ⭐⭐⭐⭐ | Enterprise features |
+| **SPARQL** | Remote Data | ✅ | ⭐⭐⭐ | Federation support |
 
-### 🚀 Backend Providers
+## 🚀 Getting Started Paths
 
-- **Apache Jena** - In-memory and TDB2 repositories
-- **Eclipse RDF4J** - In-memory and native repositories
-- **SPARQL** - Remote endpoint support
+### **New to RDF?**
+1. [RDF Fundamentals](concepts/rdf-fundamentals.md) - Learn RDF basics
+2. [Getting Started Guide](getting-started.md) - Setup and first steps
+3. [Hello World Tutorial](tutorials/hello-world.md) - Your first program
+4. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
 
-## 🚀 Performance
+### **RDF Expert?**
+1. [Core API Reference](api/core-api.md) - Complete API documentation
+2. [Provider Comparison](providers/README.md) - Choose your backend
+3. [Performance Guide](advanced/performance.md) - Optimization strategies
+4. [Advanced Features](reasoning.md) - Reasoning and validation
 
-- **Optimized for both small and large datasets**
-- **Batch operations for efficient bulk processing**
-- **Built-in performance monitoring**
-- **Lazy evaluation for large result sets**
-- **Memory-efficient operations**
+### **Application Developer?**
+1. [Getting Started Guide](getting-started.md) - Quick setup
+2. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
+3. [Repository Manager](api/repository-manager.md) - Multi-repository setup
+4. [Best Practices](best-practices.md) - Production guidelines
 
-### 📊 Performance Features
+## 🌐 Community & Support
 
-- **Query timing** - Measure query execution time
-- **Operation timing** - Monitor operation performance
-- **Statistics** - Comprehensive repository metrics
-- **Batch processing** - Efficient bulk operations
-- **Memory optimization** - Lazy evaluation and streaming
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### 🎯 How to Contribute
-
-1. **Fork the repository**
-2. **Create a feature branch**
-3. **Make your changes**
-4. **Add tests**
-5. **Submit a pull request**
-
-### 📋 Development Setup
-
-```bash
-git clone https://github.com/geoknoesis/kastor-rdf.git
-cd kastor-rdf
-./gradlew build
-```
+- **[GitHub Repository](https://github.com/geoknoesis/kastor)** - Source code and issues
+- **[GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)** - Community support
+- **[Stack Overflow](https://stackoverflow.com/questions/tagged/kastor)** - Technical questions
+- **[FAQ](faq.md)** - Frequently asked questions
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Apache Jena team** for the excellent RDF framework
-- **Eclipse RDF4J team** for the powerful RDF toolkit
-- **Kotlin team** for the amazing language features
-
-## 📞 Support
-
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+Kastor is open source and available under the [MIT License](../LICENSE).
 
 ---
 
-**🚀 This is the most elegant RDF API for Kotlin - designed for developers who value clean, readable, and maintainable code.**
+**Ready to get started?** Check out the [Getting Started Guide](getting-started.md) or jump right into [Hello World](tutorials/hello-world.md)!
