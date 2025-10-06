@@ -1,6 +1,28 @@
 # Kastor
 
-A comprehensive Kotlin library for working with RDF (Resource Description Framework) data, providing both low-level RDF operations and high-level domain object mapping.
+**Kastor** is a modern, comprehensive Kotlin framework for RDF (Resource Description Framework) and semantic web development. It bridges the gap between traditional object-oriented programming and semantic technologies, making RDF accessible and powerful for Kotlin developers.
+
+## 🌟 What Makes Kastor Special?
+
+Kastor provides a **dual-layer architecture** that serves both RDF experts and application developers:
+
+### 🎯 **For RDF Experts**
+- **Native RDF Operations**: Full control over triples, graphs, and SPARQL queries
+- **Multiple Backends**: Jena, RDF4J, Memory, and SPARQL endpoint support
+- **Advanced Features**: Reasoning, SHACL validation, transactions, and graph isomorphism
+- **RDF-star Support**: Metadata about statements and nested triple expressions
+
+### 🚀 **For Application Developers**  
+- **Natural Language DSL**: Write RDF like natural language (`person is "foaf:Person"`)
+- **Type-Safe Domain Objects**: Pure Kotlin interfaces with compile-time validation
+- **Code Generation**: Generate domain models from ontologies (SHACL + JSON-LD)
+- **Zero RDF Dependencies**: Domain objects have no RDF library dependencies
+
+### 🏗️ **Enterprise Ready**
+- **ACID Transactions**: Full transaction support across all backends
+- **Performance Optimized**: Streaming, parallel processing, and memory management
+- **Production Backends**: Jena TDB2 and RDF4J Native Store support
+- **Validation & Reasoning**: Built-in SHACL validation and OWL/RDFS reasoning
 
 ## Why "Kastor"?
 
@@ -13,24 +35,38 @@ Just as Castor revolutionized XML data binding in Java, Kastor aims to bring the
 
 Kastor honors Castor's legacy while embracing the future of semantic technologies and the Kotlin ecosystem.
 
-## Features
+## 🚀 Core Capabilities
 
-### Kastor RDF (Core)
-- **Repository Management** - Multiple RDF backends (Memory, Jena, RDF4J, SPARQL)
-- **Graph Operations** - Triple storage, retrieval, and manipulation
-- **SPARQL Support** - Query language for RDF data
-- **Serialization** - RDF/XML, Turtle, JSON-LD, and other formats
-- **Transactions** - ACID transactions for data consistency
-- **Graph Isomorphism** - Advanced blank node comparison algorithms
-- **Intuitive DSL** - Turtle-style "a" and natural language "is" aliases for rdf:type
+### 📊 **RDF Core Framework**
+- **🔄 Repository Management**: Seamlessly switch between Memory, Jena, RDF4J, and SPARQL backends
+- **📈 Graph Operations**: Advanced triple storage, retrieval, manipulation, and graph algorithms
+- **🔍 SPARQL Integration**: Full SPARQL 1.1 support with type-safe query builders
+- **💾 Serialization**: Complete RDF format support (Turtle, RDF/XML, JSON-LD, N-Triples, N-Quads)
+- **🔒 ACID Transactions**: Production-grade transaction support with rollback capabilities
+- **🧮 Graph Isomorphism**: Sophisticated blank node comparison and graph matching algorithms
+- **🎨 Natural Language DSL**: Intuitive syntax (`person is "foaf:Person"`, `person has name with "Alice"`)
 
-### OntoMapper (High-Level)
-- **Domain Interfaces** - Pure Kotlin interfaces with no RDF dependencies
-- **Automatic Materialization** - Convert RDF nodes to domain objects
-- **Type Safety** - Compile-time validation of property types
-- **RDF Side-Channel** - Access RDF power when needed
-- **Ontology Generation** - Generate code from SHACL and JSON-LD
-- **Gradle Plugin** - Seamless integration with build systems
+### 🧠 **Advanced Semantic Features**
+- **🔬 Reasoning Engine**: RDFS, OWL-EL, OWL-RL, and OWL-DL inference capabilities
+- **✅ SHACL Validation**: Comprehensive data validation with detailed constraint checking
+- **⭐ RDF-star Support**: Metadata about statements and nested triple expressions
+- **🔗 Smart QName Detection**: Automatic resolution of qualified names to IRIs
+- **📚 Built-in Vocabularies**: Pre-configured prefixes for RDF, RDFS, OWL, SHACL, and XSD
+
+### 🏷️ **OntoMapper - Code Generation**
+- **🎯 Domain Interfaces**: Generate pure Kotlin interfaces from ontologies
+- **🔄 Automatic Materialization**: Seamless conversion between RDF and domain objects
+- **🛡️ Type Safety**: Compile-time validation of property types and constraints
+- **🔌 RDF Side-Channel**: Access underlying RDF power when needed
+- **⚙️ Gradle Integration**: Zero-configuration build system integration
+- **📋 Ontology Sources**: Generate from SHACL shapes, JSON-LD contexts, and RDFS/OWL ontologies
+
+### 🏢 **Enterprise Features**
+- **🌐 Multi-Repository Setup**: Manage multiple RDF stores and federated queries
+- **📊 Performance Monitoring**: Built-in metrics and performance optimization tools
+- **🔧 Pluggable Architecture**: Extensible provider system for custom backends
+- **📱 Reactive Streams**: Support for streaming and reactive programming patterns
+- **🔐 Security**: Authentication and authorization for SPARQL endpoints
 
 ## Quick Start
 
@@ -244,27 +280,78 @@ dependencies {
 - **[Getting Started Guide](docs/kastor/getting-started/README.md)** - Quick start tutorial
 - **[API Reference](docs/kastor/api/)** - Detailed API documentation
 
-## Use Cases
+## 🎯 Real-World Applications
 
-### 📊 **Data Catalogs**
-- DCAT (Data Catalog Vocabulary) compliance
-- Government open data portals
-- Enterprise data governance
+### 📊 **Data Governance & Catalogs**
+- **Government Data Portals**: DCAT-compliant data catalogs with automatic validation
+- **Enterprise Data Lakes**: Semantic metadata management for large-scale data integration
+- **Data Quality Assurance**: SHACL-based validation ensuring data consistency and compliance
+- **Data Lineage Tracking**: RDF-star enabled provenance and metadata management
 
-### 🏢 **Enterprise Integration**
-- RDF-based data lakes
-- Semantic web applications
-- Knowledge graphs
+### 🏢 **Knowledge Management**
+- **Enterprise Knowledge Graphs**: Comprehensive knowledge representation with reasoning
+- **Semantic Search**: Intelligent search across heterogeneous data sources
+- **Content Management**: Linked data publishing with automatic relationship discovery
+- **Decision Support Systems**: OWL reasoning for complex business rule evaluation
 
-### 🔬 **Research & Academia**
-- Scientific data management
-- Research data repositories
-- Ontology-driven applications
+### 🔬 **Scientific & Research Applications**
+- **Research Data Repositories**: FAIR data principles implementation with semantic metadata
+- **Scientific Workflows**: Ontology-driven data processing and analysis pipelines
+- **Collaborative Research**: Federated queries across distributed research datasets
+- **Publication Management**: Automatic extraction and linking of research entities
 
-### 🌐 **Web Applications**
-- Linked data publishing
-- Semantic search
-- Content management systems
+### 🌐 **Web & API Development**
+- **Semantic APIs**: RESTful services with automatic RDF serialization
+- **Linked Data Publishing**: Standards-compliant web resource representation
+- **Microservices Integration**: Semantic service discovery and orchestration
+- **Real-time Data Streaming**: Reactive processing of semantic data streams
+
+### 🏭 **Industry-Specific Solutions**
+- **Healthcare**: FHIR-compliant medical data integration with semantic reasoning
+- **Finance**: Regulatory compliance and risk assessment using semantic rules
+- **Manufacturing**: IoT data integration with semantic device descriptions
+- **E-commerce**: Product catalog management with automated classification
+
+## 🏗️ Architecture Overview
+
+Kastor's architecture is designed around **separation of concerns** and **pluggable components**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kastor Framework                         │
+├─────────────────────────────────────────────────────────────┤
+│  🎨 Natural Language DSL  │  🛡️ Type Safety  │  ⚡ Performance │
+├─────────────────────────────────────────────────────────────┤
+│                    Application Layer                        │
+│  📊 Domain Objects  │  🔄 Materialization  │  🎯 Code Gen    │
+├─────────────────────────────────────────────────────────────┤
+│                      Core API Layer                         │
+│  📈 Graph Ops  │  🔍 SPARQL  │  🧠 Reasoning  │  ✅ Validation │
+├─────────────────────────────────────────────────────────────┤
+│                   Provider Layer (Pluggable)                │
+│  💾 Memory  │  🏢 Jena  │  🔧 RDF4J  │  🌐 SPARQL  │  🔌 Custom │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🔄 **Dual-Layer Design**
+
+**Layer 1: RDF Core** - For semantic web experts
+- Direct access to RDF triples, graphs, and SPARQL
+- Full control over serialization and reasoning
+- Advanced features like graph isomorphism and transactions
+
+**Layer 2: OntoMapper** - For application developers  
+- Pure Kotlin domain interfaces with no RDF dependencies
+- Automatic conversion between RDF and domain objects
+- Code generation from ontologies and schemas
+
+### 🎯 **Key Design Principles**
+
+- **Type Safety**: Compile-time validation prevents runtime errors
+- **Performance**: Optimized for both memory usage and query speed
+- **Extensibility**: Pluggable providers for custom backends and features
+- **Standards Compliance**: Full support for RDF 1.1, SPARQL 1.1, SHACL, and JSON-LD
+- **Developer Experience**: Natural language DSL and comprehensive tooling
 
 ## Development
 
