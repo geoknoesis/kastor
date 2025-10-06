@@ -24,56 +24,326 @@ SHACL (Shapes Constraint Language) is a W3C standard for validating RDF data aga
 
 ## Quick Start
 
-### Basic Validation
+This section provides a comprehensive introduction to SHACL validation with Kastor. We'll cover everything from basic validation to advanced scenarios.
+
+### Prerequisites
+
+First, add the SHACL validation dependency to your project:
+
+```kotlin
+dependencies {
+    implementation("com.geoknoesis.kastor:rdf-shacl-validation:0.1.0")
+}
+```
+
+### Basic Validation Example
+
+Let's start with a simple example that validates person data against SHACL shapes:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.shacl.*
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
 
-// Create a data graph
+// Step 1: Create your data graph
 val dataGraph = Rdf.graph {
     val person = iri("http://example.org/person1")
     person - RDF.type - "http://example.org/Person"
     person - "http://example.org/name" - "Alice Johnson"
     person - "http://example.org/email" - "alice@example.org"
     person - "http://example.org/age" - 30
+    person - "http://example.org/phone" - "+1-555-123-4567"
 }
 
-// Create a shapes graph
+// Step 2: Create your shapes graph with validation rules
 val shapesGraph = Rdf.graph {
+    // Define the Person shape
     val personShape = iri("http://example.org/PersonShape")
     personShape - RDF.type - "http://www.w3.org/ns/shacl#NodeShape"
     personShape - "http://www.w3.org/ns/shacl#targetClass" - "http://example.org/Person"
     
+    // Name property (required, single value)
     val nameProperty = iri("http://example.org/nameProperty")
     personShape - "http://www.w3.org/ns/shacl#property" - nameProperty
+    nameProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
     nameProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/name"
     nameProperty - "http://www.w3.org/ns/shacl#minCount" - 1
     nameProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
+    nameProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
+    
+    // Email property (required, single value, string)
+    val emailProperty = iri("http://example.org/emailProperty")
+    personShape - "http://www.w3.org/ns/shacl#property" - emailProperty
+    emailProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
+    emailProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/email"
+    emailProperty - "http://www.w3.org/ns/shacl#minCount" - 1
+    emailProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
+    emailProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
+    
+    // Age property (required, single value, integer)
+    val ageProperty = iri("http://example.org/ageProperty")
+    personShape - "http://www.w3.org/ns/shacl#property" - ageProperty
+    ageProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
+    ageProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/age"
+    ageProperty - "http://www.w3.org/ns/shacl#minCount" - 1
+    ageProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
+    ageProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.integer
+    
+    // Phone property (optional, single value, string)
+    val phoneProperty = iri("http://example.org/phoneProperty")
+    personShape - "http://www.w3.org/ns/shacl#property" - phoneProperty
+    phoneProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
+    phoneProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/phone"
+    phoneProperty - "http://www.w3.org/ns/shacl#minCount" - 0
+    phoneProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
+    phoneProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
 }
 
-// Validate
+// Step 3: Validate the data against the shapes
 val validator = ShaclValidation.validator()
 val report = validator.validate(dataGraph, shapesGraph)
 
+// Step 4: Check the validation results
 if (report.isValid) {
     println("✅ Validation passed!")
+    println("Validated ${report.validatedResources} resources")
+    println("Validated ${report.validatedConstraints} constraints")
+    println("Validation time: ${report.validationTime.toMillis()}ms")
 } else {
     println("❌ Validation failed with ${report.violations.size} violations")
     report.violations.forEach { violation ->
-        println("  - ${violation.message}")
+        println("  - ${violation.severity}: ${violation.message}")
+        println("    Resource: ${violation.resource}")
+        println("    Constraint: ${violation.constraint.constraintType}")
     }
 }
 ```
 
+### Understanding the Output
+
+When validation fails, you'll get detailed information about what went wrong:
+
+```
+❌ Validation failed with 3 violations
+  - VIOLATION: Property 'http://example.org/name' has 0 values, but minimum is 1
+    Resource: <http://example.org/person2>
+    Constraint: MIN_COUNT
+  - VIOLATION: Property 'http://example.org/email' has datatype 'http://www.w3.org/2001/XMLSchema#integer', but expected 'http://www.w3.org/2001/XMLSchema#string'
+    Resource: <http://example.org/person3>
+    Constraint: DATATYPE
+  - VIOLATION: Property 'http://example.org/age' has 2 values, but maximum is 1
+    Resource: <http://example.org/person4>
+    Constraint: MAX_COUNT
+```
+
 ### Quick Conformance Check
+
+For simple boolean validation without detailed results:
 
 ```kotlin
 val validator = ShaclValidation.validator()
 val conforms = validator.conforms(dataGraph, shapesGraph)
-println("Data conforms: $conforms")
+println("Data conforms: $conforms") // true or false
 ```
+
+### Common Validation Scenarios
+
+#### 1. Validating Multiple Resources
+
+```kotlin
+val dataGraph = Rdf.graph {
+    // Person 1 - Valid
+    val person1 = iri("http://example.org/person1")
+    person1 - RDF.type - "http://example.org/Person"
+    person1 - "http://example.org/name" - "Alice Johnson"
+    person1 - "http://example.org/email" - "alice@example.org"
+    person1 - "http://example.org/age" - 30
+    
+    // Person 2 - Missing required name
+    val person2 = iri("http://example.org/person2")
+    person2 - RDF.type - "http://example.org/Person"
+    person2 - "http://example.org/email" - "bob@example.org"
+    person2 - "http://example.org/age" - 25
+    
+    // Person 3 - Invalid age type
+    val person3 = iri("http://example.org/person3")
+    person3 - RDF.type - "http://example.org/Person"
+    person3 - "http://example.org/name" - "Charlie Brown"
+    person3 - "http://example.org/email" - "charlie@example.org"
+    person3 - "http://example.org/age" - "thirty" // Should be integer
+}
+
+val report = validator.validate(dataGraph, shapesGraph)
+
+// Get violations by resource
+report.violations.groupBy { it.resource }.forEach { (resource, violations) ->
+    println("Resource $resource has ${violations.size} violations:")
+    violations.forEach { println("  - ${it.message}") }
+}
+```
+
+#### 2. Resource-Specific Validation
+
+Validate only a specific resource instead of the entire graph:
+
+```kotlin
+val person1 = iri("http://example.org/person1")
+val person1Report = validator.validateResource(dataGraph, shapesGraph, person1)
+
+if (person1Report.isValid) {
+    println("✅ Person1 is valid")
+} else {
+    println("❌ Person1 has ${person1Report.violations.size} violations")
+}
+```
+
+#### 3. Constraint-Specific Validation
+
+Validate against specific constraints only:
+
+```kotlin
+val constraints = listOf(
+    ShaclConstraint(
+        constraintType = ConstraintType.MIN_COUNT,
+        path = "http://example.org/name",
+        parameters = mapOf("value" to 1)
+    ),
+    ShaclConstraint(
+        constraintType = ConstraintType.DATATYPE,
+        path = "http://example.org/age",
+        parameters = mapOf("value" to iri("http://www.w3.org/2001/XMLSchema#integer"))
+    )
+)
+
+val report = validator.validateConstraints(dataGraph, constraints)
+```
+
+### Using Different Validator Configurations
+
+#### 1. Strict Validation
+
+```kotlin
+val strictValidator = ShaclValidation.strictValidator()
+val report = strictValidator.validate(dataGraph, shapesGraph)
+// Strict mode includes warnings and validates inactive shapes
+```
+
+#### 2. Fast Validation
+
+```kotlin
+val fastValidator = ShaclValidation.fastValidator()
+val report = fastValidator.validate(dataGraph, shapesGraph)
+// Fast mode skips explanations and suggestions for better performance
+```
+
+#### 3. Large Graph Validation
+
+```kotlin
+val largeGraphValidator = ShaclValidation.largeGraphValidator()
+val report = largeGraphValidator.validate(largeDataGraph, shapesGraph)
+// Optimized for large datasets with streaming and parallel processing
+```
+
+#### 4. Custom Configuration
+
+```kotlin
+val config = ValidationConfig(
+    profile = ValidationProfile.SHACL_CORE,
+    strictMode = true,
+    includeWarnings = true,
+    maxViolations = 100,
+    timeout = Duration.ofMinutes(5),
+    enableExplanations = true,
+    enableSuggestions = true
+)
+
+val validator = ShaclValidation.validator(config)
+val report = validator.validate(dataGraph, shapesGraph)
+```
+
+### Working with Validation Results
+
+#### Detailed Violation Analysis
+
+```kotlin
+val report = validator.validate(dataGraph, shapesGraph)
+
+// Get violations by severity
+val errors = report.getViolationsBySeverity(ViolationSeverity.VIOLATION)
+val warnings = report.getViolationsBySeverity(ViolationSeverity.WARNING)
+
+// Get violations by constraint type
+val minCountViolations = report.getViolationsForConstraint(ConstraintType.MIN_COUNT)
+val datatypeViolations = report.getViolationsForConstraint(ConstraintType.DATATYPE)
+
+// Get violations for a specific shape
+val personViolations = report.getViolationsForShape("http://example.org/PersonShape")
+
+// Get violations for a specific resource
+val resourceViolations = report.getViolationsForResource(someResource)
+```
+
+#### Validation Statistics
+
+```kotlin
+val stats = report.statistics
+println("Total resources: ${stats.totalResources}")
+println("Validated resources: ${stats.validatedResources}")
+println("Total constraints: ${stats.totalConstraints}")
+println("Validated constraints: ${stats.validatedConstraints}")
+println("Shapes processed: ${stats.shapesProcessed}")
+println("Constraints by type: ${stats.constraintsByType}")
+println("Violations by type: ${stats.violationsByType}")
+println("Average validation time per resource: ${stats.averageValidationTimePerResource.toMillis()}ms")
+```
+
+#### Summary Information
+
+```kotlin
+val summary = report.getSummary()
+println(summary.getDescription())
+
+// Or get specific summary data
+println("Valid: ${summary.isValid}")
+println("Total violations: ${summary.totalViolations}")
+println("Violations by severity: ${summary.violationsBySeverity}")
+println("Violations by shape: ${summary.violationsByShape}")
+println("Validation time: ${summary.validationTime}")
+```
+
+### Error Handling
+
+```kotlin
+try {
+    val report = validator.validate(dataGraph, shapesGraph)
+    // Process results
+} catch (e: ValidationException) {
+    println("Validation failed with error: ${e.message}")
+    e.cause?.let { println("Cause: ${it.message}") }
+} catch (e: IllegalArgumentException) {
+    println("Invalid configuration: ${e.message}")
+}
+```
+
+### Best Practices for Quick Start
+
+1. **Start Simple**: Begin with basic constraints like `minCount`, `maxCount`, and `datatype`
+2. **Use Meaningful Names**: Use descriptive IRIs for your shapes and properties
+3. **Test Incrementally**: Validate small datasets first, then scale up
+4. **Handle Results Properly**: Always check `report.isValid` before processing violations
+5. **Use Appropriate Validators**: Choose the right validator configuration for your use case
+6. **Monitor Performance**: Check validation times and adjust configuration if needed
+
+### Next Steps
+
+Once you're comfortable with basic validation:
+
+1. **Explore Advanced Constraints**: Learn about `pattern`, `class`, `in`, `hasValue`, etc.
+2. **Use Complex Shapes**: Combine multiple constraints and nested shapes
+3. **Optimize Performance**: Use streaming and parallel validation for large datasets
+4. **Integrate with Backends**: Use Jena or RDF4J validators for full SHACL support
+5. **Build Validation Pipelines**: Create automated validation workflows
 
 ## Validation Providers
 
