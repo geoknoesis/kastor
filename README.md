@@ -282,6 +282,29 @@ cd kastor
 ./gradlew test
 ```
 
+## About
+
+**Kastor** is developed by **[GeoKnoesis LLC](https://geoknoesis.com/)**, a company specializing in semantic web technologies and knowledge engineering.
+
+### Main Developer
+- **Stephane Fellah** - Principal Developer
+- **Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+
+### Support
+We welcome community support and contributions! If you find Kastor useful, please consider:
+
+- 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
+- 🐛 **Report issues** or suggest improvements
+- 💬 **Join discussions** in our [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
+- 📖 **Improve documentation** through pull requests
+
+### Financial Support
+If you'd like to support the development of Kastor financially, you can:
+
+- 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)
+- ☕ **Buy us a coffee** via [Ko-fi](https://ko-fi.com/geoknoesis)
+- 🏢 **Enterprise support** - Contact us at [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com) for commercial licensing and support options
+
 ## License
 
 Kastor is licensed under the [Apache License 2.0](LICENSE).
@@ -297,4 +320,4 @@ Kastor is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-**Ready to get started?** Check out our [Getting Started Guide](docs/kastor/getting-started.md) or explore the [examples](samples/)!
+**Ready to get started?** Check out our [Getting Started Guide](docs/kastor/getting-started/README.md) or explore the [examples](samples/)!

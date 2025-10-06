@@ -9,13 +9,20 @@ variables:
   project_name: Kastor
   project_description: A comprehensive Kotlin library for working with RDF data and domain object mapping
   version: 0.1.0
-  author: GeoKnoesis
+  author: GeoKnoesis LLC
+  main_developer: Stephane Fellah
+  contact_email: stephanef@geoknoesis.com
+  company_url: https://geoknoesis.com/
   license: Apache License 2.0
   
   # Repository information
   github_url: https://github.com/geoknoesis/kastor
   issues_url: https://github.com/geoknoesis/kastor/issues
   discussions_url: https://github.com/geoknoesis/kastor/discussions
+  
+  # Support links
+  github_sponsors: https://github.com/sponsors/geoknoesis
+  ko_fi: https://ko-fi.com/geoknoesis
   
   # Documentation links
   kastor_docs: ./docs/kastor/README.md

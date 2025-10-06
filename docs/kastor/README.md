@@ -200,10 +200,25 @@ val results = repo.query("""
 
 ## 🌐 Community & Support
 
+### **About Kastor**
+**Kastor** is developed by **[GeoKnoesis LLC](https://geoknoesis.com/)**, a company specializing in semantic web technologies and knowledge engineering.
+
+**Main Developer**: **Stephane Fellah** - [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+
+### **Getting Help**
 - **[GitHub Repository](https://github.com/geoknoesis/kastor)** - Source code and issues
 - **[GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)** - Community support
 - **[Stack Overflow](https://stackoverflow.com/questions/tagged/kastor)** - Technical questions
 - **[FAQ](resources/faq.md)** - Frequently asked questions
+- **Direct Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+
+### **Support the Project**
+If you find Kastor useful, please consider supporting its development:
+
+- 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
+- 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)
+- ☕ **Buy us a coffee** via [Ko-fi](https://ko-fi.com/geoknoesis)
+- 🏢 **Enterprise support** - Contact us for commercial licensing and support options
 
 ## 📄 License
 
