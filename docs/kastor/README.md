@@ -67,27 +67,27 @@ fun main() {
 ### **Getting Started**
 - **[Getting Started Guide](getting-started/README.md)** - Complete setup and introduction
 - **[Quick Start Examples](getting-started/quick-start.md)** - Copy-paste examples for immediate success
-- **[Hello World Tutorial](getting-started/hello-world.md)** - Step-by-step first program
+- **[Hello World Tutorial](tutorials/hello-world.md)** - Step-by-step first program
 
 ### **Core Features**
-- **[DSL Guide](features/compact-dsl-guide.md)** - Natural language syntax
+- **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
 - **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints
-- **[RDF-star Support](features/rdf-star.md)** - Metadata about statements
+- **[RDF-star Support](api/compact-dsl-guide.md#rdf-star-support)** - Metadata about statements
 
 ### **Guides**
-- **[Provider Overview](guides/providers-overview.md)** - Available backends comparison
-- **[Performance Guide](guides/performance.md)** - Optimization strategies
-- **[Serialization Formats](guides/formats.md)** - RDF format support
+- **[Provider Overview](providers/README.md)** - Available backends comparison
+- **[Performance Guide](advanced/performance.md)** - Optimization strategies
+- **[Serialization Formats](advanced/formats.md)** - RDF format support
 - **[Best Practices](guides/best-practices.md)** - Usage guidelines and patterns
 - **[Extending Kastor](guides/extending.md)** - Custom providers and plugins
 
 ### **Resources**
-- **[Vocabularies](resources/vocabularies.md)** - Working with RDF vocabularies
-- **[RDF Fundamentals](resources/rdf-fundamentals.md)** - Understanding RDF basics
-- **[SPARQL Fundamentals](resources/sparql-fundamentals.md)** - Query language introduction
-- **[Troubleshooting](resources/troubleshooting.md)** - Common issues and solutions
-- **[FAQ](resources/faq.md)** - Frequently asked questions
+- **[Vocabularies](concepts/vocabularies.md)** - Working with RDF vocabularies
+- **[RDF Fundamentals](concepts/rdf-fundamentals.md)** - Understanding RDF basics
+- **[SPARQL Fundamentals](concepts/sparql-fundamentals.md)** - Query language introduction
+- **[Troubleshooting](guides/troubleshooting.md)** - Common issues and solutions
+- **[FAQ](guides/faq.md)** - Frequently asked questions
 
 ## 🎯 Use Cases
 
@@ -181,21 +181,21 @@ val results = repo.query("""
 ## 🚀 Getting Started Paths
 
 ### **New to RDF?**
-1. [RDF Fundamentals](resources/rdf-fundamentals.md) - Learn RDF basics
+1. [RDF Fundamentals](concepts/rdf-fundamentals.md) - Learn RDF basics
 2. [Getting Started Guide](getting-started/README.md) - Setup and first steps
-3. [Hello World Tutorial](getting-started/hello-world.md) - Your first program
-4. [DSL Guide](features/compact-dsl-guide.md) - Natural language syntax
+3. [Hello World Tutorial](tutorials/hello-world.md) - Your first program
+4. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
 
 ### **RDF Expert?**
-1. [Provider Overview](guides/providers-overview.md) - Choose your backend
-2. [Performance Guide](guides/performance.md) - Optimization strategies
+1. [Provider Overview](providers/README.md) - Choose your backend
+2. [Performance Guide](advanced/performance.md) - Optimization strategies
 3. [Reasoning](features/reasoning.md) - RDFS, OWL inference capabilities
 4. [SHACL Validation](features/shacl-validation.md) - Data validation
 
 ### **Application Developer?**
 1. [Getting Started Guide](getting-started/README.md) - Quick setup
-2. [DSL Guide](features/compact-dsl-guide.md) - Natural language syntax
-3. [Provider Overview](guides/providers-overview.md) - Backend comparison
+2. [DSL Guide](api/compact-dsl-guide.md) - Natural language syntax
+3. [Provider Overview](providers/README.md) - Backend comparison
 4. [Best Practices](guides/best-practices.md) - Production guidelines
 
 ## 🌐 Community & Support
@@ -209,7 +209,7 @@ val results = repo.query("""
 - **[GitHub Repository](https://github.com/geoknoesis/kastor)** - Source code and issues
 - **[GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)** - Community support
 - **[Stack Overflow](https://stackoverflow.com/questions/tagged/kastor)** - Technical questions
-- **[FAQ](resources/faq.md)** - Frequently asked questions
+- **[FAQ](guides/faq.md)** - Frequently asked questions
 - **Direct Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 
 ### **Support the Project**
@@ -226,4 +226,4 @@ Kastor is open source and available under the [MIT License](../LICENSE).
 
 ---
 
-**Ready to get started?** Check out the [Getting Started Guide](getting-started/README.md) or jump right into [Hello World](getting-started/hello-world.md)!
+**Ready to get started?** Check out the [Getting Started Guide](getting-started/README.md) or jump right into [Hello World](tutorials/hello-world.md)!

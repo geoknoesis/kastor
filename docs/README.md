@@ -5,9 +5,9 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 ## 🚀 Quick Start
 
 ### New to Kastor?
-- **[Getting Started Guide](kastor/getting-started.md)** - 5-minute setup and first steps
+- **[Getting Started Guide](kastor/getting-started/README.md)** - 5-minute setup and first steps
 - **[Hello World Tutorial](kastor/tutorials/hello-world.md)** - Your first RDF program
-- **[Quick Start Examples](kastor/quick-start.md)** - Copy-paste examples
+- **[Quick Start Examples](kastor/getting-started/quick-start.md)** - Copy-paste examples
 
 ### New to RDF?
 - **[RDF Fundamentals](kastor/concepts/rdf-fundamentals.md)** - Understanding RDF basics
@@ -36,14 +36,14 @@ Kastor Framework
 - **[Transactions](kastor/api/transactions.md)** - ACID transaction support
 
 #### **Reasoning** (`rdf/reasoning`)
-- **[Reasoning Guide](kastor/reasoning.md)** - RDFS, OWL reasoning
-- **[Provider Architecture](kastor/reasoning.md#providers)** - Pluggable reasoners
-- **[Performance](kastor/reasoning.md#performance)** - Optimization strategies
+- **[Reasoning Guide](kastor/features/reasoning.md)** - RDFS, OWL reasoning
+- **[Provider Architecture](kastor/features/reasoning.md#providers)** - Pluggable reasoners
+- **[Performance](kastor/features/reasoning.md#performance)** - Optimization strategies
 
 #### **SHACL Validation** (`rdf/shacl-validation`)
-- **[Validation Guide](kastor/shacl-validation.md)** - Data validation
-- **[Quick Start](kastor/shacl-validation.md#quick-start)** - Get started in minutes
-- **[Constraint Types](kastor/shacl-validation.md#constraint-types)** - Available constraints
+- **[Validation Guide](kastor/features/shacl-validation.md)** - Data validation
+- **[Quick Start](kastor/features/shacl-validation.md#quick-start)** - Get started in minutes
+- **[Constraint Types](kastor/features/shacl-validation.md#constraint-types)** - Available constraints
 
 #### **OntoMapper** (`ontomapper`)
 - **[Getting Started](ontomapper/tutorials/getting-started.md)** - Code generation basics
@@ -74,7 +74,7 @@ Kastor Framework
 ## 🎯 Learning Paths
 
 ### **Beginner Path**
-1. [Getting Started](kastor/getting-started.md) - Setup and basics
+1. [Getting Started](kastor/getting-started/README.md) - Setup and basics
 2. [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md) - Core concepts
 3. [Hello World](kastor/tutorials/hello-world.md) - First program
 4. [DSL Guide](kastor/api/compact-dsl-guide.md) - Natural language syntax
@@ -82,7 +82,7 @@ Kastor Framework
 ### **RDF Expert Path**
 1. [Core API](kastor/api/core-api.md) - Complete API reference
 2. [Provider Comparison](kastor/providers/README.md) - Backend selection
-3. [Performance Guide](kastor/performance.md) - Optimization
+3. [Performance Guide](kastor/advanced/performance.md) - Optimization
 4. [Advanced Patterns](kastor/advanced/README.md) - Enterprise usage
 
 ### **Domain Modeling Path**
@@ -94,49 +94,49 @@ Kastor Framework
 ### **Enterprise Path**
 1. [Repository Management](kastor/api/repository-manager.md) - Multi-repository setup
 2. [Transactions](kastor/api/transactions.md) - ACID compliance
-3. [Reasoning](kastor/reasoning.md) - Inference capabilities
-4. [SHACL Validation](kastor/shacl-validation.md) - Data validation
-5. [Best Practices](kastor/best-practices.md) - Production guidelines
+3. [Reasoning](kastor/features/reasoning.md) - Inference capabilities
+4. [SHACL Validation](kastor/features/shacl-validation.md) - Data validation
+5. [Best Practices](kastor/guides/best-practices.md) - Production guidelines
 
 ## 🔧 Use Case Guides
 
 ### **Data Catalogs**
 - [DCAT Examples](kastor/examples.md#dcat) - Data catalog modeling
 - [Ontology Generation](ontomapper/tutorials/ontology-generation.md) - Schema generation
-- [Validation](kastor/shacl-validation.md) - Data quality checks
+- [Validation](kastor/features/shacl-validation.md) - Data quality checks
 
 ### **Knowledge Graphs**
 - [Graph Operations](kastor/api/core-api.md) - Triple management
-- [Reasoning](kastor/reasoning.md) - Inference and classification
+- [Reasoning](kastor/features/reasoning.md) - Inference and classification
 - [SPARQL Queries](kastor/concepts/sparql-fundamentals.md) - Complex queries
 
 ### **Web Applications**
 - [SPARQL Endpoints](kastor/providers/sparql.md) - Web service integration
 - [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Side-channel access
-- [Performance](kastor/performance.md) - Optimization strategies
+- [Performance](kastor/advanced/performance.md) - Optimization strategies
 
 ### **Enterprise Integration**
 - [Repository Manager](kastor/api/repository-manager.md) - Multi-backend setup
 - [Transactions](kastor/api/transactions.md) - ACID transactions
-- [Validation](kastor/shacl-validation.md) - Data governance
+- [Validation](kastor/features/shacl-validation.md) - Data governance
 
 ## 📚 Reference Materials
 
 ### **API References**
 - [Core API](kastor/api/core-api.md) - Complete RDF operations
 - [Repository API](kastor/api/repository-manager.md) - Repository management
-- [Reasoning API](kastor/reasoning.md#api-reference) - Inference operations
-- [Validation API](kastor/shacl-validation.md#api-reference) - SHACL validation
+- [Reasoning API](kastor/features/reasoning.md#api-reference) - Inference operations
+- [Validation API](kastor/features/shacl-validation.md#api-reference) - SHACL validation
 - [OntoMapper API](ontomapper/reference/README.md) - Code generation
 
 ### **Configuration References**
 - [Provider Configuration](kastor/providers/README.md) - Backend setup
-- [Validation Configuration](kastor/shacl-validation.md#configuration) - SHACL options
-- [Reasoning Configuration](kastor/reasoning.md#configuration) - Inference options
+- [Validation Configuration](kastor/features/shacl-validation.md#configuration) - SHACL options
+- [Reasoning Configuration](kastor/features/reasoning.md#configuration) - Inference options
 - [Gradle Configuration](ontomapper/tutorials/gradle-configuration.md) - Build setup
 
 ### **Format References**
-- [Serialization Formats](kastor/formats.md) - RDF serialization
+- [Serialization Formats](kastor/advanced/formats.md) - RDF serialization
 - [Vocabulary References](kastor/concepts/vocabularies.md) - Common vocabularies
 - [SPARQL Reference](kastor/concepts/sparql-fundamentals.md) - Query language
 
@@ -148,14 +148,14 @@ Kastor Framework
 - [Sample Applications](../samples/) - Full application examples
 
 ### **Troubleshooting**
-- [FAQ](kastor/faq.md) - Frequently asked questions
-- [Troubleshooting Guide](kastor/troubleshooting.md) - Common issues
-- [Performance Issues](kastor/performance.md#troubleshooting) - Optimization problems
+- [FAQ](kastor/guides/faq.md) - Frequently asked questions
+- [Troubleshooting Guide](kastor/guides/troubleshooting.md) - Common issues
+- [Performance Issues](kastor/advanced/performance.md#troubleshooting) - Optimization problems
 
 ### **Best Practices**
-- [Kastor Best Practices](kastor/best-practices.md) - Usage guidelines
+- [Kastor Best Practices](kastor/guides/best-practices.md) - Usage guidelines
 - [OntoMapper Best Practices](ontomapper/best-practices.md) - Code generation
-- [Performance Best Practices](kastor/performance.md) - Optimization strategies
+- [Performance Best Practices](kastor/advanced/performance.md) - Optimization strategies
 
 ## 🌐 Community and Support
 

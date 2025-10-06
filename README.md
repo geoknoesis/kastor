@@ -241,8 +241,8 @@ dependencies {
 
 - **[Kastor RDF Documentation](docs/kastor/README.md)** - Core RDF functionality
 - **[OntoMapper Documentation](docs/ontomapper/README.md)** - Domain object mapping
-- **[Getting Started Guide](docs/kastor/getting-started.md)** - Quick start tutorial
-- **[API Reference](docs/kastor/reference/)** - Detailed API documentation
+- **[Getting Started Guide](docs/kastor/getting-started/README.md)** - Quick start tutorial
+- **[API Reference](docs/kastor/api/)** - Detailed API documentation
 
 ## Use Cases
 
