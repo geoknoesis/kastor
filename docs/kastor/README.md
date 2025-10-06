@@ -203,7 +203,7 @@ val results = repo.query("""
 ### **About Kastor**
 **Kastor** is developed by **[GeoKnoesis LLC](https://geoknoesis.com/)**, a company specializing in semantic web technologies and knowledge engineering.
 
-**Main Developer**: **Stephane Fellah** - [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+**Main Developer**: **Stephane Fellah** - [info@geoknoesis.com](mailto:info@geoknoesis.com)
 
 ### **Getting Help**
 - **[GitHub Repository](https://github.com/geoknoesis/kastor)** - Source code and issues
