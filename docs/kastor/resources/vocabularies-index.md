@@ -132,6 +132,7 @@ This page provides a comprehensive index of all available vocabulary terms organ
 - `SHACL.path` - Property path
 - `SHACL.minCount` - Minimum count
 - `SHACL.maxCount` - Maximum count
+- `SHACL.datatype` - Datatype constraint
 - `SHACL.pattern` - Pattern constraint
 - `SHACL.message` - Constraint message
 - `SHACL.severity` - Constraint severity

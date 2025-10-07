@@ -185,6 +185,7 @@ SHACL.property                // sh:property
 SHACL.path                    // sh:path
 SHACL.minCount                // sh:minCount
 SHACL.maxCount                // sh:maxCount
+SHACL.datatype                // sh:datatype
 SHACL.pattern                 // sh:pattern
 SHACL.message                 // sh:message
 SHACL.severity                // sh:severity

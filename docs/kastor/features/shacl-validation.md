@@ -45,6 +45,7 @@ import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.shacl.*
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import com.geoknoesis.kastor.rdf.vocab.SHACL
 
 // Step 1: Create your data graph
 val dataGraph = Rdf.graph {
@@ -60,44 +61,44 @@ val dataGraph = Rdf.graph {
 val shapesGraph = Rdf.graph {
     // Define the Person shape
     val personShape = iri("http://example.org/PersonShape")
-    personShape - RDF.type - "http://www.w3.org/ns/shacl#NodeShape"
-    personShape - "http://www.w3.org/ns/shacl#targetClass" - "http://example.org/Person"
+    personShape - RDF.type - SHACL.NodeShape
+    personShape - SHACL.targetClass - "http://example.org/Person"
     
     // Name property (required, single value)
     val nameProperty = iri("http://example.org/nameProperty")
-    personShape - "http://www.w3.org/ns/shacl#property" - nameProperty
-    nameProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
-    nameProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/name"
-    nameProperty - "http://www.w3.org/ns/shacl#minCount" - 1
-    nameProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
-    nameProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
+    personShape - SHACL.property - nameProperty
+    nameProperty - RDF.type - SHACL.PropertyShape
+    nameProperty - SHACL.path - "http://example.org/name"
+    nameProperty - SHACL.minCount - 1
+    nameProperty - SHACL.maxCount - 1
+    nameProperty - SHACL.datatype - XSD.string
     
     // Email property (required, single value, string)
     val emailProperty = iri("http://example.org/emailProperty")
-    personShape - "http://www.w3.org/ns/shacl#property" - emailProperty
-    emailProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
-    emailProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/email"
-    emailProperty - "http://www.w3.org/ns/shacl#minCount" - 1
-    emailProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
-    emailProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
+    personShape - SHACL.property - emailProperty
+    emailProperty - RDF.type - SHACL.PropertyShape
+    emailProperty - SHACL.path - "http://example.org/email"
+    emailProperty - SHACL.minCount - 1
+    emailProperty - SHACL.maxCount - 1
+    emailProperty - SHACL.datatype - XSD.string
     
     // Age property (required, single value, integer)
     val ageProperty = iri("http://example.org/ageProperty")
-    personShape - "http://www.w3.org/ns/shacl#property" - ageProperty
-    ageProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
-    ageProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/age"
-    ageProperty - "http://www.w3.org/ns/shacl#minCount" - 1
-    ageProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
-    ageProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.integer
+    personShape - SHACL.property - ageProperty
+    ageProperty - RDF.type - SHACL.PropertyShape
+    ageProperty - SHACL.path - "http://example.org/age"
+    ageProperty - SHACL.minCount - 1
+    ageProperty - SHACL.maxCount - 1
+    ageProperty - SHACL.datatype - XSD.integer
     
     // Phone property (optional, single value, string)
     val phoneProperty = iri("http://example.org/phoneProperty")
-    personShape - "http://www.w3.org/ns/shacl#property" - phoneProperty
-    phoneProperty - RDF.type - "http://www.w3.org/ns/shacl#PropertyShape"
-    phoneProperty - "http://www.w3.org/ns/shacl#path" - "http://example.org/phone"
-    phoneProperty - "http://www.w3.org/ns/shacl#minCount" - 0
-    phoneProperty - "http://www.w3.org/ns/shacl#maxCount" - 1
-    phoneProperty - "http://www.w3.org/ns/shacl#datatype" - XSD.string
+    personShape - SHACL.property - phoneProperty
+    phoneProperty - RDF.type - SHACL.PropertyShape
+    phoneProperty - SHACL.path - "http://example.org/phone"
+    phoneProperty - SHACL.minCount - 0
+    phoneProperty - SHACL.maxCount - 1
+    phoneProperty - SHACL.datatype - XSD.string
 }
 
 // Step 3: Validate the data against the shapes

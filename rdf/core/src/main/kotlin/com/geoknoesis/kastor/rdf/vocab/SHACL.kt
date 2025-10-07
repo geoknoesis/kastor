@@ -38,6 +38,7 @@ object SHACL : Vocabulary {
     val closed: Iri by lazy { term("closed") }
     val ignoredProperties: Iri by lazy { term("ignoredProperties") }
     val property: Iri by lazy { term("property") }
+    val path: Iri by lazy { term("path") }
     val node: Iri by lazy { term("node") }
     val not: Iri by lazy { term("not") }
     val and: Iri by lazy { term("and") }
@@ -56,6 +57,7 @@ object SHACL : Vocabulary {
     val hasValue: Iri by lazy { term("hasValue") }
     val `in`: Iri by lazy { term("in") }
     val hasShape: Iri by lazy { term("hasShape") }
+    val datatype: Iri by lazy { term("datatype") }
     val qualifiedValueShape: Iri by lazy { term("qualifiedValueShape") }
     val qualifiedMinCount: Iri by lazy { term("qualifiedMinCount") }
     val qualifiedMaxCount: Iri by lazy { term("qualifiedMaxCount") }
