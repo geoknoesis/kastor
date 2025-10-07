@@ -760,10 +760,10 @@ We welcome contributions! To add your example:
 
 After exploring the examples:
 
-1. **[Quick Start Guide](quick-start.md)** - Build your first application
-2. **[RDF Fundamentals](rdf-fundamentals.md)** - Deepen your understanding
-3. **[Super Sleek API Guide](super-sleek-api-guide.md)** - Master advanced features
-4. **[API Reference](api-reference.md)** - Complete API documentation
+1. **[Quick Start Guide](../getting-started/quick-start.md)** - Build your first application
+2. **[RDF Fundamentals](../concepts/rdf-fundamentals.md)** - Deepen your understanding
+3. **[API Reference](../api/api-reference.md)** - Complete API documentation
+4. **[DSL Guide](../api/compact-dsl-guide.md)** - Master advanced features
 
 ## 📞 Need Help?
 

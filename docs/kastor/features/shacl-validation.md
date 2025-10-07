@@ -788,6 +788,6 @@ Kastor supports a wide range of SHACL constraint types:
 ## See Also
 
 - [SHACL Specification](https://www.w3.org/TR/shacl/)
-- [Kastor RDF Core](./core-api.md)
+- [Kastor RDF Core](../api/core-api.md)
 - [Kastor Reasoning](./reasoning.md)
-- [Examples](../examples/BasicShaclValidationExample.kt)
+- [Examples](../examples/README.md)

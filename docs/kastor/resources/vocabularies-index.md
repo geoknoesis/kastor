@@ -379,5 +379,5 @@ object MyVocab : Vocabulary {
 - [RDF Vocabularies](vocabularies.md) - Comprehensive documentation
 - [Vocabularies Quick Reference](vocabularies-quickref.md) - Quick reference card
 - [RDF Terms](rdfterms.md) - Core RDF term model
-- [Core API](core-api.md) - Main RDF API interfaces
+- [Core API](../api/core-api.md) - Main RDF API interfaces
 

@@ -83,7 +83,7 @@ Kastor Framework
 1. [Core API](kastor/api/core-api.md) - Complete API reference
 2. [Provider Comparison](kastor/providers/README.md) - Backend selection
 3. [Performance Guide](kastor/advanced/performance.md) - Optimization
-4. [Advanced Patterns](kastor/advanced/README.md) - Enterprise usage
+4. [Advanced Patterns](kastor/advanced/performance.md) - Enterprise usage
 
 ### **Domain Modeling Path**
 1. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md) - Code generation
@@ -143,7 +143,7 @@ Kastor Framework
 ## 🛠️ Development Resources
 
 ### **Examples and Samples**
-- [Kastor Examples](kastor/examples.md) - Complete working examples
+- [Kastor Examples](kastor/examples/README.md) - Complete working examples
 - [OntoMapper Examples](ontomapper/examples/README.md) - Code generation samples
 - [Sample Applications](../samples/) - Full application examples
 
@@ -179,9 +179,8 @@ We welcome community support and contributions! If you find Kastor useful:
 - 🏢 **Enterprise support** - Contact us for commercial licensing and support options
 
 ### **Contributing**
-- [Contributing Guide](../CONTRIBUTING.md) - How to contribute
-- [Development Setup](../docs/development/README.md) - Local development
-- [Code of Conduct](../CODE_OF_CONDUCT.md) - Community guidelines
+- [GitHub Repository](https://github.com/geoknoesis/kastor) - Source code and issues
+- [Community Discussions](https://github.com/geoknoesis/kastor/discussions) - Ask questions and share ideas
 
 ### **External Resources**
 - [RDF 1.1 Specification](https://www.w3.org/TR/rdf11-concepts/) - W3C standard
@@ -198,4 +197,4 @@ We welcome community support and contributions! If you find Kastor useful:
 - **🔗 Links**: All internal links use relative paths for offline reading
 - **📖 Print**: Use browser print function for PDF generation
 
-**Need help finding something?** Check the [troubleshooting guide](kastor/troubleshooting.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
+**Need help finding something?** Check the [troubleshooting guide](kastor/guides/troubleshooting.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
