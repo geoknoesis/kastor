@@ -30,6 +30,28 @@ data class PrefixDeclaration(val prefix: String, val namespace: String) {
 }
 
 /**
+ * Represents a SPARQL 1.2 VERSION declaration.
+ *
+ * VERSION declarations specify the SPARQL version to use for the query.
+ * This is a new feature in SPARQL 1.2.
+ *
+ * ## Usage
+ * ```kotlin
+ * val version = VersionDeclaration("1.2")
+ * ```
+ *
+ * @property version The SPARQL version (e.g., "1.2")
+ */
+data class VersionDeclaration(val version: String) {
+    init {
+        require(version.isNotBlank()) { "Version must not be blank" }
+        require(version.matches(Regex("\\d+\\.\\d+"))) { "Version must be in format X.Y" }
+    }
+    
+    override fun toString(): String = "VERSION $version"
+}
+
+/**
  * Common SPARQL prefixes for popular vocabularies.
  *
  * This object provides constants for commonly used prefixes,
@@ -393,6 +415,28 @@ data class QuotedTriplePattern(
     val obj: RdfTerm
 ) : RdfTerm {
     override fun toString(): String = "<< $subject $predicate $obj >>"
+}
+
+/**
+ * Represents an RDF-star triple pattern where the subject or object is a quoted triple.
+ *
+ * This allows using quoted triples in triple patterns for SPARQL 1.2 RDF-star support.
+ *
+ * ## Usage
+ * ```kotlin
+ * val rdfStarPattern = RdfStarTriplePattern(
+ *     quotedTriple = QuotedTriplePattern(var("s"), var("p"), var("o")),
+ *     predicate = var("pred"),
+ *     obj = var("obj")
+ * )
+ * ```
+ */
+data class RdfStarTriplePattern(
+    val quotedTriple: QuotedTriplePattern,
+    val predicate: RdfTerm,
+    val obj: RdfTerm
+) : SparqlGraphPattern {
+    override fun toString(): String = "$quotedTriple $predicate $obj ."
 }
 
 // ---- Property Paths (SPARQL 1.2) ----
@@ -770,6 +814,30 @@ fun dateTime(variable: Var): BuiltInFunction = BuiltInFunction("DATETIME", listO
 fun date(variable: Var): BuiltInFunction = BuiltInFunction("DATE", listOf(variable))
 fun time(variable: Var): BuiltInFunction = BuiltInFunction("TIME", listOf(variable))
 
+// SPARQL 1.2 RDF-star Functions
+fun triple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm): BuiltInFunction = 
+    BuiltInFunction("TRIPLE", listOf(subject, predicate, obj))
+
+fun isTriple(variable: Var): BuiltInFunction = BuiltInFunction("isTRIPLE", listOf(variable))
+
+fun subject(variable: Var): BuiltInFunction = BuiltInFunction("SUBJECT", listOf(variable))
+
+fun predicate(variable: Var): BuiltInFunction = BuiltInFunction("PREDICATE", listOf(variable))
+
+fun `object`(variable: Var): BuiltInFunction = BuiltInFunction("OBJECT", listOf(variable))
+
+// SPARQL 1.2 Literal Base Direction Functions
+fun langdir(variable: Var): BuiltInFunction = BuiltInFunction("LANGDIR", listOf(variable))
+
+fun hasLang(variable: Var, languageTag: String): BuiltInFunction = 
+    BuiltInFunction("hasLANG", listOf(variable, string(languageTag)))
+
+fun hasLangdir(variable: Var, direction: String): BuiltInFunction = 
+    BuiltInFunction("hasLANGDIR", listOf(variable, string(direction)))
+
+fun strlangdir(variable: Var, languageTag: String, direction: String): BuiltInFunction = 
+    BuiltInFunction("STRLANGDIR", listOf(variable, string(languageTag), string(direction)))
+
 // Extension functions for built-in functions
 fun Var.like(pattern: String): BuiltInFunction = regex(this, pattern.replace("*", ".*"))
 fun Var.isNotNull(): BuiltInFunction = bound(this)
@@ -839,6 +907,7 @@ data class AliasedSelectItem(
  */
 data class SelectQuery(
     val selectItems: List<SelectItem>,
+    val version: VersionDeclaration? = null,
     val prefixes: List<PrefixDeclaration> = emptyList(),
     val wherePattern: SparqlGraphPattern? = null,
     val groupBy: List<Var> = emptyList(),
@@ -848,6 +917,12 @@ data class SelectQuery(
     val offset: Int? = null
 ) {
     override fun toString(): String = buildString {
+        // Add version declaration
+        version?.let { ver ->
+            append(ver)
+            append("\n\n")
+        }
+        
         // Add prefix declarations
         if (prefixes.isNotEmpty()) {
             prefixes.forEach { prefix ->
@@ -931,6 +1006,7 @@ fun select(block: SelectQueryBuilder.() -> Unit): SelectQuery {
  */
 class SelectQueryBuilder(private val selectItems: List<SelectItem>) {
     private val items = selectItems.toMutableList()
+    private var version: VersionDeclaration? = null
     private val prefixes = mutableListOf<PrefixDeclaration>()
     private var wherePattern: SparqlGraphPattern? = null
     private val groupBy = mutableListOf<Var>()
@@ -1001,6 +1077,26 @@ class SelectQueryBuilder(private val selectItems: List<SelectItem>) {
     }
 
     /**
+     * Sets the SPARQL version for the query.
+     *
+     * ## Usage
+     * ```kotlin
+     * val query = select("name") {
+     *     version("1.2")
+     *     prefix("foaf", "http://xmlns.com/foaf/0.1/")
+     *     where {
+     *         // Use SPARQL 1.2 features
+     *     }
+     * }
+     * ```
+     *
+     * @param version The SPARQL version (e.g., "1.2")
+     */
+    fun version(version: String) {
+        this.version = VersionDeclaration(version)
+    }
+
+    /**
      * Adds a prefix declaration to the query.
      *
      * ## Usage
@@ -1051,6 +1147,7 @@ class SelectQueryBuilder(private val selectItems: List<SelectItem>) {
 
     fun build(): SelectQuery = SelectQuery(
         selectItems = items,
+        version = version,
         prefixes = prefixes,
         wherePattern = wherePattern,
         groupBy = groupBy,
@@ -1115,6 +1212,10 @@ class WhereBuilder {
         val graphBuilder = WhereBuilder()
         graphBuilder.apply(block)
         patterns.add(NamedGraphPattern(graphName, graphBuilder.build()))
+    }
+
+    fun quotedTriple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
+        patterns.add(RdfStarTriplePattern(QuotedTriplePattern(subject, predicate, obj), var_("dummy"), var_("dummy")))
     }
 
     fun build(): SparqlGraphPattern = when {

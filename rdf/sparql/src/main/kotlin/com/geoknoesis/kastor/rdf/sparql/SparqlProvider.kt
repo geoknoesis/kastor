@@ -27,9 +27,9 @@ class SparqlProvider : RdfApiProvider {
         return ProviderCapabilities(
             supportsInference = false,
             supportsTransactions = false,
-            supportsNamedGraphs = false,
-            supportsUpdates = false,
-            supportsRdfStar = false, // Depends on endpoint support
+            supportsNamedGraphs = true,
+            supportsUpdates = true,
+            supportsRdfStar = true, // SPARQL 1.2 supports RDF-star
             maxMemoryUsage = Long.MAX_VALUE
         )
     }

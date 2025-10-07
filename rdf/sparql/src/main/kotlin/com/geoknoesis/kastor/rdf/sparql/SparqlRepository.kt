@@ -109,9 +109,9 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         return ProviderCapabilities(
             supportsInference = false,
             supportsTransactions = false,
-            supportsNamedGraphs = false,
-            supportsUpdates = false,
-            supportsRdfStar = false,
+            supportsNamedGraphs = true,
+            supportsUpdates = true,
+            supportsRdfStar = true, // SPARQL 1.2 supports RDF-star
             maxMemoryUsage = Long.MAX_VALUE
         )
     }

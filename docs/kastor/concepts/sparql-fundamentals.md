@@ -1,27 +1,30 @@
 # SPARQL Fundamentals
 
-This document provides a comprehensive overview of SPARQL (SPARQL Protocol and RDF Query Language) and how to use it effectively with the Kastor QueryTerms API.
+This document provides a comprehensive overview of SPARQL (SPARQL Protocol and RDF Query Language) and how to use it effectively with the Kastor QueryTerms API. Kastor supports **SPARQL 1.2**, including all the latest features such as RDF-star, enhanced functions, and improved syntax.
 
 ## Table of Contents
 
 1. [Introduction](#introduction)
 2. [Basic Concepts](#basic-concepts)
+   - [SPARQL 1.2 Version Declaration](#sparql-12-version-declaration)
+   - [Prefix Declarations](#prefix-declarations)
 3. [Query Structure](#query-structure)
 4. [Variables](#variables)
 5. [Triple Patterns](#triple-patterns)
 6. [Graph Patterns](#graph-patterns)
 7. [Filters](#filters)
 8. [Built-in Functions](#built-in-functions)
+   - [SPARQL 1.2 Enhanced Functions](#sparql-12-enhanced-functions)
 9. [Aggregation](#aggregation)
 10. [SubSelect](#subselect)
-11. [RDF-star](#rdf-star)
+11. [RDF-star (SPARQL 1.2)](#rdf-star-sparql-12)
 12. [Best Practices](#best-practices)
 
 ## Introduction
 
 SPARQL is the standard query language for RDF (Resource Description Framework) data. It allows you to retrieve and manipulate data stored in RDF format using a SQL-like syntax.
 
-### Key Features of SPARQL
+### Key Features of SPARQL 1.2
 
 - **Pattern Matching**: Find data that matches specific triple patterns
 - **Filtering**: Restrict results based on conditions
@@ -30,9 +33,40 @@ SPARQL is the standard query language for RDF (Resource Description Framework) d
 - **Optional Matching**: Include data that may not exist
 - **Union**: Match multiple alternative patterns
 - **Subqueries**: Nest queries within queries
-- **RDF-star**: Work with quoted triples
+- **RDF-star**: Work with quoted triples and triple terms
+- **Enhanced Functions**: New built-in functions for string manipulation, date/time handling, and RDF-star operations
+- **Literal Base Direction**: Support for text direction in literals
+- **Version Declaration**: Explicit SPARQL version specification
 
 ## Basic Concepts
+
+### SPARQL 1.2 Version Declaration
+
+SPARQL 1.2 introduces explicit version declarations to specify which version of SPARQL to use:
+
+```kotlin
+val query = select("name", "age") {
+    version("1.2")  // Explicit SPARQL 1.2 declaration
+    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    where {
+        pattern(var_("person"), iri("foaf:name"), var_("name"))
+        pattern(var_("person"), iri("foaf:age"), var_("age"))
+    }
+}
+```
+
+This generates:
+```sparql
+VERSION 1.2
+
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+
+SELECT ?name ?age
+WHERE {
+  ?person foaf:name ?name .
+  ?person foaf:age ?age .
+}
+```
 
 ### Prefix Declarations
 
@@ -283,6 +317,67 @@ bind(`var`("birthMonth"), month(birthDateVar))
 bind(`var`("birthDay"), day(birthDateVar))
 ```
 
+### SPARQL 1.2 Enhanced Functions
+
+SPARQL 1.2 introduces many new built-in functions:
+
+#### Enhanced String Functions
+```kotlin
+val query = select {
+    version("1.2")
+    expression(replaceAll(var_("text"), "old", "new"), "replaced")
+    expression(encodeForUri(var_("text")), "encoded")
+    expression(decodeForUri(var_("text")), "decoded")
+    expression(contains(var_("text"), "substring"), "hasSubstring")
+    expression(startsWith(var_("text"), "prefix"), "hasPrefix")
+    expression(endsWith(var_("text"), "suffix"), "hasSuffix")
+    where {
+        pattern(var_("s"), iri("ex:text"), var_("text"))
+    }
+}
+```
+
+#### Enhanced Numeric Functions
+```kotlin
+val query = select {
+    version("1.2")
+    expression(rand(), "randomValue")
+    expression(random(), "randomValue2")
+    expression(now(), "currentTime")
+    expression(timezone(), "timezone")
+    where {
+        pattern(var_("s"), iri("ex:value"), var_("value"))
+    }
+}
+```
+
+#### Literal Base Direction Functions
+```kotlin
+val query = select("text") {
+    version("1.2")
+    where {
+        pattern(var_("s"), iri("ex:text"), var_("text"))
+        filter(hasLang(var_("text"), "en"))
+        filter(hasLangdir(var_("text"), "rtl"))
+    }
+}
+```
+
+#### RDF-star Functions
+```kotlin
+val query = select {
+    version("1.2")
+    expression(triple(var_("s"), var_("p"), var_("o")), "tripleTerm")
+    expression(subject(var_("triple")), "subj")
+    expression(predicate(var_("triple")), "pred")
+    expression(`object`(var_("triple")), "obj")
+    where {
+        pattern(var_("s"), var_("p"), var_("o"))
+        filter(isTriple(var_("triple")))
+    }
+}
+```
+
 ## Aggregation
 
 ### Aggregate Functions
@@ -336,26 +431,62 @@ subSelect {
 3. **Performance Optimization**: Pre-filter large datasets
 4. **Complex Joins**: Combine data from different sources
 
-## RDF-star
+## RDF-star (SPARQL 1.2)
+
+SPARQL 1.2 introduces comprehensive support for RDF-star, allowing you to work with quoted triples and triple terms.
 
 ### Quoted Triples
 
-RDF-star allows using triples as subjects or objects.
+RDF-star allows using triples as subjects or objects:
 
 ```kotlin
-// Create quoted triple
-val quotedTriple = quotedTriple(personVar, namePred, nameVar)
+val query = select("confidence") {
+    version("1.2")
+    where {
+        // Quoted triple pattern
+        quotedTriple(var_("person"), iri("foaf:name"), var_("name"))
+        
+        // Use quoted triple in patterns
+        pattern(quotedTriple(var_("person"), iri("foaf:name"), var_("name")), 
+                iri("ex:confidence"), var_("confidence"))
+    }
+}
+```
 
-// Use in patterns
-`var`("statement") quoted iri("http://example.org/confidence") with `var`("confidence")
-`var`("statement") quoted iri("http://example.org/subject") with personVar
+This generates:
+```sparql
+VERSION 1.2
+
+SELECT ?confidence
+WHERE {
+  << ?person foaf:name ?name >> ex:confidence ?confidence .
+}
+```
+
+### SPARQL 1.2 RDF-star Functions
+
+SPARQL 1.2 introduces new functions for working with triple terms:
+
+```kotlin
+val query = select {
+    version("1.2")
+    expression(triple(var_("s"), var_("p"), var_("o")), "tripleTerm")
+    expression(subject(var_("triple")), "subj")
+    expression(predicate(var_("triple")), "pred")
+    expression(`object`(var_("triple")), "obj")
+    where {
+        pattern(var_("s"), var_("p"), var_("o"))
+        pattern(var_("triple"), iri("rdf:type"), iri("rdf:Statement"))
+        filter(isTriple(var_("triple")))
+    }
+}
 ```
 
 ### DSL Syntax
 
 ```kotlin
-// Using DSL
-`var`("statement") quoted iri("http://example.org/confidence") with `var`("confidence")
+// Using DSL for quoted triples
+var_("statement") quoted iri("http://example.org/confidence") with var_("confidence")
 ```
 
 ### Use Cases
