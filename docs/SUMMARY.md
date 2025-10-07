@@ -34,6 +34,13 @@
 
 ### **Advanced Features**
 - [Features Overview](kastor/features/README.md)
+- [SPARQL 1.2 Support](kastor/features/sparql-1.2.md)
+- [SPARQL Service Description](kastor/features/service-description.md)
+- [Enhanced Providers](kastor/features/enhanced-providers.md)
+- [Extension Functions](kastor/features/extension-functions.md)
+- [Provider Capabilities](kastor/features/provider-capabilities.md)
+- [RDF-star Support](kastor/features/rdf-star.md)
+- [Registry Management](kastor/features/registry-management.md)
 - [Reasoning](kastor/features/reasoning.md)
 - [SHACL Validation](kastor/features/shacl-validation.md)
 
@@ -117,9 +124,11 @@
 
 ### **For RDF Experts**
 1. [Core API](kastor/api/core-api.md)
-2. [Provider Comparison](kastor/providers/provider-comparison.md)
-3. [OntoMapper Core Concepts](ontomapper/tutorials/core-concepts.md)
-4. [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
+2. [SPARQL 1.2 Support](kastor/features/sparql-1.2.md)
+3. [RDF-star Support](kastor/features/rdf-star.md)
+4. [Provider Comparison](kastor/providers/provider-comparison.md)
+5. [OntoMapper Core Concepts](ontomapper/tutorials/core-concepts.md)
+6. [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
 
 ### **For Application Developers**
 1. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md)
@@ -163,8 +172,9 @@ Guidelines and recommendations:
 
 ### **By Topic**
 - **RDF Basics**: [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md), [Vocabularies](kastor/concepts/vocabularies.md)
-- **Querying**: [SPARQL](kastor/concepts/sparql-fundamentals.md), [Query DSL](kastor/guides/kastor-query-dsl-tutorial.md)
-- **Backends**: [Providers](kastor/providers/README.md), [Jena](kastor/providers/jena.md), [RDF4J](kastor/providers/rdf4j.md)
+- **Querying**: [SPARQL](kastor/concepts/sparql-fundamentals.md), [SPARQL 1.2](kastor/features/sparql-1.2.md), [Query DSL](kastor/guides/kastor-query-dsl-tutorial.md)
+- **Advanced Features**: [RDF-star](kastor/features/rdf-star.md), [Service Description](kastor/features/service-description.md), [Extension Functions](kastor/features/extension-functions.md)
+- **Backends**: [Providers](kastor/providers/README.md), [Enhanced Providers](kastor/features/enhanced-providers.md), [Provider Capabilities](kastor/features/provider-capabilities.md), [Registry Management](kastor/features/registry-management.md)
 - **Domain Objects**: [Domain Modeling](ontomapper/tutorials/domain-modeling.md), [Core Concepts](ontomapper/tutorials/core-concepts.md)
 - **Code Generation**: [Ontology Generation](ontomapper/tutorials/ontology-generation.md), [Annotations](ontomapper/reference/annotations.md)
 
@@ -184,6 +194,9 @@ Guidelines and recommendations:
 ### **External Links**
 - [RDF 1.1 Specification](https://www.w3.org/TR/rdf11-concepts/)
 - [SPARQL 1.1 Specification](https://www.w3.org/TR/sparql11-query/)
+- [SPARQL 1.2 Specification](https://www.w3.org/TR/sparql12-query/)
+- [RDF-star Specification](https://www.w3.org/TR/rdf-star/)
+- [SPARQL Service Description](https://www.w3.org/TR/sparql11-service-description/)
 - [SHACL Specification](https://www.w3.org/TR/shacl/)
 - [JSON-LD Specification](https://www.w3.org/TR/json-ld11/)
 
