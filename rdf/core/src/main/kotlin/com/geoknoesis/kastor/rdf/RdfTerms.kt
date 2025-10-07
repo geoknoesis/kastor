@@ -579,6 +579,22 @@ fun bnode(id: String) = BlankNode(id)
 fun string(value: String): Literal = Literal(value, XSD.string)
 
 /**
+ * Creates an integer literal.
+ *
+ * ## Usage
+ * ```kotlin
+ * val age = int(25)
+ * val count = int(100)
+ * ```
+ *
+ * @param value The integer value
+ * @return A new [Literal] with `xsd:integer` datatype
+ */
+fun int(value: Int): Literal = Literal(value.toString(), XSD.integer)
+
+fun boolean(value: Boolean): Literal = Literal(value.toString(), XSD.boolean)
+
+/**
  * Creates a language-tagged string literal.
  *
  * Language-tagged strings are useful for multilingual content where you need

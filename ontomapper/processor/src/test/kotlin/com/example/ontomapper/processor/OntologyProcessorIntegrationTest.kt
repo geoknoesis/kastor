@@ -22,10 +22,10 @@ class OntologyProcessorIntegrationTest {
     @BeforeEach
     fun setup() {
         logger = object : KSPLogger {
-            override fun logging(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
-            override fun info(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
-            override fun warn(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
-            override fun error(msg: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
+            override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
+            override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
+            override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
+            override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
             override fun exception(e: Throwable) {}
         }
         shaclParser = ShaclParser(logger)

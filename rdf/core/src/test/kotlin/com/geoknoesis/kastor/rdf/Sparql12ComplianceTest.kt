@@ -334,4 +334,287 @@ class Sparql12ComplianceTest {
         
         assertEquals("<< ?s ?p ?o >> ?pred ?obj .", rdfStarPattern.toString())
     }
+
+    @Test
+    fun `test property paths - one or more`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), OneOrMore(BasicPath(iri("foaf:knows"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("SELECT"))
+        assertTrue(queryString.contains("?person"))
+        assertTrue(queryString.contains("?friend"))
+        assertTrue(queryString.contains("<foaf:knows>+"))
+    }
+
+    @Test
+    fun `test property paths - zero or more`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), ZeroOrMore(BasicPath(iri("foaf:knows"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>*"))
+    }
+
+    @Test
+    fun `test property paths - zero or one`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), ZeroOrOne(BasicPath(iri("foaf:knows"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>?"))
+    }
+
+    @Test
+    fun `test property paths - alternative`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), Alternative(BasicPath(iri("foaf:knows")), BasicPath(iri("foaf:friendOf"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>|<foaf:friendOf>"))
+    }
+
+    @Test
+    fun `test property paths - sequence`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), PathSequence(BasicPath(iri("foaf:knows")), BasicPath(iri("foaf:friendOf"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>/<foaf:friendOf>"))
+    }
+
+    @Test
+    fun `test property paths - range`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), Range(BasicPath(iri("foaf:knows")), 2, 4), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>{2,4}"))
+    }
+
+    @Test
+    fun `test property paths - negation`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), Negation(BasicPath(iri("foaf:knows"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("!<foaf:knows>"))
+    }
+
+    @Test
+    fun `test property paths - inverse`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), Inverse(BasicPath(iri("foaf:knows"))), var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("^<foaf:knows>"))
+    }
+
+    @Test
+    fun `test property paths - complex combination`() {
+        val query = select {
+            where {
+                propertyPath(var_("person"), 
+                    OneOrMore(Alternative(BasicPath(iri("foaf:knows")), Inverse(BasicPath(iri("foaf:friendOf"))))), 
+                    var_("friend"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("<foaf:knows>|^<foaf:friendOf>+"))
+    }
+
+    @Test
+    fun `test aggregation and GROUP BY support`() {
+        val query = select {
+            variable(var_("department"))
+            aggregate(count(var_("employee")), "employeeCount")
+            aggregate(avg(var_("salary")), "avgSalary")
+            where {
+                pattern(var_("employee"), iri("worksFor"), var_("department"))
+                pattern(var_("employee"), iri("hasSalary"), var_("salary"))
+            }
+            groupBy(var_("department"))
+            having {
+                // Test aggregate comparison
+                filter(count(var_("employee")) gt int(5))
+            }
+            orderBy(var_("employeeCount"), OrderDirection.DESC)
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("COUNT(?employee)"))
+        assertTrue(queryString.contains("AVG(?salary)"))
+        assertTrue(queryString.contains("GROUP BY ?department"))
+        assertTrue(queryString.contains("HAVING"))
+        assertTrue(queryString.contains("COUNT(?employee) > \"5\"^^<http://www.w3.org/2001/XMLSchema#integer>"))
+        assertTrue(queryString.contains("ORDER BY ?employeeCount DESC"))
+    }
+
+    @Test
+    fun `test all aggregate functions`() {
+        val query = select {
+            aggregate(count(var_("item")), "count")
+            aggregate(countDistinct(var_("item")), "distinctCount")
+            aggregate(sum(var_("value")), "total")
+            aggregate(avg(var_("value")), "average")
+            aggregate(min(var_("value")), "minimum")
+            aggregate(max(var_("value")), "maximum")
+            aggregate(groupConcat(var_("name")), "names")
+            where {
+                pattern(var_("item"), iri("hasValue"), var_("value"))
+                pattern(var_("item"), iri("hasName"), var_("name"))
+            }
+        }
+        val queryString = query.toString()
+        assertTrue(queryString.contains("COUNT(?item)"))
+        assertTrue(queryString.contains("COUNT(DISTINCT ?item)"))
+        assertTrue(queryString.contains("SUM(?value)"))
+        assertTrue(queryString.contains("AVG(?value)"))
+        assertTrue(queryString.contains("MIN(?value)"))
+        assertTrue(queryString.contains("MAX(?value)"))
+        assertTrue(queryString.contains("GROUP_CONCAT(?name)"))
+    }
+
+    @Test
+    fun `test datatype handling xsd string vs plain literals`() {
+        // Test that string literals are properly typed as xsd:string
+        val query = select {
+            variable(var_("name"))
+            where {
+                pattern(var_("person"), iri("foaf:name"), var_("name"))
+                filter(var_("name") eq string("John"))
+            }
+        }
+        val queryString = query.toString()
+        
+        // Verify that string literals are typed as xsd:string
+        assertTrue(queryString.contains("\"John\"^^<http://www.w3.org/2001/XMLSchema#string>"))
+        
+        // Test with different literal types
+        val query2 = select {
+            variable(var_("age"))
+            where {
+                pattern(var_("person"), iri("foaf:age"), var_("age"))
+                filter(var_("age") eq int(25))
+            }
+        }
+        val queryString2 = query2.toString()
+        
+        // Verify that integer literals are typed as xsd:integer
+        assertTrue(queryString2.contains("\"25\"^^<http://www.w3.org/2001/XMLSchema#integer>"))
+        
+        // Test with language-tagged literals
+        val query3 = select {
+            variable(var_("label"))
+            where {
+                pattern(var_("resource"), iri("rdfs:label"), var_("label"))
+                filter(var_("label") eq lang("Hello", "en"))
+            }
+        }
+        val queryString3 = query3.toString()
+        
+        // Verify that language-tagged literals use @ syntax
+        assertTrue(queryString3.contains("\"Hello\"@en"))
+    }
+
+    @Test
+    fun `test Unicode escape sequence handling`() {
+        // Test Unicode escape sequences in string literals
+        val query = select {
+            variable(var_("text"))
+            where {
+                pattern(var_("resource"), iri("dc:description"), var_("text"))
+                filter(var_("text") eq string("Hello \u0041\u0042\u0043")) // ABC in Unicode escapes
+            }
+        }
+        val queryString = query.toString()
+        
+        // Verify that Unicode escape sequences are properly handled
+        assertTrue(queryString.contains("Hello ABC"))
+        
+        // Test with more complex Unicode sequences
+        val query2 = select {
+            variable(var_("unicode"))
+            where {
+                pattern(var_("resource"), iri("rdfs:label"), var_("unicode"))
+                filter(var_("unicode") eq string("Unicode: \u03B1\u03B2\u03B3")) // Greek letters
+            }
+        }
+        val queryString2 = query2.toString()
+        
+        // Verify that Unicode characters are preserved
+        assertTrue(queryString2.contains("Unicode: αβγ"))
+        
+        // Test with special characters that need escaping
+        val query3 = select {
+            variable(var_("special"))
+            where {
+                pattern(var_("resource"), iri("dc:title"), var_("special"))
+                filter(var_("special") eq string("Special: \"quotes\" 'apostrophes' \\backslashes\\"))
+            }
+        }
+        val queryString3 = query3.toString()
+        
+        // Verify that special characters are properly escaped in SPARQL
+        assertTrue(queryString3.contains("\"quotes\""))
+        assertTrue(queryString3.contains("\\backslashes\\"))
+    }
+
+    @Test
+    fun `test effective boolean value EBV handling`() {
+        // Test EBV conversion for different literal types
+        val query = select {
+            variable(var_("resource"))
+            where {
+                pattern(var_("resource"), iri("rdf:type"), var_("type"))
+                // Test boolean literals (true/false)
+                filter(var_("active") eq boolean(true))
+                // Test numeric literals (0 = false, non-zero = true)
+                filter(var_("count") gt int(0))
+                // Test string literals (empty = false, non-empty = true)
+                filter(var_("name") ne string(""))
+                // Test using boolean functions
+                filter(bound(var_("optional")))
+                filter(isIRI(var_("uri")))
+                filter(isLiteral(var_("literal")))
+                filter(isNumeric(var_("number")))
+            }
+        }
+        val queryString = query.toString()
+        
+        // Verify boolean literal handling
+        assertTrue(queryString.contains("\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"))
+        assertTrue(queryString.contains("\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>"))
+        assertTrue(queryString.contains("\"\"^^<http://www.w3.org/2001/XMLSchema#string>"))
+        assertTrue(queryString.contains("BOUND(?optional)"))
+        assertTrue(queryString.contains("isIRI(?uri)"))
+        assertTrue(queryString.contains("isLITERAL(?literal)"))
+        assertTrue(queryString.contains("isNUMERIC(?number)"))
+        
+        // Test conditional expressions that rely on EBV
+        val query2 = select {
+            variable(var_("result"))
+            where {
+                pattern(var_("resource"), iri("hasValue"), var_("value"))
+                bind(var_("result"), if_(var_("value") gt int(10), string("high"), string("low")))
+            }
+        }
+        val queryString2 = query2.toString()
+        assertTrue(queryString2.contains("IF(?value > \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>, \"high\"^^<http://www.w3.org/2001/XMLSchema#string>, \"low\"^^<http://www.w3.org/2001/XMLSchema#string>) AS ?result"))
+    }
 }

@@ -376,6 +376,27 @@ data class NamedGraphPattern(
 }
 
 /**
+ * Represents a SERVICE pattern in SPARQL for federated queries.
+ *
+ * SERVICE allows querying remote SPARQL endpoints within a query.
+ * It's equivalent to `SERVICE <endpoint> { ... }` in SPARQL.
+ *
+ * ## Usage
+ * ```kotlin
+ * val service = ServicePattern(
+ *     iri("http://dbpedia.org/sparql"),
+ *     TriplePattern(personVar, namePred, nameVar)
+ * )
+ * ```
+ */
+data class ServicePattern(
+    val serviceEndpoint: RdfTerm,
+    val pattern: SparqlGraphPattern
+) : SparqlGraphPattern {
+    override fun toString(): String = "SERVICE $serviceEndpoint $pattern"
+}
+
+/**
  * Represents a SubSelect (nested query) in SPARQL.
  *
  * SubSelect allows using a SELECT query as part of a larger query.
@@ -852,16 +873,18 @@ data class AggregateFunction(
     val name: String,
     val variable: Var,
     val alias: String? = null
-) {
-    override fun toString(): String = when (alias) {
-        null -> "$name($variable)"
-        else -> "$name($variable) AS ?$alias"
+) : RdfTerm {
+    override fun toString(): String = when {
+        alias != null && name.startsWith("COUNT(DISTINCT") -> "$name $variable) AS ?$alias"
+        alias == null && name.startsWith("COUNT(DISTINCT") -> "$name $variable)"
+        alias != null -> "$name($variable) AS ?$alias"
+        else -> "$name($variable)"
     }
 }
 
 // Aggregate function constructors
 fun count(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("COUNT", variable, alias)
-fun countDistinct(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("COUNT(DISTINCT)", variable, alias)
+fun countDistinct(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("COUNT(DISTINCT", variable, alias)
 fun sum(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("SUM", variable, alias)
 fun avg(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("AVG", variable, alias)
 fun min(variable: Var, alias: String? = null): AggregateFunction = AggregateFunction("MIN", variable, alias)
@@ -876,6 +899,14 @@ fun groupConcat(variable: Var, alias: String? = null): AggregateFunction = Aggre
  */
 sealed interface SelectItem {
     fun as_(alias: String): AliasedSelectItem
+}
+
+/**
+ * Represents an aggregate function in SELECT.
+ */
+data class AggregateSelectItem(val aggregateFunction: AggregateFunction) : SelectItem {
+    override fun toString(): String = aggregateFunction.toString()
+    override fun as_(alias: String): AliasedSelectItem = AliasedSelectItem(aggregateFunction, alias)
 }
 
 /**
@@ -1001,6 +1032,114 @@ fun select(block: SelectQueryBuilder.() -> Unit): SelectQuery {
     return SelectQueryBuilder(emptyList()).apply(block).build()
 }
 
+// ---- SPARQL 1.2 Query Forms ----
+
+/**
+ * Represents a SPARQL ASK query.
+ */
+data class AskQuery(
+    val version: VersionDeclaration? = null,
+    val prefixes: List<PrefixDeclaration> = emptyList(),
+    val wherePattern: SparqlGraphPattern? = null
+) {
+    override fun toString(): String = buildString {
+        // Add version declaration
+        version?.let { ver ->
+            append(ver)
+            append("\n\n")
+        }
+        
+        // Add prefix declarations
+        if (prefixes.isNotEmpty()) {
+            prefixes.forEach { prefix ->
+                append(prefix)
+                append("\n")
+            }
+            append("\n")
+        }
+        
+        append("ASK")
+        wherePattern?.let { pattern ->
+            append(" $pattern")
+        }
+    }
+}
+
+/**
+ * Represents a SPARQL CONSTRUCT query.
+ */
+data class ConstructQuery(
+    val version: VersionDeclaration? = null,
+    val prefixes: List<PrefixDeclaration> = emptyList(),
+    val constructTemplate: List<TriplePattern> = emptyList(),
+    val wherePattern: SparqlGraphPattern? = null
+) {
+    override fun toString(): String = buildString {
+        // Add version declaration
+        version?.let { ver ->
+            append(ver)
+            append("\n\n")
+        }
+        
+        // Add prefix declarations
+        if (prefixes.isNotEmpty()) {
+            prefixes.forEach { prefix ->
+                append(prefix)
+                append("\n")
+            }
+            append("\n")
+        }
+        
+        append("CONSTRUCT {\n")
+        constructTemplate.forEach { triple ->
+            append("  $triple\n")
+        }
+        append("}")
+        
+        wherePattern?.let { pattern ->
+            append(" WHERE $pattern")
+        }
+    }
+}
+
+/**
+ * Represents a SPARQL DESCRIBE query.
+ */
+data class DescribeQuery(
+    val version: VersionDeclaration? = null,
+    val prefixes: List<PrefixDeclaration> = emptyList(),
+    val describeTerms: List<RdfTerm> = emptyList(),
+    val wherePattern: SparqlGraphPattern? = null
+) {
+    override fun toString(): String = buildString {
+        // Add version declaration
+        version?.let { ver ->
+            append(ver)
+            append("\n\n")
+        }
+        
+        // Add prefix declarations
+        if (prefixes.isNotEmpty()) {
+            prefixes.forEach { prefix ->
+                append(prefix)
+                append("\n")
+            }
+            append("\n")
+        }
+        
+        append("DESCRIBE ")
+        if (describeTerms.isEmpty()) {
+            append("*")
+        } else {
+            append(describeTerms.joinToString(" "))
+        }
+        
+        wherePattern?.let { pattern ->
+            append(" WHERE $pattern")
+        }
+    }
+}
+
 /**
  * Builder class for constructing SELECT queries.
  */
@@ -1074,6 +1213,29 @@ class SelectQueryBuilder(private val selectItems: List<SelectItem>) {
      */
     fun expression(expression: RdfTerm, alias: String) {
         items.add(AliasedSelectItem(expression, alias))
+    }
+
+    /**
+     * Adds an aggregate function to the SELECT clause.
+     *
+     * ## Usage
+     * ```kotlin
+     * val query = select {
+     *     variable("department")
+     *     aggregate(count(var_("employee")), "employeeCount")
+     *     aggregate(avg(var_("salary")), "avgSalary")
+     *     where {
+     *         // patterns
+     *     }
+     *     groupBy(var_("department"))
+     * }
+     * ```
+     *
+     * @param aggregateFunction The aggregate function to add
+     * @param alias The alias for the aggregate function
+     */
+    fun aggregate(aggregateFunction: AggregateFunction, alias: String) {
+        items.add(AggregateSelectItem(aggregateFunction.copy(alias = alias)))
     }
 
     /**
@@ -1214,6 +1376,16 @@ class WhereBuilder {
         patterns.add(NamedGraphPattern(graphName, graphBuilder.build()))
     }
 
+    fun service(endpoint: RdfTerm, block: WhereBuilder.() -> Unit) {
+        val serviceBuilder = WhereBuilder()
+        serviceBuilder.apply(block)
+        patterns.add(ServicePattern(endpoint, serviceBuilder.build()))
+    }
+
+    fun propertyPath(subject: RdfTerm, path: PropertyPath, obj: RdfTerm) {
+        patterns.add(PropertyPathPattern(subject, path, obj))
+    }
+
     fun quotedTriple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
         patterns.add(RdfStarTriplePattern(QuotedTriplePattern(subject, predicate, obj), var_("dummy"), var_("dummy")))
     }
@@ -1302,6 +1474,12 @@ fun graph(graphName: RdfTerm, pattern: SparqlGraphPattern): NamedGraphPattern =
     NamedGraphPattern(graphName, pattern)
 
 /**
+ * Creates a SERVICE pattern for federated queries.
+ */
+fun service(endpoint: RdfTerm, pattern: SparqlGraphPattern): ServicePattern = 
+    ServicePattern(endpoint, pattern)
+
+/**
  * Creates an ORDER BY clause for ascending order.
  */
 fun asc(variable: Var): OrderClause = OrderClause(variable, OrderDirection.ASC)
@@ -1338,6 +1516,137 @@ infix fun RdfTerm.quoted(predicate: RdfTerm): QuotedSubjectPredicatePair = Quote
 
 data class QuotedSubjectPredicatePair(val subject: RdfTerm, val predicate: RdfTerm) {
     infix fun with(obj: RdfTerm): QuotedTriplePattern = QuotedTriplePattern(subject, predicate, obj)
+}
+
+// ---- SPARQL 1.2 Query Form DSL Functions ----
+
+/**
+ * Creates an ASK query.
+ */
+fun ask(block: AskQueryBuilder.() -> Unit): AskQuery {
+    return AskQueryBuilder().apply(block).build()
+}
+
+/**
+ * Creates a CONSTRUCT query.
+ */
+fun construct(block: ConstructQueryBuilder.() -> Unit): ConstructQuery {
+    return ConstructQueryBuilder().apply(block).build()
+}
+
+/**
+ * Creates a DESCRIBE query.
+ */
+fun describe(vararg terms: RdfTerm, block: DescribeQueryBuilder.() -> Unit): DescribeQuery {
+    return DescribeQueryBuilder(terms.toList()).apply(block).build()
+}
+
+/**
+ * Creates a DESCRIBE * query (describes all resources).
+ */
+fun describeAll(block: DescribeQueryBuilder.() -> Unit): DescribeQuery {
+    return DescribeQueryBuilder(emptyList()).apply(block).build()
+}
+
+/**
+ * Builder class for constructing ASK queries.
+ */
+class AskQueryBuilder {
+    private var version: VersionDeclaration? = null
+    private val prefixes = mutableListOf<PrefixDeclaration>()
+    private var wherePattern: SparqlGraphPattern? = null
+
+    fun version(version: String) {
+        this.version = VersionDeclaration(version)
+    }
+
+    fun prefix(prefix: String, namespace: String) {
+        prefixes.add(PrefixDeclaration(prefix, namespace))
+    }
+
+    fun where(block: WhereBuilder.() -> Unit) {
+        val whereBuilder = WhereBuilder()
+        whereBuilder.apply(block)
+        wherePattern = whereBuilder.build()
+    }
+
+    fun build(): AskQuery = AskQuery(
+        version = version,
+        prefixes = prefixes,
+        wherePattern = wherePattern
+    )
+}
+
+/**
+ * Builder class for constructing CONSTRUCT queries.
+ */
+class ConstructQueryBuilder {
+    private var version: VersionDeclaration? = null
+    private val prefixes = mutableListOf<PrefixDeclaration>()
+    private val constructTemplate = mutableListOf<TriplePattern>()
+    private var wherePattern: SparqlGraphPattern? = null
+
+    fun version(version: String) {
+        this.version = VersionDeclaration(version)
+    }
+
+    fun prefix(prefix: String, namespace: String) {
+        prefixes.add(PrefixDeclaration(prefix, namespace))
+    }
+
+    fun construct(block: WhereBuilder.() -> Unit) {
+        val constructBuilder = WhereBuilder()
+        constructBuilder.apply(block)
+        // Extract triple patterns from the construct block
+        // This is a simplified implementation - in practice you'd need more sophisticated pattern extraction
+    }
+
+    fun template(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
+        constructTemplate.add(TriplePattern(subject, predicate, obj))
+    }
+
+    fun where(block: WhereBuilder.() -> Unit) {
+        val whereBuilder = WhereBuilder()
+        whereBuilder.apply(block)
+        wherePattern = whereBuilder.build()
+    }
+
+    fun build(): ConstructQuery = ConstructQuery(
+        version = version,
+        prefixes = prefixes,
+        constructTemplate = constructTemplate,
+        wherePattern = wherePattern
+    )
+}
+
+/**
+ * Builder class for constructing DESCRIBE queries.
+ */
+class DescribeQueryBuilder(private val describeTerms: List<RdfTerm>) {
+    private var version: VersionDeclaration? = null
+    private val prefixes = mutableListOf<PrefixDeclaration>()
+    private var wherePattern: SparqlGraphPattern? = null
+
+    fun version(version: String) {
+        this.version = VersionDeclaration(version)
+    }
+
+    fun prefix(prefix: String, namespace: String) {
+        prefixes.add(PrefixDeclaration(prefix, namespace))
+    }
+
+    fun where(block: WhereBuilder.() -> Unit) {
+        val whereBuilder = WhereBuilder()
+        whereBuilder.apply(block)
+        wherePattern = whereBuilder.build()
+    }
+
+    fun build(): DescribeQuery = DescribeQuery(
+        version = version,
+        prefixes = prefixes,
+        describeTerms = describeTerms,
+        wherePattern = wherePattern
+    )
 }
 
 // ---- SELECT Expression Convenience Functions ----

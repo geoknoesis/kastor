@@ -9,7 +9,6 @@ rootProject.name = "kastor"
 include(
   "bom",
   ":rdf:core", ":rdf:jena", ":rdf:rdf4j", ":rdf:sparql", ":rdf:reasoning", ":rdf:shacl-validation", ":rdf:examples",
-  ":mapper:core", ":mapper:processor",
   ":ontomapper:runtime", ":ontomapper:processor", ":ontomapper:gradle-plugin", ":ontomapper:validation-jena", ":ontomapper:validation-rdf4j",
   ":samples:dcat-us"
 )

@@ -164,11 +164,7 @@ class Rdf4jValidation : ValidationPort {
             valueFactory.createLiteral(term.lexical, term.lang)
           }
           else -> {
-            if (term.datatype != null) {
-              valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
-            } else {
-              valueFactory.createLiteral(term.lexical)
-            }
+            valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
           }
         }
       }

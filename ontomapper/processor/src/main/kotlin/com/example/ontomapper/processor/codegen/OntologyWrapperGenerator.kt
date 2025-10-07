@@ -154,7 +154,7 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
         }
     }
 
-    private fun determineKotlinType(property: ShaclProperty, context: com.example.ontomapper.processor.model.JsonLdContext): String {
+    private fun determineKotlinType(property: ShaclProperty, @Suppress("UNUSED_PARAMETER") context: com.example.ontomapper.processor.model.JsonLdContext): String {
         // Check if it's an object property (has targetClass)
         if (property.targetClass != null) {
             val targetInterfaceName = extractInterfaceName(property.targetClass)

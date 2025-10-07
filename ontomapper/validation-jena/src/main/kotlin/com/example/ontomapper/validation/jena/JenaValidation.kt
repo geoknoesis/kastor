@@ -146,11 +146,7 @@ class JenaValidation : ValidationPort {
             jenaModel.createLiteral(term.lexical, term.lang)
           }
           else -> {
-            if (term.datatype != null) {
-              jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
-            } else {
-              jenaModel.createLiteral(term.lexical)
-            }
+            jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
           }
         }
       }
