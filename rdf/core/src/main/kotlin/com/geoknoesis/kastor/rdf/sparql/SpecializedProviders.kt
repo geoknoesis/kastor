@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.*
 /**
  * SPARQL Endpoint Provider - for remote SPARQL endpoints.
  */
-class SparqlEndpointProvider : EnhancedRdfApiProvider {
+class SparqlEndpointProvider : RdfApiProvider {
     
     override fun getType(): String = "sparql-endpoint"
     override val name: String = "SPARQL Endpoint Provider"
@@ -75,7 +75,7 @@ class SparqlEndpointProvider : EnhancedRdfApiProvider {
 /**
  * Reasoner Provider - for inference engines.
  */
-class ReasonerProvider : EnhancedRdfApiProvider {
+class ReasonerProvider : RdfApiProvider {
     
     override fun getType(): String = "reasoner"
     override val name: String = "Reasoner Provider"
@@ -142,7 +142,7 @@ class ReasonerProvider : EnhancedRdfApiProvider {
 /**
  * SHACL Validator Provider - for validation engines.
  */
-class ShaclValidatorProvider : EnhancedRdfApiProvider {
+class ShaclValidatorProvider : RdfApiProvider {
     
     override fun getType(): String = "shacl-validator"
     override val name: String = "SHACL Validator Provider"

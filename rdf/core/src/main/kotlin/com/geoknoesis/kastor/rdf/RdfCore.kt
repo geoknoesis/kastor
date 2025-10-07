@@ -543,7 +543,7 @@ object RdfApiRegistry {
 }
 
 /**
- * Interface for RDF API providers.
+ * Interface for RDF API providers with optional enhanced capabilities.
  */
 interface RdfApiProvider {
     
@@ -581,6 +581,33 @@ interface RdfApiProvider {
      * Check if a repository type is supported.
      */
     fun isSupported(type: String): Boolean
+    
+    // === ENHANCED CAPABILITIES (Optional) ===
+    
+    /**
+     * Get the provider category.
+     * Default implementation returns RDF_STORE for backward compatibility.
+     */
+    fun getProviderCategory(): ProviderCategory = ProviderCategory.RDF_STORE
+    
+    /**
+     * Generate SPARQL service description for this provider.
+     * Default implementation returns null for providers that don't support service descriptions.
+     */
+    fun generateServiceDescription(serviceUri: String): RdfGraph? = null
+    
+    /**
+     * Get detailed capability information.
+     * Default implementation creates DetailedProviderCapabilities from basic capabilities.
+     */
+    fun getDetailedCapabilities(): DetailedProviderCapabilities {
+        return DetailedProviderCapabilities(
+            basic = getCapabilities(),
+            providerCategory = getProviderCategory(),
+            supportedSparqlFeatures = emptyMap(),
+            customExtensionFunctions = emptyList()
+        )
+    }
 }
 
 /**
@@ -607,6 +634,29 @@ enum class ProviderCategory {
     SERVICE_DESCRIPTION,   // SPARQL service description
     FEDERATION            // Federated query support
 }
+
+/**
+ * Detailed provider capabilities with extended information.
+ */
+data class DetailedProviderCapabilities(
+    val basic: ProviderCapabilities,
+    val providerCategory: ProviderCategory,
+    val supportedSparqlFeatures: Map<String, Boolean>,
+    val customExtensionFunctions: List<SparqlExtensionFunction>,
+    val performanceMetrics: PerformanceMetrics? = null,
+    val limitations: List<String> = emptyList()
+)
+
+/**
+ * Performance metrics for the provider.
+ */
+data class PerformanceMetrics(
+    val maxQueryComplexity: Int,
+    val maxResultSize: Long,
+    val averageResponseTime: Double,
+    val concurrentQueryLimit: Int,
+    val memoryUsageLimit: Long
+)
 
 /**
  * Enhanced provider capabilities with SPARQL 1.2 support.

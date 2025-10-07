@@ -62,7 +62,7 @@ class SparqlServiceDescriptionTest {
     
     @Test
     fun `test enhanced provider registry`() {
-        val providers = EnhancedRdfApiRegistry.getEnhancedProviders()
+        val providers = EnhancedRdfApiRegistry.getAllProviders()
         assertTrue(providers.isNotEmpty())
         
         val sparqlProviders = EnhancedRdfApiRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
@@ -188,5 +188,27 @@ class SparqlServiceDescriptionTest {
         // Test feature support checking
         assertTrue(EnhancedRdfApiRegistry.supportsFeature("sparql-endpoint", "RDF-star"))
         assertFalse(EnhancedRdfApiRegistry.supportsFeature("sparql-endpoint", "NonExistentFeature"))
+    }
+    
+    @Test
+    fun `test new registry features`() {
+        // Test hasProviderWithFeature
+        assertTrue(EnhancedRdfApiRegistry.hasProviderWithFeature("RDF-star"))
+        assertFalse(EnhancedRdfApiRegistry.hasProviderWithFeature("NonExistentFeature"))
+        
+        // Test getProviderStatistics
+        val statistics = EnhancedRdfApiRegistry.getProviderStatistics()
+        assertTrue(statistics.isNotEmpty())
+        assertEquals(1, statistics[ProviderCategory.SPARQL_ENDPOINT])
+        assertEquals(1, statistics[ProviderCategory.REASONER])
+        assertEquals(1, statistics[ProviderCategory.SHACL_VALIDATOR])
+        
+        // Test getProvider
+        val sparqlProvider = EnhancedRdfApiRegistry.getProvider("sparql-endpoint")
+        assertNotNull(sparqlProvider)
+        assertEquals("sparql-endpoint", sparqlProvider?.getType())
+        
+        val nonExistentProvider = EnhancedRdfApiRegistry.getProvider("non-existent")
+        assertNull(nonExistentProvider)
     }
 }
