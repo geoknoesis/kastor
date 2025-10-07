@@ -584,15 +584,67 @@ interface RdfApiProvider {
 }
 
 /**
- * Provider capabilities.
+ * Represents a SPARQL extension function.
+ */
+data class SparqlExtensionFunction(
+    val iri: String,
+    val name: String,
+    val description: String,
+    val argumentTypes: List<String> = emptyList(),
+    val returnType: String? = null,
+    val isAggregate: Boolean = false,
+    val isBuiltIn: Boolean = true
+)
+
+/**
+ * Categories of RDF providers.
+ */
+enum class ProviderCategory {
+    RDF_STORE,              // Jena, RDF4J, etc.
+    SPARQL_ENDPOINT,        // Remote SPARQL endpoints
+    REASONER,              // Inference engines
+    SHACL_VALIDATOR,       // SHACL validation
+    SERVICE_DESCRIPTION,   // SPARQL service description
+    FEDERATION            // Federated query support
+}
+
+/**
+ * Enhanced provider capabilities with SPARQL 1.2 support.
  */
 data class ProviderCapabilities(
+    // Existing capabilities
     val supportsInference: Boolean = false,
     val supportsTransactions: Boolean = false,
     val supportsNamedGraphs: Boolean = false,
     val supportsUpdates: Boolean = false,
     val supportsRdfStar: Boolean = false,
-    val maxMemoryUsage: Long = Long.MAX_VALUE
+    val maxMemoryUsage: Long = Long.MAX_VALUE,
+    
+    // SPARQL 1.2 specific capabilities
+    val sparqlVersion: String = "1.2",
+    val supportsPropertyPaths: Boolean = true,
+    val supportsAggregation: Boolean = true,
+    val supportsSubSelect: Boolean = true,
+    val supportsFederation: Boolean = false,
+    val supportsVersionDeclaration: Boolean = true,
+    val supportsServiceDescription: Boolean = true,
+    
+    // Service description capabilities
+    val supportedLanguages: List<String> = listOf("sparql", "sparql12"),
+    val supportedResultFormats: List<String> = listOf(
+        "application/sparql-results+json",
+        "application/sparql-results+xml",
+        "text/csv",
+        "text/tab-separated-values"
+    ),
+    val supportedInputFormats: List<String> = listOf(
+        "application/sparql-query",
+        "application/sparql-update"
+    ),
+    val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
+    val entailmentRegimes: List<String> = emptyList(),
+    val namedGraphs: List<String> = emptyList(),
+    val defaultGraphs: List<String> = emptyList()
 )
 
 // === DEFAULT PROVIDER MANAGEMENT ===
