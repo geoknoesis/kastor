@@ -486,7 +486,8 @@ data class RdfConfig(
 )
 
 /**
- * Registry for RDF API providers.
+ * Unified registry for RDF API providers with enhanced capabilities.
+ * Consolidates functionality from both RdfApiRegistry and EnhancedRdfApiRegistry.
  */
 object RdfApiRegistry {
     
@@ -495,7 +496,34 @@ object RdfApiRegistry {
     init {
         // Register default memory provider
         register(MemoryRepositoryProvider())
+        
+        // Register specialized providers (imported dynamically to avoid circular dependencies)
+        try {
+            val sparqlEndpointProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.SparqlEndpointProvider")
+            val sparqlEndpointProvider = sparqlEndpointProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
+            register(sparqlEndpointProvider)
+        } catch (e: Exception) {
+            // SPARQL module not available, skip registration
+        }
+        
+        try {
+            val reasonerProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.ReasonerProvider")
+            val reasonerProvider = reasonerProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
+            register(reasonerProvider)
+        } catch (e: Exception) {
+            // Reasoner module not available, skip registration
+        }
+        
+        try {
+            val shaclValidatorProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.ShaclValidatorProvider")
+            val shaclValidatorProvider = shaclValidatorProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
+            register(shaclValidatorProvider)
+        } catch (e: Exception) {
+            // SHACL module not available, skip registration
+        }
     }
+    
+    // === BASIC PROVIDER OPERATIONS ===
     
     /**
      * Register an RDF provider.
@@ -521,6 +549,11 @@ object RdfApiRegistry {
     }
     
     /**
+     * Get all providers (alias for discoverProviders for consistency).
+     */
+    fun getAllProviders(): List<RdfApiProvider> = discoverProviders()
+    
+    /**
      * Get supported repository types.
      */
     fun getSupportedTypes(): List<String> {
@@ -535,10 +568,88 @@ object RdfApiRegistry {
     }
     
     /**
-     * Check if a provider supports a specific type.
+     * Check if a provider supports a specific type (alias for supports).
      */
     fun isSupported(type: String): Boolean {
         return supports(type)
+    }
+    
+    /**
+     * Get provider by type.
+     */
+    fun getProvider(type: String): RdfApiProvider? = providers[type]
+    
+    // === ENHANCED PROVIDER OPERATIONS ===
+    
+    /**
+     * Get providers by category.
+     */
+    fun getProvidersByCategory(category: ProviderCategory): List<RdfApiProvider> {
+        return providers.values.filter { it.getProviderCategory() == category }
+    }
+    
+    /**
+     * Generate service description for a specific provider.
+     */
+    fun generateServiceDescription(providerType: String, serviceUri: String): RdfGraph? {
+        val provider = providers[providerType] ?: return null
+        return provider.generateServiceDescription(serviceUri)
+    }
+    
+    /**
+     * Get all service descriptions.
+     */
+    fun getAllServiceDescriptions(baseUri: String): Map<String, RdfGraph> {
+        return providers.mapValues { (_, provider) ->
+            val serviceUri = "$baseUri/${provider.getType()}"
+            provider.generateServiceDescription(serviceUri) ?: StandaloneGraph(emptyList())
+        }
+    }
+    
+    /**
+     * Discover capabilities for all providers.
+     */
+    fun discoverAllCapabilities(): Map<String, DetailedProviderCapabilities> {
+        return providers.mapValues { (_, provider) ->
+            provider.getDetailedCapabilities()
+        }
+    }
+    
+    /**
+     * Check if a provider supports a specific SPARQL feature.
+     */
+    fun supportsFeature(providerType: String, feature: String): Boolean {
+        val provider = providers[providerType] ?: return false
+        val capabilities = provider.getDetailedCapabilities()
+        return capabilities.supportedSparqlFeatures[feature] ?: false
+    }
+    
+    /**
+     * Get all supported SPARQL features across providers.
+     */
+    fun getSupportedFeatures(): Map<String, List<String>> {
+        return providers.mapValues { (_, provider) ->
+            val capabilities = provider.getDetailedCapabilities()
+            capabilities.supportedSparqlFeatures.filter { it.value }.keys.toList()
+        }
+    }
+    
+    /**
+     * Check if any provider supports a specific feature.
+     */
+    fun hasProviderWithFeature(feature: String): Boolean {
+        return providers.values.any { provider ->
+            val capabilities = provider.getDetailedCapabilities()
+            capabilities.supportedSparqlFeatures[feature] == true
+        }
+    }
+    
+    /**
+     * Get provider statistics.
+     */
+    fun getProviderStatistics(): Map<ProviderCategory, Int> {
+        val categories = providers.values.groupBy { it.getProviderCategory() }
+        return categories.mapValues { it.value.size }
     }
 }
 
