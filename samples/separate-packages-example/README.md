@@ -1,6 +1,6 @@
 # Separate Packages Example
 
-This example demonstrates how to generate vocabularies, interfaces, and wrappers in separate packages using the OntoMapper Gradle plugin, providing better organization and separation of concerns.
+This example demonstrates how to generate vocabularies, interfaces, and wrappers in separate packages using the Kastor Gen Gradle plugin, providing better organization and separation of concerns.
 
 ## Features
 
@@ -36,11 +36,11 @@ The `build.gradle.kts` file configures separate packages for each component type
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
 // Configure separate packages for different generated components
-ontomapper {
+kastorGen {
     ontologies {
         // DCAT-US with separate packages
         create("dcat") {
@@ -234,7 +234,7 @@ internal class CatalogWrapper(
     
     companion object {
         init {
-            OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
+            kastor.gen.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
         }
     }
 }
@@ -360,7 +360,7 @@ val results = repo.query {
 
 ### Custom Package Names
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("custom") {
             shaclPath.set("ontologies/custom.shacl.ttl")
@@ -381,7 +381,7 @@ ontomapper {
 
 ### Mixed Package Configuration
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("mixed") {
             shaclPath.set("ontologies/mixed.shacl.ttl")
@@ -402,7 +402,7 @@ ontomapper {
 
 ### Environment-specific Packages
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("env") {
             shaclPath.set("ontologies/env.shacl.ttl")
@@ -503,7 +503,7 @@ ontomapper {
 - Use the generated components in your applications
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/ontomapper/tutorials/gradle-configuration.md)
+- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
 - [Multiple Ontology Example](../samples/multi-ontology-example/README.md)
 - [Vocabulary Generation Example](../samples/vocabulary-example/README.md)
-- [Best Practices](../docs/ontomapper/best-practices.md)
+- [Best Practices](../docs/kastor-gen/best-practices.md)

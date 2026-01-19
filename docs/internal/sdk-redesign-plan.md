@@ -16,8 +16,8 @@ Define a concrete redesign plan to make Kastor a reference-quality, RDF-engine-a
 - `rdf-context`: JSON-LD context model and mapping (Context, Term, Mapping).
 - `rdf-shacl`: SHACL domain model + validation API (Shape, Constraint, ValidationReport).
 - `rdf-adapter-*`: Backend adapters (jena, rdf4j, sparql, in-memory).
-- `ontomapper-processor`: Codegen from SHACL + JSON-LD to Kotlin domain types.
-- `ontomapper-runtime`: Minimal runtime for materialization using contracts.
+- `kastor-gen-processor`: Codegen from SHACL + JSON-LD to Kotlin domain types.
+- `kastor-gen-runtime`: Minimal runtime for materialization using contracts.
 
 ## Structural Changes (High Level)
 1. Replace provider IDs and option maps with typed repository profiles and capabilities.
@@ -149,7 +149,7 @@ interface Catalog {
 **Before**
 ```kotlin
 val ref = RdfRef(node, graph)
-val catalog = OntoMapper.materialize(ref, Catalog::class.java, validate = true)
+val catalog = kastor.gen.materialize(ref, Catalog::class.java, validate = true)
 ```
 
 **After**

@@ -1,6 +1,6 @@
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper")
+    id("com.geoknoesis.kastor.gen")
 }
 
 repositories {
@@ -8,13 +8,13 @@ repositories {
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:ontomapper-runtime:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
     implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
     implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
 }
 
 // Configure separate packages for different generated components
-ontomapper {
+kastorGen {
     ontologies {
         // DCAT-US with separate packages
         create("dcat") {

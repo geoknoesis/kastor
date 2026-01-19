@@ -21,7 +21,7 @@ Kastor Framework
 ├── 📦 RDF Core          - Core RDF operations and DSL
 ├── 🧠 Reasoning         - RDFS, OWL reasoning capabilities  
 ├── ✅ SHACL Validation  - Data validation and constraints
-├── 🏷️ OntoMapper       - Code generation from ontologies
+├── 🏷️ Kastor Gen       - Code generation from ontologies
 └── 🔌 Providers         - Jena, RDF4J, SPARQL backends
 ```
 
@@ -45,11 +45,11 @@ Kastor Framework
 - **[Quick Start](kastor/features/shacl-validation.md#quick-start)** - Get started in minutes
 - **[Constraint Types](kastor/features/shacl-validation.md#constraint-types)** - Available constraints
 
-#### **OntoMapper** (`ontomapper`)
-- **[Getting Started](ontomapper/tutorials/getting-started.md)** - Code generation basics
-- **[Core Concepts](ontomapper/tutorials/core-concepts.md)** - Architecture overview
-- **[Domain Modeling](ontomapper/tutorials/domain-modeling.md)** - Creating domain interfaces
-- **[Best Practices](ontomapper/best-practices.md)** - Usage guidelines
+#### **Kastor Gen** (`kastor-gen`)
+- **[Getting Started](kastor-gen/tutorials/getting-started.md)** - Code generation basics
+- **[Core Concepts](kastor-gen/tutorials/core-concepts.md)** - Architecture overview
+- **[Domain Modeling](kastor-gen/tutorials/domain-modeling.md)** - Creating domain interfaces
+- **[Best Practices](kastor-gen/best-practices.md)** - Usage guidelines
 
 ### **Backend Providers**
 
@@ -86,10 +86,10 @@ Kastor Framework
 4. [Advanced Patterns](kastor/advanced/performance.md) - Enterprise usage
 
 ### **Domain Modeling Path**
-1. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md) - Code generation
-2. [Domain Modeling](ontomapper/tutorials/domain-modeling.md) - Interface design
-3. [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Side-channel access
-4. [Validation](ontomapper/tutorials/validation.md) - Data quality
+1. [Kastor Gen Getting Started](kastor-gen/tutorials/getting-started.md) - Code generation
+2. [Domain Modeling](kastor-gen/tutorials/domain-modeling.md) - Interface design
+3. [RDF Integration](kastor-gen/tutorials/rdf-integration.md) - Side-channel access
+4. [Validation](kastor-gen/tutorials/validation.md) - Data quality
 
 ### **Enterprise Path**
 1. [Repository Management](kastor/api/repository-manager.md) - Multi-repository setup
@@ -102,7 +102,7 @@ Kastor Framework
 
 ### **Data Catalogs**
 - [DCAT Examples](kastor/examples.md#dcat) - Data catalog modeling
-- [Ontology Generation](ontomapper/tutorials/ontology-generation.md) - Schema generation
+- [Ontology Generation](kastor-gen/tutorials/ontology-generation.md) - Schema generation
 - [Validation](kastor/features/shacl-validation.md) - Data quality checks
 
 ### **Knowledge Graphs**
@@ -112,7 +112,7 @@ Kastor Framework
 
 ### **Web Applications**
 - [SPARQL Endpoints](kastor/providers/sparql.md) - Web service integration
-- [RDF Integration](ontomapper/tutorials/rdf-integration.md) - Side-channel access
+- [RDF Integration](kastor-gen/tutorials/rdf-integration.md) - Side-channel access
 - [Performance](kastor/advanced/performance.md) - Optimization strategies
 
 ### **Enterprise Integration**
@@ -127,13 +127,13 @@ Kastor Framework
 - [Repository API](kastor/api/repository-manager.md) - Repository management
 - [Reasoning API](kastor/features/reasoning.md#api-reference) - Inference operations
 - [Validation API](kastor/features/shacl-validation.md#api-reference) - SHACL validation
-- [OntoMapper API](ontomapper/reference/README.md) - Code generation
+- [Kastor Gen API](kastor-gen/reference/README.md) - Code generation
 
 ### **Configuration References**
 - [Provider Configuration](kastor/providers/README.md) - Backend setup
 - [Validation Configuration](kastor/features/shacl-validation.md#configuration) - SHACL options
 - [Reasoning Configuration](kastor/features/reasoning.md#configuration) - Inference options
-- [Gradle Configuration](ontomapper/tutorials/gradle-configuration.md) - Build setup
+- [Gradle Configuration](kastor-gen/tutorials/gradle-configuration.md) - Build setup
 
 ### **Format References**
 - [Serialization Formats](kastor/advanced/formats.md) - RDF serialization
@@ -144,7 +144,7 @@ Kastor Framework
 
 ### **Examples and Samples**
 - [Kastor Examples](kastor/examples/README.md) - Complete working examples
-- [OntoMapper Examples](ontomapper/examples/README.md) - Code generation samples
+- [Kastor Gen Examples](kastor-gen/examples/README.md) - Code generation samples
 - [Sample Applications](../samples/) - Full application examples
 
 ### **Troubleshooting**
@@ -154,7 +154,7 @@ Kastor Framework
 
 ### **Best Practices**
 - [Kastor Best Practices](kastor/guides/best-practices.md) - Usage guidelines
-- [OntoMapper Best Practices](ontomapper/best-practices.md) - Code generation
+- [Kastor Gen Best Practices](kastor-gen/best-practices.md) - Code generation
 - [Performance Best Practices](kastor/advanced/performance.md) - Optimization strategies
 
 ## 🌐 Community and Support

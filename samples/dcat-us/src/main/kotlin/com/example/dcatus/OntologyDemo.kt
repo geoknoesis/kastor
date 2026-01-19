@@ -1,7 +1,7 @@
 package com.example.dcatus
 
 import com.example.dcatus.generated.*
-import com.example.ontomapper.runtime.*
+import com.geoknoesis.kastor.gen.runtime.*
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.DCAT
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
@@ -12,11 +12,11 @@ import com.geoknoesis.kastor.rdf.vocab.SKOS
 /**
  * Demo showing generated domain interfaces and wrappers from SHACL + JSON-LD.
  * 
- * This demonstrates how the OntoMapper can generate pure domain interfaces
+ * This demonstrates how Kastor Gen can generate pure domain interfaces
  * and RDF-backed wrapper implementations from ontology files.
  */
 fun main() {
-    println("=== OntoMapper SHACL/JSON-LD Generation Demo ===\n")
+    println("=== Kastor Gen SHACL/JSON-LD Generation Demo ===\n")
     
     // Note: In a real scenario, the interfaces and wrappers would be generated
     // by the KSP processor from the SHACL and JSON-LD context files.

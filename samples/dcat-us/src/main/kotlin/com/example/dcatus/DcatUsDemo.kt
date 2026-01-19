@@ -1,7 +1,7 @@
 package com.example.dcatus
 
 import com.example.dcatus.domain.*
-import com.example.ontomapper.runtime.*
+import com.geoknoesis.kastor.gen.runtime.*
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.DCAT
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
@@ -10,11 +10,11 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SKOS
 
 /**
- * Minimal demo of OntoMapper with DCAT-US.
+ * Minimal demo of Kastor Gen with DCAT-US.
  * Demonstrates pure domain usage + RDF side-channel access.
  */
 fun main() {
-    println("=== OntoMapper DCAT-US Demo ===\n")
+    println("=== Kastor Gen DCAT-US Demo ===\n")
     
     // Create a Kastor repository with sample DCAT data
     val repo = Rdf.memory()

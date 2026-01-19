@@ -4,16 +4,16 @@ plugins {
 }
 
 dependencies {
-  implementation(project(":ontomapper:runtime"))
-  implementation(project(":ontomapper:processor"))
+  implementation(project(":kastor-gen:runtime"))
+  implementation(project(":kastor-gen:processor"))
   
   // Choose backend (Jena or RDF4J)
   implementation(project(":rdf:jena"))
-  implementation(project(":ontomapper:validation-jena"))
+  implementation(project(":kastor-gen:validation-jena"))
   
   // Alternative: RDF4J backend
   // implementation(project(":rdf:rdf4j"))
-  // implementation(project(":ontomapper:validation-rdf4j"))
+  // implementation(project(":kastor-gen:validation-rdf4j"))
   
   testImplementation(libs.kotlin.test)
   testImplementation(libs.junit.jupiter)

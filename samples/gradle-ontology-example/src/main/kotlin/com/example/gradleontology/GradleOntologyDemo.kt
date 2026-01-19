@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.jena.*
 
 /**
- * Demonstration of using OntoMapper with Gradle-only configuration.
+ * Demonstration of using Kastor Gen with Gradle-only configuration.
  * 
  * This example shows how to generate domain interfaces and wrappers
  * from SHACL and JSON-LD context files using only Gradle configuration,

@@ -26,29 +26,29 @@ gradle-ontology-example/
 
 ## Gradle Configuration
 
-The `build.gradle.kts` file configures the OntoMapper plugin:
+The `build.gradle.kts` file configures the Kastor Gen plugin:
 
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
-// Configure OntoMapper plugin
-ontomapper {
+// Configure Kastor Gen plugin
+kastorGen {
     shaclPath.set("ontologies/dcat-us.shacl.ttl")
     contextPath.set("ontologies/dcat-us.context.jsonld")
     targetPackage.set("com.example.dcatus.generated")
     generateInterfaces.set(true)
     generateWrappers.set(true)
-    outputDirectory.set("build/generated/sources/ontomapper")
+    outputDirectory.set("build/generated/sources/kastor-gen")
 }
 
 // Add generated sources to source sets
 sourceSets {
     main {
         kotlin {
-            srcDir("build/generated/sources/ontomapper")
+            srcDir("build/generated/sources/kastor-gen")
         }
     }
 }
@@ -63,7 +63,7 @@ sourceSets {
 | `targetPackage` | String | `com.example.generated` | Target package for generated code |
 | `generateInterfaces` | Boolean | `true` | Whether to generate domain interfaces |
 | `generateWrappers` | Boolean | `true` | Whether to generate wrapper implementations |
-| `outputDirectory` | String | `build/generated/sources/ontomapper` | Output directory for generated files |
+| `outputDirectory` | String | `build/generated/sources/kastor-gen` | Output directory for generated files |
 
 ## Generated Code
 
@@ -116,8 +116,8 @@ internal class CatalogWrapper(
 
 3. **View generated code**:
    ```bash
-   # Generated files are in build/generated/sources/ontomapper/
-   ls -la build/generated/sources/ontomapper/com/example/dcatus/generated/
+   # Generated files are in build/generated/sources/kastor-gen/
+   ls -la build/generated/sources/kastor-gen/com/example/dcatus/generated/
    ```
 
 ## Benefits
@@ -157,7 +157,7 @@ internal class CatalogWrapper(
 
 ### Multiple Ontologies
 ```kotlin
-ontomapper {
+kastorGen {
     // Primary ontology
     shaclPath.set("ontologies/dcat-us.shacl.ttl")
     contextPath.set("ontologies/dcat-us.context.jsonld")
@@ -169,14 +169,14 @@ ontomapper {
 
 ### Custom Output Directory
 ```kotlin
-ontomapper {
+kastorGen {
     outputDirectory.set("src/generated/kotlin")
 }
 ```
 
 ### Conditional Generation
 ```kotlin
-ontomapper {
+kastorGen {
     generateInterfaces.set(project.hasProperty("generateInterfaces"))
     generateWrappers.set(project.hasProperty("generateWrappers"))
 }
@@ -207,7 +207,7 @@ ontomapper {
 
 ## Next Steps
 
-- Explore the generated code in `build/generated/sources/ontomapper/`
+- Explore the generated code in `build/generated/sources/kastor-gen/`
 - Modify the SHACL and JSON-LD files to see how generation changes
 - Add more complex ontologies and shapes
 - Integrate with your existing RDF data and queries

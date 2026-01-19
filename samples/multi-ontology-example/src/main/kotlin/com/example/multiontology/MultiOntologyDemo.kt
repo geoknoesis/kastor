@@ -7,7 +7,7 @@ import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.jena.*
 
 /**
- * Demonstration of using OntoMapper with multiple ontology configurations.
+ * Demonstration of using Kastor Gen with multiple ontology configurations.
  * 
  * This example shows how to generate domain interfaces and wrappers
  * from multiple SHACL and JSON-LD context files using Gradle configuration,

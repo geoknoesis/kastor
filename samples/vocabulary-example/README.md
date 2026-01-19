@@ -1,6 +1,6 @@
 # Vocabulary Generation Example
 
-This example demonstrates how to generate vocabulary files from SHACL and JSON-LD context files using the OntoMapper Gradle plugin, following the Kastor vocabulary pattern.
+This example demonstrates how to generate vocabulary files from SHACL and JSON-LD context files using the Kastor Gen Gradle plugin, following the Kastor vocabulary pattern.
 
 ## Features
 
@@ -36,11 +36,11 @@ The `build.gradle.kts` file configures vocabulary generation:
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
 // Configure vocabulary generation
-ontomapper {
+kastorGen {
     ontologies {
         // DCAT-US vocabulary
         create("dcat") {
@@ -100,7 +100,7 @@ Each vocabulary configuration supports the following options:
 | `vocabularyName` | String | `Vocabulary` | Name of the vocabulary object |
 | `vocabularyNamespace` | String | `http://example.org/vocab#` | Namespace URI for the vocabulary |
 | `vocabularyPrefix` | String | `vocab` | Prefix for the vocabulary |
-| `outputDirectory` | String | `build/generated/sources/ontomapper` | Output directory for generated files |
+| `outputDirectory` | String | `build/generated/sources/kastor-gen` | Output directory for generated files |
 
 ## Generated Vocabulary Structure
 
@@ -282,7 +282,7 @@ val customTerm = DCAT.term("customProperty")
 
 ### Custom Vocabulary Names
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("custom") {
             shaclPath.set("ontologies/custom.shacl.ttl")
@@ -299,7 +299,7 @@ ontomapper {
 
 ### Mixed Generation
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("mixed") {
             shaclPath.set("ontologies/mixed.shacl.ttl")
@@ -318,7 +318,7 @@ ontomapper {
 
 ### Environment-specific Configuration
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("dcat") {
             shaclPath.set("ontologies/dcat-us.shacl.ttl")
@@ -383,7 +383,7 @@ ontomapper {
 - Integrate with existing Kastor vocabulary infrastructure
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/ontomapper/tutorials/gradle-configuration.md)
+- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
 - [Kastor Vocabularies](../docs/kastor/vocabularies.md)
 - [Vocabulary Interface](../docs/kastor/vocabularies-index.md)
-- [Best Practices](../docs/ontomapper/best-practices.md)
+- [Best Practices](../docs/kastor-gen/best-practices.md)

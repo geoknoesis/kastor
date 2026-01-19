@@ -1,10 +1,10 @@
-# DCAT-US 3.0 OntoMapper Example
+# DCAT-US 3.0 Kastor Gen Example
 
-This example demonstrates how to use OntoMapper to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes, and then use the generated code to work with DCAT-US compliant data.
+This example demonstrates how to use Kastor Gen to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes, and then use the generated code to work with DCAT-US compliant data.
 
 ## 🎯 Overview
 
-The [DCAT-US 3.0 specification](https://resources.data.gov/standards/dcat-us/) is the U.S. government's implementation of the W3C Data Catalog Vocabulary (DCAT) standard. This example shows how OntoMapper can automatically generate Kotlin code from the DCAT-US SHACL shapes, making it easy to work with government data catalogs in a type-safe manner.
+The [DCAT-US 3.0 specification](https://resources.data.gov/standards/dcat-us/) is the U.S. government's implementation of the W3C Data Catalog Vocabulary (DCAT) standard. This example shows how Kastor Gen can automatically generate Kotlin code from the DCAT-US SHACL shapes, making it easy to work with government data catalogs in a type-safe manner.
 
 ## 🚀 Features Demonstrated
 
@@ -255,7 +255,7 @@ val turtle = repo.serialize(catalog.toRdfGraph(), "text/turtle")
 The example is configured in `build.gradle.kts`:
 
 ```kotlin
-ontomapper {
+kastorGen {
     ontology {
         source = "https://raw.githubusercontent.com/DOI-DO/dcat-us/main/shacl/dcat-us_3.0_shacl_shapes.ttl"
         format = "turtle"
@@ -293,7 +293,7 @@ ontomapper {
 1. **Generate Code**:
    ```bash
    cd examples/dcat-us
-   ./gradlew generateOntoMapperCode
+   ./gradlew generateKastorGenCode
    ```
 
 2. **Run Example**:
@@ -311,12 +311,12 @@ ontomapper {
 - [DCAT-US 3.0 Specification](https://resources.data.gov/standards/dcat-us/)
 - [DCAT-US SHACL Shapes](https://github.com/DOI-DO/dcat-us/blob/main/shacl/dcat-us_3.0_shacl_shapes.ttl)
 - [W3C DCAT Vocabulary](https://www.w3.org/TR/vocab-dcat-3/)
-- [OntoMapper Documentation](../ontomapper/README.md)
+- [Kastor Gen Documentation](../../../../../../docs/kastor-gen/README.md)
 - [Kastor RDF API](../kastor/README.md)
 
 ## 🤝 Contributing
 
-This example demonstrates best practices for using OntoMapper with government data standards. Contributions and improvements are welcome!
+This example demonstrates best practices for using Kastor Gen with government data standards. Contributions and improvements are welcome!
 
 ## 📄 License
 

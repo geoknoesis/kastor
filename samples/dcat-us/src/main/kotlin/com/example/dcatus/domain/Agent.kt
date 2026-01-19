@@ -1,7 +1,7 @@
 package com.example.dcatus.domain
 
-import com.example.ontomapper.annotations.RdfClass
-import com.example.ontomapper.annotations.RdfProperty
+import com.geoknoesis.kastor.gen.annotations.RdfClass
+import com.geoknoesis.kastor.gen.annotations.RdfProperty
 
 /**
  * Domain interface for FOAF Agent.

@@ -35,11 +35,11 @@ The `build.gradle.kts` file configures multiple ontologies:
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
 // Configure multiple ontologies
-ontomapper {
+kastorGen {
     ontologies {
         // DCAT-US ontology
         create("dcat") {
@@ -90,7 +90,7 @@ Each ontology configuration supports the following options:
 | `targetPackage` | String | `com.example.generated` | Target package for generated code |
 | `generateInterfaces` | Boolean | `true` | Whether to generate domain interfaces |
 | `generateWrappers` | Boolean | `true` | Whether to generate wrapper implementations |
-| `outputDirectory` | String | `build/generated/sources/ontomapper` | Output directory for generated files |
+| `outputDirectory` | String | `build/generated/sources/kastor-gen` | Output directory for generated files |
 
 ## Generated Code Structure
 
@@ -235,7 +235,7 @@ val results = repo.query {
 
 ### Environment-specific Ontologies
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         if (project.hasProperty("dev")) {
             create("dcat") {
@@ -262,7 +262,7 @@ ontomapper {
 
 ### Conditional Generation
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("dcat") {
             shaclPath.set("ontologies/dcat-us.shacl.ttl")
@@ -281,7 +281,7 @@ ontomapper {
 
 ### Custom Output Directories
 ```kotlin
-ontomapper {
+kastorGen {
     ontologies {
         create("dcat") {
             shaclPath.set("ontologies/dcat-us.shacl.ttl")
@@ -351,7 +351,7 @@ ontomapper {
 - Use cross-ontology queries for complex data analysis
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/ontomapper/tutorials/gradle-configuration.md)
+- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
 - [Ontology Generation](ontology-generation.md) - Annotation-based approach
 - [Domain Modeling](domain-modeling.md) - Creating domain interfaces
 - [Best Practices](best-practices.md) - Guidelines for effective usage

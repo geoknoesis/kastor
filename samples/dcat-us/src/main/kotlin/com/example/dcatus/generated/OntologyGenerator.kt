@@ -1,6 +1,6 @@
 package com.example.dcatus.generated
 
-import com.example.ontomapper.annotations.GenerateFromOntology
+import com.geoknoesis.kastor.gen.annotations.GenerateFromOntology
 
 /**
  * Generator class for DCAT-US domain interfaces and wrappers.

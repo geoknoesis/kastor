@@ -1,7 +1,7 @@
 package com.example.dcatus
 
 import com.example.dcatus.domain.*
-import com.example.ontomapper.runtime.*
+import com.geoknoesis.kastor.gen.runtime.*
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.DCAT
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS

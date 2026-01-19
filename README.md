@@ -53,7 +53,7 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **🔗 Smart QName Detection**: Automatic resolution of qualified names to IRIs
 - **📚 Built-in Vocabularies**: Pre-configured prefixes for RDF, RDFS, OWL, SHACL, and XSD
 
-### 🏷️ **OntoMapper - Code Generation**
+### 🏷️ **Kastor Gen - Code Generation**
 - **🎯 Domain Interfaces**: Generate pure Kotlin interfaces from ontologies
 - **🔄 Automatic Materialization**: Seamless conversion between RDF and domain objects
 - **🛡️ Type Safety**: Compile-time validation of property types and constraints
@@ -243,9 +243,9 @@ dependencies {
     // Kastor RDF Core
     implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
     
-    // OntoMapper
-    implementation("com.geoknoesis.kastor:ontomapper-runtime:0.1.0")
-    ksp("com.geoknoesis.kastor:ontomapper-processor:0.1.0")
+    // Kastor Gen
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.1.0")
     
     // Optional: Specific backends
     implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
@@ -264,10 +264,10 @@ dependencies {
         <version>0.1.0</version>
     </dependency>
     
-    <!-- OntoMapper -->
+    <!-- Kastor Gen -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
-        <artifactId>ontomapper-runtime</artifactId>
+        <artifactId>kastor-gen-runtime</artifactId>
         <version>0.1.0</version>
     </dependency>
 </dependencies>
@@ -276,7 +276,7 @@ dependencies {
 ## Documentation
 
 - **[Kastor RDF Documentation](docs/kastor/README.md)** - Core RDF functionality
-- **[OntoMapper Documentation](docs/ontomapper/README.md)** - Domain object mapping
+- **[Kastor Gen Documentation](docs/kastor-gen/README.md)** - Domain object mapping
 - **[Getting Started Guide](docs/kastor/getting-started/README.md)** - Quick start tutorial
 - **[API Reference](docs/kastor/api/)** - Detailed API documentation
 
@@ -340,7 +340,7 @@ Kastor's architecture is designed around **separation of concerns** and **plugga
 - Full control over serialization and reasoning
 - Advanced features like graph isomorphism and transactions
 
-**Layer 2: OntoMapper** - For application developers  
+**Layer 2: Kastor Gen** - For application developers  
 - Pure Kotlin domain interfaces with no RDF dependencies
 - Automatic conversion between RDF and domain objects
 - Code generation from ontologies and schemas

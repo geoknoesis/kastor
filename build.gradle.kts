@@ -14,7 +14,7 @@ subprojects {
   apply(plugin = "java-library")
   
   // Apply KSP plugin to projects that need it (but not the processor itself or runtime)
-  if ((project.path.startsWith(":ontomapper:") && project.path != ":ontomapper:processor" && project.path != ":ontomapper:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
+  if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
     apply(plugin = "com.google.devtools.ksp")
   }
 
@@ -40,8 +40,8 @@ subprojects {
     add("implementation", "org.slf4j:slf4j-api:2.0.13")
     
     // Add KSP dependencies for projects that use it (but not the processor itself or runtime)
-    if ((project.path.startsWith(":ontomapper:") && project.path != ":ontomapper:processor" && project.path != ":ontomapper:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
-      add("ksp", project(":ontomapper:processor"))
+    if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
+      add("ksp", project(":kastor-gen:processor"))
     }
   }
 

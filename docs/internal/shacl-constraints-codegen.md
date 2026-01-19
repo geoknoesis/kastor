@@ -1,7 +1,7 @@
 # SHACL Constraint Mapping to Code Generation (Detailed Design)
 
 ## Purpose
-Define a complete, deterministic mapping from SHACL constraints to generated code in Kastor OntoMapper. This includes:
+Define a complete, deterministic mapping from SHACL constraints to generated code in Kastor Gen. This includes:
 - data model extensions to represent SHACL features,
 - parser extraction rules,
 - interface/implementation generation rules,
@@ -41,7 +41,7 @@ This must be expanded to full SHACL coverage as defined below.
 - **Extensible**: new constraints can be added without breaking existing generators.
 
 ## Data Model Extensions
-Add a richer SHACL model in `ontomapper/processor/.../model`:
+Add a richer SHACL model in `kastor-gen/processor/.../model`:
 
 ```kotlin
 data class ShaclShape(

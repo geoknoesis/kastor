@@ -4,8 +4,8 @@ This directory contains comprehensive examples demonstrating various features an
 
 ## 🎯 Available Examples
 
-### 1. **DCAT-US 3.0 OntoMapper Example** (`dcat-us/`)
-Demonstrates how to use OntoMapper to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes.
+### 1. **DCAT-US 3.0 Kastor Gen Example** (`dcat-us/`)
+Demonstrates how to use Kastor Gen to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes.
 
 **Features:**
 - Automatic code generation from SHACL shapes
@@ -16,13 +16,13 @@ Demonstrates how to use OntoMapper to generate interfaces, wrappers, and vocabul
 
 **Key Files:**
 - `DCAT_US_Example.kt` - Main example implementation
-- `build.gradle.kts` - OntoMapper configuration
+- `build.gradle.kts` - Kastor Gen configuration
 - Custom Mustache templates for code generation
 
 **Usage:**
 ```bash
 cd examples/dcat-us
-./gradlew generateOntoMapperCode
+./gradlew generateKastorGenCode
 ./gradlew run
 ```
 
@@ -59,8 +59,8 @@ cd examples/dcat-us
 
 ## 📚 Example Categories
 
-### **OntoMapper Examples**
-Examples demonstrating the OntoMapper code generation capabilities:
+### **Kastor Gen Examples**
+Examples demonstrating the Kastor Gen code generation capabilities:
 
 - **[DCAT-US 3.0](dcat-us/)** - Government data catalog vocabulary
 - More examples coming soon...
@@ -98,13 +98,13 @@ To create a new example:
    ```kotlin
    // examples/my-example/build.gradle.kts
    plugins {
-       id("com.google.devtools.ksp") // If using OntoMapper
+      id("com.google.devtools.ksp") // If using Kastor Gen
    }
    
    dependencies {
        implementation(project(":rdf:core"))
-       implementation(project(":ontomapper:runtime"))
-       ksp(project(":ontomapper:processor")) // If using OntoMapper
+       implementation(project(":kastor-gen:runtime"))
+       ksp(project(":kastor-gen:processor")) // If using Kastor Gen
    }
    ```
 
@@ -155,7 +155,7 @@ We welcome contributions of new examples! To contribute:
 4. **Submit a pull request** with a clear description
 
 ### **Example Ideas**
-- OntoMapper with different vocabularies (Schema.org, Dublin Core, etc.)
+- Kastor Gen with different vocabularies (Schema.org, Dublin Core, etc.)
 - Complex SPARQL query examples
 - SHACL validation scenarios
 - Integration with popular RDF stores

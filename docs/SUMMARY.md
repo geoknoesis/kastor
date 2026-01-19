@@ -84,33 +84,33 @@
 
 ---
 
-## **OntoMapper**
+## **Kastor Gen**
 
 ### **Getting Started**
-- [OntoMapper Overview](ontomapper/README.md)
-- [Getting Started](ontomapper/tutorials/getting-started.md)
-- [Core Concepts](ontomapper/tutorials/core-concepts.md)
-- [Domain Modeling](ontomapper/tutorials/domain-modeling.md)
+- [Kastor Gen Overview](kastor-gen/README.md)
+- [Getting Started](kastor-gen/tutorials/getting-started.md)
+- [Core Concepts](kastor-gen/tutorials/core-concepts.md)
+- [Domain Modeling](kastor-gen/tutorials/domain-modeling.md)
 
 ### **RDF Integration**
-- [RDF Integration](ontomapper/tutorials/rdf-integration.md)
-- [Validation](ontomapper/tutorials/validation.md)
-- [Advanced Usage](ontomapper/tutorials/advanced-usage.md)
+- [RDF Integration](kastor-gen/tutorials/rdf-integration.md)
+- [Validation](kastor-gen/tutorials/validation.md)
+- [Advanced Usage](kastor-gen/tutorials/advanced-usage.md)
 
 ### **Code Generation**
-- [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
-- [Gradle Configuration](ontomapper/tutorials/gradle-configuration.md)
-- [Prefix Mappings](ontomapper/tutorials/prefix-mappings.md)
+- [Ontology Generation](kastor-gen/tutorials/ontology-generation.md)
+- [Gradle Configuration](kastor-gen/tutorials/gradle-configuration.md)
+- [Prefix Mappings](kastor-gen/tutorials/prefix-mappings.md)
 
 ### **Reference**
-- [Annotations Reference](ontomapper/reference/annotations.md)
-- [Runtime Reference](ontomapper/reference/runtime.md)
-- [Validation Reference](ontomapper/reference/validation.md)
+- [Annotations Reference](kastor-gen/reference/annotations.md)
+- [Runtime Reference](kastor-gen/reference/runtime.md)
+- [Validation Reference](kastor-gen/reference/validation.md)
 
 ### **Best Practices**
-- [Best Practices](ontomapper/best-practices.md)
-- [FAQ](ontomapper/faq.md)
-- [Examples](ontomapper/examples/README.md)
+- [Best Practices](kastor-gen/best-practices.md)
+- [FAQ](kastor-gen/faq.md)
+- [Examples](kastor-gen/examples/README.md)
 
 ---
 
@@ -120,20 +120,20 @@
 1. [Kastor Getting Started](kastor/getting-started/getting-started.md)
 2. [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md)
 3. [Hello World Tutorial](kastor/tutorials/hello-world.md)
-4. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md)
+4. [Kastor Gen Getting Started](kastor-gen/tutorials/getting-started.md)
 
 ### **For RDF Experts**
 1. [Core API](kastor/api/core-api.md)
 2. [SPARQL 1.2 Support](kastor/features/sparql-1.2.md)
 3. [RDF-star Support](kastor/features/rdf-star.md)
 4. [Provider Comparison](kastor/providers/provider-comparison.md)
-5. [OntoMapper Core Concepts](ontomapper/tutorials/core-concepts.md)
-6. [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
+5. [Kastor Gen Core Concepts](kastor-gen/tutorials/core-concepts.md)
+6. [Ontology Generation](kastor-gen/tutorials/ontology-generation.md)
 
 ### **For Application Developers**
-1. [OntoMapper Getting Started](ontomapper/tutorials/getting-started.md)
-2. [Domain Modeling](ontomapper/tutorials/domain-modeling.md)
-3. [RDF Integration](ontomapper/tutorials/rdf-integration.md)
+1. [Kastor Gen Getting Started](kastor-gen/tutorials/getting-started.md)
+2. [Domain Modeling](kastor-gen/tutorials/domain-modeling.md)
+3. [RDF Integration](kastor-gen/tutorials/rdf-integration.md)
 4. [Best Practices](kastor/guides/best-practices.md)
 
 ## 📖 Documentation Types
@@ -143,28 +143,28 @@ Step-by-step guides with examples:
 - [Hello World](kastor/tutorials/hello-world.md)
 - [Load and Query](kastor/tutorials/load-and-query.md)
 - [Remote Endpoint](kastor/tutorials/remote-endpoint.md)
-- [Getting Started](ontomapper/tutorials/getting-started.md)
-- [Domain Modeling](ontomapper/tutorials/domain-modeling.md)
+- [Getting Started](kastor-gen/tutorials/getting-started.md)
+- [Domain Modeling](kastor-gen/tutorials/domain-modeling.md)
 
 ### **Guides**
 Comprehensive topic coverage:
 - [SPARQL Fundamentals](kastor/concepts/sparql-fundamentals.md)
 - [Kastor Query DSL](kastor/guides/kastor-query-dsl-tutorial.md)
-- [RDF Integration](ontomapper/tutorials/rdf-integration.md)
-- [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
+- [RDF Integration](kastor-gen/tutorials/rdf-integration.md)
+- [Ontology Generation](kastor-gen/tutorials/ontology-generation.md)
 
 ### **Reference**
 API documentation and specifications:
 - [Core API](kastor/api/core-api.md)
 - [Repository Reference](kastor/reference/repository.md)
 - [Types Reference](kastor/reference/types.md)
-- [Runtime Reference](ontomapper/reference/runtime.md)
-- [Annotations Reference](ontomapper/reference/annotations.md)
+- [Runtime Reference](kastor-gen/reference/runtime.md)
+- [Annotations Reference](kastor-gen/reference/annotations.md)
 
 ### **Best Practices**
 Guidelines and recommendations:
 - [Kastor Best Practices](kastor/guides/best-practices.md)
-- [OntoMapper Best Practices](ontomapper/best-practices.md)
+- [Kastor Gen Best Practices](kastor-gen/best-practices.md)
 - [Performance](kastor/advanced/performance.md)
 - [Troubleshooting](kastor/guides/troubleshooting.md)
 
@@ -175,19 +175,19 @@ Guidelines and recommendations:
 - **Querying**: [SPARQL](kastor/concepts/sparql-fundamentals.md), [SPARQL 1.2](kastor/features/sparql-1.2.md), [Query DSL](kastor/guides/kastor-query-dsl-tutorial.md)
 - **Advanced Features**: [RDF-star](kastor/features/rdf-star.md), [Service Description](kastor/features/service-description.md), [Extension Functions](kastor/features/extension-functions.md)
 - **Backends**: [Providers](kastor/providers/README.md), [Enhanced Providers](kastor/features/enhanced-providers.md), [Provider Capabilities](kastor/features/provider-capabilities.md), [Registry Management](kastor/features/registry-management.md)
-- **Domain Objects**: [Domain Modeling](ontomapper/tutorials/domain-modeling.md), [Core Concepts](ontomapper/tutorials/core-concepts.md)
-- **Code Generation**: [Ontology Generation](ontomapper/tutorials/ontology-generation.md), [Annotations](ontomapper/reference/annotations.md)
+- **Domain Objects**: [Domain Modeling](kastor-gen/tutorials/domain-modeling.md), [Core Concepts](kastor-gen/tutorials/core-concepts.md)
+- **Code Generation**: [Ontology Generation](kastor-gen/tutorials/ontology-generation.md), [Annotations](kastor-gen/reference/annotations.md)
 
 ### **By Use Case**
-- **Data Catalogs**: [Examples](kastor/examples/README.md), [Ontology Generation](ontomapper/tutorials/ontology-generation.md)
-- **Knowledge Graphs**: [Graph Operations](kastor/api/core-api.md), [Domain Modeling](ontomapper/tutorials/domain-modeling.md)
-- **Web Applications**: [SPARQL Endpoints](kastor/tutorials/remote-endpoint.md), [RDF Integration](ontomapper/tutorials/rdf-integration.md)
-- **Enterprise Integration**: [Transactions](kastor/api/transactions.md), [Best Practices](ontomapper/best-practices.md)
+- **Data Catalogs**: [Examples](kastor/examples/README.md), [Ontology Generation](kastor-gen/tutorials/ontology-generation.md)
+- **Knowledge Graphs**: [Graph Operations](kastor/api/core-api.md), [Domain Modeling](kastor-gen/tutorials/domain-modeling.md)
+- **Web Applications**: [SPARQL Endpoints](kastor/tutorials/remote-endpoint.md), [RDF Integration](kastor-gen/tutorials/rdf-integration.md)
+- **Enterprise Integration**: [Transactions](kastor/api/transactions.md), [Best Practices](kastor-gen/best-practices.md)
 
 ### **By Skill Level**
-- **Beginner**: [Getting Started](kastor/getting-started/getting-started.md), [Hello World](kastor/tutorials/hello-world.md), [Core Concepts](ontomapper/tutorials/core-concepts.md)
-- **Intermediate**: [SPARQL](kastor/concepts/sparql-fundamentals.md), [Domain Modeling](ontomapper/tutorials/domain-modeling.md), [Validation](ontomapper/tutorials/validation.md)
-- **Advanced**: [Performance](kastor/advanced/performance.md), [Ontology Generation](ontomapper/tutorials/ontology-generation.md), [Advanced Usage](ontomapper/tutorials/advanced-usage.md)
+- **Beginner**: [Getting Started](kastor/getting-started/getting-started.md), [Hello World](kastor/tutorials/hello-world.md), [Core Concepts](kastor-gen/tutorials/core-concepts.md)
+- **Intermediate**: [SPARQL](kastor/concepts/sparql-fundamentals.md), [Domain Modeling](kastor-gen/tutorials/domain-modeling.md), [Validation](kastor-gen/tutorials/validation.md)
+- **Advanced**: [Performance](kastor/advanced/performance.md), [Ontology Generation](kastor-gen/tutorials/ontology-generation.md), [Advanced Usage](kastor-gen/tutorials/advanced-usage.md)
 
 ## 📚 Additional Resources
 
@@ -208,7 +208,7 @@ Guidelines and recommendations:
 
 ### **Examples and Samples**
 - [Kastor Examples](kastor/examples/README.md)
-- [OntoMapper Examples](ontomapper/examples/README.md)
+- [Kastor Gen Examples](kastor-gen/examples/README.md)
 - [Sample Applications](../samples/) - Complete working examples
 
 ---

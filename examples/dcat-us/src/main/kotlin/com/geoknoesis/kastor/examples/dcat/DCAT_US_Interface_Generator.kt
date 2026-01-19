@@ -5,7 +5,7 @@ import java.io.FileWriter
 
 /**
  * Simple interface generator for DCAT-US classes.
- * This demonstrates what the OntoMapper plugin would generate automatically.
+ * This demonstrates what the Kastor Gen plugin would generate automatically.
  */
 class DCAT_US_Interface_Generator {
     
@@ -176,7 +176,7 @@ object DCAT_US {
  */
 fun main() {
     val generator = DCAT_US_Interface_Generator()
-    val outputDir = File("build/generated/sources/ontomapper")
+    val outputDir = File("build/generated/sources/kastor-gen")
     
     println("Generating DCAT-US interfaces...")
     generator.generateInterfaces(outputDir)

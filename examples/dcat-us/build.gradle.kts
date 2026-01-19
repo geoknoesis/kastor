@@ -1,26 +1,26 @@
-// DCAT-US OntoMapper Example Configuration
-// This example demonstrates OntoMapper code generation from DCAT-US 3.0 SHACL shapes
+// DCAT-US Kastor Gen Example Configuration
+// This example demonstrates Kastor Gen code generation from DCAT-US 3.0 SHACL shapes
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
 dependencies {
     // Core Kastor dependencies - using project dependencies
     implementation(project(":rdf:core"))
-    implementation(project(":ontomapper:runtime"))
+    implementation(project(":kastor-gen:runtime"))
 }
 
-// Configure OntoMapper plugin
-ontomapper {
+// Configure Kastor Gen plugin
+kastorGen {
     ontology("dcat-us") {
         shaclPath = "src/main/resources/dcat-us_3.0_shacl_shapes.ttl"
         contextPath = "src/main/resources/dcat-us_3.0_context.jsonld"
         interfacePackage = "com.geoknoesis.kastor.examples.dcat.generated"
         generateInterfaces = true
         generateWrappers = false  // Only generate interfaces as requested
-        outputDirectory = "build/generated/sources/ontomapper"
+        outputDirectory = "build/generated/sources/kastor-gen"
         generateVocabulary = false
     }
 }
@@ -30,7 +30,7 @@ ontomapper {
 sourceSets {
     main {
         kotlin {
-            srcDir("build/generated/sources/ontomapper")
+            srcDir("build/generated/sources/kastor-gen")
         }
     }
 }
@@ -47,21 +47,21 @@ afterEvaluate {
     }
 }
 
-// Task to generate OntoMapper interfaces manually
-tasks.register<JavaExec>("generateOntoMapperCode") {
+// Task to generate Kastor Gen interfaces manually
+tasks.register<JavaExec>("generateKastorGenCode") {
     dependsOn("compileKotlin")
     mainClass.set("com.geoknoesis.kastor.examples.dcat.DCAT_US_Interface_GeneratorKt")
     classpath = sourceSets.main.get().runtimeClasspath
-    description = "Generate OntoMapper interfaces from DCAT-US 3.0 SHACL shapes"
-    group = "ontomapper"
+    description = "Generate Kastor Gen interfaces from DCAT-US 3.0 SHACL shapes"
+    group = "kastor-gen"
 }
 
 // Task to run the example
 tasks.register<JavaExec>("run") {
-    dependsOn("generateOntoMapperCode", "compileKotlin")
+    dependsOn("generateKastorGenCode", "compileKotlin")
     mainClass.set("com.geoknoesis.kastor.examples.dcat.DCAT_US_ExampleKt")
     classpath = sourceSets.main.get().runtimeClasspath
-    description = "Run the DCAT-US OntoMapper example"
+    description = "Run the DCAT-US Kastor Gen example"
     group = "examples"
 }
 
@@ -70,13 +70,13 @@ tasks.register<JavaExec>("runManualExample") {
     dependsOn("compileKotlin")
     mainClass.set("com.geoknoesis.kastor.examples.dcat.DCAT_US_Manual_ExampleKt")
     classpath = sourceSets.main.get().runtimeClasspath
-    description = "Run the DCAT-US manual example showing what OntoMapper would generate"
+    description = "Run the DCAT-US manual example showing what Kastor Gen would generate"
     group = "examples"
 }
 
 // Task to run the generated interfaces example
 tasks.register<JavaExec>("runGeneratedExample") {
-    dependsOn("generateOntoMapperCode", "compileKotlin")
+    dependsOn("generateKastorGenCode", "compileKotlin")
     mainClass.set("com.geoknoesis.kastor.examples.dcat.DCAT_US_Generated_ExampleKt")
     classpath = sourceSets.main.get().runtimeClasspath
     description = "Run the DCAT-US example using generated interfaces"

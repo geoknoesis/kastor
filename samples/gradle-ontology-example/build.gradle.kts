@@ -1,6 +1,6 @@
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.ontomapper")
+    id("com.geoknoesis.kastor.gen")
 }
 
 repositories {
@@ -8,25 +8,25 @@ repositories {
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:ontomapper-runtime:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
     implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
 }
 
-// Configure OntoMapper plugin
-ontomapper {
+// Configure Kastor Gen plugin
+kastorGen {
     shaclPath.set("ontologies/dcat-us.shacl.ttl")
     contextPath.set("ontologies/dcat-us.context.jsonld")
     targetPackage.set("com.example.dcatus.generated")
     generateInterfaces.set(true)
     generateWrappers.set(true)
-    outputDirectory.set("build/generated/sources/ontomapper")
+    outputDirectory.set("build/generated/sources/kastor-gen")
 }
 
 // Add generated sources to source sets
 sourceSets {
     main {
         kotlin {
-            srcDir("build/generated/sources/ontomapper")
+            srcDir("build/generated/sources/kastor-gen")
         }
     }
 }

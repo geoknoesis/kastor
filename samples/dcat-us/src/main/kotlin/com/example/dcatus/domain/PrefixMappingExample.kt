@@ -1,12 +1,12 @@
 package com.example.dcatus.domain
 
-import com.example.ontomapper.annotations.Prefix
-import com.example.ontomapper.annotations.PrefixMapping
-import com.example.ontomapper.annotations.RdfClass
-import com.example.ontomapper.annotations.RdfProperty
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.PrefixMapping
+import com.geoknoesis.kastor.gen.annotations.RdfClass
+import com.geoknoesis.kastor.gen.annotations.RdfProperty
 
 /**
- * Example demonstrating the use of prefix mappings and QNames in OntoMapper annotations.
+ * Example demonstrating the use of prefix mappings and QNames in Kastor Gen annotations.
  * 
  * This shows how to declare prefix mappings and use QNames instead of full IRIs
  * in RdfClass and RdfProperty annotations.

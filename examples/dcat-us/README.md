@@ -1,10 +1,10 @@
-# DCAT-US 3.0 OntoMapper Example
+# DCAT-US 3.0 Kastor Gen Example
 
-This example demonstrates how to use OntoMapper to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes, and then use the generated code to work with DCAT-US compliant data.
+This example demonstrates how to use Kastor Gen to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes, and then use the generated code to work with DCAT-US compliant data.
 
 ## 🎯 Overview
 
-The [DCAT-US 3.0 specification](https://resources.data.gov/standards/dcat-us/) is the U.S. government's implementation of the W3C Data Catalog Vocabulary (DCAT) standard. This example shows how OntoMapper can automatically generate Kotlin code from the [DCAT-US SHACL shapes](https://github.com/DOI-DO/dcat-us/blob/main/shacl/dcat-us_3.0_shacl_shapes.ttl), making it easy to work with government data catalogs in a type-safe manner.
+The [DCAT-US 3.0 specification](https://resources.data.gov/standards/dcat-us/) is the U.S. government's implementation of the W3C Data Catalog Vocabulary (DCAT) standard. This example shows how Kastor Gen can automatically generate Kotlin code from the [DCAT-US SHACL shapes](https://github.com/DOI-DO/dcat-us/blob/main/shacl/dcat-us_3.0_shacl_shapes.ttl), making it easy to work with government data catalogs in a type-safe manner.
 
 ## 🚀 Features Demonstrated
 
@@ -256,30 +256,30 @@ The example is configured in `build.gradle.kts` using KSP arguments:
 
 ```kotlin
 ksp {
-    arg("ontomapper.source", "https://raw.githubusercontent.com/DOI-DO/dcat-us/main/shacl/dcat-us_3.0_shacl_shapes.ttl")
-    arg("ontomapper.format", "turtle")
-    arg("ontomapper.packageName", "com.geoknoesis.kastor.examples.dcat.generated")
-    arg("ontomapper.generateVocabulary", "true")
-    arg("ontomapper.generateInterfaces", "true")
-    arg("ontomapper.generateDataClasses", "true")
-    arg("ontomapper.generateWrappers", "true")
-    arg("ontomapper.generateDsl", "true")
-    arg("ontomapper.enableShaclValidation", "true")
+    arg("kastor.gen.source", "https://raw.githubusercontent.com/DOI-DO/dcat-us/main/shacl/dcat-us_3.0_shacl_shapes.ttl")
+    arg("kastor.gen.format", "turtle")
+    arg("kastor.gen.packageName", "com.geoknoesis.kastor.examples.dcat.generated")
+    arg("kastor.gen.generateVocabulary", "true")
+    arg("kastor.gen.generateInterfaces", "true")
+    arg("kastor.gen.generateDataClasses", "true")
+    arg("kastor.gen.generateWrappers", "true")
+    arg("kastor.gen.generateDsl", "true")
+    arg("kastor.gen.enableShaclValidation", "true")
     
     // Custom prefix mappings for DCAT-US
-    arg("ontomapper.prefix.dcat", "http://www.w3.org/ns/dcat#")
-    arg("ontomapper.prefix.dct", "http://purl.org/dc/terms/")
+    arg("kastor.gen.prefix.dcat", "http://www.w3.org/ns/dcat#")
+    arg("kastor.gen.prefix.dct", "http://purl.org/dc/terms/")
     // ... more prefixes
     
     // Property mappings for better Kotlin naming
-    arg("ontomapper.propertyMapping.http://www.w3.org/ns/dcat#title", "title")
-    arg("ontomapper.propertyMapping.http://www.w3.org/ns/dcat#description", "description")
-    arg("ontomapper.propertyMapping.http://www.w3.org/ns/dcat#keyword", "keywords")
+    arg("kastor.gen.propertyMapping.http://www.w3.org/ns/dcat#title", "title")
+    arg("kastor.gen.propertyMapping.http://www.w3.org/ns/dcat#description", "description")
+    arg("kastor.gen.propertyMapping.http://www.w3.org/ns/dcat#keyword", "keywords")
     // ... more mappings
     
     // Required properties for validation
-    arg("ontomapper.required.Catalog", "title,description,publisher")
-    arg("ontomapper.required.Dataset", "title,description,publisher")
+    arg("kastor.gen.required.Catalog", "title,description,publisher")
+    arg("kastor.gen.required.Dataset", "title,description,publisher")
 }
 ```
 
@@ -287,7 +287,7 @@ ksp {
 
 1. **Generate Code** (from project root):
    ```bash
-   ./gradlew :examples:dcat-us:generateOntoMapperCode
+   ./gradlew :examples:dcat-us:generateKastorGenCode
    ```
 
 2. **Run Example** (from project root):
@@ -304,7 +304,7 @@ ksp {
 4. **Or run from example directory**:
    ```bash
    cd examples/dcat-us
-   ../../gradlew generateOntoMapperCode
+   ../../gradlew generateKastorGenCode
    ../../gradlew run
    ../../gradlew build test
    ```
@@ -314,12 +314,12 @@ ksp {
 - [DCAT-US 3.0 Specification](https://resources.data.gov/standards/dcat-us/)
 - [DCAT-US SHACL Shapes](https://github.com/DOI-DO/dcat-us/blob/main/shacl/dcat-us_3.0_shacl_shapes.ttl)
 - [W3C DCAT Vocabulary](https://www.w3.org/TR/vocab-dcat-3/)
-- [OntoMapper Documentation](../../docs/ontomapper/README.md)
+- [Kastor Gen Documentation](../../docs/kastor-gen/README.md)
 - [Kastor RDF API](../../docs/kastor/README.md)
 
 ## 🤝 Contributing
 
-This example demonstrates best practices for using OntoMapper with government data standards. Contributions and improvements are welcome!
+This example demonstrates best practices for using Kastor Gen with government data standards. Contributions and improvements are welcome!
 
 ## 📄 License
 

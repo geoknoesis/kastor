@@ -16,7 +16,7 @@ Kastor is a modern Kotlin RDF framework that makes semantic web development acce
 - **SHACL Validation**: Data validation and constraint checking
 - **Transactions**: ACID compliance for data integrity
 - **Repository Management**: Multi-repository setup and federation
-- **OntoMapper Integration**: Code generation from ontologies
+- **Kastor Gen Integration**: Code generation from ontologies
 
 ## 🚀 Quick Start
 
