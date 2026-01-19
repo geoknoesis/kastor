@@ -48,3 +48,12 @@ object SKOS : Vocabulary {
     val memberList: Iri by lazy { term("memberList") }
     val notation: Iri by lazy { term("notation") }
 }
+
+
+
+
+
+
+
+
+

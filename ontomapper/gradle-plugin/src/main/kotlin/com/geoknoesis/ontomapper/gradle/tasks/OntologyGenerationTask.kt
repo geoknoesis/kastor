@@ -267,3 +267,15 @@ abstract class OntologyGenerationTask : DefaultTask() {
         throw IllegalArgumentException("File not found: $path (tried: $file, $projectFile, $resourceFile)")
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

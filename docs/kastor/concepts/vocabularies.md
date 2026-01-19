@@ -558,3 +558,6 @@ val person = FOAF.Person
 - **DCTERMS**: [Dublin Core Terms](https://www.dublincore.org/specifications/dublin-core/dcmi-terms/)
 - **FOAF**: [FOAF Specification](http://xmlns.com/foaf/spec/)
 
+
+
+

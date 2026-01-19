@@ -22,9 +22,13 @@ println("Examples: ${locationParam?.examples?.joinToString(", ")}")
 
 // Validate configuration before creating repository
 val requiredParams = RdfApiRegistry.getRequiredParameters("sparql")
-val config = RdfConfig("sparql", mapOf("location" to "http://dbpedia.org/sparql"))
+val config = RdfConfig(
+    providerId = "sparql",
+    variantId = "sparql",
+    options = mapOf("location" to "http://dbpedia.org/sparql")
+)
 val missingParams = requiredParams.filter { param -> 
-    !config.params.containsKey(param.name) 
+    !config.options.containsKey(param.name) 
 }
 if (missingParams.isEmpty()) {
     println("Configuration is valid")
@@ -46,7 +50,9 @@ if (variant != null) {
     }
     
     if (missingParams.isEmpty()) {
-        val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2", params))
+        val repo = RdfApiRegistry.create(
+            RdfConfig(providerId = "jena", variantId = "tdb2", options = params)
+        )
         println("Repository created successfully")
     } else {
         println("Missing required parameters: ${missingParams.map { it.name }}")
@@ -101,4 +107,7 @@ SELECT ?s ?label WHERE {
 ```sparql
 CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <urn:g> { ?s ?p ?o } }
 ```
+
+
+
 

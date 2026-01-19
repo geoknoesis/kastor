@@ -27,7 +27,7 @@ interface Person {
 interface Person {
     val name: List<String>
     val rdfNode: RdfTerm        // Don't do this!
-    val rdfGraph: RdfGraph      // Don't do this!
+    val RdfGraph: RdfGraph      // Don't do this!
 }
 ```
 
@@ -455,3 +455,6 @@ class PersonIntegrationTest {
 - **Learn about [Validation](validation.md)** - SHACL validation patterns
 - **Check out [Advanced Usage](advanced-usage.md)** - Complex scenarios
 - **See [Practical Examples](../examples/README.md)** - Real-world use cases
+
+
+

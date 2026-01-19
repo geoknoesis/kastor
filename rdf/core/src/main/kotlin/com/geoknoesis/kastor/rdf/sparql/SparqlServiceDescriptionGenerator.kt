@@ -3,7 +3,7 @@ package com.geoknoesis.kastor.rdf.sparql
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.SPARQL_SD
 import com.geoknoesis.kastor.rdf.vocab.SPARQL12
-import com.geoknoesis.kastor.rdf.dsl.StandaloneGraph
+import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 
 /**
  * SPARQL Service Description generator.
@@ -21,30 +21,30 @@ class SparqlServiceDescriptionGenerator(
         val triples = mutableListOf<RdfTriple>()
         
         // Service URI
-        val service = iri(serviceUri)
+        val service = Iri(serviceUri)
         
         // Basic service information
-        triples.add(RdfTriple(service, iri("${SPARQL_SD.namespace}Service"), iri("${SPARQL_SD.namespace}Service")))
-        triples.add(RdfTriple(service, SPARQL12.Sparql12Service, iri("${SPARQL12.namespace}Sparql12Service")))
-        triples.add(RdfTriple(service, SPARQL_SD.endpointProp, iri("$serviceUri/sparql")))
-        triples.add(RdfTriple(service, SPARQL_SD.updateEndpointProp, iri("$serviceUri/update")))
+        triples.add(RdfTriple(service, Iri("${SPARQL_SD.namespace}Service"), Iri("${SPARQL_SD.namespace}Service")))
+        triples.add(RdfTriple(service, SPARQL12.Sparql12Service, Iri("${SPARQL12.namespace}Sparql12Service")))
+        triples.add(RdfTriple(service, SPARQL_SD.endpointProp, Iri("$serviceUri/sparql")))
+        triples.add(RdfTriple(service, SPARQL_SD.updateEndpointProp, Iri("$serviceUri/update")))
         
         // SPARQL version support
         triples.add(RdfTriple(service, SPARQL12.supportedSparqlVersion, string(capabilities.sparqlVersion)))
         
         // Supported languages
         capabilities.supportedLanguages.forEach { lang ->
-            triples.add(RdfTriple(service, SPARQL_SD.supportedLanguageProp, iri("${SPARQL_SD.namespace}$lang")))
+            triples.add(RdfTriple(service, SPARQL_SD.supportedLanguageProp, Iri("${SPARQL_SD.namespace}$lang")))
         }
         
         // Result formats
         capabilities.supportedResultFormats.forEach { format ->
-            triples.add(RdfTriple(service, SPARQL_SD.resultFormatProp, iri(format)))
+            triples.add(RdfTriple(service, SPARQL_SD.resultFormatProp, Iri(format)))
         }
         
         // Input formats
         capabilities.supportedInputFormats.forEach { format ->
-            triples.add(RdfTriple(service, SPARQL_SD.inputFormatProp, iri(format)))
+            triples.add(RdfTriple(service, SPARQL_SD.inputFormatProp, Iri(format)))
         }
         
         // SPARQL 1.2 features
@@ -74,7 +74,7 @@ class SparqlServiceDescriptionGenerator(
         
         // Extension functions
         capabilities.extensionFunctions.forEach { func ->
-            val functionUri = iri(func.iri)
+            val functionUri = Iri(func.iri)
             triples.add(RdfTriple(service, SPARQL_SD.extensionFunction, functionUri))
             triples.add(RdfTriple(functionUri, SPARQL_SD.functionName, string(func.name)))
             triples.add(RdfTriple(functionUri, SPARQL_SD.description, string(func.description)))
@@ -84,38 +84,37 @@ class SparqlServiceDescriptionGenerator(
             }
             
             if (func.returnType != null) {
-                triples.add(RdfTriple(functionUri, SPARQL_SD.returnType, iri(func.returnType)))
+                triples.add(RdfTriple(functionUri, SPARQL_SD.returnType, Iri(func.returnType)))
             }
         }
         
         // Dataset information
         val dataset = bnode("dataset")
         triples.add(RdfTriple(service, SPARQL_SD.defaultDatasetProp, dataset))
-        triples.add(RdfTriple(dataset, iri("${SPARQL_SD.namespace}Dataset"), iri("${SPARQL_SD.namespace}Dataset")))
+        triples.add(RdfTriple(dataset, Iri("${SPARQL_SD.namespace}Dataset"), Iri("${SPARQL_SD.namespace}Dataset")))
         
         // Default graphs
         capabilities.defaultGraphs.forEach { graphUri ->
-            val graphResource = iri(graphUri)
+            val graphResource = Iri(graphUri)
             triples.add(RdfTriple(dataset, SPARQL_SD.defaultGraphProp, graphResource))
-            triples.add(RdfTriple(graphResource, iri("${SPARQL_SD.namespace}DefaultGraph"), iri("${SPARQL_SD.namespace}DefaultGraph")))
+            triples.add(RdfTriple(graphResource, Iri("${SPARQL_SD.namespace}DefaultGraph"), Iri("${SPARQL_SD.namespace}DefaultGraph")))
         }
         
         // Named graphs
         capabilities.namedGraphs.forEach { graphUri ->
-            val graphResource = iri(graphUri)
+            val graphResource = Iri(graphUri)
             triples.add(RdfTriple(dataset, SPARQL_SD.namedGraphProp, graphResource))
-            triples.add(RdfTriple(graphResource, iri("${SPARQL_SD.namespace}NamedGraph"), iri("${SPARQL_SD.namespace}NamedGraph")))
+            triples.add(RdfTriple(graphResource, Iri("${SPARQL_SD.namespace}NamedGraph"), Iri("${SPARQL_SD.namespace}NamedGraph")))
         }
         
-        return StandaloneGraph(triples)
+        return MemoryGraph(triples)
     }
     
     /**
      * Generate service description as SPARQL query result.
      */
     fun generateAsSparqlResult(): String {
-        val graph = generateServiceDescription()
-        val triples = graph.getTriples()
+        generateServiceDescription()
         
         return buildString {
             appendLine("SELECT ?subject ?predicate ?object WHERE {")
@@ -145,8 +144,7 @@ class SparqlServiceDescriptionGenerator(
      * Generate service description as JSON-LD format.
      */
     fun generateAsJsonLd(): String {
-        val graph = generateServiceDescription()
-        val triples = graph.getTriples()
+        generateServiceDescription()
         
         return buildString {
             appendLine("{")
@@ -160,3 +158,12 @@ class SparqlServiceDescriptionGenerator(
         }
     }
 }
+
+
+
+
+
+
+
+
+

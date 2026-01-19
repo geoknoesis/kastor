@@ -293,10 +293,13 @@ A: Make sure KSP is properly configured and the build completed successfully. Th
 A: Ensure you have the correct import statements for `@RdfClass` and `@RdfProperty`.
 
 **Q: Validation not working**
-A: Check that you've added the validation dependencies and that a ValidationPort is registered.
+A: Check that you've added the validation dependencies and that a ShaclValidator is registered.
 
 ### Getting Help
 
 - Check the [FAQ](../faq.md) for common questions
 - Look at [Examples](../examples/README.md) for more patterns
 - Review the [API Reference](../reference/README.md) for detailed documentation
+
+
+

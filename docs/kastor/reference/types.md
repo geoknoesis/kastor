@@ -10,10 +10,18 @@
 `RdfTriple(subject: RdfTerm, predicate: Iri, object: RdfTerm)`
 
 ### RdfGraph
-`triples(): Sequence<RdfTriple>`, `size(): Long`
+Read-only graph view.
+`getTriples(): List<RdfTriple>`, `hasTriple(triple: RdfTriple): Boolean`, `size(): Int`
+
+### MutableRdfGraph
+Mutable graph operations.
+`addTriple(...)`, `addTriples(...)`, `removeTriple(...)`, `removeTriples(...)`, `clear()`
 
 ### Query results
 - `ResultBinding(name: String, value: RdfTerm)`
 - `RdfSelectRow(bindings: List<ResultBinding>)` with operator `get(name: String): RdfTerm?`
 - `ResultSet(rows: List<RdfSelectRow>)`
+
+
+
 

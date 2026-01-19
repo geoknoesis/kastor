@@ -79,3 +79,12 @@ object FOAF : Vocabulary {
     val tipjar: Iri by lazy { term("tipjar") }
     val myersBriggs: Iri by lazy { term("myersBriggs") }
 }
+
+
+
+
+
+
+
+
+

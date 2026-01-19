@@ -356,7 +356,7 @@ object OntoMapperConfig {
     
     fun initialize() {
         if (validationEnabled) {
-            ValidationRegistry.register(JenaValidation())
+            ShaclValidation.register(JenaValidation())
         }
     }
 }
@@ -441,7 +441,7 @@ Configure runtime behavior:
 // ✅ Good: Runtime configuration
 fun initializeOntoMapper() {
     // Register validation port
-    ValidationRegistry.register(JenaValidation())
+    ShaclValidation.register(JenaValidation())
     
     // Initialize generated wrappers
     OntoMapper.initialize()
@@ -548,3 +548,5 @@ Following these best practices will help you build robust, maintainable applicat
 8. **Configure for deployment** - Set up proper build and runtime configuration
 
 For more specific guidance, see the [FAQ](faq.md) and [API Reference](reference/).
+
+

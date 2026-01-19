@@ -92,3 +92,12 @@ enum class PerformanceProfile {
     MEDIUM,    // OWL-EL, OWL-QL
     SLOW       // OWL-DL, complex custom rules
 }
+
+
+
+
+
+
+
+
+

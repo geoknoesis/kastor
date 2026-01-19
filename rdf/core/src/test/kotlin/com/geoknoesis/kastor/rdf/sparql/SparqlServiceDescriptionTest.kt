@@ -33,8 +33,8 @@ class SparqlServiceDescriptionTest {
         assertTrue(serviceDescription.size() > 0)
         
         // Check that service description contains expected triples
-        val serviceUri = iri("https://example.com/sparql")
-        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, iri("${SPARQL_SD.namespace}Service"), iri("${SPARQL_SD.namespace}Service"))))
+        val serviceUri = Iri("https://example.com/sparql")
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, Iri("${SPARQL_SD.namespace}Service"), Iri("${SPARQL_SD.namespace}Service"))))
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportedSparqlVersion, string("1.2"))))
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportsRdfStar, boolean(true))))
     }
@@ -66,7 +66,7 @@ class SparqlServiceDescriptionTest {
         assertTrue(providers.isNotEmpty())
         
         // Check that we have at least the memory provider
-        assertTrue(providers.any { it.getType() == "memory" })
+        assertTrue(providers.any { it.id == "memory" })
         
         val capabilities = RdfApiRegistry.discoverAllCapabilities()
         assertTrue(capabilities.isNotEmpty())
@@ -76,7 +76,7 @@ class SparqlServiceDescriptionTest {
         assertNotNull(memoryProvider)
         memoryProvider?.let { provider ->
             // Just check that we can get capabilities, don't assume specific features
-            val providerCapabilities = provider.getCapabilities()
+            val providerCapabilities = provider.getCapabilities(provider.defaultVariantId())
             assertNotNull(providerCapabilities)
         }
     }
@@ -126,7 +126,7 @@ class SparqlServiceDescriptionTest {
         val memoryProvider = RdfApiRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
         memoryProvider?.let { provider ->
-            val capabilities = provider.getDetailedCapabilities()
+            val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             
             assertEquals(ProviderCategory.RDF_STORE, capabilities.providerCategory)
             // Just check that basic capabilities exist, don't assume specific features
@@ -136,7 +136,7 @@ class SparqlServiceDescriptionTest {
         // Test specialized providers if available (they may not be available in isolated tests)
         val sparqlProvider = RdfApiRegistry.getProvider("sparql-endpoint")
         sparqlProvider?.let { provider ->
-            val sparqlCapabilities = provider.getDetailedCapabilities()
+            val sparqlCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.SPARQL_ENDPOINT, sparqlCapabilities.providerCategory)
             assertTrue(sparqlCapabilities.supportedSparqlFeatures["RDF-star"] == true)
             assertTrue(sparqlCapabilities.supportedSparqlFeatures["Federation"] == true)
@@ -145,7 +145,7 @@ class SparqlServiceDescriptionTest {
         
         val reasonerProvider = RdfApiRegistry.getProvider("reasoner")
         reasonerProvider?.let { provider ->
-            val reasonerCapabilities = provider.getDetailedCapabilities()
+            val reasonerCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.REASONER, reasonerCapabilities.providerCategory)
             assertTrue(reasonerCapabilities.supportedSparqlFeatures["Inference"] == true)
             assertTrue(reasonerCapabilities.basic.supportsInference)
@@ -153,7 +153,7 @@ class SparqlServiceDescriptionTest {
         
         val shaclProvider = RdfApiRegistry.getProvider("shacl-validator")
         shaclProvider?.let { provider ->
-            val shaclCapabilities = provider.getDetailedCapabilities()
+            val shaclCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.SHACL_VALIDATOR, shaclCapabilities.providerCategory)
             assertTrue(shaclCapabilities.supportedSparqlFeatures["SHACL Validation"] == true)
         }
@@ -229,18 +229,18 @@ class SparqlServiceDescriptionTest {
         // Test getProvider
         val memoryProvider = RdfApiRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
-        assertEquals("memory", memoryProvider?.getType())
+        assertEquals("memory", memoryProvider?.id)
         
         val nonExistentProvider = RdfApiRegistry.getProvider("non-existent")
         assertNull(nonExistentProvider)
         
         // Test basic registry operations
         assertTrue(RdfApiRegistry.supports("memory"))
-        assertTrue(RdfApiRegistry.isSupported("memory"))
+        assertTrue(RdfApiRegistry.supportsVariant("memory", "memory"))
         assertFalse(RdfApiRegistry.supports("non-existent"))
         
         val supportedTypes = RdfApiRegistry.getSupportedTypes()
-        assertTrue(supportedTypes.contains("memory"))
+        assertTrue(supportedTypes.contains("memory:memory"))
     }
     
     @Test
@@ -254,15 +254,27 @@ class SparqlServiceDescriptionTest {
         
         // Test that getSupportedTypes() matches actual provider types
         val supportedTypes = RdfApiRegistry.getSupportedTypes()
-        val providerTypes = allProviders.map { it.getType() }
+        val providerTypes = allProviders.map { it.id }.toSet()
+        val supportedProviders = supportedTypes.map { it.substringBefore(":", it) }.toSet()
         
-        assertEquals(supportedTypes.toSet(), providerTypes.toSet())
+        assertEquals(providerTypes, supportedProviders)
         
         // Test that each provider type can be retrieved
         supportedTypes.forEach { type ->
-            val provider = RdfApiRegistry.getProvider(type)
+            val parts = type.split(":", limit = 2)
+            assertEquals(2, parts.size, "Type '$type' should include provider and variant")
+            val provider = RdfApiRegistry.getProvider(parts[0])
             assertNotNull(provider, "Provider for type '$type' should not be null")
-            assertEquals(type, provider?.getType())
+            assertEquals(parts[0], provider?.id)
         }
     }
 }
+
+
+
+
+
+
+
+
+

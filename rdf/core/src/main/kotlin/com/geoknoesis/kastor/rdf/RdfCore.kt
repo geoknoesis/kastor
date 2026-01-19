@@ -1,10 +1,10 @@
 package com.geoknoesis.kastor.rdf
 
 import java.io.Closeable
+import java.util.ServiceLoader
 import com.geoknoesis.kastor.rdf.vocab.XSD
-import com.geoknoesis.kastor.rdf.dsl.TripleDsl
 import com.geoknoesis.kastor.rdf.dsl.GraphDsl
-import com.geoknoesis.kastor.rdf.dsl.StandaloneGraph
+import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
 
 /**
@@ -21,14 +21,42 @@ object Rdf {
      * Create an in-memory repository with default settings.
      * Perfect for quick prototyping and testing.
      */
-    fun memory(): RdfRepository = factory { type = "memory" }
+    fun memory(): RdfRepository = factory {
+        when {
+            RdfApiRegistry.supportsVariant("jena", "memory") -> {
+                providerId = "jena"
+                variantId = "memory"
+            }
+            RdfApiRegistry.supportsVariant("rdf4j", "memory") -> {
+                providerId = "rdf4j"
+                variantId = "memory"
+            }
+            else -> {
+                providerId = "memory"
+                variantId = "memory"
+            }
+        }
+    }
     
     /**
      * Create an in-memory repository with RDFS inference.
      * Automatically infers additional triples based on RDFS rules.
      */
-    fun memoryWithInference(): RdfRepository = factory { 
-        type = "memory"
+    fun memoryWithInference(): RdfRepository = factory {
+        when {
+            RdfApiRegistry.supportsVariant("jena", "memory-inference") -> {
+                providerId = "jena"
+                variantId = "memory-inference"
+            }
+            RdfApiRegistry.supportsVariant("rdf4j", "memory-rdfs") -> {
+                providerId = "rdf4j"
+                variantId = "memory-rdfs"
+            }
+            else -> {
+                providerId = "memory"
+                variantId = "memory"
+            }
+        }
         inference = true
     }
     
@@ -36,8 +64,21 @@ object Rdf {
      * Create a persistent repository with TDB2 backend.
      * Data persists between application restarts.
      */
-    fun persistent(location: String = "data"): RdfRepository = factory { 
-        type = "tdb2"
+    fun persistent(location: String = "data"): RdfRepository = factory {
+        when {
+            RdfApiRegistry.supportsVariant("jena", "tdb2") -> {
+                providerId = "jena"
+                variantId = "tdb2"
+            }
+            RdfApiRegistry.supportsVariant("rdf4j", "native") -> {
+                providerId = "rdf4j"
+                variantId = "native"
+            }
+            else -> {
+                providerId = "memory"
+                variantId = "memory"
+            }
+        }
         this.location = location
     }
     
@@ -51,28 +92,19 @@ object Rdf {
     }
     
     /**
-     * Create a repository manager for multi-repository operations.
-     * Perfect for federated queries and complex data management.
-     */
-    fun manager(configure: ManagerBuilder.() -> Unit): RepositoryManager {
-        val builder = ManagerBuilder().apply(configure)
-        return builder.build()
-    }
-    
-    /**
      * Create a standalone RDF graph using DSL.
      * Perfect for creating graphs without a repository context.
      * 
      * Example:
      * ```kotlin
      * val graph = Rdf.graph {
-     *     val person = iri("http://example.org/person")
+     *     val person = Iri("http://example.org/person")
      *     person - FOAF.name - "Alice"
      *     person - FOAF.age - 30
      * }
      * ```
      */
-    fun graph(configure: GraphDsl.() -> Unit): RdfGraph {
+    fun graph(configure: GraphDsl.() -> Unit): MutableRdfGraph {
         val dsl = GraphDsl().apply(configure)
         return dsl.build()
     }
@@ -99,44 +131,27 @@ object Rdf {
      * Builder for configuring individual repositories.
      */
     class RepositoryBuilder {
-        var type: String = "memory"
+        var providerId: String? = null
+        var variantId: String? = null
+        var requirements: ProviderRequirements = ProviderRequirements()
         var location: String? = null
         var inference: Boolean = false
-        var optimization: Boolean = true
-        var cacheSize: Int = 1000
-        var maxMemory: String = "1GB"
         
         fun build(): RdfRepository {
             val config = RdfConfig(
-                type = type,
-                params = mapOf(
+                providerId = providerId,
+                variantId = variantId,
+                options = mapOf(
                     "location" to (location ?: "data"),
-                    "inference" to inference.toString(),
-                    "optimization" to optimization.toString(),
-                    "cacheSize" to cacheSize.toString(),
-                    "maxMemory" to maxMemory
-                )
+                    "inference" to inference.toString()
+                ),
+                requirements = requirements.takeIf { it != ProviderRequirements() }
             )
             
             return RdfApiRegistry.create(config)
         }
     }
     
-    /**
-     * Builder for configuring repository managers.
-     */
-    class ManagerBuilder {
-        private val repositories = mutableMapOf<String, RdfRepository>()
-        
-        fun repository(name: String, configure: RepositoryBuilder.() -> Unit) {
-            val builder = RepositoryBuilder().apply(configure)
-            repositories[name] = builder.build()
-        }
-        
-        fun build(): RepositoryManager {
-            return DefaultRepositoryManager(repositories)
-        }
-    }
 }
 
 // === CORE INTERFACES ===
@@ -148,19 +163,24 @@ object Rdf {
  * Main interface for RDF repository operations.
  * Provides a unified API for all RDF operations.
  */
-interface RdfRepository : Closeable {
+interface RdfRepository : Repository {
     
     // === GRAPH OPERATIONS ===
     
     /**
      * Get the default graph for this repository.
      */
-    val defaultGraph: RdfGraph
+    override val defaultGraph: MutableRdfGraph
     
     /**
      * Get a named graph by IRI.
      */
-    fun getGraph(name: Iri): RdfGraph
+    fun getGraph(name: Iri): MutableRdfGraph
+
+    /**
+     * Minimal core API graph access.
+     */
+    override fun graph(name: Iri): MutableRdfGraph = getGraph(name)
     
     /**
      * Check if a named graph exists.
@@ -175,111 +195,39 @@ interface RdfRepository : Closeable {
     /**
      * Create a new named graph.
      */
-    fun createGraph(name: Iri): RdfGraph
+    fun createGraph(name: Iri): MutableRdfGraph
     
     /**
      * Remove a named graph and all its triples.
      */
     fun removeGraph(name: Iri): Boolean
     
-    // === TRIPLE OPERATIONS ===
-    
-    /**
-     * Add triples using the elegant DSL.
-     * Supports all syntax styles: ultra-compact, natural language, infix operators.
-     */
-    fun add(configure: TripleDsl.() -> Unit) {
-        val dsl = TripleDsl().apply(configure)
-        defaultGraph.addTriples(dsl.triples)
-    }
-    
-    /**
-     * Add triples to a specific named graph.
-     */
-    fun addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit) {
-        val dsl = TripleDsl().apply(configure)
-        getGraph(graphName).addTriples(dsl.triples)
-    }
-    
-    /**
-     * Add a single triple to the default graph.
-     */
-    fun addTriple(triple: RdfTriple) {
-        defaultGraph.addTriple(triple)
-    }
-    
-    /**
-     * Add multiple triples to the default graph.
-     */
-    fun addTriples(triples: Collection<RdfTriple>) {
-        defaultGraph.addTriples(triples)
-    }
-    
-    /**
-     * Add a single triple to a specific named graph.
-     */
-    fun addTriple(graphName: Iri?, triple: RdfTriple) {
-        if (graphName == null) {
-            defaultGraph.addTriple(triple)
-        } else {
-            getGraph(graphName).addTriple(triple)
-        }
-    }
-    
-    /**
-     * Remove a triple from the default graph.
-     */
-    fun removeTriple(triple: RdfTriple): Boolean {
-        return defaultGraph.removeTriple(triple)
-    }
-    
-    /**
-     * Remove multiple triples from the default graph.
-     */
-    fun removeTriples(triples: Collection<RdfTriple>): Boolean {
-        return defaultGraph.removeTriples(triples)
-    }
-    
-    /**
-     * Check if a triple exists in the default graph.
-     */
-    fun hasTriple(triple: RdfTriple): Boolean {
-        return defaultGraph.hasTriple(triple)
-    }
-    
-    /**
-     * Get all triples from the default graph.
-     */
-    fun getTriples(): List<RdfTriple> {
-        return defaultGraph.getTriples()
-    }
-    
     // === QUERY OPERATIONS ===
     
     /**
      * Execute a SPARQL SELECT query.
      */
-    fun query(sparql: String): QueryResult
+    override fun select(query: SparqlSelect): QueryResult
     
     /**
      * Execute a SPARQL ASK query.
      */
-    fun ask(sparql: String): Boolean
+    override fun ask(query: SparqlAsk): Boolean
     
     /**
      * Execute a SPARQL CONSTRUCT query.
      */
-    fun construct(sparql: String): List<RdfTriple>
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple>
     
     /**
      * Execute a SPARQL DESCRIBE query.
      */
-    fun describe(sparql: String): List<RdfTriple>
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple>
     
     /**
      * Execute a SPARQL UPDATE operation.
      */
-    fun update(sparql: String)
+    override fun update(query: UpdateQuery)
     
     // === TRANSACTION OPERATIONS ===
     
@@ -299,16 +247,6 @@ interface RdfRepository : Closeable {
      * Clear all data from the repository.
      */
     fun clear(): Boolean
-    
-    /**
-     * Get repository statistics.
-     */
-    fun getStatistics(): RepositoryStatistics
-    
-    /**
-     * Get performance monitoring data.
-     */
-    fun getPerformanceMonitor(): PerformanceMonitor
     
     /**
      * Check if the repository is closed.
@@ -347,6 +285,26 @@ interface QueryResult : Iterable<BindingSet> {
      * Get result rows as a sequence for streaming.
      */
     fun asSequence(): Sequence<BindingSet>
+}
+
+/**
+ * Simple in-memory query result backed by a list.
+ */
+class ListQueryResult(private val rows: List<BindingSet>) : QueryResult {
+    override fun iterator(): Iterator<BindingSet> = rows.iterator()
+    override fun count(): Int = rows.size
+    override fun first(): BindingSet? = rows.firstOrNull()
+    override fun toList(): List<BindingSet> = rows.toList()
+    override fun asSequence(): Sequence<BindingSet> = rows.asSequence()
+}
+
+/**
+ * Binding set backed by a map of variable -> term.
+ */
+class MapBindingSet(private val values: Map<String, RdfTerm>) : BindingSet {
+    override fun get(variable: String): RdfTerm? = values[variable]
+    override fun getVariableNames(): Set<String> = values.keys
+    override fun hasBinding(variable: String): Boolean = values.containsKey(variable)
 }
 
 /**
@@ -390,99 +348,40 @@ interface BindingSet {
     fun getBoolean(variable: String): Boolean? = getString(variable)?.toBooleanStrictOrNull()
 }
 
-// === REPOSITORY MANAGEMENT ===
-
-/**
- * Interface for managing multiple repositories.
- */
-interface RepositoryManager : Closeable {
-    
-    /**
-     * Get a repository by name.
-     */
-    fun getRepository(name: String): RdfRepository?
-    
-    /**
-     * Check if a repository exists.
-     */
-    fun hasRepository(name: String): Boolean
-    
-    /**
-     * List all repository names.
-     */
-    fun listRepositories(): List<String>
-    
-    /**
-     * Execute a federated query across multiple repositories.
-     */
-    fun federatedQuery(sparql: String): QueryResult
-}
-
-/**
- * Default implementation of RepositoryManager.
- */
-class DefaultRepositoryManager(private val repositories: Map<String, RdfRepository>) : RepositoryManager {
-    
-    override fun getRepository(name: String): RdfRepository? = repositories[name]
-    
-    override fun hasRepository(name: String): Boolean = repositories.containsKey(name)
-    
-    override fun listRepositories(): List<String> = repositories.keys.toList()
-    
-    override fun federatedQuery(sparql: String): QueryResult {
-        // Simple implementation - could be enhanced for true federation
-        val firstRepo = repositories.values.firstOrNull() 
-            ?: throw IllegalStateException("No repositories available for federated query")
-        return firstRepo.query(sparql)
-    }
-    
-    override fun close() {
-        repositories.values.forEach { it.close() }
-    }
-}
-
-// === STATISTICS AND MONITORING ===
-
-/**
- * Repository statistics.
- */
-data class RepositoryStatistics(
-    val tripleCount: Long,
-    val graphCount: Int,
-    val memoryUsage: Long,
-    val diskUsage: Long,
-    val lastModified: Long
-) {
-    /**
-     * Get total number of triples across all graphs.
-     */
-    val totalTriples: Long = tripleCount
-    
-    /**
-     * Get size in bytes.
-     */
-    val sizeBytes: Long = memoryUsage + diskUsage
-}
-
-/**
- * Performance monitoring data.
- */
-data class PerformanceMonitor(
-    val queryCount: Long,
-    val averageQueryTime: Double,
-    val totalQueryTime: Long,
-    val cacheHitRate: Double,
-    val memoryUsage: Long
-)
-
 // === CONFIGURATION ===
 
 /**
  * Configuration for RDF repositories.
  */
 data class RdfConfig(
-    val type: String,
-    val params: Map<String, String> = emptyMap()
+    val providerId: String? = null,
+    val variantId: String? = null,
+    val options: Map<String, String> = emptyMap(),
+    val requirements: ProviderRequirements? = null
+)
+
+/**
+ * Provider variant metadata.
+ */
+data class RdfVariant(
+    val id: String,
+    val description: String = "",
+    val defaultOptions: Map<String, String> = emptyMap()
+)
+
+/**
+ * Selection requirements for provider discovery.
+ * null means "don't care", true means "must support", false means "must not support".
+ */
+data class ProviderRequirements(
+    val providerCategory: ProviderCategory? = null,
+    val supportsInference: Boolean? = null,
+    val supportsTransactions: Boolean? = null,
+    val supportsNamedGraphs: Boolean? = null,
+    val supportsUpdates: Boolean? = null,
+    val supportsRdfStar: Boolean? = null,
+    val supportsFederation: Boolean? = null,
+    val supportsServiceDescription: Boolean? = null
 )
 
 /**
@@ -492,34 +391,102 @@ data class RdfConfig(
 object RdfApiRegistry {
     
     private val providers = mutableMapOf<String, RdfApiProvider>()
+    private val providersByType = mutableMapOf<String, RdfApiProvider>()
     
     init {
         // Register default memory provider
         register(MemoryRepositoryProvider())
-        
-        // Register specialized providers (imported dynamically to avoid circular dependencies)
-        try {
-            val sparqlEndpointProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.SparqlEndpointProvider")
-            val sparqlEndpointProvider = sparqlEndpointProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
-            register(sparqlEndpointProvider)
-        } catch (e: Exception) {
-            // SPARQL module not available, skip registration
+
+        // Discover providers via ServiceLoader to keep registration portable.
+        discoverWithServiceLoader()
+    }
+
+    data class ProviderSelection(val provider: RdfApiProvider, val variantId: String)
+
+    private fun toTypeKey(providerId: String, variantId: String): String {
+        return "$providerId:$variantId"
+    }
+
+    private fun resolveSelection(config: RdfConfig): ProviderSelection? {
+        if (config.providerId != null) {
+            val provider = providers[config.providerId] ?: return null
+            val resolvedVariant = config.variantId ?: provider.defaultVariantId()
+            if (!provider.supportsVariant(resolvedVariant)) return null
+            if (config.requirements != null &&
+                !matchesRequirements(provider, resolvedVariant, config.requirements)
+            ) {
+                return selectProvider(config.requirements, config.providerId, config.variantId)
+            }
+            return ProviderSelection(provider, resolvedVariant)
         }
-        
-        try {
-            val reasonerProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.ReasonerProvider")
-            val reasonerProvider = reasonerProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
-            register(reasonerProvider)
-        } catch (e: Exception) {
-            // Reasoner module not available, skip registration
+
+        if (config.requirements != null) {
+            return selectProvider(config.requirements, config.providerId, config.variantId)
         }
-        
+
+        val defaultProviderId = DefaultProvider.get()
+        val provider = providers[defaultProviderId] ?: return null
+        val resolvedVariant = config.variantId ?: provider.defaultVariantId()
+        return ProviderSelection(provider, resolvedVariant)
+    }
+
+    fun selectProvider(
+        requirements: ProviderRequirements,
+        preferredProviderId: String? = null,
+        preferredVariantId: String? = null
+    ): ProviderSelection? {
+        val orderedProviders = buildList {
+            preferredProviderId?.let { providers[it] }?.let { add(it) }
+            providers.values.filterNot { it.id == preferredProviderId }.forEach { add(it) }
+        }
+        orderedProviders.forEach { provider ->
+            val variants = if (preferredVariantId != null) {
+                provider.variants().filter { it.id == preferredVariantId }
+            } else {
+                provider.variants()
+            }
+            variants.forEach { variant ->
+                if (matchesRequirements(provider, variant.id, requirements)) {
+                    return ProviderSelection(provider, variant.id)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun matchesRequirements(
+        provider: RdfApiProvider,
+        variantId: String,
+        requirements: ProviderRequirements
+    ): Boolean {
+        requirements.providerCategory?.let {
+            if (provider.getProviderCategory() != it) return false
+        }
+        val capabilities = provider.getCapabilities(variantId)
+        fun matches(required: Boolean?, actual: Boolean): Boolean {
+            return when (required) {
+                null -> true
+                true -> actual
+                false -> !actual
+            }
+        }
+        if (!matches(requirements.supportsInference, capabilities.supportsInference)) return false
+        if (!matches(requirements.supportsTransactions, capabilities.supportsTransactions)) return false
+        if (!matches(requirements.supportsNamedGraphs, capabilities.supportsNamedGraphs)) return false
+        if (!matches(requirements.supportsUpdates, capabilities.supportsUpdates)) return false
+        if (!matches(requirements.supportsRdfStar, capabilities.supportsRdfStar)) return false
+        if (!matches(requirements.supportsFederation, capabilities.supportsFederation)) return false
+        if (!matches(requirements.supportsServiceDescription, capabilities.supportsServiceDescription)) return false
+        return true
+    }
+
+    private fun discoverWithServiceLoader() {
         try {
-            val shaclValidatorProviderClass = Class.forName("com.geoknoesis.kastor.rdf.sparql.ShaclValidatorProvider")
-            val shaclValidatorProvider = shaclValidatorProviderClass.getDeclaredConstructor().newInstance() as RdfApiProvider
-            register(shaclValidatorProvider)
+            ServiceLoader.load(RdfApiProvider::class.java).forEach { provider ->
+                register(provider)
+            }
         } catch (e: Exception) {
-            // SHACL module not available, skip registration
+            // If discovery fails, keep going with explicitly registered providers.
         }
     }
     
@@ -529,16 +496,26 @@ object RdfApiRegistry {
      * Register an RDF provider.
      */
     fun register(provider: RdfApiProvider) {
-        providers[provider.getType()] = provider
+        providers[provider.id] = provider
+        provider.variants().forEach { variant ->
+            providersByType[toTypeKey(provider.id, variant.id)] = provider
+        }
     }
     
     /**
      * Create a repository from configuration.
      */
     fun create(config: RdfConfig): RdfRepository {
-        val provider = providers[config.type] 
-            ?: throw IllegalArgumentException("No provider found for repository type: ${config.type}")
-        return provider.createRepository(config)
+        val selection = resolveSelection(config)
+            ?: throw IllegalArgumentException("No provider found for repository config: $config")
+        val variant = selection.provider.variants().firstOrNull { it.id == selection.variantId }
+        val mergedOptions = (variant?.defaultOptions ?: emptyMap()) + config.options
+        val mergedConfig = config.copy(
+            providerId = selection.provider.id,
+            variantId = selection.variantId,
+            options = mergedOptions
+        )
+        return selection.provider.createRepository(selection.variantId, mergedConfig)
     }
     
     /**
@@ -557,14 +534,21 @@ object RdfApiRegistry {
      * Get supported repository types.
      */
     fun getSupportedTypes(): List<String> {
-        return providers.keys.toList()
+        if (providersByType.isNotEmpty()) {
+            return providersByType.keys.toList().distinct()
+        }
+        return providers.values
+            .flatMap { provider -> provider.variants().map { toTypeKey(provider.id, it.id) } }
+            .distinct()
     }
     
     /**
      * Check if a provider supports a specific type.
      */
-    fun supports(type: String): Boolean {
-        return providers.containsKey(type)
+    fun supports(providerId: String): Boolean = providers.containsKey(providerId)
+
+    fun supportsVariant(providerId: String, variantId: String): Boolean {
+        return providersByType.containsKey(toTypeKey(providerId, variantId))
     }
     
     /**
@@ -577,7 +561,7 @@ object RdfApiRegistry {
     /**
      * Get provider by type.
      */
-    fun getProvider(type: String): RdfApiProvider? = providers[type]
+    fun getProvider(providerId: String): RdfApiProvider? = providers[providerId]
     
     // === ENHANCED PROVIDER OPERATIONS ===
     
@@ -591,9 +575,10 @@ object RdfApiRegistry {
     /**
      * Generate service description for a specific provider.
      */
-    fun generateServiceDescription(providerType: String, serviceUri: String): RdfGraph? {
-        val provider = providers[providerType] ?: return null
-        return provider.generateServiceDescription(serviceUri)
+    fun generateServiceDescription(providerId: String, serviceUri: String, variantId: String? = null): RdfGraph? {
+        val provider = providers[providerId] ?: return null
+        val resolvedVariant = variantId ?: provider.defaultVariantId()
+        return provider.generateServiceDescription(serviceUri, resolvedVariant)
     }
     
     /**
@@ -601,8 +586,8 @@ object RdfApiRegistry {
      */
     fun getAllServiceDescriptions(baseUri: String): Map<String, RdfGraph> {
         return providers.mapValues { (_, provider) ->
-            val serviceUri = "$baseUri/${provider.getType()}"
-            provider.generateServiceDescription(serviceUri) ?: StandaloneGraph(emptyList())
+            val serviceUri = "$baseUri/${provider.id}"
+            provider.generateServiceDescription(serviceUri, provider.defaultVariantId()) ?: MemoryGraph(emptyList())
         }
     }
     
@@ -611,16 +596,16 @@ object RdfApiRegistry {
      */
     fun discoverAllCapabilities(): Map<String, DetailedProviderCapabilities> {
         return providers.mapValues { (_, provider) ->
-            provider.getDetailedCapabilities()
+            provider.getDetailedCapabilities(provider.defaultVariantId())
         }
     }
     
     /**
      * Check if a provider supports a specific SPARQL feature.
      */
-    fun supportsFeature(providerType: String, feature: String): Boolean {
-        val provider = providers[providerType] ?: return false
-        val capabilities = provider.getDetailedCapabilities()
+    fun supportsFeature(providerId: String, feature: String, variantId: String? = null): Boolean {
+        val provider = providers[providerId] ?: return false
+        val capabilities = provider.getDetailedCapabilities(variantId ?: provider.defaultVariantId())
         return capabilities.supportedSparqlFeatures[feature] ?: false
     }
     
@@ -629,7 +614,7 @@ object RdfApiRegistry {
      */
     fun getSupportedFeatures(): Map<String, List<String>> {
         return providers.mapValues { (_, provider) ->
-            val capabilities = provider.getDetailedCapabilities()
+            val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             capabilities.supportedSparqlFeatures.filter { it.value }.keys.toList()
         }
     }
@@ -639,7 +624,7 @@ object RdfApiRegistry {
      */
     fun hasProviderWithFeature(feature: String): Boolean {
         return providers.values.any { provider ->
-            val capabilities = provider.getDetailedCapabilities()
+            val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             capabilities.supportedSparqlFeatures[feature] == true
         }
     }
@@ -659,39 +644,44 @@ object RdfApiRegistry {
 interface RdfApiProvider {
     
     /**
-     * Get the provider type identifier.
+     * Provider id (stable identifier).
      */
-    fun getType(): String
+    val id: String
     
     /**
      * Get the provider name.
      */
-    val name: String
+    val name: String get() = id
     
     /**
      * Get the provider version.
      */
-    val version: String
+    val version: String get() = "unspecified"
     
     /**
      * Create a repository with the given configuration.
      */
-    fun createRepository(config: RdfConfig): RdfRepository
+    fun createRepository(variantId: String, config: RdfConfig): RdfRepository
     
     /**
      * Get provider capabilities.
      */
-    fun getCapabilities(): ProviderCapabilities
+    fun getCapabilities(variantId: String? = null): ProviderCapabilities = ProviderCapabilities()
     
     /**
-     * Get supported repository types.
+     * Get supported variants for this provider.
      */
-    fun getSupportedTypes(): List<String>
+    fun variants(): List<RdfVariant> = listOf(RdfVariant("default"))
     
     /**
-     * Check if a repository type is supported.
+     * Get the default variant id.
      */
-    fun isSupported(type: String): Boolean
+    fun defaultVariantId(): String = variants().firstOrNull()?.id ?: "default"
+    
+    /**
+     * Check if a variant is supported.
+     */
+    fun supportsVariant(variantId: String): Boolean = variants().any { it.id == variantId }
     
     // === ENHANCED CAPABILITIES (Optional) ===
     
@@ -705,15 +695,15 @@ interface RdfApiProvider {
      * Generate SPARQL service description for this provider.
      * Default implementation returns null for providers that don't support service descriptions.
      */
-    fun generateServiceDescription(serviceUri: String): RdfGraph? = null
+    fun generateServiceDescription(serviceUri: String, variantId: String? = null): RdfGraph? = null
     
     /**
      * Get detailed capability information.
      * Default implementation creates DetailedProviderCapabilities from basic capabilities.
      */
-    fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    fun getDetailedCapabilities(variantId: String? = null): DetailedProviderCapabilities {
         return DetailedProviderCapabilities(
-            basic = getCapabilities(),
+            basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = emptyMap(),
             customExtensionFunctions = emptyList()
@@ -782,26 +772,18 @@ data class ProviderCapabilities(
     val maxMemoryUsage: Long = Long.MAX_VALUE,
     
     // SPARQL 1.2 specific capabilities
-    val sparqlVersion: String = "1.2",
-    val supportsPropertyPaths: Boolean = true,
-    val supportsAggregation: Boolean = true,
-    val supportsSubSelect: Boolean = true,
+    val sparqlVersion: String = "1.1",
+    val supportsPropertyPaths: Boolean = false,
+    val supportsAggregation: Boolean = false,
+    val supportsSubSelect: Boolean = false,
     val supportsFederation: Boolean = false,
-    val supportsVersionDeclaration: Boolean = true,
-    val supportsServiceDescription: Boolean = true,
+    val supportsVersionDeclaration: Boolean = false,
+    val supportsServiceDescription: Boolean = false,
     
     // Service description capabilities
-    val supportedLanguages: List<String> = listOf("sparql", "sparql12"),
-    val supportedResultFormats: List<String> = listOf(
-        "application/sparql-results+json",
-        "application/sparql-results+xml",
-        "text/csv",
-        "text/tab-separated-values"
-    ),
-    val supportedInputFormats: List<String> = listOf(
-        "application/sparql-query",
-        "application/sparql-update"
-    ),
+    val supportedLanguages: List<String> = emptyList(),
+    val supportedResultFormats: List<String> = emptyList(),
+    val supportedInputFormats: List<String> = emptyList(),
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
@@ -822,3 +804,12 @@ object DefaultProvider {
     
     fun get(): String = current
 }
+
+
+
+
+
+
+
+
+

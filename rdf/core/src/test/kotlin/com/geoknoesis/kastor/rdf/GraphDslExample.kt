@@ -18,8 +18,8 @@ fun main() {
     
     // Example 1: Simple person graph
     val personGraph = Rdf.graph {
-        val person = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val person = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         
         // Using bracket syntax
         person[FOAF.name] = "Alice"
@@ -41,9 +41,9 @@ fun main() {
     
     // Example 2: Document metadata graph
     val documentGraph = Rdf.graph {
-        val document = iri("http://example.org/document")
-        val author = iri("http://example.org/author")
-        val publisher = iri("http://example.org/publisher")
+        val document = Iri("http://example.org/document")
+        val author = Iri("http://example.org/author")
+        val publisher = Iri("http://example.org/publisher")
         
         // Mix different syntaxes
         document - DCTERMS.title - "The Art of RDF"
@@ -54,11 +54,11 @@ fun main() {
         
         // Author information
         author - FOAF.name - "Jane Smith"
-        author[DCTERMS.type] = iri("http://purl.org/dc/terms/Agent")
+        author[DCTERMS.type] = Iri("http://purl.org/dc/terms/Agent")
         
         // Publisher information
         publisher - FOAF.name - "RDF Publishing House"
-        publisher - RDF.type - iri("http://purl.org/dc/terms/Agent")
+        publisher - RDF.type - Iri("http://purl.org/dc/terms/Agent")
     }
     
     println("2. Document Graph (${documentGraph.size()} triples):")
@@ -69,8 +69,8 @@ fun main() {
     
     // Example 3: Complex knowledge graph with blank nodes
     val knowledgeGraph = Rdf.graph {
-        val person = iri("http://example.org/person")
-        val organization = iri("http://example.org/org")
+        val person = Iri("http://example.org/person")
+        val organization = Iri("http://example.org/org")
         
         // Person details
         person - FOAF.name - "Dr. Sarah Johnson"
@@ -83,11 +83,11 @@ fun main() {
         
         // Employment relationship (using blank node for complex relationship)
         val employment = bnode("employment1")
-        employment - RDF.type - iri("http://example.org/Employment")
-        employment - iri("http://example.org/employee") - person
-        employment - iri("http://example.org/employer") - organization
-        employment - iri("http://example.org/position") - "Senior Researcher"
-        employment - iri("http://example.org/startDate") - "2020-01-01"
+        employment - RDF.type - Iri("http://example.org/Employment")
+        employment - Iri("http://example.org/employee") - person
+        employment - Iri("http://example.org/employer") - organization
+        employment - Iri("http://example.org/position") - "Senior Researcher"
+        employment - Iri("http://example.org/startDate") - "2020-01-01"
     }
     
     println("3. Knowledge Graph (${knowledgeGraph.size()} triples):")
@@ -101,7 +101,7 @@ fun main() {
     
     // Create a base graph
     val baseGraph = Rdf.graph {
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
         resource - DCTERMS.title - "Base Resource"
         resource - DCTERMS.type - "Document"
     }
@@ -110,18 +110,18 @@ fun main() {
     
     // Add more triples to the graph
     baseGraph.addTriple(RdfTriple(
-        iri("http://example.org/resource"),
+        Iri("http://example.org/resource"),
         DCTERMS.description,
-        literal("A sample resource for demonstration")
+        Literal("A sample resource for demonstration")
     ))
     
     println("   After adding description: ${baseGraph.size()}")
     
     // Check if specific triple exists
     val titleTriple = RdfTriple(
-        iri("http://example.org/resource"),
+        Iri("http://example.org/resource"),
         DCTERMS.title,
-        literal("Base Resource")
+        Literal("Base Resource")
     )
     println("   Contains title triple: ${baseGraph.hasTriple(titleTriple)}")
     
@@ -135,13 +135,13 @@ fun main() {
     println("5. Combining Graphs:")
     
     val graph1 = Rdf.graph {
-        iri("http://example.org/person1") - FOAF.name - "Alice"
-        iri("http://example.org/person1") - FOAF.age - 30
+        Iri("http://example.org/person1") - FOAF.name - "Alice"
+        Iri("http://example.org/person1") - FOAF.age - 30
     }
     
     val graph2 = Rdf.graph {
-        iri("http://example.org/person2") - FOAF.name - "Bob"
-        iri("http://example.org/person2") - FOAF.age - 25
+        Iri("http://example.org/person2") - FOAF.name - "Bob"
+        Iri("http://example.org/person2") - FOAF.age - 25
     }
     
     // Create a combined graph
@@ -150,7 +150,7 @@ fun main() {
         addTriples(graph2.getTriples())
         
         // Add a relationship between the people
-        iri("http://example.org/person1") - FOAF.knows - iri("http://example.org/person2")
+        Iri("http://example.org/person1") - FOAF.knows - Iri("http://example.org/person2")
     }
     
     println("   Combined graph size: ${combinedGraph.size()}")
@@ -196,7 +196,7 @@ fun validatePersonGraph(graph: RdfGraph): Boolean {
  */
 fun createPersonTemplate(personUri: String, name: String, age: Int): RdfGraph {
     return Rdf.graph {
-        val person = iri(personUri)
+        val person = Iri(personUri)
         person - FOAF.name - name
         person - FOAF.age - age
         person - RDF.type - FOAF.Person
@@ -219,3 +219,12 @@ fun demonstrateTemplate() {
     println("Alice graph is valid: ${validatePersonGraph(aliceGraph)}")
     println("Bob graph is valid: ${validatePersonGraph(bobGraph)}")
 }
+
+
+
+
+
+
+
+
+

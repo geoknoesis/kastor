@@ -21,10 +21,10 @@ fun main() {
     
     // Add sample DCAT data
     repo.add {
-        val catalog = iri("https://data.example.org/catalog")
-        val dataset = iri("https://data.example.org/dataset/1")
-        val distribution = iri("https://data.example.org/distribution/1")
-        val publisher = iri("https://data.example.org/agency/department")
+        val catalog = Iri("https://data.example.org/catalog")
+        val dataset = Iri("https://data.example.org/dataset/1")
+        val distribution = Iri("https://data.example.org/distribution/1")
+        val publisher = Iri("https://data.example.org/agency/department")
         
         // Catalog
         catalog - RDF.type - DCAT.Catalog
@@ -44,14 +44,14 @@ fun main() {
         // Distribution
         distribution - RDF.type - DCAT.Distribution
         distribution - DCTERMS.title - "CSV Distribution"
-        distribution - DCAT.downloadURL - "https://data.example.org/files/dataset.csv"
+        distribution - DCAT.downloadURL - Iri("https://data.example.org/files/dataset.csv")
         distribution - DCAT.mediaType - "text/csv"
         distribution - DCTERMS.format - "CSV"
         
         // Publisher
         publisher - RDF.type - FOAF.Agent
         publisher - FOAF.name - "Example Government Department"
-        publisher - FOAF.homepage - "https://example.gov"
+        publisher - FOAF.homepage - Iri("https://example.gov")
         
         // Add some extra triples for side-channel demonstration
         catalog - SKOS.altLabel - "Alternative Catalog Name"
@@ -127,7 +127,7 @@ fun main() {
     OntoMapper.registry[Agent::class.java] = { handle -> SimpleAgentWrapper(handle) }
     
     // Find a Catalog node and materialize it
-    val catalogRef = RdfRef(iri("https://data.example.org/catalog"), repo.defaultGraph)
+    val catalogRef = RdfRef(Iri("https://data.example.org/catalog"), repo.defaultGraph)
     val catalog: Catalog = catalogRef.asType()
     
     println("1. Pure Domain Usage:")
@@ -187,3 +187,12 @@ fun main() {
     
     repo.close()
 }
+
+
+
+
+
+
+
+
+

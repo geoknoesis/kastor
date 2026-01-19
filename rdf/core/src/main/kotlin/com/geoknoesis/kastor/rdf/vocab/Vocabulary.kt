@@ -1,7 +1,6 @@
 package com.geoknoesis.kastor.rdf.vocab
 
 import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.iri
 
 /**
  * Base interface for RDF vocabularies.
@@ -35,7 +34,7 @@ interface Vocabulary {
      * @return The full IRI for the term
      */
     fun term(localName: String): Iri {
-        return iri(namespace + localName)
+        return Iri(namespace + localName)
     }
     
     /**
@@ -47,3 +46,12 @@ interface Vocabulary {
         return term.value.startsWith(namespace)
     }
 }
+
+
+
+
+
+
+
+
+

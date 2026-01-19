@@ -133,8 +133,8 @@ class TripleDsl {
      *         "dcat" to "http://www.w3.org/ns/dcat#"
      *     }
      *     
-     *     val person = iri("http://example.org/person")
-     *     person - "foaf:name" - "Alice"
+     *     val person = Iri("http://example.org/person")
+     *     person - qname("foaf:name") - "Alice"
      * }
      * ```
      */
@@ -154,48 +154,23 @@ class TripleDsl {
      */
     private fun resolveIri(iriOrQName: String): Iri {
         val resolved = QNameResolver.resolve(iriOrQName, prefixMappings)
-        return iri(resolved)
+        return Iri(resolved)
     }
     
     /**
-     * Smart object creation with automatic QName detection.
-     * - If predicate is rdf:type: Always try to resolve as QName/IRI
-     * - If value looks like QName and prefix is declared: Resolve as IRI
-     * - Otherwise: Create string literal
+     * Smart object creation with explicit semantics.
+     * - Strings are always string literals.
+     * - Use [Iri] or [qname] for IRIs.
      */
     internal fun createSmartObject(value: Any, predicate: Iri): RdfTerm {
         return when (value) {
             is String -> {
-                // Special case: rdf:type always resolves QNames/IRIs
-                if (predicate == RDF.type) {
-                    try {
-                        resolveIri(value)  // "foaf:Person" → IRI
-                    } catch (e: IllegalArgumentException) {
-                        Literal(value, XSD.string)  // Fallback to literal if resolution fails
-                    }
-                } else {
-                    // Smart QName detection for other predicates
-                    if (isFullIri(value)) {
-                        try {
-                            resolveIri(value)  // "http://example.org/friend" → IRI
-                        } catch (e: IllegalArgumentException) {
-                            Literal(value, XSD.string)  // Fallback to literal if resolution fails
-                        }
-                    } else if (looksLikeQName(value) && hasDeclaredPrefix(value)) {
-                        try {
-                            resolveIri(value)  // "foaf:Person" → IRI
-                        } catch (e: IllegalArgumentException) {
-                            Literal(value, XSD.string)  // Fallback to literal if resolution fails
-                        }
-                    } else {
-                        Literal(value, XSD.string)  // "Alice" → string literal
-                    }
-                }
+                Literal(value, XSD.string)
             }
             is Int -> Literal(value.toString(), XSD.integer)
             is Double -> Literal(value.toString(), XSD.double)
             is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value  // Already resolved (qname(), iri(), literal(), etc.)
+            is RdfTerm -> value  // Already resolved (qname(), Iri(), Literal(), etc.)
             is RdfStarTriple -> {
                 // Create an embedded triple for RDF-star
                 val embeddedSubject = createSmartObject(value.subject, predicate)
@@ -220,32 +195,6 @@ class TripleDsl {
     }
     
     /**
-     * Check if a string is a full IRI (starts with http:// or https://).
-     */
-    private fun isFullIri(value: String): Boolean {
-        return value.startsWith("http://") || value.startsWith("https://")
-    }
-    
-    /**
-     * Check if a string looks like a QName (contains ':' but not a full IRI).
-     */
-    private fun looksLikeQName(value: String): Boolean {
-        return value.contains(':') && 
-               !value.startsWith("http://") && 
-               !value.startsWith("https://") &&
-               value.indexOf(':') > 0 && 
-               value.indexOf(':') < value.length - 1
-    }
-    
-    /**
-     * Check if a QName has a declared prefix.
-     */
-    private fun hasDeclaredPrefix(value: String): Boolean {
-        val prefix = value.substringBefore(':')
-        return prefixMappings.containsKey(prefix)
-    }
-    
-    /**
      * Create an IRI from a QName or full IRI string.
      * 
      * Example:
@@ -257,29 +206,11 @@ class TripleDsl {
         return resolveIri(iriOrQName)
     }
     
-    /**
-     * Extension function to access bare "a" from DSL context
-     */
-    fun a(): String = "a"
-    
     // === ULTRA-COMPACT SYNTAX ===
     
     /**
-     * Ultra-compact bracket syntax: person["name"] = "Alice"
-     * Supports QNames: person["foaf:name"] = "Alice"
-     * Supports Turtle-style "a" alias: person["a"] = "foaf:Person"
-     */
-    operator fun RdfResource.set(predicate: String, value: Any) {
-        val predicateIri = when (predicate) {
-            "a" -> RDF.type  // Turtle-style alias for rdf:type
-            else -> resolveIri(predicate)
-        }
-        val obj = createSmartObject(value, predicateIri)
-        triples.add(RdfTriple(this, predicateIri, obj))
-    }
-    
-    /**
-     * Ultra-compact bracket syntax with IRI predicate: person[name] = "Alice"
+     * Ultra-compact bracket syntax: person[FOAF.name] = "Alice"
+     * Use qname("foaf:name") for QNames.
      */
     operator fun RdfResource.set(predicate: Iri, value: Any) {
         val obj = createSmartObject(value, predicate)
@@ -293,23 +224,6 @@ class TripleDsl {
      */
     infix fun RdfResource.has(predicate: Iri): SubjectAndPredicate {
         return SubjectAndPredicate(this, predicate)
-    }
-    
-    /**
-     * Natural language syntax with QName: person has "foaf:name" with "Alice"
-     */
-    infix fun RdfResource.has(predicateQName: String): SubjectAndPredicate {
-        val predicate = resolveIri(predicateQName)
-        return SubjectAndPredicate(this, predicate)
-    }
-    
-    /**
-     * Natural language syntax: person `is` "foaf:Person"
-     * Directly creates a type triple without requiring 'with'
-     */
-    infix fun RdfResource.`is`(typeQName: String) {
-        val typeIri = resolveIri(typeQName)
-        triples.add(RdfTriple(this, RDF.type, typeIri))
     }
     
     /**
@@ -334,19 +248,6 @@ class TripleDsl {
      * Minus operator syntax: person - FOAF.name - "Alice"
      */
     infix operator fun RdfResource.minus(predicate: Iri): SubjectPredicateChain {
-        return SubjectPredicateChain(this, predicate)
-    }
-    
-    /**
-     * Minus operator syntax with QName: person - "foaf:name" - "Alice"
-     * Also supports Turtle-style "a" alias for rdf:type: person - "a" - "foaf:Person"
-     * And bare "a": person - a - "foaf:Person"
-     */
-    infix operator fun RdfResource.minus(predicateQName: String): SubjectPredicateChain {
-        val predicate = when (predicateQName) {
-            "a" -> RDF.type  // Turtle-style alias for rdf:type
-            else -> resolveIri(predicateQName)
-        }
         return SubjectPredicateChain(this, predicate)
     }
     
@@ -508,7 +409,7 @@ class TripleDsl {
                     is RdfTerm -> value
                     else -> Literal(value.toString(), XSD.string)
                 }
-                val memberProperty = IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
                 triples.add(RdfTriple(bagNode, memberProperty, obj))
             }
             
@@ -534,7 +435,7 @@ class TripleDsl {
                     is RdfTerm -> value
                     else -> Literal(value.toString(), XSD.string)
                 }
-                val memberProperty = IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
                 triples.add(RdfTriple(seqNode, memberProperty, obj))
             }
             
@@ -560,7 +461,7 @@ class TripleDsl {
                     is RdfTerm -> value
                     else -> Literal(value.toString(), XSD.string)
                 }
-                val memberProperty = IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
                 triples.add(RdfTriple(altNode, memberProperty, obj))
             }
             
@@ -597,13 +498,6 @@ class TripleDsl {
     }
     
     /**
-     * Create a triple with string predicate.
-     */
-    fun triple(subject: RdfResource, predicate: String, obj: RdfTerm) {
-        triples.add(RdfTriple(subject, Iri(predicate), obj))
-    }
-    
-    /**
      * Add multiple triples to the DSL.
      */
     fun addTriples(newTriples: Collection<RdfTriple>) {
@@ -620,3 +514,12 @@ data class SubjectAndPredicate(val subject: RdfResource, val predicate: Iri)
  * Helper class for minus operator syntax.
  */
 data class SubjectPredicateChain(val subject: RdfResource, val predicate: Iri)
+
+
+
+
+
+
+
+
+

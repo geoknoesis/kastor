@@ -41,7 +41,7 @@ val sparqlProvider = SparqlEndpointProvider()
 
 // Capabilities include federation and service description
 val capabilities = sparqlProvider.getCapabilities()
-println("Type: ${sparqlProvider.getType()}") // "sparql-endpoint"
+println("Type: ${sparqlProvider.id}") // "sparql-endpoint"
 println("Category: ${sparqlProvider.getProviderCategory()}") // SPARQL_ENDPOINT
 println("Federation: ${capabilities.supportsFederation}") // true
 println("SPARQL Version: ${capabilities.sparqlVersion}") // "1.2"
@@ -56,7 +56,7 @@ val reasonerProvider = ReasonerProvider()
 
 // Capabilities include inference and entailment regimes
 val capabilities = reasonerProvider.getCapabilities()
-println("Type: ${reasonerProvider.getType()}") // "reasoner"
+println("Type: ${reasonerProvider.id}") // "reasoner"
 println("Category: ${reasonerProvider.getProviderCategory()}") // REASONER
 println("Inference: ${capabilities.supportsInference}") // true
 println("Entailment Regimes: ${capabilities.entailmentRegimes}")
@@ -72,7 +72,7 @@ val shaclProvider = ShaclValidatorProvider()
 
 // Capabilities include validation features
 val capabilities = shaclProvider.getCapabilities()
-println("Type: ${shaclProvider.getType()}") // "shacl-validator"
+println("Type: ${shaclProvider.id}") // "shacl-validator"
 println("Category: ${shaclProvider.getProviderCategory()}") // SHACL_VALIDATOR
 println("Validation: ${capabilities.supportsValidation}") // true
 ```
@@ -86,49 +86,35 @@ All providers implement the unified `RdfApiProvider` interface:
 ```kotlin
 interface RdfApiProvider {
     // Basic provider information
-    fun getType(): String
-    val name: String
-    val version: String
+    val id: String
+    val name: String get() = id
+    val version: String get() = "unspecified"
     
     // Repository creation
-    fun createRepository(config: RdfConfig): RdfRepository
+    fun createRepository(variantId: String, config: RdfConfig): RdfRepository
     
     // Basic capabilities
-    fun getCapabilities(): ProviderCapabilities
-    fun getSupportedTypes(): List<String>
-    fun isSupported(type: String): Boolean
+    fun getCapabilities(variantId: String? = null): ProviderCapabilities = ProviderCapabilities()
+    fun variants(): List<RdfVariant> = listOf(RdfVariant("default"))
+    fun defaultVariantId(): String = variants().firstOrNull()?.id ?: "default"
     
     // Enhanced capabilities (optional)
     fun getProviderCategory(): ProviderCategory = ProviderCategory.RDF_STORE
-    fun generateServiceDescription(serviceUri: String): RdfGraph? = null
-    fun getDetailedCapabilities(): DetailedProviderCapabilities
+    fun generateServiceDescription(serviceUri: String, variantId: String? = null): RdfGraph? = null
+    fun getDetailedCapabilities(variantId: String? = null): DetailedProviderCapabilities
 }
 ```
 
-### Backward Compatibility
+### Default Implementations
 
-The interface maintains backward compatibility through default implementations:
+The interface provides sensible defaults for optional methods:
 
 ```kotlin
 // Basic providers only need to implement core methods
 class BasicProvider : RdfApiProvider {
-    override fun getType(): String = "basic"
-    override val name: String = "Basic Provider"
-    override val version: String = "1.0.0"
+    override val id: String = "basic"
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
-        // Implementation
-    }
-    
-    override fun getCapabilities(): ProviderCapabilities {
-        // Implementation
-    }
-    
-    override fun getSupportedTypes(): List<String> {
-        // Implementation
-    }
-    
-    override fun isSupported(type: String): Boolean {
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // Implementation
     }
     
@@ -153,26 +139,18 @@ data class ProviderCapabilities(
     val maxMemoryUsage: Long = Long.MAX_VALUE,
     
     // SPARQL 1.2 specific capabilities
-    val sparqlVersion: String = "1.2",
-    val supportsPropertyPaths: Boolean = true,
-    val supportsAggregation: Boolean = true,
-    val supportsSubSelect: Boolean = true,
+    val sparqlVersion: String = "1.1",
+    val supportsPropertyPaths: Boolean = false,
+    val supportsAggregation: Boolean = false,
+    val supportsSubSelect: Boolean = false,
     val supportsFederation: Boolean = false,
-    val supportsVersionDeclaration: Boolean = true,
-    val supportsServiceDescription: Boolean = true,
+    val supportsVersionDeclaration: Boolean = false,
+    val supportsServiceDescription: Boolean = false,
     
     // Service description capabilities
-    val supportedLanguages: List<String> = listOf("sparql", "sparql12"),
-    val supportedResultFormats: List<String> = listOf(
-        "application/sparql-results+json",
-        "application/sparql-results+xml",
-        "text/csv",
-        "text/tab-separated-values"
-    ),
-    val supportedInputFormats: List<String> = listOf(
-        "application/sparql-query",
-        "application/sparql-update"
-    ),
+    val supportedLanguages: List<String> = emptyList(),
+    val supportedResultFormats: List<String> = emptyList(),
+    val supportedInputFormats: List<String> = emptyList(),
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
@@ -319,18 +297,20 @@ SparqlExtensionFunctionRegistry.register(customFunction)
 
 ```kotlin
 class CustomProvider : RdfApiProvider {
-    override fun getType(): String = "custom"
+    override val id: String = "custom"
     override val name: String = "Custom Provider"
     override val version: String = "1.0.0"
     
     override fun getProviderCategory(): ProviderCategory = ProviderCategory.RDF_STORE
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("default"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // Custom repository implementation
         return CustomRepository(config)
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             sparqlVersion = "1.2",
             supportsRdfStar = true,
@@ -341,22 +321,14 @@ class CustomProvider : RdfApiProvider {
         )
     }
     
-    override fun getSupportedTypes(): List<String> {
-        return listOf("custom")
-    }
-    
-    override fun isSupported(type: String): Boolean {
-        return type == "custom"
-    }
-    
-    override fun generateServiceDescription(serviceUri: String): RdfGraph? {
-        val capabilities = getCapabilities()
+    override fun generateServiceDescription(serviceUri: String, variantId: String?): RdfGraph? {
+        val capabilities = getCapabilities(variantId)
         return SparqlServiceDescriptionGenerator(serviceUri, capabilities).generateServiceDescription()
     }
     
-    override fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
         return DetailedProviderCapabilities(
-            basic = getCapabilities(),
+            basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = mapOf(
                 "supportsRdfStar" to true,
@@ -373,11 +345,14 @@ class CustomProvider : RdfApiProvider {
 
 ```kotlin
 // Register custom provider
-RdfApiRegistry.register("custom", CustomProvider())
+RdfApiRegistry.register(CustomProvider())
 
 // Use custom provider
 val customProvider = RdfApiRegistry.getProvider("custom")
-val repo = customProvider.createRepository(RdfConfig())
+val repo = customProvider.createRepository(
+    customProvider.defaultVariantId(),
+    RdfConfig(providerId = "custom")
+)
 ```
 
 ## 🎨 Best Practices
@@ -425,7 +400,7 @@ if (capabilities.basic.supportsFederation) {
 ```kotlin
 // Always provide meaningful service descriptions
 val serviceUri = "https://api.example.org/sparql/v1"
-val description = provider.generateServiceDescription(serviceUri)
+val description = provider.generateServiceDescription(serviceUri, provider.defaultVariantId())
 
 if (description != null) {
     // Validate service description
@@ -440,7 +415,7 @@ if (description != null) {
 fun enhancedProviderExample() {
     // Get all providers
     val allProviders = RdfApiRegistry.getAllProviders()
-    println("Available providers: ${allProviders.keys}")
+    println("Available providers: ${allProviders.map { it.id }}")
     
     // Get providers by category
     val sparqlProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
@@ -453,14 +428,17 @@ fun enhancedProviderExample() {
         println("Category: ${memoryProvider.getProviderCategory()}")
         
         // Get capabilities
-        val capabilities = memoryProvider.getCapabilities()
+        val capabilities = memoryProvider.getCapabilities(memoryProvider.defaultVariantId())
         println("SPARQL Version: ${capabilities.sparqlVersion}")
         println("RDF-star Support: ${capabilities.supportsRdfStar}")
         println("Extension Functions: ${capabilities.extensionFunctions.size}")
         
         // Generate service description
         val serviceUri = "http://example.org/sparql"
-        val description = memoryProvider.generateServiceDescription(serviceUri)
+        val description = memoryProvider.generateServiceDescription(
+            serviceUri,
+            memoryProvider.defaultVariantId()
+        )
         if (description != null) {
             println("Service description generated with ${description.getTriples().size} triples")
         }
@@ -505,3 +483,6 @@ For questions about the enhanced provider architecture in Kastor:
 ---
 
 *Kastor enhanced provider architecture is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

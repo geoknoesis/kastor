@@ -1,126 +1,112 @@
 package com.example.ontomapper.runtime
 
-import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.add
+import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
-class ValidationPortTest {
+class ShaclValidatorTest {
 
     @Test
-    fun `ValidationRegistry throws when no port registered`() {
-        // Clear any existing registration
-        ValidationRegistry.register(object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {}
-        })
-        
-        // This should not throw since we just registered a port
-        assertDoesNotThrow {
-            ValidationRegistry.current()
+    fun `ShaclValidation throws when no validator registered`() {
+        ShaclValidation.register(null)
+
+        assertThrows(IllegalStateException::class.java) {
+            ShaclValidation.current()
         }
     }
-    
+
     @Test
-    fun `ValidationRegistry allows registration and retrieval`() {
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                // Simple validation: throw if no triples
-                if (data.getTriples().isEmpty()) {
-                    throw RuntimeException("No triples found")
-                }
+    fun `ShaclValidation allows registration and retrieval`() {
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+                return ValidationResult.Ok
             }
         }
-        
-        ValidationRegistry.register(testPort)
-        val retrieved = ValidationRegistry.current()
-        
-        assertSame(testPort, retrieved)
+
+        ShaclValidation.register(validator)
+        val retrieved = ShaclValidation.current()
+
+        assertSame(validator, retrieved)
     }
-    
+
     @Test
-    fun `ValidationRegistry handles multiple registrations`() {
-        val firstPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {}
+    fun `ShaclValidation handles multiple registrations`() {
+        val first = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult = ValidationResult.Ok
         }
-        
-        val secondPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {}
+        val second = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult = ValidationResult.Ok
         }
-        
-        ValidationRegistry.register(firstPort)
-        assertSame(firstPort, ValidationRegistry.current())
-        
-        ValidationRegistry.register(secondPort)
-        assertSame(secondPort, ValidationRegistry.current())
+
+        ShaclValidation.register(first)
+        assertSame(first, ShaclValidation.current())
+
+        ShaclValidation.register(second)
+        assertSame(second, ShaclValidation.current())
     }
-    
+
     @Test
-    fun `ValidationPort can validate successfully`() {
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                // Always pass validation
+    fun `validator can return violations`() {
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Validation failed")))
             }
         }
-        
-        ValidationRegistry.register(testPort)
-        
+
+        ShaclValidation.register(validator)
+
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        
+        val subject = Iri("http://example.org/person")
+
         repo.add {
             subject - FOAF.name - "John Doe"
         }
-        
-        assertDoesNotThrow {
-            testPort.validateOrThrow(repo.defaultGraph, subject)
-        }
+
+        val result = validator.validate(repo.defaultGraph, subject)
+        assertTrue(result is ValidationResult.Violations)
     }
-    
+
     @Test
-    fun `ValidationPort can throw validation errors`() {
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                throw RuntimeException("Validation failed")
-            }
-        }
-        
-        ValidationRegistry.register(testPort)
-        
-        val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        
-        repo.add {
-            subject - FOAF.name - "John Doe"
-        }
-        
-        assertThrows(RuntimeException::class.java) {
-            testPort.validateOrThrow(repo.defaultGraph, subject)
-        }
-    }
-    
-    @Test
-    fun `ValidationPort receives correct parameters`() {
+    fun `validator receives correct parameters`() {
         val receivedData = mutableListOf<Pair<RdfGraph, RdfTerm>>()
-        
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
                 receivedData.add(Pair(data, focus))
+                return ValidationResult.Ok
             }
         }
-        
-        ValidationRegistry.register(testPort)
-        
+
+        ShaclValidation.register(validator)
+
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        
+        val subject = Iri("http://example.org/person")
+
         repo.add {
             subject - FOAF.name - "John Doe"
         }
-        
-        testPort.validateOrThrow(repo.defaultGraph, subject)
-        
+
+        validator.validate(repo.defaultGraph, subject)
+
         assertEquals(1, receivedData.size)
         assertEquals(repo.defaultGraph, receivedData.first().first)
         assertEquals(subject, receivedData.first().second)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

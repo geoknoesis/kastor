@@ -372,3 +372,6 @@ interface Task {
 ```
 
 This comprehensive annotation system provides a clean, type-safe way to map RDF data to Kotlin domain objects while maintaining the purity of domain interfaces.
+
+
+

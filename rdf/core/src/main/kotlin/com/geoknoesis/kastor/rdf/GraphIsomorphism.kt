@@ -261,3 +261,12 @@ fun RdfGraph.findBlankNodeMapping(other: RdfGraph): Map<BlankNode, BlankNode>? {
     // backtracking algorithm to find actual node correspondences
     return emptyMap()
 }
+
+
+
+
+
+
+
+
+

@@ -201,7 +201,7 @@ val turtleData = """
            foaf:name "Bob Jones" .
 """.trimIndent()
 
-val rdfGraph = JenaBridge.fromString(turtleData, "TURTLE")
+val RdfGraph = JenaBridge.fromString(turtleData, "TURTLE")
 
 // From file
 val rdfGraph2 = JenaBridge.fromFile("data.ttl", "TURTLE")
@@ -213,21 +213,21 @@ val rdfGraph3 = JenaBridge.fromUrl("https://example.org/data.ttl", "TURTLE")
 ### Serializing RDF Data
 
 ```kotlin
-val rdfGraph = JenaBridge.createEmptyModel()
+val RdfGraph = JenaBridge.createEmptyModel()
 
 // Add some data
 val nameProperty = Iri("http://xmlns.com/foaf/0.1/name")
 val john = Iri("http://example.org/john")
-rdfGraph.addTriple(RdfTriple(john, nameProperty, Literal("John Doe")))
+RdfGraph.addTriple(RdfTriple(john, nameProperty, Literal("John Doe")))
 
 // Serialize to different formats
-val turtleString = JenaBridge.toString(rdfGraph, "TURTLE")
-val rdfXmlString = JenaBridge.toString(rdfGraph, "RDF/XML")
-val nTriplesString = JenaBridge.toString(rdfGraph, "N-TRIPLES")
-val jsonLdString = JenaBridge.toString(rdfGraph, "JSON-LD")
+val turtleString = JenaBridge.toString(RdfGraph, "TURTLE")
+val rdfXmlString = JenaBridge.toString(RdfGraph, "RDF/XML")
+val nTriplesString = JenaBridge.toString(RdfGraph, "N-TRIPLES")
+val jsonLdString = JenaBridge.toString(RdfGraph, "JSON-LD")
 
 // Or use extension function
-val turtleString2 = rdfGraph.serialize("TURTLE")
+val turtleString2 = RdfGraph.serialize("TURTLE")
 ```
 
 ### Checking Jena Backing
@@ -325,10 +325,10 @@ val turtleData = """
            foaf:name "Bob Jones" .
 """.trimIndent()
 
-val rdfGraph = JenaBridge.fromString(turtleData, "TURTLE")
+val RdfGraph = JenaBridge.fromString(turtleData, "TURTLE")
 
 // Process using Kastor API
-val triples = rdfGraph.getTriples()
+val triples = RdfGraph.getTriples()
 val nameTriples = triples.filter { 
     it.predicate.value == "http://xmlns.com/foaf/0.1/name" 
 }
@@ -340,7 +340,7 @@ nameTriples.forEach { triple ->
 }
 
 // Serialize back to RDF/XML
-val rdfXmlString = rdfGraph.serialize("RDF/XML")
+val rdfXmlString = RdfGraph.serialize("RDF/XML")
 println("RDF/XML:\n$rdfXmlString")
 ```
 
@@ -393,13 +393,13 @@ val jenaModel2 = JenaBridge.toJenaModel(kastorGraph)
 
 ```kotlin
 // ✅ Good: Check before accessing
-if (rdfGraph.isJenaBacked()) {
-    val jenaModel = rdfGraph.getJenaModel()
+if (RdfGraph.isJenaBacked()) {
+    val jenaModel = RdfGraph.getJenaModel()
     // Use Jena-specific features
 }
 
 // ❌ Avoid: Direct access without checking
-val jenaModel = rdfGraph.getJenaModel() // May return null
+val jenaModel = RdfGraph.getJenaModel() // May return null
 ```
 
 ### 3. Use Appropriate Graph Types for Your Use Case
@@ -418,7 +418,7 @@ val rdfsGraph = JenaBridge.createInferenceModel() // Overkill for simple operati
 
 ```kotlin
 // ✅ Good: Handle all term types
-val triples = rdfGraph.getTriples()
+val triples = RdfGraph.getTriples()
 triples.forEach { triple ->
     when (triple.obj) {
         is Literal -> println("Literal: ${triple.obj.lexical}")
@@ -435,13 +435,13 @@ val literal = triple.obj as Literal // May throw ClassCastException
 
 ```kotlin
 // ✅ Good: Choose format based on use case
-val turtleString = rdfGraph.serialize("TURTLE") // Human-readable
-val rdfXmlString = rdfGraph.serialize("RDF/XML") // Standard format
-val nTriplesString = rdfGraph.serialize("N-TRIPLES") // Simple format
-val jsonLdString = rdfGraph.serialize("JSON-LD") // Web-friendly
+val turtleString = RdfGraph.serialize("TURTLE") // Human-readable
+val rdfXmlString = RdfGraph.serialize("RDF/XML") // Standard format
+val nTriplesString = RdfGraph.serialize("N-TRIPLES") // Simple format
+val jsonLdString = RdfGraph.serialize("JSON-LD") // Web-friendly
 
 // ❌ Avoid: Using wrong format for the use case
-val turtleString = rdfGraph.serialize("TURTLE") // Not suitable for machine processing
+val turtleString = RdfGraph.serialize("TURTLE") // Not suitable for machine processing
 ```
 
 ## Performance Considerations
@@ -488,24 +488,24 @@ val triples = listOf(
     RdfTriple(subject2, predicate2, object2),
     RdfTriple(subject3, predicate3, object3)
 )
-rdfGraph.addTriples(triples)
+RdfGraph.addTriples(triples)
 
 // ❌ Avoid: Individual operations
-rdfGraph.addTriple(RdfTriple(subject1, predicate1, object1))
-rdfGraph.addTriple(RdfTriple(subject2, predicate2, object2))
-rdfGraph.addTriple(RdfTriple(subject3, predicate3, object3))
+RdfGraph.addTriple(RdfTriple(subject1, predicate1, object1))
+RdfGraph.addTriple(RdfTriple(subject2, predicate2, object2))
+RdfGraph.addTriple(RdfTriple(subject3, predicate3, object3))
 ```
 
 ### 4. Memory Management
 
 ```kotlin
 // ✅ Good: Clear graphs when done
-val rdfGraph = JenaBridge.createEmptyModel()
+val RdfGraph = JenaBridge.createEmptyModel()
 // ... use graph ...
-rdfGraph.clear() // Free memory
+RdfGraph.clear() // Free memory
 
 // ❌ Avoid: Keeping large graphs in memory
-val rdfGraph = JenaBridge.createEmptyModel()
+val RdfGraph = JenaBridge.createEmptyModel()
 // ... add large amounts of data ...
 // Graph remains in memory even when not needed
 ```
@@ -525,3 +525,6 @@ For more information, see:
 - [Jena Integration](enhanced-jena.md)
 - [Best Practices](best-practices.md)
 - [Performance Guide](performance.md)
+
+
+

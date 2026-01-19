@@ -12,8 +12,8 @@ OntoMapper provides built-in support for SHACL (Shapes Constraint Language) vali
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Domain Layer  │    │   Validation     │    │   SHACL Shapes  │
 │                 │    │                  │    │                 │
-│  Pure Interfaces│◄──►│  ValidationPort  │◄──►│  Jena/RDF4J     │
-│  RdfBacked      │    │  ValidationRegistry│   │  SHACL Engine   │
+│  Pure Interfaces│◄──►│  ShaclValidator  │◄──►│  Jena/RDF4J     │
+│  RdfBacked      │    │  ShaclValidation│   │  SHACL Engine   │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
@@ -28,8 +28,8 @@ OntoMapper provides validation adapters for different RDF backends:
 runtimeOnly(project(":ontomapper:validation-jena"))
 
 // Automatic registration
-class JenaValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class JenaValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // SHACL validation using Jena
     }
 }
@@ -43,8 +43,8 @@ runtimeOnly(project(":rdf:rdf4j"))
 runtimeOnly(project(":ontomapper:validation-rdf4j"))
 
 // Automatic registration
-class Rdf4jValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class Rdf4jValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // SHACL validation using RDF4J
     }
 }
@@ -77,11 +77,11 @@ try {
 
 ```kotlin
 // Check if validation is available
-val validation = ValidationRegistry.current()
+val validation = ShaclValidation.current()
 println("Validation available: ${validation != null}")
 
 // Use validation
-validation.validateOrThrow(graph, focusNode)
+validation.validate(graph, focusNode).orThrow()
 ```
 
 ## SHACL Shapes
@@ -125,12 +125,12 @@ Create SHACL shapes to define validation rules:
 ### Loading SHACL Shapes
 
 ```kotlin
-class PersonValidation : ValidationPort {
+class PersonValidation : ShaclValidator {
     private val shapesGraph: RdfGraph by lazy {
         loadShapesFromResource("person-shape.ttl")
     }
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Load and apply SHACL shapes
         val validator = createShaclValidator(shapesGraph)
         val report = validator.validate(data, focus)
@@ -139,8 +139,9 @@ class PersonValidation : ValidationPort {
             val errors = report.violations.joinToString("\n") { violation ->
                 "Validation error: ${violation.message}"
             }
-            throw ValidationException(errors)
+            return ValidationResult.Violations(listOf(ShaclViolation(null, errors)))
         }
+        return ValidationResult.Ok
     }
     
     private fun loadShapesFromResource(resourceName: String): RdfGraph {
@@ -157,8 +158,8 @@ class PersonValidation : ValidationPort {
 ### Domain-Specific Validation
 
 ```kotlin
-class PersonDomainValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class PersonDomainValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
         
@@ -179,7 +180,7 @@ class PersonDomainValidation : ValidationPort {
         // Check required name property
         val hasName = triples.any { it.predicate == FOAF.name }
         if (!hasName) {
-            throw ValidationException("Person must have a name property")
+            return ValidationResult.Violations(listOf(ShaclViolation(null, "Person must have a name property")))
         }
         
         // Check age constraints
@@ -187,7 +188,7 @@ class PersonDomainValidation : ValidationPort {
         ageTriples.forEach { triple ->
             val age = (triple.obj as? Literal)?.lexical?.toIntOrNull()
             if (age != null && (age < 0 || age > 150)) {
-                throw ValidationException("Person age must be between 0 and 150")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Person age must be between 0 and 150")))
             }
         }
         
@@ -196,7 +197,7 @@ class PersonDomainValidation : ValidationPort {
         emailTriples.forEach { triple ->
             val email = (triple.obj as? Literal)?.lexical
             if (email != null && !isValidEmail(email)) {
-                throw ValidationException("Invalid email format: $email")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Invalid email format: $email")))
             }
         }
     }
@@ -210,8 +211,8 @@ class PersonDomainValidation : ValidationPort {
 ### Business Rule Validation
 
 ```kotlin
-class BusinessRuleValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class BusinessRuleValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
         
@@ -223,7 +224,7 @@ class BusinessRuleValidation : ValidationPort {
         if (isEmployee) {
             val hasEmployer = focusTriples.any { it.predicate == EMPLOYER }
             if (!hasEmployer) {
-                throw ValidationException("Employee must have an employer")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Employee must have an employer")))
             }
         }
         
@@ -235,7 +236,7 @@ class BusinessRuleValidation : ValidationPort {
         if (isProduct) {
             val hasPrice = focusTriples.any { it.predicate == PRICE }
             if (!hasPrice) {
-                throw ValidationException("Product must have a price")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Product must have a price")))
             }
         }
     }
@@ -245,8 +246,8 @@ class BusinessRuleValidation : ValidationPort {
 ### Cross-Entity Validation
 
 ```kotlin
-class CrossEntityValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class CrossEntityValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         
         // Validate relationships
@@ -270,7 +271,7 @@ class CrossEntityValidation : ValidationPort {
         referencedEntities.forEach { entityIri ->
             val entityExists = triples.any { it.subject == entityIri }
             if (!entityExists) {
-                throw ValidationException("Referenced entity does not exist: $entityIri")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Referenced entity does not exist: $entityIri")))
             }
         }
     }
@@ -300,7 +301,7 @@ class CrossEntityValidation : ValidationPort {
         }
         
         if (hasCycle(focus)) {
-            throw ValidationException("Circular reference detected")
+            return ValidationResult.Violations(listOf(ShaclViolation(null, "Circular reference detected")))
         }
     }
 }
@@ -311,39 +312,39 @@ class CrossEntityValidation : ValidationPort {
 ### Multiple Validation Ports
 
 ```kotlin
-class CompositeValidation : ValidationPort {
+class CompositeValidation : ShaclValidator {
     private val validators = listOf(
         PersonDomainValidation(),
         BusinessRuleValidation(),
         CrossEntityValidation()
     )
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<String>()
         
         validators.forEach { validator ->
             try {
-                validator.validateOrThrow(data, focus)
+                validator.validate(data, focus).orThrow()
             } catch (e: ValidationException) {
                 errors.add(e.message ?: "Validation failed")
             }
         }
         
         if (errors.isNotEmpty()) {
-            throw ValidationException("Multiple validation errors:\n${errors.joinToString("\n")}")
+            return ValidationResult.Violations(listOf(ShaclViolation(null, "Multiple validation errors:\n${errors.joinToString("\n")}")))
         }
     }
 }
 
 // Register composite validation
-ValidationRegistry.register(CompositeValidation())
+ShaclValidation.register(CompositeValidation())
 ```
 
 ### Conditional Validation
 
 ```kotlin
-class ConditionalValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class ConditionalValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
         
@@ -371,8 +372,8 @@ class ConditionalValidation : ValidationPort {
 ### Detailed Error Reporting
 
 ```kotlin
-class DetailedValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class DetailedValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<ValidationError>()
         
         // Collect validation errors
@@ -380,7 +381,7 @@ class DetailedValidation : ValidationPort {
         
         if (errors.isNotEmpty()) {
             val errorReport = createErrorReport(errors)
-            throw ValidationException(errorReport)
+            return ValidationResult.Violations(listOf(ShaclViolation(null, errorReport)))
         }
     }
     
@@ -515,14 +516,14 @@ data class DetailedValidationResult(
 ### Lazy Validation
 
 ```kotlin
-class LazyValidation : ValidationPort {
+class LazyValidation : ShaclValidator {
     private val validationCache = mutableMapOf<RdfTerm, Boolean>()
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Check cache first
         if (validationCache.containsKey(focus)) {
             if (!validationCache[focus]!!) {
-                throw ValidationException("Cached validation failure")
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Cached validation failure")))
             }
             return
         }
@@ -532,7 +533,7 @@ class LazyValidation : ValidationPort {
         validationCache[focus] = isValid
         
         if (!isValid) {
-            throw ValidationException("Validation failed")
+            return ValidationResult.Violations(listOf(ShaclViolation(null, "Validation failed")))
         }
     }
     
@@ -546,8 +547,8 @@ class LazyValidation : ValidationPort {
 ### Batch Validation
 
 ```kotlin
-class BatchValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class BatchValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Collect all entities that need validation
         val entitiesToValidate = collectEntities(data, focus)
         
@@ -593,7 +594,7 @@ class ValidationTest {
         }
         
         assertDoesNotThrow {
-            validation.validateOrThrow(repo.defaultGraph, person)
+            validation.validate(repo.defaultGraph, person).orThrow()
         }
     }
     
@@ -609,7 +610,7 @@ class ValidationTest {
         }
         
         assertThrows(ValidationException::class.java) {
-            validation.validateOrThrow(repo.defaultGraph, person)
+            validation.validate(repo.defaultGraph, person).orThrow()
         }
     }
 }
@@ -668,3 +669,6 @@ class ValidationIntegrationTest {
 - **See [Practical Examples](../examples/README.md)** - Real-world use cases
 - **Review [API Reference](../reference/README.md)** - Complete API documentation
 - **Learn about [Best Practices](../best-practices.md)** - Guidelines for effective usage
+
+
+

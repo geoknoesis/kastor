@@ -144,7 +144,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 violations.add(
                     ValidationViolation(
                         constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: iri("unknown"),
+                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
                         message = inconsistency.description,
                         severity = Severity.ERROR
                     )
@@ -301,23 +301,23 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
     private fun convertFromJenaTriple(stmt: Statement): RdfTriple {
         return RdfTriple(
             subject = convertFromJenaResource(stmt.subject),
-            predicate = iri(stmt.predicate.uri),
+            predicate = Iri(stmt.predicate.uri),
             obj = convertFromJenaTerm(stmt.`object`)
         )
     }
     
     private fun convertFromJenaTerm(node: org.apache.jena.rdf.model.RDFNode): RdfTerm {
         return when {
-            node.isURIResource -> iri(node.asResource().uri)
+            node.isURIResource -> Iri(node.asResource().uri)
             node.isAnon -> bnode(node.asResource().id.toString())
             node.isLiteral -> {
                 val literal = node.asLiteral()
                 if (literal.language.isNotEmpty()) {
                     LangString(literal.string, literal.language)
                 } else if (literal.datatypeURI != null) {
-                    Literal(literal.string, iri(literal.datatypeURI))
+                    Literal(literal.string, Iri(literal.datatypeURI))
                 } else {
-                    Literal(literal.string, iri("http://www.w3.org/2001/XMLSchema#string"))
+                    Literal(literal.string, Iri("http://www.w3.org/2001/XMLSchema#string"))
                 }
             }
             else -> throw IllegalArgumentException("Cannot convert Jena node: $node")
@@ -326,11 +326,20 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
     
     private fun convertFromJenaResource(resource: org.apache.jena.rdf.model.Resource): RdfResource {
         return when {
-            resource.isURIResource -> iri(resource.uri)
+            resource.isURIResource -> Iri(resource.uri)
             resource.isAnon -> bnode(resource.id.toString())
             else -> throw IllegalArgumentException("Cannot convert Jena resource: $resource")
         }
     }
     
-    private fun convertFromJenaIri(uri: String): Iri = iri(uri)
+    private fun convertFromJenaIri(uri: String): Iri = Iri(uri)
 }
+
+
+
+
+
+
+
+
+

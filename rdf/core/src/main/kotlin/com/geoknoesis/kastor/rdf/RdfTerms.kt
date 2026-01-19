@@ -25,17 +25,17 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
  * ## Usage Examples
  * ```kotlin
  * // Create basic RDF terms
- * val iri = iri("http://example.org/resource")
+ * val iri = Iri("http://example.org/resource")
  * val bnode = bnode("b1")
  * val literal = string("Hello, World!")
  * 
  * // Create typed literals
- * val number = Literal(42)  // xsd:integer
+ * val number = 42.toLiteral()  // xsd:integer
  * val date = Literal(LocalDate.now())  // xsd:date
- * val boolean = Literal(true)  // xsd:boolean
+ * val boolean = true.toLiteral()  // xsd:boolean
  * 
  * // Create triples
- * val triple = triple(iri, iri("http://example.org/name"), literal)
+ * val triple = triple(iri, Iri("http://example.org/name"), literal)
  * ```
  *
  * @see [RdfCore] for the main RDF API interfaces
@@ -100,7 +100,7 @@ sealed interface RdfResource : RdfTerm
  * val predicate = Iri("http://example.org/name")
  * 
  * // Or use the top-level function
- * val iri2 = iri("http://example.org/resource")
+ * val iri2 = Iri("http://example.org/resource")
  * 
  * // Or use the extension function
  * val iri3 = "http://example.org/resource".toIri()
@@ -165,7 +165,7 @@ value class BlankNode(val id: String) : RdfResource {
  * 
  * // Or use the top-level functions
  * val string2 = string("Hello")
- * val number2 = Literal(42)
+ * val number2 = 42.toLiteral()
  * val date2 = Literal(LocalDate.now())
  * ```
  *
@@ -232,7 +232,7 @@ sealed interface Literal : RdfTerm {
          * ## Examples
          * ```kotlin
          * // Integer literals
-         * Literal(42)           // "42"^^xsd:integer
+         * 42.toLiteral()           // "42"^^xsd:integer
          * Literal(123456789L)   // "123456789"^^xsd:integer
          * 
          * // Floating-point literals
@@ -240,8 +240,8 @@ sealed interface Literal : RdfTerm {
          * Literal(3.14f)         // "3.14"^^xsd:float
          * 
          * // Boolean literals
-         * Literal(true)          // Returns TrueLiteral
-         * Literal(false)         // Returns FalseLiteral
+         * true.toLiteral()          // Returns TrueLiteral
+         * false.toLiteral()         // Returns FalseLiteral
          * 
          * // Date/Time literals
          * Literal(LocalDate.of(2025, 1, 15))  // "2025-01-15"^^xsd:date
@@ -283,9 +283,9 @@ sealed interface Literal : RdfTerm {
          * ## Examples
          * ```kotlin
          * // Supported types (use specific overloads)
-         * Literal(42)                    // "42"^^xsd:integer
+         * 42.toLiteral()                    // "42"^^xsd:integer
          * Literal(3.14)                  // "3.14"^^xsd:double
-         * Literal(true)                  // Returns TrueLiteral
+         * true.toLiteral()                  // Returns TrueLiteral
          * 
          * // Unsupported types (fallback to string)
          * Literal(SomeCustomClass())     // "SomeCustomClass@123456"^^xsd:string
@@ -469,8 +469,8 @@ data object FalseLiteral : Literal {
  *
  * ## Usage
  * ```kotlin
- * val subject = iri("http://example.org/person")
- * val predicate = iri("http://example.org/name")
+ * val subject = Iri("http://example.org/person")
+ * val predicate = Iri("http://example.org/name")
  * val obj = string("John Doe")
  * 
  * val triple = RdfTriple(subject, predicate, obj)
@@ -507,8 +507,8 @@ data class RdfTriple(val subject: RdfResource, val predicate: Iri, val obj: RdfT
  * ## Usage
  * ```kotlin
  * val baseTriple = triple(
- *     iri("http://example.org/person"),
- *     iri("http://example.org/name"),
+ *     Iri("http://example.org/person"),
+ *     Iri("http://example.org/name"),
  *     string("John Doe")
  * )
  * 
@@ -520,7 +520,7 @@ data class RdfTriple(val subject: RdfResource, val predicate: Iri, val obj: RdfT
  * // Now you can use the quoted triple as a subject
  * val metadataTriple = triple(
  *     quotedTriple,  // Subject: the quoted triple
- *     iri("http://example.org/source"),  // Predicate: source
+ *     Iri("http://example.org/source"),  // Predicate: source
  *     string("Wikipedia")  // Object: source value
  * )
  * ```
@@ -626,8 +626,8 @@ fun lang(value: String, lang: String): Literal = Literal(value, lang)
  * ## Usage
  * ```kotlin
  * val baseTriple = triple(
- *     iri("http://example.org/person"),
- *     iri("http://example.org/name"),
+ *     Iri("http://example.org/person"),
+ *     Iri("http://example.org/name"),
  *     string("John Doe")
  * )
  * 
@@ -692,7 +692,7 @@ fun ByteArray.toLiteral(): Literal = Literal(Base64.getEncoder().encodeToString(
  *
  * ## Usage
  * ```kotlin
- * val iri = IRI("http://example.org/resource")
+ * val iri = Iri("http://example.org/resource")
  * 
  * // Equivalent to:
  * val iri2 = Iri("http://example.org/resource")
@@ -727,29 +727,6 @@ typealias BNode = BlankNode
  * managing triples within a graph.
  */
 interface RdfGraph {
-    
-    /**
-     * Add a triple to this graph.
-     */
-    fun addTriple(triple: RdfTriple)
-    
-    /**
-     * Add multiple triples to this graph.
-     */
-    fun addTriples(triples: Collection<RdfTriple>)
-    
-    /**
-     * Remove a triple from this graph.
-     * @return true if the triple was removed, false if it wasn't present
-     */
-    fun removeTriple(triple: RdfTriple): Boolean
-    
-    /**
-     * Remove multiple triples from this graph.
-     * @return true if any triples were removed
-     */
-    fun removeTriples(triples: Collection<RdfTriple>): Boolean
-    
     /**
      * Check if a triple exists in this graph.
      */
@@ -764,10 +741,47 @@ interface RdfGraph {
      * Get the number of triples in this graph.
      */
     fun size(): Int
-    
+}
+
+/**
+ * Mutable RDF graph operations.
+ */
+interface MutableRdfGraph : RdfGraph {
+
+    /**
+     * Add a triple to this graph.
+     */
+    fun addTriple(triple: RdfTriple)
+
+    /**
+     * Add multiple triples to this graph.
+     */
+    fun addTriples(triples: Collection<RdfTriple>)
+
+    /**
+     * Remove a triple from this graph.
+     * @return true if the triple was removed, false if it wasn't present
+     */
+    fun removeTriple(triple: RdfTriple): Boolean
+
+    /**
+     * Remove multiple triples from this graph.
+     * @return true if any triples were removed
+     */
+    fun removeTriples(triples: Collection<RdfTriple>): Boolean
+
     /**
      * Clear all triples from this graph.
      * @return true if any triples were removed
      */
     fun clear(): Boolean
 }
+
+
+
+
+
+
+
+
+

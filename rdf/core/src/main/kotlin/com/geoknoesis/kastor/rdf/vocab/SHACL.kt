@@ -77,3 +77,12 @@ object SHACL : Vocabulary {
     val sourceShape: Iri by lazy { term("sourceShape") }
     val value: Iri by lazy { term("value") }
 }
+
+
+
+
+
+
+
+
+

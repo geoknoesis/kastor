@@ -15,7 +15,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
 
-class Rdf4jRepository(private val repository: Repository) : RdfRepository {
+class Rdf4jRepository(
+    private val repository: Repository,
+    private val connection: RepositoryConnection = repository.connection
+) : RdfRepository {
     
     companion object {
         fun MemoryRepository(): Rdf4jRepository {
@@ -77,84 +80,99 @@ class Rdf4jRepository(private val repository: Repository) : RdfRepository {
     
     private val valueFactory: ValueFactory = SimpleValueFactory.getInstance()
     
-    override val defaultGraph: RdfGraph = Rdf4jGraph(repository.connection)
+    override val defaultGraph: MutableRdfGraph = Rdf4jGraph(connection)
     
-    override fun getGraph(name: Iri): RdfGraph {
+    override fun getGraph(name: Iri): MutableRdfGraph {
         val context = valueFactory.createIRI(name.value)
-        return Rdf4jGraph(repository.connection, context)
+        return Rdf4jGraph(connection, context)
     }
     
     override fun hasGraph(name: Iri): Boolean {
         val context = valueFactory.createIRI(name.value)
-        return repository.connection.hasStatement(null, null, null, false, context)
+        return connection.hasStatement(null, null, null, false, context)
     }
     
     override fun listGraphs(): List<Iri> {
-        val contexts = repository.connection.contextIDs
+        val contexts = connection.contextIDs
         return contexts.map { Iri(it.stringValue()) }
     }
     
-    override fun createGraph(name: Iri): RdfGraph {
+    override fun createGraph(name: Iri): MutableRdfGraph {
         val context = valueFactory.createIRI(name.value)
-        return Rdf4jGraph(repository.connection, context)
+        return Rdf4jGraph(connection, context)
     }
     
     override fun removeGraph(name: Iri): Boolean {
         val context = valueFactory.createIRI(name.value)
-        val wasEmpty = repository.connection.hasStatement(null, null, null, false, context)
-        repository.connection.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
+        val wasEmpty = connection.hasStatement(null, null, null, false, context)
+        connection.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
         return !wasEmpty
     }
     
-    override fun query(sparql: String): QueryResult {
-        val connection = repository.connection
-        val query = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql)
-        return Rdf4jResultSet(query.evaluate())
-    }
-    
-    override fun ask(sparql: String): Boolean {
-        val connection = repository.connection
-        val query = connection.prepareBooleanQuery(QueryLanguage.SPARQL, sparql)
-        return query.evaluate()
-    }
-    
-    override fun construct(sparql: String): List<RdfTriple> {
-        val connection = repository.connection
-        val query = connection.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
-        val result = query.evaluate()
-        return result.map { statement ->
-            RdfTriple(
-                Rdf4jTerms.fromRdf4jResource(statement.subject),
-                Rdf4jTerms.fromRdf4jIri(statement.predicate),
-                Rdf4jTerms.fromRdf4jValue(statement.`object`)
-            )
+    override fun select(query: SparqlSelect): QueryResult {
+        val prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
+        val result = prepared.evaluate()
+        try {
+            val rows = mutableListOf<BindingSet>()
+            while (result.hasNext()) {
+                val bindingSet = result.next()
+                val values = mutableMapOf<String, RdfTerm>()
+                bindingSet.bindingNames.forEach { name ->
+                    val value = bindingSet.getValue(name)
+                    if (value != null) {
+                        values[name] = Rdf4jTerms.fromRdf4jValue(value)
+                    }
+                }
+                rows.add(MapBindingSet(values))
+            }
+            return Rdf4jResultSet(rows)
+        } finally {
+            result.close()
         }
     }
     
-    override fun describe(sparql: String): List<RdfTriple> {
-        val connection = repository.connection
-        val query = connection.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
-        val result = query.evaluate()
-        return result.map { statement ->
-            RdfTriple(
-                Rdf4jTerms.fromRdf4jResource(statement.subject),
-                Rdf4jTerms.fromRdf4jIri(statement.predicate),
-                Rdf4jTerms.fromRdf4jValue(statement.`object`)
-            )
+    override fun ask(query: SparqlAsk): Boolean {
+        val prepared = connection.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
+        return prepared.evaluate()
+    }
+    
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+        val prepared = connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        val result = prepared.evaluate()
+        return result.use { graphResult ->
+            graphResult.iterator().asSequence().map { statement ->
+                RdfTriple(
+                    Rdf4jTerms.fromRdf4jResource(statement.subject),
+                    Rdf4jTerms.fromRdf4jIri(statement.predicate),
+                    Rdf4jTerms.fromRdf4jValue(statement.`object`)
+                )
+            }
         }
     }
     
-    override fun update(sparql: String) {
-        val connection = repository.connection
-        val update = connection.prepareUpdate(QueryLanguage.SPARQL, sparql)
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
+        val prepared = connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        val result = prepared.evaluate()
+        return result.use { graphResult ->
+            graphResult.iterator().asSequence().map { statement ->
+                RdfTriple(
+                    Rdf4jTerms.fromRdf4jResource(statement.subject),
+                    Rdf4jTerms.fromRdf4jIri(statement.predicate),
+                    Rdf4jTerms.fromRdf4jValue(statement.`object`)
+                )
+            }
+        }
+    }
+    
+    override fun update(query: UpdateQuery) {
+        val update = connection.prepareUpdate(QueryLanguage.SPARQL, query.sparql)
         update.execute()
     }
     
     override fun transaction(operations: RdfRepository.() -> Unit) {
-        val connection = repository.connection
         connection.begin()
         try {
-            operations()
+            operations(this)
             connection.commit()
         } catch (e: Exception) {
             connection.rollback()
@@ -163,10 +181,9 @@ class Rdf4jRepository(private val repository: Repository) : RdfRepository {
     }
     
     override fun readTransaction(operations: RdfRepository.() -> Unit) {
-        val connection = repository.connection
         connection.begin()
         try {
-            operations()
+            operations(this)
             connection.commit()
         } catch (e: Exception) {
             connection.rollback()
@@ -175,32 +192,12 @@ class Rdf4jRepository(private val repository: Repository) : RdfRepository {
     }
     
     override fun clear(): Boolean {
-        val wasEmpty = repository.connection.isEmpty
-        repository.connection.clear()
+        val wasEmpty = connection.isEmpty
+        connection.clear()
         return !wasEmpty
     }
     
-    override fun getStatistics(): RepositoryStatistics {
-        return RepositoryStatistics(
-            tripleCount = repository.connection.size().toLong(),
-            graphCount = repository.connection.contextIDs.count(),
-            memoryUsage = 0L,
-            diskUsage = 0L,
-            lastModified = System.currentTimeMillis()
-        )
-    }
-    
-    override fun getPerformanceMonitor(): PerformanceMonitor {
-        return PerformanceMonitor(
-            queryCount = 0,
-            averageQueryTime = 0.0,
-            totalQueryTime = 0,
-            cacheHitRate = 1.0,
-            memoryUsage = 0L
-        )
-    }
-    
-    override fun isClosed(): Boolean = !repository.isInitialized
+    override fun isClosed(): Boolean = !repository.isInitialized || !connection.isOpen
     
     override fun getCapabilities(): ProviderCapabilities {
         return ProviderCapabilities(
@@ -214,7 +211,19 @@ class Rdf4jRepository(private val repository: Repository) : RdfRepository {
     }
     
     override fun close() {
+        if (connection.isOpen) {
+            connection.close()
+        }
         repository.shutDown()
     }
 }
+
+
+
+
+
+
+
+
+
 

@@ -14,15 +14,24 @@ class JenaVariantsTest {
 
     // Write session
     val repo1 = JenaRepository.Tdb2Repository(dir.absolutePath)
-    val s = iri("urn:tdb2:s")
-    val p = iri("urn:tdb2:p")
-    val o = literal("persist")
+    val s = Iri("urn:tdb2:s")
+    val p = Iri("urn:tdb2:p")
+    val o = Literal("persist")
     repo1.defaultGraph.addTriple(RdfTriple(s, p, o))
 
     // New session against same location should see data
     val repo2 = JenaRepository.Tdb2Repository(dir.absolutePath)
-    val ask = repo2.ask("ASK { <urn:tdb2:s> <urn:tdb2:p> 'persist' }")
+    val ask = repo2.ask(SparqlAskQuery("ASK { <urn:tdb2:s> <urn:tdb2:p> 'persist' }"))
     assertTrue(ask)
   }
 }
+
+
+
+
+
+
+
+
+
 

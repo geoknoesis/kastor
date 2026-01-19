@@ -566,3 +566,6 @@ Now that you understand RDF fundamentals, explore:
 
 **🎉 Congratulations! You now have a solid understanding of RDF fundamentals and are ready to build powerful semantic applications with Kastor RDF!**
 
+
+
+

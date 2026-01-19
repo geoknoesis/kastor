@@ -15,3 +15,12 @@ interface Concept {
     @get:RdfProperty(iri = "http://www.w3.org/2004/02/skos/core#definition")
     val definition: List<String>
 }
+
+
+
+
+
+
+
+
+

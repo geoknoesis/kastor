@@ -1,4 +1,4 @@
-﻿package com.example.ontomapper.runtime
+package com.example.ontomapper.runtime
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfGraph
@@ -22,7 +22,19 @@ class DefaultRdfHandle(
     KastorGraphOps.extras(graph, node, exclude = known)
   }
 
-  override fun validateOrThrow() {
-    ValidationRegistry.current().validateOrThrow(graph, node)
+  override fun validate(): ValidationResult {
+    return ShaclValidation.current().validate(graph, node)
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+

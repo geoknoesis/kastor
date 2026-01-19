@@ -212,10 +212,9 @@ class ContextualRdfHandle(
         ContextualPropertyBag(graph, node, context)
     }
     
-    override fun validateOrThrow() {
-        if (context.options.validate) {
-            ValidationRegistry.current().validateOrThrow(graph, node)
-        }
+    override fun validate(): ValidationResult {
+        if (!context.options.validate) return ValidationResult.Ok
+        return ShaclValidation.current().validate(graph, node)
     }
 }
 ```
@@ -474,8 +473,8 @@ class CachingMaterializationService {
             CachingPropertyBag(graph, node)
         }
         
-        override fun validateOrThrow() {
-            ValidationRegistry.current().validateOrThrow(graph, node)
+        override fun validate(): ValidationResult {
+            return ShaclValidation.current().validate(graph, node)
         }
     }
     
@@ -510,7 +509,7 @@ class CachingMaterializationService {
                 when (term) {
                     is Iri, is BlankNode -> {
                         try {
-                            OntoMapper.materialize(RdfRef(term, graph), asType, false)
+                            OntoMapper.materialize(RdfRef(term, graph), asType)
                         } catch (e: Exception) {
                             null
                         }
@@ -821,3 +820,6 @@ class RetryMaterializationService {
 - **Review [API Reference](../reference/README.md)** - Complete API documentation
 - **Learn about [Best Practices](../best-practices.md)** - Guidelines for effective usage
 - **Check out [FAQ](../faq.md)** - Common questions and answers
+
+
+

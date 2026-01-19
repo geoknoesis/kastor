@@ -67,27 +67,36 @@ class OntoMapperProcessor(
         val prefixMappingSymbols = resolver.getSymbolsWithAnnotation("com.example.ontomapper.annotations.PrefixMapping")
         
         prefixMappingSymbols.forEach { symbol ->
-            val prefixMappingAnnotation = symbol.annotations.find { 
-                it.shortName.asString() == "PrefixMapping" 
+            val prefixMappingAnnotations = symbol.annotations.filter {
+                it.shortName.asString() == "PrefixMapping"
             }
-            
-            if (prefixMappingAnnotation != null) {
-                val prefixesArgument = prefixMappingAnnotation.arguments.find { 
-                    it.name?.asString() == "prefixes" 
+
+            prefixMappingAnnotations.forEach { prefixMappingAnnotation ->
+                val prefixesArgument = prefixMappingAnnotation.arguments.find {
+                    it.name?.asString() == "prefixes"
                 }
-                
-                if (prefixesArgument != null) {
-                    // Extract prefix mappings from the annotation
-                    val prefixesArray = prefixesArgument.value as? List<*>
-                    prefixesArray?.forEach { prefixElement ->
-                        if (prefixElement is KSType) {
-                            // This is a Prefix annotation instance
-                            // We need to extract the name and namespace values
-                            // For now, we'll use a simplified approach
-                            logger.info("Found Prefix annotation: ${prefixElement}")
+
+                val prefixesArray = prefixesArgument?.value as? List<*> ?: emptyList<Any>()
+                prefixesArray.forEach { prefixElement ->
+                    when (prefixElement) {
+                        is KSAnnotation -> {
+                            val name = prefixElement.arguments.find { it.name?.asString() == "name" }?.value as? String
+                            val namespace = prefixElement.arguments.find { it.name?.asString() == "namespace" }?.value as? String
+                            if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
+                                prefixMappings[name] = namespace
+                                logger.info("Registered prefix: $name -> $namespace")
+                            }
+                        }
+                        is KSType -> {
+                            val annotation = prefixElement.declaration.annotations.firstOrNull()
+                            val name = annotation?.arguments?.find { it.name?.asString() == "name" }?.value as? String
+                            val namespace = annotation?.arguments?.find { it.name?.asString() == "namespace" }?.value as? String
+                            if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
+                                prefixMappings[name] = namespace
+                                logger.info("Registered prefix: $name -> $namespace")
+                            }
                         }
                     }
-                    logger.info("Found PrefixMapping annotation on ${symbol}")
                 }
             }
         }
@@ -186,7 +195,7 @@ class OntoMapperProcessor(
             returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List" -> {
                 val typeArg = returnType.arguments.firstOrNull()?.type?.resolve()
                 val elementType = typeArg?.declaration?.qualifiedName?.asString()
-                "List<$elementType>"
+                "List<${normalizeKotlinType(elementType)}>"
             }
             else -> returnType.declaration.qualifiedName?.asString() ?: "Any"
         }
@@ -234,6 +243,17 @@ class OntoMapperProcessor(
         file.write(code.toByteArray())
         file.close()
     }
+
+    private fun normalizeKotlinType(typeName: String?): String {
+        return when (typeName) {
+            "kotlin.String" -> "String"
+            "kotlin.Int" -> "Int"
+            "kotlin.Boolean" -> "Boolean"
+            "kotlin.Double" -> "Double"
+            null -> "Any"
+            else -> typeName
+        }
+    }
 }
 
 /**
@@ -250,3 +270,15 @@ class OntoMapperProcessorProvider : SymbolProcessorProvider {
         )
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

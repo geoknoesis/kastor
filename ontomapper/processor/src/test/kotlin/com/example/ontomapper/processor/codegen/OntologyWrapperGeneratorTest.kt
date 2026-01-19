@@ -2,9 +2,11 @@ package com.example.ontomapper.processor.codegen
 
 import com.example.ontomapper.processor.model.JsonLdContext
 import com.example.ontomapper.processor.model.JsonLdProperty
+import com.example.ontomapper.processor.model.JsonLdType
 import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.model.ShaclProperty
 import com.example.ontomapper.processor.model.ShaclShape
+import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -69,13 +71,22 @@ class OntologyWrapperGeneratorTest {
                 "dcterms" to "http://purl.org/dc/terms/"
             ),
             typeMappings = mapOf(
-                "Catalog" to "http://www.w3.org/ns/dcat#Catalog",
-                "Dataset" to "http://www.w3.org/ns/dcat#Dataset"
+                "Catalog" to Iri("http://www.w3.org/ns/dcat#Catalog"),
+                "Dataset" to Iri("http://www.w3.org/ns/dcat#Dataset")
             ),
             propertyMappings = mapOf(
-                "title" to JsonLdProperty("http://purl.org/dc/terms/title", "http://www.w3.org/2001/XMLSchema#string"),
-                "description" to JsonLdProperty("http://purl.org/dc/terms/description", "http://www.w3.org/2001/XMLSchema#string"),
-                "dataset" to JsonLdProperty("http://www.w3.org/ns/dcat#dataset", "@id")
+                "title" to JsonLdProperty(
+                    id = Iri("http://purl.org/dc/terms/title"),
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                ),
+                "description" to JsonLdProperty(
+                    id = Iri("http://purl.org/dc/terms/description"),
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                ),
+                "dataset" to JsonLdProperty(
+                    id = Iri("http://www.w3.org/ns/dcat#dataset"),
+                    type = JsonLdType.Id
+                )
             )
         )
 
@@ -107,15 +118,16 @@ class OntologyWrapperGeneratorTest {
         
         // Check property implementations
         assertTrue(catalogCode.contains("override val title: String by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
-        assertTrue(catalogCode.contains(".map { it.lexical }.firstOrNull() ?: \"\""))
+        assertTrue(catalogCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(catalogCode.contains(".lexical"))
         
-        assertTrue(catalogCode.contains("override val description: String by lazy {"))
+        assertTrue(catalogCode.contains("override val description: String? by lazy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"))"))
+        assertTrue(catalogCode.contains(".map { it.lexical }.firstOrNull()"))
         
         assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"))"))
-        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java, false)"))
+        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
         // Check companion object
         assertTrue(catalogCode.contains("companion object {"))
@@ -180,23 +192,23 @@ class OntologyWrapperGeneratorTest {
         
         // Check string property
         assertTrue(testCode.contains("override val stringProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull() ?: \"\""))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"))"))
+        assertTrue(testCode.contains(".lexical"))
         
         // Check int property
         assertTrue(testCode.contains("override val intProp: Int by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull() ?: 0"))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
+        assertTrue(testCode.contains(".lexical.toInt()"))
         
         // Check boolean property
         assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toBooleanStrictOrNull() ?: false"))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
+        assertTrue(testCode.contains(".lexical.toBooleanStrict()"))
         
         // Check double property
         assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull() ?: 0.0"))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
+        assertTrue(testCode.contains(".lexical.toDouble()"))
     }
 
     @Test
@@ -248,7 +260,8 @@ class OntologyWrapperGeneratorTest {
         
         // Single value property
         assertTrue(testCode.contains("override val singleProp: String by lazy {"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull() ?: \"\""))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"))"))
+        assertTrue(testCode.contains(".lexical"))
         
         // Multiple value property
         assertTrue(testCode.contains("override val multipleProp: List<String> by lazy {"))
@@ -300,13 +313,13 @@ class OntologyWrapperGeneratorTest {
         // List object property
         assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"))"))
-        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java, false)"))
+        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
         // Single object property
-        assertTrue(catalogCode.contains("override val publisher: Agent by lazy {"))
+        assertTrue(catalogCode.contains("override val publisher: Agent? by lazy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"))"))
-        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java, false)"))
-        assertTrue(catalogCode.contains(".firstOrNull() ?: error(\"Required object publisher missing\")"))
+        assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
+        assertTrue(catalogCode.contains(".firstOrNull()"))
     }
 
     @Test
@@ -461,8 +474,8 @@ class OntologyWrapperGeneratorTest {
         
         // Unknown datatypes should default to String
         assertTrue(testCode.contains("override val unknownProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"))"))
-        assertTrue(testCode.contains(".map { it.lexical }.firstOrNull() ?: \"\""))
+        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"))"))
+        assertTrue(testCode.contains(".lexical"))
     }
 
     @Test
@@ -500,3 +513,15 @@ class OntologyWrapperGeneratorTest {
         assertTrue(wrappers.containsKey("DataDistributionWrapper"))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

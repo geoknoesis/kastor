@@ -53,3 +53,12 @@ object SPARQL12 : Vocabulary {
     val rand: Iri by lazy { term("rand") }
     val random: Iri by lazy { term("random") }
 }
+
+
+
+
+
+
+
+
+

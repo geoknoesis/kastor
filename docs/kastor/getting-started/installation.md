@@ -397,8 +397,14 @@ dependencies {
 
 ```kotlin
 // Choose backend at runtime
-val jenaRepo = Rdf.factory { type = "jena:memory" }
-val rdf4jRepo = Rdf.factory { type = "rdf4j:memory" }
+val jenaRepo = Rdf.factory { 
+    providerId = "jena"
+    variantId = "memory"
+}
+val rdf4jRepo = Rdf.factory { 
+    providerId = "rdf4j"
+    variantId = "memory"
+}
 ```
 
 ## ✅ Verification
@@ -458,7 +464,10 @@ fun testBackends() {
     
     // Test Jena
     try {
-        val jenaRepo = Rdf.factory { type = "jena:memory" }
+        val jenaRepo = Rdf.factory { 
+            providerId = "jena"
+            variantId = "memory"
+        }
         jenaRepo.add {
             val person = "http://example.org/person/jena".toResource()
             person["http://example.org/person/name"] = "Jena User"
@@ -471,7 +480,10 @@ fun testBackends() {
     
     // Test RDF4J
     try {
-        val rdf4jRepo = Rdf.factory { type = "rdf4j:memory" }
+        val rdf4jRepo = Rdf.factory { 
+            providerId = "rdf4j"
+            variantId = "memory"
+        }
         rdf4jRepo.add {
             val person = "http://example.org/person/rdf4j".toResource()
             person["http://example.org/person/name"] = "RDF4J User"
@@ -632,3 +644,6 @@ After successful installation:
 ---
 
 **🎉 Congratulations! You've successfully installed Kastor RDF and are ready to build amazing RDF applications!**
+
+
+

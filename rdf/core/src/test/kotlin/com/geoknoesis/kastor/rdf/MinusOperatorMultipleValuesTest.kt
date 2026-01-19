@@ -15,10 +15,10 @@ class MinusOperatorMultipleValuesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
-            val friend3 = iri("http://example.org/friend3")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
+            val friend3 = Iri("http://example.org/friend3")
             
             // Single value (existing functionality)
             person - FOAF.name - "Alice"
@@ -33,7 +33,7 @@ class MinusOperatorMultipleValuesTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(6, allTriples.size, "Should have 6 triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(6, personTriples.size, "Person should have 6 properties")
         
         // Verify single name
@@ -46,9 +46,9 @@ class MinusOperatorMultipleValuesTest {
         assertEquals(3, knowsTriples.size, "Should have 3 knows relationships")
         
         val knowsObjects = knowsTriples.map { it.obj }
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend1")), "Should know friend1")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend2")), "Should know friend2")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend3")), "Should know friend3")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend1")), "Should know friend1")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend2")), "Should know friend2")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend3")), "Should know friend3")
         
         // Verify multiple email addresses
         val mboxTriples = personTriples.filter { it.predicate == FOAF.mbox }
@@ -66,11 +66,11 @@ class MinusOperatorMultipleValuesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             val emails = listOf("alice@example.com", "alice@work.com", "alice@personal.com")
             
@@ -84,7 +84,7 @@ class MinusOperatorMultipleValuesTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertTrue(allTriples.size >= 13, "Should have at least 13 triples (1 name + 12 for RDF list structure)")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(3, personTriples.size, "Person should have 3 direct properties (name, knows, mbox)")
         
         // Verify name property
@@ -110,9 +110,9 @@ class MinusOperatorMultipleValuesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
             val bnode = bnode("anon1")
             
             person - FOAF.name - "Alice"
@@ -127,7 +127,7 @@ class MinusOperatorMultipleValuesTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertTrue(allTriples.size >= 9, "Should have at least 9 triples") // 1 name + 3 knows + 5 for RDF list structure
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(5, personTriples.size, "Person should have 5 direct properties (1 name + 3 knows + 1 subject)")
         
         // Verify multiple knows relationships with mixed types (array creates individual triples)
@@ -135,8 +135,8 @@ class MinusOperatorMultipleValuesTest {
         assertEquals(3, knowsTriples.size, "Should have 3 knows properties")
         
         val knowsObjects = knowsTriples.map { it.obj }
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend1")), "Should know friend1")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend2")), "Should know friend2")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend1")), "Should know friend1")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend2")), "Should know friend2")
         assertTrue(knowsObjects.contains(bnode("anon1")), "Should know blank node")
         
         // Verify subject property points to RDF List
@@ -149,10 +149,10 @@ class MinusOperatorMultipleValuesTest {
 
     @Test
     fun `minus operator multiple values works with standalone graph`() {
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
         
         val graph = Rdf.graph {
             person - FOAF.name - "Alice"
@@ -164,7 +164,7 @@ class MinusOperatorMultipleValuesTest {
             person - FOAF.mbox - listOf("alice@example.com", "alice@work.com")
             
             // Multiple values using array for homepage
-            person - FOAF.homepage - arrayOf("http://alice.com", "http://alice.blog.com")
+            person - FOAF.homepage - arrayOf(Iri("http://alice.com"), Iri("http://alice.blog.com"))
         }
         
         val allTriples = graph.getTriples()
@@ -192,8 +192,8 @@ class MinusOperatorMultipleValuesTest {
         assertEquals(2, homepageTriples.size, "Should have 2 homepage properties")
         
         val homepageObjects = homepageTriples.map { it.obj }
-        assertTrue(homepageObjects.contains(iri("http://alice.com")), "Should have alice.com homepage as IRI (smart QName detection)")
-        assertTrue(homepageObjects.contains(iri("http://alice.blog.com")), "Should have alice.blog.com homepage as IRI (smart QName detection)")
+        assertTrue(homepageObjects.contains(Iri("http://alice.com")), "Should have alice.com homepage as IRI (smart QName detection)")
+        assertTrue(homepageObjects.contains(Iri("http://alice.blog.com")), "Should have alice.blog.com homepage as IRI (smart QName detection)")
     }
 
     @Test
@@ -201,10 +201,10 @@ class MinusOperatorMultipleValuesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val document = iri("http://example.org/document")
-            val author1 = iri("http://example.org/author1")
-            val author2 = iri("http://example.org/author2")
-            val author3 = iri("http://example.org/author3")
+            val document = Iri("http://example.org/document")
+            val author1 = Iri("http://example.org/author1")
+            val author2 = Iri("http://example.org/author2")
+            val author3 = Iri("http://example.org/author3")
             
             // Multiple titles
             document - DCTERMS.title - arrayOf("Main Title", "Subtitle", "Alternative Title")
@@ -222,7 +222,7 @@ class MinusOperatorMultipleValuesTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertTrue(allTriples.size >= 11, "Should have at least 11 triples") // 3 titles + 5 for creator RDF list + 2 subjects + 5 for type RDF list
         
-        val documentTriples = allTriples.filter { it.subject == iri("http://example.org/document") }
+        val documentTriples = allTriples.filter { it.subject == Iri("http://example.org/document") }
         assertEquals(7, documentTriples.size, "Document should have 7 direct properties (3 titles + 1 creator + 2 subjects + 1 type)")
         
         // Verify multiple titles (array creates individual triples)
@@ -258,9 +258,9 @@ class MinusOperatorMultipleValuesTest {
         
         assertEquals(RDF.nil, currentListElement, "Last list element should point to rdf:nil")
         assertEquals(3, listElements.size, "RDF List should contain 3 authors")
-        assertTrue(listElements.contains(iri("http://example.org/author1")), "RDF List should contain author1")
-        assertTrue(listElements.contains(iri("http://example.org/author2")), "RDF List should contain author2")
-        assertTrue(listElements.contains(iri("http://example.org/author3")), "RDF List should contain author3")
+        assertTrue(listElements.contains(Iri("http://example.org/author1")), "RDF List should contain author1")
+        assertTrue(listElements.contains(Iri("http://example.org/author2")), "RDF List should contain author2")
+        assertTrue(listElements.contains(Iri("http://example.org/author3")), "RDF List should contain author3")
         
         // Verify subject property (array creates individual triples)
         val subjectTriples = documentTriples.filter { it.predicate == DCTERMS.subject }
@@ -301,3 +301,12 @@ class MinusOperatorMultipleValuesTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,9 @@
 pluginManagement {
-  repositories { gradlePluginPortal(); mavenCentral() }
+  repositories { 
+    gradlePluginPortal()
+    mavenCentral()
+    mavenLocal()  // For local plugin development
+  }
 }
 dependencyResolutionManagement {
   repositories { mavenCentral(); mavenLocal() }
@@ -10,7 +14,7 @@ include(
   "bom",
   ":rdf:core", ":rdf:jena", ":rdf:rdf4j", ":rdf:sparql", ":rdf:reasoning", ":rdf:shacl-validation", ":rdf:examples",
   ":ontomapper:runtime", ":ontomapper:processor", ":ontomapper:gradle-plugin", ":ontomapper:validation-jena", ":ontomapper:validation-rdf4j",
-  ":samples:dcat-us"
+  ":examples:dcat-us"
 )
 
 

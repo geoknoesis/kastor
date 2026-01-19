@@ -172,3 +172,12 @@ interface OrganizationWithFilePrefixes {
     @get:RdfProperty(iri = "http://www.w3.org/ns/org#hasMember")
     val members: List<PersonWithFilePrefixes>
 }
+
+
+
+
+
+
+
+
+

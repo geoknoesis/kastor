@@ -48,7 +48,8 @@ class RdfCoreTest {
     fun `persistent repository creation works`() {
         val location = tempDir!!.resolve("test-repo").toString()
         val repo = Rdf.factory {
-            type = "memory"
+            providerId = "memory"
+            variantId = "memory"
         }
         
         assertNotNull(repo, "Persistent repository should be created")
@@ -59,7 +60,8 @@ class RdfCoreTest {
     @Test
     fun `persistent repository with default location works`() {
         val repo = Rdf.factory {
-            type = "memory"
+            providerId = "memory"
+            variantId = "memory"
         }
         
         assertNotNull(repo, "Persistent repository with default location should be created")
@@ -70,11 +72,9 @@ class RdfCoreTest {
     @Test
     fun `factory method with custom configuration works`() {
         val repo = Rdf.factory {
-            type = "memory"
+            providerId = "memory"
+            variantId = "memory"
             inference = true
-            optimization = false
-            cacheSize = 500
-            maxMemory = "512MB"
         }
         
         assertNotNull(repo, "Factory-created repository should be created")
@@ -86,11 +86,9 @@ class RdfCoreTest {
     fun `factory method with persistent configuration works`() {
         val location = tempDir!!.resolve("factory-repo").toString()
         val repo = Rdf.factory {
-            type = "memory"
+            providerId = "memory"
+            variantId = "memory"
             inference = false
-            optimization = true
-            cacheSize = 2000
-            maxMemory = "2GB"
         }
         
         assertNotNull(repo, "Factory-created persistent repository should be created")
@@ -99,57 +97,26 @@ class RdfCoreTest {
     }
     
     @Test
-    fun `repository manager creation works`() {
-        val manager = Rdf.manager {
-            // Test basic manager creation
-        }
-        
-        assertNotNull(manager, "Repository manager should be created")
-    }
-    
-    @Test
-    fun `default provider management works`() {
-        val originalProvider = Rdf.getDefaultProvider()
-        
-        try {
-            // Test setting and getting default provider
-            Rdf.setDefaultProvider("jena")
-            assertEquals("jena", Rdf.getDefaultProvider(), "Default provider should be set to jena")
-            
-            Rdf.setDefaultProvider("rdf4j")
-            assertEquals("rdf4j", Rdf.getDefaultProvider(), "Default provider should be set to rdf4j")
-        } finally {
-            // Restore original provider
-            Rdf.setDefaultProvider(originalProvider)
-        }
-    }
-    
-    @Test
     fun `repository builder with all options works`() {
         val builder = Rdf.RepositoryBuilder()
         
         // Test default values
-        assertEquals("memory", builder.type, "Default type should be memory")
+        assertNull(builder.providerId, "Default provider should be null")
+        assertNull(builder.variantId, "Default variant should be null")
         assertNull(builder.location, "Default location should be null")
         assertFalse(builder.inference, "Default inference should be false")
-        assertTrue(builder.optimization, "Default optimization should be true")
-        assertEquals(1000, builder.cacheSize, "Default cache size should be 1000")
-        assertEquals("1GB", builder.maxMemory, "Default max memory should be 1GB")
+        // Defaults trimmed for minimal API.
         
         // Test setting values
-        builder.type = "memory"
+        builder.providerId = "memory"
+        builder.variantId = "memory"
         builder.location = "/test/location"
         builder.inference = true
-        builder.optimization = false
-        builder.cacheSize = 1500
-        builder.maxMemory = "3GB"
         
-        assertEquals("memory", builder.type, "Type should be settable")
+        assertEquals("memory", builder.providerId, "Provider should be settable")
+        assertEquals("memory", builder.variantId, "Variant should be settable")
         assertEquals("/test/location", builder.location, "Location should be settable")
         assertTrue(builder.inference, "Inference should be settable")
-        assertFalse(builder.optimization, "Optimization should be settable")
-        assertEquals(1500, builder.cacheSize, "Cache size should be settable")
-        assertEquals("3GB", builder.maxMemory, "Max memory should be settable")
         
         // Test building repository
         val repo = builder.build()
@@ -159,7 +126,8 @@ class RdfCoreTest {
     @Test
     fun `repository builder with null location uses default`() {
         val repo = Rdf.RepositoryBuilder().apply {
-            type = "memory"
+            providerId = "memory"
+            variantId = "memory"
             location = null // This should use default "data"
         }.build()
         
@@ -181,7 +149,10 @@ class RdfCoreTest {
     fun `multiple repositories can be created independently`() {
         val repo1 = Rdf.memory()
         val repo2 = Rdf.memory()
-        val repo3 = Rdf.factory { type = "memory" }
+        val repo3 = Rdf.factory {
+            providerId = "memory"
+            variantId = "memory"
+        }
         
         assertNotNull(repo1, "First repository should be created")
         assertNotNull(repo2, "Second repository should be created")
@@ -208,9 +179,9 @@ class RdfCoreTest {
         val graph = repo.defaultGraph
         
         // Test basic triple operations
-        val subject = iri("http://example.org/subject")
-        val predicate = iri("http://example.org/predicate")
-        val obj = literal("test value")
+        val subject = Iri("http://example.org/subject")
+        val predicate = Iri("http://example.org/predicate")
+        val obj = Literal("test value")
         val triple = RdfTriple(subject, predicate, obj)
         
         graph.addTriple(triple)
@@ -222,3 +193,12 @@ class RdfCoreTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

@@ -20,28 +20,28 @@ class BuiltInPrefixesTest {
         
         repo.add {
             // No need to declare common prefixes - they're built-in!
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // RDF vocabulary
-            person - "rdf:type" - "rdfs:Class"
-            person["a"] = "rdf:Statement"
+            person - RDF.type - qname("rdfs:Class")
+            person[RDF.type] = qname("rdf:Statement")
             
             // RDFS vocabulary
-            person - "rdfs:label" - "Person Class"
-            person - "rdfs:comment" - "A person in our system"
-            person - "rdfs:subClassOf" - "rdfs:Resource"
+            person - qname("rdfs:label") - "Person Class"
+            person - qname("rdfs:comment") - "A person in our system"
+            person - qname("rdfs:subClassOf") - qname("rdfs:Resource")
             
             // OWL vocabulary
-            person - "owl:sameAs" - "http://example.org/person2"
-            person - "owl:differentFrom" - "http://example.org/animal"
+            person - qname("owl:sameAs") - Iri("http://example.org/person2")
+            person - qname("owl:differentFrom") - Iri("http://example.org/animal")
             
             // SHACL vocabulary
-            person - "sh:targetClass" - "rdfs:Class"
-            person - "sh:property" - "rdf:type"
+            person - qname("sh:targetClass") - qname("rdfs:Class")
+            person - qname("sh:property") - qname("rdf:type")
             
             // XSD datatypes (used in smart object creation)
-            person - "rdfs:range" - "xsd:string"
-            person - "rdfs:domain" - "xsd:integer"
+            person - qname("rdfs:range") - qname("xsd:string")
+            person - qname("rdfs:domain") - qname("xsd:integer")
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -78,13 +78,13 @@ class BuiltInPrefixesTest {
     fun `built-in prefixes work in graph DSL`() {
         val graph = Rdf.graph {
             // No need to declare common prefixes - they're built-in!
-            val concept = iri("http://example.org/concept")
+            val concept = Iri("http://example.org/concept")
             
             // Mix of built-in prefixes
-            concept - "rdf:type" - "owl:Class"
-            concept - "rdfs:label" - "Example Concept"
-            concept - "owl:equivalentClass" - "rdfs:Resource"
-            concept - "sh:targetClass" - "owl:Class"
+            concept - RDF.type - qname("owl:Class")
+            concept - qname("rdfs:label") - "Example Concept"
+            concept - qname("owl:equivalentClass") - qname("rdfs:Resource")
+            concept - qname("sh:targetClass") - qname("owl:Class")
         }
         
         val triples = graph.getTriples()
@@ -112,10 +112,10 @@ class BuiltInPrefixesTest {
                 put("rdf", "http://example.org/custom-rdf#")
             }
             
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
             
             // Should use custom namespace, not built-in
-            resource["rdf:type"] = "rdf:CustomType"
+            resource[qname("rdf:type")] = qname("rdf:CustomType")
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -135,20 +135,20 @@ class BuiltInPrefixesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // Smart QName detection with built-in prefixes
-            person - "rdf:type" - "rdfs:Class"           // Both QNames → IRIs
-            person - "rdfs:subClassOf" - "rdfs:Resource" // Both QNames → IRIs
-            person - "owl:sameAs" - "http://example.org/person2"  // QName + Full IRI → IRIs
-            person - "sh:targetClass" - "owl:Class"      // Both QNames → IRIs
+            person - RDF.type - qname("rdfs:Class")           // Both QNames → IRIs
+            person - qname("rdfs:subClassOf") - qname("rdfs:Resource") // Both QNames → IRIs
+            person - qname("owl:sameAs") - Iri("http://example.org/person2")  // QName + Full IRI → IRIs
+            person - qname("sh:targetClass") - qname("owl:Class")      // Both QNames → IRIs
             
             // Mixed with custom prefixes
             prefixes {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
-            person - "foaf:name" - "Alice"               // Custom prefix + string literal
-            person - "rdfs:label" - "Person"             // Built-in prefix + string literal
+            person - qname("foaf:name") - "Alice"               // Custom prefix + string literal
+            person - qname("rdfs:label") - "Person"             // Built-in prefix + string literal
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -175,14 +175,14 @@ class BuiltInPrefixesTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
             
             // Test all built-in prefixes
-            resource - "rdf:type" - "rdfs:Class"           // RDF namespace
-            resource - "rdfs:label" - "Test Resource"      // RDFS namespace
-            resource - "owl:sameAs" - "http://example.org/other"  // OWL namespace
-            resource - "sh:targetClass" - "rdfs:Class"     // SHACL namespace
-            resource - "xsd:string" - "test"               // XSD namespace (as predicate)
+            resource - RDF.type - qname("rdfs:Class")           // RDF namespace
+            resource - qname("rdfs:label") - "Test Resource"      // RDFS namespace
+            resource - qname("owl:sameAs") - Iri("http://example.org/other")  // OWL namespace
+            resource - qname("sh:targetClass") - qname("rdfs:Class")     // SHACL namespace
+            resource - qname("xsd:string") - "test"               // XSD namespace (as predicate)
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -210,3 +210,12 @@ class BuiltInPrefixesTest {
         println("   Total triples: ${triples.size}")
     }
 }
+
+
+
+
+
+
+
+
+

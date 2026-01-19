@@ -123,3 +123,12 @@ private fun getDefaultRulesForType(type: ReasonerType): Set<ReasoningRule> {
         else -> emptySet()
     }
 }
+
+
+
+
+
+
+
+
+

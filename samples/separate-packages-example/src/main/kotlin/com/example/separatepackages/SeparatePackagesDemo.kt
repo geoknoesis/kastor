@@ -28,12 +28,12 @@ fun main() {
     // Add data using generated vocabularies from separate packages
     repo.add {
         // DCAT-US data using vocabulary from separate package
-        val catalog = iri("http://example.org/catalog")
+        val catalog = Iri("http://example.org/catalog")
         catalog - RDF.type - DCAT.Catalog
         catalog - DCTERMS.title - "My Data Catalog"
         catalog - DCTERMS.description - "A catalog of datasets"
         
-        val dataset = iri("http://example.org/dataset")
+        val dataset = Iri("http://example.org/dataset")
         dataset - RDF.type - DCAT.Dataset
         dataset - DCTERMS.title - "Sample Dataset"
         dataset - DCTERMS.description - "A sample dataset"
@@ -41,12 +41,12 @@ fun main() {
         catalog - DCAT.datasetProp - dataset
         
         // Schema.org data using vocabulary from separate package
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         person - RDF.type - SCHEMA.Person
         person - SCHEMA.name - "John Doe"
         person - SCHEMA.email - "john@example.com"
         
-        val address = iri("http://example.org/address")
+        val address = Iri("http://example.org/address")
         address - RDF.type - SCHEMA.PostalAddress
         address - SCHEMA.streetAddress - "123 Main St"
         address - SCHEMA.addressLocality - "Anytown"
@@ -55,13 +55,13 @@ fun main() {
         person - SCHEMA.address - address
         
         // FOAF data using vocabulary from separate package
-        val foafPerson = iri("http://example.org/foaf-person")
+        val foafPerson = Iri("http://example.org/foaf-person")
         foafPerson - RDF.type - FOAF.Person
         foafPerson - FOAF.name - "Jane Smith"
         foafPerson - FOAF.mbox - "jane@example.com"
         foafPerson - FOAF.knows - person
         
-        val document = iri("http://example.org/document")
+        val document = Iri("http://example.org/document")
         document - RDF.type - FOAF.Document
         document - FOAF.title - "Sample Document"
         document - FOAF.primaryTopic - foafPerson
@@ -99,7 +99,7 @@ fun main() {
     println("\n=== Interface Usage (from interface packages) ===")
     
     // Materialize using interfaces from separate packages
-    val catalogRef = RdfRef(iri("http://example.org/catalog"), repo.defaultGraph)
+    val catalogRef = RdfRef(Iri("http://example.org/catalog"), repo.defaultGraph)
     val catalog: Catalog = catalogRef.asType()
     
     println("Catalog Interface (from com.example.dcatus.interfaces):")
@@ -107,7 +107,7 @@ fun main() {
     println("  Description: ${catalog.description}")
     println("  Dataset count: ${catalog.dataset.size}")
     
-    val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
+    val personRef = RdfRef(Iri("http://example.org/person"), repo.defaultGraph)
     val person: Person = personRef.asType()
     
     println("\nPerson Interface (from com.example.schema.interfaces):")
@@ -115,7 +115,7 @@ fun main() {
     println("  Email: ${person.email}")
     println("  Address: ${person.address?.let { "${it.streetAddress}, ${it.addressLocality}, ${it.addressCountry}" }}")
     
-    val foafPersonRef = RdfRef(iri("http://example.org/foaf-person"), repo.defaultGraph)
+    val foafPersonRef = RdfRef(Iri("http://example.org/foaf-person"), repo.defaultGraph)
     val foafPerson: foaf.Person = foafPersonRef.asType()
     
     println("\nFOAF Person Interface (from com.example.foaf.interfaces):")
@@ -214,3 +214,12 @@ fun main() {
     
     println("\n=== Demo Complete ===")
 }
+
+
+
+
+
+
+
+
+

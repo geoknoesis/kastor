@@ -31,3 +31,12 @@ object RDFS : Vocabulary {
     val subClassOf: Iri by lazy { term("subClassOf") }
     val subPropertyOf: Iri by lazy { term("subPropertyOf") }
 }
+
+
+
+
+
+
+
+
+

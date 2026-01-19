@@ -38,61 +38,61 @@ class BasicShaclValidationExample {
     private fun createPersonDataGraph(): RdfGraph {
         return Rdf.graph {
             // Valid person with all required properties
-            val alice = iri("http://example.org/alice")
-            alice - RDF.type - iri("http://example.org/Person")
-            alice - iri("http://example.org/name") - "Alice Johnson"
-            alice - iri("http://example.org/email") - "alice@example.org"
-            alice - iri("http://example.org/age") - 30
+            val alice = Iri("http://example.org/alice")
+            alice - RDF.type - Iri("http://example.org/Person")
+            alice - Iri("http://example.org/name") - "Alice Johnson"
+            alice - Iri("http://example.org/email") - "alice@example.org"
+            alice - Iri("http://example.org/age") - 30
             
             // Person with missing required email
-            val bob = iri("http://example.org/bob")
-            bob - RDF.type - iri("http://example.org/Person")
-            bob - iri("http://example.org/name") - "Bob Smith"
-            bob - iri("http://example.org/age") - 25
+            val bob = Iri("http://example.org/bob")
+            bob - RDF.type - Iri("http://example.org/Person")
+            bob - Iri("http://example.org/name") - "Bob Smith"
+            bob - Iri("http://example.org/age") - 25
             
             // Person with invalid age (negative)
-            val charlie = iri("http://example.org/charlie")
-            charlie - RDF.type - iri("http://example.org/Person")
-            charlie - iri("http://example.org/name") - "Charlie Brown"
-            charlie - iri("http://example.org/email") - "charlie@example.org"
-            charlie - iri("http://example.org/age") - (-5)
+            val charlie = Iri("http://example.org/charlie")
+            charlie - RDF.type - Iri("http://example.org/Person")
+            charlie - Iri("http://example.org/name") - "Charlie Brown"
+            charlie - Iri("http://example.org/email") - "charlie@example.org"
+            charlie - Iri("http://example.org/age") - (-5)
         }
     }
     
     private fun createPersonShapesGraph(): RdfGraph {
         return Rdf.graph {
             // Person shape
-            val personShape = iri("http://example.org/PersonShape")
-            val nameProperty = iri("http://example.org/nameProperty")
-            val emailProperty = iri("http://example.org/emailProperty")
-            val ageProperty = iri("http://example.org/ageProperty")
+            val personShape = Iri("http://example.org/PersonShape")
+            val nameProperty = Iri("http://example.org/nameProperty")
+            val emailProperty = Iri("http://example.org/emailProperty")
+            val ageProperty = Iri("http://example.org/ageProperty")
             
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
             
             // Name property constraints
-            personShape - iri("http://www.w3.org/ns/shacl#property") - nameProperty
-            nameProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            nameProperty - iri("http://www.w3.org/ns/shacl#path") - iri("http://example.org/name")
-            nameProperty - iri("http://www.w3.org/ns/shacl#minCount") - literal(1)
-            nameProperty - iri("http://www.w3.org/ns/shacl#maxCount") - literal(1)
-            nameProperty - iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
+            nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/name")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
             
             // Email property constraints
-            personShape - iri("http://www.w3.org/ns/shacl#property") - emailProperty
-            emailProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            emailProperty - iri("http://www.w3.org/ns/shacl#path") - iri("http://example.org/email")
-            emailProperty - iri("http://www.w3.org/ns/shacl#minCount") - literal(1)
-            emailProperty - iri("http://www.w3.org/ns/shacl#maxCount") - literal(1)
-            emailProperty - iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - emailProperty
+            emailProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            emailProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/email")
+            emailProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
+            emailProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            emailProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
             
             // Age property constraints
-            personShape - iri("http://www.w3.org/ns/shacl#property") - ageProperty
-            ageProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            ageProperty - iri("http://www.w3.org/ns/shacl#path") - iri("http://example.org/age")
-            ageProperty - iri("http://www.w3.org/ns/shacl#minCount") - literal(1)
-            ageProperty - iri("http://www.w3.org/ns/shacl#maxCount") - literal(1)
-            ageProperty - iri("http://www.w3.org/ns/shacl#datatype") - XSD.integer
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - ageProperty
+            ageProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            ageProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/age")
+            ageProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
+            ageProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            ageProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.integer
         }
     }
     
@@ -130,11 +130,11 @@ class BasicShaclValidationExample {
         val shapesGraph = createPersonShapesGraph()
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
         
-        val alice = iri("http://example.org/alice")
+        val alice = Iri("http://example.org/alice")
         val aliceReport = validator.validateResource(dataGraph, shapesGraph, alice)
         println("Alice validation: ${if (aliceReport.isValid) "PASSED" else "FAILED"}")
         
-        val bob = iri("http://example.org/bob")
+        val bob = Iri("http://example.org/bob")
         val bobReport = validator.validateResource(dataGraph, shapesGraph, bob)
         println("Bob validation: ${if (bobReport.isValid) "PASSED" else "FAILED"}")
         if (!bobReport.isValid) {
@@ -200,3 +200,12 @@ fun main() {
     val example = BasicShaclValidationExample()
     example.run()
 }
+
+
+
+
+
+
+
+
+

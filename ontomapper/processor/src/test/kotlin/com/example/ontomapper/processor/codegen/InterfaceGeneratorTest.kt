@@ -2,9 +2,12 @@ package com.example.ontomapper.processor.codegen
 
 import com.example.ontomapper.processor.model.JsonLdContext
 import com.example.ontomapper.processor.model.JsonLdProperty
+import com.example.ontomapper.processor.model.JsonLdType
 import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.model.ShaclProperty
 import com.example.ontomapper.processor.model.ShaclShape
+import com.example.ontomapper.annotations.ValidationAnnotations
+import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -24,7 +27,7 @@ class InterfaceGeneratorTest {
             override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {}
             override fun exception(e: Throwable) {}
         }
-        generator = InterfaceGenerator(logger)
+        generator = InterfaceGenerator(logger, ValidationAnnotations.NONE)
     }
 
     @Test
@@ -69,13 +72,22 @@ class InterfaceGeneratorTest {
                 "dcterms" to "http://purl.org/dc/terms/"
             ),
             typeMappings = mapOf(
-                "Catalog" to "http://www.w3.org/ns/dcat#Catalog",
-                "Dataset" to "http://www.w3.org/ns/dcat#Dataset"
+                "Catalog" to Iri("http://www.w3.org/ns/dcat#Catalog"),
+                "Dataset" to Iri("http://www.w3.org/ns/dcat#Dataset")
             ),
             propertyMappings = mapOf(
-                "title" to JsonLdProperty("http://purl.org/dc/terms/title", "http://www.w3.org/2001/XMLSchema#string"),
-                "description" to JsonLdProperty("http://purl.org/dc/terms/description", "http://www.w3.org/2001/XMLSchema#string"),
-                "dataset" to JsonLdProperty("http://www.w3.org/ns/dcat#dataset", "@id")
+                "title" to JsonLdProperty(
+                    id = Iri("http://purl.org/dc/terms/title"),
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                ),
+                "description" to JsonLdProperty(
+                    id = Iri("http://purl.org/dc/terms/description"),
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                ),
+                "dataset" to JsonLdProperty(
+                    id = Iri("http://www.w3.org/ns/dcat#dataset"),
+                    type = JsonLdType.Id
+                )
             )
         )
 
@@ -470,3 +482,15 @@ class InterfaceGeneratorTest {
         assertTrue(interfaces.containsKey("DataDistribution"))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

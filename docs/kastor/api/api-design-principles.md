@@ -369,3 +369,6 @@ Prevent errors before they happen
 The Kastor RDF API is designed with modern API design principles and Kotlin best practices to ensure wide adoption and excellent developer experience. By focusing on simplicity, type safety, and progressive disclosure, the API makes RDF accessible to developers of all skill levels while providing the power and flexibility needed for complex applications.
 
 The key to success is balancing simplicity with power, providing clear documentation and examples, and building a strong community around the project. With these principles in place, the Kastor RDF API is well-positioned for widespread adoption in the RDF and semantic web communities.
+
+
+

@@ -93,3 +93,12 @@ object DCTERMS : Vocabulary {
     val type: Iri by lazy { term("type") }
     val valid: Iri by lazy { term("valid") }
 }
+
+
+
+
+
+
+
+
+

@@ -20,7 +20,7 @@ class RdfContainerTest {
     @Test
     fun `bag creates rdf_Bag container with rdf__1, rdf__2, etc`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -63,10 +63,10 @@ class RdfContainerTest {
     @Test
     fun `seq creates rdf_Seq container with rdf__1, rdf__2, etc`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -108,7 +108,7 @@ class RdfContainerTest {
     @Test
     fun `alt creates rdf_Alt container with rdf__1, rdf__2, etc`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         val email1 = "alice@example.com"
         val email2 = "alice@work.com"
 
@@ -151,8 +151,8 @@ class RdfContainerTest {
     @Test
     fun `containers work with mixed types`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val person = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         val age = 30
         val height = 165.5
 
@@ -189,9 +189,9 @@ class RdfContainerTest {
 
     @Test
     fun `containers work with standalone graph`() {
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
 
         val graph = Rdf.graph {
             person - FOAF.name - "Alice"
@@ -239,9 +239,9 @@ class RdfContainerTest {
     @Test
     fun `containers vs lists vs individual values comparison`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -308,7 +308,7 @@ class RdfContainerTest {
     @Test
     fun `empty containers work correctly`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -352,3 +352,12 @@ class RdfContainerTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

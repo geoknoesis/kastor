@@ -231,7 +231,7 @@ class JenaBridgeTest {
     @Test
     fun `isJenaBacked identifies Jena-backed graphs`() {
         val jenaGraph = JenaBridge.createEmptyModel()
-        val nonJenaGraph = Rdf.memory().defaultGraph
+        val nonJenaGraph = Rdf.graph { }
         
         assertTrue(JenaBridge.isJenaBacked(jenaGraph))
         assertFalse(JenaBridge.isJenaBacked(nonJenaGraph))
@@ -245,7 +245,7 @@ class JenaBridgeTest {
         assertNotNull(underlyingModel)
         assertEquals(testModel, underlyingModel)
         
-        val nonJenaGraph = Rdf.memory().defaultGraph
+        val nonJenaGraph = Rdf.graph { }
         assertNull(JenaBridge.getJenaModel(nonJenaGraph))
     }
 
@@ -257,7 +257,7 @@ class JenaBridgeTest {
         assertNotNull(underlyingGraph)
         assertEquals(testGraph, underlyingGraph)
         
-        val nonJenaGraph = Rdf.memory().defaultGraph
+        val nonJenaGraph = Rdf.graph { }
         assertNull(JenaBridge.getJenaGraph(nonJenaGraph))
     }
 
@@ -286,7 +286,7 @@ class JenaBridgeTest {
         assertTrue(rdfGraph1.isJenaBacked())
         assertTrue(rdfGraph2.isJenaBacked())
         
-        val nonJenaGraph = Rdf.memory().defaultGraph
+        val nonJenaGraph = Rdf.graph { }
         assertFalse(nonJenaGraph.isJenaBacked())
         
         // Test RdfGraph.getJenaModel()
@@ -376,3 +376,12 @@ class JenaBridgeTest {
         assertTrue(convertedGraph.isIsomorphicTo(rdfGraph))
     }
 }
+
+
+
+
+
+
+
+
+

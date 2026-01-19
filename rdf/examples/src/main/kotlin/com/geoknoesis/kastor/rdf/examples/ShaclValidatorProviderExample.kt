@@ -243,28 +243,28 @@ class ShaclValidatorProviderExample {
     
     private fun createTestDataGraph(): RdfGraph {
         return Rdf.graph {
-            val person = iri("http://example.org/person1")
-            person - RDF.type - iri("http://example.org/Person")
-            person - iri("http://example.org/name") - "John Doe"
-            person - iri("http://example.org/email") - "john@example.org"
-            person - iri("http://example.org/age") - 30
+            val person = Iri("http://example.org/person1")
+            person - RDF.type - Iri("http://example.org/Person")
+            person - Iri("http://example.org/name") - "John Doe"
+            person - Iri("http://example.org/email") - "john@example.org"
+            person - Iri("http://example.org/age") - 30
         }
     }
     
     private fun createTestShapesGraph(): RdfGraph {
         return Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            val nameProperty = iri("http://example.org/nameProperty")
+            val personShape = Iri("http://example.org/PersonShape")
+            val nameProperty = Iri("http://example.org/nameProperty")
             
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
-            personShape - iri("http://www.w3.org/ns/shacl#property") - nameProperty
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
             
-            nameProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            nameProperty - iri("http://www.w3.org/ns/shacl#path") - iri("http://example.org/name")
-            nameProperty - iri("http://www.w3.org/ns/shacl#minCount") - literal(1)
-            nameProperty - iri("http://www.w3.org/ns/shacl#maxCount") - literal(1)
-            nameProperty - iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
+            nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/name")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
         }
     }
 }
@@ -273,3 +273,12 @@ fun main() {
     val example = ShaclValidatorProviderExample()
     example.run()
 }
+
+
+
+
+
+
+
+
+

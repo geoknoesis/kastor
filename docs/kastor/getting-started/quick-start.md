@@ -363,7 +363,8 @@ val repo = Rdf.memoryWithInference()  // Automatic RDFS reasoning
 
 ```kotlin
 val repo = Rdf.factory {
-    type = "tdb2"
+    providerId = "jena"
+    variantId = "tdb2"
     location = "custom-data"
     inference = true
     optimization = true
@@ -481,3 +482,6 @@ fun main() {
 ---
 
 **🚀 Congratulations! You've successfully completed the Kastor RDF Quick Start Guide. You're now ready to build elegant and powerful RDF applications!**
+
+
+

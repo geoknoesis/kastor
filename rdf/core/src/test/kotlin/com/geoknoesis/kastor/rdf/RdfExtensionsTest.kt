@@ -12,7 +12,7 @@ class RdfExtensionsTest {
     fun `DSL bracket syntax works`() {
         val repo = Rdf.memory()
         
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         val name = "John Doe"
         val age = 30
         val email = "john@example.org"
@@ -47,8 +47,8 @@ class RdfExtensionsTest {
     fun `DSL has-with syntax works`() {
         val repo = Rdf.memory()
         
-        val person = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val person = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         
         // Test DSL has-with syntax
         repo.add {
@@ -81,7 +81,7 @@ class RdfExtensionsTest {
     fun `DSL with different literal types works`() {
         val repo = Rdf.memory()
         
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
         
         // Test DSL with different literal types
         repo.add {
@@ -114,9 +114,9 @@ class RdfExtensionsTest {
     fun `DSL with IRI objects works`() {
         val repo = Rdf.memory()
         
-        val person = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
-        val creator = iri("http://example.org/creator")
+        val person = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
+        val creator = Iri("http://example.org/creator")
         
         // Test DSL with IRI objects
         repo.add {
@@ -145,7 +145,7 @@ class RdfExtensionsTest {
     fun `DSL with blank node objects works`() {
         val repo = Rdf.memory()
         
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         val bnode = bnode("b1")
         
         // Test DSL with blank node objects
@@ -175,12 +175,12 @@ class RdfExtensionsTest {
     fun `DSL with string predicates works`() {
         val repo = Rdf.memory()
         
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         
         // Test DSL with string predicates
         repo.add {
-            person["http://example.org/customProperty"] = "custom value"
-            person["name"] = "John"
+            person[Iri("http://example.org/customProperty")] = "custom value"
+            person[Iri("name")] = "John"
         }
         
         // Verify triples were added
@@ -204,9 +204,9 @@ class RdfExtensionsTest {
     fun `DSL with mixed term types works`() {
         val repo = Rdf.memory()
         
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
         val bnode = bnode("b1")
-        val friend = iri("http://example.org/friend")
+        val friend = Iri("http://example.org/friend")
         
         // Test DSL with mixed term types
         repo.add {
@@ -240,8 +240,8 @@ class RdfExtensionsTest {
     @Test
     fun `DSL minus operator syntax works`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val person = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -275,7 +275,7 @@ class RdfExtensionsTest {
     @Test
     fun `DSL minus operator with different literal types works`() {
         val repo = Rdf.memory()
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
 
         repo.add {
             resource - DCTERMS.title - "Test Title"
@@ -304,8 +304,8 @@ class RdfExtensionsTest {
     @Test
     fun `DSL minus operator with IRI and BlankNode objects works`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/subject")
-        val friend = iri("http://example.org/friend")
+        val subject = Iri("http://example.org/subject")
+        val friend = Iri("http://example.org/friend")
         val bnode = bnode("anon1")
 
         repo.add {
@@ -335,7 +335,7 @@ class RdfExtensionsTest {
     @Test
     fun `DSL minus operator mixed with bracket syntax works`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             // Mix minus operator with bracket syntax
@@ -366,3 +366,12 @@ class RdfExtensionsTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

@@ -14,18 +14,18 @@ import java.io.InputStreamReader
 
 class SparqlRepository(private val endpoint: String) : RdfRepository {
     
-    override val defaultGraph: RdfGraph = SparqlGraph(this)
+    override val defaultGraph: MutableRdfGraph = SparqlGraph(this)
     
-    override fun getGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
+    override fun getGraph(name: Iri): MutableRdfGraph = SparqlGraph(this, name)
     
     override fun hasGraph(name: Iri): Boolean {
-        val query = "ASK { GRAPH <${name.value}> { ?s ?p ?o } }"
+        val query = SparqlAskQuery("ASK { GRAPH <${name.value}> { ?s ?p ?o } }")
         return ask(query)
     }
     
     override fun listGraphs(): List<Iri> {
-        val query = "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }"
-        val result = query(query)
+        val query = SparqlSelectQuery("SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }")
+        val result = select(query)
         return result.mapNotNull { binding -> 
             binding.get("g")?.let { term -> 
                 if (term is Iri) term else null 
@@ -33,38 +33,38 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         }
     }
     
-    override fun createGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
+    override fun createGraph(name: Iri): MutableRdfGraph = SparqlGraph(this, name)
     
     override fun removeGraph(name: Iri): Boolean {
-        val update = "DROP GRAPH <${name.value}>"
+        val update = UpdateQuery("DROP GRAPH <${name.value}>")
         update(update)
         return true
     }
     
-    override fun query(sparql: String): QueryResult {
-        val response = executeQuery(sparql)
+    override fun select(query: SparqlSelect): QueryResult {
+        val response = executeQuery(query.sparql)
         return SparqlResultSet(response)
     }
     
-    override fun ask(sparql: String): Boolean {
-        val response = executeQuery(sparql)
+    override fun ask(query: SparqlAsk): Boolean {
+        val response = executeQuery(query.sparql)
         return response.trim().equals("true", ignoreCase = true)
     }
     
-    override fun construct(sparql: String): List<RdfTriple> {
-        val response = executeQuery(sparql)
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+        executeQuery(query.sparql)
         // Simple parsing - in practice would use proper RDF parser
-        return emptyList() // Placeholder
+        return emptySequence() // Placeholder
     }
     
-    override fun describe(sparql: String): List<RdfTriple> {
-        val response = executeQuery(sparql)
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
+        executeQuery(query.sparql)
         // Simple parsing - in practice would use proper RDF parser
-        return emptyList() // Placeholder
+        return emptySequence() // Placeholder
     }
     
-    override fun update(sparql: String) {
-        executeUpdate(sparql)
+    override fun update(query: UpdateQuery) {
+        executeUpdate(query.sparql)
     }
     
     override fun transaction(operations: RdfRepository.() -> Unit) {
@@ -78,29 +78,9 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     }
     
     override fun clear(): Boolean {
-        val update = "DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }"
+        val update = UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }")
         update(update)
         return true
-    }
-    
-    override fun getStatistics(): RepositoryStatistics {
-        return RepositoryStatistics(
-            tripleCount = 0L,
-            graphCount = 1,
-            memoryUsage = 0L,
-            diskUsage = 0L,
-            lastModified = System.currentTimeMillis()
-        )
-    }
-    
-    override fun getPerformanceMonitor(): PerformanceMonitor {
-        return PerformanceMonitor(
-            queryCount = 0L,
-            averageQueryTime = 0.0,
-            totalQueryTime = 0L,
-            cacheHitRate = 0.0,
-            memoryUsage = 0L
-        )
     }
     
     override fun isClosed(): Boolean = false
@@ -154,7 +134,7 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
 class SparqlGraph(
     private val repository: SparqlRepository,
     private val graphName: Iri? = null
-) : RdfGraph {
+) : MutableRdfGraph {
     
     override fun addTriple(triple: RdfTriple) {
         val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
@@ -165,7 +145,7 @@ class SparqlGraph(
                 }
             }
         """.trimIndent()
-        repository.update(update)
+        repository.update(UpdateQuery(update))
     }
     
     override fun addTriples(triples: Collection<RdfTriple>) {
@@ -183,7 +163,7 @@ class SparqlGraph(
                 }
             }
         """.trimIndent()
-        repository.update(update)
+        repository.update(UpdateQuery(update))
     }
     
     override fun removeTriple(triple: RdfTriple): Boolean {
@@ -195,7 +175,7 @@ class SparqlGraph(
                 }
             }
         """.trimIndent()
-        repository.update(update)
+        repository.update(UpdateQuery(update))
         return true
     }
     
@@ -214,7 +194,7 @@ class SparqlGraph(
                 }
             }
         """.trimIndent()
-        repository.update(update)
+        repository.update(UpdateQuery(update))
         return true
     }
     
@@ -227,7 +207,7 @@ class SparqlGraph(
                 }
             }
         """.trimIndent()
-        return repository.ask(query)
+        return repository.ask(SparqlAskQuery(query))
     }
     
     override fun getTriples(): List<RdfTriple> {
@@ -241,7 +221,7 @@ class SparqlGraph(
             }
         """.trimIndent()
         
-        val result = repository.query(query)
+        val result = repository.select(SparqlSelectQuery(query))
         return result.map { binding ->
             RdfTriple(
                 binding.get("s") as RdfResource,
@@ -265,7 +245,7 @@ class SparqlGraph(
             }
         """.trimIndent()
         
-        val result = repository.query(query)
+        val result = repository.select(SparqlSelectQuery(query))
         return result.map { binding ->
             RdfTriple(
                 binding.get("s") as RdfResource,
@@ -284,7 +264,7 @@ class SparqlGraph(
                 $graphClause { ?s ?p ?o }
             }
         """.trimIndent()
-        repository.update(update)
+        repository.update(UpdateQuery(update))
         return true
     }
     
@@ -296,7 +276,7 @@ class SparqlGraph(
             }
         """.trimIndent()
         
-        val result = repository.query(query)
+        val result = repository.select(SparqlSelectQuery(query))
         return result.firstOrNull()?.get("count")?.let { term ->
             if (term is Literal) term.lexical.toIntOrNull() ?: 0 else 0
         } ?: 0
@@ -334,3 +314,12 @@ class SparqlResultSet(private val response: String) : QueryResult {
     override fun count(): Int = 0
     override fun asSequence(): Sequence<BindingSet> = emptySequence()
 }
+
+
+
+
+
+
+
+
+

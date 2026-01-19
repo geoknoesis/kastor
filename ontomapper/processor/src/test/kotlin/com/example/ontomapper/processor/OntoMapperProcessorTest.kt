@@ -37,6 +37,10 @@ class OntoMapperProcessorTest {
         // List<String> should be LITERAL
         val stringListType = "List<String>"
         assertTrue(isLiteralType(stringListType))
+
+        // List<kotlin.String> should be LITERAL after normalization
+        val kotlinStringListType = "List<kotlin.String>"
+        assertTrue(isLiteralType(normalizeKotlinListType(kotlinStringListType)))
         
         // List<Int> should be LITERAL
         val intListType = "List<Int>"
@@ -131,4 +135,24 @@ class OntoMapperProcessorTest {
             else -> false
         }
     }
+
+    private fun normalizeKotlinListType(typeName: String): String {
+        return typeName
+            .replace("List<kotlin.String>", "List<String>")
+            .replace("List<kotlin.Int>", "List<Int>")
+            .replace("List<kotlin.Double>", "List<Double>")
+            .replace("List<kotlin.Boolean>", "List<Boolean>")
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+

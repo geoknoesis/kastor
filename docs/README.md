@@ -198,3 +198,5 @@ We welcome community support and contributions! If you find Kastor useful:
 - **📖 Print**: Use browser print function for PDF generation
 
 **Need help finding something?** Check the [troubleshooting guide](kastor/guides/troubleshooting.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
+
+

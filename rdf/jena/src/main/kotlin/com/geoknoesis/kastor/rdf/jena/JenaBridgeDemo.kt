@@ -220,3 +220,12 @@ private operator fun String.times(n: Int): String = this.repeat(n)
 private fun org.apache.jena.rdf.model.Resource.toKastorIri(): Iri {
     return Iri(this.uri)
 }
+
+
+
+
+
+
+
+
+

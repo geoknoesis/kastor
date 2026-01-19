@@ -16,7 +16,7 @@ class SpiDiscoveryTest {
         providers.forEach { provider ->
             assertNotNull(provider.name, "Provider should have a name")
             assertNotNull(provider.version, "Provider should have a version")
-            assertTrue(provider.getSupportedTypes().isNotEmpty(), "Provider should support at least one type")
+            assertTrue(provider.variants().isNotEmpty(), "Provider should support at least one variant")
         }
         
         println("Discovered providers:")
@@ -24,7 +24,8 @@ class SpiDiscoveryTest {
             println("  - No providers discovered (expected in core module)")
         } else {
             providers.forEach { provider ->
-                println("  - ${provider.name} v${provider.version}: ${provider.getSupportedTypes().joinToString()}")
+                val types = provider.variants().map { "${provider.id}:${it.id}" }
+                println("  - ${provider.name} v${provider.version}: ${types.joinToString()}")
             }
         }
     }
@@ -52,22 +53,36 @@ class SpiDiscoveryTest {
         
         // Check that all reported supported types are actually supported
         supportedTypes.forEach { type ->
-            assertTrue(RdfApiRegistry.isSupported(type), "Type $type should be supported")
+            val parts = type.split(":", limit = 2)
+            assertEquals(2, parts.size, "Type $type should include provider and variant")
+            assertTrue(
+                RdfApiRegistry.supportsVariant(parts[0], parts[1]),
+                "Type $type should be supported"
+            )
         }
         
         // Test unsupported type
-        assertFalse(RdfApiRegistry.isSupported("unsupported:type"), "Unsupported type should return false")
+        assertFalse(RdfApiRegistry.supportsVariant("unsupported", "type"), "Unsupported type should return false")
         
         // Test memory type (should always be supported as fallback)
-        assertTrue(RdfApiRegistry.isSupported("memory"), "Memory type should always be supported")
+        assertTrue(RdfApiRegistry.supportsVariant("memory", "memory"), "Memory type should always be supported")
     }
     
     @Test
     fun `memory repository fallback works`() {
-        val repo = RdfApiRegistry.create(RdfConfig("memory"))
+        val repo = RdfApiRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
         
         assertNotNull(repo, "Memory repository should be created")
         assertFalse(repo.isClosed(), "Repository should not be closed")
         assertNotNull(repo.defaultGraph, "Repository should have a default graph")
     }
 }
+
+
+
+
+
+
+
+
+

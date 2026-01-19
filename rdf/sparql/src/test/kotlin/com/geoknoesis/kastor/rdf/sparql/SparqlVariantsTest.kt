@@ -15,3 +15,12 @@ class SparqlVariantsTest {
   }
 }
 
+
+
+
+
+
+
+
+
+

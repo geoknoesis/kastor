@@ -65,3 +65,12 @@ object XSD : Vocabulary {
     val NOTATION: Iri by lazy { term("NOTATION") }
     val hexBinary: Iri by lazy { term("hexBinary") }
 }
+
+
+
+
+
+
+
+
+

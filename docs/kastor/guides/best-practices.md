@@ -154,9 +154,9 @@ val reasoningRepo = Rdf.memoryWithInference()
 
 // ✅ Good: Custom configuration for specific needs
 val customRepo = Rdf.factory {
-    type = "jena:tdb2"
-    params["location"] = "/data/storage"
-    params["syncMode"] = "WRITE_METADATA"
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "/data/storage"
 }
 ```
 
@@ -371,11 +371,13 @@ try {
 // ✅ Good: Use repository manager for multiple repositories
 Rdf.manager {
     repository("users") {
-        type = "jena:memory"
+        providerId = "jena"
+        variantId = "memory"
     }
     repository("products") {
-        type = "rdf4j:native"
-        params["location"] = "/data/products"
+        providerId = "rdf4j"
+        variantId = "native"
+        location = "/data/products"
     }
 }.use { manager ->
     val userRepo = manager.getRepository("users")
@@ -858,18 +860,21 @@ object Config {
     
     val repositoryConfig = when (environment) {
         "development" -> RdfConfig(
-            type = "jena:memory",
-            params = emptyMap()
+            providerId = "jena",
+            variantId = "memory",
+            options = emptyMap()
         )
         "staging" -> RdfConfig(
-            type = "jena:tdb2",
-            params = mapOf("location" to "/data/staging")
+            providerId = "jena",
+            variantId = "tdb2",
+            options = mapOf("location" to "/data/staging")
         )
         "production" -> RdfConfig(
-            type = "rdf4j:native",
-            params = mapOf(
+            providerId = "rdf4j",
+            variantId = "native",
+            options = mapOf(
                 "location" to "/data/production",
-                "syncDelay" to 1000L
+                "syncDelay" to "1000"
             )
         )
         else -> throw IllegalArgumentException("Unknown environment: $environment")
@@ -985,3 +990,6 @@ class BackupManager(private val repo: RdfRepository) {
 ---
 
 **🎉 Follow these best practices to build robust, performant, and maintainable RDF applications with Kastor!**
+
+
+

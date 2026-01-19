@@ -16,12 +16,16 @@ class WrapperGenerator(private val logger: KSPLogger) {
             appendLine("import com.geoknoesis.kastor.rdf.*")
             appendLine()
             appendLine("internal class ${classModel.simpleName}Wrapper(")
-            appendLine("  override val rdf: RdfHandle")
+            appendLine("  private val input: RdfHandle")
             appendLine(") : ${classModel.simpleName}, RdfBacked {")
             appendLine()
             appendLine("  private val known: Set<Iri> = setOf(")
             appendLine(classModel.properties.joinToString(",\n") { "    Iri(\"${it.predicateIri}\")" })
             appendLine("  )")
+            appendLine()
+            appendLine("  override val rdf: RdfHandle by lazy(LazyThreadSafetyMode.PUBLICATION) {")
+            appendLine("    if (input is DefaultRdfHandle) DefaultRdfHandle(input.node, input.graph, known) else input")
+            appendLine("  }")
             appendLine()
             
             // Generate property implementations
@@ -67,7 +71,7 @@ class WrapperGenerator(private val logger: KSPLogger) {
         return buildString {
             appendLine("  override val ${property.name}: ${elementType} by lazy {")
             appendLine("    KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"${property.predicateIri}\")) { child ->")
-            appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), ${elementType}::class.java, false)")
+            appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), ${elementType}::class.java)")
             appendLine("    }.firstOrNull() ?: error(\"Required object ${property.name} missing\")")
             appendLine("  }")
         }
@@ -78,7 +82,7 @@ class WrapperGenerator(private val logger: KSPLogger) {
         return buildString {
             appendLine("  override val ${property.name}: ${property.kotlinType} by lazy {")
             appendLine("    KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"${property.predicateIri}\")) { child ->")
-            appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), ${elementType}::class.java, false)")
+            appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), ${elementType}::class.java)")
             appendLine("    }")
             appendLine("  }")
         }
@@ -96,3 +100,15 @@ class WrapperGenerator(private val logger: KSPLogger) {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

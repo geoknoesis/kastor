@@ -24,7 +24,7 @@ Each parameter is defined with the following information:
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("jena:memory"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "memory"))
 ```
 
 ### `jena:memory:inference`
@@ -32,7 +32,7 @@ val repo = RdfApiRegistry.create(RdfConfig("jena:memory"))
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("jena:memory:inference"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "memory-inference"))
 ```
 
 ### `jena:tdb2`
@@ -41,7 +41,9 @@ val repo = RdfApiRegistry.create(RdfConfig("jena:memory:inference"))
 - `location` (required): Directory path for TDB2 storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2", mapOf("location" to "/data/tdb2")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/tdb2"))
+)
 ```
 
 ### `jena:tdb2:inference`
@@ -50,7 +52,9 @@ val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2", mapOf("location" to "/da
 - `location` (required): Directory path for TDB2 storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2:inference", mapOf("location" to "/data/tdb2")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "jena", variantId = "tdb2-inference", options = mapOf("location" to "/data/tdb2"))
+)
 ```
 
 ## Provider: RDF4J (`rdf4j`)
@@ -60,7 +64,7 @@ val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2:inference", mapOf("locatio
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory"))
 ```
 
 ### `rdf4j:native`
@@ -69,7 +73,9 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory"))
 - `location` (required): Directory path for NativeStore storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native", mapOf("location" to "/data/native")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data/native"))
+)
 ```
 
 ### `rdf4j:memory:star`
@@ -77,7 +83,7 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native", mapOf("location" to "
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:star"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory-star"))
 ```
 
 ### `rdf4j:native:star`
@@ -86,7 +92,9 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:star"))
 - `location` (required): Directory path for NativeStore storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:star", mapOf("location" to "/data/native")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "rdf4j", variantId = "native-star", options = mapOf("location" to "/data/native"))
+)
 ```
 
 ### `rdf4j:memory:rdfs`
@@ -94,7 +102,7 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:star", mapOf("location"
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:rdfs"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory-rdfs"))
 ```
 
 ### `rdf4j:native:rdfs`
@@ -103,7 +111,9 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:rdfs"))
 - `location` (required): Directory path for NativeStore storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:rdfs", mapOf("location" to "/data/native")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "rdf4j", variantId = "native-rdfs", options = mapOf("location" to "/data/native"))
+)
 ```
 
 ### `rdf4j:memory:shacl`
@@ -111,7 +121,7 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:rdfs", mapOf("location"
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:shacl"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory-shacl"))
 ```
 
 ### `rdf4j:native:shacl`
@@ -120,7 +130,9 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:shacl"))
 - `location` (required): Directory path for NativeStore storage
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:shacl", mapOf("location" to "/data/native")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "rdf4j", variantId = "native-shacl", options = mapOf("location" to "/data/native"))
+)
 ```
 
 ## Provider: SPARQL (`sparql`)
@@ -131,7 +143,9 @@ val repo = RdfApiRegistry.create(RdfConfig("rdf4j:native:shacl", mapOf("location
 - `location` (required): SPARQL endpoint URL
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("sparql", mapOf("location" to "http://dbpedia.org/sparql")))
+val repo = RdfApiRegistry.create(
+  RdfConfig(providerId = "sparql", variantId = "sparql", options = mapOf("location" to "http://dbpedia.org/sparql"))
+)
 ```
 
 ## Fallback: Memory (`memory`)
@@ -141,7 +155,7 @@ val repo = RdfApiRegistry.create(RdfConfig("sparql", mapOf("location" to "http:/
 **Parameters**: None required
 **Example**:
 ```kotlin
-val repo = RdfApiRegistry.create(RdfConfig("memory"))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
 ```
 
 ## Parameter Reference
@@ -170,35 +184,41 @@ val repo = RdfApiRegistry.create(RdfConfig("memory"))
 ### Basic In-Memory Repository
 ```kotlin
 // Any of these work for basic in-memory storage
-val repo1 = RdfApiRegistry.create(RdfConfig("memory"))
-val repo2 = RdfApiRegistry.create(RdfConfig("jena:memory"))
-val repo3 = RdfApiRegistry.create(RdfConfig("rdf4j:memory"))
+val repo1 = RdfApiRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
+val repo2 = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "memory"))
+val repo3 = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory"))
 ```
 
 ### Persistent Storage
 ```kotlin
 // Jena TDB2
-val jenaRepo = RdfApiRegistry.create(RdfConfig("jena:tdb2", mapOf("location" to "/data/jena")))
+val jenaRepo = RdfApiRegistry.create(
+  RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/jena"))
+)
 
 // RDF4J Native
-val rdf4jRepo = RdfApiRegistry.create(RdfConfig("rdf4j:native", mapOf("location" to "/data/rdf4j")))
+val rdf4jRepo = RdfApiRegistry.create(
+  RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data/rdf4j"))
+)
 ```
 
 ### Remote SPARQL Endpoint
 ```kotlin
-val sparqlRepo = RdfApiRegistry.create(RdfConfig("sparql", mapOf("location" to "https://query.wikidata.org/sparql")))
+val sparqlRepo = RdfApiRegistry.create(
+  RdfConfig(providerId = "sparql", variantId = "sparql", options = mapOf("location" to "https://query.wikidata.org/sparql"))
+)
 ```
 
 ### Advanced Features
 ```kotlin
 // Inference
-val inferenceRepo = RdfApiRegistry.create(RdfConfig("jena:memory:inference"))
+val inferenceRepo = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "memory-inference"))
 
 // RDF-star support
-val starRepo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:star"))
+val starRepo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory-star"))
 
 // SHACL validation
-val shaclRepo = RdfApiRegistry.create(RdfConfig("rdf4j:memory:shacl"))
+val shaclRepo = RdfApiRegistry.create(RdfConfig(providerId = "rdf4j", variantId = "memory-shacl"))
 ```
 
 ## Discovery
@@ -213,11 +233,12 @@ println("Available types: $allTypes")
 // Get providers and their variants
 val providers = RdfApiRegistry.discoverProviders()
 providers.forEach { provider ->
-    println("${provider.name} v${provider.version}: ${provider.getSupportedTypes()}")
+    val types = provider.variants().map { "${provider.id}:${it.id}" }
+    println("${provider.name} v${provider.version}: ${types.joinToString()}")
 }
 
 // Check if a specific type is supported
-val isSupported = RdfApiRegistry.isSupported("jena:memory")
+val isSupported = RdfApiRegistry.supportsVariant("jena", "memory")
 ```
 
 ## Enhanced Parameter Information
@@ -260,9 +281,12 @@ When creating repositories with invalid parameters:
 
 ```kotlin
 try {
-    val repo = RdfApiRegistry.create(RdfConfig("jena:tdb2")) // Missing location
+    val repo = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "tdb2")) // Missing location
 } catch (e: IllegalArgumentException) {
     println("Error: ${e.message}")
     // Output: "No provider found for repository type: jena:tdb2. Available providers: ..."
 }
 ```
+
+
+

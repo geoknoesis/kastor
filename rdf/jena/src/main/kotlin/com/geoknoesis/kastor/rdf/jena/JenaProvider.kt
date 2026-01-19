@@ -7,47 +7,58 @@ import com.geoknoesis.kastor.rdf.*
  */
 class JenaProvider : RdfApiProvider {
     
-    override fun getType(): String = "jena"
+    override val id: String = "jena"
     override val name: String = "Jena Repository"
     override val version: String = "4.0.0"
     
-    override fun isSupported(type: String): Boolean {
-        return type.startsWith("jena:")
-    }
-    
-    override fun getSupportedTypes(): List<String> {
+    override fun variants(): List<RdfVariant> {
         return listOf(
-            "jena:memory",
-            "jena:memory:inference", 
-            "jena:tdb2",
-            "jena:tdb2:inference"
+            RdfVariant("memory", "In-memory store"),
+            RdfVariant("memory-inference", "In-memory store with inference"),
+            RdfVariant("tdb2", "TDB2 persistent store"),
+            RdfVariant("tdb2-inference", "TDB2 store with inference")
         )
     }
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
-        return when (config.type) {
-            "jena:memory" -> JenaRepository.MemoryRepository()
-            "jena:memory:inference" -> JenaRepository.MemoryRepositoryWithInference()
-            "jena:tdb2" -> {
-                val location = config.params["location"] ?: "data"
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
+        return when (variantId) {
+            "memory" -> JenaRepository.MemoryRepository()
+            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference()
+            "tdb2" -> {
+                val location = config.options["location"] ?: "data"
                 JenaRepository.Tdb2Repository(location)
             }
-            "jena:tdb2:inference" -> {
-                val location = config.params["location"] ?: "data"
+            "tdb2-inference" -> {
+                val location = config.options["location"] ?: "data"
                 JenaRepository.Tdb2RepositoryWithInference(location)
             }
-            else -> throw IllegalArgumentException("Unsupported Jena repository type: ${config.type}")
+            else -> throw IllegalArgumentException("Unsupported Jena repository variant: $variantId")
         }
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             supportsInference = true,
             supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = true,
             supportsRdfStar = true,
-            maxMemoryUsage = Long.MAX_VALUE
+            maxMemoryUsage = Long.MAX_VALUE,
+            sparqlVersion = "1.2",
+            supportsPropertyPaths = true,
+            supportsAggregation = true,
+            supportsSubSelect = true,
+            supportsVersionDeclaration = true,
+            supportsServiceDescription = true
         )
     }
 }
+
+
+
+
+
+
+
+
+

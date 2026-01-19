@@ -206,7 +206,7 @@ internal class CatalogWrapper(
    */
   override val dataset: List<Dataset> by lazy {
     KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri("http://www.w3.org/ns/dcat#dataset")) { child ->
-      OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java, false)
+      OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)
     }
   }
 
@@ -375,3 +375,6 @@ src/main/kotlin/
 Ontology-driven code generation provides a powerful way to maintain consistency between your RDF ontology and Kotlin domain code. By generating interfaces and wrappers from SHACL shapes and JSON-LD context, you eliminate manual synchronization and ensure type safety.
 
 The generated code follows the same patterns as manually written interfaces, providing pure domain objects with optional RDF side-channel access. This approach scales well for large ontologies and complex domain models.
+
+
+

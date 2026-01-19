@@ -5,6 +5,7 @@ import com.example.ontomapper.processor.codegen.OntologyWrapperGenerator
 import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.parsers.JsonLdContextParser
 import com.example.ontomapper.processor.parsers.ShaclParser
+import com.example.ontomapper.annotations.ValidationAnnotations
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -30,7 +31,7 @@ class OntologyProcessorIntegrationTest {
         }
         shaclParser = ShaclParser(logger)
         contextParser = JsonLdContextParser(logger)
-        interfaceGenerator = InterfaceGenerator(logger)
+        interfaceGenerator = InterfaceGenerator(logger, ValidationAnnotations.NONE)
         wrapperGenerator = OntologyWrapperGenerator(logger)
     }
 
@@ -289,16 +290,17 @@ class OntologyProcessorIntegrationTest {
         // Verify wrapper implementations
         assertTrue(complexWrapper.contains("override val title: String by lazy {"))
         assertTrue(complexWrapper.contains("override val keywords: List<String> by lazy {"))
-        assertTrue(complexWrapper.contains("override val score: Double by lazy {"))
+        assertTrue(complexWrapper.contains("override val score: Double? by lazy {"))
         assertTrue(complexWrapper.contains("override val isActive: Boolean by lazy {"))
-        assertTrue(complexWrapper.contains("override val itemCount: Int by lazy {"))
+        assertTrue(complexWrapper.contains("override val itemCount: Int? by lazy {"))
 
         // Verify type conversions
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull() ?: \"\""))
+        assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull() ?: 0.0"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toBooleanStrictOrNull() ?: false"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull() ?: 0"))
+        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull()"))
+        assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
+        assertTrue(complexWrapper.contains(".lexical.toBooleanStrict()"))
+        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull()"))
     }
 
     @Test
@@ -373,18 +375,18 @@ class OntologyProcessorIntegrationTest {
         val resourceWrapper = wrappers["CatalogWrapper"]!!
 
         // Verify interface object properties
-        assertTrue(resourceInterface.contains("val publisher: Agent"))
+        assertTrue(resourceInterface.contains("val publisher: Agent?"))
         assertTrue(resourceInterface.contains("val dataset: List<Dataset>"))
         assertTrue(resourceInterface.contains("val requiredContact: Agent"))
 
         // Verify wrapper object property implementations
-        assertTrue(resourceWrapper.contains("override val publisher: Agent by lazy {"))
+        assertTrue(resourceWrapper.contains("override val publisher: Agent? by lazy {"))
         assertTrue(resourceWrapper.contains("override val dataset: List<Dataset> by lazy {"))
         assertTrue(resourceWrapper.contains("override val requiredContact: Agent by lazy {"))
 
         // Verify object materialization
         assertTrue(resourceWrapper.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"))"))
-        assertTrue(resourceWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java, false)"))
+        assertTrue(resourceWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
         assertTrue(resourceWrapper.contains(".firstOrNull() ?: error(\"Required object requiredContact missing\")"))
     }
 
@@ -541,3 +543,15 @@ class OntologyProcessorIntegrationTest {
         assertTrue(streamWrapper.contains("override val title: List<String> by lazy {"))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

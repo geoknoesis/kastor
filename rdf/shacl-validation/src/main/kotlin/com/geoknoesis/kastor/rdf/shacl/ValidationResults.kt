@@ -178,3 +178,12 @@ data class ValidationSuggestion(
     val codeExample: String? = null,
     val confidence: Double = 1.0
 )
+
+
+
+
+
+
+
+
+

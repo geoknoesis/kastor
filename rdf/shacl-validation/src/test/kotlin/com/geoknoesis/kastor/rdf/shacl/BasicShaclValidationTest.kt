@@ -12,29 +12,29 @@ class BasicShaclValidationTest {
     fun `memory validator performs basic SHACL validation`() {
         // Create a data graph
         val dataGraph = Rdf.graph {
-            val person = iri("http://example.org/person1")
-            val name = iri("http://example.org/name")
-            val age = iri("http://example.org/age")
+            val person = Iri("http://example.org/person1")
+            val name = Iri("http://example.org/name")
+            val age = Iri("http://example.org/age")
             
-            person - RDF.type - iri("http://example.org/Person")
+            person - RDF.type - Iri("http://example.org/Person")
             person - name - "John Doe"
             person - age - 25
         }
         
         // Create a shapes graph
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            val nameProperty = iri("http://example.org/nameProperty")
-            val namePath = iri("http://example.org/name")
+            val personShape = Iri("http://example.org/PersonShape")
+            val nameProperty = Iri("http://example.org/nameProperty")
+            val namePath = Iri("http://example.org/name")
             
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
-            personShape - iri("http://www.w3.org/ns/shacl#property") - nameProperty
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
             
-            nameProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            nameProperty - iri("http://www.w3.org/ns/shacl#path") - namePath
-            nameProperty - iri("http://www.w3.org/ns/shacl#minCount") - 1
-            nameProperty - iri("http://www.w3.org/ns/shacl#maxCount") - 1
+            nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#path") - namePath
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
+            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1
         }
         
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
@@ -50,25 +50,25 @@ class BasicShaclValidationTest {
     fun `memory validator detects constraint violations`() {
         // Create a data graph with missing required property
         val dataGraph = Rdf.graph {
-            val person = iri("http://example.org/person1")
+            val person = Iri("http://example.org/person1")
             
-            person - RDF.type - iri("http://example.org/Person")
+            person - RDF.type - Iri("http://example.org/Person")
             // Missing required name property
         }
         
         // Create a shapes graph with minCount constraint
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            val nameProperty = iri("http://example.org/nameProperty")
-            val namePath = iri("http://example.org/name")
+            val personShape = Iri("http://example.org/PersonShape")
+            val nameProperty = Iri("http://example.org/nameProperty")
+            val namePath = Iri("http://example.org/name")
             
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
-            personShape - iri("http://www.w3.org/ns/shacl#property") - nameProperty
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
             
-            nameProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            nameProperty - iri("http://www.w3.org/ns/shacl#path") - namePath
-            nameProperty - iri("http://www.w3.org/ns/shacl#minCount") - 1
+            nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#path") - namePath
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
         }
         
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
@@ -84,15 +84,15 @@ class BasicShaclValidationTest {
     @Test
     fun `different validator configurations work`() {
         val dataGraph = Rdf.graph {
-            val person = iri("http://example.org/person1")
-            person - RDF.type - iri("http://example.org/Person")
-            person - iri("http://example.org/name") - "John Doe"
+            val person = Iri("http://example.org/person1")
+            person - RDF.type - Iri("http://example.org/Person")
+            person - Iri("http://example.org/name") - "John Doe"
         }
         
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
+            val personShape = Iri("http://example.org/PersonShape")
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
         }
         
         val configs = listOf(
@@ -138,15 +138,15 @@ class BasicShaclValidationTest {
     @Test
     fun `validation report contains expected information`() {
         val dataGraph = Rdf.graph {
-            val person = iri("http://example.org/person1")
-            person - RDF.type - iri("http://example.org/Person")
-            person - iri("http://example.org/name") - "John Doe"
+            val person = Iri("http://example.org/person1")
+            person - RDF.type - Iri("http://example.org/Person")
+            person - Iri("http://example.org/name") - "John Doe"
         }
         
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
+            val personShape = Iri("http://example.org/PersonShape")
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
         }
         
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
@@ -164,38 +164,38 @@ class BasicShaclValidationTest {
     @Test
     fun `resource-specific validation works`() {
         val dataGraph = Rdf.graph {
-            val person1 = iri("http://example.org/person1")
-            val person2 = iri("http://example.org/person2")
+            val person1 = Iri("http://example.org/person1")
+            val person2 = Iri("http://example.org/person2")
             
-            person1 - RDF.type - iri("http://example.org/Person")
-            person1 - iri("http://example.org/name") - "John Doe"
+            person1 - RDF.type - Iri("http://example.org/Person")
+            person1 - Iri("http://example.org/name") - "John Doe"
             
-            person2 - RDF.type - iri("http://example.org/Person")
+            person2 - RDF.type - Iri("http://example.org/Person")
             // person2 missing name
         }
         
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            val nameProperty = iri("http://example.org/nameProperty")
-            val namePath = iri("http://example.org/name")
+            val personShape = Iri("http://example.org/PersonShape")
+            val nameProperty = Iri("http://example.org/nameProperty")
+            val namePath = Iri("http://example.org/name")
             
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
-            personShape - iri("http://www.w3.org/ns/shacl#property") - nameProperty
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
+            personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
             
-            nameProperty - RDF.type - iri("http://www.w3.org/ns/shacl#PropertyShape")
-            nameProperty - iri("http://www.w3.org/ns/shacl#path") - namePath
-            nameProperty - iri("http://www.w3.org/ns/shacl#minCount") - 1
+            nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
+            nameProperty - Iri("http://www.w3.org/ns/shacl#path") - namePath
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
         }
         
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
         
         // Validate person1 (should pass)
-        val report1 = validator.validateResource(dataGraph, shapesGraph, iri("http://example.org/person1"))
+        val report1 = validator.validateResource(dataGraph, shapesGraph, Iri("http://example.org/person1"))
         assertTrue(report1.isValid, "Person1 should be valid")
         
         // Validate person2 (should fail)
-        val report2 = validator.validateResource(dataGraph, shapesGraph, iri("http://example.org/person2"))
+        val report2 = validator.validateResource(dataGraph, shapesGraph, Iri("http://example.org/person2"))
         assertFalse(report2.isValid, "Person2 should be invalid")
         assertTrue(report2.violations.isNotEmpty(), "Person2 should have violations")
     }
@@ -203,15 +203,15 @@ class BasicShaclValidationTest {
     @Test
     fun `conforms method works correctly`() {
         val dataGraph = Rdf.graph {
-            val person = iri("http://example.org/person1")
-            person - RDF.type - iri("http://example.org/Person")
-            person - iri("http://example.org/name") - "John Doe"
+            val person = Iri("http://example.org/person1")
+            person - RDF.type - Iri("http://example.org/Person")
+            person - Iri("http://example.org/name") - "John Doe"
         }
         
         val shapesGraph = Rdf.graph {
-            val personShape = iri("http://example.org/PersonShape")
-            personShape - RDF.type - iri("http://www.w3.org/ns/shacl#NodeShape")
-            personShape - iri("http://www.w3.org/ns/shacl#targetClass") - iri("http://example.org/Person")
+            val personShape = Iri("http://example.org/PersonShape")
+            personShape - RDF.type - Iri("http://www.w3.org/ns/shacl#NodeShape")
+            personShape - Iri("http://www.w3.org/ns/shacl#targetClass") - Iri("http://example.org/Person")
         }
         
         val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
@@ -220,3 +220,12 @@ class BasicShaclValidationTest {
         assertTrue(conforms, "Data should conform to shapes")
     }
 }
+
+
+
+
+
+
+
+
+

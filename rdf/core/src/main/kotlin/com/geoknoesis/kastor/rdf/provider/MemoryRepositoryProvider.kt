@@ -8,30 +8,33 @@ import com.geoknoesis.kastor.rdf.*
  */
 class MemoryRepositoryProvider : RdfApiProvider {
     
-    override fun getType(): String = "memory"
+    override val id: String = "memory"
     
     override val name: String = "Memory Repository"
     
     override val version: String = "1.0.0"
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> {
+        return listOf(RdfVariant("memory", "In-memory store"))
+    }
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
+        if (variantId != "memory") {
+            throw IllegalArgumentException("Unsupported memory variant: $variantId")
+        }
         return MemoryRepository(config)
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             supportsInference = false,
             supportsTransactions = false,
-            supportsNamedGraphs = false,
+            supportsNamedGraphs = true,
             supportsUpdates = false,
             supportsRdfStar = true,
             maxMemoryUsage = Long.MAX_VALUE
         )
     }
-    
-    override fun getSupportedTypes(): List<String> = listOf("memory")
-    
-    override fun isSupported(type: String): Boolean = type == "memory"
 }
 
 /**
@@ -39,12 +42,12 @@ class MemoryRepositoryProvider : RdfApiProvider {
  */
 class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
-    private val graphs = mutableMapOf<Iri, RdfGraph>()
+    private val graphs = mutableMapOf<Iri, MutableRdfGraph>()
     private var closed = false
     
-    override val defaultGraph: RdfGraph by lazy { MemoryGraph() }
+    override val defaultGraph: MutableRdfGraph by lazy { MemoryGraph() }
     
-    override fun getGraph(name: Iri): RdfGraph {
+    override fun getGraph(name: Iri): MutableRdfGraph {
         return graphs.getOrPut(name) { MemoryGraph() }
     }
     
@@ -52,7 +55,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun listGraphs(): List<Iri> = graphs.keys.toList()
     
-    override fun createGraph(name: Iri): RdfGraph {
+    override fun createGraph(name: Iri): MutableRdfGraph {
         if (graphs.containsKey(name)) {
             throw IllegalArgumentException("Graph $name already exists")
         }
@@ -65,19 +68,24 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         return graphs.remove(name) != null
     }
     
-    override fun query(sparql: String): QueryResult {
-        // Simple implementation - just return empty results for now
-        return EmptyQueryResult()
+    override fun select(query: SparqlSelect): QueryResult {
+        throw UnsupportedOperationException("Memory repository does not support SPARQL queries.")
     }
     
-    override fun ask(sparql: String): Boolean = false
+    override fun ask(query: SparqlAsk): Boolean {
+        throw UnsupportedOperationException("Memory repository does not support SPARQL ASK.")
+    }
     
-    override fun construct(sparql: String): List<RdfTriple> = emptyList()
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+        throw UnsupportedOperationException("Memory repository does not support SPARQL CONSTRUCT.")
+    }
     
-    override fun describe(sparql: String): List<RdfTriple> = emptyList()
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
+        throw UnsupportedOperationException("Memory repository does not support SPARQL DESCRIBE.")
+    }
     
-    override fun update(sparql: String) {
-        // No-op for now
+    override fun update(query: UpdateQuery) {
+        throw UnsupportedOperationException("Memory repository does not support SPARQL UPDATE.")
     }
     
     override fun transaction(operations: RdfRepository.() -> Unit) {
@@ -96,27 +104,6 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         return true
     }
     
-    override fun getStatistics(): RepositoryStatistics {
-        val totalTriples = defaultGraph.size() + graphs.values.sumOf { it.size() }
-        return RepositoryStatistics(
-            tripleCount = totalTriples.toLong(),
-            graphCount = graphs.size + 1, // +1 for default graph
-            memoryUsage = estimateMemoryUsage(),
-            diskUsage = 0,
-            lastModified = System.currentTimeMillis()
-        )
-    }
-    
-    override fun getPerformanceMonitor(): PerformanceMonitor {
-        return PerformanceMonitor(
-            queryCount = 0,
-            averageQueryTime = 0.0,
-            totalQueryTime = 0,
-            cacheHitRate = 1.0,
-            memoryUsage = estimateMemoryUsage()
-        )
-    }
-    
     override fun isClosed(): Boolean = closed
     
     override fun close() {
@@ -129,26 +116,21 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         return ProviderCapabilities(
             supportsInference = false,
             supportsTransactions = false,
-            supportsNamedGraphs = false,
+            supportsNamedGraphs = true,
             supportsUpdates = false,
             supportsRdfStar = true,
             maxMemoryUsage = Long.MAX_VALUE
         )
     }
     
-    private fun estimateMemoryUsage(): Long {
-        // Rough estimate based on number of triples
-        val totalTriples = defaultGraph.size() + graphs.values.sumOf { it.size() }
-        return totalTriples * 100L // Assume ~100 bytes per triple
-    }
 }
 
 /**
  * Simple in-memory graph implementation.
  */
-class MemoryGraph : RdfGraph {
+class MemoryGraph(initialTriples: Collection<RdfTriple> = emptyList()) : MutableRdfGraph {
     
-    private val triples = mutableSetOf<RdfTriple>()
+    private val triples = mutableSetOf<RdfTriple>().apply { addAll(initialTriples) }
     
     override fun addTriple(triple: RdfTriple) {
         triples.add(triple)
@@ -200,3 +182,12 @@ class EmptyQueryResult : QueryResult {
     
     override fun asSequence(): Sequence<BindingSet> = emptySequence()
 }
+
+
+
+
+
+
+
+
+

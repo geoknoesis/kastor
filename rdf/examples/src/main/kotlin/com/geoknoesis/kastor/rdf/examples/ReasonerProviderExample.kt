@@ -121,19 +121,19 @@ class ReasonerProviderExample {
             }
             
             // Simple RDFS schema
-            val person = iri("ex:Person")
-            val student = iri("ex:Student")
-            val teacher = iri("ex:Teacher")
+            val person = Iri("ex:Person")
+            val student = Iri("ex:Student")
+            val teacher = Iri("ex:Teacher")
             
-            person - RDFS.subClassOf - iri("rdfs:Resource")
+            person - RDFS.subClassOf - Iri("rdfs:Resource")
             student - RDFS.subClassOf - person
             teacher - RDFS.subClassOf - person
             
             // Property hierarchy
-            val knows = iri("ex:knows")
-            val teaches = iri("ex:teaches")
+            val knows = Iri("ex:knows")
+            val teaches = Iri("ex:teaches")
             
-            knows - RDFS.subPropertyOf - iri("rdfs:seeAlso")
+            knows - RDFS.subPropertyOf - Iri("rdfs:seeAlso")
             teaches - RDFS.subPropertyOf - knows
             
             // Domain and range
@@ -141,8 +141,8 @@ class ReasonerProviderExample {
             knows - RDFS.range - person
             
             // Instances
-            val alice = iri("ex:alice")
-            val bob = iri("ex:bob")
+            val alice = Iri("ex:alice")
+            val bob = Iri("ex:bob")
             
             alice - RDF.type - student
             bob - RDF.type - teacher
@@ -154,3 +154,12 @@ class ReasonerProviderExample {
 fun main() {
     ReasonerProviderExample().main()
 }
+
+
+
+
+
+
+
+
+

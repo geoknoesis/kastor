@@ -74,3 +74,12 @@ object ReasonerRegistry {
         return providers.values.find { it.isSupported(type) }
     }
 }
+
+
+
+
+
+
+
+
+

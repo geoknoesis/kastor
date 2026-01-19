@@ -185,3 +185,12 @@ object Sparql12BuiltInFunctions {
         functions.forEach { function -> SparqlExtensionFunctionRegistry.register(function) }
     }
 }
+
+
+
+
+
+
+
+
+

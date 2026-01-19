@@ -224,3 +224,15 @@ enum class TermType {
     CLASS,
     PROPERTY
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -18,10 +18,10 @@ class MultipleValuesExample {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
-            val friend3 = iri("http://example.org/friend3")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
+            val friend3 = Iri("http://example.org/friend3")
             
             // Method 1: Multiple individual statements (most explicit)
             person[FOAF.name] = "Alice"
@@ -35,7 +35,7 @@ class MultipleValuesExample {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(6, allTriples.size, "Should have 6 triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(6, personTriples.size, "Person should have 6 properties")
         
         // Verify multiple knows relationships
@@ -43,9 +43,9 @@ class MultipleValuesExample {
         assertEquals(3, knowsTriples.size, "Should have 3 knows relationships")
         
         val knowsObjects = knowsTriples.map { it.obj }
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend1")), "Should know friend1")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend2")), "Should know friend2")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend3")), "Should know friend3")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend1")), "Should know friend1")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend2")), "Should know friend2")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend3")), "Should know friend3")
         
         // Verify multiple email addresses
         val mboxTriples = personTriples.filter { it.predicate == FOAF.mbox }
@@ -63,10 +63,10 @@ class MultipleValuesExample {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
-            val friend3 = iri("http://example.org/friend3")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
+            val friend3 = Iri("http://example.org/friend3")
             
             // Method 2: Using minus operator (concise)
             person - FOAF.name - "Alice"
@@ -80,7 +80,7 @@ class MultipleValuesExample {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(6, allTriples.size, "Should have 6 triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(6, personTriples.size, "Person should have 6 properties")
         
         // Verify multiple knows relationships
@@ -88,9 +88,9 @@ class MultipleValuesExample {
         assertEquals(3, knowsTriples.size, "Should have 3 knows relationships")
         
         val knowsObjects = knowsTriples.map { it.obj }
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend1")), "Should know friend1")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend2")), "Should know friend2")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend3")), "Should know friend3")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend1")), "Should know friend1")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend2")), "Should know friend2")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend3")), "Should know friend3")
         
         repo.close()
     }
@@ -100,11 +100,11 @@ class MultipleValuesExample {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             
             // Method 3: Using helper function (functional approach)
@@ -124,7 +124,7 @@ class MultipleValuesExample {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(6, allTriples.size, "Should have 6 triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(6, personTriples.size, "Person should have 6 properties")
         
         // Verify multiple knows relationships
@@ -143,7 +143,7 @@ class MultipleValuesExample {
         val repo = Rdf.memory()
         
         repo.add {
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
             
             // Multiple string values
             resource[FOAF.name] = "Primary Name"
@@ -157,13 +157,13 @@ class MultipleValuesExample {
             // Multiple IRI values
             resource[RDF.type] = RDF.Property
             resource[RDF.type] = RDFS.Resource
-            resource[RDF.type] = iri("http://example.org/CustomType")
+            resource[RDF.type] = Iri("http://example.org/CustomType")
         }
         
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(8, allTriples.size, "Should have 8 triples")
         
-        val resourceTriples = allTriples.filter { it.subject == iri("http://example.org/resource") }
+        val resourceTriples = allTriples.filter { it.subject == Iri("http://example.org/resource") }
         assertEquals(8, resourceTriples.size, "Resource should have 8 properties")
         
         // Verify multiple names
@@ -190,7 +190,7 @@ class MultipleValuesExample {
         val types = typeTriples.map { it.obj }
         assertTrue(types.contains(RDF.Property), "Should be RDF.Property")
         assertTrue(types.contains(RDFS.Resource), "Should be RDFS.Resource")
-        assertTrue(types.contains(iri("http://example.org/CustomType")), "Should be CustomType")
+        assertTrue(types.contains(Iri("http://example.org/CustomType")), "Should be CustomType")
         
         repo.close()
     }
@@ -200,7 +200,7 @@ class MultipleValuesExample {
         val repo = Rdf.memory()
         
         repo.add {
-            val document = iri("http://example.org/document")
+            val document = Iri("http://example.org/document")
             
             // Multiple titles
             document[DCTERMS.title] = "Main Title"
@@ -208,8 +208,8 @@ class MultipleValuesExample {
             document[DCTERMS.title] = "Alternative Title"
             
             // Multiple creators
-            document[DCTERMS.creator] = iri("http://example.org/author1")
-            document[DCTERMS.creator] = iri("http://example.org/author2")
+            document[DCTERMS.creator] = Iri("http://example.org/author1")
+            document[DCTERMS.creator] = Iri("http://example.org/author2")
             
             // Multiple subjects/tags
             document[DCTERMS.subject] = "Technology"
@@ -220,7 +220,7 @@ class MultipleValuesExample {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(8, allTriples.size, "Should have 8 triples")
         
-        val documentTriples = allTriples.filter { it.subject == iri("http://example.org/document") }
+        val documentTriples = allTriples.filter { it.subject == Iri("http://example.org/document") }
         assertEquals(8, documentTriples.size, "Document should have 8 properties")
         
         // Verify multiple titles
@@ -237,8 +237,8 @@ class MultipleValuesExample {
         assertEquals(2, creatorTriples.size, "Should have 2 creators")
         
         val creators = creatorTriples.map { it.obj }
-        assertTrue(creators.contains(iri("http://example.org/author1")), "Should have author1")
-        assertTrue(creators.contains(iri("http://example.org/author2")), "Should have author2")
+        assertTrue(creators.contains(Iri("http://example.org/author1")), "Should have author1")
+        assertTrue(creators.contains(Iri("http://example.org/author2")), "Should have author2")
         
         // Verify multiple subjects
         val subjectTriples = documentTriples.filter { it.predicate == DCTERMS.subject }
@@ -252,3 +252,12 @@ class MultipleValuesExample {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

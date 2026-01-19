@@ -77,3 +77,15 @@ class OntologyConfig {
     var vocabularyPrefix: String = ""
     
 }
+
+
+
+
+
+
+
+
+
+
+
+

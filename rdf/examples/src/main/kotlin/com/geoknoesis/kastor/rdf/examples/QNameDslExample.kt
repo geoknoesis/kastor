@@ -23,27 +23,27 @@ fun main() {
         }
         
         // Use QNames with minus operator and smart QName detection
-        val catalog = iri("http://example.org/catalog")
-        catalog - "dcterms:title" - "My Data Catalog"
-        catalog - "dcterms:description" - "A catalog of datasets"
-        catalog - "dcat:dataset" - "http://example.org/dataset1"  // Full IRI → IRI
-        catalog - "dcat:dataset" - iri("http://example.org/dataset2")
+        val catalog = Iri("http://example.org/catalog")
+        catalog - qname("dcterms:title") - "My Data Catalog"
+        catalog - qname("dcterms:description") - "A catalog of datasets"
+        catalog - qname("dcat:dataset") - Iri("http://example.org/dataset1")  // Full IRI → IRI
+        catalog - qname("dcat:dataset") - Iri("http://example.org/dataset2")
         
         // Use QNames with bracket syntax and smart QName detection
-        val person = iri("http://example.org/person")
-        person["foaf:name"] = "Alice"
-        person["foaf:age"] = 30
-        person["foaf:knows"] = "http://example.org/bob"  // Full IRI → IRI
+        val person = Iri("http://example.org/person")
+        person[qname("foaf:name")] = "Alice"
+        person[qname("foaf:age")] = 30
+        person[qname("foaf:knows")] = "http://example.org/bob"  // Full IRI → IRI
         
         // Smart QName detection in object position
-        person - "foaf:knows" - "foaf:Person"        // QName with declared prefix → IRI
-        person - "foaf:homepage" - "http://example.org/profile"  // Full IRI → IRI
-        person - "foaf:note" - "unknown:Person"      // Undeclared prefix → string literal
+        person - qname("foaf:knows") - "foaf:Person"        // QName with declared prefix → IRI
+        person - qname("foaf:homepage") - Iri("http://example.org/profile")  // Full IRI → IRI
+        person - qname("foaf:note") - "unknown:Person"      // Undeclared prefix → string literal
         
         // Use QNames with natural language syntax
-        val bob = iri("http://example.org/bob")
-        bob has "foaf:name" with "Bob"
-        bob has "foaf:age" with 25
+        val bob = Iri("http://example.org/bob")
+        bob has qname("foaf:name") with "Bob"
+        bob has qname("foaf:age") with 25
     }
     
     println("Repository now has ${repo.getTriples().size} triples")
@@ -63,13 +63,13 @@ fun main() {
         prefix("foaf", "http://xmlns.com/foaf/0.1/")
         prefix("schema", "http://schema.org/")
         
-        val org = iri("http://example.org/organization")
-        org - "schema:name" - "Example Corp"
-        org - "schema:url" - "https://example.org"
+        val org = Iri("http://example.org/organization")
+        org - qname("schema:name") - "Example Corp"
+        org - qname("schema:url") - Iri("https://example.org")
         
-        val employee = iri("http://example.org/employee1")
-        employee - "foaf:name" - "Charlie"
-        employee - "schema:worksFor" - org
+        val employee = Iri("http://example.org/employee1")
+        employee - qname("foaf:name") - "Charlie"
+        employee - qname("schema:worksFor") - org
     }
     
     println("Standalone graph has ${graph.getTriples().size} triples")
@@ -79,7 +79,7 @@ fun main() {
     repo.add {
         prefix("skos", "http://www.w3.org/2004/02/skos/core#")
         
-        val concept = iri("http://example.org/concept1")
+        val concept = Iri("http://example.org/concept1")
         val prefLabelIri = qname("skos:prefLabel")
         val altLabelIri = qname("skos:altLabel")
         
@@ -95,12 +95,21 @@ fun main() {
     repo.add {
         prefix("foaf", "http://xmlns.com/foaf/0.1/")
         
-        val person = iri("http://example.org/person2")
-        person - "foaf:name" - "David"
-        person - "http://example.org/customProperty" - "custom value"  // Full IRI
+        val person = Iri("http://example.org/person2")
+        person - qname("foaf:name") - "David"
+        person - Iri("http://example.org/customProperty") - "custom value"  // Full IRI
     }
     
     println("Final triple count: ${repo.getTriples().size}")
     
     repo.close()
 }
+
+
+
+
+
+
+
+
+

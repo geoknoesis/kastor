@@ -818,3 +818,6 @@ For more information, see:
 - [Domain Modeling](domain-modeling.md) - Creating domain interfaces
 - [Best Practices](best-practices.md) - Guidelines for effective usage
 - [FAQ](faq.md) - Frequently asked questions
+
+
+

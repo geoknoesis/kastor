@@ -127,7 +127,7 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 violations.add(
                     ValidationViolation(
                         constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: iri("unknown"),
+                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
                         message = inconsistency.description,
                         severity = Severity.ERROR
                     )
@@ -200,8 +200,8 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val subClass = statement.subject as? IRI
             val superClass = statement.`object` as? IRI
             if (subClass != null && superClass != null) {
-                val subClassIri = iri(subClass.stringValue())
-                val superClassIri = iri(superClass.stringValue())
+                val subClassIri = Iri(subClass.stringValue())
+                val superClassIri = Iri(superClass.stringValue())
                 classHierarchy[subClassIri] = classHierarchy.getOrDefault(subClassIri, emptyList()) + superClassIri
             }
         }
@@ -212,8 +212,8 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val instance = statement.subject as? IRI
             val typeClass = statement.`object` as? IRI
             if (instance != null && typeClass != null) {
-                val instanceIri = iri(instance.stringValue())
-                val typeIri = iri(typeClass.stringValue())
+                val instanceIri = Iri(instance.stringValue())
+                val typeIri = Iri(typeClass.stringValue())
                 instanceClassifications[instanceIri] = instanceClassifications.getOrDefault(instanceIri, emptyList()) + typeIri
             }
         }
@@ -224,8 +224,8 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val subProperty = statement.subject as? IRI
             val superProperty = statement.`object` as? IRI
             if (subProperty != null && superProperty != null) {
-                val subPropertyIri = iri(subProperty.stringValue())
-                val superPropertyIri = iri(superProperty.stringValue())
+                val subPropertyIri = Iri(subProperty.stringValue())
+                val superPropertyIri = Iri(superProperty.stringValue())
                 propertyHierarchy[subPropertyIri] = propertyHierarchy.getOrDefault(subPropertyIri, emptyList()) + superPropertyIri
             }
         }
@@ -299,14 +299,14 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     private fun convertFromRdf4jStatement(statement: org.eclipse.rdf4j.model.Statement): RdfTriple {
         return RdfTriple(
             subject = convertFromRdf4jResource(statement.subject),
-            predicate = iri(statement.predicate.stringValue()),
+            predicate = Iri(statement.predicate.stringValue()),
             obj = convertFromRdf4jTerm(statement.`object`)
         )
     }
     
     private fun convertFromRdf4jResource(resource: Resource): RdfResource {
         return when (resource) {
-            is IRI -> iri(resource.stringValue())
+            is IRI -> Iri(resource.stringValue())
             is org.eclipse.rdf4j.model.BNode -> bnode(resource.id)
             else -> throw IllegalArgumentException("Cannot convert RDF4J resource: $resource")
         }
@@ -314,18 +314,27 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     
     private fun convertFromRdf4jTerm(term: Value): RdfTerm {
         return when (term) {
-            is IRI -> iri(term.stringValue())
+            is IRI -> Iri(term.stringValue())
             is org.eclipse.rdf4j.model.BNode -> bnode(term.id)
             is org.eclipse.rdf4j.model.Literal -> {
                 if (term.language.isPresent) {
                     LangString(term.stringValue(), term.language.get())
                 } else if (term.datatype != null) {
-                    Literal(term.stringValue(), iri(term.datatype.stringValue()))
+                    Literal(term.stringValue(), Iri(term.datatype.stringValue()))
                 } else {
-                    Literal(term.stringValue(), iri("http://www.w3.org/2001/XMLSchema#string"))
+                    Literal(term.stringValue(), Iri("http://www.w3.org/2001/XMLSchema#string"))
                 }
             }
             else -> throw IllegalArgumentException("Cannot convert RDF4J term: $term")
         }
     }
 }
+
+
+
+
+
+
+
+
+

@@ -15,8 +15,17 @@
 ### Graph abstraction
 ```kotlin
 interface RdfGraph {
-  fun triples(): Sequence<RdfTriple>
-  fun size(): Long
+  fun hasTriple(triple: RdfTriple): Boolean
+  fun getTriples(): List<RdfTriple>
+  fun size(): Int
+}
+
+interface MutableRdfGraph : RdfGraph {
+  fun addTriple(triple: RdfTriple)
+  fun addTriples(triples: Collection<RdfTriple>)
+  fun removeTriple(triple: RdfTriple): Boolean
+  fun removeTriples(triples: Collection<RdfTriple>): Boolean
+  fun clear(): Boolean
 }
 ```
 
@@ -99,4 +108,7 @@ Use the `Builder` to set the `type` (e.g., `jena:memory`, `rdf4j:native`, `sparq
 
 ### Formats
 `RdfFormats` defines common names. Pass strings like `"TURTLE"`, `"NTRIPLES"`, `"RDFXML"`, `"JSONLD"`, `"TRIG"`, `"NQUADS"` to `readGraph`/`writeGraph`.
+
+
+
 

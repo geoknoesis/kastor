@@ -375,7 +375,7 @@ Kastor's SHACL validation uses a provider architecture similar to the reasoning 
 val providers = ShaclValidation.validatorProviders()
 providers.forEach { provider ->
     println("${provider.name} - ${provider.version}")
-    println("  Type: ${provider.getType()}")
+    println("  Type: ${provider.id}")
     println("  Capabilities: ${provider.getCapabilities()}")
 }
 
@@ -791,3 +791,6 @@ Kastor supports a wide range of SHACL constraint types:
 - [Kastor RDF Core](../api/core-api.md)
 - [Kastor Reasoning](./reasoning.md)
 - [Examples](../examples/README.md)
+
+
+

@@ -27,23 +27,23 @@ class SmartQNameDetectionTest {
                 put("rdfs", "http://www.w3.org/2000/01/rdf-schema#")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Smart: QName with declared prefix → IRI
-            person - "foaf:knows" - "foaf:Person"
+            person - qname("foaf:knows") - qname("foaf:Person")
             
             // ✅ Smart: String without colon → string literal
-            person - "foaf:name" - "Alice"
+            person - qname("foaf:name") - "Alice"
             
             // ✅ Smart: QName with undeclared prefix → string literal
-            person - "foaf:name" - "unknown:Person"
+            person - qname("foaf:name") - "unknown:Person"
             
             // ✅ Smart: Full IRI → IRI
-            person - "foaf:homepage" - "http://example.org/friend"
+            person - qname("foaf:homepage") - Iri("http://example.org/friend")
             
-            // ✅ Special case: rdf:type always resolves QNames
-            person - "a" - "foaf:Agent"
-            person `is` "foaf:Person"
+            // ✅ rdf:type with explicit IRIs
+            person - RDF.type - FOAF.Agent
+            person `is` FOAF.Person
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -82,14 +82,14 @@ class SmartQNameDetectionTest {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Smart QName detection
-            person["foaf:knows"] = "foaf:Person"  // Should become IRI
-            person["foaf:name"] = "Alice"         // Should become string literal
+            person[qname("foaf:knows")] = qname("foaf:Person")  // Should become IRI
+            person[qname("foaf:name")] = "Alice"         // Should become string literal
             
             // ✅ Special case: rdf:type
-            person["a"] = "foaf:Agent"            // Should become IRI
+            person[RDF.type] = FOAF.Agent
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -121,11 +121,11 @@ class SmartQNameDetectionTest {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Smart QName detection
-            person has "foaf:knows" with "foaf:Person"  // Should become IRI
-            person has "foaf:name" with "Alice"         // Should become string literal
+            person has qname("foaf:knows") with qname("foaf:Person")  // Should become IRI
+            person has qname("foaf:name") with "Alice"         // Should become string literal
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -151,16 +151,16 @@ class SmartQNameDetectionTest {
                 put("rdfs", "http://www.w3.org/2000/01/rdf-schema#")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Smart QName detection
-            person - "foaf:knows" - "foaf:Person"
-            person - "foaf:name" - "Alice"
-            person - "rdfs:subClassOf" - "foaf:Agent"
+            person - qname("foaf:knows") - qname("foaf:Person")
+            person - qname("foaf:name") - "Alice"
+            person - qname("rdfs:subClassOf") - qname("foaf:Agent")
             
             // ✅ Special case: rdf:type
-            person["a"] = "foaf:Person"
-            person `is` "foaf:Agent"
+            person[RDF.type] = FOAF.Person
+            person `is` FOAF.Agent
         }
         
         val triples = graph.getTriples()
@@ -194,10 +194,10 @@ class SmartQNameDetectionTest {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Explicit literal creation overrides smart detection
-            person - "foaf:name" - literal("foaf:Person")  // Should be string literal, not IRI
+            person - qname("foaf:name") - Literal("foaf:Person")  // Should be string literal, not IRI
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -218,10 +218,10 @@ class SmartQNameDetectionTest {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Explicit QName creation
-            person - "foaf:name" - qname("foaf:Person")  // Should be IRI
+            person - qname("foaf:name") - qname("foaf:Person")  // Should be IRI
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -242,14 +242,14 @@ class SmartQNameDetectionTest {
                 put("foaf", "http://xmlns.com/foaf/0.1/")
             }
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             // ✅ Edge cases
-            person - "foaf:name" - ":"                    // Invalid QName → string literal
-            person - "foaf:name" - "foaf:"                // Invalid QName → string literal  
-            person - "foaf:name" - ":Person"              // Invalid QName → string literal
-            person - "foaf:name" - "http://example.org"   // Full IRI → IRI
-            person - "foaf:name" - "https://example.org"  // Full IRI → IRI
+            person - qname("foaf:name") - ":"                    // Invalid QName → string literal
+            person - qname("foaf:name") - "foaf:"                // Invalid QName → string literal  
+            person - qname("foaf:name") - ":Person"              // Invalid QName → string literal
+            person - qname("foaf:name") - Iri("http://example.org")   // Full IRI → IRI
+            person - qname("foaf:name") - Iri("https://example.org")  // Full IRI → IRI
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -266,3 +266,12 @@ class SmartQNameDetectionTest {
         assertEquals(2, iriTriples.size, "Should have 2 IRI triples")
     }
 }
+
+
+
+
+
+
+
+
+

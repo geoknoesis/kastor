@@ -2,6 +2,8 @@ package com.example.ontomapper.processor
 
 import com.example.ontomapper.processor.codegen.InterfaceGenerator
 import com.example.ontomapper.processor.codegen.OntologyWrapperGenerator
+import com.example.ontomapper.annotations.ValidationAnnotations
+import com.example.ontomapper.annotations.ValidationMode
 import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.parsers.JsonLdContextParser
 import com.example.ontomapper.processor.parsers.ShaclParser
@@ -22,8 +24,8 @@ class OntologyProcessor(
 
     private val shaclParser = ShaclParser(logger)
     private val contextParser = JsonLdContextParser(logger)
-    private val interfaceGenerator = InterfaceGenerator(logger)
-    private val wrapperGenerator = OntologyWrapperGenerator(logger)
+    private var interfaceGenerator = InterfaceGenerator(logger)
+    private var wrapperGenerator = OntologyWrapperGenerator(logger)
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         logger.info("Ontology processor starting...")
@@ -65,12 +67,18 @@ class OntologyProcessor(
         val targetPackage = getAnnotationValue(annotation, "packageName") as? String ?: packageName
         val generateInterfaces = getAnnotationValue(annotation, "generateInterfaces") as? Boolean ?: true
         val generateWrappers = getAnnotationValue(annotation, "generateWrappers") as? Boolean ?: true
+        val validationMode = parseValidationMode(getAnnotationValue(annotation, "validationMode"))
+        val validationAnnotations = parseValidationAnnotations(getAnnotationValue(annotation, "validationAnnotations"))
+        val externalValidatorClass = getAnnotationValue(annotation, "externalValidatorClass") as? String
         
         if (shaclPath == null || contextPath == null) {
             logger.error("Both shaclPath and contextPath must be specified")
             return
         }
         
+        interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
+        wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
+
         processOntologyFiles(shaclPath, contextPath, targetPackage, generateInterfaces, generateWrappers)
     }
     
@@ -141,6 +149,26 @@ class OntologyProcessor(
     private fun getAnnotationValue(annotation: KSAnnotation, name: String): Any? {
         return annotation.arguments.find { it.name?.asString() == name }?.value
     }
+
+    private fun parseValidationMode(value: Any?): ValidationMode {
+        return when (value) {
+            is ValidationMode -> value
+            is KSType -> ValidationMode.valueOf(value.declaration.simpleName.asString())
+            is KSName -> ValidationMode.valueOf(value.asString())
+            is String -> ValidationMode.valueOf(value)
+            else -> ValidationMode.EMBEDDED
+        }
+    }
+
+    private fun parseValidationAnnotations(value: Any?): ValidationAnnotations {
+        return when (value) {
+            is ValidationAnnotations -> value
+            is KSType -> ValidationAnnotations.valueOf(value.declaration.simpleName.asString())
+            is KSName -> ValidationAnnotations.valueOf(value.asString())
+            is String -> ValidationAnnotations.valueOf(value)
+            else -> ValidationAnnotations.JAKARTA
+        }
+    }
 }
 
 /**
@@ -155,3 +183,15 @@ class OntologyProcessorProvider : SymbolProcessorProvider {
         )
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -9,22 +9,31 @@ class JenaBasicsExample {
   fun basics() {
     val repo = JenaRepository.MemoryRepository()
 
-    val s = iri("urn:ex:s")
-    val p = iri("urn:ex:p")
-    val o = literal("hello")
+    val s = Iri("urn:ex:s")
+    val p = Iri("urn:ex:p")
+    val o = Literal("hello")
 
     // Add triple using the new API
     repo.defaultGraph.addTriple(RdfTriple(s, p, o))
 
     // Simple SELECT
-    val result = repo.query("SELECT ?s WHERE { ?s <urn:ex:p> ?o }")
+    val result = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s <urn:ex:p> ?o }"))
     assertEquals(1, result.count())
     assertEquals(s, result.first()?.get("s"))
 
     // CONSTRUCT and ASK
-    val g = repo.construct("CONSTRUCT { ?s <urn:ex:p> ?o } WHERE { ?s <urn:ex:p> ?o }")
-    assertEquals(1, g.size)
-    val ask = repo.ask("ASK { ?s <urn:ex:p> ?o }")
+    val g = repo.construct(SparqlConstructQuery("CONSTRUCT { ?s <urn:ex:p> ?o } WHERE { ?s <urn:ex:p> ?o }"))
+    assertEquals(1, g.count())
+    val ask = repo.ask(SparqlAskQuery("ASK { ?s <urn:ex:p> ?o }"))
     assertEquals(true, ask)
   }
 }
+
+
+
+
+
+
+
+
+

@@ -11,7 +11,7 @@ import org.eclipse.rdf4j.repository.RepositoryResult
 class Rdf4jGraph(
     private val connection: RepositoryConnection,
     private val context: org.eclipse.rdf4j.model.Resource? = null
-) : RdfGraph {
+) : MutableRdfGraph {
     
     override fun addTriple(triple: RdfTriple) {
         val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
@@ -70,3 +70,12 @@ class Rdf4jGraph(
     
     override fun size(): Int = connection.size().toInt()
 }
+
+
+
+
+
+
+
+
+

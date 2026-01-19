@@ -102,7 +102,7 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
     
     override val friends: List<Person> by lazy {
         KastorGraphOps.getObjectValues(rdf.graph, rdf.node, FOAF.knows) { child ->
-            OntoMapper.materialize(RdfRef(child, rdf.graph), Person::class.java, false)
+            OntoMapper.materialize(RdfRef(child, rdf.graph), Person::class.java)
         }
     }
 }
@@ -124,6 +124,7 @@ interface RdfHandle {
     val graph: RdfGraph        // The containing RDF graph
     val extras: PropertyBag    // Unmapped properties
     
+    fun validate(): ValidationResult
     fun validateOrThrow()      // SHACL validation
 }
 ```
@@ -317,7 +318,7 @@ val unmappedProperties = extras.predicates()
 // ❌ Bad - Don't expose RDF in domain interface
 interface Person {
     val name: List<String>
-    val rdfGraph: RdfGraph  // Don't do this!
+    val RdfGraph: RdfGraph  // Don't do this!
 }
 ```
 
@@ -351,3 +352,6 @@ Now that you understand the core concepts:
 - **Explore [RDF Integration](rdf-integration.md)** - Advanced side-channel usage
 - **Check out [Validation](validation.md)** - SHACL validation patterns
 - **See [Practical Examples](../examples/README.md)** - Real-world use cases
+
+
+

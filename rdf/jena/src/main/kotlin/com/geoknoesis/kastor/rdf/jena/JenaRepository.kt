@@ -48,9 +48,9 @@ class JenaRepository private constructor(
         }
     }
     
-    override val defaultGraph: RdfGraph = JenaGraph(dataset.defaultModel)
+    override val defaultGraph: MutableRdfGraph = JenaGraph(dataset.defaultModel)
     
-    override fun getGraph(name: Iri): RdfGraph {
+    override fun getGraph(name: Iri): MutableRdfGraph {
         return JenaGraph(dataset.getNamedModel(name.value))
     }
     
@@ -62,7 +62,7 @@ class JenaRepository private constructor(
         return dataset.listNames().asSequence().map { Iri(it) }.toList()
     }
     
-    override fun createGraph(name: Iri): RdfGraph {
+    override fun createGraph(name: Iri): MutableRdfGraph {
         val model = dataset.getNamedModel(name.value)
         return JenaGraph(model)
     }
@@ -76,47 +76,75 @@ class JenaRepository private constructor(
         }
     }
     
-    override fun query(sparql: String): QueryResult {
-        val jenaQuery = QueryFactory.create(sparql)
+    override fun select(query: SparqlSelect): QueryResult {
+        val jenaQuery = QueryFactory.create(query.sparql)
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        val jenaResultSet = exec.execSelect()
-        return JenaResultSet(jenaResultSet)
+        try {
+            val jenaResultSet = exec.execSelect()
+            val rows = mutableListOf<BindingSet>()
+            while (jenaResultSet.hasNext()) {
+                val jenaBinding = jenaResultSet.next()
+                val values = mutableMapOf<String, RdfTerm>()
+                jenaBinding.varNames().asSequence().forEach { name ->
+                    val term = jenaBinding.get(name)?.let { convertNode(it) }
+                    if (term != null) {
+                        values[name] = term
+                    }
+                }
+                rows.add(MapBindingSet(values))
+            }
+            return JenaResultSet(rows)
+        } finally {
+            exec.close()
+        }
     }
     
-    override fun ask(sparql: String): Boolean {
-        val jenaQuery = QueryFactory.create(sparql)
+    override fun ask(query: SparqlAsk): Boolean {
+        val jenaQuery = QueryFactory.create(query.sparql)
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        return exec.execAsk()
+        try {
+            return exec.execAsk()
+        } finally {
+            exec.close()
+        }
     }
     
-    override fun construct(sparql: String): List<RdfTriple> {
-        val jenaQuery = QueryFactory.create(sparql)
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+        val jenaQuery = QueryFactory.create(query.sparql)
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        val resultModel = exec.execConstruct()
-        return resultModel.listStatements().asSequence().map { statement ->
-            RdfTriple(
-                convertResource(statement.subject),
-                Iri(statement.predicate.uri),
-                convertNode(statement.`object`)
-            )
-        }.toList()
+        try {
+            val resultModel = exec.execConstruct()
+            return resultModel.listStatements().asSequence().map { statement ->
+                RdfTriple(
+                    convertResource(statement.subject),
+                    Iri(statement.predicate.uri),
+                    convertNode(statement.`object`)
+                )
+            }
+        } finally {
+            exec.close()
+        }
     }
     
-    override fun describe(sparql: String): List<RdfTriple> {
-        val jenaQuery = QueryFactory.create(sparql)
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
+        val jenaQuery = QueryFactory.create(query.sparql)
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        val resultModel = exec.execDescribe()
-        return resultModel.listStatements().asSequence().map { statement ->
-            RdfTriple(
-                convertResource(statement.subject),
-                Iri(statement.predicate.uri),
-                convertNode(statement.`object`)
-            )
-        }.toList()
+        try {
+            val resultModel = exec.execDescribe()
+            return resultModel.listStatements().asSequence().map { statement ->
+                RdfTriple(
+                    convertResource(statement.subject),
+                    Iri(statement.predicate.uri),
+                    convertNode(statement.`object`)
+                )
+            }
+        } finally {
+            exec.close()
+        }
     }
     
-    override fun update(sparql: String) {
-        val jenaUpdate = org.apache.jena.update.UpdateFactory.create(sparql)
+    override fun update(query: UpdateQuery) {
+        val jenaUpdate = org.apache.jena.update.UpdateFactory.create(query.sparql)
         val exec = org.apache.jena.update.UpdateExecutionFactory.create(jenaUpdate, dataset)
         exec.execute()
     }
@@ -153,30 +181,6 @@ class JenaRepository private constructor(
             dataset.removeNamedModel(name)
         }
         return true
-    }
-    
-    override fun getStatistics(): RepositoryStatistics {
-        val totalTriples = dataset.defaultModel.size() + 
-            dataset.listNames().asSequence().sumOf { name ->
-                dataset.getNamedModel(name).size()
-            }
-        return RepositoryStatistics(
-            tripleCount = totalTriples.toLong(),
-            graphCount = dataset.listNames().asSequence().count() + 1, // +1 for default graph
-            memoryUsage = 0L, // Placeholder
-            diskUsage = 0L, // Placeholder
-            lastModified = System.currentTimeMillis()
-        )
-    }
-    
-    override fun getPerformanceMonitor(): PerformanceMonitor {
-        return PerformanceMonitor(
-            queryCount = 0,
-            averageQueryTime = 0.0,
-            totalQueryTime = 0,
-            cacheHitRate = 1.0,
-            memoryUsage = 0L
-        )
     }
     
     override fun isClosed(): Boolean {
@@ -222,3 +226,12 @@ class JenaRepository private constructor(
         }
     }
 }
+
+
+
+
+
+
+
+
+

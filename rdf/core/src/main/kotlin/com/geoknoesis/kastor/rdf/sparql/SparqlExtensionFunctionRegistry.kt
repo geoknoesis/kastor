@@ -52,3 +52,12 @@ object SparqlExtensionFunctionRegistry {
         return functions.values.filter { !it.isBuiltIn }
     }
 }
+
+
+
+
+
+
+
+
+

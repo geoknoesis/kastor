@@ -7,7 +7,7 @@ import org.apache.jena.rdf.model.Resource
 import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.StmtIterator
 
-class JenaGraph(val model: Model) : RdfGraph {
+class JenaGraph(val model: Model) : MutableRdfGraph {
     
     override fun addTriple(triple: RdfTriple) {
         val subject = JenaTerms.toResource(triple.subject)
@@ -66,3 +66,12 @@ class JenaGraph(val model: Model) : RdfGraph {
     
     override fun size(): Int = model.size().toInt()
 }
+
+
+
+
+
+
+
+
+

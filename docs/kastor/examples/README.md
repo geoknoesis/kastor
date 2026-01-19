@@ -56,7 +56,11 @@ fun `demonstrate enhanced parameter information`() {
     
     // Validate configuration before creating repository
     val requiredParams = RdfApiRegistry.getRequiredParameters("sparql")
-    val config = RdfConfig("sparql", mapOf("location" to "http://dbpedia.org/sparql"))
+    val config = RdfConfig(
+        providerId = "sparql",
+        variantId = "sparql",
+        options = mapOf("location" to "http://dbpedia.org/sparql")
+    )
     val missingParams = requiredParams.filter { param -> 
         !config.params.containsKey(param.name) 
     }
@@ -122,8 +126,9 @@ fun main() {
     
     // Custom configuration
     val customRepo = Rdf.factory {
-        type = "jena:tdb2"
-        params["location"] = "/path/to/storage"
+        providerId = "jena"
+        variantId = "tdb2"
+        location = "/path/to/storage"
     }
     
     // Clean up
@@ -350,8 +355,8 @@ fun main() {
     val eveAge = literal(28)
     
     val eveTriples = listOf(
-        triple(eve, "http://example.org/person/name", eveName),
-        triple(eve, "http://example.org/person/age", eveAge)
+        triple(eve, Iri("http://example.org/person/name"), eveName),
+        triple(eve, Iri("http://example.org/person/age"), eveAge)
     )
     repo.addTriples(eveTriples)
     
@@ -775,4 +780,7 @@ After exploring the examples:
 ---
 
 **🎉 Ready to explore? Start with the basic examples and work your way up to building amazing RDF applications!**
+
+
+
 

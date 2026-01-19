@@ -552,3 +552,6 @@ val complexQuery = select("name", "email", "age", "confidence") {
 
 This comprehensive SPARQL API provides all the tools needed to work with RDF data effectively and efficiently.
 
+
+
+

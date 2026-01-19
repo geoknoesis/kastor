@@ -232,18 +232,20 @@ Create your own provider by implementing `RdfApiProvider`:
 
 ```kotlin
 class CustomProvider : RdfApiProvider {
-    override fun createRepository(config: RepositoryConfig): RdfRepository {
+    override val id: String = "custom"
+    override val name: String = "Custom Provider"
+    override val version: String = "1.0.0"
+    
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("default"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // Your custom implementation
         return CustomRepository(config)
     }
-    
-    override fun getType(): String = "CUSTOM"
-    override val name: String = "Custom Provider"
-    override val version: String = "1.0.0"
 }
 
 // Register and use
-Rdf.registerProvider(CustomProvider())
+RdfApiRegistry.register(CustomProvider())
 val repo = Rdf.factory { custom() }
 ```
 
@@ -297,3 +299,5 @@ val repo = Rdf.factory { custom() }
 ---
 
 **Need help choosing a provider?** Check the [FAQ](../faq.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
+
+

@@ -109,13 +109,13 @@ result.inferredTriples.forEach { triple ->
 // Get available providers
 val providers = RdfReasoning.reasonerProviders()
 providers.forEach { provider ->
-    println("${provider.name} (${provider.getType()}) - v${provider.version}")
+    println("${provider.name} (${provider.id}) - v${provider.version}")
     println("  Supported types: ${provider.getSupportedTypes().joinToString(", ")}")
 }
 
 // Use specific provider
-val jenaReasoner = providers.find { it.getType() == "jena" }?.createReasoner(ReasonerConfig.rdfs())
-val rdf4jReasoner = providers.find { it.getType() == "rdf4j" }?.createReasoner(ReasonerConfig.rdfs())
+val jenaReasoner = providers.find { it.id == "jena" }?.createReasoner(ReasonerConfig.rdfs())
+val rdf4jReasoner = providers.find { it.id == "rdf4j" }?.createReasoner(ReasonerConfig.rdfs())
 ```
 
 ### **Configuration Options**
@@ -303,3 +303,6 @@ To add reasoning to existing Kastor applications:
    ```
 
 The reasoning framework integrates seamlessly with the existing Kastor RDF API, providing powerful inference capabilities while maintaining the same clean, DSL-based approach that developers already know and love.
+
+
+

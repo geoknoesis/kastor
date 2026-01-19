@@ -18,21 +18,21 @@ fun main() {
         println("No need to declare them - they're ready to use!")
         println()
         
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         
         // 1. RDF vocabulary
         println("1. RDF vocabulary:")
-        person["rdf:type"] = "rdfs:Class"              // Built-in prefixes
-        person["a"] = "rdf:Statement"                  // Turtle-style "a" alias
+        person[RDF.type] = "rdfs:Class"              // Built-in prefixes
+        person[RDF.type] = "rdf:Statement"                  // Turtle-style "a" alias
         println("   person[\"rdf:type\"] = \"rdfs:Class\"")
         println("   person[\"a\"] = \"rdf:Statement\"")
         println()
         
         // 2. RDFS vocabulary
         println("2. RDFS vocabulary:")
-        person - "rdfs:label" - "Person Class"
-        person - "rdfs:comment" - "A person in our system"
-        person - "rdfs:subClassOf" - "rdfs:Resource"
+        person - qname("rdfs:label") - "Person Class"
+        person - qname("rdfs:comment") - "A person in our system"
+        person - qname("rdfs:subClassOf") - "rdfs:Resource"
         println("   person - \"rdfs:label\" - \"Person Class\"")
         println("   person - \"rdfs:comment\" - \"A person in our system\"")
         println("   person - \"rdfs:subClassOf\" - \"rdfs:Resource\"")
@@ -40,9 +40,9 @@ fun main() {
         
         // 3. OWL vocabulary
         println("3. OWL vocabulary:")
-        person - "owl:sameAs" - "http://example.org/person2"
-        person - "owl:differentFrom" - "http://example.org/animal"
-        person - "owl:equivalentClass" - "rdfs:Class"
+        person - qname("owl:sameAs") - Iri("http://example.org/person2")
+        person - qname("owl:differentFrom") - Iri("http://example.org/animal")
+        person - qname("owl:equivalentClass") - "rdfs:Class"
         println("   person - \"owl:sameAs\" - \"http://example.org/person2\"")
         println("   person - \"owl:differentFrom\" - \"http://example.org/animal\"")
         println("   person - \"owl:equivalentClass\" - \"rdfs:Class\"")
@@ -50,9 +50,9 @@ fun main() {
         
         // 4. SHACL vocabulary
         println("4. SHACL vocabulary:")
-        person - "sh:targetClass" - "rdfs:Class"
-        person - "sh:property" - "rdf:type"
-        person - "sh:minCount" - 1
+        person - qname("sh:targetClass") - "rdfs:Class"
+        person - qname("sh:property") - "rdf:type"
+        person - qname("sh:minCount") - 1
         println("   person - \"sh:targetClass\" - \"rdfs:Class\"")
         println("   person - \"sh:property\" - \"rdf:type\"")
         println("   person - \"sh:minCount\" - 1")
@@ -64,9 +64,9 @@ fun main() {
             put("foaf", "http://xmlns.com/foaf/0.1/")
             put("schema", "http://schema.org/")
         }
-        person - "foaf:name" - "Alice"                 // Custom prefix
-        person - "rdfs:label" - "Person"               // Built-in prefix
-        person - "schema:worksFor" - "http://example.org/company"  // Custom prefix + full IRI
+        person - qname("foaf:name") - "Alice"                 // Custom prefix
+        person - qname("rdfs:label") - "Person"               // Built-in prefix
+        person - qname("schema:worksFor") - Iri("http://example.org/company")  // Custom prefix + full IRI
         println("   person - \"foaf:name\" - \"Alice\"                 // Custom prefix")
         println("   person - \"rdfs:label\" - \"Person\"               // Built-in prefix")
         println("   person - \"schema:worksFor\" - \"http://example.org/company\"")
@@ -74,10 +74,10 @@ fun main() {
         
         // 6. Smart QName detection with built-in prefixes
         println("6. Smart QName detection with built-in prefixes:")
-        person - "rdf:type" - "rdfs:Class"           // Both QNames → IRIs
-        person - "rdfs:subClassOf" - "rdfs:Resource" // Both QNames → IRIs
-        person - "owl:sameAs" - "http://example.org/person3"  // QName + Full IRI → IRIs
-        person - "sh:targetClass" - "owl:Class"      // Both QNames → IRIs
+        person - RDF.type - "rdfs:Class"           // Both QNames → IRIs
+        person - qname("rdfs:subClassOf") - "rdfs:Resource" // Both QNames → IRIs
+        person - qname("owl:sameAs") - Iri("http://example.org/person3")  // QName + Full IRI → IRIs
+        person - qname("sh:targetClass") - "owl:Class"      // Both QNames → IRIs
         println("   person - \"rdf:type\" - \"rdfs:Class\"           // Both QNames → IRIs")
         println("   person - \"rdfs:subClassOf\" - \"rdfs:Resource\" // Both QNames → IRIs")
         println("   person - \"owl:sameAs\" - \"http://example.org/person3\"  // QName + Full IRI → IRIs")
@@ -106,12 +106,12 @@ fun main() {
             put("foaf", "http://xmlns.com/foaf/0.1/")
         }
         
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
         
         // Should use custom namespace, not built-in
-        resource["rdf:type"] = "rdf:CustomType"
-        resource - "rdf:label" - "Custom Resource"
-        resource - "foaf:name" - "Test Resource"
+        resource[RDF.type] = "rdf:CustomType"
+        resource - qname("rdf:label") - "Custom Resource"
+        resource - qname("foaf:name") - "Test Resource"
         
         println("Override example:")
         println("  resource[\"rdf:type\"] = \"rdf:CustomType\"  // Uses custom namespace")
@@ -135,3 +135,12 @@ fun main() {
     
     repo.close()
 }
+
+
+
+
+
+
+
+
+

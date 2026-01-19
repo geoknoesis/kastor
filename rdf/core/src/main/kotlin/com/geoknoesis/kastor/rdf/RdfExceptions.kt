@@ -61,3 +61,12 @@ class RdfInferenceException(message: String, cause: Throwable? = null) : RdfExce
  * Exception thrown when configuration operations fail.
  */
 class RdfConfigurationException(message: String, cause: Throwable? = null) : RdfException(message, cause)
+
+
+
+
+
+
+
+
+

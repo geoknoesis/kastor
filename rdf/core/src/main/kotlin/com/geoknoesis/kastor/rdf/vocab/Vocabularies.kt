@@ -56,6 +56,7 @@ object Vocabularies {
      * Note: This is a simplified implementation that returns null.
      * For full reflection-based implementation, additional setup is required.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun getTermsByPrefix(prefix: String): Map<String, Iri>? {
         // Simplified implementation - returns null for now
         // In a full implementation, this would use reflection to get all properties
@@ -70,3 +71,12 @@ object Vocabularies {
         return getTermsByPrefix(vocab.prefix)
     }
 }
+
+
+
+
+
+
+
+
+

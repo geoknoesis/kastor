@@ -7,38 +7,51 @@ import com.geoknoesis.kastor.rdf.*
  */
 class SparqlProvider : RdfApiProvider {
     
-    override fun getType(): String = "sparql"
+    override val id: String = "sparql"
     
     override val name: String = "SPARQL Repository"
     
     override val version: String = "1.0.0"
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
-        return when (config.type) {
+    override fun variants(): List<RdfVariant> {
+        return listOf(RdfVariant("sparql", "Remote SPARQL endpoint"))
+    }
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
+        return when (variantId) {
             "sparql" -> {
-                val endpoint = config.params["location"] ?: throw IllegalArgumentException("SPARQL endpoint URL required")
+                val endpoint = config.options["location"]
+                    ?: throw IllegalArgumentException("SPARQL endpoint URL required")
                 SparqlRepository(endpoint)
             }
-            else -> throw IllegalArgumentException("Unsupported SPARQL repository type: ${config.type}")
+            else -> throw IllegalArgumentException("Unsupported SPARQL repository variant: $variantId")
         }
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             supportsInference = false,
             supportsTransactions = false,
             supportsNamedGraphs = true,
             supportsUpdates = true,
             supportsRdfStar = true, // SPARQL 1.2 supports RDF-star
-            maxMemoryUsage = Long.MAX_VALUE
+            maxMemoryUsage = Long.MAX_VALUE,
+            sparqlVersion = "1.2",
+            supportsPropertyPaths = true,
+            supportsAggregation = true,
+            supportsSubSelect = true,
+            supportsFederation = true,
+            supportsVersionDeclaration = true,
+            supportsServiceDescription = true
         )
     }
-    
-    override fun getSupportedTypes(): List<String> {
-        return listOf("sparql")
-    }
-    
-    override fun isSupported(type: String): Boolean {
-        return type == "sparql"
-    }
 }
+
+
+
+
+
+
+
+
+

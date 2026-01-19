@@ -86,3 +86,15 @@ annotation class RdfClass(
 annotation class RdfProperty(
     val iri: String
 )
+
+
+
+
+
+
+
+
+
+
+
+

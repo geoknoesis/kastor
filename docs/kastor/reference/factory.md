@@ -2,12 +2,15 @@
 
 ```kotlin
 // Modern approach using RdfApiRegistry
-val repo = RdfApiRegistry.create(RdfConfig("jena:memory"))
-val persistentRepo = RdfApiRegistry.create(RdfConfig("jena:tdb2", mapOf("location" to "/data/tdb2")))
+val repo = RdfApiRegistry.create(RdfConfig(providerId = "jena", variantId = "memory"))
+val persistentRepo = RdfApiRegistry.create(
+  RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/tdb2"))
+)
 
 // Legacy factory approach (still supported)
 val api = Rdf.factory {
-  type("jena:memory")
+  providerId = "jena"
+  variantId = "memory"
   // param("name", "value") // provider-specific
   // defaultGraph(iri("urn:graph"))
   // strict(true)
@@ -35,7 +38,7 @@ data class ConfigVariant(
 )
 
 // Configuration creation
-val config = RdfConfig(type: String, params: Map<String,String>, strict: Boolean = true)
+val config = RdfConfig(providerId: String, variantId: String, options: Map<String,String>)
 ```
 
 ### Parameter Discovery
@@ -66,4 +69,7 @@ val missingParams = requiredParams.filter { param ->
 
 ### Discovery
 `RdfApiRegistry` finds providers via Java `ServiceLoader`. You can also register a provider programmatically.
+
+
+
 

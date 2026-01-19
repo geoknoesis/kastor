@@ -14,9 +14,9 @@ fun main() {
     val repo = Rdf.memory()
     
     // Create some resources
-    val person = iri("http://example.org/person")
-    val friend = iri("http://example.org/friend")
-    val document = iri("http://example.org/document")
+    val person = Iri("http://example.org/person")
+    val friend = Iri("http://example.org/friend")
+    val document = Iri("http://example.org/document")
     
     // Using the new minus operator syntax
     repo.add {
@@ -43,11 +43,11 @@ fun main() {
     }
     
     // Query the data
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?subject ?predicate ?object WHERE {
             ?subject ?predicate ?object .
         } ORDER BY ?subject ?predicate
-    """.trimIndent())
+    """.trimIndent()))
     
     println("=== RDF Data using minus operator syntax ===")
     results.forEach { binding ->
@@ -77,3 +77,12 @@ fun main() {
  * 
  * All three syntaxes are equivalent and can be mixed within the same DSL block.
  */
+
+
+
+
+
+
+
+
+

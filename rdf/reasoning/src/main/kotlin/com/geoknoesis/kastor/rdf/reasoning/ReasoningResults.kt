@@ -80,3 +80,12 @@ data class ValidationStatistics(
     val warningsFound: Int,
     val validationTime: Duration
 )
+
+
+
+
+
+
+
+
+

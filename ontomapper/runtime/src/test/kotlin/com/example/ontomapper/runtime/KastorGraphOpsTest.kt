@@ -12,7 +12,7 @@ class KastorGraphOpsTest {
     @Test
     fun `getLiteralValues returns literals for subject and predicate`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -31,7 +31,7 @@ class KastorGraphOpsTest {
     @Test
     fun `getLiteralValues returns empty list when no matches`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -45,8 +45,8 @@ class KastorGraphOpsTest {
     @Test
     fun `getLiteralValues only returns literal objects`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val subject = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -62,7 +62,7 @@ class KastorGraphOpsTest {
     @Test
     fun `getRequiredLiteralValue returns first literal`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -77,7 +77,7 @@ class KastorGraphOpsTest {
     @Test
     fun `getRequiredLiteralValue throws when no literals found`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -91,9 +91,9 @@ class KastorGraphOpsTest {
     @Test
     fun `getObjectValues applies factory function to object terms`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
+        val subject = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
         
         repo.add {
             subject - FOAF.knows - friend1
@@ -117,7 +117,7 @@ class KastorGraphOpsTest {
     @Test
     fun `getObjectValues returns empty list when no matches`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -133,8 +133,8 @@ class KastorGraphOpsTest {
     @Test
     fun `getObjectValues handles factory exceptions gracefully`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val subject = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         
         repo.add {
             subject - FOAF.knows - friend
@@ -155,7 +155,7 @@ class KastorGraphOpsTest {
     @Test
     fun `extras creates PropertyBag with correct parameters`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John Doe"
@@ -174,3 +174,15 @@ class KastorGraphOpsTest {
         assertTrue(propertyBag.predicates().contains(FOAF.age))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -14,11 +14,11 @@ class RdfListMinusOperatorTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             
             person - FOAF.name - "Alice"
@@ -28,7 +28,7 @@ class RdfListMinusOperatorTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertTrue(allTriples.size >= 7, "Should have at least 7 triples (1 name + 6 for RDF list structure)")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(2, personTriples.size, "Person should have 2 direct properties (name and knows)")
         
         // Verify name property
@@ -48,7 +48,7 @@ class RdfListMinusOperatorTest {
         
         val firstTriple = listTriples.find { it.predicate == RDF.first }
         assertNotNull(firstTriple, "Should have rdf:first property")
-        assertEquals(iri("http://example.org/friend1"), firstTriple!!.obj)
+        assertEquals(Iri("http://example.org/friend1"), firstTriple!!.obj)
         
         val restTriple = listTriples.find { it.predicate == RDF.rest }
         assertNotNull(restTriple, "Should have rdf:rest property")
@@ -62,7 +62,7 @@ class RdfListMinusOperatorTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Alice"
             person - FOAF.knows - emptyList<Any>()  // Creates rdf:nil
@@ -71,7 +71,7 @@ class RdfListMinusOperatorTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(2, allTriples.size, "Should have 2 triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(2, personTriples.size, "Person should have 2 properties")
         
         // Verify knows property points to nil
@@ -87,9 +87,9 @@ class RdfListMinusOperatorTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
             
             person - FOAF.name - "Alice"
             // Mixed types: IRI, String, Int, Boolean
@@ -99,7 +99,7 @@ class RdfListMinusOperatorTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertTrue(allTriples.size >= 9, "Should have at least 9 triples (1 name + 8 for RDF list structure)")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(2, personTriples.size, "Person should have 2 direct properties")
         
         // Verify subject property points to RDF List
@@ -114,17 +114,17 @@ class RdfListMinusOperatorTest {
         
         val firstTriple = listTriples.find { it.predicate == RDF.first }
         assertNotNull(firstTriple, "Should have rdf:first property")
-        assertEquals(iri("http://example.org/friend1"), firstTriple!!.obj, "First element should be the IRI")
+        assertEquals(Iri("http://example.org/friend1"), firstTriple!!.obj, "First element should be the IRI")
         
         repo.close()
     }
 
     @Test
     fun `minus operator with list works in standalone graph`() {
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         val friends = listOf(
-            iri("http://example.org/friend1"),
-            iri("http://example.org/friend2")
+            Iri("http://example.org/friend1"),
+            Iri("http://example.org/friend2")
         )
         
         val graph = Rdf.graph {
@@ -154,11 +154,11 @@ class RdfListMinusOperatorTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = arrayOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             
             person - FOAF.name - "Alice"
@@ -168,7 +168,7 @@ class RdfListMinusOperatorTest {
         val allTriples = repo.defaultGraph.getTriples()
         assertEquals(4, allTriples.size, "Should have 4 triples (1 name + 3 individual knows)")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(4, personTriples.size, "Person should have 4 properties")
         
         // Verify multiple knows relationships
@@ -176,10 +176,19 @@ class RdfListMinusOperatorTest {
         assertEquals(3, knowsTriples.size, "Should have 3 knows relationships")
         
         val knowsObjects = knowsTriples.map { it.obj }
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend1")), "Should know friend1")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend2")), "Should know friend2")
-        assertTrue(knowsObjects.contains(iri("http://example.org/friend3")), "Should know friend3")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend1")), "Should know friend1")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend2")), "Should know friend2")
+        assertTrue(knowsObjects.contains(Iri("http://example.org/friend3")), "Should know friend3")
         
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

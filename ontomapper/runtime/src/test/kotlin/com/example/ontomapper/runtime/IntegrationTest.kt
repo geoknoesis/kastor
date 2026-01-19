@@ -57,9 +57,9 @@ class IntegrationTest {
         OntoMapper.registry[Organization::class.java] = { handle -> OrganizationWrapper(handle) }
 
         val repo = Rdf.memory()
-        val person1 = iri("http://example.org/person1")
-        val person2 = iri("http://example.org/person2")
-        val org = iri("http://example.org/org")
+        val person1 = Iri("http://example.org/person1")
+        val person2 = Iri("http://example.org/person2")
+        val org = Iri("http://example.org/org")
 
         repo.add {
             // Person 1
@@ -101,24 +101,25 @@ class IntegrationTest {
 
     @Test
     fun `materialization with validation works`() {
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                // Simple validation: require name property
-                val hasName = data.getTriples().any { 
-                    it.subject == focus && it.predicate == FOAF.name 
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+                val hasName = data.getTriples().any {
+                    it.subject == focus && it.predicate == FOAF.name
                 }
-                if (!hasName) {
-                    throw RuntimeException("Person must have a name")
+                return if (hasName) {
+                    ValidationResult.Ok
+                } else {
+                    ValidationResult.Violations(listOf(ShaclViolation(FOAF.name, "Person must have a name")))
                 }
             }
         }
 
-        ValidationRegistry.register(testPort)
+        ShaclValidation.register(validator)
 
         OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         // Valid person
         repo.add {
@@ -128,20 +129,20 @@ class IntegrationTest {
 
         val personRef = RdfRef(person, repo.defaultGraph)
         assertDoesNotThrow {
-            val p: Person = OntoMapper.materialize(personRef, Person::class.java, validate = true)
+            val p: Person = OntoMapper.materializeValidated(personRef, Person::class.java)
             assertEquals(listOf("John"), p.name)
         }
 
         // Invalid person (no name)
         val invalidRepo = Rdf.memory()
-        val invalidPerson = iri("http://example.org/invalid")
+        val invalidPerson = Iri("http://example.org/invalid")
         invalidRepo.add {
             invalidPerson - FOAF.age - 30
         }
 
         val invalidRef = RdfRef(invalidPerson, invalidRepo.defaultGraph)
-        assertThrows(RuntimeException::class.java) {
-            OntoMapper.materialize(invalidRef, Person::class.java, validate = true)
+        assertThrows(ValidationException::class.java) {
+            OntoMapper.materializeValidated(invalidRef, Person::class.java)
         }
     }
 
@@ -150,7 +151,7 @@ class IntegrationTest {
         OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "John"
@@ -187,7 +188,7 @@ class IntegrationTest {
         OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Jane"
@@ -196,7 +197,7 @@ class IntegrationTest {
 
         // Test Java-style API compatibility
         val personRef = RdfRef(person, repo.defaultGraph)
-        val personObj: Person = OntoMapper.materialize(personRef, Person::class.java, false)
+        val personObj: Person = OntoMapper.materialize(personRef, Person::class.java)
 
         // Test that RdfBacked interface works
         assertTrue(personObj is RdfBacked)
@@ -214,7 +215,7 @@ class IntegrationTest {
     fun `error handling in integration scenarios`() {
         // Test unregistered type
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         val personRef = RdfRef(person, repo.defaultGraph)
 
         // Clear registry to test unregistered type
@@ -235,3 +236,15 @@ class IntegrationTest {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

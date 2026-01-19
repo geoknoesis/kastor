@@ -20,3 +20,15 @@ enum class PropertyType {
     OBJECT,
     OBJECT_LIST
 }
+
+
+
+
+
+
+
+
+
+
+
+

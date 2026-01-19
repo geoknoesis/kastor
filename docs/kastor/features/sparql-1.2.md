@@ -413,3 +413,6 @@ For questions about SPARQL 1.2 support in Kastor:
 ---
 
 *Kastor SPARQL 1.2 support is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

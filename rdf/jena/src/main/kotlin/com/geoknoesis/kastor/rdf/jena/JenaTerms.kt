@@ -120,3 +120,12 @@ object JenaTerms {
         return toNode(term) ?: throw IllegalArgumentException("Cannot convert null term to Jena value")
     }
 }
+
+
+
+
+
+
+
+
+

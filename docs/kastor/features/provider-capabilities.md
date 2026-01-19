@@ -402,8 +402,8 @@ if (capabilities.supportsRdfStar) {
 fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfApiProvider? {
     val allProviders = RdfApiRegistry.getAllProviders()
     
-    return allProviders.values.find { provider ->
-        val capabilities = provider.getCapabilities()
+    return allProviders.find { provider ->
+        val capabilities = provider.getCapabilities(provider.defaultVariantId())
         val hasRdfStar = !requiresRdfStar || capabilities.supportsRdfStar
         val hasFederation = !requiresFederation || capabilities.supportsFederation
         
@@ -417,15 +417,17 @@ fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfAp
 ```kotlin
 // Provide fallbacks for unsupported features
 fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
-    val capabilities = provider.getCapabilities()
+    val capabilities = provider.getCapabilities(provider.defaultVariantId())
     
     return try {
-        provider.createRepository(RdfConfig()).query(query)
+        val variant = provider.defaultVariantId()
+        provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).query(query)
     } catch (e: UnsupportedOperationException) {
         if (!capabilities.supportsRdfStar && query.contains("<<")) {
             // Fallback to regular SPARQL
             val fallbackQuery = query.replace("<<", "").replace(">>", "")
-            provider.createRepository(RdfConfig()).query(fallbackQuery)
+            val variant = provider.defaultVariantId()
+            provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).query(fallbackQuery)
         } else {
             throw e
         }
@@ -439,17 +441,17 @@ fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
 fun providerCapabilitiesExample() {
     // Get all providers
     val allProviders = RdfApiRegistry.getAllProviders()
-    println("Available providers: ${allProviders.keys}")
+    println("Available providers: ${allProviders.map { it.id }}")
     
     // Check each provider's capabilities
-    allProviders.forEach { (type, provider) ->
-        println("\n=== $type Provider ===")
+    allProviders.forEach { provider ->
+        println("\n=== ${provider.id} Provider ===")
         println("Name: ${provider.name}")
         println("Version: ${provider.version}")
         println("Category: ${provider.getProviderCategory()}")
         
         // Basic capabilities
-        val capabilities = provider.getCapabilities()
+        val capabilities = provider.getCapabilities(provider.defaultVariantId())
         println("SPARQL Version: ${capabilities.sparqlVersion}")
         println("RDF-star: ${capabilities.supportsRdfStar}")
         println("Property Paths: ${capabilities.supportsPropertyPaths}")
@@ -512,20 +514,20 @@ fun providerCapabilitiesExample() {
     // Provider selection based on capabilities
     println("\n=== Provider Selection ===")
     
-    val rdfStarProvider = allProviders.values.find { 
-        it.getCapabilities().supportsRdfStar 
+    val rdfStarProvider = allProviders.find { 
+        it.getCapabilities(it.defaultVariantId()).supportsRdfStar 
     }
-    println("RDF-star provider: ${rdfStarProvider?.getType()}")
+    println("RDF-star provider: ${rdfStarProvider?.id}")
     
-    val federationProvider = allProviders.values.find { 
-        it.getCapabilities().supportsFederation 
+    val federationProvider = allProviders.find { 
+        it.getCapabilities(it.defaultVariantId()).supportsFederation 
     }
-    println("Federation provider: ${federationProvider?.getType()}")
+    println("Federation provider: ${federationProvider?.id}")
     
-    val inferenceProvider = allProviders.values.find { 
-        it.getCapabilities().supportsInference 
+    val inferenceProvider = allProviders.find { 
+        it.getCapabilities(it.defaultVariantId()).supportsInference 
     }
-    println("Inference provider: ${inferenceProvider?.getType()}")
+    println("Inference provider: ${inferenceProvider?.id}")
 }
 ```
 
@@ -548,3 +550,6 @@ For questions about provider capabilities in Kastor:
 ---
 
 *Kastor provider capability system is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

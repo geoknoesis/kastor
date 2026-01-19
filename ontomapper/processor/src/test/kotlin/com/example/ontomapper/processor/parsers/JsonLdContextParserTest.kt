@@ -1,7 +1,7 @@
 package com.example.ontomapper.processor.parsers
 
-import com.example.ontomapper.processor.model.JsonLdContext
-import com.example.ontomapper.processor.model.JsonLdProperty
+import com.example.ontomapper.processor.model.JsonLdType
+import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -69,23 +69,23 @@ class JsonLdContextParserTest {
         assertEquals("http://www.w3.org/2001/XMLSchema#", context.prefixes["xsd"])
 
         // Check type mappings
-        assertEquals("http://www.w3.org/ns/dcat#Catalog", context.typeMappings["Catalog"])
-        assertEquals("http://www.w3.org/ns/dcat#Dataset", context.typeMappings["Dataset"])
-        assertEquals("http://www.w3.org/ns/dcat#Distribution", context.typeMappings["Distribution"])
-        assertEquals("http://xmlns.com/foaf/0.1/Agent", context.typeMappings["Agent"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Catalog"), context.typeMappings["Catalog"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Dataset"), context.typeMappings["Dataset"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Distribution"), context.typeMappings["Distribution"])
+        assertEquals(Iri("http://xmlns.com/foaf/0.1/Agent"), context.typeMappings["Agent"])
 
         // Check property mappings
-        assertEquals("http://purl.org/dc/terms/title", context.propertyMappings["title"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["title"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/title"), context.propertyMappings["title"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["title"]!!.type)
 
-        assertEquals("http://purl.org/dc/terms/description", context.propertyMappings["description"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["description"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/description"), context.propertyMappings["description"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["description"]!!.type)
 
-        assertEquals("http://purl.org/dc/terms/publisher", context.propertyMappings["publisher"]!!.id)
-        assertEquals("@id", context.propertyMappings["publisher"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/publisher"), context.propertyMappings["publisher"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["publisher"]!!.type)
 
-        assertEquals("http://www.w3.org/ns/dcat#dataset", context.propertyMappings["dataset"]!!.id)
-        assertEquals("@id", context.propertyMappings["dataset"]!!.type)
+        assertEquals(Iri("http://www.w3.org/ns/dcat#dataset"), context.propertyMappings["dataset"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["dataset"]!!.type)
     }
 
     @Test
@@ -124,11 +124,11 @@ class JsonLdContextParserTest {
 
         val context = parser.parseContextContent(contextContent)
 
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["stringProp"]!!.type)
-        assertEquals("http://www.w3.org/2001/XMLSchema#int", context.propertyMappings["intProp"]!!.type)
-        assertEquals("http://www.w3.org/2001/XMLSchema#boolean", context.propertyMappings["booleanProp"]!!.type)
-        assertEquals("http://www.w3.org/2001/XMLSchema#double", context.propertyMappings["doubleProp"]!!.type)
-        assertEquals("http://www.w3.org/2001/XMLSchema#anyURI", context.propertyMappings["anyURIProp"]!!.type)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["stringProp"]!!.type)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#int")), context.propertyMappings["intProp"]!!.type)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#boolean")), context.propertyMappings["booleanProp"]!!.type)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#double")), context.propertyMappings["doubleProp"]!!.type)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#anyURI")), context.propertyMappings["anyURIProp"]!!.type)
         assertNull(context.propertyMappings["noTypeProp"]!!.type)
     }
 
@@ -158,14 +158,14 @@ class JsonLdContextParserTest {
 
         val context = parser.parseContextContent(contextContent)
 
-        assertEquals("http://www.w3.org/ns/dcat#dataset", context.propertyMappings["dataset"]!!.id)
-        assertEquals("@id", context.propertyMappings["dataset"]!!.type)
+        assertEquals(Iri("http://www.w3.org/ns/dcat#dataset"), context.propertyMappings["dataset"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["dataset"]!!.type)
 
-        assertEquals("http://purl.org/dc/terms/publisher", context.propertyMappings["publisher"]!!.id)
-        assertEquals("@id", context.propertyMappings["publisher"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/publisher"), context.propertyMappings["publisher"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["publisher"]!!.type)
 
-        assertEquals("http://www.w3.org/ns/dcat#distribution", context.propertyMappings["distribution"]!!.id)
-        assertEquals("@id", context.propertyMappings["distribution"]!!.type)
+        assertEquals(Iri("http://www.w3.org/ns/dcat#distribution"), context.propertyMappings["distribution"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["distribution"]!!.type)
     }
 
     @Test
@@ -175,6 +175,7 @@ class JsonLdContextParserTest {
               "@context": {
                 "dcat": "http://www.w3.org/ns/dcat#",
                 "dcterms": "http://purl.org/dc/terms/",
+                "xsd": "http://www.w3.org/2001/XMLSchema#",
                 
                 "Catalog": "dcat:Catalog",
                 "Dataset": "dcat:Dataset",
@@ -197,12 +198,12 @@ class JsonLdContextParserTest {
         assertEquals("http://purl.org/dc/terms/", context.prefixes["dcterms"])
 
         // Should have type mappings
-        assertEquals("http://www.w3.org/ns/dcat#Catalog", context.typeMappings["Catalog"])
-        assertEquals("http://www.w3.org/ns/dcat#Dataset", context.typeMappings["Dataset"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Catalog"), context.typeMappings["Catalog"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Dataset"), context.typeMappings["Dataset"])
 
         // Should have property mappings
-        assertEquals("http://purl.org/dc/terms/title", context.propertyMappings["title"]!!.id)
-        assertEquals("http://purl.org/dc/terms/description", context.propertyMappings["description"]!!.id)
+        assertEquals(Iri("http://purl.org/dc/terms/title"), context.propertyMappings["title"]!!.id)
+        assertEquals(Iri("http://purl.org/dc/terms/description"), context.propertyMappings["description"]!!.id)
     }
 
     @Test
@@ -258,8 +259,8 @@ class JsonLdContextParserTest {
 
         assertTrue(context.prefixes.isEmpty())
         assertEquals(2, context.typeMappings.size)
-        assertEquals("http://www.w3.org/ns/dcat#Catalog", context.typeMappings["Catalog"])
-        assertEquals("http://www.w3.org/ns/dcat#Dataset", context.typeMappings["Dataset"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Catalog"), context.typeMappings["Catalog"])
+        assertEquals(Iri("http://www.w3.org/ns/dcat#Dataset"), context.typeMappings["Dataset"])
         assertTrue(context.propertyMappings.isEmpty())
     }
 
@@ -296,6 +297,23 @@ class JsonLdContextParserTest {
     }
 
     @Test
+    fun `parseContext rejects unknown prefixes`() {
+        val contextContent = """
+            {
+              "@context": {
+                "title": {
+                  "@id": "dcterms:title"
+                }
+              }
+            }
+        """.trimIndent()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parseContextContent(contextContent)
+        }
+    }
+
+    @Test
     fun `parseContext from input stream works`() {
         val contextContent = """
             {
@@ -315,8 +333,8 @@ class JsonLdContextParserTest {
         val context = parser.parseContext(inputStream)
 
         assertEquals("http://www.w3.org/ns/dcat#", context.prefixes["dcat"])
-        assertEquals("http://purl.org/dc/terms/title", context.propertyMappings["title"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["title"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/title"), context.propertyMappings["title"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["title"]!!.type)
     }
 
     @Test
@@ -350,16 +368,28 @@ class JsonLdContextParserTest {
 
         val context = parser.parseContextContent(contextContent)
 
-        assertEquals("http://www.w3.org/ns/dcat#downloadURL", context.propertyMappings["downloadURL"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#anyURI", context.propertyMappings["downloadURL"]!!.type)
+        assertEquals(Iri("http://www.w3.org/ns/dcat#downloadURL"), context.propertyMappings["downloadURL"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#anyURI")), context.propertyMappings["downloadURL"]!!.type)
 
-        assertEquals("http://www.w3.org/ns/dcat#mediaType", context.propertyMappings["mediaType"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["mediaType"]!!.type)
+        assertEquals(Iri("http://www.w3.org/ns/dcat#mediaType"), context.propertyMappings["mediaType"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["mediaType"]!!.type)
 
-        assertEquals("http://purl.org/dc/terms/format", context.propertyMappings["format"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["format"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/format"), context.propertyMappings["format"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["format"]!!.type)
 
-        assertEquals("http://purl.org/dc/terms/keyword", context.propertyMappings["keyword"]!!.id)
-        assertEquals("http://www.w3.org/2001/XMLSchema#string", context.propertyMappings["keyword"]!!.type)
+        assertEquals(Iri("http://purl.org/dc/terms/keyword"), context.propertyMappings["keyword"]!!.id)
+        assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["keyword"]!!.type)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

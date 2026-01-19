@@ -154,3 +154,12 @@ data class RegistryStatistics(
     val unsupportedProfiles: List<ValidationProfile>,
     val providersByProfile: Map<ValidationProfile, List<String>>
 )
+
+
+
+
+
+
+
+
+

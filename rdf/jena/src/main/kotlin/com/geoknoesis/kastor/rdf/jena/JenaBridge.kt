@@ -20,7 +20,7 @@ object JenaBridge {
      * @param model The Jena Model to convert
      * @return A Kastor RdfGraph that wraps the Jena Model
      */
-    fun fromJenaModel(model: Model): RdfGraph {
+    fun fromJenaModel(model: Model): MutableRdfGraph {
         return JenaGraph(model)
     }
 
@@ -30,7 +30,7 @@ object JenaBridge {
      * @param graph The Jena Graph to convert
      * @return A Kastor RdfGraph that wraps the Jena Graph
      */
-    fun fromJenaGraph(graph: Graph): RdfGraph {
+    fun fromJenaGraph(graph: Graph): MutableRdfGraph {
         val model = ModelFactory.createModelForGraph(graph)
         return JenaGraph(model)
     }
@@ -73,7 +73,7 @@ object JenaBridge {
      * 
      * @return A new empty Kastor RdfGraph backed by a Jena Model
      */
-    fun createEmptyModel(): RdfGraph {
+    fun createEmptyModel(): MutableRdfGraph {
         return fromJenaModel(ModelFactory.createDefaultModel())
     }
 
@@ -82,7 +82,7 @@ object JenaBridge {
      * 
      * @return A new empty Kastor RdfGraph backed by a Jena Graph
      */
-    fun createEmptyGraph(): RdfGraph {
+    fun createEmptyGraph(): MutableRdfGraph {
         val model = ModelFactory.createDefaultModel()
         return fromJenaGraph(model.graph)
     }
@@ -92,7 +92,7 @@ object JenaBridge {
      * 
      * @return A Kastor RdfGraph backed by a Jena Model with RDFS inference
      */
-    fun createInferenceModel(): RdfGraph {
+    fun createInferenceModel(): MutableRdfGraph {
         val model = ModelFactory.createRDFSModel(ModelFactory.createDefaultModel())
         return fromJenaModel(model)
     }
@@ -102,7 +102,7 @@ object JenaBridge {
      * 
      * @return A Kastor RdfGraph backed by a Jena Model with OWL inference
      */
-    fun createOwlInferenceModel(): RdfGraph {
+    fun createOwlInferenceModel(): MutableRdfGraph {
         val model = ModelFactory.createOntologyModel()
         return fromJenaModel(model)
     }
@@ -114,7 +114,7 @@ object JenaBridge {
      * @param format The RDF format (e.g., "TURTLE", "RDF/XML", "JSON-LD")
      * @return A Kastor RdfGraph containing the loaded data
      */
-    fun fromString(rdfData: String, format: String = "TURTLE"): RdfGraph {
+    fun fromString(rdfData: String, format: String = "TURTLE"): MutableRdfGraph {
         val model = ModelFactory.createDefaultModel()
         val inputStream = rdfData.byteInputStream()
         model.read(inputStream, null, format)
@@ -128,7 +128,7 @@ object JenaBridge {
      * @param format The RDF format (e.g., "TURTLE", "RDF/XML", "JSON-LD")
      * @return A Kastor RdfGraph containing the loaded data
      */
-    fun fromFile(filePath: String, format: String = "TURTLE"): RdfGraph {
+    fun fromFile(filePath: String, format: String = "TURTLE"): MutableRdfGraph {
         val model = ModelFactory.createDefaultModel()
         model.read(filePath, format)
         return fromJenaModel(model)
@@ -141,7 +141,7 @@ object JenaBridge {
      * @param format The RDF format (e.g., "TURTLE", "RDF/XML", "JSON-LD")
      * @return A Kastor RdfGraph containing the loaded data
      */
-    fun fromUrl(url: String, format: String = "TURTLE"): RdfGraph {
+    fun fromUrl(url: String, format: String = "TURTLE"): MutableRdfGraph {
         val model = ModelFactory.createDefaultModel()
         model.read(url, format)
         return fromJenaModel(model)
@@ -219,12 +219,12 @@ object JenaBridge {
 /**
  * Converts a Jena Model to a Kastor RdfGraph.
  */
-fun Model.toKastorGraph(): RdfGraph = JenaBridge.fromJenaModel(this)
+fun Model.toKastorGraph(): MutableRdfGraph = JenaBridge.fromJenaModel(this)
 
 /**
  * Converts a Jena Graph to a Kastor RdfGraph.
  */
-fun Graph.toKastorGraph(): RdfGraph = JenaBridge.fromJenaGraph(this)
+fun Graph.toKastorGraph(): MutableRdfGraph = JenaBridge.fromJenaGraph(this)
 
 /**
  * Converts a Kastor RdfGraph to a Jena Model.
@@ -255,3 +255,12 @@ fun RdfGraph.getJenaGraph(): Graph? = JenaBridge.getJenaGraph(this)
  * Serializes a Kastor RdfGraph to a string.
  */
 fun RdfGraph.serialize(format: String = "TURTLE"): String = JenaBridge.toString(this, format)
+
+
+
+
+
+
+
+
+

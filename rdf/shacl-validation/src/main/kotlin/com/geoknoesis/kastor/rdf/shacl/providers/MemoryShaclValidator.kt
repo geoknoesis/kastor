@@ -98,8 +98,8 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         // Convert shapes to a temporary graph for processing
         val shapesGraph = Rdf.graph {
             for (shape in shapes) {
-                val shapeIri = iri(shape.shapeUri)
-                shapeIri - "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" - "http://www.w3.org/ns/shacl#NodeShape"
+                val shapeIri = Iri(shape.shapeUri)
+                shapeIri - Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type") - Iri("http://www.w3.org/ns/shacl#NodeShape")
                 
                 for (constraint in shape.constraints) {
                     // Add constraint information to the graph
@@ -318,7 +318,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         
         // If shape has a specific target node, return it
         if (shape.targetNode != null) {
-            resources.add(iri(shape.targetNode))
+            resources.add(Iri(shape.targetNode))
             return resources.toList()
         }
         
@@ -488,3 +488,12 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
  * Validation exception.
  */
 class ValidationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+
+
+
+
+
+
+
+

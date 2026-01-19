@@ -241,13 +241,13 @@ class VocabularyTest {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
         
-        val resource = iri("http://example.org/resource")
+        val resource = Iri("http://example.org/resource")
         
         // Test using vocabulary terms in triples
-        val triple1 = RdfTriple(resource, DCTERMS.title, literal("My Resource"))
-        val triple2 = RdfTriple(resource, FOAF.name, literal("Resource Name"))
+        val triple1 = RdfTriple(resource, DCTERMS.title, Literal("My Resource"))
+        val triple2 = RdfTriple(resource, FOAF.name, Literal("Resource Name"))
         val triple3 = RdfTriple(resource, RDF.type, FOAF.Document)
-        val triple4 = RdfTriple(resource, RDFS.label, literal("Resource Label"))
+        val triple4 = RdfTriple(resource, RDFS.label, Literal("Resource Label"))
         
         // Add triples to graph
         graph.addTriple(triple1)
@@ -265,3 +265,12 @@ class VocabularyTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

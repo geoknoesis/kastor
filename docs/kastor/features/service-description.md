@@ -467,3 +467,6 @@ For questions about SPARQL Service Description in Kastor:
 ---
 
 *Kastor SPARQL Service Description support is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

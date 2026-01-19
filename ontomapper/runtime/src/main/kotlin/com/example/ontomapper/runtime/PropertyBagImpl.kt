@@ -1,4 +1,4 @@
-﻿package com.example.ontomapper.runtime
+package com.example.ontomapper.runtime
 
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
@@ -47,8 +47,20 @@ internal class PropertyBagImpl(
   override fun <T : Any> objects(pred: Iri, asType: Class<T>): List<T> =
     values(pred).mapNotNull { term ->
       when (term) {
-        is Iri, is BlankNode -> OntoMapper.materialize(RdfRef(term, graph), asType, false)
+        is Iri, is BlankNode -> OntoMapper.materialize(RdfRef(term, graph), asType)
         else -> null
       }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

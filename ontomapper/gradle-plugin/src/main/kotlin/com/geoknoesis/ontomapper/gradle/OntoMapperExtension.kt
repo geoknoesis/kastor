@@ -41,3 +41,15 @@ open class OntoMapperExtension {
         ontologies?.configure()
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

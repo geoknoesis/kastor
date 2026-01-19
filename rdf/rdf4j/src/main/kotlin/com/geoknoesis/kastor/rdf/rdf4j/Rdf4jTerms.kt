@@ -81,3 +81,12 @@ object Rdf4jTerms {
         }
     }
 }
+
+
+
+
+
+
+
+
+

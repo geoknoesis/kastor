@@ -180,3 +180,12 @@ enum class ViolationSeverity {
     VIOLATION,   // Constraint violation
     ERROR        // Critical error
 }
+
+
+
+
+
+
+
+
+

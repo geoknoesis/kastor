@@ -99,6 +99,19 @@ class PrefixMappingProcessorTest {
     }
 
     @Test
+    fun `QName mappings apply to class and property IRIs`() {
+        val prefixMappings = mapOf(
+            "ex" to "http://example.org/vocab#"
+        )
+
+        val classIri = QNameResolver.resolveQName("ex:Person", prefixMappings)
+        val propertyIri = QNameResolver.resolveQName("ex:name", prefixMappings)
+
+        assertEquals("http://example.org/vocab#Person", classIri)
+        assertEquals("http://example.org/vocab#name", propertyIri)
+    }
+
+    @Test
     fun `prefix mappings work with complex scenarios`() {
         val prefixMappings = mapOf(
             "dcat" to "http://www.w3.org/ns/dcat#",
@@ -187,3 +200,15 @@ class PrefixMappingProcessorTest {
         assertEquals("simpleName", QNameResolver.resolveQName("simpleName", singleMapping))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

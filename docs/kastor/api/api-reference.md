@@ -41,8 +41,8 @@ interface RdfRepository : Closeable {
     fun readTransaction(operations: RdfRepository.() -> Unit)
     
     // Graph operations
-    fun getGraph(graphName: Iri): RdfGraph
-    fun createGraph(graphName: Iri): RdfGraph
+    fun getGraph(graphName: Iri): MutableRdfGraph
+    fun createGraph(graphName: Iri): MutableRdfGraph
     fun listGraphs(): List<Iri>
     fun removeGraph(graphName: Iri)
     
@@ -60,19 +60,27 @@ interface RdfRepository : Closeable {
 
 ### RdfGraph
 
-Interface for managing named graphs.
+Read-only graph interface.
 
 ```kotlin
 interface RdfGraph {
-    val name: Iri
-    
-    fun addTriples(triples: Collection<RdfTriple>)
+    fun hasTriple(triple: RdfTriple): Boolean
+    fun getTriples(): List<RdfTriple>
+    fun size(): Int
+}
+```
+
+### MutableRdfGraph
+
+Mutable graph operations.
+
+```kotlin
+interface MutableRdfGraph : RdfGraph {
     fun addTriple(triple: RdfTriple)
-    fun removeTriples(triples: Collection<RdfTriple>)
-    fun removeTriple(triple: RdfTriple)
-    fun clear()
-    fun isEmpty(): Boolean
-    fun size(): Long
+    fun addTriples(triples: Collection<RdfTriple>)
+    fun removeTriple(triple: RdfTriple): Boolean
+    fun removeTriples(triples: Collection<RdfTriple>): Boolean
+    fun clear(): Boolean
 }
 ```
 
@@ -82,9 +90,13 @@ Interface for creating RDF repositories.
 
 ```kotlin
 interface RdfApiProvider {
-    fun create(config: RdfConfig): RdfRepository
-    fun getSupportedTypes(): List<String>
-    fun getConfigVariants(): List<RdfConfigVariant>
+    val id: String
+    val name: String
+    val version: String
+    fun variants(): List<RdfVariant>
+    fun defaultVariantId(): String
+    fun createRepository(variantId: String, config: RdfConfig): RdfRepository
+    fun getCapabilities(variantId: String? = null): ProviderCapabilities
 }
 ```
 
@@ -122,8 +134,10 @@ Configuration for RDF repositories.
 
 ```kotlin
 data class RdfConfig(
-    val type: String,
-    val params: Map<String, Any> = emptyMap()
+    val providerId: String? = null,
+    val variantId: String? = null,
+    val options: Map<String, String> = emptyMap(),
+    val requirements: ProviderRequirements? = null
 )
 ```
 
@@ -430,9 +444,6 @@ fun RdfRepository.statisticsFormatted(): String
 ### Graph Extensions
 
 ```kotlin
-fun RdfGraph.addTriplesAndReturn(triples: Collection<RdfTriple>): RdfGraph
-fun RdfGraph.removeTriplesAndReturn(triples: Collection<RdfTriple>): RdfGraph
-fun RdfGraph.clearAndReturn(): RdfGraph
 ```
 
 ### Triple DSL Extensions
@@ -513,26 +524,26 @@ class RdfConfigurationException(message: String, cause: Throwable? = null) : Rdf
 
 ```kotlin
 // In-memory repository
-"jena:memory"
+providerId = "jena", variantId = "memory"
 
 // TDB2 persistent repository
-"jena:tdb2"
+providerId = "jena", variantId = "tdb2"
 
 // In-memory with inference
-"jena:memory:inference"
+providerId = "jena", variantId = "memory-inference"
 ```
 
 #### RDF4J Backend
 
 ```kotlin
 // In-memory repository
-"rdf4j:memory"
+providerId = "rdf4j", variantId = "memory"
 
 // Native persistent repository
-"rdf4j:native"
+providerId = "rdf4j", variantId = "native"
 
 // SPARQL endpoint
-"rdf4j:sparql"
+providerId = "sparql", variantId = "sparql"
 ```
 
 ### Configuration Parameters
@@ -541,11 +552,12 @@ class RdfConfigurationException(message: String, cause: Throwable? = null) : Rdf
 
 ```kotlin
 RdfConfig(
-    type = "jena:tdb2",
-    params = mapOf(
+    providerId = "jena",
+    variantId = "tdb2",
+    options = mapOf(
         "location" to "/path/to/storage",
         "syncMode" to "WRITE_METADATA",
-        "unionDefaultGraph" to true
+        "unionDefaultGraph" to "true"
     )
 )
 ```
@@ -554,11 +566,12 @@ RdfConfig(
 
 ```kotlin
 RdfConfig(
-    type = "rdf4j:native",
-    params = mapOf(
+    providerId = "rdf4j",
+    variantId = "native",
+    options = mapOf(
         "location" to "/path/to/storage",
-        "syncDelay" to 1000L,
-        "tripleIndexes" to listOf("spoc", "posc", "psoc")
+        "syncDelay" to "1000",
+        "tripleIndexes" to "spoc,posc,psoc"
     )
 )
 ```
@@ -567,11 +580,12 @@ RdfConfig(
 
 ```kotlin
 RdfConfig(
-    type = "rdf4j:sparql",
-    params = mapOf(
+    providerId = "sparql",
+    variantId = "sparql",
+    options = mapOf(
         "queryEndpoint" to "https://dbpedia.org/sparql",
         "updateEndpoint" to "https://example.org/update",
-        "timeout" to 30000
+        "timeout" to "30000"
     )
 )
 ```
@@ -709,9 +723,13 @@ Service loader for discovering RDF providers.
 ```kotlin
 object RdfApiRegistry {
     fun discoverProviders(): List<RdfApiProvider>
-    fun getProvider(type: String): RdfApiProvider?
+    fun getProvider(providerId: String): RdfApiProvider?
     fun getSupportedTypes(): List<String>
-    fun getConfigVariants(): Map<String, List<RdfConfigVariant>>
+    fun supports(providerId: String): Boolean
+    fun supportsVariant(providerId: String, variantId: String): Boolean
+    fun selectProvider(requirements: ProviderRequirements): ProviderSelection?
+    fun register(provider: RdfApiProvider)
+    fun create(config: RdfConfig): RdfRepository
 }
 ```
 
@@ -815,3 +833,6 @@ repo.addBatch(batchSize = 1000) {
 ---
 
 **🎉 This completes the comprehensive API reference for Kastor RDF!**
+
+
+

@@ -340,3 +340,15 @@ class ShaclParserTest {
         assertEquals("http://www.w3.org/ns/dcat#Catalog", shapes[0].targetClass)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

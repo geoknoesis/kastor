@@ -1,0 +1,41 @@
+{
+  "@context": {
+    "dcat": "http://www.w3.org/ns/dcat#",
+    "dct": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "vcard": "http://www.w3.org/2006/vcard/ns#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "spdx": "http://spdx.org/rdf/terms#",
+    "locn": "http://www.w3.org/ns/locn#",
+    "dcat-us": "http://resources.data.gov/def/dcat-us/",
+    "dcat-us-3": "http://resources.data.gov/def/dcat-us/3.0/",
+    
+    "title": "dct:title",
+    "description": "dct:description",
+    "publisher": "dct:publisher",
+    "issued": "dct:issued",
+    "modified": "dct:modified",
+    "license": "dct:license",
+    "rights": "dct:rights",
+    "spatial": "dct:spatial",
+    "temporal": "dct:temporal",
+    "keyword": "dcat:keyword",
+    "theme": "dcat:theme",
+    "contactPoint": "dcat:contactPoint",
+    "distribution": "dcat:distribution",
+    "dataset": "dcat:dataset",
+    "accessURL": "dcat:accessURL",
+    "downloadURL": "dcat:downloadURL",
+    "mediaType": "dcat:mediaType",
+    "format": "dct:format",
+    "byteSize": "dcat:byteSize",
+    
+    "Catalog": "dcat:Catalog",
+    "Dataset": "dcat:Dataset",
+    "Distribution": "dcat:Distribution",
+    "DataService": "dcat:DataService",
+    "Agent": "foaf:Agent",
+    "Organization": "foaf:Organization"
+  }
+}
+

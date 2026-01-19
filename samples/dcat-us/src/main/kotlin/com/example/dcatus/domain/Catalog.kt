@@ -21,3 +21,12 @@ interface Catalog {
     @get:RdfProperty(iri = "http://purl.org/dc/terms/publisher")
     val publisher: List<Agent>
 }
+
+
+
+
+
+
+
+
+

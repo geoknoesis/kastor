@@ -69,3 +69,15 @@ class OntoMapperPlugin : Plugin<Project> {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

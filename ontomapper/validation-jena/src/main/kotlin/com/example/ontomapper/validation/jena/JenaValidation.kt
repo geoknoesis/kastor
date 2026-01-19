@@ -1,7 +1,10 @@
-﻿package com.example.ontomapper.validation.jena
+package com.example.ontomapper.validation.jena
 
-import com.example.ontomapper.runtime.ValidationPort
-import com.example.ontomapper.runtime.ValidationRegistry
+import com.example.ontomapper.runtime.ShaclSeverity
+import com.example.ontomapper.runtime.ShaclValidation
+import com.example.ontomapper.runtime.ShaclValidator
+import com.example.ontomapper.runtime.ShaclViolation
+import com.example.ontomapper.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
@@ -14,98 +17,88 @@ import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.RDFNode
 import org.apache.jena.rdf.model.Resource
+import org.apache.jena.rdf.model.ResourceFactory
+import org.apache.jena.shacl.ShaclValidator
 import org.apache.jena.sparql.graph.GraphFactory
+import org.apache.jena.vocabulary.RDF
 
 /**
  * Jena-based SHACL validation adapter.
  * Bridges Kastor RdfGraph to Jena Model for SHACL validation.
  */
-class JenaValidation : ValidationPort {
+class JenaValidation : ShaclValidator {
   
   companion object {
-    private const val RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-    private const val FOAF_PERSON = "http://xmlns.com/foaf/0.1/Person"
-    private const val FOAF_NAME = "http://xmlns.com/foaf/0.1/name"
-    private const val ERROR_PERSON_NAME = "FOAF Person must have a name property"
+    private const val SHACL_NS = "http://www.w3.org/ns/shacl#"
     private const val ERROR_CONVERT_RESOURCE = "Cannot convert %s to Jena Resource"
     private const val ERROR_CONVERT_NODE = "Cannot convert %s to Jena RDFNode"
+    private const val ERROR_NO_FOCUS_RESULTS = "SHACL validation failed for focus node"
+    private val NODE_SHAPE = ResourceFactory.createResource("${SHACL_NS}NodeShape")
+    private val FOCUS_NODE = ResourceFactory.createProperty("${SHACL_NS}focusNode")
+    private val RESULT_MESSAGE = ResourceFactory.createProperty("${SHACL_NS}resultMessage")
+    private val RESULT_PATH = ResourceFactory.createProperty("${SHACL_NS}resultPath")
+    private val RESULT_SEVERITY = ResourceFactory.createProperty("${SHACL_NS}resultSeverity")
   }
   
   init {
-    ValidationRegistry.register(this)
+    ShaclValidation.register(this)
   }
   
   /**
    * Validates the focus node against SHACL shapes.
-   * 
+   *
    * This implementation performs basic SHACL validation using Jena's capabilities.
    * For production use, configure proper SHACL shapes and validation rules.
    */
-  override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-    try {
-      // Convert Kastor RDF graph to Jena model for validation
+  override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+    return try {
       val jenaModel = convertToJenaModel(data)
-      
-      // Perform basic validation rules
-      validateBasicDataQuality(jenaModel, focus)
-      
-      // Additional validation rules can be added here
-      // For example, loading external SHACL shapes and validating against them
-      
-    } catch (e: ValidationException) {
-      // Re-throw ValidationException directly to maintain API contract
-      throw e
+
+      if (!jenaModel.contains(null, RDF.type, NODE_SHAPE)) {
+        return ValidationResult.Ok
+      }
+
+      val report = ShaclValidator.get().validate(jenaModel, jenaModel)
+      if (report.conforms()) {
+        return ValidationResult.Ok
+      }
+
+      val focusResource = when (focus) {
+        is Iri -> jenaModel.createResource(focus.value)
+        is BlankNode -> jenaModel.createResource(AnonId(focus.id))
+        else -> null
+      } ?: return ValidationResult.Violations(listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)))
+
+      val reportModel = report.model
+      val focusResults = reportModel.listResourcesWithProperty(FOCUS_NODE, focusResource).toList()
+      if (focusResults.isEmpty()) {
+        return ValidationResult.Violations(listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)))
+      }
+
+      val violations = focusResults.flatMap { result ->
+        val path = result.getProperty(RESULT_PATH)?.`object`?.asResource()?.uri?.let { Iri(it) }
+        val severity = result.getProperty(RESULT_SEVERITY)?.`object`?.asResource()?.uri
+          ?.let { mapSeverity(it) } ?: ShaclSeverity.Violation
+        val messages = result.listProperties(RESULT_MESSAGE)
+          .toList()
+          .mapNotNull { it.`object`?.toString() }
+          .ifEmpty { listOf(ERROR_NO_FOCUS_RESULTS) }
+        messages.map { message -> ShaclViolation(path, message, severity) }
+      }.ifEmpty { listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)) }
+
+      ValidationResult.Violations(violations)
     } catch (e: Exception) {
-      throw RuntimeException("SHACL validation failed: ${e.message}", e)
+      ValidationResult.Violations(listOf(ShaclViolation(null, "SHACL validation failed: ${e.message}")))
     }
   }
-  
-  /**
-   * Performs basic data quality validation.
-   * This can be extended with more sophisticated SHACL rules.
-   */
-  private fun validateBasicDataQuality(model: Model, focus: RdfTerm) {
-    val resource = when (focus) {
-      is Iri -> model.getResource(focus.value)
-      is BlankNode -> model.getResource(AnonId(focus.id))
-      else -> {
-        // For literals, we can't validate as resources
-        return
-      }
+
+  private fun mapSeverity(uri: String): ShaclSeverity {
+    return when (uri) {
+      "${SHACL_NS}Violation" -> ShaclSeverity.Violation
+      "${SHACL_NS}Warning" -> ShaclSeverity.Warning
+      "${SHACL_NS}Info" -> ShaclSeverity.Info
+      else -> ShaclSeverity.Violation
     }
-    
-    // Basic validation rules
-    validateResourceProperties(resource)
-  }
-  
-  /**
-   * Validates that a resource has appropriate properties.
-   */
-  private fun validateResourceProperties(resource: Resource) {
-    // Basic validation: if it's a FOAF.Person, it should have a name
-    val properties = resource.listProperties()
-    val propertyList = properties.toList()
-    
-    val hasType = propertyList.any { 
-      it.predicate.uri == RDF_TYPE && it.`object`.isURIResource && it.`object`.asResource().uri == FOAF_PERSON
-    }
-    
-    if (hasType) {
-      val hasName = propertyList.any { 
-        it.predicate.uri == FOAF_NAME
-      }
-      
-      if (!hasName) {
-        throw ValidationException(ERROR_PERSON_NAME)
-      }
-    }
-    
-    // Additional validation rules can be added here
-    // For example:
-    // - Validate property value formats
-    // - Check for circular references
-    // - Validate cardinality constraints
-    // - Check for data quality issues
   }
   
   private fun convertToJenaModel(kastorGraph: RdfGraph): Model {
@@ -158,4 +151,12 @@ class JenaValidation : ValidationPort {
 /**
  * Exception thrown when SHACL validation fails.
  */
-class ValidationException(message: String) : RuntimeException(message)
+
+
+
+
+
+
+
+
+

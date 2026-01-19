@@ -26,7 +26,7 @@ class UpdatedMinusOperatorExample {
         println("1. Single Values:")
         val repo1 = Rdf.memory()
         repo1.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Alice"
             person - FOAF.age - 30
@@ -42,11 +42,11 @@ class UpdatedMinusOperatorExample {
         println("2. Arrays - Multiple Individual Triples:")
         val repo2 = Rdf.memory()
         repo2.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = arrayOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             val emails = arrayOf("alice@example.com", "alice@work.com")
             
@@ -64,11 +64,11 @@ class UpdatedMinusOperatorExample {
         println("3. Lists - RDF Lists:")
         val repo3 = Rdf.memory()
         repo3.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             val subjects = listOf("Technology", "Programming", "RDF")
             
@@ -86,9 +86,9 @@ class UpdatedMinusOperatorExample {
         println("4. Mixed Types in Arrays:")
         val repo4 = Rdf.memory()
         repo4.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
             val bnode = bnode("anon1")
             
             person - FOAF.name - "Alice"
@@ -105,9 +105,9 @@ class UpdatedMinusOperatorExample {
         println("5. Mixed Types in Lists (RDF List):")
         val repo5 = Rdf.memory()
         repo5.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
             val bnode = bnode("anon1")
             
             person - FOAF.name - "Alice"
@@ -124,7 +124,7 @@ class UpdatedMinusOperatorExample {
         println("6. Empty List - rdf:nil:")
         val repo6 = Rdf.memory()
         repo6.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Alice"
             person - FOAF.knows - emptyList<Any>()  // Creates rdf:nil
@@ -138,10 +138,10 @@ class UpdatedMinusOperatorExample {
         // 7. Standalone graph with both arrays and lists
         println("7. Standalone Graph - Arrays vs Lists:")
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2")
             )
             val emails = arrayOf("alice@example.com", "alice@work.com")
             
@@ -176,3 +176,12 @@ class UpdatedMinusOperatorExample {
         repo6.close()
     }
 }
+
+
+
+
+
+
+
+
+

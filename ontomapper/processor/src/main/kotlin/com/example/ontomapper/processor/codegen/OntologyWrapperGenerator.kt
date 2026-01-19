@@ -1,6 +1,7 @@
 package com.example.ontomapper.processor.codegen
 
 import com.example.ontomapper.processor.model.OntologyModel
+import com.example.ontomapper.annotations.ValidationMode
 import com.example.ontomapper.processor.model.ShaclProperty
 import com.example.ontomapper.processor.model.ShaclShape
 import com.google.devtools.ksp.processing.KSPLogger
@@ -9,7 +10,11 @@ import com.google.devtools.ksp.processing.KSPLogger
  * Generator for Kotlin wrapper classes from SHACL shapes and JSON-LD context.
  * Creates RDF-backed wrapper implementations.
  */
-class OntologyWrapperGenerator(private val logger: KSPLogger) {
+class OntologyWrapperGenerator(
+    private val logger: KSPLogger,
+    private val validationMode: ValidationMode = ValidationMode.EMBEDDED,
+    private val externalValidatorClass: String? = null
+) {
 
     /**
      * Generates Kotlin wrapper code from SHACL shapes.
@@ -52,7 +57,7 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
             appendLine(" * Generated from SHACL shape: ${shape.shapeIri}")
             appendLine(" */")
             appendLine("internal class $wrapperName(")
-            appendLine("  override val rdf: RdfHandle")
+            appendLine("  private val input: RdfHandle")
             appendLine(") : $interfaceName, RdfBacked {")
             appendLine()
             
@@ -61,12 +66,19 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
             appendLine(shape.properties.joinToString(",\n") { "    Iri(\"${it.path}\")" })
             appendLine("  )")
             appendLine()
+            appendLine("  override val rdf: RdfHandle by lazy(LazyThreadSafetyMode.PUBLICATION) {")
+            appendLine("    if (input is DefaultRdfHandle) DefaultRdfHandle(input.node, input.graph, known) else input")
+            appendLine("  }")
+            appendLine()
             
             // Generate property implementations
             shape.properties.forEach { property ->
                 appendLine(generatePropertyImplementation(property, context))
                 appendLine()
             }
+
+            appendLine(generateValidationBlock(shape))
+            appendLine()
             
             // Companion object with registry
             appendLine("  companion object {")
@@ -75,6 +87,57 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
             appendLine("    }")
             appendLine("  }")
             appendLine("}")
+        }
+    }
+
+    private fun generateValidationBlock(shape: ShaclShape): String {
+        return when (validationMode) {
+            ValidationMode.NONE -> ""
+            ValidationMode.EXTERNAL -> generateExternalValidation()
+            ValidationMode.EMBEDDED -> generateEmbeddedValidation(shape)
+        }
+    }
+
+    private fun generateExternalValidation(): String {
+        val validatorRef = externalValidatorClass?.takeIf { it.isNotBlank() }
+        return buildString {
+            appendLine("  fun validate(): ValidationResult {")
+            if (validatorRef != null) {
+                appendLine("    return $validatorRef().validate(rdf.graph, rdf.node)")
+            } else {
+                appendLine("    return ShaclValidation.current().validate(rdf.graph, rdf.node)")
+            }
+            appendLine("  }")
+        }
+    }
+
+    private fun generateEmbeddedValidation(shape: ShaclShape): String {
+        return buildString {
+            appendLine("  fun validate(): ValidationResult {")
+            appendLine("    val violations = mutableListOf<ShaclViolation>()")
+            shape.properties.forEach { property ->
+                val pred = property.path
+                val min = property.minCount
+                val max = property.maxCount
+                if (min != null || max != null) {
+                    val countExpr = if (property.targetClass != null) {
+                        "KastorGraphOps.countObjectValues(rdf.graph, rdf.node, Iri(\"$pred\"))"
+                    } else {
+                        "KastorGraphOps.countLiteralValues(rdf.graph, rdf.node, Iri(\"$pred\"))"
+                    }
+                    appendLine("    run {")
+                    appendLine("      val count = $countExpr")
+                    min?.let {
+                        appendLine("      if (count < $it) violations.add(ShaclViolation(Iri(\"$pred\"), \"minCount $it violated\"))")
+                    }
+                    max?.let {
+                        appendLine("      if (count > $it) violations.add(ShaclViolation(Iri(\"$pred\"), \"maxCount $it violated\"))")
+                    }
+                    appendLine("    }")
+                }
+            }
+            appendLine("    return if (violations.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(violations)")
+            appendLine("  }")
         }
     }
 
@@ -94,11 +157,15 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
                 val targetInterfaceName = extractInterfaceName(property.targetClass)
                 if (property.maxCount == 1) {
                     appendLine("    KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"${property.path}\")) { child ->")
-                    appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), $targetInterfaceName::class.java, false)")
-                    appendLine("    }.firstOrNull() ?: error(\"Required object $propertyName missing\")")
+                    appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), $targetInterfaceName::class.java)")
+                    if (property.minCount != null && property.minCount > 0) {
+                        appendLine("    }.firstOrNull() ?: error(\"Required object $propertyName missing\")")
+                    } else {
+                        appendLine("    }.firstOrNull()")
+                    }
                 } else {
                     appendLine("    KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"${property.path}\")) { child ->")
-                    appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), $targetInterfaceName::class.java, false)")
+                    appendLine("      OntoMapper.materialize(RdfRef(child, rdf.graph), $targetInterfaceName::class.java)")
                     appendLine("    }")
                 }
             } else {
@@ -114,12 +181,20 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
                 
                 // Use single value method only if maxCount is exactly 1
                 val isSingleValue = property.maxCount == 1
+                val isRequired = property.minCount != null && property.minCount > 0
                 
                 if (isSingleValue) {
-                    val defaultValue = getDefaultValue(baseType)
-                    appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getSingleValueConversionMethod(baseType)} ?: $defaultValue")
+                    if (isRequired) {
+                        appendLine("    ${requiredLiteralAccessor(baseType, property.path)}")
+                    } else {
+                        appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getSingleValueConversionMethod(baseType)}")
+                    }
                 } else {
-                    appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getConversionMethod(baseType)}")
+                    if (isRequired) {
+                        appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getConversionMethod(baseType)}.ifEmpty { error(\"Required literal $propertyName missing\") }")
+                    } else {
+                        appendLine("    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"${property.path}\")).map { it.lexical }${getConversionMethod(baseType)}")
+                    }
                 }
             }
             
@@ -145,12 +220,12 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
         }
     }
 
-    private fun getDefaultValue(kotlinType: String): String {
+    private fun requiredLiteralAccessor(kotlinType: String, path: String): String {
         return when (kotlinType) {
-            "Int" -> "0"
-            "Double" -> "0.0"
-            "Boolean" -> "false"
-            else -> "\"\""
+            "Int" -> "KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"$path\")).lexical.toInt()"
+            "Double" -> "KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"$path\")).lexical.toDouble()"
+            "Boolean" -> "KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"$path\")).lexical.toBooleanStrict()"
+            else -> "KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"$path\")).lexical"
         }
     }
 
@@ -159,7 +234,11 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
         if (property.targetClass != null) {
             val targetInterfaceName = extractInterfaceName(property.targetClass)
             return if (property.maxCount == 1) {
-                targetInterfaceName
+                if (property.minCount == null || property.minCount == 0) {
+                    "$targetInterfaceName?"
+                } else {
+                    targetInterfaceName
+                }
             } else {
                 "List<$targetInterfaceName>"
             }
@@ -178,11 +257,15 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
         }
         
                 // Return as list if maxCount > 1 or maxCount is null (unbounded)
-                return if (property.maxCount == 1) {
-                    kotlinType
-                } else {
-                    "List<$kotlinType>"
-                }
+        return if (property.maxCount == 1) {
+            if (property.minCount == null || property.minCount == 0) {
+                "$kotlinType?"
+            } else {
+                kotlinType
+            }
+        } else {
+            "List<$kotlinType>"
+        }
     }
 
     private fun extractInterfaceName(classIri: String): String {
@@ -195,3 +278,15 @@ class OntologyWrapperGenerator(private val logger: KSPLogger) {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

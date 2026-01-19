@@ -5,6 +5,7 @@ import com.example.ontomapper.processor.codegen.OntologyWrapperGenerator
 import com.example.ontomapper.processor.model.OntologyModel
 import com.example.ontomapper.processor.parsers.JsonLdContextParser
 import com.example.ontomapper.processor.parsers.ShaclParser
+import com.example.ontomapper.annotations.ValidationAnnotations
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -33,7 +34,7 @@ class OntologyProcessorEndToEndTest {
         }
         shaclParser = ShaclParser(logger)
         contextParser = JsonLdContextParser(logger)
-        interfaceGenerator = InterfaceGenerator(logger)
+        interfaceGenerator = InterfaceGenerator(logger, ValidationAnnotations.NONE)
         wrapperGenerator = OntologyWrapperGenerator(logger)
     }
 
@@ -227,7 +228,7 @@ class OntologyProcessorEndToEndTest {
         assertNotNull(simpleCatalogWrapper)
         assertTrue(simpleCatalogWrapper!!.contains("internal class CatalogWrapper("))
         assertTrue(simpleCatalogWrapper.contains("override val title: String by lazy {"))
-        assertTrue(simpleCatalogWrapper.contains("override val description: String by lazy {"))
+        assertTrue(simpleCatalogWrapper.contains("override val description: String? by lazy {"))
 
         // Verify that generated code follows Kotlin syntax rules
         assertTrue(simpleCatalogInterface.contains("package com.example.test"))
@@ -252,7 +253,7 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper uses correct KastorGraphOps methods
-        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"))"))
     }
 
@@ -408,14 +409,14 @@ class OntologyProcessorEndToEndTest {
         val catalogInterface = interfaces["Catalog"]!!
         assertTrue(catalogInterface.contains("val title: String"))
         assertTrue(catalogInterface.contains("val dataset: List<Dataset>"))
-        assertTrue(catalogInterface.contains("val publisher: Agent"))
+        assertTrue(catalogInterface.contains("val publisher: Agent?"))
 
         // Verify Catalog wrapper has correct object property handling
         val catalogWrapper = wrappers["CatalogWrapper"]!!
         assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogWrapper.contains("override val publisher: Agent by lazy {"))
-        assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java, false)"))
-        assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java, false)"))
+        assertTrue(catalogWrapper.contains("override val publisher: Agent? by lazy {"))
+        assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
+        assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
 
         // Verify Dataset interface has correct relationships
         val datasetInterface = interfaces["Dataset"]!!
@@ -446,3 +447,15 @@ class OntologyProcessorEndToEndTest {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

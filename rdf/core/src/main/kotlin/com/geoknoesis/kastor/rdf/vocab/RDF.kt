@@ -34,3 +34,12 @@ object RDF : Vocabulary {
     val _4: Iri by lazy { term("_4") }
     val _5: Iri by lazy { term("_5") }
 }
+
+
+
+
+
+
+
+
+

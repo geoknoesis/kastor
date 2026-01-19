@@ -19,7 +19,10 @@ annotation class GenerateFromOntology(
     val contextPath: String,
     val packageName: String = "",
     val generateInterfaces: Boolean = true,
-    val generateWrappers: Boolean = true
+    val generateWrappers: Boolean = true,
+    val validationMode: ValidationMode = ValidationMode.EMBEDDED,
+    val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
+    val externalValidatorClass: String = ""
 )
 
 /**
@@ -38,5 +41,32 @@ annotation class OntologyPackage(
     val shaclPath: String,
     val contextPath: String,
     val generateInterfaces: Boolean = true,
-    val generateWrappers: Boolean = true
+    val generateWrappers: Boolean = true,
+    val validationMode: ValidationMode = ValidationMode.EMBEDDED,
+    val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
+    val externalValidatorClass: String = ""
 )
+
+enum class ValidationMode {
+    EMBEDDED,
+    EXTERNAL,
+    NONE
+}
+
+enum class ValidationAnnotations {
+    JAKARTA,
+    JAVAX,
+    NONE
+}
+
+
+
+
+
+
+
+
+
+
+
+

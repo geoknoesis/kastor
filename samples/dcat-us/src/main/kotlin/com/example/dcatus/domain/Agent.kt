@@ -15,3 +15,12 @@ interface Agent {
     @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/homepage")
     val homepage: List<String>
 }
+
+
+
+
+
+
+
+
+

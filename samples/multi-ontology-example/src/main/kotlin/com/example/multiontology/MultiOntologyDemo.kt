@@ -22,12 +22,12 @@ fun main() {
     // Add data from different ontologies
     repo.add {
         // DCAT-US data
-        val catalog = iri("http://example.org/catalog")
+        val catalog = Iri("http://example.org/catalog")
         catalog - RDF.type - DCAT.Catalog
         catalog - DCTERMS.title - "My Data Catalog"
         catalog - DCTERMS.description - "A catalog of datasets"
         
-        val dataset = iri("http://example.org/dataset")
+        val dataset = Iri("http://example.org/dataset")
         dataset - RDF.type - DCAT.Dataset
         dataset - DCTERMS.title - "Sample Dataset"
         dataset - DCTERMS.description - "A sample dataset"
@@ -35,12 +35,12 @@ fun main() {
         catalog - DCAT.dataset - dataset
         
         // Schema.org data
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
         person - RDF.type - SCHEMA.Person
         person - SCHEMA.name - "John Doe"
         person - SCHEMA.email - "john@example.com"
         
-        val address = iri("http://example.org/address")
+        val address = Iri("http://example.org/address")
         address - RDF.type - SCHEMA.PostalAddress
         address - SCHEMA.streetAddress - "123 Main St"
         address - SCHEMA.addressLocality - "Anytown"
@@ -49,13 +49,13 @@ fun main() {
         person - SCHEMA.address - address
         
         // FOAF data
-        val foafPerson = iri("http://example.org/foaf-person")
+        val foafPerson = Iri("http://example.org/foaf-person")
         foafPerson - RDF.type - FOAF.Person
         foafPerson - FOAF.name - "Jane Smith"
         foafPerson - FOAF.mbox - "jane@example.com"
         foafPerson - FOAF.knows - person
         
-        val document = iri("http://example.org/document")
+        val document = Iri("http://example.org/document")
         document - RDF.type - FOAF.Document
         document - FOAF.title - "Sample Document"
         document - FOAF.primaryTopic - foafPerson
@@ -67,7 +67,7 @@ fun main() {
     // Materialize using generated interfaces from different ontologies
     
     // DCAT-US
-    val catalogRef = RdfRef(iri("http://example.org/catalog"), repo.defaultGraph)
+    val catalogRef = RdfRef(Iri("http://example.org/catalog"), repo.defaultGraph)
     val catalog: Catalog = catalogRef.asType()
     
     println("\n=== DCAT-US Materialization ===")
@@ -76,7 +76,7 @@ fun main() {
     println("Dataset count: ${catalog.dataset.size}")
     
     // Schema.org
-    val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
+    val personRef = RdfRef(Iri("http://example.org/person"), repo.defaultGraph)
     val person: Person = personRef.asType()
     
     println("\n=== Schema.org Materialization ===")
@@ -85,7 +85,7 @@ fun main() {
     println("Address: ${person.address?.let { "${it.streetAddress}, ${it.addressLocality}, ${it.addressCountry}" }}")
     
     // FOAF
-    val foafPersonRef = RdfRef(iri("http://example.org/foaf-person"), repo.defaultGraph)
+    val foafPersonRef = RdfRef(Iri("http://example.org/foaf-person"), repo.defaultGraph)
     val foafPerson: foaf.Person = foafPersonRef.asType()
     
     println("\n=== FOAF Materialization ===")
@@ -134,3 +134,12 @@ fun main() {
     
     println("\n=== Demo Complete ===")
 }
+
+
+
+
+
+
+
+
+

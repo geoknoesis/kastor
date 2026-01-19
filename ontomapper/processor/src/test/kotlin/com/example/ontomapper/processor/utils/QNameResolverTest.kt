@@ -122,3 +122,15 @@ class QNameResolverTest {
         assertEquals("http://purl.org/dc/terms/Title", QNameResolver.resolveQName("DCTERMS:Title", prefixMappings))
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

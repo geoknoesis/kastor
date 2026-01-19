@@ -28,6 +28,7 @@ interface RdfHandle {
     val graph: RdfGraph        // The containing RDF graph
     val extras: PropertyBag    // Unmapped properties
     
+    fun validate(): ValidationResult
     fun validateOrThrow()      // SHACL validation
 }
 ```
@@ -523,3 +524,6 @@ sealed class ProcessingResult {
 - **Check out [Advanced Usage](advanced-usage.md)** - Complex scenarios
 - **See [Practical Examples](../examples/README.md)** - Real-world use cases
 - **Review [API Reference](../reference/README.md)** - Complete API documentation
+
+
+

@@ -77,17 +77,15 @@ class SubjectPropertyDsl(private val subject: RdfResource) {
     
     /**
      * Generic property function for custom predicates.
-     * Usage: property(FOAF.name, "Alice") or property("http://example.org/custom", "value")
+     * Usage: property(FOAF.name, "Alice") or property(Iri("http://example.org/custom"), "value")
      */
     fun property(predicate: Iri, value: Any) = addProperty(predicate, value)
-    fun property(predicate: String, value: Any) = addProperty(Iri(predicate), value)
     
     /**
      * Add multiple values for a custom property.
      * Usage: property(FOAF.knows, friend1, friend2, friend3)
      */
     fun property(predicate: Iri, vararg values: Any) = addMultipleProperties(predicate, values)
-    fun property(predicate: String, vararg values: Any) = addMultipleProperties(Iri(predicate), values)
     
     /**
      * Add a property with automatic type conversion.
@@ -111,3 +109,12 @@ class SubjectPropertyDsl(private val subject: RdfResource) {
         values.forEach { value -> addProperty(predicate, value) }
     }
 }
+
+
+
+
+
+
+
+
+

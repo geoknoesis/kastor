@@ -166,3 +166,12 @@ class GraphIsomorphismTest {
         assertFalse(graph1.isIsomorphicTo(graph2))
     }
 }
+
+
+
+
+
+
+
+
+

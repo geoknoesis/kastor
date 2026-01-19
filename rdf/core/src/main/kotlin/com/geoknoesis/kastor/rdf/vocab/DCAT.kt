@@ -23,3 +23,12 @@ object DCAT : Vocabulary {
     val downloadURL: Iri by lazy { term("downloadURL") }
     val mediaType: Iri by lazy { term("mediaType") }
 }
+
+
+
+
+
+
+
+
+

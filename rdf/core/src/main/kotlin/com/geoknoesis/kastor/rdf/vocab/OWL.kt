@@ -90,3 +90,12 @@ object OWL : Vocabulary {
     val versionInfo: Iri by lazy { term("versionInfo") }
     val versionIRI: Iri by lazy { term("versionIRI") }
 }
+
+
+
+
+
+
+
+
+

@@ -12,7 +12,7 @@ import com.geoknoesis.kastor.rdf.dsl.list
  */
 fun main() {
     val repo = Rdf.memory()
-    val person = iri("http://example.org/person/alice")
+    val person = Iri("http://example.org/person/alice")
 
     repo.add {
         person - FOAF.name - "Alice"
@@ -74,3 +74,12 @@ fun main() {
     
     repo.close()
 }
+
+
+
+
+
+
+
+
+

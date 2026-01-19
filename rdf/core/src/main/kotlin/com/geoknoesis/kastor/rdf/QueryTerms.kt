@@ -62,7 +62,7 @@ data class VersionDeclaration(val version: String) {
  * select("name") {
  *     addCommonPrefixes("foaf", "rdf", "rdfs")
  *     where {
- *         person has iri("foaf:name") with var("name")
+ *         person has Iri("foaf:name") with var("name")
  *     }
  * }
  * ```
@@ -196,7 +196,7 @@ fun `var`(name: String) = Var(name)
  * ```kotlin
  * val pattern = TriplePattern(
  *     subject = var("person"),
- *     predicate = iri("http://example.org/name"),
+ *     predicate = Iri("http://example.org/name"),
  *     obj = var("name")
  * )
  * ```
@@ -384,7 +384,7 @@ data class NamedGraphPattern(
  * ## Usage
  * ```kotlin
  * val service = ServicePattern(
- *     iri("http://dbpedia.org/sparql"),
+ *     Iri("http://dbpedia.org/sparql"),
  *     TriplePattern(personVar, namePred, nameVar)
  * )
  * ```
@@ -471,7 +471,7 @@ data class RdfStarTriplePattern(
  * ## Usage
  * ```kotlin
  * // Basic path
- * val path = PropertyPath(iri("http://example.org/friend"))
+ * val path = PropertyPath(Iri("http://example.org/friend"))
  * 
  * // One or more
  * val oneOrMore = OneOrMore(path)
@@ -575,7 +575,7 @@ data class PropertyPathPattern(
 
 // Property path convenience functions
 fun path(predicate: RdfTerm): PropertyPath = BasicPath(predicate)
-fun path(predicate: String): PropertyPath = BasicPath(iri(predicate))
+fun path(predicate: String): PropertyPath = BasicPath(Iri(predicate))
 
 // Range convenience functions
 fun PropertyPath.exactly(n: Int): Range = Range(this, n, n)
@@ -946,7 +946,10 @@ data class SelectQuery(
     val orderBy: List<OrderClause> = emptyList(),
     val limit: Int? = null,
     val offset: Int? = null
-) {
+) : SparqlSelect {
+    override val sparql: String
+        get() = toString()
+
     override fun toString(): String = buildString {
         // Add version declaration
         version?.let { ver ->
@@ -1041,7 +1044,10 @@ data class AskQuery(
     val version: VersionDeclaration? = null,
     val prefixes: List<PrefixDeclaration> = emptyList(),
     val wherePattern: SparqlGraphPattern? = null
-) {
+) : SparqlAsk {
+    override val sparql: String
+        get() = toString()
+
     override fun toString(): String = buildString {
         // Add version declaration
         version?.let { ver ->
@@ -1073,7 +1079,10 @@ data class ConstructQuery(
     val prefixes: List<PrefixDeclaration> = emptyList(),
     val constructTemplate: List<TriplePattern> = emptyList(),
     val wherePattern: SparqlGraphPattern? = null
-) {
+) : SparqlConstruct {
+    override val sparql: String
+        get() = toString()
+
     override fun toString(): String = buildString {
         // Add version declaration
         version?.let { ver ->
@@ -1110,7 +1119,10 @@ data class DescribeQuery(
     val prefixes: List<PrefixDeclaration> = emptyList(),
     val describeTerms: List<RdfTerm> = emptyList(),
     val wherePattern: SparqlGraphPattern? = null
-) {
+) : SparqlDescribe {
+    override val sparql: String
+        get() = toString()
+
     override fun toString(): String = buildString {
         // Add version declaration
         version?.let { ver ->
@@ -1682,8 +1694,8 @@ infix fun RdfTerm.as_(alias: String): AliasedSelectItem = AliasedSelectItem(this
  * val query = select("name", "age") {
  *     addCommonPrefixes("foaf", "rdf", "rdfs")
  *     where {
- *         person has iri("foaf:name") with var("name")
- *         person has iri("rdf:type") with var("type")
+ *         person has Iri("foaf:name") with var("name")
+ *         person has Iri("rdf:type") with var("type")
  *     }
  * }
  * ```
@@ -1709,3 +1721,12 @@ fun SelectQueryBuilder.addCommonPrefixes(vararg prefixes: String) {
         }
     }
 }
+
+
+
+
+
+
+
+
+

@@ -17,3 +17,12 @@ import com.example.ontomapper.annotations.GenerateFromOntology
 //     generateWrappers = true
 // )
 class OntologyGenerator
+
+
+
+
+
+
+
+
+

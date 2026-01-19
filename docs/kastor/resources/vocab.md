@@ -16,3 +16,6 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
 val label = RDFS.label // Iri("http://www.w3.org/2000/01/rdf-schema#label")
 ```
 
+
+
+

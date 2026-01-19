@@ -23,7 +23,8 @@ dependencies {
 import com.geoknoesis.kastor.rdf.Rdf
 
 val api = Rdf.factory {
-  type("jena:memory")
+  providerId = "jena"
+  variantId = "memory"
 }
 val repo = api.repository
 ```
@@ -118,4 +119,7 @@ repo.add {
 - **Validation**: Constraints enforced at compile time
 
 The old generic `literal()` function is still available for backward compatibility but is deprecated.
+
+
+
 

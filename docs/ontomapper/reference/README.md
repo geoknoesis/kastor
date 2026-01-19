@@ -25,6 +25,7 @@ interface RdfHandle {
     val node: RdfTerm
     val graph: RdfGraph
     val extras: PropertyBag
+    fun validate(): ValidationResult
     fun validateOrThrow()
 }
 
@@ -66,13 +67,13 @@ inline fun <reified T: Any> T.asRdf(): RdfHandle
 ### Validation
 
 ```kotlin
-interface ValidationPort {
-    fun validateOrThrow(data: RdfGraph, focus: RdfTerm)
+interface ShaclValidator {
+    fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 
-object ValidationRegistry {
-    fun register(port: ValidationPort)
-    fun current(): ValidationPort
+object ShaclValidation {
+    fun register(port: ShaclValidator)
+    fun current(): ShaclValidator
 }
 ```
 
@@ -116,3 +117,6 @@ RDF4J-based SHACL validation adapter.
 5. Use materialization in your code
 
 See the [Getting Started Tutorial](../tutorials/getting-started.md) for detailed instructions.
+
+
+

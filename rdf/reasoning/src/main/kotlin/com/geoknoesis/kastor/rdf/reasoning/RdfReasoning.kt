@@ -41,3 +41,12 @@ object RdfReasoning {
         return ReasonerRegistry.isSupported(type)
     }
 }
+
+
+
+
+
+
+
+
+

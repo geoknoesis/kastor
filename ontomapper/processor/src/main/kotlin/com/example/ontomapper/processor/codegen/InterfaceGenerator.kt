@@ -1,6 +1,7 @@
 package com.example.ontomapper.processor.codegen
 
 import com.example.ontomapper.processor.model.OntologyModel
+import com.example.ontomapper.annotations.ValidationAnnotations
 import com.example.ontomapper.processor.model.ShaclProperty
 import com.example.ontomapper.processor.model.ShaclShape
 import com.google.devtools.ksp.processing.KSPLogger
@@ -9,7 +10,10 @@ import com.google.devtools.ksp.processing.KSPLogger
  * Generator for Kotlin domain interfaces from SHACL shapes.
  * Creates pure domain interfaces with no RDF dependencies.
  */
-class InterfaceGenerator(private val logger: KSPLogger) {
+class InterfaceGenerator(
+    private val logger: KSPLogger,
+    private val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA
+) {
 
     /**
      * Generates Kotlin interface code from SHACL shapes.
@@ -42,6 +46,9 @@ class InterfaceGenerator(private val logger: KSPLogger) {
             appendLine()
             appendLine("import com.example.ontomapper.annotations.RdfClass")
             appendLine("import com.example.ontomapper.annotations.RdfProperty")
+            if (validationAnnotations != ValidationAnnotations.NONE) {
+                appendLine("import ${validationPackage()}.constraints.*")
+            }
             appendLine()
             
             // Interface declaration with RdfClass annotation
@@ -66,7 +73,7 @@ class InterfaceGenerator(private val logger: KSPLogger) {
 
     private fun generateProperty(property: ShaclProperty, context: com.example.ontomapper.processor.model.JsonLdContext): String {
         val kotlinType = determineKotlinType(property, context)
-        val propertyName = property.name
+        val propertyName = toValidKotlinIdentifier(property.name)
         
         return buildString {
             appendLine("    /**")
@@ -76,6 +83,9 @@ class InterfaceGenerator(private val logger: KSPLogger) {
             if (property.maxCount != null) appendLine("     * Max count: ${property.maxCount}")
             appendLine("     */")
             appendLine("    @get:RdfProperty(iri = \"${property.path}\")")
+            validationAnnotationsForProperty(property).forEach { annotation ->
+                appendLine("    $annotation")
+            }
             appendLine("    val $propertyName: $kotlinType")
         }
     }
@@ -85,7 +95,11 @@ class InterfaceGenerator(private val logger: KSPLogger) {
         if (property.targetClass != null) {
             val targetInterfaceName = extractInterfaceName(property.targetClass)
             return if (property.maxCount == 1) {
-                targetInterfaceName
+                if (property.minCount == null || property.minCount == 0) {
+                    "$targetInterfaceName?"
+                } else {
+                    targetInterfaceName
+                }
             } else {
                 "List<$targetInterfaceName>"
             }
@@ -106,8 +120,46 @@ class InterfaceGenerator(private val logger: KSPLogger) {
         // Return as list if maxCount > 1 or maxCount is null (unbounded)
         return if (property.maxCount == null || property.maxCount > 1) {
             "List<$kotlinType>"
+        } else if (property.minCount == null || property.minCount == 0) {
+            "$kotlinType?"
         } else {
             kotlinType
+        }
+    }
+
+    private fun validationAnnotationsForProperty(property: ShaclProperty): List<String> {
+        if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
+        val annotations = mutableListOf<String>()
+        val isList = property.maxCount == null || property.maxCount > 1
+        val min = property.minCount
+        val max = property.maxCount
+
+        if (!isList) {
+            if (min != null && min > 0) {
+                annotations.add("@get:NotNull")
+            }
+        } else {
+            if (min != null && min > 0) {
+                annotations.add("@get:NotEmpty")
+            }
+            if (min != null || max != null) {
+                val parts = mutableListOf<String>()
+                min?.let { parts.add("min = $it") }
+                max?.let { parts.add("max = $it") }
+                if (parts.isNotEmpty()) {
+                    annotations.add("@get:Size(${parts.joinToString(", ")})")
+                }
+            }
+        }
+
+        return annotations
+    }
+
+    private fun validationPackage(): String {
+        return when (validationAnnotations) {
+            ValidationAnnotations.JAKARTA -> "jakarta.validation"
+            ValidationAnnotations.JAVAX -> "javax.validation"
+            ValidationAnnotations.NONE -> "jakarta.validation"
         }
     }
 
@@ -120,4 +172,30 @@ class InterfaceGenerator(private val logger: KSPLogger) {
             word.replaceFirstChar { it.uppercaseChar() }
         }
     }
+
+    /**
+     * Converts a property name to a valid Kotlin identifier by converting hyphens and underscores to camelCase.
+     */
+    private fun toValidKotlinIdentifier(name: String): String {
+        // Split on hyphens and underscores
+        val parts = name.split('-', '_')
+        
+        // First part stays lowercase, rest are capitalized
+        return parts.mapIndexed { index, part ->
+            if (index == 0) part.replaceFirstChar { it.lowercaseChar() }
+            else part.replaceFirstChar { it.uppercaseChar() }
+        }.joinToString("")
+    }
 }
+
+
+
+
+
+
+
+
+
+
+
+

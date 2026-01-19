@@ -90,3 +90,12 @@ object ShaclValidation {
         return ValidatorRegistry.getRegistryStatistics()
     }
 }
+
+
+
+
+
+
+
+
+

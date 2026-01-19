@@ -13,10 +13,10 @@ import com.geoknoesis.kastor.rdf.dsl.list
  */
 fun main() {
     val repo = Rdf.memory()
-    val person = iri("http://example.org/person/alice")
-    val friend1 = iri("http://example.org/person/bob")
-    val friend2 = iri("http://example.org/person/charlie")
-    val friend3 = iri("http://example.org/person/diana")
+    val person = Iri("http://example.org/person/alice")
+    val friend1 = Iri("http://example.org/person/bob")
+    val friend2 = Iri("http://example.org/person/charlie")
+    val friend3 = Iri("http://example.org/person/diana")
 
     repo.add {
         // Basic properties
@@ -64,3 +64,12 @@ fun main() {
     
     repo.close()
 }
+
+
+
+
+
+
+
+
+

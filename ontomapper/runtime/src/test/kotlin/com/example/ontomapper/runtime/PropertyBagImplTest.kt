@@ -11,7 +11,7 @@ class PropertyBagImplTest {
     @Test
     fun `property bag excludes known predicates and returns deterministic order`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         val knownPredicates = setOf(DCTERMS.title, FOAF.name)
         
         repo.add {
@@ -40,12 +40,12 @@ class PropertyBagImplTest {
     @Test
     fun `property bag returns correct values for different types`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/resource")
+        val subject = Iri("http://example.org/resource")
         
         repo.add {
             subject - DCTERMS.title - "Test Title"
             subject - FOAF.age - 25
-            subject - DCTERMS.creator - iri("http://example.org/creator")
+            subject - DCTERMS.creator - Iri("http://example.org/creator")
         }
         
         val propertyBag = KastorGraphOps.extras(repo.defaultGraph, subject, emptySet())
@@ -70,3 +70,15 @@ class PropertyBagImplTest {
         assertTrue(allValues.first() is Literal)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

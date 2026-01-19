@@ -1,0 +1,5 @@
+com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
+com.geoknoesis.kastor.rdf.sparql.SparqlEndpointProvider
+com.geoknoesis.kastor.rdf.sparql.ReasonerProvider
+com.geoknoesis.kastor.rdf.sparql.ShaclValidatorProvider
+

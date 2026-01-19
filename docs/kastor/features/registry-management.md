@@ -20,7 +20,7 @@ The unified registry system provides:
 ```kotlin
 // Get all registered providers
 val allProviders = RdfApiRegistry.getAllProviders()
-println("Available providers: ${allProviders.keys}")
+println("Available providers: ${allProviders.map { it.id }}")
 
 // Get specific provider
 val memoryProvider = RdfApiRegistry.getProvider("memory")
@@ -69,12 +69,12 @@ allCapabilities.forEach { (providerType, capabilities) ->
 ```kotlin
 // Generate service description for specific provider
 val memoryDescription = RdfApiRegistry.generateServiceDescription(
-    providerType = "memory",
+    providerId = "memory",
     serviceUri = "http://example.org/memory"
 )
 
 val jenaDescription = RdfApiRegistry.generateServiceDescription(
-    providerType = "jena",
+    providerId = "jena",
     serviceUri = "http://example.org/jena"
 )
 
@@ -236,11 +236,13 @@ println("SHACL Validator Provider: ${shaclProvider?.name ?: "Not available"}")
 ```kotlin
 // Register custom provider
 class CustomProvider : RdfApiProvider {
-    override fun getType(): String = "custom"
+    override val id: String = "custom"
     override val name: String = "Custom Provider"
     override val version: String = "1.0.0"
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("default"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         return CustomRepository(config)
     }
     
@@ -253,12 +255,10 @@ class CustomProvider : RdfApiProvider {
         )
     }
     
-    override fun getSupportedTypes(): List<String> = listOf("custom")
-    override fun isSupported(type: String): Boolean = type == "custom"
 }
 
 // Register the custom provider
-RdfApiRegistry.register("custom", CustomProvider())
+RdfApiRegistry.register(CustomProvider())
 
 // Verify registration
 val customProvider = RdfApiRegistry.getProvider("custom")
@@ -278,8 +278,8 @@ fun selectProvider(
 ): RdfApiProvider? {
     val allProviders = RdfApiRegistry.getAllProviders()
     
-    return allProviders.values.find { provider ->
-        val capabilities = provider.getCapabilities()
+    return allProviders.find { provider ->
+        val capabilities = provider.getCapabilities(provider.defaultVariantId())
         
         val hasRdfStar = !requiresRdfStar || capabilities.supportsRdfStar
         val hasFederation = !requiresFederation || capabilities.supportsFederation
@@ -301,7 +301,7 @@ val inferenceProvider = selectProvider(requiresInference = true)
 // Select provider by category
 fun selectProviderByCategory(category: ProviderCategory): RdfApiProvider? {
     val providers = RdfApiRegistry.getProvidersByCategory(category)
-    return providers.values.firstOrNull()
+    return providers.firstOrNull()
 }
 
 // Use category-based selection
@@ -318,17 +318,17 @@ fun selectBestProvider(useCase: String): RdfApiProvider? {
     val allProviders = RdfApiRegistry.getAllProviders()
     
     return when (useCase) {
-        "memory-intensive" -> allProviders.values.minByOrNull { 
-            it.getCapabilities().maxMemoryUsage 
+        "memory-intensive" -> allProviders.minByOrNull { 
+            it.getCapabilities(it.defaultVariantId()).maxMemoryUsage 
         }
-        "sparql-advanced" -> allProviders.values.find { 
-            it.getCapabilities().supportsFederation && 
-            it.getCapabilities().supportsPropertyPaths 
+        "sparql-advanced" -> allProviders.find { 
+            val capabilities = it.getCapabilities(it.defaultVariantId())
+            capabilities.supportsFederation && capabilities.supportsPropertyPaths 
         }
-        "reasoning" -> allProviders.values.find { 
-            it.getCapabilities().supportsInference 
+        "reasoning" -> allProviders.find { 
+            it.getCapabilities(it.defaultVariantId()).supportsInference 
         }
-        else -> allProviders.values.firstOrNull()
+        else -> allProviders.firstOrNull()
     }
 }
 ```
@@ -343,14 +343,14 @@ fun checkProviderHealth(): Map<String, Boolean> {
     val allProviders = RdfApiRegistry.getAllProviders()
     val healthStatus = mutableMapOf<String, Boolean>()
     
-    allProviders.forEach { (type, provider) ->
+    allProviders.forEach { provider ->
         try {
             // Try to create a repository to test provider health
-            val repo = provider.createRepository(RdfConfig())
-            healthStatus[type] = true
+            val repo = provider.createRepository(provider.defaultVariantId(), RdfConfig())
+            healthStatus[provider.id] = true
         } catch (e: Exception) {
-            println("Provider $type is unhealthy: ${e.message}")
-            healthStatus[type] = false
+            println("Provider ${provider.id} is unhealthy: ${e.message}")
+            healthStatus[provider.id] = false
         }
     }
     
@@ -472,10 +472,10 @@ fun registryManagementExample() {
     // 1. Basic provider operations
     println("\n1. Basic Provider Operations")
     val allProviders = RdfApiRegistry.getAllProviders()
-    println("Available providers: ${allProviders.keys}")
+    println("Available providers: ${allProviders.map { it.id }}")
     
-    allProviders.forEach { (type, provider) ->
-        println("  $type: ${provider.name} v${provider.version}")
+    allProviders.forEach { provider ->
+        println("  ${provider.id}: ${provider.name} v${provider.version}")
     }
     
     // 2. Category-based operations
@@ -533,15 +533,15 @@ fun registryManagementExample() {
     
     // 7. Provider selection
     println("\n7. Provider Selection")
-    val rdfStarProvider = allProviders.values.find { 
-        it.getCapabilities().supportsRdfStar 
+    val rdfStarProvider = allProviders.find { 
+        it.getCapabilities(it.defaultVariantId()).supportsRdfStar 
     }
-    println("  RDF-star provider: ${rdfStarProvider?.getType()}")
+    println("  RDF-star provider: ${rdfStarProvider?.id}")
     
-    val federationProvider = allProviders.values.find { 
-        it.getCapabilities().supportsFederation 
+    val federationProvider = allProviders.find { 
+        it.getCapabilities(it.defaultVariantId()).supportsFederation 
     }
-    println("  Federation provider: ${federationProvider?.getType()}")
+    println("  Federation provider: ${federationProvider?.id}")
     
     // 8. Health checking
     println("\n8. Provider Health Check")
@@ -568,12 +568,12 @@ fun checkProviderHealth(): Map<String, Boolean> {
     val allProviders = RdfApiRegistry.getAllProviders()
     val healthStatus = mutableMapOf<String, Boolean>()
     
-    allProviders.forEach { (type, provider) ->
+    allProviders.forEach { provider ->
         try {
-            provider.createRepository(RdfConfig())
-            healthStatus[type] = true
+            provider.createRepository(provider.defaultVariantId(), RdfConfig())
+            healthStatus[provider.id] = true
         } catch (e: Exception) {
-            healthStatus[type] = false
+            healthStatus[provider.id] = false
         }
     }
     
@@ -612,3 +612,6 @@ For questions about registry management in Kastor:
 ---
 
 *Kastor registry management system is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

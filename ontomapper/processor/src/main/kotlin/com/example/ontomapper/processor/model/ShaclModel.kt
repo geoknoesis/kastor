@@ -1,5 +1,7 @@
 package com.example.ontomapper.processor.model
 
+import com.geoknoesis.kastor.rdf.Iri as RdfIri
+
 /**
  * Model representing a SHACL NodeShape.
  */
@@ -27,7 +29,7 @@ data class ShaclProperty(
  */
 data class JsonLdContext(
     val prefixes: Map<String, String>,
-    val typeMappings: Map<String, String>,
+    val typeMappings: Map<String, RdfIri>,
     val propertyMappings: Map<String, JsonLdProperty>
 )
 
@@ -35,9 +37,14 @@ data class JsonLdContext(
  * Model representing a JSON-LD property definition.
  */
 data class JsonLdProperty(
-    val id: String,
-    val type: String?
+    val id: RdfIri,
+    val type: JsonLdType?
 )
+
+sealed interface JsonLdType {
+    data object Id : JsonLdType
+    data class Iri(val iri: RdfIri) : JsonLdType
+}
 
 /**
  * Combined model for code generation from SHACL + JSON-LD.
@@ -46,3 +53,15 @@ data class OntologyModel(
     val shapes: List<ShaclShape>,
     val context: JsonLdContext
 )
+
+
+
+
+
+
+
+
+
+
+
+

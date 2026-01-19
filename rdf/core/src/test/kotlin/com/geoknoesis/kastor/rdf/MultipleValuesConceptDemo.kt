@@ -25,10 +25,10 @@ class MultipleValuesConceptDemo {
         // Current working approach: Multiple individual statements
         println("1. Current Approach - Multiple Individual Statements:")
         repo.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
-            val friend3 = iri("http://example.org/friend3")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
+            val friend3 = Iri("http://example.org/friend3")
             
             person[FOAF.name] = "Alice"
             person[FOAF.knows] = friend1
@@ -41,7 +41,7 @@ class MultipleValuesConceptDemo {
         val allTriples = repo.defaultGraph.getTriples()
         println("   Created ${allTriples.size} triples")
         
-        val personTriples = allTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTriples = allTriples.filter { it.subject == Iri("http://example.org/person") }
         val knowsTriples = personTriples.filter { it.predicate == FOAF.knows }
         val mboxTriples = personTriples.filter { it.predicate == FOAF.mbox }
         
@@ -53,11 +53,11 @@ class MultipleValuesConceptDemo {
         // Helper function approach
         println("2. Helper Function Approach:")
         repo.add {
-            val person2 = iri("http://example.org/person2")
+            val person2 = Iri("http://example.org/person2")
             val friends = listOf(
-                iri("http://example.org/friend4"),
-                iri("http://example.org/friend5"),
-                iri("http://example.org/friend6")
+                Iri("http://example.org/friend4"),
+                Iri("http://example.org/friend5"),
+                Iri("http://example.org/friend6")
             )
             
             person2[FOAF.name] = "Bob"
@@ -73,7 +73,7 @@ class MultipleValuesConceptDemo {
         }
         
         val allTriples2 = repo.defaultGraph.getTriples()
-        val person2Triples = allTriples2.filter { it.subject == iri("http://example.org/person2") }
+        val person2Triples = allTriples2.filter { it.subject == Iri("http://example.org/person2") }
         val knows2Triples = person2Triples.filter { it.predicate == FOAF.knows }
         val mbox2Triples = person2Triples.filter { it.predicate == FOAF.mbox }
         
@@ -96,7 +96,7 @@ class MultipleValuesConceptDemo {
         // Document metadata example
         println("4. Document Metadata with Multiple Values:")
         repo.add {
-            val document = iri("http://example.org/document")
+            val document = Iri("http://example.org/document")
             
             // Multiple titles
             document[DCTERMS.title] = "Main Title"
@@ -104,8 +104,8 @@ class MultipleValuesConceptDemo {
             document[DCTERMS.title] = "Alternative Title"
             
             // Multiple creators
-            document[DCTERMS.creator] = iri("http://example.org/author1")
-            document[DCTERMS.creator] = iri("http://example.org/author2")
+            document[DCTERMS.creator] = Iri("http://example.org/author1")
+            document[DCTERMS.creator] = Iri("http://example.org/author2")
             
             // Multiple subjects
             document[DCTERMS.subject] = "Technology"
@@ -114,7 +114,7 @@ class MultipleValuesConceptDemo {
         }
         
         val allTriples3 = repo.defaultGraph.getTriples()
-        val documentTriples = allTriples3.filter { it.subject == iri("http://example.org/document") }
+        val documentTriples = allTriples3.filter { it.subject == Iri("http://example.org/document") }
         val titleTriples = documentTriples.filter { it.predicate == DCTERMS.title }
         val creatorTriples = documentTriples.filter { it.predicate == DCTERMS.creator }
         val subjectTriples = documentTriples.filter { it.predicate == DCTERMS.subject }
@@ -145,12 +145,12 @@ class MultipleValuesConceptDemo {
         // Example 1: Person with multiple social connections
         println("Example 1: Person with Multiple Social Connections")
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val socialConnections = listOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/colleague1"),
-                iri("http://example.org/colleague2")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/colleague1"),
+                Iri("http://example.org/colleague2")
             )
             
             person[FOAF.name] = "Alice"
@@ -169,7 +169,7 @@ class MultipleValuesConceptDemo {
         }
         
         val personTriples = repo.defaultGraph.getTriples().filter { 
-            it.subject == iri("http://example.org/person") 
+            it.subject == Iri("http://example.org/person") 
         }
         println("   Alice has ${personTriples.size} properties")
         println("   - ${personTriples.count { it.predicate == FOAF.knows }} social connections")
@@ -180,7 +180,7 @@ class MultipleValuesConceptDemo {
         // Example 2: Document with multiple metadata
         println("Example 2: Document with Multiple Metadata")
         repo.add {
-            val document = iri("http://example.org/document")
+            val document = Iri("http://example.org/document")
             
             // Multiple titles for different languages
             document[DCTERMS.title] = "RDF in Kotlin"
@@ -188,9 +188,9 @@ class MultipleValuesConceptDemo {
             document[DCTERMS.title] = "RDF mit Kotlin"
             
             // Multiple authors
-            document[DCTERMS.creator] = iri("http://example.org/author1")
-            document[DCTERMS.creator] = iri("http://example.org/author2")
-            document[DCTERMS.creator] = iri("http://example.org/author3")
+            document[DCTERMS.creator] = Iri("http://example.org/author1")
+            document[DCTERMS.creator] = Iri("http://example.org/author2")
+            document[DCTERMS.creator] = Iri("http://example.org/author3")
             
             // Multiple subjects/tags
             val tags = listOf("RDF", "Kotlin", "Programming", "Semantic Web", "DSL")
@@ -205,7 +205,7 @@ class MultipleValuesConceptDemo {
         }
         
         val documentTriples = repo.defaultGraph.getTriples().filter { 
-            it.subject == iri("http://example.org/document") 
+            it.subject == Iri("http://example.org/document") 
         }
         println("   Document has ${documentTriples.size} properties")
         println("   - ${documentTriples.count { it.predicate == DCTERMS.title }} titles")
@@ -217,13 +217,13 @@ class MultipleValuesConceptDemo {
         // Example 3: Resource with multiple types
         println("Example 3: Resource with Multiple Types")
         repo.add {
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
             
             // Multiple types (common in RDF)
             resource[RDF.type] = RDF.Property
             resource[RDF.type] = RDFS.Resource
-            resource[RDF.type] = iri("http://example.org/CustomType")
-            resource[RDF.type] = iri("http://example.org/AnotherType")
+            resource[RDF.type] = Iri("http://example.org/CustomType")
+            resource[RDF.type] = Iri("http://example.org/AnotherType")
             
             // Multiple labels for different languages
             resource[RDFS.label] = "Property"
@@ -236,7 +236,7 @@ class MultipleValuesConceptDemo {
         }
         
         val resourceTriples = repo.defaultGraph.getTriples().filter { 
-            it.subject == iri("http://example.org/resource") 
+            it.subject == Iri("http://example.org/resource") 
         }
         println("   Resource has ${resourceTriples.size} properties")
         println("   - ${resourceTriples.count { it.predicate == RDF.type }} types")
@@ -246,3 +246,12 @@ class MultipleValuesConceptDemo {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

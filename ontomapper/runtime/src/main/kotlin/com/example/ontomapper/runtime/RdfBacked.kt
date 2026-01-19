@@ -13,8 +13,11 @@ interface RdfHandle {
   val graph: RdfGraph        // Kastor Graph (Jena/RDF4J under the hood)
   val extras: PropertyBag    // Unmapped triples (lazy & memoized)
 
-  /** Validate the focus node against configured SHACL shapes; throw on failure. */
-  fun validateOrThrow()
+  /** Validate the focus node against configured SHACL shapes. */
+  fun validate(): ValidationResult
+
+  /** Validate and throw on failure. */
+  fun validateOrThrow() = validate().orThrow()
 }
 
 /** Strongly typed property bag; no Any/Strings for RDF terms. */
@@ -29,3 +32,15 @@ interface PropertyBag {
   /** Materialize object values as domain types via registry. */
   fun <T : Any> objects(pred: Iri, asType: Class<T>): List<T>
 }
+
+
+
+
+
+
+
+
+
+
+
+

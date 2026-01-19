@@ -318,12 +318,14 @@ import com.geoknoesis.kastor.rdf.Rdf
 
 // Create a dataset using the factory DSL
 val dataset = Rdf.dataset {
-    type("rdf4j:memory")
+    providerId = "rdf4j"
+    variantId = "memory"
 }
 
 // Create a live graph from a dataset
 val liveGraph = Rdf.liveGraph("http://example.org/graphs/data") {
-    type("rdf4j:memory")
+    providerId = "rdf4j"
+    variantId = "memory"
 }
 ```
 

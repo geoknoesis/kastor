@@ -24,3 +24,6 @@
 - RDF4J: auto-commit if no transaction; bindings applied.
 - SPARQL: remote HTTP; transactions no-ops; `addTriple` unsupported; inline values.
 
+
+
+

@@ -14,8 +14,8 @@ object VocabularyExample {
      */
     fun createPersonDescription() {
         // Create resources
-        val person = iri("http://example.com/person/123")
-        val document = iri("http://example.com/document/456")
+        val person = Iri("http://example.com/person/123")
+        val document = Iri("http://example.com/document/456")
         
         // Create triples using vocabulary terms
         val triples = listOf(
@@ -23,23 +23,23 @@ object VocabularyExample {
             RdfTriple(person, RDF.type, FOAF.Person),
             
             // Person properties
-            RdfTriple(person, FOAF.name, "John Doe".toLiteral()),
-            RdfTriple(person, FOAF.firstName, "John".toLiteral()),
-            RdfTriple(person, FOAF.familyName, "Doe".toLiteral()),
+            RdfTriple(person, FOAF.name, Literal("John Doe")),
+            RdfTriple(person, FOAF.firstName, Literal("John")),
+            RdfTriple(person, FOAF.familyName, Literal("Doe")),
             RdfTriple(person, FOAF.age, 30.toLiteral()),
-            RdfTriple(person, FOAF.homepage, iri("http://johndoe.com")),
+            RdfTriple(person, FOAF.homepage, Iri("http://johndoe.com")),
             
             // Person relationships
-            RdfTriple(person, FOAF.knows, iri("http://example.com/person/456")),
-            RdfTriple(person, FOAF.workplaceHomepage, iri("http://company.com")),
+            RdfTriple(person, FOAF.knows, Iri("http://example.com/person/456")),
+            RdfTriple(person, FOAF.workplaceHomepage, Iri("http://company.com")),
             
             // Document metadata using Dublin Core
             RdfTriple(document, RDF.type, DCTERMS.BibliographicResource),
-            RdfTriple(document, DCTERMS.title, "Sample Document".toLiteral()),
+            RdfTriple(document, DCTERMS.title, Literal("Sample Document")),
             RdfTriple(document, DCTERMS.creator, person),
-            RdfTriple(document, DCTERMS.date, "2024-01-15".toLiteral()),
-            RdfTriple(document, DCTERMS.description, "A sample document for demonstration".toLiteral()),
-            RdfTriple(document, DCTERMS.language, "en".toLiteral())
+            RdfTriple(document, DCTERMS.date, Literal("2024-01-15")),
+            RdfTriple(document, DCTERMS.description, Literal("A sample document for demonstration")),
+            RdfTriple(document, DCTERMS.language, Literal("en"))
         )
         
         println("Created ${triples.size} triples for person description")
@@ -106,24 +106,24 @@ object VocabularyExample {
     fun createOntologyDefinition() {
         println("\n=== Ontology Definition ===")
         
-        val personClass = iri("http://example.com/ontology/Person")
-        val nameProperty = iri("http://example.com/ontology/name")
-        val ageProperty = iri("http://example.com/ontology/age")
+        val personClass = Iri("http://example.com/ontology/Person")
+        val nameProperty = Iri("http://example.com/ontology/name")
+        val ageProperty = Iri("http://example.com/ontology/age")
         
         val ontologyTriples = listOf(
             // Class definitions
             RdfTriple(personClass, RDF.type, RDFS.Class),
-            RdfTriple(personClass, RDFS.label, "Person".toLiteral()),
-            RdfTriple(personClass, RDFS.comment, "A human being".toLiteral()),
+            RdfTriple(personClass, RDFS.label, Literal("Person")),
+            RdfTriple(personClass, RDFS.comment, Literal("A human being")),
             
             // Property definitions
             RdfTriple(nameProperty, RDF.type, RDF.Property),
-            RdfTriple(nameProperty, RDFS.label, "name".toLiteral()),
+            RdfTriple(nameProperty, RDFS.label, Literal("name")),
             RdfTriple(nameProperty, RDFS.domain, personClass),
             RdfTriple(nameProperty, RDFS.range, XSD.string),
             
             RdfTriple(ageProperty, RDF.type, RDF.Property),
-            RdfTriple(ageProperty, RDFS.label, "age".toLiteral()),
+            RdfTriple(ageProperty, RDFS.label, Literal("age")),
             RdfTriple(ageProperty, RDFS.domain, personClass),
             RdfTriple(ageProperty, RDFS.range, XSD.integer),
             
@@ -142,24 +142,24 @@ object VocabularyExample {
     fun createKnowledgeOrganization() {
         println("\n=== Knowledge Organization (SKOS) ===")
         
-        val conceptScheme = iri("http://example.com/scheme/geography")
-        val countryConcept = iri("http://example.com/concept/country")
-        val cityConcept = iri("http://example.com/concept/city")
+        val conceptScheme = Iri("http://example.com/scheme/geography")
+        val countryConcept = Iri("http://example.com/concept/country")
+        val cityConcept = Iri("http://example.com/concept/city")
         
         val skosTriples = listOf(
             // Concept scheme
             RdfTriple(conceptScheme, RDF.type, SKOS.ConceptScheme),
-            RdfTriple(conceptScheme, SKOS.prefLabel, "Geographic Concepts".toLiteral()),
+            RdfTriple(conceptScheme, SKOS.prefLabel, Literal("Geographic Concepts")),
             
             // Concepts
             RdfTriple(countryConcept, RDF.type, SKOS.Concept),
-            RdfTriple(countryConcept, SKOS.prefLabel, "Country".toLiteral()),
-            RdfTriple(countryConcept, SKOS.definition, "A nation or sovereign state".toLiteral()),
+            RdfTriple(countryConcept, SKOS.prefLabel, Literal("Country")),
+            RdfTriple(countryConcept, SKOS.definition, Literal("A nation or sovereign state")),
             RdfTriple(countryConcept, SKOS.inScheme, conceptScheme),
             
             RdfTriple(cityConcept, RDF.type, SKOS.Concept),
-            RdfTriple(cityConcept, SKOS.prefLabel, "City".toLiteral()),
-            RdfTriple(cityConcept, SKOS.definition, "A large human settlement".toLiteral()),
+            RdfTriple(cityConcept, SKOS.prefLabel, Literal("City")),
+            RdfTriple(cityConcept, SKOS.definition, Literal("A large human settlement")),
             RdfTriple(cityConcept, SKOS.inScheme, conceptScheme),
             
             // Hierarchical relationships
@@ -176,8 +176,8 @@ object VocabularyExample {
     fun createDataValidationConstraints() {
         println("\n=== Data Validation (SHACL) ===")
         
-        val personShape = iri("http://example.com/shapes/PersonShape")
-        val namePropertyShape = iri("http://example.com/shapes/PersonNameProperty")
+        val personShape = Iri("http://example.com/shapes/PersonShape")
+        val namePropertyShape = Iri("http://example.com/shapes/PersonNameProperty")
         
         val shaclTriples = listOf(
             // Node shape
@@ -189,8 +189,8 @@ object VocabularyExample {
             RdfTriple(namePropertyShape, SHACL.property, FOAF.name),
             RdfTriple(namePropertyShape, SHACL.minCount, 1.toLiteral()),
             RdfTriple(namePropertyShape, SHACL.maxCount, 1.toLiteral()),
-            RdfTriple(namePropertyShape, SHACL.pattern, "^[A-Z][a-z]+ [A-Z][a-z]+$".toLiteral()),
-            RdfTriple(namePropertyShape, SHACL.message, "Person must have exactly one name in 'First Last' format".toLiteral()),
+            RdfTriple(namePropertyShape, SHACL.pattern, Literal("^[A-Z][a-z]+ [A-Z][a-z]+$")),
+            RdfTriple(namePropertyShape, SHACL.message, Literal("Person must have exactly one name in 'First Last' format")),
             
             // Link property shape to node shape
             RdfTriple(personShape, SHACL.property, namePropertyShape)
@@ -216,3 +216,12 @@ object VocabularyExample {
         println("\nAll examples completed successfully!")
     }
 }
+
+
+
+
+
+
+
+
+

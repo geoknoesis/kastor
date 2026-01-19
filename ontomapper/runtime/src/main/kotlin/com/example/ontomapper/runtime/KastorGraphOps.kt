@@ -1,4 +1,4 @@
-﻿package com.example.ontomapper.runtime
+package com.example.ontomapper.runtime
 
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
@@ -35,6 +35,14 @@ object KastorGraphOps {
     return graph.getTriples()
       .filter { it.subject == subj && it.predicate == pred }
       .mapNotNull { it.obj as? Literal }
+  }
+
+  /**
+   * Counts literal values for a given subject and predicate.
+   */
+  fun countLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): Int {
+    return graph.getTriples()
+      .count { it.subject == subj && it.predicate == pred && it.obj is Literal }
   }
 
   /**
@@ -75,4 +83,24 @@ object KastorGraphOps {
         }
       }
   }
+
+  /**
+   * Counts object values (IRI or BlankNode) for a given subject and predicate.
+   */
+  fun countObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): Int {
+    return graph.getTriples()
+      .count { it.subject == subj && it.predicate == pred && (it.obj is Iri || it.obj is BlankNode) }
+  }
 }
+
+
+
+
+
+
+
+
+
+
+
+

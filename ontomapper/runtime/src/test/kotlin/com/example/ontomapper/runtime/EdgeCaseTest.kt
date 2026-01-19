@@ -14,7 +14,7 @@ class EdgeCaseTest {
         // In practice, null graphs should not occur, but defensive programming is good
         
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -29,7 +29,7 @@ class EdgeCaseTest {
     @Test
     fun `property bag handles empty graph`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         // Empty graph
         val propertyBag = KastorGraphOps.extras(repo.defaultGraph, subject, emptySet())
@@ -44,8 +44,8 @@ class EdgeCaseTest {
     @Test
     fun `property bag handles subject not in graph`() {
         val repo = Rdf.memory()
-        val subject1 = iri("http://example.org/person1")
-        val subject2 = iri("http://example.org/person2")
+        val subject1 = Iri("http://example.org/person1")
+        val subject2 = Iri("http://example.org/person2")
         
         repo.add {
             subject1 - FOAF.name - "John"
@@ -61,8 +61,8 @@ class EdgeCaseTest {
     @Test
     fun `KastorGraphOps handles non-existent predicates`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        val nonExistentPredicate = iri("http://example.org/nonexistent")
+        val subject = Iri("http://example.org/person")
+        val nonExistentPredicate = Iri("http://example.org/nonexistent")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -77,10 +77,24 @@ class EdgeCaseTest {
     }
 
     @Test
+    fun `required literal access throws when missing`() {
+        val repo = Rdf.memory()
+        val subject = Iri("http://example.org/person")
+
+        repo.add {
+            subject - FOAF.name - "John"
+        }
+
+        assertThrows(IllegalStateException::class.java) {
+            KastorGraphOps.getRequiredLiteralValue(repo.defaultGraph, subject, FOAF.age)
+        }
+    }
+
+    @Test
     fun `KastorGraphOps handles objects that are not literals`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
-        val friend = iri("http://example.org/friend")
+        val subject = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -94,7 +108,7 @@ class EdgeCaseTest {
     @Test
     fun `DefaultRdfHandle handles empty known set`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -113,7 +127,7 @@ class EdgeCaseTest {
     @Test
     fun `DefaultRdfHandle handles large known set`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -123,9 +137,9 @@ class EdgeCaseTest {
         
         val largeKnownSet = setOf(
             FOAF.name, FOAF.age, DCTERMS.description,
-            iri("http://example.org/prop1"),
-            iri("http://example.org/prop2"),
-            iri("http://example.org/prop3")
+            Iri("http://example.org/prop1"),
+            Iri("http://example.org/prop2"),
+            Iri("http://example.org/prop3")
         )
         
         val handle = DefaultRdfHandle(subject, repo.defaultGraph, largeKnownSet)
@@ -138,7 +152,7 @@ class EdgeCaseTest {
     @Test
     fun `materialization with malformed data handles gracefully`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -167,17 +181,17 @@ class EdgeCaseTest {
 
     @Test
     fun `validation handles concurrent access`() {
-        val validation = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                // Simulate some processing time
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
                 Thread.sleep(10)
+                return ValidationResult.Ok
             }
         }
         
-        ValidationRegistry.register(validation)
+        ShaclValidation.register(validator)
         
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         repo.add {
             subject - FOAF.name - "John"
@@ -187,7 +201,7 @@ class EdgeCaseTest {
         val threads = (1..5).map {
             Thread {
                 assertDoesNotThrow {
-                    validation.validateOrThrow(repo.defaultGraph, subject)
+                    validator.validate(repo.defaultGraph, subject).orThrow()
                 }
             }
         }
@@ -199,15 +213,15 @@ class EdgeCaseTest {
     @Test
     fun `property bag deterministic ordering with many predicates`() {
         val repo = Rdf.memory()
-        val subject = iri("http://example.org/person")
+        val subject = Iri("http://example.org/person")
         
         // Add many predicates in random order
         val predicates = listOf(
-            iri("http://example.org/z"),
-            iri("http://example.org/a"),
-            iri("http://example.org/m"),
-            iri("http://example.org/b"),
-            iri("http://example.org/y")
+            Iri("http://example.org/z"),
+            Iri("http://example.org/a"),
+            Iri("http://example.org/m"),
+            Iri("http://example.org/b"),
+            Iri("http://example.org/y")
         )
         
         predicates.forEach { pred ->
@@ -226,8 +240,8 @@ class EdgeCaseTest {
     @Test
     fun `materialization with circular references handles gracefully`() {
         val repo = Rdf.memory()
-        val person1 = iri("http://example.org/person1")
-        val person2 = iri("http://example.org/person2")
+        val person1 = Iri("http://example.org/person1")
+        val person2 = Iri("http://example.org/person2")
         
         repo.add {
             person1 - FOAF.name - "Alice"
@@ -259,3 +273,15 @@ class EdgeCaseTest {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

@@ -19,10 +19,10 @@ class CurlyBracesParenthesesSyntaxTest {
     @Test
     fun `curly braces creates multiple individual triples`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -56,8 +56,8 @@ class CurlyBracesParenthesesSyntaxTest {
     @Test
     fun `curly braces with mixed types works`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
         val bnode = bnode("anon1")
 
         repo.add {
@@ -89,10 +89,10 @@ class CurlyBracesParenthesesSyntaxTest {
 
     @Test
     fun `curly braces works with standalone graph`() {
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
 
         val graph = Rdf.graph {
             person - FOAF.name - "Alice"
@@ -132,10 +132,10 @@ class CurlyBracesParenthesesSyntaxTest {
     @Test
     fun `curly braces vs parentheses vs arrays vs lists comparison`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -183,10 +183,10 @@ class CurlyBracesParenthesesSyntaxTest {
     @Test
     fun `parentheses creates RDF list`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        val friend1 = iri("http://example.org/friend1")
-        val friend2 = iri("http://example.org/friend2")
-        val friend3 = iri("http://example.org/friend3")
+        val person = Iri("http://example.org/person")
+        val friend1 = Iri("http://example.org/friend1")
+        val friend2 = Iri("http://example.org/friend2")
+        val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -233,3 +233,12 @@ class CurlyBracesParenthesesSyntaxTest {
     }
 
 }
+
+
+
+
+
+
+
+
+

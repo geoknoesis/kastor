@@ -12,7 +12,7 @@ class TurtleStyleBasicTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             person[FOAF.name] = "Alice"
             person[FOAF.age] = 30
         }
@@ -37,7 +37,7 @@ class TurtleStyleBasicTest {
         val repo = Rdf.memory()
         
         repo.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             person - FOAF.name - "Alice"
             person - FOAF.age - 30
         }
@@ -67,20 +67,15 @@ class TurtleStyleBasicTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
             
-            // Turtle-style "a" alias for rdf:type
-            person["a"] = "foaf:Person"
-            document["a"] = "dcterms:Dataset"
+            // Turtle-style rdf:type
+            person[RDF.type] = FOAF.Person
+            document[RDF.type] = Iri("http://purl.org/dc/terms/Dataset")
             
-            // Also test with minus operator (quoted)
-            person - "a" - "foaf:Agent"
-            
-            // And bare "a" (unquoted)
-            println("About to call a(): ${a()}")
-            val result = person - a() - "foaf:Agent"
-            println("Result of person - a() - 'foaf:Agent': $result")
+            // Also test with minus operator
+            person - RDF.type - FOAF.Agent
         }
         
         val allTriples = repo.defaultGraph.getTriples()
@@ -106,12 +101,12 @@ class TurtleStyleBasicTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
             
             // Natural language "is" alias for rdf:type
-            person `is` "foaf:Person"
-            document `is` "dcterms:Dataset"
+            person `is` FOAF.Person
+            document `is` Iri("http://purl.org/dc/terms/Dataset")
             
             // Also test with IRI
             person `is` FOAF.Agent
@@ -136,14 +131,14 @@ class TurtleStyleBasicTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val person = iri("http://example.org/person")
-            val organization = iri("http://example.org/org")
+            val person = Iri("http://example.org/person")
+            val organization = Iri("http://example.org/org")
             
             // Mix different type declaration styles
-            person["a"] = "foaf:Person"  // Turtle-style
-            person `is` "foaf:Agent"  // Natural language
-            organization - "a" - "foaf:Organization"  // Minus operator with a
-            organization has RDF.type with "foaf:Agent"  // Traditional has/with
+            person[RDF.type] = FOAF.Person  // Turtle-style
+            person `is` FOAF.Agent  // Natural language
+            organization - RDF.type - FOAF.Organization  // Minus operator
+            organization has RDF.type with FOAF.Agent  // Traditional has/with
             
             // Add some other properties
             person[FOAF.name] = "Alice"
@@ -162,3 +157,12 @@ class TurtleStyleBasicTest {
         repo.close()
     }
 }
+
+
+
+
+
+
+
+
+

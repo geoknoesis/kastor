@@ -2,7 +2,10 @@
 
 1) Start with an in-memory repository
 ```kotlin
-val api = Rdf.factory { type("jena:memory") }
+val api = Rdf.factory {
+  providerId = "jena"
+  variantId = "memory"
+}
 val repo = api.repository
 ```
 
@@ -21,4 +24,7 @@ repo.commit(); repo.end()
 ```kotlin
 val rows = repo.querySelect("SELECT ?s WHERE { ?s <urn:ex:p> ?o }")
 ```
+
+
+
 

@@ -23,7 +23,8 @@ Basic in-memory RDF4J repository with default configuration.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:memory")
+    providerId = "rdf4j"
+    variantId = "memory"
 }
 ```
 
@@ -32,9 +33,9 @@ Persistent NativeStore with high-performance disk storage.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:native")
-    param("location", "/data/rdf4j")
-    param("tripleIndexes", "spoc,posc")
+    providerId = "rdf4j"
+    variantId = "native"
+    location = "/data/rdf4j"
 }
 ```
 
@@ -45,7 +46,8 @@ In-memory repository with explicit RDF-star support.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:memory:star")
+    providerId = "rdf4j"
+    variantId = "memory-star"
 }
 ```
 
@@ -54,8 +56,9 @@ Persistent repository with explicit RDF-star support.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:native:star")
-    param("location", "/data/rdf4j")
+    providerId = "rdf4j"
+    variantId = "native-star"
+    location = "/data/rdf4j"
 }
 ```
 
@@ -66,7 +69,8 @@ In-memory repository with RDFS inference enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:memory:rdfs")
+    providerId = "rdf4j"
+    variantId = "memory-rdfs"
 }
 ```
 
@@ -75,8 +79,9 @@ Persistent repository with RDFS inference enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:native:rdfs")
-    param("location", "/data/rdf4j")
+    providerId = "rdf4j"
+    variantId = "native-rdfs"
+    location = "/data/rdf4j"
 }
 ```
 
@@ -87,9 +92,8 @@ In-memory repository with SHACL validation enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:memory:shacl")
-    param("validationEnabled", "true")
-    param("validationReport", "true")
+    providerId = "rdf4j"
+    variantId = "memory-shacl"
 }
 ```
 
@@ -98,9 +102,9 @@ Persistent repository with SHACL validation enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("rdf4j:native:shacl")
-    param("location", "/data/rdf4j")
-    param("validationEnabled", "true")
+    providerId = "rdf4j"
+    variantId = "native-shacl"
+    location = "/data/rdf4j"
 }
 ```
 
@@ -116,8 +120,11 @@ import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepositoryManagerFactory
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 // Create repositories
-manager.createRepository("users", RdfConfig("rdf4j:memory"))
-manager.createRepository("products", RdfConfig("rdf4j:native", mapOf("location" to "/data/products")))
+manager.createRepository("users", RdfConfig(providerId = "rdf4j", variantId = "memory"))
+manager.createRepository(
+    "products",
+    RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data/products"))
+)
 
 // Get repositories
 val usersRepo = manager.getRepository("users")
@@ -180,7 +187,8 @@ val mixedManager = Rdf4jRepositoryManagerFactory.createMixed(
 ```kotlin
 // Create repository with RDFS inference
 val api = Rdf.factory {
-    type("rdf4j:memory:rdfs")
+    providerId = "rdf4j"
+    variantId = "memory-rdfs"
 }
 
 val repo = api.repository
@@ -206,9 +214,8 @@ val results = repo.select(
 ```kotlin
 // Create repository with SHACL validation
 val api = Rdf.factory {
-    type("rdf4j:memory:shacl")
-    param("validationEnabled", "true")
-    param("validationReport", "true")
+    providerId = "rdf4j"
+    variantId = "memory-shacl"
 }
 
 val repo = api.repository
@@ -237,8 +244,8 @@ shapesGraph.add(triple(nameProperty, shaclMinCount, integerLiteral(1)))
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 // Create multiple repositories
-manager.createRepository("users", RdfConfig("rdf4j:memory"))
-manager.createRepository("products", RdfConfig("rdf4j:memory"))
+manager.createRepository("users", RdfConfig(providerId = "rdf4j", variantId = "memory"))
+manager.createRepository("products", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 // Add data to repositories
 val usersRepo = manager.getRepository("users")
@@ -267,8 +274,8 @@ val results = manager.federatedQuery(
 ```kotlin
 val manager = Rdf4jRepositoryManagerFactory.create()
 
-manager.createRepository("source", RdfConfig("rdf4j:memory"))
-manager.createRepository("target", RdfConfig("rdf4j:memory"))
+manager.createRepository("source", RdfConfig(providerId = "rdf4j", variantId = "memory"))
+manager.createRepository("target", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 // Add data to source repository
 val sourceRepo = manager.getRepository("source")
@@ -292,7 +299,7 @@ assertEquals(1, triples.size)
 
 ```kotlin
 val manager = Rdf4jRepositoryManagerFactory.create()
-manager.createRepository("test", RdfConfig("rdf4j:memory"))
+manager.createRepository("test", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 if (manager is Rdf4jRepositoryManager) {
     // Get statistics for a specific repository
@@ -320,12 +327,12 @@ if (manager is Rdf4jRepositoryManager) {
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 // Create repository
-manager.createRepository("test", RdfConfig("rdf4j:memory"))
+manager.createRepository("test", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 val originalConfig = manager.getRepositoryConfig("test")
 println("Original config: $originalConfig")
 
 // Update configuration
-val updatedConfig = RdfConfig("rdf4j:memory:rdfs")
+val updatedConfig = RdfConfig(providerId = "rdf4j", variantId = "memory-rdfs")
 val updatedRepo = manager.updateRepositoryConfig("test", updatedConfig)
 
 val newConfig = manager.getRepositoryConfig("test")
@@ -341,7 +348,10 @@ val manager = Rdf4jRepositoryManagerFactory.create()
 
 try {
     // Create and use repositories
-    manager.createRepository("data", RdfConfig("rdf4j:native", mapOf("location" to "/data")))
+    manager.createRepository(
+        "data",
+        RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data"))
+    )
     val repo = manager.getRepository("data")
     
     // Perform operations...
@@ -358,7 +368,7 @@ try {
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 try {
-    manager.createRepository("test", RdfConfig("rdf4j:memory"))
+    manager.createRepository("test", RdfConfig(providerId = "rdf4j", variantId = "memory"))
     val repo = manager.getRepository("test")
     
     // Operations that might fail
@@ -378,16 +388,19 @@ try {
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 // For temporary data
-manager.createRepository("temp", RdfConfig("rdf4j:memory"))
+manager.createRepository("temp", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 // For persistent data
-manager.createRepository("data", RdfConfig("rdf4j:native", mapOf("location" to "/data")))
+manager.createRepository(
+    "data",
+    RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data"))
+)
 
 // For inference-heavy workloads
-manager.createRepository("inference", RdfConfig("rdf4j:memory:rdfs"))
+manager.createRepository("inference", RdfConfig(providerId = "rdf4j", variantId = "memory-rdfs"))
 
 // For validation-heavy workloads
-manager.createRepository("validation", RdfConfig("rdf4j:memory:shacl"))
+manager.createRepository("validation", RdfConfig(providerId = "rdf4j", variantId = "memory-shacl"))
 ```
 
 ### 4. Federation Strategies
@@ -396,9 +409,18 @@ manager.createRepository("validation", RdfConfig("rdf4j:memory:shacl"))
 val manager = Rdf4jRepositoryManagerFactory.create()
 
 // Create specialized repositories
-manager.createRepository("users", RdfConfig("rdf4j:native", mapOf("location" to "/data/users")))
-manager.createRepository("products", RdfConfig("rdf4j:native", mapOf("location" to "/data/products")))
-manager.createRepository("external", RdfConfig("sparql", mapOf("queryEndpoint" to "https://dbpedia.org/sparql")))
+manager.createRepository(
+    "users",
+    RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data/users"))
+)
+manager.createRepository(
+    "products",
+    RdfConfig(providerId = "rdf4j", variantId = "native", options = mapOf("location" to "/data/products"))
+)
+manager.createRepository(
+    "external",
+    RdfConfig(providerId = "sparql", variantId = "sparql", options = mapOf("location" to "https://dbpedia.org/sparql"))
+)
 
 // Federated queries
 val results = manager.federatedQuery(
@@ -409,19 +431,21 @@ val results = manager.federatedQuery(
 
 ## Migration from Basic Implementation
 
-The enhanced RDF4J implementation maintains backward compatibility:
+Use explicit provider/variant selection:
 
 ```kotlin
-// Old way (still works)
 val api = Rdf.factory {
-    type("rdf4j:memory")
+    providerId = "rdf4j"
+    variantId = "memory"
 }
 
-// New way (enhanced capabilities)
 val manager = Rdf4jRepositoryManagerFactory.create()
-manager.createRepository("data", RdfConfig("rdf4j:memory:rdfs"))
+manager.createRepository("data", RdfConfig(providerId = "rdf4j", variantId = "memory-rdfs"))
 ```
 
 ## Examples
 
 See the `Rdf4jRepositoryManagerExample.kt` file for comprehensive examples demonstrating all features.
+
+
+

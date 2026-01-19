@@ -21,3 +21,12 @@ interface Distribution {
     @get:RdfProperty(iri = "http://purl.org/dc/terms/format")
     val format: List<String>
 }
+
+
+
+
+
+
+
+
+

@@ -7,19 +7,21 @@ import com.geoknoesis.kastor.rdf.*
  */
 class SparqlEndpointProvider : RdfApiProvider {
     
-    override fun getType(): String = "sparql-endpoint"
+    override val id: String = "sparql-endpoint"
     override val name: String = "SPARQL Endpoint Provider"
     override val version: String = "1.2.0"
     
     override fun getProviderCategory(): ProviderCategory = ProviderCategory.SPARQL_ENDPOINT
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("endpoint"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // For now, throw an exception as we need to import SparqlRepository from the correct package
         // This would be implemented with proper imports
         throw NotImplementedError("SparqlRepository integration not yet implemented")
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             sparqlVersion = "1.2",
             supportsRdfStar = true,
@@ -35,14 +37,14 @@ class SparqlEndpointProvider : RdfApiProvider {
         )
     }
     
-    override fun generateServiceDescription(serviceUri: String): RdfGraph? {
+    override fun generateServiceDescription(serviceUri: String, variantId: String?): RdfGraph? {
         val capabilities = getCapabilities()
         return SparqlServiceDescriptionGenerator(serviceUri, capabilities).generateServiceDescription()
     }
     
-    override fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
         return DetailedProviderCapabilities(
-            basic = getCapabilities(),
+            basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = mapOf(
                 "RDF-star" to true,
@@ -68,8 +70,6 @@ class SparqlEndpointProvider : RdfApiProvider {
         )
     }
     
-    override fun getSupportedTypes(): List<String> = listOf("sparql-endpoint")
-    override fun isSupported(type: String): Boolean = type == "sparql-endpoint"
 }
 
 /**
@@ -77,18 +77,20 @@ class SparqlEndpointProvider : RdfApiProvider {
  */
 class ReasonerProvider : RdfApiProvider {
     
-    override fun getType(): String = "reasoner"
+    override val id: String = "reasoner"
     override val name: String = "Reasoner Provider"
     override val version: String = "1.0.0"
     
     override fun getProviderCategory(): ProviderCategory = ProviderCategory.REASONER
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("reasoner"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // Implementation would create a repository with reasoning capabilities
         throw NotImplementedError("Reasoner repository integration not yet implemented")
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             supportsInference = true,
             sparqlVersion = "1.2",
@@ -102,14 +104,14 @@ class ReasonerProvider : RdfApiProvider {
         )
     }
     
-    override fun generateServiceDescription(serviceUri: String): RdfGraph? {
+    override fun generateServiceDescription(serviceUri: String, variantId: String?): RdfGraph? {
         val capabilities = getCapabilities()
         return SparqlServiceDescriptionGenerator(serviceUri, capabilities).generateServiceDescription()
     }
     
-    override fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
         return DetailedProviderCapabilities(
-            basic = getCapabilities(),
+            basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = mapOf(
                 "RDF-star" to true,
@@ -135,8 +137,6 @@ class ReasonerProvider : RdfApiProvider {
         )
     }
     
-    override fun getSupportedTypes(): List<String> = listOf("reasoner")
-    override fun isSupported(type: String): Boolean = type == "reasoner"
 }
 
 /**
@@ -144,18 +144,20 @@ class ReasonerProvider : RdfApiProvider {
  */
 class ShaclValidatorProvider : RdfApiProvider {
     
-    override fun getType(): String = "shacl-validator"
+    override val id: String = "shacl-validator"
     override val name: String = "SHACL Validator Provider"
     override val version: String = "1.0.0"
     
     override fun getProviderCategory(): ProviderCategory = ProviderCategory.SHACL_VALIDATOR
     
-    override fun createRepository(config: RdfConfig): RdfRepository {
+    override fun variants(): List<RdfVariant> = listOf(RdfVariant("shacl-validator"))
+    
+    override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         // Implementation would create a repository with SHACL validation
         throw NotImplementedError("SHACL validator repository integration not yet implemented")
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             sparqlVersion = "1.2",
             supportsRdfStar = true,
@@ -168,14 +170,14 @@ class ShaclValidatorProvider : RdfApiProvider {
         )
     }
     
-    override fun generateServiceDescription(serviceUri: String): RdfGraph? {
+    override fun generateServiceDescription(serviceUri: String, variantId: String?): RdfGraph? {
         val capabilities = getCapabilities()
         return SparqlServiceDescriptionGenerator(serviceUri, capabilities).generateServiceDescription()
     }
     
-    override fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
         return DetailedProviderCapabilities(
-            basic = getCapabilities(),
+            basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = mapOf(
                 "RDF-star" to true,
@@ -199,6 +201,13 @@ class ShaclValidatorProvider : RdfApiProvider {
         )
     }
     
-    override fun getSupportedTypes(): List<String> = listOf("shacl-validator")
-    override fun isSupported(type: String): Boolean = type == "shacl-validator"
 }
+
+
+
+
+
+
+
+
+

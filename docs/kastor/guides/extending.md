@@ -6,15 +6,12 @@ You can add new providers by implementing the `RdfApiProvider` SPI.
 ```kotlin
 class MyProvider : RdfApiProvider {
   override val id: String = "my"
-  override fun variants(): List<RdfConfigVariant> = listOf(
-    RdfConfigVariant(
-      type = "my:memory",
-      description = "In-memory store",
-    ),
-  )
-  override fun create(config: RdfConfig): RdfApi = when (config.type) {
-    "my:memory" -> SimpleRdfApi(MyRepository())
-    else -> error("Unsupported variant: ${'$'}{config.type}")
+
+  override fun variants(): List<RdfVariant> = listOf(RdfVariant("memory"))
+
+  override fun createRepository(variantId: String, config: RdfConfig): RdfRepository = when (variantId) {
+    "memory" -> MyRepository()
+    else -> error("Unsupported variant: ${'$'}variantId")
   }
 }
 ```
@@ -34,6 +31,12 @@ RdfApiRegistry.register(MyProvider())
 
 ### 4) Use it
 ```kotlin
-val api = Rdf.factory { type("my:memory") }
+val api = Rdf.factory {
+  providerId = "my"
+  variantId = "memory"
+}
 ```
+
+
+
 

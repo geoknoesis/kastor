@@ -33,6 +33,7 @@ interface RdfHandle {
     val graph: RdfGraph        // Kastor Graph (Jena/RDF4J under the hood)
     val extras: PropertyBag    // Unmapped triples (lazy & memoized)
     
+    fun validate(): ValidationResult
     fun validateOrThrow()      // Validate against SHACL shapes
 }
 ```
@@ -43,7 +44,8 @@ interface RdfHandle {
 - `extras: PropertyBag` - Unmapped properties
 
 **Methods:**
-- `validateOrThrow()` - Validate the focus node against configured SHACL shapes
+- `validate()` - Validate and return `ValidationResult`
+- `validateOrThrow()` - Validate and throw on violations
 
 **Usage:**
 ```kotlin
@@ -334,3 +336,6 @@ val name2 = person.name.firstOrNull()  // Uses cached result
 - Mix RDF operations with domain logic
 - Ignore validation errors
 - Access side-channel in tight loops
+
+
+

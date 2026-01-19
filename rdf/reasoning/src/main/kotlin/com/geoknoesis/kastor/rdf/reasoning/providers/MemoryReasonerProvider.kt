@@ -114,7 +114,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 violations.add(
                     ValidationViolation(
                         constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: iri("unknown"),
+                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
                         message = inconsistency.description,
                         severity = Severity.ERROR
                     )
@@ -153,7 +153,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 if (triple1.obj == triple2.subject) {
                     val inferredTriple = RdfTriple(
                         triple1.subject,
-                        iri("http://www.w3.org/2000/01/rdf-schema#subClassOf"),
+                        Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf"),
                         triple2.obj
                     )
                     if (!triples.contains(inferredTriple)) {
@@ -181,7 +181,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 if (triple1.obj == triple2.subject) {
                     val inferredTriple = RdfTriple(
                         triple1.subject,
-                        iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf"),
+                        Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf"),
                         triple2.obj
                     )
                     if (!triples.contains(inferredTriple)) {
@@ -212,7 +212,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 if (triple.predicate == property) {
                     val typeTriple = RdfTriple(
                         triple.subject,
-                        iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+                        Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
                         domain
                     )
                     if (!triples.contains(typeTriple)) {
@@ -244,7 +244,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
                     val objIri = triple.obj as Iri
                     val typeTriple = RdfTriple(
                         objIri,
-                        iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+                        Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
                         range
                     )
                     if (!triples.contains(typeTriple)) {
@@ -359,3 +359,12 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         }.size
     }
 }
+
+
+
+
+
+
+
+
+

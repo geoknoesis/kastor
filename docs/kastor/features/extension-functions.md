@@ -655,3 +655,6 @@ For questions about SPARQL extension functions in Kastor:
 ---
 
 *Kastor SPARQL extension function system is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

@@ -8,10 +8,7 @@ class ConfigVariantsTest {
     
     @Test
     fun `all configuration variants are supported`() {
-        val providers = RdfApiRegistry.discoverProviders()
-        
-        // Collect all supported types from all providers
-        val allSupportedTypes = providers.flatMap { it.getSupportedTypes() }
+        val allSupportedTypes = RdfApiRegistry.getSupportedTypes()
         
         println("All supported configuration variants:")
         allSupportedTypes.forEach { type ->
@@ -20,12 +17,17 @@ class ConfigVariantsTest {
         
         // Test that each type is supported
         allSupportedTypes.forEach { type ->
-            assertTrue(RdfApiRegistry.isSupported(type), "Type $type should be supported")
+            val parts = type.split(":", limit = 2)
+            assertEquals(2, parts.size, "Type $type should include provider and variant")
+            assertTrue(
+                RdfApiRegistry.supportsVariant(parts[0], parts[1]),
+                "Type $type should be supported"
+            )
         }
         
         // Verify we have the expected variants
         // Only memory provider is currently registered by default
-        val expectedTypes = listOf("memory")
+        val expectedTypes = listOf("memory:memory")
         
         expectedTypes.forEach { expectedType ->
             assertTrue(allSupportedTypes.contains(expectedType), 
@@ -35,33 +37,37 @@ class ConfigVariantsTest {
     
     @Test
     fun `jena variants work correctly`() {
-        val jenaTypes = listOf(
-            "jena:memory",
-            "jena:memory:inference", 
-            "jena:tdb2",
-            "jena:tdb2:inference"
+        val jenaVariants = listOf(
+            "memory",
+            "memory-inference",
+            "tdb2",
+            "tdb2-inference"
         )
         
-        jenaTypes.forEach { type ->
-            println("Testing Jena variant: $type")
+        jenaVariants.forEach { variant ->
+            println("Testing Jena variant: jena:$variant")
             
             try {
-                val config = if (type.contains("tdb2")) {
-                    // Add location parameter for TDB2 variants
-                    RdfConfig(type, mapOf("location" to "test-data"))
+                val options = if (variant.contains("tdb2")) {
+                    mapOf("location" to "test-data")
                 } else {
-                    RdfConfig(type)
+                    emptyMap()
                 }
+                val config = RdfConfig(
+                    providerId = "jena",
+                    variantId = variant,
+                    options = options
+                )
                 
                 val repo = RdfApiRegistry.create(config)
-                assertNotNull(repo, "Repository should be created for $type")
+                assertNotNull(repo, "Repository should be created for jena:$variant")
                 assertFalse(repo.isClosed(), "Repository should not be closed")
                 assertNotNull(repo.defaultGraph, "Repository should have a default graph")
                 
-                println("  ✓ Successfully created repository for $type")
+                println("  ✓ Successfully created repository for jena:$variant")
                 
             } catch (e: Exception) {
-                println("  ⚠ Failed to create repository for $type: ${e.message}")
+                println("  ⚠ Failed to create repository for jena:$variant: ${e.message}")
                 // Some variants might fail due to missing dependencies or file system issues
             }
         }
@@ -69,37 +75,41 @@ class ConfigVariantsTest {
     
     @Test
     fun `rdf4j variants work correctly`() {
-        val rdf4jTypes = listOf(
-            "rdf4j:memory",
-            "rdf4j:native",
-            "rdf4j:memory:star",
-            "rdf4j:native:star",
-            "rdf4j:memory:rdfs",
-            "rdf4j:native:rdfs",
-            "rdf4j:memory:shacl",
-            "rdf4j:native:shacl"
+        val rdf4jVariants = listOf(
+            "memory",
+            "native",
+            "memory-star",
+            "native-star",
+            "memory-rdfs",
+            "native-rdfs",
+            "memory-shacl",
+            "native-shacl"
         )
         
-        rdf4jTypes.forEach { type ->
-            println("Testing RDF4J variant: $type")
+        rdf4jVariants.forEach { variant ->
+            println("Testing RDF4J variant: rdf4j:$variant")
             
             try {
-                val config = if (type.contains("native")) {
-                    // Add location parameter for native variants
-                    RdfConfig(type, mapOf("location" to "test-data"))
+                val options = if (variant.contains("native")) {
+                    mapOf("location" to "test-data")
                 } else {
-                    RdfConfig(type)
+                    emptyMap()
                 }
+                val config = RdfConfig(
+                    providerId = "rdf4j",
+                    variantId = variant,
+                    options = options
+                )
                 
                 val repo = RdfApiRegistry.create(config)
-                assertNotNull(repo, "Repository should be created for $type")
+                assertNotNull(repo, "Repository should be created for rdf4j:$variant")
                 assertFalse(repo.isClosed(), "Repository should not be closed")
                 assertNotNull(repo.defaultGraph, "Repository should have a default graph")
                 
-                println("  ✓ Successfully created repository for $type")
+                println("  ✓ Successfully created repository for rdf4j:$variant")
                 
             } catch (e: Exception) {
-                println("  ⚠ Failed to create repository for $type: ${e.message}")
+                println("  ⚠ Failed to create repository for rdf4j:$variant: ${e.message}")
                 // Some variants might fail due to missing dependencies or file system issues
             }
         }
@@ -110,7 +120,11 @@ class ConfigVariantsTest {
         println("Testing SPARQL variant: sparql")
         
         try {
-            val config = RdfConfig("sparql", mapOf("location" to "http://dbpedia.org/sparql"))
+        val config = RdfConfig(
+            providerId = "sparql",
+            variantId = "sparql",
+            options = mapOf("location" to "http://dbpedia.org/sparql")
+        )
             val repo = RdfApiRegistry.create(config)
             
             assertNotNull(repo, "Repository should be created for sparql")
@@ -127,23 +141,30 @@ class ConfigVariantsTest {
     
     @Test
     fun `memory fallback still works`() {
-        val repo = RdfApiRegistry.create(RdfConfig("memory"))
+        val repo = RdfApiRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
         
         assertNotNull(repo, "Memory repository should be created")
         assertFalse(repo.isClosed(), "Repository should not be closed")
         assertNotNull(repo.defaultGraph, "Repository should have a default graph")
         
         // Test basic operations
-        val s = iri("urn:test:s")
-        val p = iri("urn:test:p")
-        val o = literal("test")
+        val s = Iri("urn:test:s")
+        val p = Iri("urn:test:p")
+        val o = Literal("test")
         
         repo.defaultGraph.addTriple(RdfTriple(s, p, o))
         
-        // Memory provider currently has placeholder query implementation
-        val result = repo.query("SELECT ?s WHERE { ?s ?p ?o }")
-        assertEquals(0, result.count()) // Placeholder returns empty results
+        assertTrue(repo.defaultGraph.hasTriple(RdfTriple(s, p, o)))
         
         println("✓ Memory repository fallback works correctly")
     }
 }
+
+
+
+
+
+
+
+
+

@@ -16,17 +16,17 @@ class RdfTermsTest {
     @Test
     fun `IRI creation and validation works`() {
         // Test valid IRIs
-        val httpIri = iri("http://example.org/resource")
+        val httpIri = Iri("http://example.org/resource")
         assertEquals("http://example.org/resource", httpIri.value, "HTTP IRI should preserve value")
         assertTrue(httpIri is Iri, "Should be instance of Iri")
         
-        val httpsIri = iri("https://example.org/secure")
+        val httpsIri = Iri("https://example.org/secure")
         assertEquals("https://example.org/secure", httpsIri.value, "HTTPS IRI should preserve value")
         
-        val urnIri = iri("urn:example:resource")
+        val urnIri = Iri("urn:example:resource")
         assertEquals("urn:example:resource", urnIri.value, "URN IRI should preserve value")
         
-        val dataIri = iri("data:text/plain;base64,SGVsbG8gV29ybGQ=")
+        val dataIri = Iri("data:text/plain;base64,SGVsbG8gV29ybGQ=")
         assertEquals("data:text/plain;base64,SGVsbG8gV29ybGQ=", dataIri.value, "Data IRI should preserve value")
     }
     
@@ -60,7 +60,7 @@ class RdfTermsTest {
     @Test
     fun `literal creation with Kotlin types works`() {
         // Test integer literal
-        val intLit = literal(42)
+        val intLit = 42.toLiteral()
         assertEquals("42", intLit.lexical, "Integer literal should convert to string")
         assertEquals(XSD.integer, intLit.datatype, "Integer literal should have xsd:integer datatype")
         
@@ -70,7 +70,7 @@ class RdfTermsTest {
             assertEquals(XSD.integer, longLit.datatype, "Long literal should have xsd:integer datatype")
         
         // Test double literal
-        val doubleLit = literal(3.14159)
+        val doubleLit = 3.14159.toLiteral()
         assertEquals("3.14159", doubleLit.lexical, "Double literal should convert to string")
         assertEquals(XSD.double, doubleLit.datatype, "Double literal should have xsd:double datatype")
         
@@ -80,7 +80,7 @@ class RdfTermsTest {
         assertEquals(XSD.float, floatLit.datatype, "Float literal should have xsd:float datatype")
         
         // Test boolean literal
-        val boolLit = Literal(true)
+        val boolLit = true.toLiteral()
         assertEquals("true", boolLit.lexical, "Boolean literal should convert to string")
         assertEquals(XSD.boolean, boolLit.datatype, "Boolean literal should have xsd:boolean datatype")
         
@@ -128,9 +128,9 @@ class RdfTermsTest {
     
     @Test
     fun `triple creation and access works`() {
-        val subject = iri("http://example.org/subject")
-        val predicate = iri("http://example.org/predicate")
-        val obj = literal("object value")
+        val subject = Iri("http://example.org/subject")
+        val predicate = Iri("http://example.org/predicate")
+        val obj = Literal("object value")
         
         val triple = RdfTriple(subject, predicate, obj)
         
@@ -142,16 +142,16 @@ class RdfTermsTest {
     @Test
     fun `triple creation with different term types works`() {
         // Test with IRI subject and object
-        val iriSubj = iri("http://example.org/person")
-        val iriPred = iri("http://example.org/name")
-        val iriObj = iri("http://example.org/John")
+        val iriSubj = Iri("http://example.org/person")
+        val iriPred = Iri("http://example.org/name")
+        val iriObj = Iri("http://example.org/John")
         
         val triple1 = RdfTriple(iriSubj, iriPred, iriObj)
         assertEquals(iriSubj, triple1.subject, "Triple with IRI object should work")
         
         // Test with blank node subject
         val bnodeSubj = bnode("b1")
-        val literalObj = literal("John Doe")
+        val literalObj = Literal("John Doe")
         
         val triple2 = RdfTriple(bnodeSubj, iriPred, literalObj)
         assertEquals(bnodeSubj, triple2.subject, "Triple with blank node subject should work")
@@ -172,9 +172,9 @@ class RdfTermsTest {
         assertEquals(0, graph.size(), "New graph should be empty")
         
         // Test adding triples
-        val subject = iri("http://example.org/subject")
-        val predicate = iri("http://example.org/predicate")
-        val obj = literal("object value")
+        val subject = Iri("http://example.org/subject")
+        val predicate = Iri("http://example.org/predicate")
+        val obj = Literal("object value")
         val triple = RdfTriple(subject, predicate, obj)
         
         graph.addTriple(triple)
@@ -203,17 +203,17 @@ class RdfTermsTest {
         val graph = repo.defaultGraph
         
         // Add multiple triples
-        val s1 = iri("http://example.org/person1")
-        val s2 = iri("http://example.org/person2")
-        val p1 = iri("http://example.org/name")
-        val p2 = iri("http://example.org/age")
-        val o1 = literal("Alice")
-        val o2 = literal("Bob")
-        val o3 = literal("30")
+        val s1 = Iri("http://example.org/person1")
+        val s2 = Iri("http://example.org/person2")
+        val p1 = Iri("http://example.org/name")
+        val p2 = Iri("http://example.org/age")
+        val o1 = Literal("Alice")
+        val o2 = Literal("Bob")
+        val o3 = Literal("30")
         
-        graph.addTriple(triple(s1, p1, o1))
-        graph.addTriple(triple(s2, p1, o2))
-        graph.addTriple(triple(s1, p2, o3))
+        graph.addTriple(RdfTriple(s1, p1, o1))
+        graph.addTriple(RdfTriple(s2, p1, o2))
+        graph.addTriple(RdfTriple(s1, p2, o3))
         
         // Test total size
         assertEquals(3, graph.size(), "Should have 3 triples total")
@@ -242,9 +242,9 @@ class RdfTermsTest {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
         
-        val subject = iri("http://example.org/subject")
-        val predicate = iri("http://example.org/predicate")
-        val obj = literal("object value")
+        val subject = Iri("http://example.org/subject")
+        val predicate = Iri("http://example.org/predicate")
+        val obj = Literal("object value")
         val triple = RdfTriple(subject, predicate, obj)
         
         // Test contains before adding
@@ -257,7 +257,7 @@ class RdfTermsTest {
         assertTrue(graph.hasTriple(triple), "Graph should contain triple after adding")
         
         // Test contains with different triple
-        val differentTriple = triple(subject, iri("http://example.org/different"), obj)
+        val differentTriple = RdfTriple(subject, Iri("http://example.org/different"), obj)
         assertFalse(graph.hasTriple(differentTriple), "Graph should not contain different triple")
         
         repo.close()
@@ -266,9 +266,9 @@ class RdfTermsTest {
     @Test
     fun `RDF term equality and hashCode work`() {
         // Test IRI equality
-        val iri1 = iri("http://example.org/resource")
-        val iri2 = iri("http://example.org/resource")
-        val iri3 = iri("http://example.org/different")
+        val iri1 = Iri("http://example.org/resource")
+        val iri2 = Iri("http://example.org/resource")
+        val iri3 = Iri("http://example.org/different")
         
         assertEquals(iri1, iri2, "Same IRIs should be equal")
         assertNotEquals(iri1, iri3, "Different IRIs should not be equal")
@@ -295,9 +295,9 @@ class RdfTermsTest {
         assertEquals(literal1.hashCode(), literal2.hashCode(), "Same literals should have same hashCode")
         
         // Test triple equality
-        val triple1 = triple(iri1, iri("http://example.org/pred"), literal1)
-        val triple2 = triple(iri1, iri("http://example.org/pred"), literal1)
-        val triple3 = triple(iri3, iri("http://example.org/pred"), literal1)
+        val triple1 = RdfTriple(iri1, Iri("http://example.org/pred"), literal1)
+        val triple2 = RdfTriple(iri1, Iri("http://example.org/pred"), literal1)
+        val triple3 = RdfTriple(iri3, Iri("http://example.org/pred"), literal1)
         
         assertEquals(triple1, triple2, "Same triples should be equal")
         assertNotEquals(triple1, triple3, "Different triples should not be equal")
@@ -307,7 +307,7 @@ class RdfTermsTest {
     @Test
     fun `string conversion works for all term types`() {
         // Test IRI string conversion
-        val iri = iri("http://example.org/resource")
+        val iri = Iri("http://example.org/resource")
         assertTrue(iri.toString().contains("http://example.org/resource"), "IRI toString should contain value")
         
         // Test blank node string conversion
@@ -320,8 +320,17 @@ class RdfTermsTest {
         assertTrue(literal.toString().contains("string"), "Literal toString should contain datatype info")
         
         // Test triple string conversion
-        val triple = RdfTriple(iri, iri("http://example.org/pred"), literal)
+        val triple = RdfTriple(iri, Iri("http://example.org/pred"), literal)
         assertTrue(triple.toString().contains("http://example.org/resource"), "Triple toString should contain subject")
         assertTrue(triple.toString().contains("test value"), "Triple toString should contain object")
     }
 }
+
+
+
+
+
+
+
+
+

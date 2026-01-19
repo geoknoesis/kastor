@@ -11,8 +11,8 @@ class RdfStarTest {
     
     @Test
     fun `embedded function creates correct RdfStarTriple`() {
-        val alice = iri("http://example.org/alice")
-        val bob = iri("http://example.org/bob")
+        val alice = Iri("http://example.org/alice")
+        val bob = Iri("http://example.org/bob")
         
         val embeddedTriple = embedded(alice, FOAF.knows, bob)
         
@@ -36,9 +36,9 @@ class RdfStarTest {
         val exception = assertThrows(IllegalArgumentException::class.java) {
             Rdf.graph {
                 // Literal cannot be a subject in embedded triple
-                val invalidEmbedded = embedded("Alice", FOAF.knows, iri("http://example.org/bob"))
+                val invalidEmbedded = embedded("Alice", FOAF.knows, Iri("http://example.org/bob"))
                 // Try to use the invalid embedded triple in a triple - this should trigger the error
-                iri("http://example.org/test") - DCTERMS.source - invalidEmbedded
+                Iri("http://example.org/test") - DCTERMS.source - invalidEmbedded
             }
         }
         
@@ -50,12 +50,21 @@ class RdfStarTest {
         val exception = assertThrows(IllegalArgumentException::class.java) {
             Rdf.graph {
                 // Literal cannot be a predicate in embedded triple
-                val invalidEmbedded = embedded(iri("http://example.org/alice"), "Alice", iri("http://example.org/bob"))
+                val invalidEmbedded = embedded(Iri("http://example.org/alice"), "Alice", Iri("http://example.org/bob"))
                 // Try to use the invalid embedded triple in a triple - this should trigger the error
-                iri("http://example.org/test") - DCTERMS.source - invalidEmbedded
+                Iri("http://example.org/test") - DCTERMS.source - invalidEmbedded
             }
         }
         
         assertTrue(exception.message?.contains("predicate must be an IRI") == true)
     }
 }
+
+
+
+
+
+
+
+
+

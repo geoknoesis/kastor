@@ -19,17 +19,17 @@ fun main() {
     
     // Add DCAT-US data using the generated interfaces
     repo.add {
-        val catalog = iri("http://example.org/catalog")
+        val catalog = Iri("http://example.org/catalog")
         catalog - RDF.type - DCAT.Catalog
         catalog - DCTERMS.title - "My Data Catalog"
         catalog - DCTERMS.description - "A catalog of datasets"
-        catalog - DCTERMS.publisher - iri("http://example.org/publisher")
+        catalog - DCTERMS.publisher - Iri("http://example.org/publisher")
         
-        val dataset = iri("http://example.org/dataset")
+        val dataset = Iri("http://example.org/dataset")
         dataset - RDF.type - DCAT.Dataset
         dataset - DCTERMS.title - "Sample Dataset"
         dataset - DCTERMS.description - "A sample dataset"
-        dataset - DCAT.distribution - iri("http://example.org/distribution")
+        dataset - DCAT.distribution - Iri("http://example.org/distribution")
         
         catalog - DCAT.dataset - dataset
     }
@@ -38,7 +38,7 @@ fun main() {
     println("Repository size: ${repo.defaultGraph.size()} triples")
     
     // Materialize using generated interfaces
-    val catalogRef = RdfRef(iri("http://example.org/catalog"), repo.defaultGraph)
+    val catalogRef = RdfRef(Iri("http://example.org/catalog"), repo.defaultGraph)
     val catalog: Catalog = catalogRef.asType()
     
     println("\nMaterialized Catalog:")
@@ -77,3 +77,12 @@ fun main() {
     
     println("\n=== Demo Complete ===")
 }
+
+
+
+
+
+
+
+
+

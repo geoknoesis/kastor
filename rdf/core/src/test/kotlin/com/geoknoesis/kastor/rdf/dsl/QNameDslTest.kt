@@ -17,10 +17,10 @@ class QNameDslTest {
                 put("dcat", "http://www.w3.org/ns/dcat#")
             }
             
-            val person = iri("http://example.org/person")
-            person - "foaf:name" - "Alice"
-            person - "foaf:age" - 30
-            person - "dcat:keyword" - "test"
+            val person = Iri("http://example.org/person")
+            person - qname("foaf:name") - "Alice"
+            person - qname("foaf:age") - 30
+            person - qname("dcat:keyword") - "test"
         }
         
         val triples = repo.getTriples()
@@ -44,9 +44,9 @@ class QNameDslTest {
         repo.add {
             prefix("foaf", "http://xmlns.com/foaf/0.1/")
             
-            val person = iri("http://example.org/person")
-            person["foaf:name"] = "Bob"
-            person["foaf:age"] = 25
+            val person = Iri("http://example.org/person")
+            person[qname("foaf:name")] = "Bob"
+            person[qname("foaf:age")] = 25
         }
         
         val triples = repo.getTriples()
@@ -64,9 +64,9 @@ class QNameDslTest {
         repo.add {
             prefix("foaf", "http://xmlns.com/foaf/0.1/")
             
-            val person = iri("http://example.org/person")
-            person has "foaf:name" with "Charlie"
-            person has "foaf:age" with 35
+            val person = Iri("http://example.org/person")
+            person has qname("foaf:name") with "Charlie"
+            person has qname("foaf:age") with 35
         }
         
         val triples = repo.getTriples()
@@ -87,7 +87,7 @@ class QNameDslTest {
             val nameIri = qname("foaf:name")
             assertEquals("http://xmlns.com/foaf/0.1/name", nameIri.value)
             
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             person - nameIri - "David"
         }
         
@@ -103,10 +103,10 @@ class QNameDslTest {
                 put("dcat", "http://www.w3.org/ns/dcat#")
             }
             
-            val person = iri("http://example.org/person")
-            person - "foaf:name" - "Eve"
-            person - "foaf:age" - 28
-            person - "dcat:keyword" - "example"
+            val person = Iri("http://example.org/person")
+            person - qname("foaf:name") - "Eve"
+            person - qname("foaf:age") - 28
+            person - qname("dcat:keyword") - "example"
         }
         
         assertEquals(3, graph.getTriples().size)
@@ -130,9 +130,9 @@ class QNameDslTest {
         repo.add {
             prefix("foaf", "http://xmlns.com/foaf/0.1/")
             
-            val person = iri("http://example.org/person")
-            person - "foaf:name" - "Frank"
-            person - "http://example.org/customProp" - "value"  // Full IRI
+            val person = Iri("http://example.org/person")
+            person - qname("foaf:name") - "Frank"
+            person - Iri("http://example.org/customProp") - "value"  // Full IRI
         }
         
         val triples = repo.getTriples()
@@ -157,13 +157,13 @@ class QNameDslTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val catalog = iri("http://example.org/catalog")
-            catalog - "dcterms:title" - "My Catalog"
-            catalog - "dcterms:description" - "A test catalog"
-            catalog - "dcat:dataset" - iri("http://example.org/dataset1")
+            val catalog = Iri("http://example.org/catalog")
+            catalog - qname("dcterms:title") - "My Catalog"
+            catalog - qname("dcterms:description") - "A test catalog"
+            catalog - qname("dcat:dataset") - Iri("http://example.org/dataset1")
             
-            val person = iri("http://example.org/person")
-            person - "foaf:name" - "Grace"
+            val person = Iri("http://example.org/person")
+            person - qname("foaf:name") - "Grace"
         }
         
         val triples = repo.getTriples()
@@ -180,3 +180,12 @@ class QNameDslTest {
         })
     }
 }
+
+
+
+
+
+
+
+
+

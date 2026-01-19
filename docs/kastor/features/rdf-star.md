@@ -173,8 +173,8 @@ val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
 println("RDF-star support available: $hasRdfStarSupport")
 
 // Find providers that support RDF-star
-val rdfStarProviders = RdfApiRegistry.getAllProviders().values.filter { 
-    it.getCapabilities().supportsRdfStar 
+val rdfStarProviders = RdfApiRegistry.getAllProviders().filter { 
+    it.getCapabilities(it.defaultVariantId()).supportsRdfStar 
 }
 println("Providers supporting RDF-star: ${rdfStarProviders.size}")
 ```
@@ -183,7 +183,10 @@ println("Providers supporting RDF-star: ${rdfStarProviders.size}")
 
 ```kotlin
 val provider = RdfApiRegistry.getProvider("memory")
-val serviceDescription = provider.generateServiceDescription("http://example.org/sparql")
+val serviceDescription = provider.generateServiceDescription(
+    "http://example.org/sparql",
+    provider.defaultVariantId()
+)
 
 if (serviceDescription != null) {
     val triples = serviceDescription.getTriples()
@@ -375,12 +378,16 @@ if (provider.getCapabilities().supportsRdfStar) {
 // Handle providers without RDF-star support
 fun executeRdfStarQuery(query: String, provider: RdfApiProvider): QueryResult {
     return try {
-        provider.createRepository(RdfConfig()).query(query)
+        val variant = provider.defaultVariantId()
+        val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
+        repo.query(query)
     } catch (e: UnsupportedOperationException) {
-        if (!provider.getCapabilities().supportsRdfStar) {
+        if (!provider.getCapabilities(provider.defaultVariantId()).supportsRdfStar) {
             // Convert RDF-star query to regular SPARQL
             val fallbackQuery = query.replace("<<", "").replace(">>", "")
-            provider.createRepository(RdfConfig()).query(fallbackQuery)
+            val variant = provider.defaultVariantId()
+            val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
+            repo.query(fallbackQuery)
         } else {
             throw e
         }
@@ -548,3 +555,6 @@ For questions about RDF-star support in Kastor:
 ---
 
 *Kastor RDF-star support is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
+
+

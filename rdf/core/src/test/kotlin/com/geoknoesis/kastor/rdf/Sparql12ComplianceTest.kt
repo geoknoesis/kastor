@@ -18,7 +18,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             prefix("foaf", "http://xmlns.com/foaf/0.1/")
             where {
-                pattern(var_("person"), iri("foaf:name"), var_("name"))
+                pattern(var_("person"), Iri("foaf:name"), var_("name"))
             }
         }
 
@@ -75,7 +75,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             expression(subject(var_("triple")), "subj")
             where {
-                pattern(var_("triple"), iri("http://example.org/type"), iri("http://example.org/Triple"))
+                pattern(var_("triple"), Iri("http://example.org/type"), Iri("http://example.org/Triple"))
             }
         }
 
@@ -89,7 +89,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             expression(predicate(var_("triple")), "pred")
             where {
-                pattern(var_("triple"), iri("http://example.org/type"), iri("http://example.org/Triple"))
+                pattern(var_("triple"), Iri("http://example.org/type"), Iri("http://example.org/Triple"))
             }
         }
 
@@ -103,7 +103,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             expression(`object`(var_("triple")), "obj")
             where {
-                pattern(var_("triple"), iri("http://example.org/type"), iri("http://example.org/Triple"))
+                pattern(var_("triple"), Iri("http://example.org/type"), Iri("http://example.org/Triple"))
             }
         }
 
@@ -117,7 +117,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             expression(langdir(var_("text")), "direction")
             where {
-                pattern(var_("s"), iri("http://example.org/text"), var_("text"))
+                pattern(var_("s"), Iri("http://example.org/text"), var_("text"))
             }
         }
 
@@ -130,7 +130,7 @@ class Sparql12ComplianceTest {
         val query = select("text") {
             version("1.2")
             where {
-                pattern(var_("s"), iri("http://example.org/text"), var_("text"))
+                pattern(var_("s"), Iri("http://example.org/text"), var_("text"))
                 filter(hasLang(var_("text"), "en"))
             }
         }
@@ -144,7 +144,7 @@ class Sparql12ComplianceTest {
         val query = select("text") {
             version("1.2")
             where {
-                pattern(var_("s"), iri("http://example.org/text"), var_("text"))
+                pattern(var_("s"), Iri("http://example.org/text"), var_("text"))
                 filter(hasLangdir(var_("text"), "rtl"))
             }
         }
@@ -159,7 +159,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             expression(strlangdir(var_("text"), "en", "ltr"), "strWithDir")
             where {
-                pattern(var_("s"), iri("http://example.org/text"), var_("text"))
+                pattern(var_("s"), Iri("http://example.org/text"), var_("text"))
             }
         }
 
@@ -175,7 +175,7 @@ class Sparql12ComplianceTest {
             expression(encodeForUri(var_("text")), "encoded")
             expression(decodeForUri(var_("text")), "decoded")
             where {
-                pattern(var_("s"), iri("http://example.org/text"), var_("text"))
+                pattern(var_("s"), Iri("http://example.org/text"), var_("text"))
             }
         }
 
@@ -194,7 +194,7 @@ class Sparql12ComplianceTest {
             expression(now(), "currentTime")
             expression(timezone(), "timezone")
             where {
-                pattern(var_("s"), iri("http://example.org/value"), var_("value"))
+                pattern(var_("s"), Iri("http://example.org/value"), var_("value"))
             }
         }
 
@@ -214,7 +214,7 @@ class Sparql12ComplianceTest {
             expression(time(var_("dateTime")), "t")
             expression(tz(var_("dateTime")), "tz")
             where {
-                pattern(var_("s"), iri("http://example.org/dateTime"), var_("dateTime"))
+                pattern(var_("s"), Iri("http://example.org/dateTime"), var_("dateTime"))
             }
         }
 
@@ -234,13 +234,13 @@ class Sparql12ComplianceTest {
             
             where {
                 // Regular triple pattern
-                pattern(var_("person"), iri("foaf:name"), var_("name"))
+                pattern(var_("person"), Iri("foaf:name"), var_("name"))
                 
                 // RDF-star quoted triple pattern
-                quotedTriple(var_("person"), iri("foaf:name"), var_("name"))
+                quotedTriple(var_("person"), Iri("foaf:name"), var_("name"))
                 
                 // RDF-star functions
-                bind(var_("tripleTerm"), triple(var_("person"), iri("foaf:name"), var_("name")))
+                bind(var_("tripleTerm"), triple(var_("person"), Iri("foaf:name"), var_("name")))
                 bind(var_("confidence"), var_("confidence"))
                 
                 // Filters with new functions
@@ -283,8 +283,8 @@ class Sparql12ComplianceTest {
             
             where {
                 // Property path pattern using regular patterns for now
-                pattern(var_("person"), iri("foaf:knows"), var_("friend"))
-                pattern(var_("person"), iri("foaf:friend"), var_("friend"))
+                pattern(var_("person"), Iri("foaf:knows"), var_("friend"))
+                pattern(var_("person"), Iri("foaf:friend"), var_("friend"))
             }
         }
 
@@ -339,7 +339,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - one or more`() {
         val query = select {
             where {
-                propertyPath(var_("person"), OneOrMore(BasicPath(iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), OneOrMore(BasicPath(Iri("foaf:knows"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -353,7 +353,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - zero or more`() {
         val query = select {
             where {
-                propertyPath(var_("person"), ZeroOrMore(BasicPath(iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), ZeroOrMore(BasicPath(Iri("foaf:knows"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -364,7 +364,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - zero or one`() {
         val query = select {
             where {
-                propertyPath(var_("person"), ZeroOrOne(BasicPath(iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), ZeroOrOne(BasicPath(Iri("foaf:knows"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -375,7 +375,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - alternative`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Alternative(BasicPath(iri("foaf:knows")), BasicPath(iri("foaf:friendOf"))), var_("friend"))
+                propertyPath(var_("person"), Alternative(BasicPath(Iri("foaf:knows")), BasicPath(Iri("foaf:friendOf"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -386,7 +386,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - sequence`() {
         val query = select {
             where {
-                propertyPath(var_("person"), PathSequence(BasicPath(iri("foaf:knows")), BasicPath(iri("foaf:friendOf"))), var_("friend"))
+                propertyPath(var_("person"), PathSequence(BasicPath(Iri("foaf:knows")), BasicPath(Iri("foaf:friendOf"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -397,7 +397,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - range`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Range(BasicPath(iri("foaf:knows")), 2, 4), var_("friend"))
+                propertyPath(var_("person"), Range(BasicPath(Iri("foaf:knows")), 2, 4), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -408,7 +408,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - negation`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Negation(BasicPath(iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), Negation(BasicPath(Iri("foaf:knows"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -419,7 +419,7 @@ class Sparql12ComplianceTest {
     fun `test property paths - inverse`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Inverse(BasicPath(iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), Inverse(BasicPath(Iri("foaf:knows"))), var_("friend"))
             }
         }
         val queryString = query.toString()
@@ -431,7 +431,7 @@ class Sparql12ComplianceTest {
         val query = select {
             where {
                 propertyPath(var_("person"), 
-                    OneOrMore(Alternative(BasicPath(iri("foaf:knows")), Inverse(BasicPath(iri("foaf:friendOf"))))), 
+                    OneOrMore(Alternative(BasicPath(Iri("foaf:knows")), Inverse(BasicPath(Iri("foaf:friendOf"))))), 
                     var_("friend"))
             }
         }
@@ -446,8 +446,8 @@ class Sparql12ComplianceTest {
             aggregate(count(var_("employee")), "employeeCount")
             aggregate(avg(var_("salary")), "avgSalary")
             where {
-                pattern(var_("employee"), iri("worksFor"), var_("department"))
-                pattern(var_("employee"), iri("hasSalary"), var_("salary"))
+                pattern(var_("employee"), Iri("worksFor"), var_("department"))
+                pattern(var_("employee"), Iri("hasSalary"), var_("salary"))
             }
             groupBy(var_("department"))
             having {
@@ -476,8 +476,8 @@ class Sparql12ComplianceTest {
             aggregate(max(var_("value")), "maximum")
             aggregate(groupConcat(var_("name")), "names")
             where {
-                pattern(var_("item"), iri("hasValue"), var_("value"))
-                pattern(var_("item"), iri("hasName"), var_("name"))
+                pattern(var_("item"), Iri("hasValue"), var_("value"))
+                pattern(var_("item"), Iri("hasName"), var_("name"))
             }
         }
         val queryString = query.toString()
@@ -496,7 +496,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("name"))
             where {
-                pattern(var_("person"), iri("foaf:name"), var_("name"))
+                pattern(var_("person"), Iri("foaf:name"), var_("name"))
                 filter(var_("name") eq string("John"))
             }
         }
@@ -509,7 +509,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("age"))
             where {
-                pattern(var_("person"), iri("foaf:age"), var_("age"))
+                pattern(var_("person"), Iri("foaf:age"), var_("age"))
                 filter(var_("age") eq int(25))
             }
         }
@@ -522,7 +522,7 @@ class Sparql12ComplianceTest {
         val query3 = select {
             variable(var_("label"))
             where {
-                pattern(var_("resource"), iri("rdfs:label"), var_("label"))
+                pattern(var_("resource"), Iri("rdfs:label"), var_("label"))
                 filter(var_("label") eq lang("Hello", "en"))
             }
         }
@@ -538,7 +538,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("text"))
             where {
-                pattern(var_("resource"), iri("dc:description"), var_("text"))
+                pattern(var_("resource"), Iri("dc:description"), var_("text"))
                 filter(var_("text") eq string("Hello \u0041\u0042\u0043")) // ABC in Unicode escapes
             }
         }
@@ -551,7 +551,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("unicode"))
             where {
-                pattern(var_("resource"), iri("rdfs:label"), var_("unicode"))
+                pattern(var_("resource"), Iri("rdfs:label"), var_("unicode"))
                 filter(var_("unicode") eq string("Unicode: \u03B1\u03B2\u03B3")) // Greek letters
             }
         }
@@ -564,7 +564,7 @@ class Sparql12ComplianceTest {
         val query3 = select {
             variable(var_("special"))
             where {
-                pattern(var_("resource"), iri("dc:title"), var_("special"))
+                pattern(var_("resource"), Iri("dc:title"), var_("special"))
                 filter(var_("special") eq string("Special: \"quotes\" 'apostrophes' \\backslashes\\"))
             }
         }
@@ -581,7 +581,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("resource"))
             where {
-                pattern(var_("resource"), iri("rdf:type"), var_("type"))
+                pattern(var_("resource"), Iri("rdf:type"), var_("type"))
                 // Test boolean literals (true/false)
                 filter(var_("active") eq boolean(true))
                 // Test numeric literals (0 = false, non-zero = true)
@@ -610,7 +610,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("result"))
             where {
-                pattern(var_("resource"), iri("hasValue"), var_("value"))
+                pattern(var_("resource"), Iri("hasValue"), var_("value"))
                 bind(var_("result"), if_(var_("value") gt int(10), string("high"), string("low")))
             }
         }
@@ -618,3 +618,12 @@ class Sparql12ComplianceTest {
         assertTrue(queryString2.contains("IF(?value > \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>, \"high\"^^<http://www.w3.org/2001/XMLSchema#string>, \"low\"^^<http://www.w3.org/2001/XMLSchema#string>) AS ?result"))
     }
 }
+
+
+
+
+
+
+
+
+

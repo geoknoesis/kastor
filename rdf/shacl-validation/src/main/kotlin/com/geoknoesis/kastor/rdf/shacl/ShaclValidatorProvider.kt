@@ -1,5 +1,8 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
+
 /**
  * Interface for SHACL validator providers.
  * Provides a unified way to access different SHACL validation engines.
@@ -50,32 +53,32 @@ interface ShaclValidator {
     /**
      * Validate a data graph against a shapes graph.
      */
-    fun validate(graph: com.geoknoesis.kastor.rdf.RdfGraph, shapes: com.geoknoesis.kastor.rdf.RdfGraph): ValidationReport
+    fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport
     
     /**
      * Validate a data graph against a list of shapes.
      */
-    fun validate(graph: com.geoknoesis.kastor.rdf.RdfGraph, shapes: List<ShaclShape>): ValidationReport
+    fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport
     
     /**
      * Validate a specific resource against shapes.
      */
-    fun validateResource(graph: com.geoknoesis.kastor.rdf.RdfGraph, shapes: com.geoknoesis.kastor.rdf.RdfGraph, resource: com.geoknoesis.kastor.rdf.RdfResource): ValidationReport
+    fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport
     
     /**
      * Validate a graph against specific constraints.
      */
-    fun validateConstraints(graph: com.geoknoesis.kastor.rdf.RdfGraph, constraints: List<ShaclConstraint>): ValidationReport
+    fun validateConstraints(graph: RdfGraph, constraints: List<ShaclConstraint>): ValidationReport
     
     /**
      * Check if a graph conforms to the shapes (boolean result).
      */
-    fun conforms(graph: com.geoknoesis.kastor.rdf.RdfGraph, shapes: com.geoknoesis.kastor.rdf.RdfGraph): Boolean
+    fun conforms(graph: RdfGraph, shapes: RdfGraph): Boolean
     
     /**
      * Get validation statistics for a graph.
      */
-    fun getValidationStatistics(graph: com.geoknoesis.kastor.rdf.RdfGraph, shapes: com.geoknoesis.kastor.rdf.RdfGraph): ValidationStatistics
+    fun getValidationStatistics(graph: RdfGraph, shapes: RdfGraph): ValidationStatistics
 }
 
 /**
@@ -103,3 +106,12 @@ enum class PerformanceProfile {
     MEDIUM,    // Balanced performance and features
     THOROUGH   // Comprehensive validation, slower but more thorough
 }
+
+
+
+
+
+
+
+
+

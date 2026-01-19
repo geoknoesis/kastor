@@ -4,7 +4,10 @@ This tutorial assumes no prior RDF knowledge.
 
 1) Create an in-memory repository
 ```kotlin
-val api = Rdf.factory { type("jena:memory") }
+val api = Rdf.factory {
+  providerId = "jena"
+  variantId = "memory"
+}
 val repo = api.repository
 ```
 
@@ -19,4 +22,7 @@ val exists = repo.queryAsk("ASK { <urn:alice> <urn:knows> <urn:bob> }")
 ```
 
 You’ve created your first RDF data and queried it.
+
+
+
 

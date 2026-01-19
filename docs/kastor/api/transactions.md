@@ -21,3 +21,6 @@ try {
 - **RDF4J**: If not inside `beginTransaction()`, operations run in auto-commit. Inside a transaction you control commit/rollback/end.
 - **SPARQL (remote)**: Transactions are no-ops. Updates are sent as standalone HTTP requests.
 
+
+
+

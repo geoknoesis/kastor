@@ -23,11 +23,11 @@ class MinusOperatorMultipleValuesExample {
         println("1. Multiple Values with Arrays:")
         val repo1 = Rdf.memory()
         repo1.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             val friends = arrayOf(
-                iri("http://example.org/friend1"),
-                iri("http://example.org/friend2"),
-                iri("http://example.org/friend3")
+                Iri("http://example.org/friend1"),
+                Iri("http://example.org/friend2"),
+                Iri("http://example.org/friend3")
             )
             
             person - FOAF.name - "Alice"
@@ -44,11 +44,11 @@ class MinusOperatorMultipleValuesExample {
         println("2. Multiple Values with Lists:")
         val repo2 = Rdf.memory()
         repo2.add {
-            val document = iri("http://example.org/document")
+            val document = Iri("http://example.org/document")
             val authors = listOf(
-                iri("http://example.org/author1"),
-                iri("http://example.org/author2"),
-                iri("http://example.org/author3")
+                Iri("http://example.org/author1"),
+                Iri("http://example.org/author2"),
+                Iri("http://example.org/author3")
             )
             val tags = listOf("Technology", "Programming", "Kotlin", "RDF")
             
@@ -66,11 +66,11 @@ class MinusOperatorMultipleValuesExample {
         println("3. Multiple Values with Pairs:")
         val repo3 = Rdf.memory()
         repo3.add {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Bob"
             person - FOAF.homepage - ("http://bob.com" to "http://bob.blog.com")  // Creates 2 triples
-            person - FOAF.knows - (iri("http://example.org/friend1") to iri("http://example.org/friend2"))  // Creates 2 triples
+            person - FOAF.knows - (Iri("http://example.org/friend1") to Iri("http://example.org/friend2"))  // Creates 2 triples
         }
         
         val triples3 = repo3.defaultGraph.getTriples()
@@ -82,7 +82,7 @@ class MinusOperatorMultipleValuesExample {
         println("4. Multiple Values with Triples:")
         val repo4 = Rdf.memory()
         repo4.add {
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
             
             resource - RDFS.label - "Sample Resource"
             resource - RDF.type - Triple("Document", "Report", "Publication")  // Creates 3 triples
@@ -98,9 +98,9 @@ class MinusOperatorMultipleValuesExample {
         println("5. Mixed Types in Collections:")
         val repo5 = Rdf.memory()
         repo5.add {
-            val person = iri("http://example.org/person")
-            val friend1 = iri("http://example.org/friend1")
-            val friend2 = iri("http://example.org/friend2")
+            val person = Iri("http://example.org/person")
+            val friend1 = Iri("http://example.org/friend1")
+            val friend2 = Iri("http://example.org/friend2")
             val bnode = bnode("anon1")
             
             person - FOAF.name - "Charlie"
@@ -119,11 +119,11 @@ class MinusOperatorMultipleValuesExample {
         // 6. Standalone graph with multiple values
         println("6. Standalone Graph with Multiple Values:")
         val graph = Rdf.graph {
-            val project = iri("http://example.org/project")
+            val project = Iri("http://example.org/project")
             val contributors = listOf(
-                iri("http://example.org/dev1"),
-                iri("http://example.org/dev2"),
-                iri("http://example.org/dev3")
+                Iri("http://example.org/dev1"),
+                Iri("http://example.org/dev2"),
+                Iri("http://example.org/dev3")
             )
             
             project - RDFS.label - "Kastor RDF Library"
@@ -141,12 +141,12 @@ class MinusOperatorMultipleValuesExample {
         println("7. Complex Real-World Example:")
         val repo7 = Rdf.memory()
         repo7.add {
-            val conference = iri("http://example.org/conference/kotlinconf2024")
+            val conference = Iri("http://example.org/conference/kotlinconf2024")
             val speakers = listOf(
-                iri("http://example.org/speaker/alice"),
-                iri("http://example.org/speaker/bob"),
-                iri("http://example.org/speaker/charlie"),
-                iri("http://example.org/speaker/diana")
+                Iri("http://example.org/speaker/alice"),
+                Iri("http://example.org/speaker/bob"),
+                Iri("http://example.org/speaker/charlie"),
+                Iri("http://example.org/speaker/diana")
             )
             val topics = arrayOf("Kotlin", "RDF", "DSL", "Semantic Web", "Graph Databases")
             val locations = ("Copenhagen" to "Denmark")
@@ -184,3 +184,12 @@ class MinusOperatorMultipleValuesExample {
         repo7.close()
     }
 }
+
+
+
+
+
+
+
+
+

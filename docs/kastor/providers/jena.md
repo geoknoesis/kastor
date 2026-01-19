@@ -22,7 +22,8 @@ Basic in-memory Jena dataset with default configuration.
 
 ```kotlin
 val api = Rdf.factory {
-    type("jena:memory")
+    providerId = "jena"
+    variantId = "memory"
 }
 ```
 
@@ -31,7 +32,8 @@ In-memory Jena dataset with RDFS inference enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("jena:memory:inference")
+    providerId = "jena"
+    variantId = "memory-inference"
 }
 ```
 
@@ -42,8 +44,9 @@ Persistent TDB2 dataset with high-performance storage.
 
 ```kotlin
 val api = Rdf.factory {
-    type("jena:tdb2")
-    param("location", "/data/tdb2")
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "/data/tdb2"
 }
 ```
 
@@ -52,8 +55,9 @@ Persistent TDB2 dataset with RDFS inference enabled.
 
 ```kotlin
 val api = Rdf.factory {
-    type("jena:tdb2:inference")
-    param("location", "/data/tdb2")
+    providerId = "jena"
+    variantId = "tdb2-inference"
+    location = "/data/tdb2"
 }
 ```
 
@@ -144,8 +148,9 @@ High-performance persistent storage with TDB2:
 ```kotlin
 // Create persistent repository
 val api = Rdf.factory {
-    type("jena:tdb2")
-    param("location", "/data/tdb2")
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "/data/tdb2"
 }
 
 // Add data
@@ -156,8 +161,9 @@ graph.add(triple(subject, predicate, object))
 api.close()
 
 val reopenedApi = Rdf.factory {
-    type("jena:tdb2")
-    param("location", "/data/tdb2")
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "/data/tdb2"
 }
 
 // Data persists across sessions
@@ -174,13 +180,15 @@ RDFS and OWL inference capabilities:
 ```kotlin
 // Memory with inference
 val api = Rdf.factory {
-    type("jena:memory:inference")
+    providerId = "jena"
+    variantId = "memory-inference"
 }
 
 // TDB2 with inference
 val api = Rdf.factory {
-    type("jena:tdb2:inference")
-    param("location", "/data/tdb2")
+    providerId = "jena"
+    variantId = "tdb2-inference"
+    location = "/data/tdb2"
 }
 ```
 
@@ -192,9 +200,15 @@ Seamless integration with the RepositoryManager:
 val manager = createRepositoryManager()
 
 // Create multiple Jena repositories
-manager.createRepository("users", RdfConfig("jena:memory"))
-manager.createRepository("products", RdfConfig("jena:tdb2", mapOf("location" to "/data/products")))
-manager.createRepository("external", RdfConfig("jena:tdb2", mapOf("location" to "/data/external")))
+manager.createRepository("users", RdfConfig(providerId = "jena", variantId = "memory"))
+manager.createRepository(
+    "products",
+    RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/products"))
+)
+manager.createRepository(
+    "external",
+    RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/external"))
+)
 
 // Federated queries across Jena repositories
 val results = manager.federatedQuery(
@@ -257,18 +271,21 @@ The enhanced Jena implementation supports:
 The enhanced implementation is backward compatible with the basic Jena implementation:
 
 ```kotlin
-// Old way (still works)
 val api = Rdf.factory {
-    type("jena:memory")
+    providerId = "jena"
+    variantId = "memory"
 }
 
-// New way (enhanced capabilities)
-val api = Rdf.factory {
-    type("jena:tdb2")
-    param("location", "/data/tdb2")
+val persistentApi = Rdf.factory {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "/data/tdb2"
 }
 ```
 
 ## Examples
 
 See the `EnhancedJenaExample.kt` file for comprehensive examples demonstrating all features.
+
+
+

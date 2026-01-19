@@ -11,7 +11,7 @@ class DefaultRdfHandleTest {
     @Test
     fun `DefaultRdfHandle provides access to node and graph`() {
         val repo = Rdf.memory()
-        val node = iri("http://example.org/person")
+        val node = Iri("http://example.org/person")
         
         repo.add {
             node - FOAF.name - "John Doe"
@@ -28,7 +28,7 @@ class DefaultRdfHandleTest {
     @Test
     fun `DefaultRdfHandle extras exclude known predicates`() {
         val repo = Rdf.memory()
-        val node = iri("http://example.org/person")
+        val node = Iri("http://example.org/person")
         
         repo.add {
             node - FOAF.name - "John Doe"
@@ -51,7 +51,7 @@ class DefaultRdfHandleTest {
     @Test
     fun `DefaultRdfHandle extras are lazy and memoized`() {
         val repo = Rdf.memory()
-        val node = iri("http://example.org/person")
+        val node = Iri("http://example.org/person")
         
         repo.add {
             node - FOAF.name - "John Doe"
@@ -68,9 +68,9 @@ class DefaultRdfHandleTest {
     }
     
     @Test
-    fun `DefaultRdfHandle validateOrThrow delegates to ValidationRegistry`() {
+    fun `DefaultRdfHandle validate delegates to ShaclValidation`() {
         val repo = Rdf.memory()
-        val node = iri("http://example.org/person")
+        val node = Iri("http://example.org/person")
         
         repo.add {
             node - FOAF.name - "John Doe"
@@ -79,24 +79,21 @@ class DefaultRdfHandleTest {
         val known = emptySet<Iri>()
         val handle = DefaultRdfHandle(node, repo.defaultGraph, known)
         
-        // Clear any existing validation port
-        val testPort = object : ValidationPort {
-            override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
-                throw RuntimeException("Test validation error")
+        val validator = object : ShaclValidator {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+                return ValidationResult.Violations(listOf(ShaclViolation(null, "Test validation error")))
             }
         }
-        ValidationRegistry.register(testPort)
-        
-        // Should throw the validation error from our test port
-        assertThrows(RuntimeException::class.java) {
-            handle.validateOrThrow()
-        }
+        ShaclValidation.register(validator)
+
+        val result = handle.validate()
+        assertTrue(result is ValidationResult.Violations)
     }
     
     @Test
     fun `DefaultRdfHandle works with empty known set`() {
         val repo = Rdf.memory()
-        val node = iri("http://example.org/person")
+        val node = Iri("http://example.org/person")
         
         repo.add {
             node - FOAF.name - "John Doe"
@@ -113,3 +110,15 @@ class DefaultRdfHandleTest {
         assertEquals(2, extras.predicates().size)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+

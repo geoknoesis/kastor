@@ -23,12 +23,14 @@ val manager = createRepositoryManager()
 // Or using the factory DSL
 val manager = Rdf.manager {
     repository("users") {
-        type("jena:memory")
-        param("inferencing", "true")
+        providerId = "jena"
+        variantId = "memory"
+        inference = true
     }
     repository("products") {
-        type("rdf4j:native")
-        param("location", "./data/products")
+        providerId = "rdf4j"
+        variantId = "native"
+        location = "./data/products"
     }
 }
 ```
@@ -38,8 +40,9 @@ val manager = Rdf.manager {
 ```kotlin
 // Create repositories
 val usersApi = manager.createRepository("users", RdfConfig(
-    type = "jena:memory",
-    params = mapOf("inferencing" to "true")
+    providerId = "jena",
+    variantId = "memory",
+    options = mapOf("inferencing" to "true")
 ))
 
 // Get repositories
@@ -122,8 +125,9 @@ println("Users repository config: $config")
 ```kotlin
 // Update repository configuration
 val newConfig = RdfConfig(
-    type = "jena:tdb2",
-    params = mapOf("location" to "/new/location")
+    providerId = "jena",
+    variantId = "tdb2",
+    options = mapOf("location" to "/new/location")
 )
 val updatedApi = manager.updateRepositoryConfig("users", newConfig)
 ```
@@ -135,18 +139,19 @@ The Repository Manager integrates with the existing Factory DSL:
 ```kotlin
 val manager = Rdf.manager {
     repository("users") {
-        type("jena:memory")
-        param("inferencing", "true")
+        providerId = "jena"
+        variantId = "memory"
+        inference = true
     }
     repository("products") {
-        type("rdf4j:native")
-        param("location", "./data/products")
-        param("tripleIndexes", "spoc,posc")
+        providerId = "rdf4j"
+        variantId = "native"
+        location = "./data/products"
     }
     repository("external") {
-        type("sparql")
-        param("queryEndpoint", "https://dbpedia.org/sparql")
-        param("timeoutMs", "5000")
+        providerId = "sparql"
+        variantId = "sparql"
+        location = "https://dbpedia.org/sparql"
     }
 }
 ```
@@ -159,18 +164,20 @@ val manager = Rdf.manager {
 val manager = createRepositoryManager()
 
 // Local in-memory repository for temporary data
-manager.createRepository("temp", RdfConfig("jena:memory"))
+manager.createRepository("temp", RdfConfig(providerId = "jena", variantId = "memory"))
 
 // Local persistent repository for user data
 manager.createRepository("users", RdfConfig(
-    type = "jena:tdb2",
-    params = mapOf("location" to "/data/users")
+    providerId = "jena",
+    variantId = "tdb2",
+    options = mapOf("location" to "/data/users")
 ))
 
 // Remote SPARQL endpoint for external data
 manager.createRepository("external", RdfConfig(
-    type = "sparql",
-    params = mapOf("queryEndpoint" to "https://dbpedia.org/sparql")
+    providerId = "sparql",
+    variantId = "sparql",
+    options = mapOf("queryEndpoint" to "https://dbpedia.org/sparql")
 ))
 
 // Federated query across all repositories
@@ -187,8 +194,8 @@ val manager = createRepositoryManager()
 
 try {
     // Create repositories
-    manager.createRepository("repo1", RdfConfig("jena:memory"))
-    manager.createRepository("repo2", RdfConfig("rdf4j:memory"))
+    manager.createRepository("repo1", RdfConfig(providerId = "jena", variantId = "memory"))
+    manager.createRepository("repo2", RdfConfig(providerId = "rdf4j", variantId = "memory"))
     
     // Use repositories
     val repo1 = manager.getRepository("repo1")
@@ -204,19 +211,20 @@ try {
 
 ## Integration with Existing API
 
-The Repository Manager maintains full backward compatibility with the existing single-repository API:
+The Repository Manager keeps the single-repository API consistent alongside multi-repository usage:
 
 ```kotlin
 // Single repository (existing way)
 val api = Rdf.factory {
-    type("jena:memory")
+    providerId = "jena"
+    variantId = "memory"
 }
 val repo = api.repository
 
 // Multiple repositories (new way)
 val manager = createRepositoryManager()
-val api1 = manager.createRepository("repo1", RdfConfig("jena:memory"))
-val api2 = manager.createRepository("repo2", RdfConfig("rdf4j:memory"))
+val api1 = manager.createRepository("repo1", RdfConfig(providerId = "jena", variantId = "memory"))
+val api2 = manager.createRepository("repo2", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 // Both approaches work the same way
 val graph1 = api.repository.getGraph()
@@ -239,3 +247,6 @@ val graph2 = api1.repository.getGraph()
 3. **Leverage configuration discovery**: Use the discovery methods to understand available options
 4. **Consider federation costs**: Federated queries can be expensive; use them judiciously
 5. **Monitor resource usage**: Multiple repositories consume more resources than single repositories
+
+
+

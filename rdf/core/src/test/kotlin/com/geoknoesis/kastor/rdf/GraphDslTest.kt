@@ -12,8 +12,8 @@ class GraphDslTest {
     @Test
     fun `create graph with bracket syntax works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val friend = iri("http://example.org/friend")
+            val person = Iri("http://example.org/person")
+            val friend = Iri("http://example.org/friend")
 
             person[FOAF.name] = "Alice"
             person[FOAF.age] = 30
@@ -39,8 +39,8 @@ class GraphDslTest {
     @Test
     fun `create graph with has and with syntax works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
 
             person has FOAF.name with "Alice"
             person has FOAF.age with 25
@@ -61,8 +61,8 @@ class GraphDslTest {
     @Test
     fun `create graph with minus operator syntax works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val friend = iri("http://example.org/friend")
+            val person = Iri("http://example.org/person")
+            val friend = Iri("http://example.org/friend")
 
             person - FOAF.name - "Alice"
             person - FOAF.age - 30
@@ -83,8 +83,8 @@ class GraphDslTest {
     @Test
     fun `create graph with mixed syntaxes works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
 
             // Mix all three syntaxes
             person[FOAF.name] = "Alice"  // Bracket syntax
@@ -110,7 +110,7 @@ class GraphDslTest {
     @Test
     fun `create graph with different literal types works`() {
         val graph = Rdf.graph {
-            val resource = iri("http://example.org/resource")
+            val resource = Iri("http://example.org/resource")
 
             resource - DCTERMS.title - "Test Title"
             resource - DCTERMS.extent - 1000
@@ -140,8 +140,8 @@ class GraphDslTest {
     @Test
     fun `create graph with IRI and BlankNode objects works`() {
         val graph = Rdf.graph {
-            val subject = iri("http://example.org/subject")
-            val friend = iri("http://example.org/friend")
+            val subject = Iri("http://example.org/subject")
+            val friend = Iri("http://example.org/friend")
             val bnode = bnode("anon1")
 
             subject - FOAF.knows - friend
@@ -153,7 +153,7 @@ class GraphDslTest {
         assertEquals(4, graph.size(), "Graph should have 4 triples")
         
         val allTriples = graph.getTriples()
-        val knowsTriple = allTriples.find { it.predicate == FOAF.knows && it.obj == iri("http://example.org/friend") }
+        val knowsTriple = allTriples.find { it.predicate == FOAF.knows && it.obj == Iri("http://example.org/friend") }
         val creatorTriple = allTriples.find { it.predicate == DCTERMS.creator }
         val bnodeTriple = allTriples.find { it.predicate == FOAF.knows && it.obj == bnode("anon1") }
         val bnodeNameTriple = allTriples.find { it.predicate == FOAF.name && it.subject == bnode("anon1") }
@@ -163,8 +163,8 @@ class GraphDslTest {
         assertNotNull(bnodeTriple, "Should have blank node triple")
         assertNotNull(bnodeNameTriple, "Should have blank node name triple")
 
-        assertEquals(iri("http://example.org/friend"), knowsTriple!!.obj, "Knows object should be friend IRI")
-        assertEquals(iri("http://example.org/friend"), creatorTriple!!.obj, "Creator object should be friend IRI")
+        assertEquals(Iri("http://example.org/friend"), knowsTriple!!.obj, "Knows object should be friend IRI")
+        assertEquals(Iri("http://example.org/friend"), creatorTriple!!.obj, "Creator object should be friend IRI")
         assertEquals(bnode("anon1"), bnodeTriple!!.obj, "Blank node object should be correct")
         assertEquals("Anonymous", (bnodeNameTriple!!.obj as Literal).lexical, "Blank node name should be Anonymous")
     }
@@ -172,36 +172,36 @@ class GraphDslTest {
     @Test
     fun `create graph with explicit triple creation works`() {
         val graph = Rdf.graph {
-            val subject = iri("http://example.org/subject")
-            val predicate = iri("http://example.org/predicate")
-            val obj = literal("object value")
+            val subject = Iri("http://example.org/subject")
+            val predicate = Iri("http://example.org/predicate")
+            val obj = Literal("object value")
 
             triple(subject, predicate, obj)
-            triple(subject, "http://example.org/another", literal("another value"))
+            triple(subject, Iri("http://example.org/another"), Literal("another value"))
         }
 
         assertEquals(2, graph.size(), "Graph should have 2 triples")
         
         val allTriples = graph.getTriples()
-        val triple1 = allTriples.find { it.predicate == iri("http://example.org/predicate") }
+        val triple1 = allTriples.find { it.predicate == Iri("http://example.org/predicate") }
         val triple2 = allTriples.find { it.predicate.value == "http://example.org/another" }
 
         assertNotNull(triple1, "Should have first triple")
         assertNotNull(triple2, "Should have second triple")
 
-        assertEquals(literal("object value"), triple1!!.obj, "First triple object should match")
+        assertEquals(Literal("object value"), triple1!!.obj, "First triple object should match")
         assertEquals("another value", (triple2!!.obj as Literal).lexical, "Second triple object should match")
     }
 
     @Test
     fun `create graph with addTriples method works`() {
         val existingTriples = listOf(
-            RdfTriple(iri("http://example.org/s1"), iri("http://example.org/p1"), literal("o1")),
-            RdfTriple(iri("http://example.org/s2"), iri("http://example.org/p2"), literal("o2"))
+            RdfTriple(Iri("http://example.org/s1"), Iri("http://example.org/p1"), Literal("o1")),
+            RdfTriple(Iri("http://example.org/s2"), Iri("http://example.org/p2"), Literal("o2"))
         )
 
         val graph = Rdf.graph {
-            val subject = iri("http://example.org/subject")
+            val subject = Iri("http://example.org/subject")
             
             subject - FOAF.name - "Alice"
             addTriples(existingTriples)
@@ -222,7 +222,7 @@ class GraphDslTest {
     @Test
     fun `graph operations work after creation`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
             person - FOAF.name - "Alice"
             person - FOAF.age - 30
         }
@@ -235,7 +235,7 @@ class GraphDslTest {
         assertNotNull(nameTriple, "Should have name triple")
         
         // Test adding more triples
-        val newTriple = RdfTriple(iri("http://example.org/person"), FOAF.knows, iri("http://example.org/friend"))
+        val newTriple = RdfTriple(Iri("http://example.org/person"), FOAF.knows, Iri("http://example.org/friend"))
         graph.addTriple(newTriple)
         assertEquals(3, graph.size(), "Graph should have 3 triples after adding")
         
@@ -268,9 +268,9 @@ class GraphDslTest {
     @Test
     fun `graph with complex nested structures works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val friend = iri("http://example.org/friend")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val friend = Iri("http://example.org/friend")
+            val document = Iri("http://example.org/document")
             val bnode = bnode("complex")
 
             // Create a complex graph with various relationships
@@ -295,10 +295,10 @@ class GraphDslTest {
         val allTriples = graph.getTriples()
         
         // Verify various relationships exist
-        val personName = allTriples.find { it.subject == iri("http://example.org/person") && it.predicate == FOAF.name }
-        val friendName = allTriples.find { it.subject == iri("http://example.org/friend") && it.predicate == FOAF.name }
-        val knowsRelationship = allTriples.find { it.predicate == FOAF.knows && it.subject == iri("http://example.org/person") }
-        val documentTitle = allTriples.find { it.subject == iri("http://example.org/document") && it.predicate == DCTERMS.title }
+        val personName = allTriples.find { it.subject == Iri("http://example.org/person") && it.predicate == FOAF.name }
+        val friendName = allTriples.find { it.subject == Iri("http://example.org/friend") && it.predicate == FOAF.name }
+        val knowsRelationship = allTriples.find { it.predicate == FOAF.knows && it.subject == Iri("http://example.org/person") }
+        val documentTitle = allTriples.find { it.subject == Iri("http://example.org/document") && it.predicate == DCTERMS.title }
         val bnodeLabel = allTriples.find { it.subject == bnode("complex") && it.predicate == RDFS.label }
 
         assertNotNull(personName, "Should have person name")
@@ -316,18 +316,16 @@ class GraphDslTest {
     @Test
     fun `create graph with turtle-style a alias works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
 
-            // Turtle-style "a" alias for rdf:type
-            person["a"] = "foaf:Person"
-            document["a"] = "dcterms:Dataset"
+            // Turtle-style rdf:type
+            person[RDF.type] = FOAF.Person
+            document[RDF.type] = Iri("http://purl.org/dc/terms/Dataset")
             
-            // Also test with minus operator (quoted)
-            person - "a" - "foaf:Agent"
-            
-            // And bare "a" (unquoted)
-            person - a() - "foaf:Agent"
+            // Also test with minus operator
+            person - RDF.type - FOAF.Agent
+            person - RDF.type - FOAF.Document
         }
 
         assertEquals(4, graph.size(), "Graph should have 4 triples")
@@ -338,10 +336,10 @@ class GraphDslTest {
         assertEquals(4, typeTriples.size, "Should have 4 type triples")
         
         // Verify the objects are properly resolved
-        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(3, personTypeTriples.size, "Person should have 3 type declarations")
         
-        val documentTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/document") }
+        val documentTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/document") }
         assertEquals(1, documentTypeTriples.size, "Document should have 1 type declaration")
     }
 
@@ -353,12 +351,12 @@ class GraphDslTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val person = iri("http://example.org/person")
-            val document = iri("http://example.org/document")
+            val person = Iri("http://example.org/person")
+            val document = Iri("http://example.org/document")
 
             // Natural language "is" alias for rdf:type
-            person `is` "foaf:Person"
-            document `is` "dcterms:Dataset"
+            person `is` FOAF.Person
+            document `is` Iri("http://purl.org/dc/terms/Dataset")
             
             // Also test with IRI
             person `is` FOAF.Agent
@@ -372,10 +370,10 @@ class GraphDslTest {
         assertEquals(3, typeTriples.size, "Should have 3 type triples")
         
         // Verify the objects are properly resolved
-        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
         
-        val documentTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/document") }
+        val documentTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/document") }
         assertEquals(1, documentTypeTriples.size, "Document should have 1 type declaration")
     }
 
@@ -387,14 +385,14 @@ class GraphDslTest {
                 put("dcterms", "http://purl.org/dc/terms/")
             }
             
-            val person = iri("http://example.org/person")
-            val organization = iri("http://example.org/org")
+            val person = Iri("http://example.org/person")
+            val organization = Iri("http://example.org/org")
 
             // Mix different type declaration styles
-            person["a"] = "foaf:Person"  // Turtle-style
-            person `is` "foaf:Agent"   // Natural language
-            organization - "a" - "foaf:Organization"  // Minus operator with a
-            organization has RDF.type with "foaf:Agent"  // Traditional has/with
+            person[RDF.type] = FOAF.Person  // Turtle-style
+            person `is` FOAF.Agent   // Natural language
+            organization - RDF.type - FOAF.Organization  // Minus operator
+            organization has RDF.type with FOAF.Agent  // Traditional has/with
         }
 
         assertEquals(4, graph.size(), "Graph should have 4 triples")
@@ -405,23 +403,23 @@ class GraphDslTest {
         assertEquals(4, typeTriples.size, "Should have 4 type triples")
         
         // Verify all type declarations are present
-        val personTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/person") }
+        val personTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/person") }
         assertEquals(2, personTypeTriples.size, "Person should have 2 type declarations")
         
-        val orgTypeTriples = typeTriples.filter { it.subject == iri("http://example.org/org") }
+        val orgTypeTriples = typeTriples.filter { it.subject == Iri("http://example.org/org") }
         assertEquals(2, orgTypeTriples.size, "Organization should have 2 type declarations")
     }
 
     @Test
     fun `create graph with a alias and other properties works`() {
         val graph = Rdf.graph {
-            val person = iri("http://example.org/person")
+            val person = Iri("http://example.org/person")
 
-            // Use a alias along with other properties
-            person["a"] = "foaf:Person"
+            // Use rdf:type along with other properties
+            person[RDF.type] = FOAF.Person
             person[FOAF.name] = "Alice"
             person[FOAF.age] = 30
-            person - "a" - "foaf:Agent"  // Multiple type declarations
+            person - RDF.type - FOAF.Agent  // Multiple type declarations
         }
 
         assertEquals(4, graph.size(), "Graph should have 4 triples")
@@ -440,3 +438,12 @@ class GraphDslTest {
         assertEquals("30", (ageTriples.first().obj as Literal).lexical, "Age should be 30")
     }
 }
+
+
+
+
+
+
+
+
+

@@ -4,59 +4,60 @@ Complete reference for OntoMapper validation interfaces and adapters.
 
 ## Core Interfaces
 
-### ValidationPort
+### ShaclValidator
 
 Interface for SHACL validation implementations.
 
 ```kotlin
-interface ValidationPort {
-    fun validateOrThrow(data: RdfGraph, focus: RdfTerm)
+interface ShaclValidator {
+    fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
 
 **Methods:**
-- `validateOrThrow(data: RdfGraph, focus: RdfTerm)` - Validate RDF data against SHACL shapes
+- `validate(data: RdfGraph, focus: RdfTerm): ValidationResult` - Validate RDF data against SHACL shapes
 
 **Parameters:**
 - `data: RdfGraph` - The RDF graph containing the data
 - `focus: RdfTerm` - The focus node to validate
 
 **Throws:**
-- `ValidationException` - When validation fails
+- `ValidationException` - When you call `ValidationResult.orThrow()`
 
 **Usage:**
 ```kotlin
-class CustomValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class CustomValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Custom validation logic
         if (!isValid(data, focus)) {
-            throw ValidationException("Validation failed")
+            return ValidationResult.Violations(listOf(ShaclViolation(null, "Validation failed")))
         }
+        return ValidationResult.Ok
     }
 }
 ```
 
-### ValidationRegistry
+### ShaclValidation
 
 Registry for validation port implementations.
 
 ```kotlin
-object ValidationRegistry {
-    fun register(port: ValidationPort)
-    fun current(): ValidationPort
+object ShaclValidation {
+    fun register(port: ShaclValidator)
+    fun current(): ShaclValidator
 }
 ```
 
 **Methods:**
-- `register(port: ValidationPort)` - Register a validation port
-- `current(): ValidationPort` - Get the current validation port
+- `register(port: ShaclValidator)` - Register a validation port
+- `current(): ShaclValidator` - Get the current validation port
 
 **Usage:**
 ```kotlin
 val validation = CustomValidation()
-ValidationRegistry.register(validation)
+ShaclValidation.register(validation)
 
-val currentValidation = ValidationRegistry.current()
+val currentValidation = ShaclValidation.current()
 ```
 
 ## Validation Adapters
@@ -66,12 +67,12 @@ val currentValidation = ValidationRegistry.current()
 Jena-based SHACL validation adapter.
 
 ```kotlin
-class JenaValidation : ValidationPort {
+class JenaValidation : ShaclValidator {
     init {
-        ValidationRegistry.register(this)
+        ShaclValidation.register(this)
     }
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm)
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
 
@@ -100,12 +101,12 @@ person.asRdf().validateOrThrow()
 RDF4J-based SHACL validation adapter.
 
 ```kotlin
-class Rdf4jValidation : ValidationPort {
+class Rdf4jValidation : ShaclValidator {
     init {
-        ValidationRegistry.register(this)
+        ShaclValidation.register(this)
     }
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm)
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
 
@@ -157,8 +158,8 @@ try {
 ### Basic Validation
 
 ```kotlin
-class BasicValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class BasicValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
         
@@ -173,12 +174,12 @@ class BasicValidation : ValidationPort {
 ### SHACL Shape Validation
 
 ```kotlin
-class ShaclValidation : ValidationPort {
+class ShaclValidation : ShaclValidator {
     private val shapesGraph: RdfGraph by lazy {
         loadShapesFromResource("shapes.ttl")
     }
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val validator = createShaclValidator(shapesGraph)
         val report = validator.validate(data, focus)
         
@@ -202,19 +203,19 @@ class ShaclValidation : ValidationPort {
 ### Composite Validation
 
 ```kotlin
-class CompositeValidation : ValidationPort {
+class CompositeValidation : ShaclValidator {
     private val validators = listOf(
         BasicValidation(),
         ShaclValidation(),
         BusinessRuleValidation()
     )
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<String>()
         
         validators.forEach { validator ->
             try {
-                validator.validateOrThrow(data, focus)
+                validator.validate(data, focus).orThrow()
             } catch (e: ValidationException) {
                 errors.add(e.message ?: "Validation failed")
             }
@@ -244,7 +245,7 @@ person.asRdf().validateOrThrow()
 
 ```kotlin
 interface RdfHandle {
-    fun validateOrThrow()  // Delegates to ValidationRegistry
+    fun validateOrThrow()  // Delegates to ShaclValidation
 }
 
 // Usage
@@ -278,7 +279,7 @@ dependencies {
 class CustomValidationConfig {
     fun configureValidation() {
         val validation = CompositeValidation()
-        ValidationRegistry.register(validation)
+        ShaclValidation.register(validation)
     }
 }
 ```
@@ -310,8 +311,8 @@ sealed class ValidationResult {
 ### Detailed Error Reporting
 
 ```kotlin
-class DetailedValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class DetailedValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<ValidationError>()
         
         collectErrors(data, focus, errors)
@@ -361,10 +362,10 @@ enum class ValidationSeverity {
 ### Lazy Validation
 
 ```kotlin
-class LazyValidation : ValidationPort {
+class LazyValidation : ShaclValidator {
     private val validationCache = mutableMapOf<RdfTerm, Boolean>()
     
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Check cache first
         if (validationCache.containsKey(focus)) {
             if (!validationCache[focus]!!) {
@@ -387,8 +388,8 @@ class LazyValidation : ValidationPort {
 ### Batch Validation
 
 ```kotlin
-class BatchValidation : ValidationPort {
-    override fun validateOrThrow(data: RdfGraph, focus: RdfTerm) {
+class BatchValidation : ShaclValidator {
+    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val entitiesToValidate = collectEntities(data, focus)
         
         entitiesToValidate.chunked(100).forEach { batch ->
@@ -416,7 +417,7 @@ class ValidationTest {
         }
         
         assertDoesNotThrow {
-            validation.validateOrThrow(repo.defaultGraph, person)
+            validation.validate(repo.defaultGraph, person).orThrow()
         }
     }
     
@@ -432,7 +433,7 @@ class ValidationTest {
         }
         
         assertThrows(ValidationException::class.java) {
-            validation.validateOrThrow(repo.defaultGraph, person)
+            validation.validate(repo.defaultGraph, person).orThrow()
         }
     }
 }
@@ -488,7 +489,7 @@ class ValidationIntegrationTest {
 ### Common Issues
 
 1. **Validation not working:**
-   - Check that ValidationPort is registered
+   - Check that ShaclValidator is registered
    - Verify validation dependencies are included
    - Ensure validation is called correctly
 
@@ -501,3 +502,6 @@ class ValidationIntegrationTest {
    - Catch ValidationException specifically
    - Provide meaningful error messages
    - Handle validation failures gracefully
+
+
+

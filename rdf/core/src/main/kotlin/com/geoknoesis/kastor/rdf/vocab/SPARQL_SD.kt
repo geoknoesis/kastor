@@ -39,3 +39,12 @@ object SPARQL_SD : Vocabulary {
     val isAggregate: Iri by lazy { term("isAggregate") }
     val returnType: Iri by lazy { term("returnType") }
 }
+
+
+
+
+
+
+
+
+

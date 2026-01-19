@@ -18,7 +18,7 @@ class BnodeFactoryTest {
     @Test
     fun `bnode factory creates sequential names for lists`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -48,7 +48,7 @@ class BnodeFactoryTest {
     @Test
     fun `bnode factory creates sequential names for containers`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -79,7 +79,7 @@ class BnodeFactoryTest {
     @Test
     fun `bnode factory creates predictable names across multiple operations`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -125,7 +125,7 @@ class BnodeFactoryTest {
 
     @Test
     fun `bnode factory works with standalone graph`() {
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         val graph = Rdf.graph {
             person - FOAF.name - "Alice"
@@ -162,7 +162,7 @@ class BnodeFactoryTest {
     @Test
     fun `bnode factory creates unique names for different prefixes`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
+        val person = Iri("http://example.org/person")
 
         repo.add {
             person - FOAF.name - "Alice"
@@ -196,3 +196,12 @@ class BnodeFactoryTest {
         assertEquals(bnodeNames.size, bnodeNames.distinct().size, "All bnode names should be unique")
     }
 }
+
+
+
+
+
+
+
+
+

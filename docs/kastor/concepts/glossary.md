@@ -8,3 +8,6 @@
 - **SPARQL**: Query/update language for RDF.
 - **Triple**: Subject–predicate–object statement.
 
+
+
+
