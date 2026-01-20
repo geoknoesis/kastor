@@ -8,36 +8,36 @@ import com.geoknoesis.kastor.rdf.dsl.TripleDsl
  */
 fun RdfRepository.add(configure: TripleDsl.() -> Unit) {
     val dsl = TripleDsl().apply(configure)
-    defaultGraph.addTriples(dsl.triples)
+    editDefaultGraph().addTriples(dsl.triples)
 }
 
 fun RdfRepository.addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit) {
     val dsl = TripleDsl().apply(configure)
-    getGraph(graphName).addTriples(dsl.triples)
+    editGraph(graphName).addTriples(dsl.triples)
 }
 
 fun RdfRepository.addTriple(triple: RdfTriple) {
-    defaultGraph.addTriple(triple)
+    editDefaultGraph().addTriple(triple)
 }
 
 fun RdfRepository.addTriples(triples: Collection<RdfTriple>) {
-    defaultGraph.addTriples(triples)
+    editDefaultGraph().addTriples(triples)
 }
 
 fun RdfRepository.addTriple(graphName: Iri?, triple: RdfTriple) {
     if (graphName == null) {
-        defaultGraph.addTriple(triple)
+        editDefaultGraph().addTriple(triple)
     } else {
-        getGraph(graphName).addTriple(triple)
+        editGraph(graphName).addTriple(triple)
     }
 }
 
 fun RdfRepository.removeTriple(triple: RdfTriple): Boolean {
-    return defaultGraph.removeTriple(triple)
+    return editDefaultGraph().removeTriple(triple)
 }
 
 fun RdfRepository.removeTriples(triples: Collection<RdfTriple>): Boolean {
-    return defaultGraph.removeTriples(triples)
+    return editDefaultGraph().removeTriples(triples)
 }
 
 fun RdfRepository.hasTriple(triple: RdfTriple): Boolean {

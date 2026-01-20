@@ -177,6 +177,7 @@ class RdfCoreTest {
     fun `repository operations work after creation`() {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
         
         // Test basic triple operations
         val subject = Iri("http://example.org/subject")
@@ -184,7 +185,7 @@ class RdfCoreTest {
         val obj = Literal("test value")
         val triple = RdfTriple(subject, predicate, obj)
         
-        graph.addTriple(triple)
+        editor.addTriple(triple)
         
         val allTriples = graph.getTriples()
         assertEquals(1, allTriples.size, "Should have one triple after adding")

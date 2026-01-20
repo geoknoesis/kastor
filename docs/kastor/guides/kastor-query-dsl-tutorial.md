@@ -137,7 +137,7 @@ val query = select("name", "type") {
 Let's write our first query to find people and their names:
 
 ```kotlin
-val query = select("name") {
+val query = select(SparqlSelectQuery("name"))) {
     where {
         personVar has namePred with nameVar
     }
@@ -147,7 +147,7 @@ println(query)
 ```
 
 **What this does**:
-- `select("name")` - We want to find names
+- `select(SparqlSelectQuery("name")))` - We want to find names
 - `where { ... }` - Here are the conditions
 - `personVar has namePred with nameVar` - Find people who have names
 
@@ -424,7 +424,7 @@ Let's find people who are NOT marked as deleted:
 ```kotlin
 val deletedPred = iri("http://example.org/deleted")
 
-val query = select("name") {
+val query = select(SparqlSelectQuery("name"))) {
     where {
         personVar has namePred with nameVar
         minus {

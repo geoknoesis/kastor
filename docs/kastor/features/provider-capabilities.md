@@ -421,13 +421,13 @@ fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
     
     return try {
         val variant = provider.defaultVariantId()
-        provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).query(query)
+        provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).select(SparqlSelectQuery(query))
     } catch (e: UnsupportedOperationException) {
         if (!capabilities.supportsRdfStar && query.contains("<<")) {
             // Fallback to regular SPARQL
             val fallbackQuery = query.replace("<<", "").replace(">>", "")
             val variant = provider.defaultVariantId()
-            provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).query(fallbackQuery)
+            provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant)).select(SparqlSelectQuery(fallbackQuery))
         } else {
             throw e
         }

@@ -1,8 +1,9 @@
 package com.geoknoesis.kastor.gen.runtime
 
+import com.geoknoesis.kastor.rdf.GraphEditor
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.MutableRdfGraph
+import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
@@ -13,7 +14,8 @@ import kotlin.reflect.KClass
  * Live access wrapper for repository + graph, used by resource views.
  */
 interface GraphAccess {
-  val graph: MutableRdfGraph
+  val graph: RdfGraph
+  val editor: GraphEditor
   val repository: RdfRepository
 
   fun <T> read(block: RdfRepository.() -> T): T = repository.block()
@@ -21,7 +23,8 @@ interface GraphAccess {
 
 data class DefaultGraphAccess(
   override val repository: RdfRepository,
-  override val graph: MutableRdfGraph = repository.defaultGraph
+  override val graph: RdfGraph = repository.defaultGraph,
+  override val editor: GraphEditor = repository.editDefaultGraph()
 ) : GraphAccess
 
 data class ResourceContext(
@@ -56,8 +59,10 @@ interface Resource {
   val uri: RdfResource
   val access: GraphAccess
 
-  val graph: MutableRdfGraph
+  val graph: RdfGraph
     get() = access.graph
+  val editor: GraphEditor
+    get() = access.editor
   val repository: RdfRepository
     get() = access.repository
 
@@ -110,11 +115,11 @@ interface Resource {
   }
 
   fun addValue(pred: Iri, value: RdfTerm) {
-    graph.addTriple(RdfTriple(uri, pred, value))
+    editor.addTriple(RdfTriple(uri, pred, value))
   }
 
   fun removeValue(pred: Iri, value: RdfTerm): Boolean {
-    return graph.removeTriple(RdfTriple(uri, pred, value))
+    return editor.removeTriple(RdfTriple(uri, pred, value))
   }
 
   fun clear(pred: Iri): Boolean {
@@ -123,7 +128,7 @@ interface Resource {
       .filter { it.subject == uri && it.predicate == pred }
       .toList()
     if (toRemove.isEmpty()) return false
-    graph.removeTriples(toRemove)
+    editor.removeTriples(toRemove)
     return true
   }
 }
@@ -135,8 +140,12 @@ data class ResourceRef(
 
 fun resource(uri: RdfResource, access: GraphAccess): Resource = ResourceRef(uri, access)
 
-fun RdfRepository.resource(uri: RdfResource, graph: MutableRdfGraph = defaultGraph): Resource =
-  ResourceRef(uri, DefaultGraphAccess(this, graph))
+fun RdfRepository.resource(
+  uri: RdfResource,
+  graph: RdfGraph = defaultGraph,
+  editor: GraphEditor = editDefaultGraph()
+): Resource =
+  ResourceRef(uri, DefaultGraphAccess(this, graph, editor))
 
 inline fun <reified T : Any> Resource.asType(): T =
   `as`(T::class)

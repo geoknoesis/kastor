@@ -353,7 +353,7 @@ val query = select {
 
 #### Literal Base Direction Functions
 ```kotlin
-val query = select("text") {
+val query = select(SparqlSelectQuery("text"))) {
     version("1.2")
     where {
         pattern(var_("s"), iri("ex:text"), var_("text"))
@@ -415,7 +415,7 @@ SubSelect allows using a SELECT query as part of a larger query.
 
 ```kotlin
 subSelect {
-    select("avgAge") {
+    select(SparqlSelectQuery("avgAge"))) {
         where {
             personVar has agePred with `var`("age")
         }
@@ -440,7 +440,7 @@ SPARQL 1.2 introduces comprehensive support for RDF-star, allowing you to work w
 RDF-star allows using triples as subjects or objects:
 
 ```kotlin
-val query = select("confidence") {
+val query = select(SparqlSelectQuery("confidence"))) {
     version("1.2")
     where {
         // Quoted triple pattern

@@ -218,7 +218,8 @@ Use validation for critical operations:
 
 ```kotlin
 // ✅ Good: Validation for critical operations
-val catalog: Catalog = catalogRef.asType(validate = true)
+val validation = JenaValidation()
+val catalog: Catalog = catalogRef.asValidatedType(validation)
 
 // Or validate explicitly
 val rdfHandle = catalog.asRdf()
@@ -356,7 +357,7 @@ object OntoMapperConfig {
     
     fun initialize() {
         if (validationEnabled) {
-            ShaclValidation.register(JenaValidation())
+            val validation = JenaValidation()
         }
     }
 }
@@ -374,8 +375,9 @@ fun loadCatalog(iri: String, graph: RdfGraph): Catalog {
     require(iri.isNotBlank()) { "IRI cannot be blank" }
     require(graph.getTriples().isNotEmpty()) { "Graph cannot be empty" }
     
+    val validation = JenaValidation()
     val catalogRef = RdfRef(Iri(iri), graph)
-    return catalogRef.asType(validate = true)
+    return catalogRef.asValidatedType(validation)
 }
 ```
 
@@ -441,7 +443,7 @@ Configure runtime behavior:
 // ✅ Good: Runtime configuration
 fun initializeOntoMapper() {
     // Register validation port
-    ShaclValidation.register(JenaValidation())
+    val validation = JenaValidation()
     
     // Initialize generated wrappers
     kastor.gen.initialize()

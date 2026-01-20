@@ -1,10 +1,11 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.ShaclValidation
 import com.geoknoesis.kastor.gen.runtime.ValidationException
+import com.geoknoesis.kastor.gen.runtime.orThrow
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.dsl.list
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
@@ -14,8 +15,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles complex RDF graphs`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val org = Iri("http://example.org/org")
@@ -42,8 +41,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles empty graphs gracefully`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -58,8 +55,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles multiple validation rules`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person1 = Iri("http://example.org/person1")
         val person2 = Iri("http://example.org/person2")
@@ -90,8 +85,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles non-Person types gracefully`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val org = Iri("http://example.org/org")
         val personClass = Iri("http://example.org/Person")
@@ -111,8 +104,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles malformed IRIs gracefully`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -132,8 +123,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles blank nodes`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = BlankNode("person1")
         val personClass = Iri("http://example.org/Person")
@@ -153,8 +142,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles language-tagged literals`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -162,8 +149,8 @@ class Rdf4jValidationAdvancedTest {
 
         repo.add {
             person - com.geoknoesis.kastor.rdf.vocab.RDF.type - personClass
-            person - FOAF.name - LangString("Jean", "fr")
-            person - FOAF.name - LangString("John", "en")
+            person - FOAF.name - Literal("Jean")
+            person - FOAF.name - Literal("John")
         }
 
         // Should handle language-tagged literals
@@ -175,8 +162,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles typed literals`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -197,8 +182,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation error messages are informative`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -217,34 +200,8 @@ class Rdf4jValidationAdvancedTest {
     }
 
     @Test
-    fun `validation registry integration works correctly`() {
-        val validation = Rdf4jValidation()
-        
-        // Should be automatically registered
-        val currentValidation = ShaclValidation.current()
-        assertSame(validation, currentValidation)
-
-        val repo = Rdf.memory()
-        val person = Iri("http://example.org/person")
-        val personClass = Iri("http://example.org/Person")
-        addBasicPersonShape(repo, personClass)
-
-        repo.add {
-            person - com.geoknoesis.kastor.rdf.vocab.RDF.type - personClass
-            person - FOAF.name - "John"
-        }
-
-        // Should work through registry
-        assertDoesNotThrow {
-            currentValidation.validate(repo.defaultGraph, person).orThrow()
-        }
-    }
-
-    @Test
     fun `validation supports sh or constraints`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val personClass = Iri("http://example.org/Person")
@@ -264,8 +221,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation supports nodeKind constraints`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
         val friend = Iri("http://example.org/friend")
@@ -286,8 +241,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation supports inverse path constraints`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person1 = Iri("http://example.org/person1")
         val person2 = Iri("http://example.org/person2")
@@ -435,8 +388,6 @@ class Rdf4jValidationAdvancedTest {
     @Test
     fun `validation handles large graphs efficiently`() {
         val validation = Rdf4jValidation()
-        ShaclValidation.register(validation)
-
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
 

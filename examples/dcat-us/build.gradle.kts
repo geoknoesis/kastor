@@ -3,7 +3,6 @@
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 
 dependencies {
@@ -12,40 +11,6 @@ dependencies {
     implementation(project(":kastor-gen:runtime"))
 }
 
-// Configure Kastor Gen plugin
-kastorGen {
-    ontology("dcat-us") {
-        shaclPath = "src/main/resources/dcat-us_3.0_shacl_shapes.ttl"
-        contextPath = "src/main/resources/dcat-us_3.0_context.jsonld"
-        interfacePackage = "com.geoknoesis.kastor.examples.dcat.generated"
-        generateInterfaces = true
-        generateWrappers = false  // Only generate interfaces as requested
-        outputDirectory = "build/generated/sources/kastor-gen"
-        generateVocabulary = false
-    }
-}
-
-
-// Add generated sources to source sets
-sourceSets {
-    main {
-        kotlin {
-            srcDir("build/generated/sources/kastor-gen")
-        }
-    }
-}
-
-// Ensure proper task dependencies
-tasks.compileKotlin {
-    dependsOn("generateOntology")
-}
-
-// Fix KSP task dependency if KSP is applied
-afterEvaluate {
-    tasks.findByName("kspKotlin")?.let { kspTask ->
-        kspTask.dependsOn("generateOntology")
-    }
-}
 
 // Task to generate Kastor Gen interfaces manually
 tasks.register<JavaExec>("generateKastorGenCode") {

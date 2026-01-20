@@ -38,6 +38,7 @@ interface RdfHandle {
 ```kotlin
 val person: Person = materializeFromRdf(...)
 val rdfHandle = person.asRdf()
+val repo = Rdf.memory()
 
 // Get the RDF node
 val node = rdfHandle.node
@@ -166,7 +167,7 @@ val query = """
     }
 """.trimIndent()
 
-val results = rdfHandle.graph.query(query)
+val results = repo.select(SparqlSelectQuery(query))
 results.forEach { bindingSet ->
     val predicate = bindingSet.getValue("predicate") as Iri
     val obj = bindingSet.getValue("object")
@@ -214,10 +215,10 @@ val defaultGraph = rdfHandle.graph
 
 // Access named graphs if available
 val repository = defaultGraph.repository
-val namedGraphs = repository.listNamedGraphs()
+val namedGraphs = repository.listGraphs()
 
 namedGraphs.forEach { graphName ->
-    val namedGraph = repository.getNamedGraph(graphName)
+    val namedGraph = repository.getGraph(graphName)
     val personInNamedGraph = namedGraph.getTriples()
         .filter { it.subject == rdfHandle.node }
         .firstOrNull()
@@ -233,7 +234,8 @@ namedGraphs.forEach { graphName ->
 ### SHACL Validation
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val validation = JenaValidation()
+val person: Person = rdfRef.asType(validation)
 val rdfHandle = person.asRdf()
 
 // Validate against SHACL shapes
@@ -245,7 +247,7 @@ try {
 }
 
 // Materialize with validation
-val validatedPerson: Person = rdfRef.asType(validate = true)
+val validatedPerson: Person = rdfRef.asValidatedType(validation)
 ```
 
 ### Custom Validation

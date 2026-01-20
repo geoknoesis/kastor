@@ -152,7 +152,7 @@ class ConfigVariantsTest {
         val p = Iri("urn:test:p")
         val o = Literal("test")
         
-        repo.defaultGraph.addTriple(RdfTriple(s, p, o))
+        repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
         
         assertTrue(repo.defaultGraph.hasTriple(RdfTriple(s, p, o)))
         

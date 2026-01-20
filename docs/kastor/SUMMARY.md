@@ -82,7 +82,7 @@ val rdf4jRepo = Rdf.factory { rdf4j() }
 
 ### 2. **Type-Safe Query Results**
 ```kotlin
-val results = repo.query("SELECT ?name ?age WHERE { ?s ?p ?name }")
+val results = repo.select(SparqlSelectQuery("SELECT ?name ?age WHERE { ?s ?p ?name }"))
 results.forEach { binding ->
     val name = binding.getString("name") // String?
     val age = binding.getInt("age")      // Int?

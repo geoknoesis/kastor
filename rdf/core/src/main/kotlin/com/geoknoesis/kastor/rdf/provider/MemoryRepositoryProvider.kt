@@ -45,9 +45,9 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private val graphs = mutableMapOf<Iri, MutableRdfGraph>()
     private var closed = false
     
-    override val defaultGraph: MutableRdfGraph by lazy { MemoryGraph() }
+    override val defaultGraph: RdfGraph by lazy { MemoryGraph() }
     
-    override fun getGraph(name: Iri): MutableRdfGraph {
+    override fun getGraph(name: Iri): RdfGraph {
         return graphs.getOrPut(name) { MemoryGraph() }
     }
     
@@ -55,7 +55,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun listGraphs(): List<Iri> = graphs.keys.toList()
     
-    override fun createGraph(name: Iri): MutableRdfGraph {
+    override fun createGraph(name: Iri): RdfGraph {
         if (graphs.containsKey(name)) {
             throw IllegalArgumentException("Graph $name already exists")
         }
@@ -66,6 +66,14 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun removeGraph(name: Iri): Boolean {
         return graphs.remove(name) != null
+    }
+
+    override fun editDefaultGraph(): GraphEditor {
+        return defaultGraph as MutableRdfGraph
+    }
+
+    override fun editGraph(name: Iri): GraphEditor {
+        return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): QueryResult {
@@ -99,7 +107,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     }
     
     override fun clear(): Boolean {
-        defaultGraph.clear()
+        editDefaultGraph().clear()
         graphs.clear()
         return true
     }
@@ -109,7 +117,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override fun close() {
         closed = true
         graphs.clear()
-        defaultGraph.clear()
+        editDefaultGraph().clear()
     }
     
     override fun getCapabilities(): ProviderCapabilities {

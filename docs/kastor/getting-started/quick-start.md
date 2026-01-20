@@ -58,21 +58,21 @@ fun main() {
     
     // Define vocabulary objects for clean organization
     object PersonVocab {
-        val name = "http://example.org/person/name".toIri()
-        val age = "http://example.org/person/age".toIri()
-        val email = "http://example.org/person/email".toIri()
-        val worksFor = "http://example.org/person/worksFor".toIri()
+        val name = iri("http://example.org/person/name")
+        val age = iri("http://example.org/person/age")
+        val email = iri("http://example.org/person/email")
+        val worksFor = iri("http://example.org/person/worksFor")
     }
     
     object CompanyVocab {
-        val name = "http://example.org/company/name".toIri()
-        val industry = "http://example.org/company/industry".toIri()
+        val name = iri("http://example.org/company/name")
+        val industry = iri("http://example.org/company/industry")
     }
     
     // Add data using the elegant DSL
     repo.add {
-        val alice = "http://example.org/person/alice".toResource()
-        val company = "http://example.org/company/tech".toResource()
+        val alice = iri("http://example.org/person/alice")
+        val company = iri("http://example.org/company/tech")
         
         // Ultra-compact syntax
         alice[PersonVocab.name] = "Alice Johnson"
@@ -98,7 +98,7 @@ fun main() {
     // ... (previous code for adding data) ...
     
     // Query the data
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age ?email ?company
         WHERE {
             ?person <http://example.org/person/name> ?name ;
@@ -106,7 +106,7 @@ fun main() {
                     <http://example.org/person/email> ?email ;
                     <http://example.org/person/worksFor> ?company .
         }
-    """)
+    """))
     
     // Process results
     results.forEach { binding ->
@@ -146,7 +146,7 @@ Kastor RDF provides multiple syntax styles to suit your preferences:
 
 ```kotlin
 repo.add {
-    val person = "http://example.org/person/john".toResource()
+    val person = iri("http://example.org/person/john")
     
     person["http://example.org/person/name"] = "John Doe"
     person["http://example.org/person/age"] = 25
@@ -158,7 +158,7 @@ repo.add {
 
 ```kotlin
 repo.add {
-    val person = "http://example.org/person/jane".toResource()
+    val person = iri("http://example.org/person/jane")
     
     person has "http://example.org/person/name" with "Jane Smith"
     person has "http://example.org/person/age" with 28
@@ -170,7 +170,7 @@ repo.add {
 
 ```kotlin
 repo.add {
-    val person = "http://example.org/person/bob".toResource()
+    val person = iri("http://example.org/person/bob")
     
     person has "http://example.org/person/name" with "Bob Wilson"
     person has "http://example.org/person/age" with 32
@@ -182,7 +182,7 @@ repo.add {
 
 ```kotlin
 repo.add {
-    val person = "http://example.org/person/bob".toResource()
+    val person = iri("http://example.org/person/bob")
     
     person has "http://example.org/person/name" with "Bob Wilson"
     person has "http://example.org/person/age" with 32
@@ -191,7 +191,7 @@ repo.add {
 
 // 3. Minus operator syntax (new!)
 repo.add {
-    val person = "http://example.org/person/charlie".toResource()
+    val person = iri("http://example.org/person/charlie")
     
     person - "http://example.org/person/name" - "Charlie Brown"
     person - "http://example.org/person/age" - 25
@@ -213,8 +213,8 @@ repo.add {
 ### 5. Operator Overloads (Minimal Syntax)
 
 ```kotlin
-val person = "http://example.org/person/sarah".toResource()
-val name = "http://example.org/person/name".toIri()
+val person = iri("http://example.org/person/sarah")
+val name = iri("http://example.org/person/name")
 
 val triple = person -> (name to "Sarah Johnson")
 repo.addTriple(triple)
@@ -223,31 +223,32 @@ repo.addTriple(triple)
 ### 5. Convenience Functions (Explicit)
 
 ```kotlin
-val person = "http://example.org/person/mike".toResource()
-val name = "http://example.org/person/name".toIri()
+val person = iri("http://example.org/person/mike")
+val name = iri("http://example.org/person/name")
 
 val triple = triple(person, name, "Mike Brown")
 repo.addTriple(triple)
 ```
 
-## 🔄 Fluent Interface Operations
+## 🔄 Chaining Operations
 
-Chain operations together for elegant, readable code:
+Perform multiple operations in sequence:
 
 ```kotlin
-repo.fluent()
-    .add {
-        // Add data
-        val person = "http://example.org/person/fluent".toResource()
-        person["http://example.org/person/name"] = "Fluent User"
-        person["http://example.org/person/age"] = 35
-    }
-    .query("SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }")
-    .forEach { binding ->
-        println("${binding.getString("name")} is ${binding.getInt("age")} years old")
-    }
-    .clear()
-    .statistics()
+repo.add {
+    val person = iri("http://example.org/person/fluent")
+    person["http://example.org/person/name"] = "Fluent User"
+    person["http://example.org/person/age"] = 35
+}
+
+val results = repo.select(SparqlSelectQuery(
+    "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }"
+))
+results.forEach { binding ->
+    println("${binding.getString("name")} is ${binding.getInt("age")} years old")
+}
+
+repo.clear()
 ```
 
 ## ⚡ Performance Monitoring
@@ -256,22 +257,12 @@ Monitor your application's performance:
 
 ```kotlin
 // Time query execution
-val (results, queryDuration) = repo.queryTimed("""
+val started = System.nanoTime()
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""")
-println("Query executed in: $queryDuration")
-
-// Time operation execution
-val (_, operationDuration) = repo.operationTimed {
-    repo.add {
-        val person = "http://example.org/person/timed".toResource()
-        person["http://example.org/person/name"] = "Timed User"
-    }
-}
-println("Operation completed in: $operationDuration")
-
-// Get comprehensive statistics
-println(repo.statisticsFormatted())
+"""))
+val queryDurationMs = (System.nanoTime() - started) / 1_000_000
+println("Query executed in: ${queryDurationMs}ms")
 ```
 
 ## 📦 Batch Operations
@@ -281,11 +272,11 @@ Process large datasets efficiently:
 ```kotlin
 // Create many people efficiently
 val people = (1..1000).map { i ->
-    "http://example.org/person/person$i".toResource()
+    iri("http://example.org/person/person$i")
 }
 
-// Add in batches for better performance
-repo.addBatch(batchSize = 100) {
+// Add in a single DSL block
+repo.add {
     people.forEachIndexed { index, person ->
         person["http://example.org/person/name"] = "Person ${index + 1}"
         person["http://example.org/person/age"] = 20 + (index % 50)
@@ -299,23 +290,29 @@ Use convenient query methods:
 
 ```kotlin
 // Get first result directly
-val firstPerson = repo.queryFirst("""
+val firstPerson = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { ?person <http://example.org/person/name> ?name } LIMIT 1
-""")
+""")).first()
 println("First person: ${firstPerson?.getString("name")}")
 
 // Get results as a map
-val nameAgeMap = repo.queryMap(
-    sparql = "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }",
-    keySelector = { it.getString("name") ?: "Unknown" },
-    valueSelector = { it.getInt("age").toString() }
-)
+val nameAgeMap = repo.select(SparqlSelectQuery(
+    "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }"
+)).asSequence()
+    .mapNotNull { binding ->
+        val name = binding.getString("name")
+        val age = binding.getInt("age")
+        if (name != null && age != null) name to age.toString() else null
+    }
+    .toMap()
 println("Name-Age Map: $nameAgeMap")
 
 // Get results as specific types
-val names: List<String> = repo.query("""
+val names: List<String> = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""").mapAs()
+""")).asSequence()
+    .mapNotNull { it.getString("name") }
+    .toList()
 println("Names: $names")
 ```
 
@@ -327,7 +324,7 @@ Ensure data consistency with transactions:
 repo.transaction {
     // All operations in this block are atomic
     add {
-        val person = "http://example.org/person/atomic".toResource()
+        val person = iri("http://example.org/person/atomic")
         person["http://example.org/person/name"] = "Atomic User"
         person["http://example.org/person/age"] = 40
     }
@@ -408,61 +405,59 @@ fun main() {
     
     // Define vocabularies
     object PersonVocab {
-        val name = "http://example.org/person/name".toIri()
-        val age = "http://example.org/person/age".toIri()
-        val email = "http://example.org/person/email".toIri()
-        val worksFor = "http://example.org/person/worksFor".toIri()
+        val name = iri("http://example.org/person/name")
+        val age = iri("http://example.org/person/age")
+        val email = iri("http://example.org/person/email")
+        val worksFor = iri("http://example.org/person/worksFor")
     }
     
     object CompanyVocab {
-        val name = "http://example.org/company/name".toIri()
-        val industry = "http://example.org/company/industry".toIri()
+        val name = iri("http://example.org/company/name")
+        val industry = iri("http://example.org/company/industry")
     }
     
     // Add data using fluent interface
-    repo.fluent()
-        .add {
-            val alice = "http://example.org/person/alice".toResource()
-            val company = "http://example.org/company/tech".toResource()
-            
-            // Ultra-compact syntax
-            alice[PersonVocab.name] = "Alice Johnson"
-            alice[PersonVocab.age] = 30
-            alice[PersonVocab.email] = "alice@example.com"
-            alice[PersonVocab.worksFor] = company
-            
-            // Company information
-            company[CompanyVocab.name] = "Tech Innovations Inc."
-            company[CompanyVocab.industry] = "Software Development"
+    repo.add {
+        val alice = iri("http://example.org/person/alice")
+        val company = iri("http://example.org/company/tech")
+        
+        // Ultra-compact syntax
+        alice[PersonVocab.name] = "Alice Johnson"
+        alice[PersonVocab.age] = 30
+        alice[PersonVocab.email] = "alice@example.com"
+        alice[PersonVocab.worksFor] = company
+        
+        // Company information
+        company[CompanyVocab.name] = "Tech Innovations Inc."
+        company[CompanyVocab.industry] = "Software Development"
+    }
+    
+    val results = repo.select(SparqlSelectQuery("""
+        SELECT ?name ?age ?email ?company
+        WHERE {
+            ?person <http://example.org/person/name> ?name ;
+                    <http://example.org/person/age> ?age ;
+                    <http://example.org/person/email> ?email ;
+                    <http://example.org/person/worksFor> ?company .
         }
-        .query("""
-            SELECT ?name ?age ?email ?company
-            WHERE {
-                ?person <http://example.org/person/name> ?name ;
-                        <http://example.org/person/age> ?age ;
-                        <http://example.org/person/email> ?email ;
-                        <http://example.org/person/worksFor> ?company .
-            }
-        """)
-        .forEach { binding ->
-            val name = binding.getString("name")
-            val age = binding.getInt("age")
-            val email = binding.getString("email")
-            val company = binding.getString("company")
-            
-            println("👤 $name (age $age): $email")
-            println("   🏢 Works for: $company")
-        }
+    """))
+    results.forEach { binding ->
+        val name = binding.getString("name")
+        val age = binding.getInt("age")
+        val email = binding.getString("email")
+        val company = binding.getString("company")
+        
+        println("👤 $name (age $age): $email")
+        println("   🏢 Works for: $company")
+    }
     
     // Performance monitoring
-    val (_, queryDuration) = repo.queryTimed("""
+    val started = System.nanoTime()
+    repo.select(SparqlSelectQuery("""
         SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-    """)
-    println("\n📊 Query executed in: $queryDuration")
-    
-    // Statistics
-    println("📈 Repository statistics:")
-    println(repo.statisticsFormatted())
+    """))
+    val queryDurationMs = (System.nanoTime() - started) / 1_000_000
+    println("\n📊 Query executed in: ${queryDurationMs}ms")
     
     // Clean up
     repo.close()

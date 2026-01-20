@@ -82,8 +82,8 @@ Clear, descriptive, and consistent naming conventions
 ```kotlin
 // Consistent naming patterns
 repo.add { ... }           // Action
-repo.query("...")          // Action
-repo.getGraph("name")      // Getter
+repo.select(SparqlSelectQuery("..."))          // Action
+repo.getGraph(iri("name")) // Getter
 repo.isClosed()           // Boolean property
 ```
 
@@ -98,7 +98,7 @@ Graceful error handling with meaningful messages
 
 ```kotlin
 try {
-    val results = repo.query("SELECT ?name WHERE { ?s ?p ?name }")
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?s ?p ?name }"))
     results.forEach { binding ->
         println(binding.getString("name"))
     }
@@ -123,7 +123,7 @@ Automatic resource cleanup and lifecycle management
 // Automatic resource cleanup
 Rdf.memory().use { repo ->
     repo.add { person has name with "Alice" }
-    val results = repo.query("SELECT ?name WHERE { ?s ?p ?name }")
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?s ?p ?name }"))
     // Repository automatically closed when block exits
 }
 
@@ -204,7 +204,7 @@ Efficient by default, optimized when needed
 
 ```kotlin
 // Lazy evaluation
-val results = repo.query("SELECT ?s WHERE { ?s ?p ?o }")
+val results = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
 results.forEach { binding -> // Only processes as needed
     println(binding.getString("s"))
 }
@@ -244,9 +244,9 @@ repo.add {
 For adding functionality to existing types
 
 ```kotlin
-fun String.toIri(): Iri = Iri(this)
 fun Int.toLiteral(): Literal = integer(this)
 fun Double.toLiteral(): Literal = double(this)
+fun Boolean.toLiteral(): Literal = boolean(this)
 ```
 
 ### 4. **Sealed Class Pattern**

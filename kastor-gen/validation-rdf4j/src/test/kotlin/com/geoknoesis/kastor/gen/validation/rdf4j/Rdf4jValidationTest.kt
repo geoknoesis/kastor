@@ -1,7 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.ShaclValidation
 import com.geoknoesis.kastor.gen.runtime.ValidationException
+import com.geoknoesis.kastor.gen.runtime.orThrow
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import org.junit.jupiter.api.Test
@@ -49,15 +49,6 @@ class Rdf4jValidationTest {
         }
     }
     
-    @Test
-    fun `validation registry works correctly`() {
-        val validation = Rdf4jValidation()
-        
-        // Should be registered automatically
-        val currentValidation = ShaclValidation.current()
-        assertSame(validation, currentValidation)
-    }
-
     private fun addNameShape(repo: com.geoknoesis.kastor.rdf.RdfRepository, targetClass: Iri) {
         val sh = "http://www.w3.org/ns/shacl#"
         val xsd = "http://www.w3.org/2001/XMLSchema#"

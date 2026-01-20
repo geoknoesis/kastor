@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.parsers
 
+import com.geoknoesis.kastor.gen.processor.model.JsonLdContainer
 import com.geoknoesis.kastor.gen.processor.model.JsonLdType
 import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
@@ -204,6 +205,71 @@ class JsonLdContextParserTest {
         // Should have property mappings
         assertEquals(Iri("http://purl.org/dc/terms/title"), context.propertyMappings["title"]!!.id)
         assertEquals(Iri("http://purl.org/dc/terms/description"), context.propertyMappings["description"]!!.id)
+    }
+
+    @Test
+    fun `parseContext supports context arrays and vocab resolution`() {
+        val contextContent = """
+            {
+              "@context": [
+                {
+                  "ex": "http://example.org/",
+                  "xsd": "http://www.w3.org/2001/XMLSchema#"
+                },
+                {
+                  "@vocab": "http://example.org/vocab/",
+                  "name": {
+                    "@id": "name",
+                    "@type": "xsd:string"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val context = parser.parseContextContent(contextContent)
+
+        assertEquals("http://example.org/", context.prefixes["ex"])
+        assertEquals(Iri("http://example.org/vocab/"), context.vocabIri)
+        assertEquals(Iri("http://example.org/vocab/name"), context.propertyMappings["name"]!!.id)
+    }
+
+    @Test
+    fun `parseContext supports base resolution for relative ids`() {
+        val contextContent = """
+            {
+              "@context": {
+                "@base": "http://example.org/base/",
+                "title": {
+                  "@id": "title",
+                  "@type": "@id"
+                }
+              }
+            }
+        """.trimIndent()
+
+        val context = parser.parseContextContent(contextContent)
+
+        assertEquals(Iri("http://example.org/base/"), context.baseIri)
+        assertEquals(Iri("http://example.org/base/title"), context.propertyMappings["title"]!!.id)
+        assertEquals(JsonLdType.Id, context.propertyMappings["title"]!!.type)
+    }
+
+    @Test
+    fun `parseContext captures container hints`() {
+        val contextContent = """
+            {
+              "@context": {
+                "tags": {
+                  "@id": "http://example.org/tags",
+                  "@container": "@list"
+                }
+              }
+            }
+        """.trimIndent()
+
+        val context = parser.parseContextContent(contextContent)
+        assertEquals(JsonLdContainer.List, context.propertyMappings["tags"]!!.container)
     }
 
     @Test

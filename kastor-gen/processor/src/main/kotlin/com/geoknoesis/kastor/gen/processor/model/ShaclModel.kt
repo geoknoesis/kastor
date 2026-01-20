@@ -29,6 +29,8 @@ data class ShaclProperty(
  */
 data class JsonLdContext(
     val prefixes: Map<String, String>,
+    val baseIri: RdfIri? = null,
+    val vocabIri: RdfIri? = null,
     val typeMappings: Map<String, RdfIri>,
     val propertyMappings: Map<String, JsonLdProperty>
 )
@@ -38,12 +40,21 @@ data class JsonLdContext(
  */
 data class JsonLdProperty(
     val id: RdfIri,
-    val type: JsonLdType?
+    val type: JsonLdType?,
+    val container: JsonLdContainer? = null
 )
 
 sealed interface JsonLdType {
     data object Id : JsonLdType
     data class Iri(val iri: RdfIri) : JsonLdType
+}
+
+sealed interface JsonLdContainer {
+    data object List : JsonLdContainer
+    data object Set : JsonLdContainer
+    data object Index : JsonLdContainer
+    data object Language : JsonLdContainer
+    data class Unknown(val value: String) : JsonLdContainer
 }
 
 /**

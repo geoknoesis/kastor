@@ -38,7 +38,7 @@ val dataset = Rdf4jMemoryDataset()
 
 // Add triples to the default graph
 val defaultGraph = dataset.defaultGraph()
-defaultGraph.addTriple(
+editDefaultGraph().addTriple(
     RdfTriple(
         Iri("http://example.org/person/1"),
         Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),

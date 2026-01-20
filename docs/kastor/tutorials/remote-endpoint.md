@@ -15,12 +15,12 @@ val repo = api.repository
 
 2) Query data
 ```kotlin
-val ok = repo.queryAsk("ASK { ?s ?p ?o }")
+val ok = repo.ask(SparqlAskQuery("ASK { ?s ?p ?o }"))
 ```
 
 3) Update data (requires update endpoint configured)
 ```kotlin
-repo.update("INSERT DATA { <urn:s> <urn:p> 'o' }")
+repo.update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }")))
 ```
 
 

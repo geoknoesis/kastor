@@ -49,12 +49,12 @@ fun main() {
     }
     
     // Query the data
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE {
             ?person foaf:name ?name .
             ?person ex:age ?age .
         }
-    """)
+    """)))
     
     results.forEach { binding ->
         println("${binding.getString("name")} is ${binding.getInt("age")} years old")
@@ -125,11 +125,11 @@ val result = reasoner.reason(graph)
 Validate data quality with SHACL constraints.
 
 ```kotlin
-val validator = ShaclValidation.validator()
-val report = validator.validate(dataGraph, shapesGraph)
+val validation = JenaValidation()
+val result = validation.validate(dataGraph, focusNode)
 
-if (!report.isValid) {
-    report.violations.forEach { violation ->
+if (result is ValidationResult.Violations) {
+    result.items.forEach { violation ->
         println("Validation error: ${violation.message}")
     }
 }
@@ -143,12 +143,12 @@ val repo = Rdf.factory {
     sparql("https://dbpedia.org/sparql")
 }
 
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE {
         ?person rdfs:label ?name .
         ?person dbo:birthPlace <http://dbpedia.org/resource/Paris> .
     } LIMIT 10
-""")
+""")))
 ```
 
 ## 🏗️ Architecture

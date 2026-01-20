@@ -227,8 +227,8 @@ val api1 = manager.createRepository("repo1", RdfConfig(providerId = "jena", vari
 val api2 = manager.createRepository("repo2", RdfConfig(providerId = "rdf4j", variantId = "memory"))
 
 // Both approaches work the same way
-val graph1 = api.repository.getGraph()
-val graph2 = api1.repository.getGraph()
+val graph1 = api.repository.defaultGraph
+val graph2 = api1.repository.defaultGraph
 ```
 
 ## Benefits

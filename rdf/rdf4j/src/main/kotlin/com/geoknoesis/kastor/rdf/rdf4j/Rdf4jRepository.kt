@@ -80,9 +80,9 @@ class Rdf4jRepository(
     
     private val valueFactory: ValueFactory = SimpleValueFactory.getInstance()
     
-    override val defaultGraph: MutableRdfGraph = Rdf4jGraph(connection)
+    override val defaultGraph: RdfGraph = Rdf4jGraph(connection)
     
-    override fun getGraph(name: Iri): MutableRdfGraph {
+    override fun getGraph(name: Iri): RdfGraph {
         val context = valueFactory.createIRI(name.value)
         return Rdf4jGraph(connection, context)
     }
@@ -97,7 +97,7 @@ class Rdf4jRepository(
         return contexts.map { Iri(it.stringValue()) }
     }
     
-    override fun createGraph(name: Iri): MutableRdfGraph {
+    override fun createGraph(name: Iri): RdfGraph {
         val context = valueFactory.createIRI(name.value)
         return Rdf4jGraph(connection, context)
     }
@@ -107,6 +107,14 @@ class Rdf4jRepository(
         val wasEmpty = connection.hasStatement(null, null, null, false, context)
         connection.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
         return !wasEmpty
+    }
+
+    override fun editDefaultGraph(): GraphEditor {
+        return defaultGraph as MutableRdfGraph
+    }
+
+    override fun editGraph(name: Iri): GraphEditor {
+        return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): QueryResult {

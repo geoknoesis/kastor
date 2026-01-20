@@ -171,7 +171,7 @@ runtime evaluation in `KastorGraphOps` or an internal path evaluation helper:
 Introduce (design):
 
 ```kotlin
-interface ShaclValidator {
+interface ValidationContext {
   fun validate(shape: ShaclShape, handle: RdfHandle): List<Violation>
 }
 
@@ -205,7 +205,7 @@ Recommended behavior:
 
 External validator contract:
 ```kotlin
-interface ShaclValidator {
+interface ValidationContext {
   fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
@@ -245,7 +245,7 @@ class OntologyGen
   contextPath = "context.jsonld",
   validationMode = ValidationMode.EXTERNAL,
   validationAnnotations = ValidationAnnotations.JAKARTA,
-  externalValidatorClass = "com.example.MyShaclValidator"
+  externalValidatorClass = "com.example.MyValidationContext"
 )
 class OntologyGen
 ```
@@ -262,7 +262,7 @@ class OntologyGen
 ```
 
 ## Error Strategy
-- **Strict mode**: violations throw `ShaclValidationException`.
+- **Strict mode**: violations throw `ValidationException`.
 - **Lenient mode**: collect violations and return.
 - Provide configuration flag at generator level to emit strict vs lenient logic.
 

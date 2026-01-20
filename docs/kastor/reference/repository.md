@@ -1,28 +1,31 @@
 ## Repository
 
 ### Transactions
-- `beginTransaction(write: Boolean = true)`
-- `commit()`
-- `rollback()`
-- `end()`
+- `transaction { ... }`
+- `readTransaction { ... }`
 
 ### Queries
-- `querySelect(query: String, bindings: Map<String, RdfTerm> = emptyMap()): ResultSet`
-- `queryConstruct(query: String, bindings: Map<String, RdfTerm> = emptyMap()): RdfGraph`
-- `queryAsk(query: String, bindings: Map<String, RdfTerm> = emptyMap()): Boolean`
+- `select(SparqlSelect): QueryResult`
+- `ask(SparqlAsk): Boolean`
+- `construct(SparqlConstruct): Sequence<RdfTriple>`
+- `describe(SparqlDescribe): Sequence<RdfTriple>`
 
 ### Updates
-- `update(update: String, bindings: Map<String, RdfTerm> = emptyMap())`
+- `update(UpdateQuery)`
 
-### Data operations
-- `addTriple(graph: Iri?, triple: RdfTriple)`
-- `readGraph(graph: Iri?, input: InputStream, format: String)`
-- `writeGraph(graph: Iri?, output: OutputStream, format: String)`
+### Graph operations
+- `defaultGraph: RdfGraph`
+- `getGraph(name: Iri): RdfGraph`
+- `listGraphs(): List<Iri>`
+- `createGraph(name: Iri): RdfGraph`
+- `removeGraph(name: Iri): Boolean`
+- `editDefaultGraph(): GraphEditor`
+- `editGraph(name: Iri): GraphEditor`
 
 ### Behavior by provider
-- Jena: auto-read/write transactions if none active; bindings not applied automatically.
-- RDF4J: auto-commit if no transaction; bindings applied.
-- SPARQL: remote HTTP; transactions no-ops; `addTriple` unsupported; inline values.
+- Jena: transactions are supported; performance varies by backend.
+- RDF4J: transactions supported; suitable for production workloads.
+- SPARQL: remote endpoints may ignore transactions; use `update` and `select`/`ask`.
 
 
 

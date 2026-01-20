@@ -426,17 +426,17 @@ fun main() {
         
         // Test data addition
         repo.add {
-            val person = "http://example.org/person/test".toResource()
+            val person = iri("http://example.org/person/test")
             person["http://example.org/person/name"] = "Test User"
         }
         println("✅ Data added successfully")
         
         // Test query
-        val results = repo.query("""
+        val results = repo.select(SparqlSelectQuery("""
             SELECT ?name WHERE { 
                 ?person <http://example.org/person/name> ?name 
             }
-        """)
+        """))
         
         val count = results.count()
         println("✅ Query executed successfully: $count results")
@@ -469,7 +469,7 @@ fun testBackends() {
             variantId = "memory"
         }
         jenaRepo.add {
-            val person = "http://example.org/person/jena".toResource()
+            val person = iri("http://example.org/person/jena")
             person["http://example.org/person/name"] = "Jena User"
         }
         println("✅ Jena backend working")
@@ -485,7 +485,7 @@ fun testBackends() {
             variantId = "memory"
         }
         rdf4jRepo.add {
-            val person = "http://example.org/person/rdf4j".toResource()
+            val person = iri("http://example.org/person/rdf4j")
             person["http://example.org/person/name"] = "RDF4J User"
         }
         println("✅ RDF4J backend working")
@@ -508,9 +508,9 @@ fun performanceTest() {
     val startTime = System.currentTimeMillis()
     
     // Add 1000 triples
-    repo.addBatch(batchSize = 100) {
+    repo.add {
         for (i in 1..1000) {
-            val person = "http://example.org/person/person$i".toResource()
+            val person = iri("http://example.org/person/person$i")
             person["http://example.org/person/name"] = "Person $i"
             person["http://example.org/person/age"] = 20 + (i % 50)
         }
@@ -521,12 +521,12 @@ fun performanceTest() {
     
     // Query test
     val queryStart = System.currentTimeMillis()
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE { 
             ?person <http://example.org/person/name> ?name ;
                     <http://example.org/person/age> ?age 
         }
-    """)
+    """))
     
     val queryTime = System.currentTimeMillis() - queryStart
     println("✅ Queried ${results.count()} results in ${queryTime}ms")

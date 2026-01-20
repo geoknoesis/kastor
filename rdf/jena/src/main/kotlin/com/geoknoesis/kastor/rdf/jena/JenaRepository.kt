@@ -48,9 +48,9 @@ class JenaRepository private constructor(
         }
     }
     
-    override val defaultGraph: MutableRdfGraph = JenaGraph(dataset.defaultModel)
+    override val defaultGraph: RdfGraph = JenaGraph(dataset.defaultModel)
     
-    override fun getGraph(name: Iri): MutableRdfGraph {
+    override fun getGraph(name: Iri): RdfGraph {
         return JenaGraph(dataset.getNamedModel(name.value))
     }
     
@@ -62,7 +62,7 @@ class JenaRepository private constructor(
         return dataset.listNames().asSequence().map { Iri(it) }.toList()
     }
     
-    override fun createGraph(name: Iri): MutableRdfGraph {
+    override fun createGraph(name: Iri): RdfGraph {
         val model = dataset.getNamedModel(name.value)
         return JenaGraph(model)
     }
@@ -74,6 +74,14 @@ class JenaRepository private constructor(
         } else {
             false
         }
+    }
+
+    override fun editDefaultGraph(): GraphEditor {
+        return defaultGraph as MutableRdfGraph
+    }
+
+    override fun editGraph(name: Iri): GraphEditor {
+        return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): QueryResult {

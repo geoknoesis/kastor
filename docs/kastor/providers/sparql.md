@@ -22,13 +22,13 @@ val repo = Rdf.factory {
 }
 
 // Query remote data
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?birthDate WHERE {
         ?person rdfs:label ?name .
         ?person dbo:birthDate ?birthDate .
         FILTER(LANG(?name) = "en")
     } LIMIT 10
-""")
+"""))
 
 results.forEach { binding ->
     val name = binding.getString("name")
@@ -89,7 +89,7 @@ val repo = Rdf.factory {
     }
 }
 
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?person ?name ?birthDate WHERE {
         SERVICE <https://dbpedia.org/sparql> {
             ?person rdfs:label ?name .
@@ -99,14 +99,14 @@ val results = repo.query("""
             ?person wdt:P31 wd:Q5 .  # human
         }
     } LIMIT 10
-""")
+"""))
 ```
 
 ## Error Handling
 
 ```kotlin
 try {
-    val results = repo.query("SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10")
+    val results = repo.select(SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10"))
     results.forEach { println(it) }
 } catch (e: SparqlException) {
     when (e) {

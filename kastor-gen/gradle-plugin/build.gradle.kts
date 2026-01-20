@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.kotlin.jvm") version "1.9.24"
     id("java-gradle-plugin")
     id("maven-publish")
 }
@@ -17,8 +17,8 @@ dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:1.9.10-1.0.13")
 
     // Testing
-    testImplementation(libs.kotlin.test)
-    testImplementation(libs.junit.jupiter)
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
     testImplementation("org.gradle:gradle-tooling-api:8.0")
     testImplementation("org.gradle:gradle-test-kit:8.0")
 }

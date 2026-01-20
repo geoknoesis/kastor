@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.examples
 
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.XSD
 
 fun main() {
@@ -55,8 +56,8 @@ fun main() {
         
         // 5. Special case: rdf:type always resolves QNames
         println("5. Special case: rdf:type always resolves QNames:")
-        person[RDF.type] = "foaf:Person"
-        person `is` "foaf:Agent"
+        person[RDF.type] = qname("foaf:Person")
+        person `is` qname("foaf:Agent")
         println("   person[\"a\"] = \"foaf:Person\"                  // → <http://xmlns.com/foaf/0.1/Person>")
         println("   person `is` \"foaf:Agent\"                     // → <http://xmlns.com/foaf/0.1/Agent>")
         println()

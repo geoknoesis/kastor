@@ -22,7 +22,7 @@ repo.commit(); repo.end()
 
 3) Run a SELECT query
 ```kotlin
-val rows = repo.querySelect("SELECT ?s WHERE { ?s <urn:ex:p> ?o }")
+val rows = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s <urn:ex:p> ?o }"))
 ```
 
 

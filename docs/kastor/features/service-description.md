@@ -264,7 +264,7 @@ println("Entailment Regimes: ${capabilities.entailmentRegimes}")
 ### SHACL Validator Provider
 
 ```kotlin
-val shaclProvider = ShaclValidatorProvider()
+val shaclProvider = ValidationContextProvider()
 
 // Service description for SHACL validation service
 val description = shaclProvider.generateServiceDescription(

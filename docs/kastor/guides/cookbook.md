@@ -62,7 +62,7 @@ if (variant != null) {
 
 ### Insert a triple
 ```kotlin
-repo.update("INSERT DATA { <urn:s> <urn:p> 'o' }")
+repo.update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }")))
 ```
 
 ### Create triples using the DSL

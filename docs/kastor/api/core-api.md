@@ -5,12 +5,11 @@
 - **`Iri`**: wraps a String IRI value.
 - **`BlankNode`**: wraps an internal identifier.
 - **`Literal`**: `lexical: String`, optional `lang: String?`, optional `datatype: Iri?`.
-- **`RdfTriple`**: `subject: RdfTerm`, `predicate: Iri`, ``object``: `RdfTerm`.
+- **`RdfTriple`**: `subject: RdfTerm`, `predicate: Iri`, `object`: `RdfTerm`.
 
 ### Query results
-- **`ResultBinding(name: String, value: RdfTerm)`**
-- **`RdfSelectRow(bindings: List<ResultBinding>)`** with `operator fun get(name: String): RdfTerm?`
-- **`ResultSet(rows: List<RdfSelectRow>)`**
+- **`QueryResult`**: iterable of `BindingSet` rows with `first()`, `toList()`, and `asSequence()`.
+- **`BindingSet`**: lookup by variable name via `get("name")`, plus typed accessors like `getString`, `getInt`, `getDouble`.
 
 ### Graph abstraction
 ```kotlin
@@ -20,76 +19,52 @@ interface RdfGraph {
   fun size(): Int
 }
 
-interface MutableRdfGraph : RdfGraph {
+interface GraphEditor {
   fun addTriple(triple: RdfTriple)
   fun addTriples(triples: Collection<RdfTriple>)
   fun removeTriple(triple: RdfTriple): Boolean
   fun removeTriples(triples: Collection<RdfTriple>): Boolean
   fun clear(): Boolean
 }
+
+interface MutableRdfGraph : RdfGraph, GraphEditor
 ```
 
 ### Repository abstraction
 ```kotlin
-interface RdfRepository {
-  // Transactions
-  fun beginTransaction(write: Boolean = true)
-  fun commit()
-  fun rollback()
-  fun end()
+interface RdfRepository : Repository {
+  val defaultGraph: RdfGraph
 
-  // SPARQL
-  fun querySelect(query: String, bindings: Map<String, RdfTerm> = emptyMap()): ResultSet
-  fun queryConstruct(query: String, bindings: Map<String, RdfTerm> = emptyMap()): RdfGraph
-  fun queryAsk(query: String, bindings: Map<String, RdfTerm> = emptyMap()): Boolean
-  fun update(update: String, bindings: Map<String, RdfTerm> = emptyMap())
+  fun getGraph(name: Iri): RdfGraph
+  fun listGraphs(): List<Iri>
+  fun createGraph(name: Iri): RdfGraph
+  fun removeGraph(name: Iri): Boolean
+  fun editDefaultGraph(): GraphEditor
+  fun editGraph(name: Iri): GraphEditor
 
-  // Data operations
-  fun addTriple(graph: Iri?, triple: RdfTriple)
-  fun readGraph(graph: Iri?, input: java.io.InputStream, format: String)
-  fun writeGraph(graph: Iri?, output: java.io.OutputStream, format: String)
+  fun select(query: SparqlSelect): QueryResult
+  fun ask(query: SparqlAsk): Boolean
+  fun construct(query: SparqlConstruct): Sequence<RdfTriple>
+  fun describe(query: SparqlDescribe): Sequence<RdfTriple>
+  fun update(query: UpdateQuery)
+
+  fun transaction(operations: RdfRepository.() -> Unit)
+  fun readTransaction(operations: RdfRepository.() -> Unit)
+
+  fun clear(): Boolean
+  fun isClosed(): Boolean
+  fun getCapabilities(): ProviderCapabilities
 }
 ```
 
 ### Factory DSL
 ```kotlin
 object Rdf {
-  fun factory(block: Builder.() -> Unit): RdfApi
-  fun iri(value: String): Iri
-  fun bnode(id: String): BlankNode
-  fun literal(lexical: String, lang: String? = null, datatype: Iri? = null): Literal
-}
-```
-
-### Enhanced Configuration System
-The API provides rich parameter metadata for all configuration variants:
-
-```kotlin
-// Parameter information structure
-data class ConfigParameter(
-    val name: String,           // Parameter name (e.g., "location")
-    val description: String,     // Human-readable description
-    val type: String = "String", // Data type (default: "String")
-    val optional: Boolean = false, // Whether parameter is optional
-    val defaultValue: String? = null, // Default value if optional
-    val examples: List<String> = emptyList() // Example values
-)
-
-// Configuration variant information
-data class ConfigVariant(
-    val type: String,
-    val description: String,
-    val parameters: List<ConfigParameter> = emptyList()
-)
-
-// Registry methods for parameter discovery
-object RdfApiRegistry {
-    fun getAllConfigVariants(): List<ConfigVariant>
-    fun getConfigVariant(type: String): ConfigVariant?
-    fun getParameters(type: String): List<ConfigParameter>
-    fun getRequiredParameters(type: String): List<ConfigParameter>
-    fun getOptionalParameters(type: String): List<ConfigParameter>
-    fun getParameterInfo(type: String, paramName: String): ConfigParameter?
+  fun memory(): RdfRepository
+  fun memoryWithInference(): RdfRepository
+  fun persistent(location: String = "data"): RdfRepository
+  fun factory(configure: RepositoryBuilder.() -> Unit): RdfRepository
+  fun graph(configure: GraphDsl.() -> Unit): MutableRdfGraph
 }
 ```
 
@@ -103,11 +78,6 @@ val ageTriple = person has age with 30
 ```
 
 See [RDF Terms](rdfterms.md#triple-dsl-natural-language-for-rdf-statements-) for complete documentation.
-
-Use the `Builder` to set the `type` (e.g., `jena:memory`, `rdf4j:native`, `sparql`) and provider-specific params. The builder constructs an `RdfApi` with a `repository` instance.
-
-### Formats
-`RdfFormats` defines common names. Pass strings like `"TURTLE"`, `"NTRIPLES"`, `"RDFXML"`, `"JSONLD"`, `"TRIG"`, `"NQUADS"` to `readGraph`/`writeGraph`.
 
 
 

@@ -23,23 +23,23 @@ This guide provides comprehensive best practices for using Kastor RDF effectivel
 
 ```kotlin
 // ✅ Good: Use descriptive, hierarchical IRIs
-val personIri = "http://example.org/person/alice".toResource()
-val companyIri = "http://example.org/company/techcorp".toResource()
+val personIri = iri("http://example.org/person/alice")
+val companyIri = iri("http://example.org/company/techcorp")
 
 // ❌ Bad: Unclear or inconsistent naming
-val s = "http://ex.org/p1".toResource()
-val obj = "http://ex.org/o".toResource()
+val s = iri("http://ex.org/p1")
+val obj = iri("http://ex.org/o")
 
 // ✅ Good: Use vocabulary objects for organization
 object PersonVocab {
-    val name = "http://example.org/person/name".toIri()
-    val age = "http://example.org/person/age".toIri()
-    val email = "http://example.org/person/email".toIri()
+    val name = iri("http://example.org/person/name")
+    val age = iri("http://example.org/person/age")
+    val email = iri("http://example.org/person/email")
 }
 
 // ✅ Good: Use meaningful variable names
-val alice = "http://example.org/person/alice".toResource()
-val techCorp = "http://example.org/company/techcorp".toResource()
+val alice = iri("http://example.org/person/alice")
+val techCorp = iri("http://example.org/company/techcorp")
 ```
 
 #### Functions and Methods
@@ -116,23 +116,23 @@ person has PersonVocab.age with 30  // Inconsistent
 ```kotlin
 // ✅ Good: Organize vocabularies by domain
 object PersonVocab {
-    val name = "http://example.org/person/name".toIri()
-    val age = "http://example.org/person/age".toIri()
-    val email = "http://example.org/person/email".toIri()
-    val worksFor = "http://example.org/person/worksFor".toIri()
+    val name = iri("http://example.org/person/name")
+    val age = iri("http://example.org/person/age")
+    val email = iri("http://example.org/person/email")
+    val worksFor = iri("http://example.org/person/worksFor")
 }
 
 object CompanyVocab {
-    val name = "http://example.org/company/name".toIri()
-    val industry = "http://example.org/company/industry".toIri()
-    val location = "http://example.org/company/location".toIri()
+    val name = iri("http://example.org/company/name")
+    val industry = iri("http://example.org/company/industry")
+    val location = iri("http://example.org/company/location")
 }
 
 // ✅ Good: Use standard vocabularies when possible
 object Foaf {
-    val name = "http://xmlns.com/foaf/0.1/name".toIri()
-    val mbox = "http://xmlns.com/foaf/0.1/mbox".toIri()
-    val homepage = "http://xmlns.com/foaf/0.1/homepage".toIri()
+    val name = iri("http://xmlns.com/foaf/0.1/name")
+    val mbox = iri("http://xmlns.com/foaf/0.1/mbox")
+    val homepage = iri("http://xmlns.com/foaf/0.1/homepage")
 }
 ```
 
@@ -166,9 +166,9 @@ val customRepo = Rdf.factory {
 
 ```kotlin
 // ✅ Good: Batch operations for efficiency
-repo.addBatch(batchSize = 1000) {
+repo.add {
     for (i in 1..10000) {
-        val person = "http://example.org/person/person$i".toResource()
+        val person = iri("http://example.org/person/person$i")
         person[PersonVocab.name] = "Person $i"
         person[PersonVocab.age] = 20 + (i % 50)
         person[PersonVocab.email] = "person$i@example.com"
@@ -178,7 +178,7 @@ repo.addBatch(batchSize = 1000) {
 // ❌ Bad: Individual operations for large datasets
 for (i in 1..10000) {
     repo.add {
-        val person = "http://example.org/person/person$i".toResource()
+        val person = iri("http://example.org/person/person$i")
         person[PersonVocab.name] = "Person $i"
     }
 }
@@ -192,7 +192,7 @@ val smallBatchSize = 100    // For complex triples
 val mediumBatchSize = 1000  // For simple triples
 val largeBatchSize = 5000   // For bulk imports
 
-repo.addBatch(batchSize = smallBatchSize) {
+repo.add {
     // Complex operations
 }
 ```
@@ -203,46 +203,46 @@ repo.addBatch(batchSize = smallBatchSize) {
 
 ```kotlin
 // ✅ Good: Use LIMIT for large result sets
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age WHERE { 
         ?person <http://example.org/person/name> ?name ;
                 <http://example.org/person/age> ?age 
     } LIMIT 100
-""")
+"""))
 
 // ✅ Good: Use specific predicates
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { 
         ?person <http://example.org/person/name> ?name 
     }
-""")
+"""))
 
 // ❌ Bad: Unnecessary complexity
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?s ?p ?o WHERE { 
         ?s ?p ?o 
     } LIMIT 100
-""")
+"""))
 ```
 
 #### Use Indexed Properties
 
 ```kotlin
 // ✅ Good: Query by indexed properties
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?person WHERE { 
         ?person <http://example.org/person/email> "alice@example.com" 
     }
-""")
+"""))
 
 // ✅ Good: Use multiple indexed properties
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?person WHERE { 
         ?person <http://example.org/person/name> ?name ;
                 <http://example.org/person/age> ?age .
         FILTER(?age > 25)
     }
-""")
+"""))
 ```
 
 ### Memory Management
@@ -251,16 +251,13 @@ val results = repo.query("""
 
 ```kotlin
 // ✅ Good: Monitor performance
-val (_, queryDuration) = repo.queryTimed("""
+val started = System.nanoTime()
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""")
+"""))
+val queryDurationMs = (System.nanoTime() - started) / 1_000_000
+println("Query duration: ${queryDurationMs}ms")
 
-val stats = repo.getStatistics()
-println("Memory usage: ${stats.sizeBytes / 1024}KB")
-
-// ✅ Good: Use performance monitoring
-val perf = repo.getPerformanceMonitor()
-println("Cache hit rate: ${perf.cacheHitRate * 100}%")
 ```
 
 ## 🚨 Error Handling
@@ -272,7 +269,7 @@ println("Cache hit rate: ${perf.cacheHitRate * 100}%")
 ```kotlin
 // ✅ Good: Handle specific exceptions
 try {
-    val results = repo.query("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }")
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
     results.forEach { binding ->
         println(binding.getString("name"))
     }
@@ -296,7 +293,7 @@ fun addPerson(name: String, age: Int): RdfResource {
     require(name.isNotBlank()) { "Name cannot be blank" }
     require(age > 0) { "Age must be positive" }
     
-    val person = "http://example.org/person/${UUID.randomUUID()}".toResource()
+    val person = iri("http://example.org/person/${UUID.randomUUID()}")
     
     repo.add {
         person[PersonVocab.name] = name
@@ -313,13 +310,13 @@ fun addPerson(name: String, age: Int): RdfResource {
 // ✅ Good: Graceful degradation for optional features
 fun getPersonWithOptionalData(id: String): PersonData? {
     return try {
-        val results = repo.query("""
+        val results = repo.select(SparqlSelectQuery("""
             SELECT ?name ?age ?email WHERE { 
                 <$id> <http://example.org/person/name> ?name ;
                       <http://example.org/person/age> ?age .
                 OPTIONAL { <$id> <http://example.org/person/email> ?email }
             }
-        """)
+        """))
         
         results.firstOrNull()?.let { binding ->
             PersonData(
@@ -345,11 +342,11 @@ fun getPersonWithOptionalData(id: String): PersonData? {
 // ✅ Good: Use Kotlin's use function
 Rdf.memory().use { repo ->
     repo.add {
-        val person = "http://example.org/person/alice".toResource()
+        val person = iri("http://example.org/person/alice")
         person[PersonVocab.name] = "Alice"
     }
     
-    val results = repo.query("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }")
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
     results.forEach { binding ->
         println(binding.getString("name"))
     }
@@ -405,13 +402,13 @@ Rdf.manager {
 repo.transaction {
     // All operations are atomic
     add {
-        val person = "http://example.org/person/alice".toResource()
+        val person = iri("http://example.org/person/alice")
         person[PersonVocab.name] = "Alice"
         person[PersonVocab.age] = 30
     }
     
     add {
-        val company = "http://example.org/company/techcorp".toResource()
+        val company = iri("http://example.org/company/techcorp")
         company[CompanyVocab.name] = "Tech Corp"
     }
     
@@ -420,7 +417,7 @@ repo.transaction {
 
 // ✅ Good: Use read transactions for better performance
 repo.readTransaction {
-    val count = query("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }")
+    val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }"))
         .firstOrNull()?.getInt("count") ?: 0
     
     println("Total people: $count")
@@ -468,23 +465,23 @@ val companyUri = "http://example.org/c1"
 // ✅ Good: Clear ontology structure
 object Ontology {
     // Classes
-    val Person = "http://example.org/ontology/Person".toIri()
-    val Company = "http://example.org/ontology/Company".toIri()
-    val Product = "http://example.org/ontology/Product".toIri()
+    val Person = iri("http://example.org/ontology/Person")
+    val Company = iri("http://example.org/ontology/Company")
+    val Product = iri("http://example.org/ontology/Product")
     
     // Properties
-    val name = "http://example.org/ontology/name".toIri()
-    val age = "http://example.org/ontology/age".toIri()
-    val email = "http://example.org/ontology/email".toIri()
-    val worksFor = "http://example.org/ontology/worksFor".toIri()
-    val founded = "http://example.org/ontology/founded".toIri()
+    val name = iri("http://example.org/ontology/name")
+    val age = iri("http://example.org/ontology/age")
+    val email = iri("http://example.org/ontology/email")
+    val worksFor = iri("http://example.org/ontology/worksFor")
+    val founded = iri("http://example.org/ontology/founded")
 }
 
 // ✅ Good: Use standard vocabularies
 object Foaf {
-    val Person = "http://xmlns.com/foaf/0.1/Person".toIri()
-    val name = "http://xmlns.com/foaf/0.1/name".toIri()
-    val mbox = "http://xmlns.com/foaf/0.1/mbox".toIri()
+    val Person = iri("http://xmlns.com/foaf/0.1/Person")
+    val name = iri("http://xmlns.com/foaf/0.1/name")
+    val mbox = iri("http://xmlns.com/foaf/0.1/mbox")
 }
 ```
 
@@ -493,7 +490,7 @@ object Foaf {
 ```kotlin
 // ✅ Good: Use appropriate data types
 repo.add {
-    val person = "http://example.org/person/alice".toResource()
+    val person = iri("http://example.org/person/alice")
     person[PersonVocab.name] = "Alice Johnson"           // String
     person[PersonVocab.age] = 30                          // Integer
     person[PersonVocab.salary] = 75000.50                // Double
@@ -504,7 +501,7 @@ repo.add {
 
 // ✅ Good: Use typed literals when needed
 repo.add {
-    val person = "http://example.org/person/alice".toResource()
+    val person = iri("http://example.org/person/alice")
     person[PersonVocab.birthDate] = literal("1994-05-15", datatype = "http://www.w3.org/2001/XMLSchema#date")
     person[PersonVocab.salary] = literal(75000.50, datatype = "http://www.w3.org/2001/XMLSchema#decimal")
 }
@@ -518,46 +515,46 @@ repo.add {
 
 ```kotlin
 // ✅ Good: Use specific patterns
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age WHERE { 
         ?person <http://example.org/person/name> ?name ;
                 <http://example.org/person/age> ?age .
         FILTER(?age > 25)
     }
-""")
+"""))
 
 // ✅ Good: Use OPTIONAL for optional data
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?email WHERE { 
         ?person <http://example.org/person/name> ?name .
         OPTIONAL { ?person <http://example.org/person/email> ?email }
     }
-""")
+"""))
 
 // ❌ Bad: Inefficient patterns
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?s ?p ?o WHERE { 
         ?s ?p ?o 
     }
-""")
+"""))
 ```
 
 #### Use Aggregation Wisely
 
 ```kotlin
 // ✅ Good: Use aggregation for summaries
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT (COUNT(?person) AS ?count) (AVG(?age) AS ?avgAge) WHERE { 
         ?person <http://example.org/person/age> ?age 
     }
-""")
+"""))
 
 // ✅ Good: Use GROUP BY for grouped data
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?company (COUNT(?person) AS ?employeeCount) WHERE { 
         ?person <http://example.org/person/worksFor> ?company 
     } GROUP BY ?company
-""")
+"""))
 ```
 
 ### Query Caching
@@ -571,13 +568,13 @@ class CachedPersonRepository(private val repo: RdfRepository) {
     
     fun findPeopleByCompany(company: String): List<Person> {
         return cache.getOrPut(company) {
-            val results = repo.query("""
+            val results = repo.select(SparqlSelectQuery("""
                 SELECT ?name ?age WHERE { 
                     ?person <http://example.org/person/name> ?name ;
                             <http://example.org/person/age> ?age ;
                             <http://example.org/person/worksFor> <$company> 
                 }
-            """)
+            """))
             
             results.map { binding ->
                 Person(
@@ -608,7 +605,7 @@ interface PersonRepository {
 
 class RdfPersonRepository(private val repo: RdfRepository) : PersonRepository {
     override fun createPerson(name: String, age: Int): RdfResource {
-        val person = "http://example.org/person/${UUID.randomUUID()}".toResource()
+        val person = iri("http://example.org/person/${UUID.randomUUID()}")
         
         repo.add {
             person[PersonVocab.name] = name
@@ -619,12 +616,12 @@ class RdfPersonRepository(private val repo: RdfRepository) : PersonRepository {
     }
     
     override fun findPerson(id: String): Person? {
-        val results = repo.query("""
+        val results = repo.select(SparqlSelectQuery("""
             SELECT ?name ?age WHERE { 
                 <$id> <http://example.org/person/name> ?name ;
                       <http://example.org/person/age> ?age 
             }
-        """)
+        """))
         
         return results.firstOrNull()?.let { binding ->
             Person(
@@ -743,8 +740,8 @@ class PersonRepositoryTest {
         
         // Link to company
         repo.add {
-            alice[PersonVocab.worksFor] = "http://example.org/company/techcorp".toResource()
-            bob[PersonVocab.worksFor] = "http://example.org/company/techcorp".toResource()
+            alice[PersonVocab.worksFor] = iri("http://example.org/company/techcorp")
+            bob[PersonVocab.worksFor] = iri("http://example.org/company/techcorp")
         }
         
         val people = personRepo.findPeopleByCompany("http://example.org/company/techcorp")
@@ -920,9 +917,9 @@ class BackupManager(private val repo: RdfRepository) {
         val backupPath = "/backups/$backupId"
         
         // Export data to backup format
-        val data = repo.query("""
+        val data = repo.select(SparqlSelectQuery("""
             CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }
-        """)
+        """))
         
         // Save to backup location
         saveToBackup(backupPath, data)

@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
-import com.geoknoesis.kastor.gen.runtime.ShaclValidation
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.FOAF
@@ -45,15 +44,6 @@ class JenaValidationTest {
         assertTrue(result is ValidationResult.Violations)
     }
     
-    @Test
-    fun `validation registry works correctly`() {
-        val validation = JenaValidation()
-        
-        // Should be registered automatically
-        val currentValidation = ShaclValidation.current()
-        assertSame(validation, currentValidation)
-    }
-
     private fun addNameShape(repo: com.geoknoesis.kastor.rdf.RdfRepository, targetClass: Iri) {
         val sh = "http://www.w3.org/ns/shacl#"
         val xsd = "http://www.w3.org/2001/XMLSchema#"

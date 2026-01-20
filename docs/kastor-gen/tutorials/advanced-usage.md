@@ -214,7 +214,7 @@ class ContextualRdfHandle(
     
     override fun validate(): ValidationResult {
         if (!context.options.validate) return ValidationResult.Ok
-        return ShaclValidation.current().validate(graph, node)
+        return validation.validate(graph, node)
     }
 }
 ```
@@ -474,7 +474,7 @@ class CachingMaterializationService {
         }
         
         override fun validate(): ValidationResult {
-            return ShaclValidation.current().validate(graph, node)
+            return validation.validate(graph, node)
         }
     }
     

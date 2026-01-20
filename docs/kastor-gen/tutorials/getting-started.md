@@ -184,21 +184,14 @@ fun main() {
     // ... (previous code)
     
     // Materialize with validation
-    try {
-        val alice: Person = aliceRef.asType(validate = true)
-        println("Validation passed!")
-    } catch (e: Exception) {
-        println("Validation failed: ${e.message}")
-    }
+    val validation = JenaValidation()
+    val alice: Person = aliceRef.asValidatedType(validation)
+    println("Validation passed!")
     
-    // Or validate manually
-    try {
-        val rdfHandle = alice.asRdf()
-        rdfHandle.validateOrThrow()
-        println("Manual validation passed!")
-    } catch (e: Exception) {
-        println("Manual validation failed: ${e.message}")
-    }
+    // Or validate manually (using the same context)
+    val rdfHandle = alice.asRdf()
+    rdfHandle.validateOrThrow()
+    println("Manual validation passed!")
 }
 ```
 
@@ -293,7 +286,7 @@ A: Make sure KSP is properly configured and the build completed successfully. Th
 A: Ensure you have the correct import statements for `@RdfClass` and `@RdfProperty`.
 
 **Q: Validation not working**
-A: Check that you've added the validation dependencies and that a ShaclValidator is registered.
+A: Check that you've added the validation dependencies and that a ValidationContext is registered.
 
 ### Getting Help
 

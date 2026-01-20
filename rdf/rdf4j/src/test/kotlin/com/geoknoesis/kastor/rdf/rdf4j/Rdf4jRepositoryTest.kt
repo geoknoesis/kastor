@@ -15,7 +15,7 @@ class Rdf4jRepositoryTest {
     val p = Iri("urn:ex:p")
     val o = Literal("hi")
 
-    repo.defaultGraph.addTriple(RdfTriple(s, p, o))
+    repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
 
     val result = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
     assertEquals(1, result.count())

@@ -42,9 +42,9 @@ A **resource** is anything that can be identified on the web. Resources are iden
 
 ```kotlin
 // Examples of resources
-val person = "http://example.org/person/alice".toResource()
-val company = "http://example.org/company/tech".toResource()
-val document = "http://example.org/document/1".toResource()
+val person = iri("http://example.org/person/alice")
+val company = iri("http://example.org/company/tech")
+val document = iri("http://example.org/document/1")
 ```
 
 ### Properties
@@ -53,9 +53,9 @@ A **property** describes a relationship between resources or between a resource 
 
 ```kotlin
 // Examples of properties
-val name = "http://example.org/person/name".toIri()
-val age = "http://example.org/person/age".toIri()
-val worksFor = "http://example.org/person/worksFor".toIri()
+val name = iri("http://example.org/person/name")
+val age = iri("http://example.org/person/age")
+val worksFor = iri("http://example.org/person/worksFor")
 ```
 
 ### Values
@@ -71,7 +71,7 @@ val ageValue = 30
 val emailValue = "alice@example.com"
 
 // Resource values
-val companyValue = "http://example.org/company/tech".toResource()
+val companyValue = iri("http://example.org/company/tech")
 ```
 
 ## 🔗 RDF Triples
@@ -92,8 +92,8 @@ Subject → Predicate → Object
 
 ```kotlin
 // Triple: Alice has name "Alice Johnson"
-val alice = "http://example.org/person/alice".toResource()
-val name = "http://example.org/person/name".toIri()
+val alice = iri("http://example.org/person/alice")
+val name = iri("http://example.org/person/name")
 val aliceName = "Alice Johnson"
 
 // Creating the triple
@@ -115,8 +115,8 @@ A single resource can have multiple properties:
 
 ```kotlin
 repo.add {
-    val alice = "http://example.org/person/alice".toResource()
-    val company = "http://example.org/company/tech".toResource()
+    val alice = iri("http://example.org/person/alice")
+    val company = iri("http://example.org/company/tech")
     
     // Multiple triples about Alice
     alice["http://example.org/person/name"] = "Alice Johnson"
@@ -140,12 +140,12 @@ An IRI is a generalization of URI that can contain Unicode characters.
 
 ```kotlin
 // Creating IRIs
-val personIri = "http://example.org/person/alice".toIri()
-val nameIri = "http://example.org/person/name".toIri()
+val personIri = iri("http://example.org/person/alice")
+val nameIri = iri("http://example.org/person/name")
 
 // Using in triples
 repo.add {
-    val alice = personIri.toResource()
+    val alice = personIri
     alice[nameIri] = "Alice Johnson"
 }
 ```
@@ -176,9 +176,9 @@ Resources are identified by IRIs and can be subjects or objects in triples.
 
 ```kotlin
 // Creating resources
-val alice = "http://example.org/person/alice".toResource()
-val bob = "http://example.org/person/bob".toResource()
-val company = "http://example.org/company/tech".toResource()
+val alice = iri("http://example.org/person/alice")
+val bob = iri("http://example.org/person/bob")
+val company = iri("http://example.org/company/tech")
 
 // Using resources in relationships
 repo.add {
@@ -197,11 +197,11 @@ A named graph is a collection of triples identified by an IRI. It's like a "cont
 
 ```kotlin
 // Create a named graph
-val metadataGraph = repo.createGraph("http://example.org/graphs/metadata".toIri())
+val metadataGraph = repo.createGraph(iri("http://example.org/graphs/metadata"))
 
 // Add triples to the named graph
-repo.addToGraph("http://example.org/graphs/metadata".toIri()) {
-    val metadata = "http://example.org/metadata".toResource()
+repo.addToGraph(iri("http://example.org/graphs/metadata")) {
+    val metadata = iri("http://example.org/metadata")
     metadata["http://example.org/metadata/created"] = "2024-01-01"
     metadata["http://example.org/metadata/version"] = "1.0"
     metadata["http://example.org/metadata/description"] = "Sample dataset"
@@ -230,16 +230,16 @@ A vocabulary is a collection of IRIs that represent concepts in a specific domai
 ```kotlin
 // Example: FOAF (Friend of a Friend) vocabulary
 object Foaf {
-    val Person = "http://xmlns.com/foaf/0.1/Person".toIri()
-    val name = "http://xmlns.com/foaf/0.1/name".toIri()
-    val age = "http://xmlns.com/foaf/0.1/age".toIri()
-    val email = "http://xmlns.com/foaf/0.1/mbox".toIri()
-    val knows = "http://xmlns.com/foaf/0.1/knows".toIri()
+    val Person = iri("http://xmlns.com/foaf/0.1/Person")
+    val name = iri("http://xmlns.com/foaf/0.1/name")
+    val age = iri("http://xmlns.com/foaf/0.1/age")
+    val email = iri("http://xmlns.com/foaf/0.1/mbox")
+    val knows = iri("http://xmlns.com/foaf/0.1/knows")
 }
 
 // Using the vocabulary
 repo.add {
-    val alice = "http://example.org/person/alice".toResource()
+    val alice = iri("http://example.org/person/alice")
     
     alice[Foaf.name] = "Alice Johnson"
     alice[Foaf.age] = 30
@@ -280,14 +280,14 @@ WHERE {
 Retrieve data from the repository:
 
 ```kotlin
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age ?email
     WHERE {
         ?person <http://example.org/person/name> ?name ;
                 <http://example.org/person/age> ?age ;
                 <http://example.org/person/email> ?email .
     }
-""")
+"""))
 
 results.forEach { binding ->
     val name = binding.getString("name")
@@ -302,11 +302,11 @@ results.forEach { binding ->
 Check if data exists:
 
 ```kotlin
-val exists = repo.ask("""
+val exists = repo.ask(SparqlAskQuery("""
     ASK {
         ?person <http://example.org/person/name> "Alice Johnson" .
     }
-""")
+""")))
 println("Alice exists: $exists")
 ```
 
@@ -315,14 +315,14 @@ println("Alice exists: $exists")
 Create new triples from existing data:
 
 ```kotlin
-val newTriples = repo.construct("""
+val newTriples = repo.construct(SparqlConstructQuery("""
     CONSTRUCT {
         ?person <http://example.org/person/fullName> ?name .
     }
     WHERE {
         ?person <http://example.org/person/name> ?name .
     }
-""")
+""")))
 ```
 
 ### 🎯 SPARQL Patterns
@@ -419,17 +419,17 @@ company:tech
 ```kotlin
 // Good: Descriptive and consistent
 object PersonVocab {
-    val name = "http://example.org/person/name".toIri()
-    val age = "http://example.org/person/age".toIri()
-    val email = "http://example.org/person/email".toIri()
-    val worksFor = "http://example.org/person/worksFor".toIri()
+    val name = iri("http://example.org/person/name")
+    val age = iri("http://example.org/person/age")
+    val email = iri("http://example.org/person/email")
+    val worksFor = iri("http://example.org/person/worksFor")
 }
 
 // Avoid: Generic or inconsistent
 object BadVocab {
-    val n = "http://example.org/p1".toIri()
-    val a = "http://example.org/p2".toIri()
-    val e = "http://example.org/p3".toIri()
+    val n = iri("http://example.org/p1")
+    val a = iri("http://example.org/p2")
+    val e = iri("http://example.org/p3")
 }
 ```
 
@@ -459,26 +459,26 @@ fun main() {
     
     // Define vocabularies
     object PersonVocab {
-        val Person = "http://example.org/person/Person".toIri()
-        val name = "http://example.org/person/name".toIri()
-        val age = "http://example.org/person/age".toIri()
-        val email = "http://example.org/person/email".toIri()
-        val worksFor = "http://example.org/person/worksFor".toIri()
-        val friend = "http://example.org/person/friend".toIri()
+        val Person = iri("http://example.org/person/Person")
+        val name = iri("http://example.org/person/name")
+        val age = iri("http://example.org/person/age")
+        val email = iri("http://example.org/person/email")
+        val worksFor = iri("http://example.org/person/worksFor")
+        val friend = iri("http://example.org/person/friend")
     }
     
     object CompanyVocab {
-        val Company = "http://example.org/company/Company".toIri()
-        val name = "http://example.org/company/name".toIri()
-        val industry = "http://example.org/company/industry".toIri()
-        val location = "http://example.org/company/location".toIri()
+        val Company = iri("http://example.org/company/Company")
+        val name = iri("http://example.org/company/name")
+        val industry = iri("http://example.org/company/industry")
+        val location = iri("http://example.org/company/location")
     }
     
     // Add data
     repo.add {
-        val alice = "http://example.org/person/alice".toResource()
-        val bob = "http://example.org/person/bob".toResource()
-        val company = "http://example.org/company/tech".toResource()
+        val alice = iri("http://example.org/person/alice")
+        val bob = iri("http://example.org/person/bob")
+        val company = iri("http://example.org/company/tech")
         
         // Alice's information
         alice[PersonVocab.name] = "Alice Johnson"
@@ -500,7 +500,7 @@ fun main() {
     }
     
     // Query the data
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age ?email ?company ?industry
         WHERE {
             ?person <http://example.org/person/name> ?name ;
@@ -511,7 +511,7 @@ fun main() {
                      <http://example.org/company/industry> ?industry .
         }
         ORDER BY ?name
-    """)
+    """))
     
     println("👥 People and their companies:")
     results.forEach { binding ->
@@ -526,14 +526,14 @@ fun main() {
     }
     
     // Find friends
-    val friends = repo.query("""
+    val friends = repo.select(SparqlSelectQuery("""
         SELECT ?name ?friendName
         WHERE {
             ?person <http://example.org/person/name> ?name ;
                     <http://example.org/person/friend> ?friend .
             ?friend <http://example.org/person/name> ?friendName .
         }
-    """)
+    """))
     
     println("\n🤝 Friendships:")
     friends.forEach { binding ->

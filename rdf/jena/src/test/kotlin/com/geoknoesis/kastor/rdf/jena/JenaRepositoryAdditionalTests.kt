@@ -21,7 +21,7 @@ class JenaRepositoryAdditionalTests {
 
     assertThrows(Exception::class.java) {
       repo.transaction {
-        defaultGraph.addTriple(RdfTriple(s, p, o))
+        editDefaultGraph().addTriple(RdfTriple(s, p, o))
         // Rollback is automatic on exception
         throw RuntimeException("Rollback")
       }
@@ -43,7 +43,7 @@ class JenaRepositoryAdditionalTests {
     val p = Iri("urn:g:p")
     val o = Literal("x")
 
-    repo.getGraph(g).addTriple(RdfTriple(s, p, o))
+    repo.editGraph(g).addTriple(RdfTriple(s, p, o))
 
     val result = repo.select(SparqlSelectQuery("SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:g:p> ?o } }"))
     assertEquals(1, result.count())

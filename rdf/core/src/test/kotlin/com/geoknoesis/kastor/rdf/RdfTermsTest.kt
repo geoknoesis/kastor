@@ -167,6 +167,7 @@ class RdfTermsTest {
     fun `graph operations work`() {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
         
         // Test initial state
         assertEquals(0, graph.size(), "New graph should be empty")
@@ -177,7 +178,7 @@ class RdfTermsTest {
         val obj = Literal("object value")
         val triple = RdfTriple(subject, predicate, obj)
         
-        graph.addTriple(triple)
+        editor.addTriple(triple)
         
         assertEquals(1, graph.size(), "Graph should have one triple after adding")
         
@@ -190,7 +191,7 @@ class RdfTermsTest {
         assertTrue(graph.hasTriple(triple), "Graph should contain the triple")
         
         // Test removing triple
-        val removed = graph.removeTriple(triple)
+        val removed = editor.removeTriple(triple)
         assertTrue(removed, "Should successfully remove triple")
         assertEquals(0, graph.size(), "Graph should be empty after removing triple")
         
@@ -201,6 +202,7 @@ class RdfTermsTest {
     fun `graph with multiple triples works`() {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
         
         // Add multiple triples
         val s1 = Iri("http://example.org/person1")
@@ -211,9 +213,9 @@ class RdfTermsTest {
         val o2 = Literal("Bob")
         val o3 = Literal("30")
         
-        graph.addTriple(RdfTriple(s1, p1, o1))
-        graph.addTriple(RdfTriple(s2, p1, o2))
-        graph.addTriple(RdfTriple(s1, p2, o3))
+        editor.addTriple(RdfTriple(s1, p1, o1))
+        editor.addTriple(RdfTriple(s2, p1, o2))
+        editor.addTriple(RdfTriple(s1, p2, o3))
         
         // Test total size
         assertEquals(3, graph.size(), "Should have 3 triples total")
@@ -241,6 +243,7 @@ class RdfTermsTest {
     fun `graph contains operations work`() {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
         
         val subject = Iri("http://example.org/subject")
         val predicate = Iri("http://example.org/predicate")
@@ -251,7 +254,7 @@ class RdfTermsTest {
         assertFalse(graph.hasTriple(triple), "Graph should not contain triple before adding")
         
         // Add triple
-        graph.addTriple(triple)
+        editor.addTriple(triple)
         
         // Test contains after adding
         assertTrue(graph.hasTriple(triple), "Graph should contain triple after adding")

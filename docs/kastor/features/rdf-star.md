@@ -380,14 +380,14 @@ fun executeRdfStarQuery(query: String, provider: RdfApiProvider): QueryResult {
     return try {
         val variant = provider.defaultVariantId()
         val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
-        repo.query(query)
+        repo.select(SparqlSelectQuery(query))
     } catch (e: UnsupportedOperationException) {
         if (!provider.getCapabilities(provider.defaultVariantId()).supportsRdfStar) {
             // Convert RDF-star query to regular SPARQL
             val fallbackQuery = query.replace("<<", "").replace(">>", "")
             val variant = provider.defaultVariantId()
             val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
-            repo.query(fallbackQuery)
+            repo.select(SparqlSelectQuery(fallbackQuery))
         } else {
             throw e
         }
@@ -486,7 +486,7 @@ fun rdfStarExample() {
         ORDER BY DESC(?certainty)
     """
     
-    val results = repo.query(query)
+    val results = repo.select(SparqlSelectQuery(query))
     results.forEach { binding ->
         val subject = binding.getIri("subject")
         val obj = binding.getIri("object")
@@ -506,7 +506,7 @@ fun rdfStarExample() {
         }
     """
     
-    val functionResults = repo.query(functionQuery)
+    val functionResults = repo.select(SparqlSelectQuery(functionQuery))
     functionResults.forEach { binding ->
         val subject = binding.getIri("subject")
         val predicate = binding.getIri("predicate")
@@ -525,7 +525,7 @@ fun rdfStarExample() {
         GROUP BY ?source
     """
     
-    val aggregateResults = repo.query(aggregateQuery)
+    val aggregateResults = repo.select(SparqlSelectQuery(aggregateQuery))
     aggregateResults.forEach { binding ->
         val source = binding.getIri("source")
         val avgCertainty = binding.getDouble("avgCertainty")

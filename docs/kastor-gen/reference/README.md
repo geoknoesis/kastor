@@ -57,23 +57,20 @@ annotation class RdfProperty(val iri: String)
 ```kotlin
 object OntoMapper {
     val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
-    fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validate: Boolean = false): T
+    fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
+    fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
 }
 
-inline fun <reified T: Any> RdfRef.asType(validate: Boolean = false): T
+inline fun <reified T: Any> RdfRef.asType(validation: ValidationContext? = null): T
+inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext? = null): T
 inline fun <reified T: Any> T.asRdf(): RdfHandle
 ```
 
 ### Validation
 
 ```kotlin
-interface ShaclValidator {
+interface ValidationContext {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
-}
-
-object ShaclValidation {
-    fun register(port: ShaclValidator)
-    fun current(): ShaclValidator
 }
 ```
 

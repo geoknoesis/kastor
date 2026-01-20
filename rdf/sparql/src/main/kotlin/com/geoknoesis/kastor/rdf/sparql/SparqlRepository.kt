@@ -14,9 +14,9 @@ import java.io.InputStreamReader
 
 class SparqlRepository(private val endpoint: String) : RdfRepository {
     
-    override val defaultGraph: MutableRdfGraph = SparqlGraph(this)
+    override val defaultGraph: RdfGraph = SparqlGraph(this)
     
-    override fun getGraph(name: Iri): MutableRdfGraph = SparqlGraph(this, name)
+    override fun getGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
     
     override fun hasGraph(name: Iri): Boolean {
         val query = SparqlAskQuery("ASK { GRAPH <${name.value}> { ?s ?p ?o } }")
@@ -33,12 +33,20 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         }
     }
     
-    override fun createGraph(name: Iri): MutableRdfGraph = SparqlGraph(this, name)
+    override fun createGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
     
     override fun removeGraph(name: Iri): Boolean {
         val update = UpdateQuery("DROP GRAPH <${name.value}>")
         update(update)
         return true
+    }
+
+    override fun editDefaultGraph(): GraphEditor {
+        return defaultGraph as MutableRdfGraph
+    }
+
+    override fun editGraph(name: Iri): GraphEditor {
+        return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): QueryResult {

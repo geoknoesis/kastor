@@ -74,28 +74,33 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         
         // Extract classes from SHACL shapes
         shapes.forEach { shape ->
-            val className = context.typeMappings[shape.targetClass] 
-                ?: shape.targetClass.substringAfterLast('#').substringAfterLast('/')
-            
+            val classIri = context.typeMappings[shape.targetClass]?.value ?: shape.targetClass
+            val className = classIri.substringAfterLast('#').substringAfterLast('/')
+
             if (className.isNotEmpty()) {
-                classes.add(VocabularyTerm(
-                    name = className,
-                    iri = shape.targetClass,
-                    type = TermType.CLASS,
-                    description = ""
-                ))
+                classes.add(
+                    VocabularyTerm(
+                        name = className,
+                        iri = classIri,
+                        type = TermType.CLASS,
+                        description = ""
+                    )
+                )
             }
         }
         
         // Extract additional classes from context
-        context.typeMappings.forEach { (iri, name) ->
-            if (!classes.any { it.iri == iri }) {
-                classes.add(VocabularyTerm(
-                    name = name,
-                    iri = iri,
-                    type = TermType.CLASS,
-                    description = null
-                ))
+        context.typeMappings.forEach { (term, iri) ->
+            val iriValue = iri.value
+            if (!classes.any { it.iri == iriValue }) {
+                classes.add(
+                    VocabularyTerm(
+                        name = term,
+                        iri = iriValue,
+                        type = TermType.CLASS,
+                        description = null
+                    )
+                )
             }
         }
         
@@ -111,29 +116,34 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         // Extract properties from SHACL shapes
         shapes.forEach { shape ->
             shape.properties.forEach { property ->
-                val propertyName = context.propertyMappings[property.path]?.id
-                    ?: property.path.substringAfterLast('#').substringAfterLast('/')
-                
+                val propertyIri = context.propertyMappings[property.path]?.id?.value ?: property.path
+                val propertyName = propertyIri.substringAfterLast('#').substringAfterLast('/')
+
                 if (propertyName.isNotEmpty()) {
-                    properties.add(VocabularyTerm(
-                        name = propertyName,
-                        iri = property.path,
-                        type = TermType.PROPERTY,
-                        description = property.description
-                    ))
+                    properties.add(
+                        VocabularyTerm(
+                            name = propertyName,
+                            iri = propertyIri,
+                            type = TermType.PROPERTY,
+                            description = property.description
+                        )
+                    )
                 }
             }
         }
         
         // Extract additional properties from context
-        context.propertyMappings.forEach { (iri, property) ->
-            if (!properties.any { it.iri == iri }) {
-                properties.add(VocabularyTerm(
-                    name = property.id,
-                    iri = iri,
-                    type = TermType.PROPERTY,
-                    description = null
-                ))
+        context.propertyMappings.forEach { (term, property) ->
+            val iriValue = property.id.value
+            if (!properties.any { it.iri == iriValue }) {
+                properties.add(
+                    VocabularyTerm(
+                        name = term,
+                        iri = iriValue,
+                        type = TermType.PROPERTY,
+                        description = null
+                    )
+                )
             }
         }
         

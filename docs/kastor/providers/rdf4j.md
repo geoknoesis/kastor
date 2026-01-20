@@ -192,14 +192,14 @@ val api = Rdf.factory {
 }
 
 val repo = api.repository
-val graph = repo.getGraph()
+val graphEditor = repo.editDefaultGraph()
 
 // Add RDFS schema
 val rdfsSubClassOf = iri("http://www.w3.org/2000/01/rdf-schema#subClassOf")
 val personClass = iri("http://example.org/Person")
 val animalClass = iri("http://example.org/Animal")
 
-graph.add(triple(personClass, rdfsSubClassOf, animalClass))
+graphEditor.addTriple(triple(personClass, rdfsSubClassOf, animalClass))
 
 // Query with inference
 val results = repo.select(
@@ -221,7 +221,7 @@ val api = Rdf.factory {
 val repo = api.repository
 
 // Add SHACL shapes
-val shapesGraph = repo.getGraph("http://example.org/shapes")
+val shapesGraph = repo.getGraph(iri("http://example.org/shapes"))
 val shaclTargetClass = iri("http://www.w3.org/ns/shacl#targetClass")
 val shaclProperty = iri("http://www.w3.org/ns/shacl#property")
 val shaclPath = iri("http://www.w3.org/ns/shacl#path")
@@ -251,8 +251,8 @@ manager.createRepository("products", RdfConfig(providerId = "rdf4j", variantId =
 val usersRepo = manager.getRepository("users")
 val productsRepo = manager.getRepository("products")
 
-val usersGraph = usersRepo.repository.getGraph()
-val productsGraph = productsRepo.repository.getGraph()
+val usersGraph = usersRepo.repository.defaultGraph
+val productsGraph = productsRepo.repository.defaultGraph
 
 val person1 = iri("http://example.org/person1")
 val person2 = iri("http://example.org/person2")
@@ -279,7 +279,7 @@ manager.createRepository("target", RdfConfig(providerId = "rdf4j", variantId = "
 
 // Add data to source repository
 val sourceRepo = manager.getRepository("source")
-val sourceGraph = sourceRepo.repository.getGraph("http://example.org/graph")
+val sourceGraph = sourceRepo.repository.getGraph(iri("http://example.org/graph"))
 
 val person = iri("http://example.org/person")
 val name = iri("http://xmlns.com/foaf/0.1/name")
@@ -290,7 +290,7 @@ manager.copyGraph("source", "target", "http://example.org/graph")
 
 // Verify graph was copied
 val targetRepo = manager.getRepository("target")
-val targetGraph = targetRepo.repository.getGraph("http://example.org/graph")
+val targetGraph = targetRepo.repository.getGraph(iri("http://example.org/graph"))
 val triples = targetGraph.triples().toList()
 assertEquals(1, triples.size)
 ```

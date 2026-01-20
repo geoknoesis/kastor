@@ -744,10 +744,9 @@ interface RdfGraph {
 }
 
 /**
- * Mutable RDF graph operations.
+ * Write operations for RDF graphs.
  */
-interface MutableRdfGraph : RdfGraph {
-
+interface GraphEditor {
     /**
      * Add a triple to this graph.
      */
@@ -776,6 +775,11 @@ interface MutableRdfGraph : RdfGraph {
      */
     fun clear(): Boolean
 }
+
+/**
+ * Mutable RDF graph operations.
+ */
+interface MutableRdfGraph : RdfGraph, GraphEditor
 
 
 

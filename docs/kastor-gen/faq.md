@@ -136,7 +136,8 @@ OntoMapper supports SHACL validation:
 
 ```kotlin
 // Validate during materialization
-val catalog: Catalog = catalogRef.asType(validate = true)
+val validation = JenaValidation()
+val catalog: Catalog = catalogRef.asValidatedType(validation)
 
 // Or validate explicitly
 val rdfHandle = catalog.asRdf()

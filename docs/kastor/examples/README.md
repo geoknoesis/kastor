@@ -86,18 +86,18 @@ fun main() {
     
     // Add data
     repo.add {
-        val person = "http://example.org/person/alice".toResource()
+        val person = iri("http://example.org/person/alice")
         person["http://example.org/person/name"] = "Alice Johnson"
         person["http://example.org/person/age"] = 30
     }
     
     // Query data
-    val results = repo.query("""
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE { 
             ?person <http://example.org/person/name> ?name ;
                     <http://example.org/person/age> ?age 
         }
-    """)
+    """))
     
     results.forEach { binding ->
         println("${binding.getString("name")} is ${binding.getInt("age")} years old")
@@ -147,7 +147,7 @@ Demonstrates all available DSL syntaxes:
 ```kotlin
 fun main() {
     val repo = Rdf.memory()
-    val person = "http://example.org/person/alice".toResource()
+    val person = iri("http://example.org/person/alice")
     
     repo.add {
         // Ultra-compact syntax
@@ -186,13 +186,13 @@ fun main() {
     
     // Define your own vocabulary
     object PersonVocab {
-        val name = "http://example.org/person/name".toIri()
-        val age = "http://example.org/person/age".toIri()
-        val email = "http://example.org/person/email".toIri()
+        val name = iri("http://example.org/person/name")
+        val age = iri("http://example.org/person/age")
+        val email = iri("http://example.org/person/email")
     }
     
     repo.add {
-        val person = "http://example.org/person/alice".toResource()
+        val person = iri("http://example.org/person/alice")
         
         // Use full IRIs
         person[PersonVocab.name] = "Alice"
@@ -274,7 +274,7 @@ fun main() {
     
     // Use variables in ultra-compact syntax
     repo.add {
-        val person = "http://example.org/person/alice".toResource()
+        val person = iri("http://example.org/person/alice")
         person[name] = "Alice Johnson"
         person[age] = 30
     }
@@ -298,48 +298,49 @@ fun main() {
     // Elegant factory methods
     val repo = Rdf.memory()
     
-    // Fluent interface operations
-    repo.fluent()
-        .add {
-            val alice = "http://example.org/person/alice".toResource()
-            alice["http://example.org/person/name"] = "Alice Johnson"
-            alice["http://example.org/person/age"] = 30
-        }
-        .query("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }")
-        .forEach { binding ->
-            println("Found: ${binding.getString("name")}")
-        }
+    // Repository operations
+    repo.add {
+        val alice = iri("http://example.org/person/alice")
+        alice["http://example.org/person/name"] = "Alice Johnson"
+        alice["http://example.org/person/age"] = 30
+    }
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+    results.forEach { binding ->
+        println("Found: ${binding.getString("name")}")
+    }
     
     // Performance monitoring
-    val (_, queryDuration) = repo.queryTimed("""
+    val started = System.nanoTime()
+    repo.select(SparqlSelectQuery("""
         SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-    """)
-    println("Query took: $queryDuration")
+    """))
+    val queryDurationMs = (System.nanoTime() - started) / 1_000_000
+    println("Query took: ${queryDurationMs}ms")
     
     // Batch operations
-    repo.addBatch(batchSize = 50) {
+    repo.add {
         for (i in 1..100) {
-            val person = "http://example.org/person/person$i".toResource()
+            val person = iri("http://example.org/person/person$i")
             person["http://example.org/person/name"] = "Person $i"
             person["http://example.org/person/age"] = 20 + (i % 50)
         }
     }
     
     // Advanced query features
-    val firstPerson = repo.queryFirst("""
+    val firstPerson = repo.select(SparqlSelectQuery("""
         SELECT ?name WHERE { ?person <http://example.org/person/name> ?name } LIMIT 1
-    """)
+    """)).first()
     println("First person: ${firstPerson?.getString("name")}")
     
     // Transaction operations
     repo.transaction {
         add {
-            val david = "http://example.org/person/david".toResource()
+            val david = iri("http://example.org/person/david")
             david["http://example.org/person/name"] = "David Wilson"
             david["http://example.org/person/age"] = 40
         }
         
-        val count = query("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }")
+        val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }"))
             .firstOrNull()?.getInt("count") ?: 0
         println("People count in transaction: $count")
     }
@@ -361,21 +362,18 @@ fun main() {
     repo.addTriples(eveTriples)
     
     // Graph operations
-    val metadataGraph = repo.createGraph("http://example.org/graphs/metadata".toIri())
-    repo.addToGraph("http://example.org/graphs/metadata".toIri()) {
-        val metadata = "http://example.org/metadata".toResource()
+    val metadataGraph = repo.createGraph(iri("http://example.org/graphs/metadata"))
+    repo.addToGraph(iri("http://example.org/graphs/metadata")) {
+        val metadata = iri("http://example.org/metadata")
         metadata["http://example.org/metadata/created"] = "2024-01-01"
         metadata["http://example.org/metadata/version"] = "1.0"
     }
     
     // Final statistics
-    val stats = repo.getStatistics()
     println("""
-        📊 Repository Statistics:
-        ├─ Total Triples: ${stats.totalTriples}
-        ├─ Named Graphs: ${stats.graphCount}
-        ├─ Size: ${stats.sizeBytes / 1024}KB
-        └─ Last Modified: ${java.time.Instant.ofEpochMilli(stats.lastModified)}
+        📊 Repository Snapshot:
+        ├─ Total Triples: ${repo.defaultGraph.size()}
+        └─ Named Graphs: ${repo.listGraphs().size}
     """.trimIndent())
     
     repo.close()
@@ -396,9 +394,9 @@ fun main() {
     // Batch operations for large datasets
     val startTime = System.currentTimeMillis()
     
-    repo.addBatch(batchSize = 1000) {
+    repo.add {
         for (i in 1..10000) {
-            val person = "http://example.org/person/person$i".toResource()
+            val person = iri("http://example.org/person/person$i")
             person["http://example.org/person/name"] = "Person $i"
             person["http://example.org/person/age"] = 20 + (i % 50)
             person["http://example.org/person/email"] = "person$i@example.com"
@@ -409,18 +407,19 @@ fun main() {
     println("Added 30,000 triples in ${addTime}ms")
     
     // Performance monitoring
-    val (results, queryTime) = repo.queryTimed("""
+    val started = System.nanoTime()
+    val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE { 
             ?person <http://example.org/person/name> ?name ;
                     <http://example.org/person/age> ?age 
         } LIMIT 100
-    """)
+    """))
+    val queryTimeMs = (System.nanoTime() - started) / 1_000_000
     
-    println("Query returned ${results.count()} results in $queryTime")
+    println("Query returned ${results.count()} results in ${queryTimeMs}ms")
     
     // Statistics
-    val stats = repo.getStatistics()
-    println("Repository size: ${stats.sizeFormatted()}")
+    println("Repository size: ${repo.defaultGraph.size()}")
     
     repo.close()
 }
@@ -440,24 +439,24 @@ fun main() {
     
     // Define ontology
     object Ontology {
-        val Person = "http://example.org/ontology/Person".toIri()
-        val Company = "http://example.org/ontology/Company".toIri()
-        val name = "http://example.org/ontology/name".toIri()
-        val worksFor = "http://example.org/ontology/worksFor".toIri()
-        val founded = "http://example.org/ontology/founded".toIri()
-        val industry = "http://example.org/ontology/industry".toIri()
+        val Person = iri("http://example.org/ontology/Person")
+        val Company = iri("http://example.org/ontology/Company")
+        val name = iri("http://example.org/ontology/name")
+        val worksFor = iri("http://example.org/ontology/worksFor")
+        val founded = iri("http://example.org/ontology/founded")
+        val industry = iri("http://example.org/ontology/industry")
     }
     
     // Add knowledge graph data
     repo.add {
         // People
-        val alice = "http://example.org/person/alice".toResource()
-        val bob = "http://example.org/person/bob".toResource()
-        val charlie = "http://example.org/person/charlie".toResource()
+        val alice = iri("http://example.org/person/alice")
+        val bob = iri("http://example.org/person/bob")
+        val charlie = iri("http://example.org/person/charlie")
         
         // Companies
-        val techCorp = "http://example.org/company/techcorp".toResource()
-        val dataInc = "http://example.org/company/datainc".toResource()
+        val techCorp = iri("http://example.org/company/techcorp")
+        val dataInc = iri("http://example.org/company/datainc")
         
         // Type assertions
         alice[Ontology.Person] = true
@@ -490,35 +489,35 @@ fun main() {
     
     // Find all people
     println("All People:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?name WHERE { 
             ?person <http://example.org/ontology/Person> true ;
                     <http://example.org/ontology/name> ?name 
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         println("- ${binding.getString("name")}")
     }
     
     // Find people by company
     println("\nPeople at Tech Corporation:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?name WHERE { 
             ?person <http://example.org/ontology/name> ?name ;
                     <http://example.org/ontology/worksFor> <http://example.org/company/techcorp>
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         println("- ${binding.getString("name")}")
     }
     
     // Find founders
     println("\nCompany Founders:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?personName ?companyName WHERE { 
             ?person <http://example.org/ontology/name> ?personName ;
                     <http://example.org/ontology/founded> ?company .
             ?company <http://example.org/ontology/name> ?companyName
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         println("- ${binding.getString("personName")} founded ${binding.getString("companyName")}")
     }
     
@@ -539,7 +538,7 @@ fun main() {
     // Add linked data from multiple sources
     repo.add {
         // FOAF data
-        val alice = "http://example.org/person/alice".toResource()
+        val alice = iri("http://example.org/person/alice")
         alice["http://xmlns.com/foaf/0.1/name"] = "Alice Johnson"
         alice["http://xmlns.com/foaf/0.1/mbox"] = "alice@example.com"
         alice["http://xmlns.com/foaf/0.1/homepage"] = "http://alice.example.com"
@@ -553,7 +552,7 @@ fun main() {
         alice["http://schema.org/worksFor"] = "http://example.org/company/techcorp"
         
         // Friend relationships
-        val bob = "http://example.org/person/bob".toResource()
+        val bob = iri("http://example.org/person/bob")
         alice["http://xmlns.com/foaf/0.1/knows"] = bob
         bob["http://xmlns.com/foaf/0.1/name"] = "Bob Smith"
         bob["http://xmlns.com/foaf/0.1/mbox"] = "bob@example.com"
@@ -564,13 +563,13 @@ fun main() {
     
     // Find people with their contact info
     println("People with Contact Information:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?name ?email ?homepage WHERE { 
             ?person <http://xmlns.com/foaf/0.1/name> ?name ;
                     <http://xmlns.com/foaf/0.1/mbox> ?email .
             OPTIONAL { ?person <http://xmlns.com/foaf/0.1/homepage> ?homepage }
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         val name = binding.getString("name")
         val email = binding.getString("email")
         val homepage = binding.getString("homepage")
@@ -583,25 +582,25 @@ fun main() {
     
     // Find social network
     println("\nSocial Network:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?personName ?friendName WHERE { 
             ?person <http://xmlns.com/foaf/0.1/name> ?personName ;
                     <http://xmlns.com/foaf/0.1/knows> ?friend .
             ?friend <http://xmlns.com/foaf/0.1/name> ?friendName
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         println("- ${binding.getString("personName")} knows ${binding.getString("friendName")}")
     }
     
     // Find people with job information
     println("\nPeople with Job Information:")
-    repo.query("""
+    repo.select(SparqlSelectQuery("""
         SELECT ?name ?jobTitle ?company WHERE { 
             ?person <http://xmlns.com/foaf/0.1/name> ?name ;
                     <http://schema.org/jobTitle> ?jobTitle ;
                     <http://schema.org/worksFor> ?company
         }
-    """).forEach { binding ->
+    """)).forEach { binding ->
         println("- ${binding.getString("name")}: ${binding.getString("jobTitle")} at ${binding.getString("company")}")
     }
     
@@ -685,11 +684,11 @@ fun main() {
         }
         
         // Show results
-        val results = repo.query("""
+        val results = repo.select(SparqlSelectQuery("""
             SELECT ?result WHERE { 
                 # Your query
             }
-        """)
+        """))
         
         results.forEach { binding ->
             println("Result: ${binding.getString("result")}")

@@ -14,7 +14,7 @@ class JenaBasicsExample {
     val o = Literal("hello")
 
     // Add triple using the new API
-    repo.defaultGraph.addTriple(RdfTriple(s, p, o))
+    repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
 
     // Simple SELECT
     val result = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s <urn:ex:p> ?o }"))

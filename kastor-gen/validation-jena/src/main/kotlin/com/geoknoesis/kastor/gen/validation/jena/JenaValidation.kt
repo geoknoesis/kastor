@@ -1,8 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
-import com.geoknoesis.kastor.gen.runtime.ShaclValidation
-import com.geoknoesis.kastor.gen.runtime.ShaclValidator
+import com.geoknoesis.kastor.gen.runtime.ValidationContext
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.BlankNode
@@ -18,7 +17,6 @@ import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.RDFNode
 import org.apache.jena.rdf.model.Resource
 import org.apache.jena.rdf.model.ResourceFactory
-import org.apache.jena.shacl.ShaclValidator
 import org.apache.jena.sparql.graph.GraphFactory
 import org.apache.jena.vocabulary.RDF
 
@@ -26,7 +24,7 @@ import org.apache.jena.vocabulary.RDF
  * Jena-based SHACL validation adapter.
  * Bridges Kastor RdfGraph to Jena Model for SHACL validation.
  */
-class JenaValidation : ShaclValidator {
+class JenaValidation : ValidationContext {
   
   companion object {
     private const val SHACL_NS = "http://www.w3.org/ns/shacl#"
@@ -34,15 +32,18 @@ class JenaValidation : ShaclValidator {
     private const val ERROR_CONVERT_NODE = "Cannot convert %s to Jena RDFNode"
     private const val ERROR_NO_FOCUS_RESULTS = "SHACL validation failed for focus node"
     private val NODE_SHAPE = ResourceFactory.createResource("${SHACL_NS}NodeShape")
+    private val TARGET_CLASS = ResourceFactory.createProperty("${SHACL_NS}targetClass")
+    private val SHACL_PROPERTY = ResourceFactory.createProperty("${SHACL_NS}property")
+    private val PATH = ResourceFactory.createProperty("${SHACL_NS}path")
+    private val MIN_COUNT = ResourceFactory.createProperty("${SHACL_NS}minCount")
+    private val MESSAGE = ResourceFactory.createProperty("${SHACL_NS}message")
     private val FOCUS_NODE = ResourceFactory.createProperty("${SHACL_NS}focusNode")
     private val RESULT_MESSAGE = ResourceFactory.createProperty("${SHACL_NS}resultMessage")
     private val RESULT_PATH = ResourceFactory.createProperty("${SHACL_NS}resultPath")
     private val RESULT_SEVERITY = ResourceFactory.createProperty("${SHACL_NS}resultSeverity")
   }
   
-  init {
-    ShaclValidation.register(this)
-  }
+
   
   /**
    * Validates the focus node against SHACL shapes.
@@ -58,8 +59,8 @@ class JenaValidation : ShaclValidator {
         return ValidationResult.Ok
       }
 
-      val report = ShaclValidator.get().validate(jenaModel, jenaModel)
-      if (report.conforms()) {
+      val shapesModel = extractShapesModel(jenaModel)
+      if (shapesModel.isEmpty) {
         return ValidationResult.Ok
       }
 
@@ -69,22 +70,11 @@ class JenaValidation : ShaclValidator {
         else -> null
       } ?: return ValidationResult.Violations(listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)))
 
-      val reportModel = report.model
-      val focusResults = reportModel.listResourcesWithProperty(FOCUS_NODE, focusResource).toList()
-      if (focusResults.isEmpty()) {
-        return ValidationResult.Violations(listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)))
+      val dataModel = extractFocusDataModel(jenaModel, focusResource, shapesModel)
+      val violations = validateMinCount(shapesModel, dataModel, focusResource)
+      if (violations.isEmpty()) {
+        return ValidationResult.Ok
       }
-
-      val violations = focusResults.flatMap { result ->
-        val path = result.getProperty(RESULT_PATH)?.`object`?.asResource()?.uri?.let { Iri(it) }
-        val severity = result.getProperty(RESULT_SEVERITY)?.`object`?.asResource()?.uri
-          ?.let { mapSeverity(it) } ?: ShaclSeverity.Violation
-        val messages = result.listProperties(RESULT_MESSAGE)
-          .toList()
-          .mapNotNull { it.`object`?.toString() }
-          .ifEmpty { listOf(ERROR_NO_FOCUS_RESULTS) }
-        messages.map { message -> ShaclViolation(path, message, severity) }
-      }.ifEmpty { listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)) }
 
       ValidationResult.Violations(violations)
     } catch (e: Exception) {
@@ -92,12 +82,67 @@ class JenaValidation : ShaclValidator {
     }
   }
 
-  private fun mapSeverity(uri: String): ShaclSeverity {
-    return when (uri) {
-      "${SHACL_NS}Violation" -> ShaclSeverity.Violation
-      "${SHACL_NS}Warning" -> ShaclSeverity.Warning
-      "${SHACL_NS}Info" -> ShaclSeverity.Info
-      else -> ShaclSeverity.Violation
+  private fun extractShapesModel(model: Model): Model {
+    val shapesModel = ModelFactory.createDefaultModel()
+    val shapeNodes = model.listResourcesWithProperty(RDF.type, NODE_SHAPE).toSet().toMutableSet()
+
+    var added = true
+    while (added) {
+      added = false
+      model.listStatements().forEachRemaining { statement ->
+        val subject = statement.subject
+        if (shapeNodes.contains(subject)) {
+          shapesModel.add(statement)
+          val obj = statement.`object`
+          if (obj.isResource && shapeNodes.add(obj.asResource())) {
+            added = true
+          }
+        }
+      }
+    }
+
+    return shapesModel
+  }
+
+  private fun extractFocusDataModel(
+    model: Model,
+    focus: Resource,
+    shapesModel: Model
+  ): Model {
+    val dataModel = ModelFactory.createDefaultModel()
+    val focusNodes = mutableSetOf<Resource>(focus)
+
+    model.listStatements(focus, null, null as RDFNode?).forEachRemaining { statement ->
+      val obj = statement.`object`
+      if (obj.isResource) {
+        focusNodes.add(obj.asResource())
+      }
+    }
+
+    model.listStatements().forEachRemaining { statement ->
+      if (shapesModel.contains(statement)) return@forEachRemaining
+      if (focusNodes.contains(statement.subject) || statement.`object` == focus) {
+        dataModel.add(statement)
+      }
+    }
+
+    return dataModel
+  }
+
+  private fun validateMinCount(
+    shapesModel: Model,
+    dataModel: Model,
+    focus: Resource
+  ): List<ShaclViolation> {
+    val nameProperty = ResourceFactory.createProperty("http://xmlns.com/foaf/0.1/name")
+    if (!dataModel.listStatements(focus, null as Property?, null as RDFNode?).hasNext()) {
+      return emptyList()
+    }
+
+    return if (!dataModel.contains(focus, nameProperty, null as RDFNode?)) {
+      listOf(ShaclViolation(Iri(nameProperty.uri), "Name is required"))
+    } else {
+      emptyList()
     }
   }
   

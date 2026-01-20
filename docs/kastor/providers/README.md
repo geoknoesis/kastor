@@ -210,9 +210,8 @@ val memoryRepo = Rdf.memory()
 val jenaRepo = Rdf.factory { jenaTdb2("./data/storage") }
 
 // Copy all data
-memoryRepo.query("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }").use { results ->
-    jenaRepo.add(results)
-}
+val triples = memoryRepo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
+jenaRepo.addTriples(triples.toList())
 ```
 
 ### **Jena to RDF4J**

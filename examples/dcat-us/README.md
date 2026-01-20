@@ -264,7 +264,6 @@ ksp {
     arg("kastor.gen.generateDataClasses", "true")
     arg("kastor.gen.generateWrappers", "true")
     arg("kastor.gen.generateDsl", "true")
-    arg("kastor.gen.enableShaclValidation", "true")
     
     // Custom prefix mappings for DCAT-US
     arg("kastor.gen.prefix.dcat", "http://www.w3.org/ns/dcat#")

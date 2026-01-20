@@ -105,7 +105,7 @@ class OntologyWrapperGenerator(
             if (validatorRef != null) {
                 appendLine("    return $validatorRef().validate(rdf.graph, rdf.node)")
             } else {
-                appendLine("    return ShaclValidation.current().validate(rdf.graph, rdf.node)")
+                appendLine("    return rdf.validate()")
             }
             appendLine("  }")
         }

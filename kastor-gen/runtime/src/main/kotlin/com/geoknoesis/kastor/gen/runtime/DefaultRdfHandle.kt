@@ -14,7 +14,8 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 class DefaultRdfHandle(
   override val node: RdfTerm,
   override val graph: RdfGraph,
-  private val known: Set<Iri>
+  private val known: Set<Iri>,
+  private val validationContext: ValidationContext? = null
 ) : RdfHandle {
 
   // PUBLICATION is sufficient: values are idempotent and immutable
@@ -23,7 +24,7 @@ class DefaultRdfHandle(
   }
 
   override fun validate(): ValidationResult {
-    return ShaclValidation.current().validate(graph, node)
+    return validationContext?.validate(graph, node) ?: ValidationResult.NotConfigured
   }
 }
 

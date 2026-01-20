@@ -17,7 +17,7 @@ class JenaVariantsTest {
     val s = Iri("urn:tdb2:s")
     val p = Iri("urn:tdb2:p")
     val o = Literal("persist")
-    repo1.defaultGraph.addTriple(RdfTriple(s, p, o))
+    repo1.editDefaultGraph().addTriple(RdfTriple(s, p, o))
 
     // New session against same location should see data
     val repo2 = JenaRepository.Tdb2Repository(dir.absolutePath)

@@ -1,59 +1,36 @@
 ## Guides
 
 ### Transactions
-- Call `beginTransaction(write = true)` before batched writes; follow with `commit()` or `rollback()`, then `end()`.
-- Reads auto-open a read transaction in Jena; RDF4J uses a connection per operation unless inside an explicit transaction.
+- Use `transaction { ... }` for atomic operations.
+- Use `readTransaction { ... }` for read-only work when the provider supports it.
 
 ```kotlin
-repo.beginTransaction()
-try {
-  repo.update("INSERT DATA { <urn:s> <urn:p> 'o' }")
-  repo.commit()
-} catch (t: Throwable) {
-  repo.rollback()
-  throw t
-} finally {
-  repo.end()
+repo.transaction {
+  update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }"))
 }
 ```
 
 ### Querying
-- `querySelect` returns rows and variable->term bindings.
-- `queryConstruct` returns an `RdfGraph` you can iterate.
-- `queryAsk` returns a Boolean.
+- `select` returns a `QueryResult` you can iterate.
+- `construct` returns a `Sequence<RdfTriple>` for streaming.
+- `ask` returns a Boolean.
 
 ```kotlin
-val rows = repo.querySelect("SELECT ?s WHERE { ?s ?p ?o }")
-rows.rows.forEach { row -> println(row.vars["s"]) }
+val rows = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
+rows.forEach { row -> println(row.get("s")) }
 
-val g = repo.queryConstruct("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
-println(g.size())
-```
-
-### Importing and exporting graphs
-```kotlin
-val turtle = """
-@prefix ex: <urn:ex:> .
-ex:s ex:p "o" .
-""".trimIndent()
-repo.beginTransaction()
-repo.readGraph(null, turtle.byteInputStream(), "TURTLE")
-repo.commit()
-repo.end()
-
-val out = java.io.ByteArrayOutputStream()
-repo.writeGraph(null, out, "TURTLE")
-println(out.toString("UTF-8"))
+val triples = repo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
+println(triples.count())
 ```
 
 ### Named graphs
 ```kotlin
-val g = Rdf.iri("urn:g")
-repo.beginTransaction()
-repo.addTriple(g, RdfTriple(Rdf.iri("urn:s"), Rdf.iri("urn:p"), Rdf.literal("o")))
-repo.commit(); repo.end()
+val g = iri("urn:g")
+repo.transaction {
+  editGraph(g).addTriple(RdfTriple(iri("urn:s"), iri("urn:p"), literal("o")))
+}
 
-val rows = repo.querySelect("SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }")
+val rows = repo.select(SparqlSelectQuery("SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }"))
 ```
 
 

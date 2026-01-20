@@ -22,25 +22,11 @@ data class ShaclViolation(
 sealed interface ValidationResult {
     data object Ok : ValidationResult
     data class Violations(val items: List<ShaclViolation>) : ValidationResult
+    data object NotConfigured : ValidationResult
 }
 
-interface ShaclValidator {
+interface ValidationContext {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
-}
-
-object ShaclValidation {
-    @Volatile
-    private var validator: ShaclValidator? = null
-
-    private const val ERROR_NO_VALIDATOR = "No ShaclValidator registered"
-
-    @JvmStatic
-    fun register(v: ShaclValidator?) {
-        validator = v
-    }
-
-    @JvmStatic
-    fun current(): ShaclValidator = validator ?: error(ERROR_NO_VALIDATOR)
 }
 
 class ValidationException(
@@ -56,6 +42,7 @@ fun ValidationResult.orThrow() {
             val message = items.joinToString("; ") { it.message }
             throw ValidationException(message.ifBlank { "SHACL validation failed" }, items)
         }
+        is ValidationResult.NotConfigured -> Unit
     }
 }
 

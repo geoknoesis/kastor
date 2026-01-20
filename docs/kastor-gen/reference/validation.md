@@ -4,12 +4,12 @@ Complete reference for Kastor Gen validation interfaces and adapters.
 
 ## Core Interfaces
 
-### ShaclValidator
+### ValidationContext
 
 Interface for SHACL validation implementations.
 
 ```kotlin
-interface ShaclValidator {
+interface ValidationContext {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
@@ -26,7 +26,7 @@ interface ShaclValidator {
 
 **Usage:**
 ```kotlin
-class CustomValidation : ShaclValidator {
+class CustomValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Custom validation logic
         if (!isValid(data, focus)) {
@@ -37,27 +37,13 @@ class CustomValidation : ShaclValidator {
 }
 ```
 
-### ShaclValidation
+### Validation Usage
 
-Registry for validation port implementations.
+Validation is explicit and optional. You provide a `ValidationContext` when you want SHACL checks enforced.
 
-```kotlin
-object ShaclValidation {
-    fun register(port: ShaclValidator)
-    fun current(): ShaclValidator
-}
-```
-
-**Methods:**
-- `register(port: ShaclValidator)` - Register a validation port
-- `current(): ShaclValidator` - Get the current validation port
-
-**Usage:**
 ```kotlin
 val validation = CustomValidation()
-ShaclValidation.register(validation)
-
-val currentValidation = ShaclValidation.current()
+val person: Person = OntoMapper.materializeValidated(ref, Person::class.java, validation)
 ```
 
 ## Validation Adapters
@@ -67,17 +53,13 @@ val currentValidation = ShaclValidation.current()
 Jena-based SHACL validation adapter.
 
 ```kotlin
-class JenaValidation : ShaclValidator {
-    init {
-        ShaclValidation.register(this)
-    }
-    
+class JenaValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
 
 **Features:**
-- Automatic registration on instantiation
+- Explicit validation context
 - Jena SHACL engine integration
 - Support for complex SHACL shapes
 - Detailed validation reporting
@@ -88,12 +70,8 @@ class JenaValidation : ShaclValidator {
 
 **Usage:**
 ```kotlin
-// Automatic registration
 val validation = JenaValidation()
-
-// Manual validation
-val person: Person = materializeFromRdf(...)
-person.asRdf().validateOrThrow()
+val person: Person = OntoMapper.materializeValidated(ref, Person::class.java, validation)
 ```
 
 ### Rdf4jValidation
@@ -101,17 +79,13 @@ person.asRdf().validateOrThrow()
 RDF4J-based SHACL validation adapter.
 
 ```kotlin
-class Rdf4jValidation : ShaclValidator {
-    init {
-        ShaclValidation.register(this)
-    }
-    
+class Rdf4jValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 }
 ```
 
 **Features:**
-- Automatic registration on instantiation
+- Explicit validation context
 - RDF4J SHACL engine integration
 - Support for complex SHACL shapes
 - Detailed validation reporting
@@ -122,12 +96,8 @@ class Rdf4jValidation : ShaclValidator {
 
 **Usage:**
 ```kotlin
-// Automatic registration
 val validation = Rdf4jValidation()
-
-// Manual validation
-val person: Person = materializeFromRdf(...)
-person.asRdf().validateOrThrow()
+val person: Person = OntoMapper.materializeValidated(ref, Person::class.java, validation)
 ```
 
 ## Exception Classes
@@ -158,7 +128,7 @@ try {
 ### Basic Validation
 
 ```kotlin
-class BasicValidation : ShaclValidator {
+class BasicValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
@@ -174,21 +144,22 @@ class BasicValidation : ShaclValidator {
 ### SHACL Shape Validation
 
 ```kotlin
-class ShaclValidation : ShaclValidator {
+class ShaclShapeValidation : ValidationContext {
     private val shapesGraph: RdfGraph by lazy {
         loadShapesFromResource("shapes.ttl")
     }
     
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val validator = createShaclValidator(shapesGraph)
+        val validator = createValidationContext(shapesGraph)
         val report = validator.validate(data, focus)
         
         if (!report.isValid) {
-            val errors = report.violations.joinToString("\n") { violation ->
-                "Validation error: ${violation.message}"
+            val violations = report.violations.map { violation ->
+                ShaclViolation(null, violation.message)
             }
-            throw ValidationException(errors)
+            return ValidationResult.Violations(violations)
         }
+        return ValidationResult.Ok
     }
     
     private fun loadShapesFromResource(resourceName: String): RdfGraph {
@@ -203,10 +174,10 @@ class ShaclValidation : ShaclValidator {
 ### Composite Validation
 
 ```kotlin
-class CompositeValidation : ShaclValidator {
+class CompositeValidation : ValidationContext {
     private val validators = listOf(
         BasicValidation(),
-        ShaclValidation(),
+        ShaclShapeValidation(),
         BusinessRuleValidation()
     )
     
@@ -233,11 +204,12 @@ class CompositeValidation : ShaclValidator {
 ### Materialization with Validation
 
 ```kotlin
-// Automatic validation during materialization
-val person: Person = rdfRef.asType(validate = true)
+// Validation during materialization
+val validation = JenaValidation()
+val person: Person = rdfRef.asValidatedType(validation)
 
-// Manual validation after materialization
-val person: Person = rdfRef.asType()
+// Manual validation after materialization (same context)
+val person: Person = rdfRef.asType(validation)
 person.asRdf().validateOrThrow()
 ```
 
@@ -245,7 +217,7 @@ person.asRdf().validateOrThrow()
 
 ```kotlin
 interface RdfHandle {
-    fun validateOrThrow()  // Delegates to ShaclValidation
+    fun validateOrThrow()  // Uses the validation context passed at materialization time
 }
 
 // Usage
@@ -279,7 +251,7 @@ dependencies {
 class CustomValidationConfig {
     fun configureValidation() {
         val validation = CompositeValidation()
-        ShaclValidation.register(validation)
+        val person: Person = rdfRef.asValidatedType(validation)
     }
 }
 ```
@@ -311,7 +283,7 @@ sealed class ValidationResult {
 ### Detailed Error Reporting
 
 ```kotlin
-class DetailedValidation : ShaclValidator {
+class DetailedValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<ValidationError>()
         
@@ -362,7 +334,7 @@ enum class ValidationSeverity {
 ### Lazy Validation
 
 ```kotlin
-class LazyValidation : ShaclValidator {
+class LazyValidation : ValidationContext {
     private val validationCache = mutableMapOf<RdfTerm, Boolean>()
     
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
@@ -388,7 +360,7 @@ class LazyValidation : ShaclValidator {
 ### Batch Validation
 
 ```kotlin
-class BatchValidation : ShaclValidator {
+class BatchValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val entitiesToValidate = collectEntities(data, focus)
         
@@ -455,8 +427,9 @@ class ValidationIntegrationTest {
         
         val personRef = RdfRef(person, repo.defaultGraph)
         
+        val validation = JenaValidation()
         assertDoesNotThrow {
-            val personObj: Person = personRef.asType(validate = true)
+            val personObj: Person = personRef.asValidatedType(validation)
             assertEquals("John Doe", personObj.name.firstOrNull())
         }
     }
@@ -489,7 +462,7 @@ class ValidationIntegrationTest {
 ### Common Issues
 
 1. **Validation not working:**
-   - Check that ShaclValidator is registered
+   - Check that ValidationContext is registered
    - Verify validation dependencies are included
    - Ensure validation is called correctly
 

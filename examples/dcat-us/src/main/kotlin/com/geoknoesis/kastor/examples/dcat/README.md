@@ -276,14 +276,6 @@ kastorGen {
             // ... more mappings
         }
         
-        // Validation configuration
-        validation {
-            enableShaclValidation = true
-            requiredProperties {
-                "Catalog" to listOf("title", "description", "publisher")
-                "Dataset" to listOf("title", "description", "publisher")
-            }
-        }
     }
 }
 ```

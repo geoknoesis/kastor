@@ -297,7 +297,7 @@ if (provider.getCapabilities().extensionFunctions.isNotEmpty()) {
 Handle unsupported features gracefully:
 ```kotlin
 try {
-    val result = repo.query(sparql12Query)
+    val result = repo.select(SparqlSelectQuery(sparql12Query))
 } catch (e: UnsupportedOperationException) {
     // Fallback to SPARQL 1.1 query
 }
@@ -354,7 +354,7 @@ fun sparql12Example() {
         }
     """
     
-    val results = repo.query(query)
+    val results = repo.select(SparqlSelectQuery(query))
     results.forEach { binding ->
         println("Person: ${binding.getIri("person")}")
         println("Certainty: ${binding.getDouble("certainty")}")

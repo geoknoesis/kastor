@@ -240,6 +240,7 @@ class VocabularyTest {
     fun `vocabulary terms can be used in triples`() {
         val repo = Rdf.memory()
         val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
         
         val resource = Iri("http://example.org/resource")
         
@@ -250,10 +251,10 @@ class VocabularyTest {
         val triple4 = RdfTriple(resource, RDFS.label, Literal("Resource Label"))
         
         // Add triples to graph
-        graph.addTriple(triple1)
-        graph.addTriple(triple2)
-        graph.addTriple(triple3)
-        graph.addTriple(triple4)
+        editor.addTriple(triple1)
+        editor.addTriple(triple2)
+        editor.addTriple(triple3)
+        editor.addTriple(triple4)
         
         // Verify triples were added correctly
         assertEquals(4, graph.size(), "Graph should contain 4 triples")

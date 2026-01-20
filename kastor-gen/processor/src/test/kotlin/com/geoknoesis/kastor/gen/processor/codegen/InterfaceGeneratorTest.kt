@@ -71,6 +71,8 @@ class InterfaceGeneratorTest {
                 "dcat" to "http://www.w3.org/ns/dcat#",
                 "dcterms" to "http://purl.org/dc/terms/"
             ),
+            baseIri = null,
+            vocabIri = null,
             typeMappings = mapOf(
                 "Catalog" to Iri("http://www.w3.org/ns/dcat#Catalog"),
                 "Dataset" to Iri("http://www.w3.org/ns/dcat#Dataset")
@@ -78,15 +80,18 @@ class InterfaceGeneratorTest {
             propertyMappings = mapOf(
                 "title" to JsonLdProperty(
                     id = Iri("http://purl.org/dc/terms/title"),
-                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")),
+                    container = null
                 ),
                 "description" to JsonLdProperty(
                     id = Iri("http://purl.org/dc/terms/description"),
-                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string"))
+                    type = JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")),
+                    container = null
                 ),
                 "dataset" to JsonLdProperty(
                     id = Iri("http://www.w3.org/ns/dcat#dataset"),
-                    type = JsonLdType.Id
+                    type = JsonLdType.Id,
+                    container = null
                 )
             )
         )

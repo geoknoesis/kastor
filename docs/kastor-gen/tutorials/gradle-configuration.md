@@ -799,12 +799,12 @@ val catalogHandle = catalogRef.rdf
 val catalogWrapper = CatalogWrapper(catalogHandle)
 
 // Query with vocabularies from separate packages
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE {
         ?person a <http://schema.org/Person> ;
                 <http://schema.org/name> ?name .
     }
-""")
+""")))
 ```
 
 ## Conclusion

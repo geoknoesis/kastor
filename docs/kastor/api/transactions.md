@@ -6,7 +6,7 @@ Use transactions to group writes and ensure consistency.
 ```kotlin
 repo.beginTransaction()
 try {
-  repo.update("INSERT DATA { <urn:s> <urn:p> 'o' }")
+  repo.update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }")))
   repo.commit()
 } catch (t: Throwable) {
   repo.rollback()

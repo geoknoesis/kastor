@@ -12,7 +12,7 @@ class Rdf4jVariantsTest {
     val s = Iri("urn:memory:s")
     val p = Iri("urn:memory:p")
     val o = Literal("test")
-    repo.defaultGraph.addTriple(RdfTriple(s, p, o))
+    repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
     assertTrue(repo.ask(SparqlAskQuery("ASK { <urn:memory:s> <urn:memory:p> 'test' }")))
   }
 
@@ -27,7 +27,7 @@ class Rdf4jVariantsTest {
     val s = Iri("urn:native:s")
     val p = Iri("urn:native:p")
     val o = Literal("persist")
-    repo1.defaultGraph.addTriple(RdfTriple(s, p, o))
+    repo1.editDefaultGraph().addTriple(RdfTriple(s, p, o))
 
     // New session against same location should see data
     val repo2 = Rdf4jRepository.NativeRepository(dir.absolutePath)

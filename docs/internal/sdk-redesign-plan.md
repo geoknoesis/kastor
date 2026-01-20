@@ -91,19 +91,16 @@ person.set(FOAF.age, 30)
 
 **Before**
 ```kotlin
-val validator = ShaclValidation.validator()
-val report = validator.validate(dataGraph, shapesGraph)
-if (!report.isValid) { ... }
+val validation = JenaValidation()
+val result = validation.validate(dataGraph, focusNode)
+if (result is ValidationResult.Violations) { ... }
 ```
 
 **After**
 ```kotlin
-val validator = Shacl.validator(profile = ValidationProfile.Strict)
-val report = validator.validate(data = graph, shapes = shapes)
-
-if (report is ValidationReport.Failed) {
-  report.violations.forEach { v -> println(v.describe()) }
-}
+val validation = JenaValidation()
+val person = rdfRef.asValidatedType<Person>(validation)
+person.asRdf().validateOrThrow()
 ```
 
 **Notes**
@@ -149,12 +146,14 @@ interface Catalog {
 **Before**
 ```kotlin
 val ref = RdfRef(node, graph)
-val catalog = kastor.gen.materialize(ref, Catalog::class.java, validate = true)
+val validation = JenaValidation()
+val catalog = kastor.gen.materializeValidated(ref, Catalog::class.java, validation)
 ```
 
 **After**
 ```kotlin
-val catalog = graph.node(node).asType<Catalog>(validate = true)
+val validation = JenaValidation()
+val catalog = graph.node(node).asValidatedType<Catalog>(validation)
 ```
 
 **Notes**
@@ -167,7 +166,7 @@ val catalog = graph.node(node).asType<Catalog>(validate = true)
 
 **Before**
 ```kotlin
-val result = repo.query("SELECT ?value WHERE { ... }")
+val result = repo.select(SparqlSelectQuery("SELECT ?value WHERE { ... }"))
 val title = result.firstAs<String>()
 ```
 
@@ -178,7 +177,7 @@ val query = Query.select {
   where { node has DCTERMS.title value title }
 }
 
-val titles: List<String> = repo.query(query).map { it[title] }
+val titles: List<String> = repo.select(query).map { it[title] }
 ```
 
 **Notes**

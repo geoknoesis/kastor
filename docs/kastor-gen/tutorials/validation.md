@@ -12,8 +12,8 @@ Kastor Gen provides built-in support for SHACL (Shapes Constraint Language) vali
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   Domain Layer  │    │   Validation     │    │   SHACL Shapes  │
 │                 │    │                  │    │                 │
-│  Pure Interfaces│◄──►│  ShaclValidator  │◄──►│  Jena/RDF4J     │
-│  RdfBacked      │    │  ShaclValidation│   │  SHACL Engine   │
+│  Pure Interfaces│◄──►│  ValidationContext  │◄──►│  Jena/RDF4J     │
+│  RdfBacked      │    │  (explicit)     │   │  SHACL Engine   │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
@@ -27,8 +27,7 @@ Kastor Gen provides validation adapters for different RDF backends:
 // Add dependency
 runtimeOnly(project(":kastor-gen:validation-jena"))
 
-// Automatic registration
-class JenaValidation : ShaclValidator {
+class JenaValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // SHACL validation using Jena
     }
@@ -42,8 +41,7 @@ class JenaValidation : ShaclValidator {
 runtimeOnly(project(":rdf:rdf4j"))
 runtimeOnly(project(":kastor-gen:validation-rdf4j"))
 
-// Automatic registration
-class Rdf4jValidation : ShaclValidator {
+class Rdf4jValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // SHACL validation using RDF4J
     }
@@ -55,14 +53,16 @@ class Rdf4jValidation : ShaclValidator {
 ### Materialization with Validation
 
 ```kotlin
-val person: Person = rdfRef.asType(validate = true)
-// Automatically validates against SHACL shapes
+val validation = JenaValidation()
+val person: Person = rdfRef.asValidatedType(validation)
+// Validates against SHACL shapes during materialization
 ```
 
 ### Manual Validation
 
 ```kotlin
-val person: Person = rdfRef.asType()
+val validation = JenaValidation()
+val person: Person = rdfRef.asType(validation)
 val rdfHandle = person.asRdf()
 
 try {
@@ -77,7 +77,7 @@ try {
 
 ```kotlin
 // Check if validation is available
-val validation = ShaclValidation.current()
+val validation = JenaValidation()
 println("Validation available: ${validation != null}")
 
 // Use validation
@@ -125,14 +125,14 @@ Create SHACL shapes to define validation rules:
 ### Loading SHACL Shapes
 
 ```kotlin
-class PersonValidation : ShaclValidator {
+class PersonValidation : ValidationContext {
     private val shapesGraph: RdfGraph by lazy {
         loadShapesFromResource("person-shape.ttl")
     }
     
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Load and apply SHACL shapes
-        val validator = createShaclValidator(shapesGraph)
+        val validator = createValidationContext(shapesGraph)
         val report = validator.validate(data, focus)
         
         if (!report.isValid) {
@@ -158,7 +158,7 @@ class PersonValidation : ShaclValidator {
 ### Domain-Specific Validation
 
 ```kotlin
-class PersonDomainValidation : ShaclValidator {
+class PersonDomainValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
@@ -211,7 +211,7 @@ class PersonDomainValidation : ShaclValidator {
 ### Business Rule Validation
 
 ```kotlin
-class BusinessRuleValidation : ShaclValidator {
+class BusinessRuleValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
@@ -246,7 +246,7 @@ class BusinessRuleValidation : ShaclValidator {
 ### Cross-Entity Validation
 
 ```kotlin
-class CrossEntityValidation : ShaclValidator {
+class CrossEntityValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         
@@ -312,7 +312,7 @@ class CrossEntityValidation : ShaclValidator {
 ### Multiple Validation Ports
 
 ```kotlin
-class CompositeValidation : ShaclValidator {
+class CompositeValidation : ValidationContext {
     private val validators = listOf(
         PersonDomainValidation(),
         BusinessRuleValidation(),
@@ -337,13 +337,13 @@ class CompositeValidation : ShaclValidator {
 }
 
 // Register composite validation
-ShaclValidation.register(CompositeValidation())
+val validation = CompositeValidation()
 ```
 
 ### Conditional Validation
 
 ```kotlin
-class ConditionalValidation : ShaclValidator {
+class ConditionalValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val triples = data.getTriples()
         val focusTriples = triples.filter { it.subject == focus }
@@ -372,7 +372,7 @@ class ConditionalValidation : ShaclValidator {
 ### Detailed Error Reporting
 
 ```kotlin
-class DetailedValidation : ShaclValidator {
+class DetailedValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         val errors = mutableListOf<ValidationError>()
         
@@ -516,7 +516,7 @@ data class DetailedValidationResult(
 ### Lazy Validation
 
 ```kotlin
-class LazyValidation : ShaclValidator {
+class LazyValidation : ValidationContext {
     private val validationCache = mutableMapOf<RdfTerm, Boolean>()
     
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
@@ -547,7 +547,7 @@ class LazyValidation : ShaclValidator {
 ### Batch Validation
 
 ```kotlin
-class BatchValidation : ShaclValidator {
+class BatchValidation : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
         // Collect all entities that need validation
         val entitiesToValidate = collectEntities(data, focus)
@@ -635,7 +635,8 @@ class ValidationIntegrationTest {
         
         // Materialize with validation
         assertDoesNotThrow {
-            val personObj: Person = personRef.asType(validate = true)
+            val validation = JenaValidation()
+            val personObj: Person = personRef.asValidatedType(validation)
             assertEquals("John Doe", personObj.name.firstOrNull())
         }
     }

@@ -267,7 +267,8 @@ try {
 
 ```kotlin
 try {
-    val person: Person = rdfRef.asType(validate = true)
+    val validation = JenaValidation()
+    val person: Person = rdfRef.asValidatedType(validation)
 } catch (e: ValidationException) {
     // SHACL validation failed
     println("Validation failed: ${e.message}")
@@ -337,7 +338,8 @@ val name = person.name.first()  // May throw exception
 
 ```kotlin
 // ✅ Good - Validate when needed
-val person: Person = rdfRef.asType(validate = true)
+val validation = JenaValidation()
+val person: Person = rdfRef.asValidatedType(validation)
 
 // Or validate manually
 val rdfHandle = person.asRdf()

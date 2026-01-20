@@ -181,15 +181,13 @@ class EdgeCaseTest {
 
     @Test
     fun `validation handles concurrent access`() {
-        val validator = object : ShaclValidator {
+        val validator = object : ValidationContext {
             override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
                 Thread.sleep(10)
                 return ValidationResult.Ok
             }
         }
-        
-        ShaclValidation.register(validator)
-        
+
         val repo = Rdf.memory()
         val subject = Iri("http://example.org/person")
         

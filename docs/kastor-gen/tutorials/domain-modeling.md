@@ -334,7 +334,8 @@ Use SHACL for structural validation:
 
 ```kotlin
 // Materialize with validation
-val product: Product = rdfRef.asType(validate = true)
+val validation = JenaValidation()
+val product: Product = rdfRef.asValidatedType(validation)
 
 // Or validate manually
 val rdfHandle = product.asRdf()

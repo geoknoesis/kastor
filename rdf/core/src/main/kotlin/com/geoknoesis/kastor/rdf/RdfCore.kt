@@ -170,17 +170,17 @@ interface RdfRepository : Repository {
     /**
      * Get the default graph for this repository.
      */
-    override val defaultGraph: MutableRdfGraph
+    override val defaultGraph: RdfGraph
     
     /**
      * Get a named graph by IRI.
      */
-    fun getGraph(name: Iri): MutableRdfGraph
+    fun getGraph(name: Iri): RdfGraph
 
     /**
      * Minimal core API graph access.
      */
-    override fun graph(name: Iri): MutableRdfGraph = getGraph(name)
+    override fun graph(name: Iri): RdfGraph = getGraph(name)
     
     /**
      * Check if a named graph exists.
@@ -195,12 +195,22 @@ interface RdfRepository : Repository {
     /**
      * Create a new named graph.
      */
-    fun createGraph(name: Iri): MutableRdfGraph
+    fun createGraph(name: Iri): RdfGraph
     
     /**
      * Remove a named graph and all its triples.
      */
     fun removeGraph(name: Iri): Boolean
+
+    /**
+     * Get an editor for the default graph.
+     */
+    fun editDefaultGraph(): GraphEditor
+
+    /**
+     * Get an editor for a named graph.
+     */
+    fun editGraph(name: Iri): GraphEditor
     
     // === QUERY OPERATIONS ===
     

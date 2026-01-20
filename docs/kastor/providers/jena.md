@@ -71,16 +71,17 @@ The enhanced implementation supports full SPARQL Dataset operations:
 val repo = api.repository
 
 // Default graph
-val defaultGraph = repo.getGraph()
+val defaultGraph = repo.defaultGraph
 
 // Named graphs
-val namedGraph = repo.getGraph("http://example.org/graph")
+val namedGraph = repo.getGraph(iri("http://example.org/graph"))
 
 // List all graph names
-val graphNames = repo.listGraphNames()
+val graphNames = repo.listGraphs()
 
-// Add graph to repository
-repo.addGraph(iri("http://example.org/new-graph"), graph)
+// Create and edit a graph
+repo.createGraph(iri("http://example.org/new-graph"))
+repo.editGraph(iri("http://example.org/new-graph")).addTriples(graph.getTriples())
 
 // Remove graph
 repo.removeGraph(iri("http://example.org/graph"))
@@ -128,7 +129,7 @@ Built-in transaction support for data consistency:
 
 ```kotlin
 val result = repo.transaction {
-    val graph = getGraph()
+    val graph = defaultGraph
     graph.add(triple(subject, predicate, object))
     graph.add(triple(subject2, predicate2, object2))
     "transaction completed"
@@ -154,7 +155,7 @@ val api = Rdf.factory {
 }
 
 // Add data
-val graph = api.repository.getGraph()
+val graph = api.repository.defaultGraph
 graph.add(triple(subject, predicate, object))
 
 // Close and reopen

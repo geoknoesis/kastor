@@ -105,7 +105,8 @@ Central materializer populated by generated registration code.
 object OntoMapper {
     val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
     
-    fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validate: Boolean = false): T
+    fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
+    fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
 }
 ```
 
@@ -113,7 +114,8 @@ object OntoMapper {
 - `registry: MutableMap<Class<*>, (RdfHandle) -> Any>` - Registry of wrapper factories
 
 **Methods:**
-- `materialize(ref: RdfRef, type: Class<T>, validate: Boolean = false): T` - Materialize RDF data into domain object
+- `materialize(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T` - Materialize RDF data into domain object
+- `materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T` - Materialize and validate
 
 **Usage:**
 ```kotlin
@@ -121,7 +123,8 @@ object OntoMapper {
 kastor.gen.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
 
 // Materialize
-val person = kastor.gen.materialize(ref, Person::class.java, validate = true)
+val validation = JenaValidation()
+val person = kastor.gen.materializeValidated(ref, Person::class.java, validation)
 ```
 
 ### RdfRef
@@ -216,18 +219,20 @@ internal class PropertyBagImpl(
 ### Materialization Extensions
 
 ```kotlin
-inline fun <reified T: Any> RdfRef.asType(validate: Boolean = false): T
+inline fun <reified T: Any> RdfRef.asType(validation: ValidationContext? = null): T
+inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext? = null): T
 ```
 
 **Parameters:**
-- `validate: Boolean = false` - Whether to validate against SHACL shapes
+- `validation: ValidationContext? = null` - Validation context to use (optional)
 
 **Returns:**
 - `T` - Materialized domain object
 
 **Usage:**
 ```kotlin
-val person: Person = ref.asType(validate = true)
+val validation = JenaValidation()
+val person: Person = ref.asValidatedType(validation)
 ```
 
 ### RDF Access Extensions

@@ -68,7 +68,7 @@ class DefaultRdfHandleTest {
     }
     
     @Test
-    fun `DefaultRdfHandle validate delegates to ShaclValidation`() {
+    fun `DefaultRdfHandle validate delegates to validation context`() {
         val repo = Rdf.memory()
         val node = Iri("http://example.org/person")
         
@@ -76,18 +76,31 @@ class DefaultRdfHandleTest {
             node - FOAF.name - "John Doe"
         }
         
-        val known = emptySet<Iri>()
-        val handle = DefaultRdfHandle(node, repo.defaultGraph, known)
-        
-        val validator = object : ShaclValidator {
+        val validator = object : ValidationContext {
             override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
                 return ValidationResult.Violations(listOf(ShaclViolation(null, "Test validation error")))
             }
         }
-        ShaclValidation.register(validator)
+        val known = emptySet<Iri>()
+        val handle = DefaultRdfHandle(node, repo.defaultGraph, known, validationContext = validator)
 
         val result = handle.validate()
         assertTrue(result is ValidationResult.Violations)
+    }
+
+    @Test
+    fun `DefaultRdfHandle validate returns NotConfigured when no context`() {
+        val repo = Rdf.memory()
+        val node = Iri("http://example.org/person")
+
+        repo.add {
+            node - FOAF.name - "John Doe"
+        }
+
+        val handle = DefaultRdfHandle(node, repo.defaultGraph, known = emptySet())
+        val result = handle.validate()
+
+        assertEquals(ValidationResult.NotConfigured, result)
     }
     
     @Test

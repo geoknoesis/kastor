@@ -27,7 +27,7 @@ repo.add {
 }
 
 // Query the data
-val results = repo.query("SELECT ?name WHERE { ?s foaf:name ?name }")
+val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?s foaf:name ?name }"))
 results.forEach { binding ->
     println(binding.getString("name"))
 }
@@ -128,7 +128,7 @@ repo.transaction {
         repo.add { /* ... */ }
         
         // Query data
-        val results = repo.query("SELECT ?s WHERE { ?s ?p ?o }")
+        val results = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
         
         // If everything is good, commit
         commit()
@@ -172,9 +172,8 @@ val persistentRepo = Rdf.factory {
 }
 
 // Copy all data
-memoryRepo.query("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }").use { results ->
-    persistentRepo.add(results)
-}
+val triples = memoryRepo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
+persistentRepo.addTriples(triples.toList())
 
 // Switch to persistent repository
 // memoryRepo can now be discarded

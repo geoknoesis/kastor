@@ -101,7 +101,7 @@ class IntegrationTest {
 
     @Test
     fun `materialization with validation works`() {
-        val validator = object : ShaclValidator {
+        val validator = object : ValidationContext {
             override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
                 val hasName = data.getTriples().any {
                     it.subject == focus && it.predicate == FOAF.name
@@ -113,8 +113,6 @@ class IntegrationTest {
                 }
             }
         }
-
-        ShaclValidation.register(validator)
 
         OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
 
@@ -129,7 +127,7 @@ class IntegrationTest {
 
         val personRef = RdfRef(person, repo.defaultGraph)
         assertDoesNotThrow {
-            val p: Person = OntoMapper.materializeValidated(personRef, Person::class.java)
+            val p: Person = OntoMapper.materializeValidated(personRef, Person::class.java, validator)
             assertEquals(listOf("John"), p.name)
         }
 
@@ -142,7 +140,7 @@ class IntegrationTest {
 
         val invalidRef = RdfRef(invalidPerson, invalidRepo.defaultGraph)
         assertThrows(ValidationException::class.java) {
-            OntoMapper.materializeValidated(invalidRef, Person::class.java)
+            OntoMapper.materializeValidated(invalidRef, Person::class.java, validator)
         }
     }
 

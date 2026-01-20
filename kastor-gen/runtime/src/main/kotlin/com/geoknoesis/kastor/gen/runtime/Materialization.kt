@@ -27,24 +27,29 @@ object OntoMapper {
    * @throws IllegalStateException if no factory is registered for the type
    */
   @JvmStatic
-  fun <T: Any> materialize(ref: RdfRef, type: Class<T>): T {
-    return materializeInternal(ref, type, validate = false)
+  fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T {
+    return materializeInternal(ref, type, validation, validate = false)
   }
 
   /**
    * Materializes an RDF node as a domain object and validates it.
    */
   @JvmStatic
-  fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>): T {
-    return materializeInternal(ref, type, validate = true)
+  fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T {
+    return materializeInternal(ref, type, validation, validate = true)
   }
 
-  private fun <T: Any> materializeInternal(ref: RdfRef, type: Class<T>, validate: Boolean): T {
+  private fun <T: Any> materializeInternal(
+    ref: RdfRef,
+    type: Class<T>,
+    validation: ValidationContext?,
+    validate: Boolean
+  ): T {
     val factory = registry[type] ?: run {
       loadWrapperClass(type)
       registry[type]
     } ?: error("$ERROR_NO_FACTORY ${type.name}")
-    val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet())
+    val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet(), validationContext = validation)
     @Suppress("UNCHECKED_CAST")
     val instance = factory(handle) as T
     if (validate) handle.validate().orThrow()
@@ -80,12 +85,12 @@ object OntoMapper {
 
 /** Kotlin convenience for materialization. */
 @JvmName("asTypeExtension")
-inline fun <reified T: Any> RdfRef.asType(): T =
-  OntoMapper.materialize(this, T::class.java)
+inline fun <reified T: Any> RdfRef.asType(validation: ValidationContext? = null): T =
+  OntoMapper.materialize(this, T::class.java, validation)
 
 @JvmName("asValidatedTypeExtension")
-inline fun <reified T: Any> RdfRef.asValidatedType(): T =
-  OntoMapper.materializeValidated(this, T::class.java)
+inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext? = null): T =
+  OntoMapper.materializeValidated(this, T::class.java, validation)
 
 /** Ergonomic access to the RDF side-channel. */
 @JvmName("asRdfExtension")

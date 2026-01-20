@@ -23,38 +23,31 @@ The main interface for RDF repository operations.
 
 ```kotlin
 interface RdfRepository : Closeable {
-    // Basic operations
-    fun add(configure: TripleDsl.() -> Unit)
-    fun addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit)
-    fun addTriples(triples: Collection<RdfTriple>)
-    fun addTriple(triple: RdfTriple)
-    
+    val defaultGraph: RdfGraph
+
     // Query operations
-    fun query(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): QueryResult
-    fun ask(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): Boolean
-    fun construct(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): List<RdfTriple>
-    fun describe(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): List<RdfTriple>
-    fun update(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap())
-    
+    fun select(query: SparqlSelect): QueryResult
+    fun ask(query: SparqlAsk): Boolean
+    fun construct(query: SparqlConstruct): Sequence<RdfTriple>
+    fun describe(query: SparqlDescribe): Sequence<RdfTriple>
+    fun update(query: UpdateQuery)
+
     // Transaction operations
     fun transaction(operations: RdfRepository.() -> Unit)
     fun readTransaction(operations: RdfRepository.() -> Unit)
-    
+
     // Graph operations
-    fun getGraph(graphName: Iri): MutableRdfGraph
-    fun createGraph(graphName: Iri): MutableRdfGraph
+    fun getGraph(graphName: Iri): RdfGraph
+    fun createGraph(graphName: Iri): RdfGraph
     fun listGraphs(): List<Iri>
-    fun removeGraph(graphName: Iri)
-    
+    fun removeGraph(graphName: Iri): Boolean
+    fun editDefaultGraph(): GraphEditor
+    fun editGraph(graphName: Iri): GraphEditor
+
     // Utility operations
-    fun clear()
-    fun isEmpty(): Boolean
-    fun size(): Long
+    fun clear(): Boolean
     fun isClosed(): Boolean
-    
-    // Statistics and monitoring
-    fun getStatistics(): RepositoryStatistics
-    fun getPerformanceMonitor(): PerformanceMonitor
+    fun getCapabilities(): ProviderCapabilities
 }
 ```
 
@@ -70,18 +63,24 @@ interface RdfGraph {
 }
 ```
 
-### MutableRdfGraph
+### GraphEditor
 
 Mutable graph operations.
 
 ```kotlin
-interface MutableRdfGraph : RdfGraph {
+interface GraphEditor {
     fun addTriple(triple: RdfTriple)
     fun addTriples(triples: Collection<RdfTriple>)
     fun removeTriple(triple: RdfTriple): Boolean
     fun removeTriples(triples: Collection<RdfTriple>): Boolean
     fun clear(): Boolean
 }
+```
+
+### MutableRdfGraph
+
+```kotlin
+interface MutableRdfGraph : RdfGraph, GraphEditor
 ```
 
 ### RdfApiProvider
@@ -178,35 +177,6 @@ data class SubjectAndPredicate(
 )
 ```
 
-### RepositoryStatistics
-
-Repository performance and usage statistics.
-
-```kotlin
-data class RepositoryStatistics(
-    val totalTriples: Long,
-    val graphCount: Int,
-    val sizeBytes: Long,
-    val lastModified: Long,
-    val queryCount: Long,
-    val averageQueryTime: Double
-)
-```
-
-### PerformanceMonitor
-
-Performance monitoring data.
-
-```kotlin
-data class PerformanceMonitor(
-    val queryCount: Long,
-    val averageQueryTime: Double,
-    val cacheHitRate: Double,
-    val memoryUsage: Long,
-    val diskUsage: Long
-)
-```
-
 ## 🏭 Factory Methods
 
 ### Rdf Object
@@ -290,27 +260,6 @@ class TripleDsl {
     
     // Generic infix operator
     infix fun RdfResource.`is`(predicate: Iri): SubjectAndPredicate
-}
-```
-
-### RdfOperations
-
-Fluent interface for repository operations.
-
-```kotlin
-class RdfOperations(private val repo: RdfRepository) {
-    fun add(configure: TripleDsl.() -> Unit): RdfOperations
-    fun addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit): RdfOperations
-    fun query(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): QueryResult
-    fun ask(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): Boolean
-    fun construct(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): List<RdfTriple>
-    fun describe(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): List<RdfTriple>
-    fun update(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): RdfOperations
-    fun transaction(operations: RdfRepository.() -> Unit): RdfOperations
-    fun readTransaction(operations: RdfRepository.() -> Unit): RdfOperations
-    fun clear(): RdfOperations
-    fun statistics(): RepositoryStatistics
-    fun performance(): PerformanceMonitor
 }
 ```
 
@@ -408,37 +357,28 @@ class RdfAltValues(val values: List<Any>)     // rdf:Alt
 
 ## 🔧 Extension Functions
 
-### String Extensions
-
-```kotlin
-fun String.toIri(): Iri
-fun String.toResource(): RdfResource
-fun String.toLiteral(): RdfLiteral
-```
-
 ### Number Extensions
 
 ```kotlin
-fun Int.toLiteral(): RdfLiteral
-fun Double.toLiteral(): RdfLiteral
-fun Boolean.toLiteral(): RdfLiteral
+fun Int.toLiteral(): Literal
+fun Long.toLiteral(): Literal
+fun Double.toLiteral(): Literal
+fun Float.toLiteral(): Literal
+fun Boolean.toLiteral(): Literal
 ```
 
 ### Repository Extensions
 
 ```kotlin
-fun RdfRepository.fluent(): RdfOperations
-fun RdfRepository.queryFirst(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): BindingSet?
-fun RdfRepository.queryList(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): List<BindingSet>
-fun RdfRepository.queryMap(sparql: String, keySelector: (BindingSet) -> String, valueSelector: (BindingSet) -> String, initialBindings: Map<String, RdfTerm> = emptyMap()): Map<String, String>
-fun RdfRepository.queryTimed(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): Pair<QueryResult, Duration>
-fun RdfRepository.operationTimed(operations: RdfRepository.() -> Unit): Pair<Unit, Duration>
-fun RdfRepository.addBatch(batchSize: Int = 1000, configure: TripleDsl.() -> Unit)
-fun RdfRepository.addBatchToGraph(graphName: Iri, batchSize: Int = 1000, configure: TripleDsl.() -> Unit)
-fun RdfRepository.hasTriples(): Boolean
-fun RdfRepository.tripleCount(): Int
-fun RdfRepository.sizeFormatted(): String
-fun RdfRepository.statisticsFormatted(): String
+fun RdfRepository.add(configure: TripleDsl.() -> Unit)
+fun RdfRepository.addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit)
+fun RdfRepository.addTriple(triple: RdfTriple)
+fun RdfRepository.addTriples(triples: Collection<RdfTriple>)
+fun RdfRepository.addTriple(graphName: Iri?, triple: RdfTriple)
+fun RdfRepository.removeTriple(triple: RdfTriple): Boolean
+fun RdfRepository.removeTriples(triples: Collection<RdfTriple>): Boolean
+fun RdfRepository.hasTriple(triple: RdfTriple): Boolean
+fun RdfRepository.getTriples(): List<RdfTriple>
 ```
 
 ### Graph Extensions
@@ -456,13 +396,6 @@ fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: String)
 fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Int)
 fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Double)
 fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Boolean)
-```
-
-### Query Result Extensions
-
-```kotlin
-inline fun <reified T> QueryResult.firstAs(): T?
-inline fun <reified T> QueryResult.mapAs(): List<T>
 ```
 
 ### Operator Overloads
@@ -623,37 +556,7 @@ interface BindingSet {
 }
 ```
 
-### Type-Safe Extensions
-
-```kotlin
-inline fun <reified T> QueryResult.firstAs(): T?
-inline fun <reified T> QueryResult.mapAs(): List<T>
-```
-
-## ⚡ Performance
-
-### Batch Operations
-
-```kotlin
-fun RdfRepository.addBatch(batchSize: Int = 1000, configure: TripleDsl.() -> Unit)
-fun RdfRepository.addBatchToGraph(graphName: Iri, batchSize: Int = 1000, configure: TripleDsl.() -> Unit)
-```
-
-### Performance Monitoring
-
-```kotlin
-fun RdfRepository.queryTimed(sparql: String, initialBindings: Map<String, RdfTerm> = emptyMap()): Pair<QueryResult, Duration>
-fun RdfRepository.operationTimed(operations: RdfRepository.() -> Unit): Pair<Unit, Duration>
-fun RdfRepository.getStatistics(): RepositoryStatistics
-fun RdfRepository.getPerformanceMonitor(): PerformanceMonitor
-```
-
-### Statistics Formatting
-
-```kotlin
-fun RdfRepository.sizeFormatted(): String
-fun RdfRepository.statisticsFormatted(): String
-```
+Query results provide `first()`, `toList()`, and `asSequence()` for common access patterns.
 
 ## 🔍 RDF Terms
 
@@ -763,18 +666,18 @@ val repo = Rdf.memory()
 
 // Add data
 repo.add {
-    val person = "http://example.org/person/alice".toResource()
+    val person = iri("http://example.org/person/alice")
     person["http://example.org/person/name"] = "Alice"
     person["http://example.org/person/age"] = 30
 }
 
 // Query data
-val results = repo.query("""
+val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age WHERE { 
         ?person <http://example.org/person/name> ?name ;
                 <http://example.org/person/age> ?age 
     }
-""")
+"""))
 
 // Process results
 results.forEach { binding ->
@@ -788,29 +691,33 @@ repo.close()
 ### Advanced Usage
 
 ```kotlin
-// Fluent interface
-Rdf.memory().fluent()
-    .add {
-        val person = "http://example.org/person/alice".toResource()
-        person["http://example.org/person/name"] = "Alice"
-    }
-    .query("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }")
-    .forEach { binding ->
-        println("Found: ${binding.getString("name")}")
-    }
-    .clear()
-    .close()
+// Repository operations
+val repo = Rdf.memory()
+repo.add {
+    val person = iri("http://example.org/person/alice")
+    person["http://example.org/person/name"] = "Alice"
+}
+
+val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+results.forEach { binding ->
+    println("Found: ${binding.getString("name")}")
+}
+
+repo.clear()
+repo.close()
 
 // Performance monitoring
-val (results, duration) = repo.queryTimed("""
+val started = System.nanoTime()
+repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
-""")
-println("Query took: $duration")
+"""))
+val durationMs = (System.nanoTime() - started) / 1_000_000
+println("Query took: ${durationMs}ms")
 
-// Batch operations
-repo.addBatch(batchSize = 1000) {
+// Bulk operations
+repo.add {
     for (i in 1..10000) {
-        val person = "http://example.org/person/person$i".toResource()
+        val person = iri("http://example.org/person/person$i")
         person["http://example.org/person/name"] = "Person $i"
     }
 }
