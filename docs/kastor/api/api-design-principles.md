@@ -60,7 +60,7 @@ Compile-time safety where possible
 ```kotlin
 // Type-safe literal creation
 val stringLit = string("Hello")
-val intLit = integer(42)
+val intLit = int(42)
 val doubleLit = double(3.14)
 val boolLit = boolean(true)
 
@@ -155,7 +155,7 @@ val jenaRepo = Rdf.factory { jena() }
 val rdf4jRepo = Rdf.factory { rdf4j() }
 
 // Capability discovery
-val provider = RdfApiRegistry.getProvider("jena")
+val provider = RdfProviderRegistry.getProvider("jena")
 val capabilities = provider.getCapabilities()
 if (capabilities.contains(Capability.RDFS_INFERENCE)) {
     // Use inference features
@@ -244,7 +244,7 @@ repo.add {
 For adding functionality to existing types
 
 ```kotlin
-fun Int.toLiteral(): Literal = integer(this)
+fun Int.toLiteral(): Literal = int(this)
 fun Double.toLiteral(): Literal = double(this)
 fun Boolean.toLiteral(): Literal = boolean(this)
 ```

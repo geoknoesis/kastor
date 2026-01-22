@@ -64,40 +64,44 @@ class GraphDsl {
     }
     
     /**
-     * Smart object creation with explicit semantics.
+     * Converts a value to an RDF term.
      * - Strings are always string literals.
      * - Use [Iri] or [qname] for IRIs.
      */
-    internal fun createSmartObject(value: Any, predicate: Iri): RdfTerm {
-        return when (value) {
-            is String -> {
-                Literal(value, XSD.string)
+    private fun Any.toRdfTerm(): RdfTerm = when (this) {
+        is String -> Literal(this, XSD.string)
+        is Int -> Literal(toString(), XSD.integer)
+        is Double -> Literal(toString(), XSD.double)
+        is Boolean -> Literal(toString(), XSD.boolean)
+        is RdfTerm -> this
+        is RdfStarTriple -> {
+            // Create an embedded triple for RDF-star
+            // Note: We use a local helper that doesn't handle RdfStarTriple to avoid infinite recursion
+            fun toTerm(v: Any): RdfTerm = when (v) {
+                is String -> Literal(v, XSD.string)
+                is Int -> Literal(v.toString(), XSD.integer)
+                is Double -> Literal(v.toString(), XSD.double)
+                is Boolean -> Literal(v.toString(), XSD.boolean)
+                is RdfTerm -> v
+                else -> Literal(v.toString(), XSD.string)
             }
-            is Int -> Literal(value.toString(), XSD.integer)
-            is Double -> Literal(value.toString(), XSD.double)
-            is Boolean -> Literal(value.toString(), XSD.boolean)
-            is RdfTerm -> value  // Already resolved (qname(), Iri(), literal(), etc.)
-            is RdfStarTriple -> {
-                // Create an embedded triple for RDF-star
-                val embeddedSubject = createSmartObject(value.subject, predicate)
-                val embeddedPredicate = createSmartObject(value.predicate, predicate)
-                val embeddedObject = createSmartObject(value.obj, predicate)
-                
-                // Ensure subject and predicate are resources
-                val subjectResource = when (embeddedSubject) {
-                    is RdfResource -> embeddedSubject
-                    else -> throw IllegalArgumentException("RDF-star embedded triple subject must be a resource, got: ${embeddedSubject::class.simpleName}")
-                }
-                val predicateIri = when (embeddedPredicate) {
-                    is Iri -> embeddedPredicate
-                    else -> throw IllegalArgumentException("RDF-star embedded triple predicate must be an IRI, got: ${embeddedPredicate::class.simpleName}")
-                }
-                
-                val embeddedTriple = RdfTriple(subjectResource, predicateIri, embeddedObject)
-                TripleTerm(embeddedTriple)
+            val embeddedSubject = toTerm(this.subject)
+            val embeddedPredicate = toTerm(this.predicate)
+            val embeddedObject = toTerm(this.obj)
+            
+            // Ensure subject and predicate are resources
+            val subjectResource = when (embeddedSubject) {
+                is RdfResource -> embeddedSubject
+                else -> throw IllegalArgumentException("RDF-star embedded triple subject must be a resource, got: ${embeddedSubject::class.simpleName}")
             }
-            else -> Literal(value.toString(), XSD.string)
+            val predicateIri = when (embeddedPredicate) {
+                is Iri -> embeddedPredicate
+                else -> throw IllegalArgumentException("RDF-star embedded triple predicate must be an IRI, got: ${embeddedPredicate::class.simpleName}")
+            }
+            
+            TripleTerm(RdfTriple(subjectResource, predicateIri, embeddedObject))
         }
+        else -> Literal(toString(), XSD.string)
     }
     
     /**
@@ -107,43 +111,7 @@ class GraphDsl {
         return resolveIri(iriOrQName)
     }
     
-    // === ULTRA-COMPACT SYNTAX ===
-    
-    /**
-     * Ultra-compact bracket syntax: person[FOAF.name] = "Alice"
-     * Use qname("foaf:name") for QNames.
-     */
-    operator fun RdfResource.set(predicate: Iri, value: Any) {
-        val obj = createSmartObject(value, predicate)
-        triples.add(RdfTriple(this, predicate, obj))
-    }
-    
-    // === NATURAL LANGUAGE SYNTAX ===
-    
-    /**
-     * Natural language syntax: person has FOAF.name with "Alice"
-     */
-    infix fun RdfResource.has(predicate: Iri): SubjectAndPredicate {
-        return SubjectAndPredicate(this, predicate)
-    }
-    
-    /**
-     * Natural language syntax: person `is` FOAF.Person
-     * Directly creates a type triple without requiring 'with'
-     */
-    infix fun RdfResource.`is`(typeIri: Iri) {
-        triples.add(RdfTriple(this, RDF.type, typeIri))
-    }
-    
-    /**
-     * Natural language syntax: person has FOAF.name with "Alice"
-     */
-    infix fun SubjectAndPredicate.with(value: Any) {
-        val obj = createSmartObject(value, predicate)
-        triples.add(RdfTriple(subject, predicate, obj))
-    }
-    
-    // === MINUS OPERATOR SYNTAX ===
+    // === PRIMARY SYNTAX: MINUS OPERATOR ===
     
     /**
      * Minus operator syntax: person - FOAF.name - "Alice"
@@ -156,72 +124,25 @@ class GraphDsl {
      * Minus operator syntax: person - FOAF.name - "Alice"
      */
     infix operator fun SubjectPredicateChain.minus(value: Any) {
-        val obj = createSmartObject(value, predicate)
-        triples.add(RdfTriple(subject, predicate, obj))
+        triples.add(RdfTriple(subject, predicate, value.toRdfTerm()))
     }
     
     /**
-     * Minus operator with multiple values: person - FOAF.knows - [friend1, friend2, friend3]
-     */
-    infix operator fun <T> SubjectPredicateChain.minus(values: Array<T>) {
-        values.forEach { value ->
-            val obj = createSmartObject(value as Any, predicate)
-            triples.add(RdfTriple(subject, predicate, obj))
-        }
-    }
-    
-    
-    /**
-     * Minus operator with curly braces for individual triples: person - FOAF.knows - {friend1, friend2, friend3}
-     * Creates multiple individual triples.
-     */
-    infix operator fun SubjectPredicateChain.minus(values: MultipleIndividualValues) {
-        values.values.forEach { value ->
-            val obj = createSmartObject(value, predicate)
-            triples.add(RdfTriple(subject, predicate, obj))
-        }
-    }
-    
-    /**
-     * Minus operator with parentheses for RDF lists: person - FOAF.knows - (friend1, friend2, friend3)
+     * Minus operator with RDF list: person - FOAF.knows - rdfList(friend1, friend2, friend3)
      * Creates proper RDF List structure.
      */
     infix operator fun SubjectPredicateChain.minus(values: RdfListValues) {
-        val rdfList = createRdfList(values.values)
-        triples.add(RdfTriple(subject, predicate, rdfList))
+        triples.add(RdfTriple(subject, predicate, createRdfList(values.values)))
     }
     
     /**
-     * Convenience: Minus operator with Pair for 2 values: person - FOAF.knows - (friend1, friend2)
+     * Minus operator with multiple individual values: person - FOAF.knows - multiple(friend1, friend2)
      * Creates individual triples for each value.
      */
-    infix operator fun SubjectPredicateChain.minus(pair: Pair<*, *>) {
-        val values = listOf(pair.first, pair.second)
-        values.forEach { value ->
-            val obj = createSmartObject(value as Any, predicate)
-            triples.add(RdfTriple(subject, predicate, obj))
+    infix operator fun SubjectPredicateChain.minus(values: MultipleIndividualValues) {
+        values.values.forEach { value ->
+            triples.add(RdfTriple(subject, predicate, value.toRdfTerm()))
         }
-    }
-    
-    /**
-     * Convenience: Minus operator with Triple for 3 values: person - FOAF.mbox - (email1, email2, email3)
-     * Creates individual triples for each value.
-     */
-    infix operator fun SubjectPredicateChain.minus(triple: Triple<*, *, *>) {
-        val values = listOf(triple.first, triple.second, triple.third)
-        values.forEach { value ->
-            val obj = createSmartObject(value as Any, predicate)
-            triples.add(RdfTriple(subject, predicate, obj))
-        }
-    }
-    
-    /**
-     * Minus operator with multiple values: person - FOAF.knows - listOf(friend1, friend2, friend3)
-     * Creates an RDF List instead of multiple individual triples.
-     */
-    infix operator fun SubjectPredicateChain.minus(values: List<Any>) {
-        val rdfList = createRdfList(values)
-        triples.add(RdfTriple(subject, predicate, rdfList))
     }
     
     /**
@@ -252,38 +173,22 @@ class GraphDsl {
     }
     
         /**
-         * Helper function to create RDF Lists from Kotlin lists.
+         * Creates an RDF List from Kotlin values.
          */
-        internal fun createRdfList(values: List<Any>): RdfTerm {
-            if (values.isEmpty()) {
-                return RDF.nil
-            }
+        private fun createRdfList(values: List<Any>): RdfTerm {
+            if (values.isEmpty()) return RDF.nil
             
-            val listNodes = values.map { value ->
-                when (value) {
-                    is String -> Literal(value, XSD.string)
-                    is Int -> Literal(value.toString(), XSD.integer)
-                    is Double -> Literal(value.toString(), XSD.double)
-                    is Boolean -> Literal(value.toString(), XSD.boolean)
-                    is RdfTerm -> value
-                    else -> Literal(value.toString(), XSD.string)
-                }
-            }
-            
-            // Create RDF List structure using blank nodes with sequential names
+            val listNodes = values.map { it.toRdfTerm() }
             val listHead = nextBnode()
             var currentNode = listHead
             
-            // Create triples for each element in the list
             listNodes.forEachIndexed { index, element ->
                 triples.add(RdfTriple(currentNode, RDF.first, element))
-                
                 if (index < listNodes.size - 1) {
                     val nextNode = nextBnode()
                     triples.add(RdfTriple(currentNode, RDF.rest, nextNode))
                     currentNode = nextNode
                 } else {
-                    // Last element points to nil
                     triples.add(RdfTriple(currentNode, RDF.rest, RDF.nil))
                 }
             }
@@ -292,102 +197,44 @@ class GraphDsl {
         }
         
         /**
-         * Helper function to create RDF Bag from values.
+         * Creates an RDF Bag from values.
          */
         private fun createRdfBag(values: List<Any>): RdfTerm {
             val bagNode = nextBnode()
-            
-            // Add type declaration
             triples.add(RdfTriple(bagNode, RDF.type, RDF.Bag))
-            
-            // Add each value with rdf:_1, rdf:_2, etc.
             values.forEachIndexed { index, value ->
-                val obj = when (value) {
-                    is String -> Literal(value, XSD.string)
-                    is Int -> Literal(value.toString(), XSD.integer)
-                    is Double -> Literal(value.toString(), XSD.double)
-                    is Boolean -> Literal(value.toString(), XSD.boolean)
-                    is RdfTerm -> value
-                    else -> Literal(value.toString(), XSD.string)
-                }
-                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
-                triples.add(RdfTriple(bagNode, memberProperty, obj))
+                val memberProperty = Iri.of("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                triples.add(RdfTriple(bagNode, memberProperty, value.toRdfTerm()))
             }
-            
             return bagNode
         }
         
         /**
-         * Helper function to create RDF Seq from values.
+         * Creates an RDF Seq from values.
          */
         private fun createRdfSeq(values: List<Any>): RdfTerm {
             val seqNode = nextBnode()
-            
-            // Add type declaration
             triples.add(RdfTriple(seqNode, RDF.type, RDF.Seq))
-            
-            // Add each value with rdf:_1, rdf:_2, etc.
             values.forEachIndexed { index, value ->
-                val obj = when (value) {
-                    is String -> Literal(value, XSD.string)
-                    is Int -> Literal(value.toString(), XSD.integer)
-                    is Double -> Literal(value.toString(), XSD.double)
-                    is Boolean -> Literal(value.toString(), XSD.boolean)
-                    is RdfTerm -> value
-                    else -> Literal(value.toString(), XSD.string)
-                }
-                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
-                triples.add(RdfTriple(seqNode, memberProperty, obj))
+                val memberProperty = Iri.of("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                triples.add(RdfTriple(seqNode, memberProperty, value.toRdfTerm()))
             }
-            
             return seqNode
         }
         
         /**
-         * Helper function to create RDF Alt from values.
+         * Creates an RDF Alt from values.
          */
         private fun createRdfAlt(values: List<Any>): RdfTerm {
             val altNode = nextBnode()
-            
-            // Add type declaration
             triples.add(RdfTriple(altNode, RDF.type, RDF.Alt))
-            
-            // Add each value with rdf:_1, rdf:_2, etc.
             values.forEachIndexed { index, value ->
-                val obj = when (value) {
-                    is String -> Literal(value, XSD.string)
-                    is Int -> Literal(value.toString(), XSD.integer)
-                    is Double -> Literal(value.toString(), XSD.double)
-                    is Boolean -> Literal(value.toString(), XSD.boolean)
-                    is RdfTerm -> value
-                    else -> Literal(value.toString(), XSD.string)
-                }
-                val memberProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
-                triples.add(RdfTriple(altNode, memberProperty, obj))
+                val memberProperty = Iri.of("http://www.w3.org/1999/02/22-rdf-syntax-ns#_${index + 1}")
+                triples.add(RdfTriple(altNode, memberProperty, value.toRdfTerm()))
             }
-            
             return altNode
         }
     
-    
-    // === TURTLE-STYLE COMPACT SYNTAX ===
-    
-    /**
-     * Turtle-style compact syntax for multiple properties on same subject.
-     * Usage: subject.properties { name("Alice"); age(30); knows(friend) }
-     */
-    fun RdfResource.properties(configure: SubjectPropertyDsl.() -> Unit) {
-        val dsl = SubjectPropertyDsl(this).apply(configure)
-        triples.addAll(dsl.triples)
-    }
-    
-    /**
-     * Turtle-style compact syntax with semicolon separators.
-     * Usage: subject.ttl { name("Alice"); age(30); knows(friend) }
-     */
-    fun RdfResource.ttl(configure: SubjectPropertyDsl.() -> Unit) {
-        properties(configure)
-    }
     
     // === EXPLICIT TRIPLE CREATION ===
     

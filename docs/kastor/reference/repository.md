@@ -5,7 +5,7 @@
 - `readTransaction { ... }`
 
 ### Queries
-- `select(SparqlSelect): QueryResult`
+- `select(SparqlSelect): SparqlQueryResult`
 - `ask(SparqlAsk): Boolean`
 - `construct(SparqlConstruct): Sequence<RdfTriple>`
 - `describe(SparqlDescribe): Sequence<RdfTriple>`

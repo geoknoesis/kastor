@@ -235,7 +235,7 @@ val namePath = iri("http://xmlns.com/foaf/0.1/name")
 shapesGraph.add(triple(personShape, shaclTargetClass, personClass))
 shapesGraph.add(triple(personShape, shaclProperty, nameProperty))
 shapesGraph.add(triple(nameProperty, shaclPath, namePath))
-shapesGraph.add(triple(nameProperty, shaclMinCount, integerLiteral(1)))
+shapesGraph.add(triple(nameProperty, shaclMinCount, int(1)))
 ```
 
 ### Federation
@@ -258,8 +258,8 @@ val person1 = iri("http://example.org/person1")
 val person2 = iri("http://example.org/person2")
 val name = iri("http://xmlns.com/foaf/0.1/name")
 
-usersGraph.add(triple(person1, name, plainLiteral("John")))
-productsGraph.add(triple(person2, name, plainLiteral("Jane")))
+usersGraph.add(triple(person1, name, string("John")))
+productsGraph.add(triple(person2, name, string("Jane")))
 
 // Federated query across repositories
 val results = manager.federatedQuery(
@@ -283,7 +283,7 @@ val sourceGraph = sourceRepo.repository.getGraph(iri("http://example.org/graph")
 
 val person = iri("http://example.org/person")
 val name = iri("http://xmlns.com/foaf/0.1/name")
-sourceGraph.add(triple(person, name, plainLiteral("John Doe")))
+sourceGraph.add(triple(person, name, string("John Doe")))
 
 // Copy graph between repositories
 manager.copyGraph("source", "target", "http://example.org/graph")

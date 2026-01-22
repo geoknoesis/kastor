@@ -8,7 +8,12 @@ import org.eclipse.rdf4j.model.Statement
 import org.eclipse.rdf4j.repository.RepositoryConnection
 import org.eclipse.rdf4j.repository.RepositoryResult
 
-class Rdf4jGraph(
+/**
+ * Internal RDF4J adapter for RdfGraph.
+ * This is an implementation detail and should not be used directly.
+ * Use [RdfGraph] interface instead.
+ */
+internal class Rdf4jGraph(
     private val connection: RepositoryConnection,
     private val context: org.eclipse.rdf4j.model.Resource? = null
 ) : MutableRdfGraph {

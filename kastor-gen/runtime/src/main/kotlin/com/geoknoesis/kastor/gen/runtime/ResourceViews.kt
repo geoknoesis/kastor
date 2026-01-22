@@ -47,8 +47,8 @@ object ResourceViews : ResourceViewFactory {
     return OntoMapper.materialize(RdfRef(context.uri, context.access.graph), iface.java)
   }
 
-  fun <T : Any> createValidatedView(iface: KClass<T>, context: ResourceContext): T {
-    return OntoMapper.materializeValidated(RdfRef(context.uri, context.access.graph), iface.java)
+  fun <T : Any> createValidatedView(iface: KClass<T>, context: ResourceContext, validation: ValidationContext): T {
+    return OntoMapper.materializeValidated(RdfRef(context.uri, context.access.graph), iface.java, validation)
   }
 }
 
@@ -69,8 +69,8 @@ interface Resource {
   fun <T : Any> `as`(iface: KClass<T>): T =
     ResourceViews.createView(iface, ResourceContext(uri, access))
 
-  fun <T : Any> asValidated(iface: KClass<T>): T =
-    ResourceViews.createValidatedView(iface, ResourceContext(uri, access))
+  fun <T : Any> asValidated(iface: KClass<T>, validation: ValidationContext): T =
+    ResourceViews.createValidatedView(iface, ResourceContext(uri, access), validation)
 
   fun predicates(): Set<Iri> =
     graph.getTriples()
@@ -150,8 +150,8 @@ fun RdfRepository.resource(
 inline fun <reified T : Any> Resource.asType(): T =
   `as`(T::class)
 
-inline fun <reified T : Any> Resource.asValidatedType(): T =
-  asValidated(T::class)
+inline fun <reified T : Any> Resource.asValidatedType(validation: ValidationContext): T =
+  asValidated(T::class, validation)
 
 
 

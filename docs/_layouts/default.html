@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title }} | {{ site.title }}</title>
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+  </head>
+  <body>
+    <div class="page">
+      <aside class="page-sidebar">
+        {% include sidebar.html %}
+      </aside>
+      <main class="page-content">
+        {{ content }}
+      </main>
+    </div>
+    {% include mermaid-init.html %}
+  </body>
+</html>
+

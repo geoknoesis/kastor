@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.*
 /**
  * Jena provider implementation for the RDF API.
  */
-class JenaProvider : RdfApiProvider {
+class JenaProvider : RdfProvider {
     
     override val id: String = "jena"
     override val name: String = "Jena Repository"

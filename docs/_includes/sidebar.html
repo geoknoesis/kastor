@@ -1,0 +1,22 @@
+{% if site.data.navigation.main %}
+<nav class="sidebar">
+  <div class="sidebar-title">Documentation</div>
+  <ul class="sidebar-list">
+    {% for item in site.data.navigation.main %}
+    <li class="sidebar-item">
+      <a href="{{ item.url | relative_url }}">{{ item.title }}</a>
+      {% if item.children %}
+      <ul class="sidebar-sublist">
+        {% for child in item.children %}
+        <li class="sidebar-subitem">
+          <a href="{{ child.url | relative_url }}">{{ child.title }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+

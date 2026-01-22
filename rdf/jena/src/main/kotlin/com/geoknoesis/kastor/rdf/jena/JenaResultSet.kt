@@ -1,9 +1,9 @@
 package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.BindingSet
-import com.geoknoesis.kastor.rdf.QueryResult
+import com.geoknoesis.kastor.rdf.SparqlQueryResult
 
-class JenaResultSet(private val rows: List<BindingSet>) : QueryResult {
+class JenaResultSet(private val rows: List<BindingSet>) : SparqlQueryResult {
     override fun iterator(): Iterator<BindingSet> = rows.iterator()
     override fun toList(): List<BindingSet> = rows.toList()
     override fun first(): BindingSet? = rows.firstOrNull()

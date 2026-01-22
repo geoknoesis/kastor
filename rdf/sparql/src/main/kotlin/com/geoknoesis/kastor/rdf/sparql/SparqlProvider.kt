@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.*
 /**
  * SPARQL provider implementation for the RDF API.
  */
-class SparqlProvider : RdfApiProvider {
+class SparqlProvider : RdfProvider {
     
     override val id: String = "sparql"
     

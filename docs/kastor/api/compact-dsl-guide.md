@@ -827,7 +827,7 @@ repo.add {
     
     people.forEach { person ->
         triples.add(RdfTriple(person, PersonVocab.name, string("Alice")))
-        triples.add(RdfTriple(person, PersonVocab.age, integer(30)))
+        triples.add(RdfTriple(person, PersonVocab.age, int(30)))
     }
     
     // All triples added in one batch

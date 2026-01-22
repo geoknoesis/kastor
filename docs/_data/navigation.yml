@@ -1,0 +1,62 @@
+main:
+  - title: Getting Started
+    url: /kastor/getting-started/README.html
+    children:
+      - title: Getting Started
+        url: /kastor/getting-started/getting-started.html
+      - title: Installation
+        url: /kastor/getting-started/installation.html
+      - title: Quick Start
+        url: /kastor/getting-started/quick-start.html
+      - title: Configuration Variants
+        url: /kastor/getting-started/configuration-variants.html
+  - title: Concepts
+    url: /kastor/concepts/README.html
+    children:
+      - title: Concepts Overview
+        url: /kastor/concepts/README.html
+      - title: RDF Fundamentals
+        url: /kastor/concepts/rdf-fundamentals.html
+      - title: SPARQL Fundamentals
+        url: /kastor/concepts/sparql-fundamentals.html
+      - title: Vocabularies
+        url: /kastor/concepts/vocabularies.html
+      - title: Glossary
+        url: /kastor/concepts/glossary.html
+      - title: Design Philosophy
+        url: /kastor/philosophy.html
+  - title: How-To Guides
+    url: /kastor/guides/README.html
+    children:
+      - title: Guides Overview
+        url: /kastor/guides/guides.html
+      - title: Parse RDF
+        url: /kastor/guides/how-to-parse-rdf.html
+      - title: Serialize RDF
+        url: /kastor/guides/how-to-serialize-rdf.html
+      - title: Validate with SHACL
+        url: /kastor/guides/how-to-validate-shacl.html
+      - title: Perform Reasoning
+        url: /kastor/guides/how-to-reasoning.html
+      - title: Named Graphs
+        url: /kastor/guides/how-to-named-graphs.html
+      - title: Transactions
+        url: /kastor/guides/how-to-transactions.html
+      - title: Cookbook
+        url: /kastor/guides/cookbook.html
+      - title: Best Practices
+        url: /kastor/guides/best-practices.html
+      - title: Troubleshooting
+        url: /kastor/guides/troubleshooting.html
+  - title: Reference
+    url: /kastor/reference/README.html
+    children:
+      - title: API Reference
+        url: /kastor/api/api-reference.html
+      - title: Core API
+        url: /kastor/api/core-api.html
+      - title: DSL Reference
+        url: /kastor/reference/dsl.html
+      - title: Types Reference
+        url: /kastor/reference/types.html
+

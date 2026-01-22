@@ -9,7 +9,11 @@ import org.apache.jena.rdf.model.Literal as JenaLiteral
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.rdf.model.Model
 
-object JenaTerms {
+/**
+ * Internal utility for converting between Kastor RDF terms and Jena types.
+ * This is an implementation detail and should not be used directly.
+ */
+internal object JenaTerms {
     /**
      * Converts a Kastor RDF term to a Jena RDFNode.
      */

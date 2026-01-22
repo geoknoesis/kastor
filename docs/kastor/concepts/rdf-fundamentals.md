@@ -1,5 +1,7 @@
 # 📖 RDF Fundamentals
 
+{% include version-banner.md %}
+
 Understanding the basics of RDF (Resource Description Framework) is essential for working effectively with Kastor RDF. This guide covers the core concepts you need to know.
 
 ## 📋 Table of Contents
@@ -88,6 +90,11 @@ The fundamental unit of RDF is the **triple**, which consists of three parts:
 Subject → Predicate → Object
 ```
 
+```mermaid
+graph LR
+    S[Subject<br/>Resource] -->|Predicate<br/>Property| O[Object<br/>Value or Resource]
+```
+
 ### 🎯 Examples
 
 ```kotlin
@@ -107,6 +114,16 @@ repo.add {
     // or
     alice has name with "Alice Johnson"
 }
+```
+
+### 🧭 Graph View
+
+```mermaid
+graph LR
+    A[alice] -->|foaf:name| B["Alice Johnson"]
+    A -->|foaf:age| C[30]
+    A -->|foaf:worksFor| D[company]
+    D -->|foaf:name| E["Tech Innovations Inc."]
 ```
 
 ### 🔄 Multiple Triples
@@ -160,8 +177,8 @@ val name = string("Alice Johnson")
 val email = string("alice@example.com")
 
 // Numeric literals
-val age = integer(30)
-val salary = double(75000.0)
+val age = int(30)
+val salary = 75000.0.toLiteral()
 
 // Boolean literals
 val active = boolean(true)

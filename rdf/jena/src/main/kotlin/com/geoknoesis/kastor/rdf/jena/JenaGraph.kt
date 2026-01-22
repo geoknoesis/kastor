@@ -7,7 +7,12 @@ import org.apache.jena.rdf.model.Resource
 import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.StmtIterator
 
-class JenaGraph(val model: Model) : MutableRdfGraph {
+/**
+ * Internal Jena adapter for RdfGraph.
+ * This is an implementation detail and should not be used directly.
+ * Use [RdfGraph] interface instead.
+ */
+internal class JenaGraph(val model: Model) : MutableRdfGraph {
     
     override fun addTriple(triple: RdfTriple) {
         val subject = JenaTerms.toResource(triple.subject)

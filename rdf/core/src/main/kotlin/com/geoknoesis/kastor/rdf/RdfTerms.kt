@@ -94,24 +94,129 @@ sealed interface RdfResource : RdfTerm
  * This class uses Kotlin's `@JvmInline` value class for efficient memory usage
  * while maintaining type safety and stable equality semantics.
  *
+ * IRIs are validated according to RFC 3987. Invalid IRIs will throw [IllegalArgumentException].
+ *
  * ## Usage
  * ```kotlin
  * val iri = Iri("http://example.org/resource")
  * val predicate = Iri("http://example.org/name")
  * 
- * // Or use the top-level function
- * val iri2 = Iri("http://example.org/resource")
+ * // Or use the companion factory (recommended for explicit validation)
+ * val iri2 = Iri.of("http://example.org/resource")
  * 
  * // Or use the extension function
  * val iri3 = "http://example.org/resource".toIri()
  * ```
  *
  * @property value The string representation of the IRI
+ * @throws IllegalArgumentException if the IRI is invalid according to RFC 3987
  * @see [RdfResource]
  */
 @JvmInline
 value class Iri(val value: String) : RdfResource {
+    init {
+        require(isValidIri(value)) { 
+            "Invalid IRI: '$value'. IRIs must be valid according to RFC 3987." 
+        }
+    }
+    
+    companion object {
+        /**
+         * Creates an IRI with validation (explicit factory method).
+         * 
+         * @param value The IRI string to validate and create
+         * @return A validated Iri instance
+         * @throws IllegalArgumentException if the IRI is invalid
+         */
+        fun of(value: String): Iri = Iri(value)
+        
+        /**
+         * Creates an IRI without validation (use only for trusted sources).
+         * 
+         * This method still validates the IRI, but is intended for use when:
+         * - The IRI comes from a trusted source (e.g., vocabulary constants)
+         * - The IRI has already been validated
+         * - Code generation produces known-valid IRIs
+         * 
+         * Note: Due to value class limitations, validation still occurs.
+         * This method serves as documentation that the IRI is from a trusted source.
+         * 
+         * @param value The IRI string (assumed to be valid)
+         * @return An Iri instance (still validated)
+         */
+        internal fun unsafe(value: String): Iri = Iri(value)
+    }
+    
     override fun toString(): String = "<$value>" // debugging only
+}
+
+/**
+ * Validates an IRI according to RFC 3987.
+ * 
+ * **Note:** This implementation performs basic validation suitable for most use cases.
+ * For full RFC 3987 compliance with all edge cases, consider using a dedicated IRI library.
+ * 
+ * **Current validation checks:**
+ * - Non-empty string
+ * - Has scheme (e.g., "http:", "https:", "urn:")
+ * - Scheme is valid (letters, digits, +, -, .)
+ * - Absolute URI (not relative)
+ * - Allows Unicode characters (IRIs are a superset of URIs)
+ * 
+ * **Limitations:**
+ * - Does not validate full IRI syntax (authority, path, query, fragment components)
+ * - Does not validate percent-encoding
+ * - Does not validate internationalized domain names (IDN)
+ * 
+ * For production use with strict IRI validation requirements, consider:
+ * - Apache Commons Validator
+ * - Java's `java.net.URI` (for ASCII-only IRIs)
+ * - Dedicated IRI validation libraries
+ * 
+ * @param value The IRI string to validate
+ * @return true if the IRI appears valid, false otherwise
+ */
+private fun isValidIri(value: String): Boolean {
+    if (value.isEmpty()) return false
+    
+    // Try to parse as URI first (for ASCII IRIs)
+    try {
+        val uri = java.net.URI(value)
+        // Basic validation: must have a scheme
+        if (uri.scheme == null) return false
+        // Reject relative URIs (they're not valid IRIs)
+        if (!uri.isAbsolute) return false
+    } catch (e: java.net.URISyntaxException) {
+        // If URI parsing fails, check if it's a valid IRI with Unicode
+        // IRIs allow Unicode, so we do a more lenient check
+        if (!hasValidIriStructure(value)) return false
+    }
+    
+    return true
+}
+
+/**
+ * Checks if a string has valid IRI structure (scheme:path).
+ * More lenient than URI validation to allow Unicode characters.
+ */
+private fun hasValidIriStructure(value: String): Boolean {
+    // Must contain a colon (for scheme:path structure)
+    val colonIndex = value.indexOf(':')
+    if (colonIndex <= 0) return false
+    
+    // Scheme must be non-empty and start with a letter
+    val scheme = value.substring(0, colonIndex)
+    if (scheme.isEmpty() || !scheme[0].isLetter()) return false
+    
+    // Scheme can contain letters, digits, +, -, .
+    if (!scheme.all { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }) {
+        return false
+    }
+    
+    // After colon, there should be something (even if just //)
+    if (colonIndex >= value.length - 1) return false
+    
+    return true
 }
 
 /**
@@ -592,6 +697,36 @@ fun string(value: String): Literal = Literal(value, XSD.string)
  */
 fun int(value: Int): Literal = Literal(value.toString(), XSD.integer)
 
+/**
+ * Creates a decimal literal (xsd:decimal).
+ *
+ * ## Usage
+ * ```kotlin
+ * val height = decimal(175.5)
+ * val amount = decimal(BigDecimal("123.45"))
+ * ```
+ *
+ * @param value The decimal value
+ * @return A new [Literal] with `xsd:decimal` datatype
+ */
+fun decimal(value: BigDecimal): Literal = Literal(value.stripTrailingZeros().toPlainString(), XSD.decimal)
+
+/**
+ * Creates a decimal literal (xsd:decimal) from a double value.
+ *
+ * @param value The double value
+ * @return A new [Literal] with `xsd:decimal` datatype
+ */
+fun decimal(value: Double): Literal = decimal(BigDecimal.valueOf(value))
+
+/**
+ * Creates a decimal literal (xsd:decimal) from a float value.
+ *
+ * @param value The float value
+ * @return A new [Literal] with `xsd:decimal` datatype
+ */
+fun decimal(value: Float): Literal = decimal(BigDecimal.valueOf(value.toDouble()))
+
 fun boolean(value: Boolean): Literal = Literal(value.toString(), XSD.boolean)
 
 /**
@@ -668,6 +803,14 @@ fun YearMonth.toLiteral(): Literal = Literal(this.toString(), XSD.gYearMonth)
 // Essential binary extension
 fun ByteArray.toLiteral(): Literal = Literal(Base64.getEncoder().encodeToString(this), XSD.base64Binary)
 
+/**
+ * Converts a string to an IRI with validation.
+ * 
+ * @return A validated Iri instance
+ * @throws IllegalArgumentException if the string is not a valid IRI
+ */
+fun String.toIri(): Iri = Iri.of(this)
+
 
 
 
@@ -695,7 +838,7 @@ fun ByteArray.toLiteral(): Literal = Literal(Base64.getEncoder().encodeToString(
  * val iri = Iri("http://example.org/resource")
  * 
  * // Equivalent to:
- * val iri2 = Iri("http://example.org/resource")
+ * val iri2 = IRI("http://example.org/resource")
  * ```
  *
  * @see [Iri]
@@ -728,14 +871,45 @@ typealias BNode = BlankNode
  */
 interface RdfGraph {
     /**
-     * Check if a triple exists in this graph.
+     * Checks if a triple exists in the graph.
+     * 
+     * **Performance:** O(1) for most implementations (hash-based lookup).
+     * 
+     * @param triple The triple to check
+     * @return true if the triple exists, false otherwise
      */
     fun hasTriple(triple: RdfTriple): Boolean
     
     /**
-     * Get all triples in this graph.
+     * Gets all triples in the graph.
+     * 
+     * **Performance:** O(n) where n is the number of triples.
+     * For large graphs, consider using [getTriplesSequence] for lazy evaluation
+     * or SPARQL queries with filters instead.
+     * 
+     * @return List of all triples (defensive copy)
      */
     fun getTriples(): List<RdfTriple>
+    
+    /**
+     * Gets all triples in the graph as a lazy sequence.
+     * 
+     * **Performance:** O(1) to create the sequence, O(n) to iterate.
+     * This method provides lazy evaluation, avoiding intermediate list creation.
+     * Use this for large graphs where you don't need all triples at once.
+     * 
+     * **Example:**
+     * ```kotlin
+     * // Process triples lazily without loading all into memory
+     * graph.getTriplesSequence()
+     *     .filter { it.predicate == FOAF.name }
+     *     .take(100)
+     *     .forEach { println(it) }
+     * ```
+     * 
+     * @return Sequence of all triples (lazy evaluation)
+     */
+    fun getTriplesSequence(): Sequence<RdfTriple> = getTriples().asSequence()
     
     /**
      * Get the number of triples in this graph.
@@ -748,12 +922,22 @@ interface RdfGraph {
  */
 interface GraphEditor {
     /**
-     * Add a triple to this graph.
+     * Adds a single triple to the graph.
+     * 
+     * **Performance:** O(1) for most implementations.
+     * For adding multiple triples, prefer [addTriples] for better performance.
+     * 
+     * @param triple The triple to add
      */
     fun addTriple(triple: RdfTriple)
 
     /**
-     * Add multiple triples to this graph.
+     * Adds multiple triples to the graph.
+     * 
+     * **Performance:** This method is optimized for batch operations.
+     * For adding multiple triples, prefer this over multiple [addTriple] calls.
+     * 
+     * @param triples The triples to add
      */
     fun addTriples(triples: Collection<RdfTriple>)
 

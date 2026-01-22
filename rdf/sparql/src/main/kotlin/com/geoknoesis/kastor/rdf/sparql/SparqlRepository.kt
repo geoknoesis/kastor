@@ -49,7 +49,7 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         return getGraph(name) as MutableRdfGraph
     }
     
-    override fun select(query: SparqlSelect): QueryResult {
+    override fun select(query: SparqlSelect): SparqlQueryResult {
         val response = executeQuery(query.sparql)
         return SparqlResultSet(response)
     }
@@ -314,7 +314,7 @@ class SparqlGraph(
     }
 }
 
-class SparqlResultSet(private val response: String) : QueryResult {
+class SparqlResultSet(private val response: String) : SparqlQueryResult {
     // Simple implementation - in practice would parse SPARQL JSON results
     override fun iterator(): Iterator<BindingSet> = emptyList<BindingSet>().iterator()
     override fun toList(): List<BindingSet> = emptyList()

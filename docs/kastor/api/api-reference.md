@@ -26,7 +26,7 @@ interface RdfRepository : Closeable {
     val defaultGraph: RdfGraph
 
     // Query operations
-    fun select(query: SparqlSelect): QueryResult
+    fun select(query: SparqlSelect): SparqlQueryResult
     fun ask(query: SparqlAsk): Boolean
     fun construct(query: SparqlConstruct): Sequence<RdfTriple>
     fun describe(query: SparqlDescribe): Sequence<RdfTriple>
@@ -83,12 +83,12 @@ interface GraphEditor {
 interface MutableRdfGraph : RdfGraph, GraphEditor
 ```
 
-### RdfApiProvider
+### RdfProvider
 
 Interface for creating RDF repositories.
 
 ```kotlin
-interface RdfApiProvider {
+interface RdfProvider {
     val id: String
     val name: String
     val version: String
@@ -109,7 +109,7 @@ interface RepositoryManager : Closeable {
     fun getRepository(name: String): RdfRepository?
     fun listRepositories(): List<String>
     fun removeRepository(name: String)
-    fun federatedQuery(sparql: String, repositories: List<String>): QueryResult
+    fun federatedQuery(sparql: String, repositories: List<String>): SparqlQueryResult
 }
 ```
 
@@ -191,22 +191,22 @@ object Rdf {
     fun memoryWithInference(): RdfRepository
     
     // Advanced factory
-    fun factory(configure: RepositoryBuilder.() -> Unit): RdfRepository
+    fun repository(configure: RdfRepositoryBuilder.() -> Unit): RdfRepository
     
     // Manager factory
     fun manager(configure: ManagerBuilder.() -> Unit): RepositoryManager
     
     // Registry
-    val registry: RdfApiRegistry
+    val registry: RdfProviderRegistry
 }
 ```
 
-### RepositoryBuilder
+### RdfRepositoryBuilder
 
 Builder for configuring individual repositories.
 
 ```kotlin
-class RepositoryBuilder {
+class RdfRepositoryBuilder {
     var type: String = "memory"
     val params: MutableMap<String, Any> = mutableMapOf()
     
@@ -530,7 +530,7 @@ RdfConfig(
 Interface for SPARQL query results.
 
 ```kotlin
-interface QueryResult : Iterable<BindingSet> {
+interface SparqlQueryResult : Iterable<BindingSet> {
     fun count(): Long
     fun firstOrNull(): BindingSet?
     fun toList(): List<BindingSet>
@@ -589,7 +589,7 @@ sealed class RdfLiteral : RdfTerm {
 
 ```kotlin
 fun string(value: String, language: String? = null, datatype: Iri? = null): RdfLiteral
-fun integer(value: Int): RdfLiteral
+fun int(value: Int): RdfLiteral
 fun double(value: Double): RdfLiteral
 fun boolean(value: Boolean): RdfLiteral
 fun literal(value: String): RdfLiteral
@@ -619,19 +619,19 @@ fun triple(subject: RdfResource, predicate: Iri, obj: Boolean): RdfTriple
 
 ## 📚 Registry
 
-### RdfApiRegistry
+### RdfProviderRegistry
 
 Service loader for discovering RDF providers.
 
 ```kotlin
-object RdfApiRegistry {
-    fun discoverProviders(): List<RdfApiProvider>
-    fun getProvider(providerId: String): RdfApiProvider?
+object RdfProviderRegistry {
+    fun discoverProviders(): List<RdfProvider>
+    fun getProvider(providerId: String): RdfProvider?
     fun getSupportedTypes(): List<String>
     fun supports(providerId: String): Boolean
     fun supportsVariant(providerId: String, variantId: String): Boolean
     fun selectProvider(requirements: ProviderRequirements): ProviderSelection?
-    fun register(provider: RdfApiProvider)
+    fun register(provider: RdfProvider)
     fun create(config: RdfConfig): RdfRepository
 }
 ```

@@ -1,37 +1,22 @@
-## Guides
+# Guides
 
-### Transactions
-- Use `transaction { ... }` for atomic operations.
-- Use `readTransaction { ... }` for read-only work when the provider supports it.
+{% include version-banner.md %}
 
-```kotlin
-repo.transaction {
-  update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }"))
-}
-```
+This page is a hub for outcome-driven guides. Each guide is designed to be runnable and scoped to a single task.
 
-### Querying
-- `select` returns a `QueryResult` you can iterate.
-- `construct` returns a `Sequence<RdfTriple>` for streaming.
-- `ask` returns a Boolean.
+## Core workflows
 
-```kotlin
-val rows = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
-rows.forEach { row -> println(row.get("s")) }
+- [How to Parse RDF](how-to-parse-rdf.md)
+- [How to Serialize RDF](how-to-serialize-rdf.md)
+- [How to Validate with SHACL](how-to-validate-shacl.md)
+- [How to Perform Reasoning](how-to-reasoning.md)
+- [How to Work with Named Graphs](how-to-named-graphs.md)
+- [How to Use Transactions](how-to-transactions.md)
 
-val triples = repo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
-println(triples.count())
-```
+## Related topics
 
-### Named graphs
-```kotlin
-val g = iri("urn:g")
-repo.transaction {
-  editGraph(g).addTriple(RdfTriple(iri("urn:s"), iri("urn:p"), literal("o")))
-}
-
-val rows = repo.select(SparqlSelectQuery("SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }"))
-```
+- [Kastor Query DSL Tutorial](kastor-query-dsl-tutorial.md)
+- [Cookbook](cookbook.md)
 
 
 

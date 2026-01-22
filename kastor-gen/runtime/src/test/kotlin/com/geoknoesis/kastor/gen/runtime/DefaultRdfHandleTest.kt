@@ -78,7 +78,14 @@ class DefaultRdfHandleTest {
         
         val validator = object : ValidationContext {
             override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Test validation error")))
+                return ValidationResult.Violations(listOf(
+                  ShaclViolation(
+                    focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+                    shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
+                    constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
+                    message = "Test validation error"
+                  )
+                ))
             }
         }
         val known = emptySet<Iri>()

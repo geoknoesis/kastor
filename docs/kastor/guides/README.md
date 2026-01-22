@@ -1,5 +1,7 @@
 # Kastor Guides
 
+{% include version-banner.md %}
+
 This section contains comprehensive guides, best practices, and troubleshooting information for using Kastor effectively.
 
 ## 📖 Available Guides
@@ -7,6 +9,14 @@ This section contains comprehensive guides, best practices, and troubleshooting 
 ### **Best Practices**
 - [Best Practices](best-practices.md) - Guidelines for effective Kastor usage
 - [Extending Kastor](extending.md) - How to extend Kastor with custom functionality
+
+### **How-To Guides**
+- [How to Parse RDF](how-to-parse-rdf.md) - Load RDF data into graphs
+- [How to Serialize RDF](how-to-serialize-rdf.md) - Export graphs to standard formats
+- [How to Validate with SHACL](how-to-validate-shacl.md) - Validate data with shapes
+- [How to Perform Reasoning](how-to-reasoning.md) - Run RDFS inference
+- [How to Work with Named Graphs](how-to-named-graphs.md) - Manage datasets
+- [How to Use Transactions](how-to-transactions.md) - Atomic write operations
 
 ### **Tutorials and Examples**
 - [Guides](guides.md) - Comprehensive topic-based guides

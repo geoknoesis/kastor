@@ -2,6 +2,31 @@
 
 Kastor is a modern Kotlin RDF framework that makes semantic web development accessible, powerful, and enjoyable. Built with Kotlin-first design principles, it provides a natural language DSL, type-safe operations, and pluggable backends.
 
+## Why Kastor (in one sentence)
+Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces with a side-channel back to RDF, plus a vocabulary-agnostic DSL that keeps RDF explicit without forcing RDF types into your business code.
+
+## Philosophy & Tradeoffs
+**Philosophy**
+- **Domain-first, RDF second**: work with pure Kotlin domain interfaces; access RDF through a side-channel when needed.
+- **Vocabulary-agnostic core**: no hardcoded vocab assumptions; your vocabularies drive the model.
+- **Explicit semantics over magic**: the DSL avoids hidden inference; validation and reasoning are explicit.
+- **Provider-agnostic**: swap Jena, RDF4J, Memory, or SPARQL without changing your app model.
+
+**Anti-goals**
+- Not a triple store or RDF database.
+- Not a SPARQL engine (it integrates with providers that are).
+- Not an ontology reasoner beyond provider capabilities.
+
+**Comparison (neutral)**
+| Concern | Kastor | Jena / RDF4J / rdflib |
+|---|---|---|
+| Domain objects without RDF dependencies | ✅ | ❌ |
+| Side-channel RDF access | ✅ | ❌ (typically direct RDF types) |
+| Vocabulary-agnostic DSL | ✅ | ⚠️ (varies) |
+| Provider-agnostic core API | ✅ | ❌ (engine-specific APIs) |
+
+For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
+
 ## 🌟 Features
 
 ### **Core Capabilities**
@@ -68,6 +93,7 @@ fun main() {
 - **[Getting Started Guide](getting-started/README.md)** - Complete setup and introduction
 - **[Quick Start Examples](getting-started/quick-start.md)** - Copy-paste examples for immediate success
 - **[Hello World Tutorial](tutorials/hello-world.md)** - Step-by-step first program
+- **[How-To Guides](guides/README.md)** - Task-oriented workflows
 
 ### **Core Features**
 - **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
@@ -212,8 +238,12 @@ val results = repo.select(SparqlSelectQuery("""
 - **[FAQ](guides/faq.md)** - Frequently asked questions
 - **Direct Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 
-### **Support the Project**
-If you find Kastor useful, please consider supporting its development:
+### **Support This Project**
+Kastor is open-source infrastructure for RDF in Kotlin. Keeping it correct, secure, and well-maintained takes ongoing work.
+
+If Kastor helps you or your organization, consider supporting its long-term sustainability through sponsorship, contributions, or advocacy. Your support funds maintenance, security, performance improvements, and documentation.
+
+You can help by:
 
 - 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
 - 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)
@@ -222,7 +252,7 @@ If you find Kastor useful, please consider supporting its development:
 
 ## 📄 License
 
-Kastor is open source and available under the [MIT License](../LICENSE).
+Kastor is open source and available under the [Apache License 2.0](../../LICENSE).
 
 ---
 

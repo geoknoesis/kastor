@@ -9,7 +9,11 @@ import org.eclipse.rdf4j.model.BNode
 import org.eclipse.rdf4j.model.Triple
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
-object Rdf4jTerms {
+/**
+ * Internal utility for converting between Kastor RDF terms and RDF4J types.
+ * This is an implementation detail and should not be used directly.
+ */
+internal object Rdf4jTerms {
     private val valueFactory = SimpleValueFactory.getInstance()
     
     fun toRdf4jResource(term: RdfTerm): Resource {

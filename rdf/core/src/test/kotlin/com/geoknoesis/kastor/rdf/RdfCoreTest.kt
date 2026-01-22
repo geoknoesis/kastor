@@ -47,7 +47,7 @@ class RdfCoreTest {
     @Test
     fun `persistent repository creation works`() {
         val location = tempDir!!.resolve("test-repo").toString()
-        val repo = Rdf.factory {
+        val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
         }
@@ -59,7 +59,7 @@ class RdfCoreTest {
     
     @Test
     fun `persistent repository with default location works`() {
-        val repo = Rdf.factory {
+        val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
         }
@@ -70,8 +70,8 @@ class RdfCoreTest {
     }
     
     @Test
-    fun `factory method with custom configuration works`() {
-        val repo = Rdf.factory {
+    fun `repository method with custom configuration works`() {
+        val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
             inference = true
@@ -83,9 +83,9 @@ class RdfCoreTest {
     }
     
     @Test
-    fun `factory method with persistent configuration works`() {
+    fun `repository method with persistent configuration works`() {
         val location = tempDir!!.resolve("factory-repo").toString()
-        val repo = Rdf.factory {
+        val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
             inference = false
@@ -98,7 +98,7 @@ class RdfCoreTest {
     
     @Test
     fun `repository builder with all options works`() {
-        val builder = Rdf.RepositoryBuilder()
+        val builder = Rdf.RdfRepositoryBuilder()
         
         // Test default values
         assertNull(builder.providerId, "Default provider should be null")
@@ -125,7 +125,7 @@ class RdfCoreTest {
     
     @Test
     fun `repository builder with null location uses default`() {
-        val repo = Rdf.RepositoryBuilder().apply {
+        val repo = Rdf.RdfRepositoryBuilder().apply {
             providerId = "memory"
             variantId = "memory"
             location = null // This should use default "data"
@@ -149,7 +149,7 @@ class RdfCoreTest {
     fun `multiple repositories can be created independently`() {
         val repo1 = Rdf.memory()
         val repo2 = Rdf.memory()
-        val repo3 = Rdf.factory {
+        val repo3 = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
         }

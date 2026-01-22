@@ -1,5 +1,7 @@
 # 🚀 Quick Start Guide
 
+{% include version-banner.md %}
+
 Get up and running with Kastor RDF in minutes! This guide will walk you through the essential steps to create your first RDF application.
 
 ## 📋 Prerequisites
@@ -17,11 +19,11 @@ Add the following to your `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Core API
-    implementation("com.geoknoesis:kastor-rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
     
     // Choose your backend (or both)
-    implementation("com.geoknoesis:kastor-rdf-jena:0.1.0")    // Apache Jena backend
-    implementation("com.geoknoesis:kastor-rdf-rdf4j:0.1.0")   // Eclipse RDF4J backend
+    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")    // Apache Jena backend
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")   // Eclipse RDF4J backend
 }
 
 repositories {

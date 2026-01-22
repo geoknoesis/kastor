@@ -15,6 +15,17 @@ import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
 
+/**
+ * RDF4J-based implementation of [RdfRepository].
+ * 
+ * **Note on Backend Types:**
+ * This implementation uses RDF4J's `Repository` and `RepositoryConnection` types internally.
+ * This is an implementation detail and does not leak into the public API. All public methods
+ * return Kastor types only.
+ * 
+ * @param repository RDF4J Repository instance (internal implementation detail)
+ * @param connection RDF4J RepositoryConnection instance (internal implementation detail)
+ */
 class Rdf4jRepository(
     private val repository: Repository,
     private val connection: RepositoryConnection = repository.connection
@@ -117,7 +128,7 @@ class Rdf4jRepository(
         return getGraph(name) as MutableRdfGraph
     }
     
-    override fun select(query: SparqlSelect): QueryResult {
+    override fun select(query: SparqlSelect): SparqlQueryResult {
         val prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
         val result = prepared.evaluate()
         try {
@@ -140,8 +151,24 @@ class Rdf4jRepository(
     }
     
     override fun ask(query: SparqlAsk): Boolean {
-        val prepared = connection.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
-        return prepared.evaluate()
+        val prepared = try {
+            connection.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to prepare SPARQL ASK query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
+        return try {
+            prepared.evaluate()
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL ASK query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {

@@ -1,27 +1,71 @@
 ## Hello, RDF
 
-This tutorial assumes no prior RDF knowledge.
+{% include version-banner.md %}
 
-1) Create an in-memory repository
+This tutorial assumes no prior RDF knowledge. You will create a graph, query it, and print results.
+
+## What you'll build
+
+You will model one person and one organization, then query the person's name and employer.
+
+## Step 1: Create an in-memory repository
+
 ```kotlin
-val api = Rdf.factory {
-  providerId = "jena"
-  variantId = "memory"
+import com.geoknoesis.kastor.rdf.Rdf
+
+val repo = Rdf.memory()
+```
+
+## Step 2: Add a few triples (subject–predicate–object)
+
+```kotlin
+import com.geoknoesis.kastor.rdf.iri
+
+repo.add {
+    val alice = iri("http://example.org/alice")
+    val org = iri("http://example.org/org/acme")
+
+    alice has "http://xmlns.com/foaf/0.1/name" with "Alice Johnson"
+    alice has "http://xmlns.com/foaf/0.1/age" with 30
+    alice has "http://xmlns.com/foaf/0.1/worksFor" with org
+
+    org has "http://xmlns.com/foaf/0.1/name" with "Acme Corp"
 }
-val repo = api.repository
 ```
 
-2) Insert one fact: subject–predicate–object
+## Step 3: Query the graph
+
 ```kotlin
-repo.update(UpdateQuery("INSERT DATA { <urn:alice> <urn:knows> <urn:bob> }")))
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+
+val results = repo.select(SparqlSelectQuery("""
+    SELECT ?name ?orgName WHERE {
+        <http://example.org/alice> <http://xmlns.com/foaf/0.1/name> ?name .
+        <http://example.org/alice> <http://xmlns.com/foaf/0.1/worksFor> ?org .
+        ?org <http://xmlns.com/foaf/0.1/name> ?orgName .
+    }
+"""))
+
+results.forEach { row ->
+    val name = row.getString("name")
+    val orgName = row.getString("orgName")
+    println("$name works for $orgName")
+}
 ```
 
-3) Ask if the fact exists
+## Step 4: Close the repository
+
 ```kotlin
-val exists = repo.ask(SparqlAskQuery("ASK { <urn:alice> <urn:knows> <urn:bob> }"))
+repo.close()
 ```
 
-You’ve created your first RDF data and queried it.
+## Expected output
+
+```
+Alice Johnson works for Acme Corp
+```
+
+You’ve created your first RDF data and queried it successfully.
 
 
 

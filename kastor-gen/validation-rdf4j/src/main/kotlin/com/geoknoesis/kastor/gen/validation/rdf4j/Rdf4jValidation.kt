@@ -8,6 +8,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Model
@@ -98,10 +99,24 @@ class Rdf4jValidation : ValidationContext {
 
       ValidationResult.Ok
     } catch (e: ShaclSailValidationException) {
-      val violations = listOf(ShaclViolation(null, "Name is required"))
+      val violations = listOf(
+        ShaclViolation(
+          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,
+          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,
+          message = "Name is required"
+        )
+      )
       ValidationResult.Violations(violations)
     } catch (e: Exception) {
-      ValidationResult.Violations(listOf(ShaclViolation(null, "Name is required")))
+      ValidationResult.Violations(listOf(
+        ShaclViolation(
+          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
+          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
+          message = "Name is required"
+        )
+      ))
     }
   }
   

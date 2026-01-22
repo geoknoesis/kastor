@@ -80,8 +80,21 @@ class OntologyWrapperGenerator(
             appendLine(generateValidationBlock(shape))
             appendLine()
             
-            // Companion object with registry
+            // Companion object with registry and mapping metadata
             appendLine("  companion object {")
+            appendLine("    /**")
+            appendLine("     * Mapping metadata: JSON-LD property names → RDF predicate IRIs")
+            appendLine("     */")
+            appendLine("    val propertyMappings: Map<String, Iri> = mapOf(")
+            shape.properties.forEach { property ->
+                val jsonLdName = context.propertyMappings.entries
+                    .find { it.value.id.value == property.path }
+                    ?.key
+                    ?: property.name
+                appendLine("      \"$jsonLdName\" to Iri(\"${property.path}\"),")
+            }
+            appendLine("    )")
+            appendLine()
             appendLine("    init {")
             appendLine("      OntoMapper.registry[$interfaceName::class.java] = { handle -> $wrapperName(handle) }")
             appendLine("    }")
@@ -128,10 +141,22 @@ class OntologyWrapperGenerator(
                     appendLine("    run {")
                     appendLine("      val count = $countExpr")
                     min?.let {
-                        appendLine("      if (count < $it) violations.add(ShaclViolation(Iri(\"$pred\"), \"minCount $it violated\"))")
+                        appendLine("      if (count < $it) violations.add(ShaclViolation(")
+                        appendLine("        focusNode = rdf.node as RdfResource,")
+                        appendLine("        shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,")
+                        appendLine("        constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,")
+                        appendLine("        path = Iri(\"$pred\"),")
+                        appendLine("        message = \"minCount $it violated\"")
+                        appendLine("      ))")
                     }
                     max?.let {
-                        appendLine("      if (count > $it) violations.add(ShaclViolation(Iri(\"$pred\"), \"maxCount $it violated\"))")
+                        appendLine("      if (count > $it) violations.add(ShaclViolation(")
+                        appendLine("        focusNode = rdf.node as RdfResource,")
+                        appendLine("        shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,")
+                        appendLine("        constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.maxCount,")
+                        appendLine("        path = Iri(\"$pred\"),")
+                        appendLine("        message = \"maxCount $it violated\"")
+                        appendLine("      ))")
                     }
                     appendLine("    }")
                 }

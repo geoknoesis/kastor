@@ -8,7 +8,7 @@ class ConfigVariantsTest {
     
     @Test
     fun `all configuration variants are supported`() {
-        val allSupportedTypes = RdfApiRegistry.getSupportedTypes()
+        val allSupportedTypes = RdfProviderRegistry.getSupportedTypes()
         
         println("All supported configuration variants:")
         allSupportedTypes.forEach { type ->
@@ -20,7 +20,7 @@ class ConfigVariantsTest {
             val parts = type.split(":", limit = 2)
             assertEquals(2, parts.size, "Type $type should include provider and variant")
             assertTrue(
-                RdfApiRegistry.supportsVariant(parts[0], parts[1]),
+                RdfProviderRegistry.supportsVariant(parts[0], parts[1]),
                 "Type $type should be supported"
             )
         }
@@ -59,7 +59,7 @@ class ConfigVariantsTest {
                     options = options
                 )
                 
-                val repo = RdfApiRegistry.create(config)
+                val repo = RdfProviderRegistry.create(config)
                 assertNotNull(repo, "Repository should be created for jena:$variant")
                 assertFalse(repo.isClosed(), "Repository should not be closed")
                 assertNotNull(repo.defaultGraph, "Repository should have a default graph")
@@ -101,7 +101,7 @@ class ConfigVariantsTest {
                     options = options
                 )
                 
-                val repo = RdfApiRegistry.create(config)
+                val repo = RdfProviderRegistry.create(config)
                 assertNotNull(repo, "Repository should be created for rdf4j:$variant")
                 assertFalse(repo.isClosed(), "Repository should not be closed")
                 assertNotNull(repo.defaultGraph, "Repository should have a default graph")
@@ -125,7 +125,7 @@ class ConfigVariantsTest {
             variantId = "sparql",
             options = mapOf("location" to "http://dbpedia.org/sparql")
         )
-            val repo = RdfApiRegistry.create(config)
+            val repo = RdfProviderRegistry.create(config)
             
             assertNotNull(repo, "Repository should be created for sparql")
             assertFalse(repo.isClosed(), "Repository should not be closed")
@@ -141,7 +141,7 @@ class ConfigVariantsTest {
     
     @Test
     fun `memory fallback still works`() {
-        val repo = RdfApiRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
+        val repo = RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
         
         assertNotNull(repo, "Memory repository should be created")
         assertFalse(repo.isClosed(), "Repository should not be closed")

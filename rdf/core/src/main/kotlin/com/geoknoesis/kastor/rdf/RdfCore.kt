@@ -12,8 +12,17 @@ import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
  * 
  * A modern, type-safe, and intuitive API for working with RDF data.
  * Designed for maximum developer productivity and code elegance.
+ * 
+ * **API Stability:** The factory methods (`memory()`, `persistent()`, `repository()`) 
+ * and `graph()` DSL are stable and part of the public API.
  */
 object Rdf {
+    
+    /**
+     * Default location for persistent repositories.
+     * Used when no location is specified in repository configuration.
+     */
+    internal const val DEFAULT_PERSISTENT_LOCATION = "data"
     
     // === FACTORY METHODS ===
     
@@ -21,13 +30,13 @@ object Rdf {
      * Create an in-memory repository with default settings.
      * Perfect for quick prototyping and testing.
      */
-    fun memory(): RdfRepository = factory {
+    fun memory(): RdfRepository = repository {
         when {
-            RdfApiRegistry.supportsVariant("jena", "memory") -> {
+            RdfProviderRegistry.supportsVariant("jena", "memory") -> {
                 providerId = "jena"
                 variantId = "memory"
             }
-            RdfApiRegistry.supportsVariant("rdf4j", "memory") -> {
+            RdfProviderRegistry.supportsVariant("rdf4j", "memory") -> {
                 providerId = "rdf4j"
                 variantId = "memory"
             }
@@ -42,13 +51,13 @@ object Rdf {
      * Create an in-memory repository with RDFS inference.
      * Automatically infers additional triples based on RDFS rules.
      */
-    fun memoryWithInference(): RdfRepository = factory {
+    fun memoryWithInference(): RdfRepository = repository {
         when {
-            RdfApiRegistry.supportsVariant("jena", "memory-inference") -> {
+            RdfProviderRegistry.supportsVariant("jena", "memory-inference") -> {
                 providerId = "jena"
                 variantId = "memory-inference"
             }
-            RdfApiRegistry.supportsVariant("rdf4j", "memory-rdfs") -> {
+            RdfProviderRegistry.supportsVariant("rdf4j", "memory-rdfs") -> {
                 providerId = "rdf4j"
                 variantId = "memory-rdfs"
             }
@@ -64,13 +73,13 @@ object Rdf {
      * Create a persistent repository with TDB2 backend.
      * Data persists between application restarts.
      */
-    fun persistent(location: String = "data"): RdfRepository = factory {
+    fun persistent(location: String = DEFAULT_PERSISTENT_LOCATION): RdfRepository = repository {
         when {
-            RdfApiRegistry.supportsVariant("jena", "tdb2") -> {
+            RdfProviderRegistry.supportsVariant("jena", "tdb2") -> {
                 providerId = "jena"
                 variantId = "tdb2"
             }
-            RdfApiRegistry.supportsVariant("rdf4j", "native") -> {
+            RdfProviderRegistry.supportsVariant("rdf4j", "native") -> {
                 providerId = "rdf4j"
                 variantId = "native"
             }
@@ -83,11 +92,40 @@ object Rdf {
     }
     
     /**
-     * Create a repository with custom configuration.
-     * Full control over repository settings.
+     * Create a repository with full configuration control.
+     * 
+     * Use this method when you need fine-grained control over repository configuration
+     * that isn't available through the convenience methods (`memory()`, `persistent()`, etc.).
+     * 
+     * **Example:**
+     * ```kotlin
+     * val repo = Rdf.repository {
+     *     providerId = "jena"
+     *     variantId = "tdb2"
+     *     location = "/path/to/storage"
+     *     inference = true
+     *     requirements = ProviderRequirements(
+     *         supportsTransactions = true,
+     *         supportsNamedGraphs = true
+     *     )
+     * }
+     * ```
+     * 
+     * **When to use:**
+     * - Need specific provider/variant combination
+     * - Require custom provider requirements
+     * - Want to configure advanced options
+     * 
+     * **When to use convenience methods instead:**
+     * - `memory()` - Simple in-memory repository
+     * - `persistent()` - Persistent storage with defaults
+     * - `memoryWithInference()` - In-memory with RDFS inference
+     * 
+     * @param configure Lambda to configure the repository builder
+     * @return A configured RdfRepository instance
      */
-    fun factory(configure: RepositoryBuilder.() -> Unit): RdfRepository {
-        val builder = RepositoryBuilder().apply(configure)
+    fun repository(configure: RdfRepositoryBuilder.() -> Unit): RdfRepository {
+        val builder = RdfRepositoryBuilder().apply(configure)
         return builder.build()
     }
     
@@ -117,20 +155,20 @@ object Rdf {
      * Affects which backend is used when no specific type is specified.
      */
     fun setDefaultProvider(provider: String) {
-        DefaultProvider.set(provider)
+        DefaultRdfProvider.set(provider)
     }
     
     /**
      * Get the current default RDF provider.
      */
-    fun getDefaultProvider(): String = DefaultProvider.get()
+    fun getDefaultProvider(): String = DefaultRdfProvider.get()
     
     // === BUILDER CLASSES ===
     
     /**
-     * Builder for configuring individual repositories.
+     * Builder for configuring individual RDF repositories.
      */
-    class RepositoryBuilder {
+    class RdfRepositoryBuilder {
         var providerId: String? = null
         var variantId: String? = null
         var requirements: ProviderRequirements = ProviderRequirements()
@@ -142,13 +180,13 @@ object Rdf {
                 providerId = providerId,
                 variantId = variantId,
                 options = mapOf(
-                    "location" to (location ?: "data"),
+                    "location" to (location ?: DEFAULT_PERSISTENT_LOCATION),
                     "inference" to inference.toString()
                 ),
                 requirements = requirements.takeIf { it != ProviderRequirements() }
             )
             
-            return RdfApiRegistry.create(config)
+            return RdfProviderRegistry.create(config)
         }
     }
     
@@ -161,9 +199,16 @@ object Rdf {
 
 /**
  * Main interface for RDF repository operations.
- * Provides a unified API for all RDF operations.
+ * Provides a unified API for all RDF operations including graph management and SPARQL queries.
+ * 
+ * **Relationship with [SparqlRepository]:**
+ * - [SparqlRepository] is the minimal interface providing only SPARQL query operations
+ * - [RdfRepository] extends [SparqlRepository] and adds graph management (named graphs, editing, etc.)
+ * 
+ * All [RdfRepository] implementations also implement [SparqlRepository], so you can use either interface
+ * depending on your needs. Use [RdfRepository] when you need full graph management capabilities.
  */
-interface RdfRepository : Repository {
+interface RdfRepository : SparqlRepository {
     
     // === GRAPH OPERATIONS ===
     
@@ -216,8 +261,22 @@ interface RdfRepository : Repository {
     
     /**
      * Execute a SPARQL SELECT query.
+     * 
+     * **Error Handling:**
+     * - Throws [RdfQueryException] if the query fails to parse or execute
+     * - The exception includes the query string for debugging
+     * - Use [selectOrNull] or [selectResult] for functional error handling
+     * 
+     * **Error Handling Pattern:**
+     * - **Technical failures** (parsing, execution) → [RdfQueryException]
+     * - **Semantic failures** (validation) → [ValidationResult] sealed class
+     * - **Operations that should never fail** → Direct return types
+     * 
+     * @param query The SPARQL SELECT query to execute
+     * @return SparqlQueryResult containing the query results
+     * @throws RdfQueryException if the query fails to parse or execute
      */
-    override fun select(query: SparqlSelect): QueryResult
+    override fun select(query: SparqlSelect): SparqlQueryResult
     
     /**
      * Execute a SPARQL ASK query.
@@ -243,11 +302,36 @@ interface RdfRepository : Repository {
     
     /**
      * Execute operations within a transaction.
+     * 
+     * **Resource Management:**
+     * - Transaction is automatically rolled back on exception
+     * - Transaction is committed on successful completion
+     * - Resources are cleaned up even if exception occurs
+     * 
+     * **Example:**
+     * ```kotlin
+     * repo.transaction {
+     *     repo.addTriple(triple1)
+     *     repo.addTriple(triple2)
+     *     // If any operation throws, all changes are rolled back
+     * }
+     * ```
+     * 
+     * @param operations The operations to execute in the transaction
+     * @throws RdfTransactionException if transaction fails
      */
     fun transaction(operations: RdfRepository.() -> Unit)
     
     /**
      * Execute read-only operations within a transaction.
+     * 
+     * **Resource Management:**
+     * - Read transaction provides consistent view of data
+     * - No changes are committed (read-only)
+     * - Resources are cleaned up on completion
+     * 
+     * @param operations The read-only operations to execute
+     * @throws RdfTransactionException if transaction fails
      */
     fun readTransaction(operations: RdfRepository.() -> Unit)
     
@@ -274,7 +358,7 @@ interface RdfRepository : Repository {
 /**
  * Result of a SPARQL SELECT query.
  */
-interface QueryResult : Iterable<BindingSet> {
+interface SparqlQueryResult : Iterable<BindingSet> {
     
     /**
      * Get the number of result rows.
@@ -298,15 +382,45 @@ interface QueryResult : Iterable<BindingSet> {
 }
 
 /**
- * Simple in-memory query result backed by a list.
+ * Simple in-memory SPARQL query result backed by a list.
  */
-class ListQueryResult(private val rows: List<BindingSet>) : QueryResult {
+class ListSparqlQueryResult(private val rows: List<BindingSet>) : SparqlQueryResult {
     override fun iterator(): Iterator<BindingSet> = rows.iterator()
     override fun count(): Int = rows.size
     override fun first(): BindingSet? = rows.firstOrNull()
     override fun toList(): List<BindingSet> = rows.toList()
     override fun asSequence(): Sequence<BindingSet> = rows.asSequence()
 }
+
+/**
+ * Factory function to create a SPARQL query result from a list of binding sets.
+ * 
+ * **Example:**
+ * ```kotlin
+ * val bindings = listOf(
+ *     MapBindingSet(mapOf("name" to Literal("Alice"))),
+ *     MapBindingSet(mapOf("name" to Literal("Bob")))
+ * )
+ * val result = sparqlQueryResult(bindings)
+ * ```
+ * 
+ * @param rows List of binding sets representing query result rows
+ * @return A SparqlQueryResult containing the provided rows
+ */
+fun sparqlQueryResult(rows: List<BindingSet>): SparqlQueryResult = ListSparqlQueryResult(rows)
+
+/**
+ * Factory function to create an empty SPARQL query result.
+ * 
+ * **Example:**
+ * ```kotlin
+ * val emptyResult = emptySparqlQueryResult()
+ * assertTrue(emptyResult.count() == 0)
+ * ```
+ * 
+ * @return An empty SparqlQueryResult (singleton instance)
+ */
+fun emptySparqlQueryResult(): SparqlQueryResult = EmptySparqlQueryResult
 
 /**
  * Binding set backed by a map of variable -> term.
@@ -356,6 +470,62 @@ interface BindingSet {
      * Get a boolean value for a variable.
      */
     fun getBoolean(variable: String): Boolean? = getString(variable)?.toBooleanStrictOrNull()
+    
+    /**
+     * Get a string value for a variable, or return the default if not bound.
+     * 
+     * @param variable The variable name
+     * @param default The default value to return if the variable is not bound
+     * @return The string value or the default
+     */
+    fun getStringOr(variable: String, default: String): String = getString(variable) ?: default
+    
+    /**
+     * Get an integer value for a variable, or return the default if not bound.
+     * 
+     * @param variable The variable name
+     * @param default The default value to return if the variable is not bound
+     * @return The integer value or the default
+     */
+    fun getIntOr(variable: String, default: Int): Int = getInt(variable) ?: default
+    
+    /**
+     * Get a double value for a variable, or return the default if not bound.
+     * 
+     * @param variable The variable name
+     * @param default The default value to return if the variable is not bound
+     * @return The double value or the default
+     */
+    fun getDoubleOr(variable: String, default: Double): Double = getDouble(variable) ?: default
+    
+    /**
+     * Get a boolean value for a variable, or return the default if not bound.
+     * 
+     * @param variable The variable name
+     * @param default The default value to return if the variable is not bound
+     * @return The boolean value or the default
+     */
+    fun getBooleanOr(variable: String, default: Boolean): Boolean = getBoolean(variable) ?: default
+    
+    /**
+     * Get a string value for a variable, or throw an exception if not bound.
+     * 
+     * @param variable The variable name
+     * @return The string value
+     * @throws IllegalArgumentException if the variable is not bound
+     */
+    fun getStringOrThrow(variable: String): String = 
+        getString(variable) ?: throw IllegalArgumentException("Variable '$variable' is not bound")
+    
+    /**
+     * Get an integer value for a variable, or throw an exception if not bound.
+     * 
+     * @param variable The variable name
+     * @return The integer value
+     * @throws IllegalArgumentException if the variable is not bound or cannot be converted to Int
+     */
+    fun getIntOrThrow(variable: String): Int = 
+        getInt(variable) ?: throw IllegalArgumentException("Variable '$variable' is not bound or cannot be converted to Int")
 }
 
 // === CONFIGURATION ===
@@ -395,13 +565,12 @@ data class ProviderRequirements(
 )
 
 /**
- * Unified registry for RDF API providers with enhanced capabilities.
- * Consolidates functionality from both RdfApiRegistry and EnhancedRdfApiRegistry.
+ * Unified registry for RDF providers with enhanced capabilities.
  */
-object RdfApiRegistry {
+object RdfProviderRegistry {
     
-    private val providers = mutableMapOf<String, RdfApiProvider>()
-    private val providersByType = mutableMapOf<String, RdfApiProvider>()
+    private val providers = mutableMapOf<String, RdfProvider>()
+    private val providersByType = mutableMapOf<String, RdfProvider>()
     
     init {
         // Register default memory provider
@@ -411,7 +580,7 @@ object RdfApiRegistry {
         discoverWithServiceLoader()
     }
 
-    data class ProviderSelection(val provider: RdfApiProvider, val variantId: String)
+    data class ProviderSelection(val provider: RdfProvider, val variantId: String)
 
     private fun toTypeKey(providerId: String, variantId: String): String {
         return "$providerId:$variantId"
@@ -434,7 +603,7 @@ object RdfApiRegistry {
             return selectProvider(config.requirements, config.providerId, config.variantId)
         }
 
-        val defaultProviderId = DefaultProvider.get()
+        val defaultProviderId = DefaultRdfProvider.get()
         val provider = providers[defaultProviderId] ?: return null
         val resolvedVariant = config.variantId ?: provider.defaultVariantId()
         return ProviderSelection(provider, resolvedVariant)
@@ -465,7 +634,7 @@ object RdfApiRegistry {
     }
 
     private fun matchesRequirements(
-        provider: RdfApiProvider,
+        provider: RdfProvider,
         variantId: String,
         requirements: ProviderRequirements
     ): Boolean {
@@ -492,7 +661,7 @@ object RdfApiRegistry {
 
     private fun discoverWithServiceLoader() {
         try {
-            ServiceLoader.load(RdfApiProvider::class.java).forEach { provider ->
+            ServiceLoader.load(RdfProvider::class.java).forEach { provider ->
                 register(provider)
             }
         } catch (e: Exception) {
@@ -505,7 +674,7 @@ object RdfApiRegistry {
     /**
      * Register an RDF provider.
      */
-    fun register(provider: RdfApiProvider) {
+    fun register(provider: RdfProvider) {
         providers[provider.id] = provider
         provider.variants().forEach { variant ->
             providersByType[toTypeKey(provider.id, variant.id)] = provider
@@ -531,14 +700,14 @@ object RdfApiRegistry {
     /**
      * Discover available providers.
      */
-    fun discoverProviders(): List<RdfApiProvider> {
+    fun discoverProviders(): List<RdfProvider> {
         return providers.values.toList()
     }
     
     /**
      * Get all providers (alias for discoverProviders for consistency).
      */
-    fun getAllProviders(): List<RdfApiProvider> = discoverProviders()
+    fun getAllProviders(): List<RdfProvider> = discoverProviders()
     
     /**
      * Get supported repository types.
@@ -571,14 +740,14 @@ object RdfApiRegistry {
     /**
      * Get provider by type.
      */
-    fun getProvider(providerId: String): RdfApiProvider? = providers[providerId]
+    fun getProvider(providerId: String): RdfProvider? = providers[providerId]
     
     // === ENHANCED PROVIDER OPERATIONS ===
     
     /**
      * Get providers by category.
      */
-    fun getProvidersByCategory(category: ProviderCategory): List<RdfApiProvider> {
+    fun getProvidersByCategory(category: ProviderCategory): List<RdfProvider> {
         return providers.values.filter { it.getProviderCategory() == category }
     }
     
@@ -649,9 +818,9 @@ object RdfApiRegistry {
 }
 
 /**
- * Interface for RDF API providers with optional enhanced capabilities.
+ * Interface for RDF providers with optional enhanced capabilities.
  */
-interface RdfApiProvider {
+interface RdfProvider {
     
     /**
      * Provider id (stable identifier).
@@ -805,8 +974,13 @@ data class ProviderCapabilities(
 /**
  * Manages the default RDF provider.
  */
-object DefaultProvider {
-    private var current: String = "memory"
+object DefaultRdfProvider {
+    /**
+     * Default provider ID used when no provider is specified.
+     */
+    const val DEFAULT_PROVIDER_ID = "memory"
+    
+    private var current: String = DEFAULT_PROVIDER_ID
     
     fun set(provider: String) {
         current = provider

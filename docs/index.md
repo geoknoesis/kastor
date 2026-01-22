@@ -45,6 +45,14 @@ Kastor is a Kotlin-first SDK that makes RDF and knowledge-graph development prac
 - Kastor Gen: [Kastor Gen](kastor-gen/README.md)
 - GitHub: https://github.com/geoknoesis/kastor
 
+## Hello RDF in 5 minutes
+
+Follow the canonical walkthrough and run your first RDF program:
+
+- [Hello World Tutorial](kastor/tutorials/hello-world.md)
+- [Getting Started](kastor/getting-started/getting-started.md)
+- [How-To Guides](kastor/guides/README.md)
+
 ## Contact and Feedback
 
 Have ideas or integration questions? We welcome feedback.

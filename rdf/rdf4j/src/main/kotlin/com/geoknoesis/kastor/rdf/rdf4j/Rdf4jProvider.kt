@@ -5,7 +5,7 @@ import com.geoknoesis.kastor.rdf.*
 /**
  * RDF4J provider implementation for the RDF API.
  */
-class Rdf4jProvider : RdfApiProvider {
+class Rdf4jProvider : RdfProvider {
     
     override val id: String = "rdf4j"
     override val name: String = "RDF4J Repository"

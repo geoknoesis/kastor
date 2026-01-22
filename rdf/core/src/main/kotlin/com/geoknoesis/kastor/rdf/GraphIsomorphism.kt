@@ -24,9 +24,10 @@ data class GraphNode(
 }
 
 /**
- * Represents an RDF graph for isomorphism testing
+ * Represents an RDF graph structure for isomorphism testing.
+ * This is an internal representation used by the isomorphism checker.
  */
-class IsomorphismGraph {
+class GraphIsomorphismStructure {
     private val nodes = mutableMapOf<String, GraphNode>()
     var edgeCounts: Map<String, Int> = emptyMap()
     
@@ -55,8 +56,8 @@ class WeisfeilerLehmanIsomorphism {
      * Check if two RDF graphs are isomorphic, considering blank nodes
      */
     fun areIsomorphic(graph1: RdfGraph, graph2: RdfGraph): Boolean {
-        val isoGraph1 = buildIsomorphismGraph(graph1)
-        val isoGraph2 = buildIsomorphismGraph(graph2)
+        val isoGraph1 = buildIsomorphismStructure(graph1)
+        val isoGraph2 = buildIsomorphismStructure(graph2)
         
         return areIsomorphic(isoGraph1, isoGraph2)
     }
@@ -64,8 +65,8 @@ class WeisfeilerLehmanIsomorphism {
     /**
      * Build an isomorphism graph from an RDF graph
      */
-    private fun buildIsomorphismGraph(rdfGraph: RdfGraph): IsomorphismGraph {
-        val isoGraph = IsomorphismGraph()
+    private fun buildIsomorphismStructure(rdfGraph: RdfGraph): GraphIsomorphismStructure {
+        val isoGraph = GraphIsomorphismStructure()
         val triples = rdfGraph.getTriples()
         
         // Count edge multiplicities
@@ -132,7 +133,7 @@ class WeisfeilerLehmanIsomorphism {
     /**
      * Check if two isomorphism graphs are isomorphic using Weisfeiler-Lehman
      */
-    private fun areIsomorphic(graph1: IsomorphismGraph, graph2: IsomorphismGraph): Boolean {
+    private fun areIsomorphic(graph1: GraphIsomorphismStructure, graph2: GraphIsomorphismStructure): Boolean {
         if (graph1.size() != graph2.size()) {
             return false
         }
@@ -180,7 +181,7 @@ class WeisfeilerLehmanIsomorphism {
     /**
      * Initialize node labels based on node properties
      */
-    private fun initializeLabels(graph: IsomorphismGraph): MutableMap<String, String> {
+    private fun initializeLabels(graph: GraphIsomorphismStructure): MutableMap<String, String> {
         val labels = mutableMapOf<String, String>()
         
         for (node in graph.getAllNodes()) {
@@ -208,7 +209,7 @@ class WeisfeilerLehmanIsomorphism {
      * Refine labels using neighborhood information
      */
     private fun refineLabels(
-        graph: IsomorphismGraph, 
+        graph: GraphIsomorphismStructure, 
         currentLabels: Map<String, String>
     ): MutableMap<String, String> {
         val newLabels = mutableMapOf<String, String>()

@@ -11,10 +11,24 @@ enum class ShaclSeverity {
 }
 
 /**
- * Represents a SHACL validation violation.
+ * Represents a SHACL validation violation with structured information.
+ * 
+ * @property focusNode The resource that violated the constraint
+ * @property shapeIri The IRI of the SHACL shape that was violated
+ * @property constraintIri The IRI of the constraint component that failed (e.g., sh:minCount)
+ * @property path The property path that was validated (null for node-level constraints)
+ * @property actualValue The actual value that violated the constraint (if applicable)
+ * @property expectedValue The expected value or constraint description (if applicable)
+ * @property message Human-readable error message
+ * @property severity The severity level of the violation
  */
 data class ShaclViolation(
-    val path: Iri?,
+    val focusNode: RdfResource,
+    val shapeIri: Iri,
+    val constraintIri: Iri,
+    val path: Iri? = null,
+    val actualValue: RdfTerm? = null,
+    val expectedValue: RdfTerm? = null,
     val message: String,
     val severity: ShaclSeverity = ShaclSeverity.Violation
 )

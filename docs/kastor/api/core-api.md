@@ -8,7 +8,7 @@
 - **`RdfTriple`**: `subject: RdfTerm`, `predicate: Iri`, `object`: `RdfTerm`.
 
 ### Query results
-- **`QueryResult`**: iterable of `BindingSet` rows with `first()`, `toList()`, and `asSequence()`.
+- **`SparqlQueryResult`**: iterable of `BindingSet` rows with `first()`, `toList()`, and `asSequence()`.
 - **`BindingSet`**: lookup by variable name via `get("name")`, plus typed accessors like `getString`, `getInt`, `getDouble`.
 
 ### Graph abstraction
@@ -32,7 +32,7 @@ interface MutableRdfGraph : RdfGraph, GraphEditor
 
 ### Repository abstraction
 ```kotlin
-interface RdfRepository : Repository {
+interface RdfRepository : SparqlRepository {
   val defaultGraph: RdfGraph
 
   fun getGraph(name: Iri): RdfGraph
@@ -42,7 +42,7 @@ interface RdfRepository : Repository {
   fun editDefaultGraph(): GraphEditor
   fun editGraph(name: Iri): GraphEditor
 
-  fun select(query: SparqlSelect): QueryResult
+  fun select(query: SparqlSelect): SparqlQueryResult
   fun ask(query: SparqlAsk): Boolean
   fun construct(query: SparqlConstruct): Sequence<RdfTriple>
   fun describe(query: SparqlDescribe): Sequence<RdfTriple>
@@ -63,7 +63,7 @@ object Rdf {
   fun memory(): RdfRepository
   fun memoryWithInference(): RdfRepository
   fun persistent(location: String = "data"): RdfRepository
-  fun factory(configure: RepositoryBuilder.() -> Unit): RdfRepository
+  fun repository(configure: RdfRepositoryBuilder.() -> Unit): RdfRepository
   fun graph(configure: GraphDsl.() -> Unit): MutableRdfGraph
 }
 ```

@@ -26,6 +26,16 @@ class DefaultRdfHandle(
   override fun validate(): ValidationResult {
     return validationContext?.validate(graph, node) ?: ValidationResult.NotConfigured
   }
+  
+  /**
+   * Validates this resource against a validation context.
+   * 
+   * @param validation The validation context to use
+   * @return Validation result
+   */
+  fun validate(validation: ValidationContext): ValidationResult {
+    return validation.validate(graph, node)
+  }
 }
 
 

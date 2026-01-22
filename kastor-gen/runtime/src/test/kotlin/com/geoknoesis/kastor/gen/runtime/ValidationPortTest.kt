@@ -15,7 +15,14 @@ class ValidationContextTest {
     fun `validation context can return violations`() {
         val validator = object : ValidationContext {
             override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Validation failed")))
+                return ValidationResult.Violations(listOf(
+                  ShaclViolation(
+                    focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+                    shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
+                    constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
+                    message = "Validation failed"
+                  )
+                ))
             }
         }
 

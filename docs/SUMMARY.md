@@ -11,10 +11,12 @@
   - [Configuration Variants](kastor/getting-started/configuration-variants.md)
 
 ### **Core Concepts**
+- [Concepts Overview](kastor/concepts/README.md)
 - [RDF Fundamentals](kastor/concepts/rdf-fundamentals.md)
 - [SPARQL Fundamentals](kastor/concepts/sparql-fundamentals.md)
 - [Vocabularies](kastor/concepts/vocabularies.md)
 - [Glossary](kastor/concepts/glossary.md)
+- [Design Philosophy](kastor/philosophy.md)
 
 ### **API Documentation**
 - [Core API](kastor/api/core-api.md)
@@ -52,6 +54,12 @@
 - [Guides Overview](kastor/guides/README.md)
 - [Best Practices](kastor/guides/best-practices.md)
 - [Guides](kastor/guides/guides.md)
+- [How to Parse RDF](kastor/guides/how-to-parse-rdf.md)
+- [How to Serialize RDF](kastor/guides/how-to-serialize-rdf.md)
+- [How to Validate with SHACL](kastor/guides/how-to-validate-shacl.md)
+- [How to Perform Reasoning](kastor/guides/how-to-reasoning.md)
+- [How to Work with Named Graphs](kastor/guides/how-to-named-graphs.md)
+- [How to Use Transactions](kastor/guides/how-to-transactions.md)
 - [Cookbook](kastor/guides/cookbook.md)
 - [Kastor Query DSL Tutorial](kastor/guides/kastor-query-dsl-tutorial.md)
 - [Extending Kastor](kastor/guides/extending.md)

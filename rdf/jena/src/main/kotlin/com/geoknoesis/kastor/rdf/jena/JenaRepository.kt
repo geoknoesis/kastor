@@ -16,6 +16,15 @@ import org.apache.jena.rdf.model.Literal
 import org.apache.jena.query.ReadWrite
 import java.nio.file.Paths
 
+/**
+ * Jena-based implementation of [RdfRepository].
+ * 
+ * **Note on Backend Types:**
+ * This implementation uses Jena's `Dataset` type internally. This is an implementation detail
+ * and does not leak into the public API. All public methods return Kastor types only.
+ * 
+ * @param dataset Jena Dataset instance (internal implementation detail)
+ */
 class JenaRepository private constructor(
     private val dataset: Dataset
 ) : RdfRepository {
@@ -84,8 +93,16 @@ class JenaRepository private constructor(
         return getGraph(name) as MutableRdfGraph
     }
     
-    override fun select(query: SparqlSelect): QueryResult {
-        val jenaQuery = QueryFactory.create(query.sparql)
+    override fun select(query: SparqlSelect): SparqlQueryResult {
+        val jenaQuery = try {
+            QueryFactory.create(query.sparql)
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to parse SPARQL query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
         try {
             val jenaResultSet = exec.execSelect()
@@ -102,16 +119,36 @@ class JenaRepository private constructor(
                 rows.add(MapBindingSet(values))
             }
             return JenaResultSet(rows)
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
         } finally {
             exec.close()
         }
     }
     
     override fun ask(query: SparqlAsk): Boolean {
-        val jenaQuery = QueryFactory.create(query.sparql)
+        val jenaQuery = try {
+            QueryFactory.create(query.sparql)
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to parse SPARQL ASK query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
         val exec = QueryExecutionFactory.create(jenaQuery, dataset)
         try {
             return exec.execAsk()
+        } catch (e: Exception) {
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL ASK query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
         } finally {
             exec.close()
         }

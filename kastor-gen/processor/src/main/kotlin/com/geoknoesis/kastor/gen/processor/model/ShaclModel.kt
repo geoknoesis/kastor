@@ -13,6 +13,9 @@ data class ShaclShape(
 
 /**
  * Model representing a SHACL property constraint.
+ * 
+ * This model captures the essential SHACL constraints for code generation.
+ * Additional constraints (e.g., sh:pattern, sh:in) can be added as needed.
  */
 data class ShaclProperty(
     val path: String,
@@ -21,7 +24,24 @@ data class ShaclProperty(
     val datatype: String?,
     val targetClass: String?,
     val minCount: Int?,
-    val maxCount: Int?
+    val maxCount: Int?,
+    // String constraints
+    val minLength: Int? = null,
+    val maxLength: Int? = null,
+    val pattern: String? = null,
+    // Numeric constraints
+    val minInclusive: Double? = null,
+    val maxInclusive: Double? = null,
+    val minExclusive: Double? = null,
+    val maxExclusive: Double? = null,
+    // Value constraints
+    val inValues: List<String>? = null,
+    val hasValue: String? = null,
+    // Node constraints
+    val nodeKind: String? = null,
+    val qualifiedValueShape: String? = null,
+    val qualifiedMinCount: Int? = null,
+    val qualifiedMaxCount: Int? = null
 )
 
 /**

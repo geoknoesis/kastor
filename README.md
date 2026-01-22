@@ -2,6 +2,29 @@
 
 **Kastor** is a modern, comprehensive Kotlin framework for RDF (Resource Description Framework) and semantic web development. It bridges the gap between traditional object-oriented programming and semantic technologies, making RDF accessible and powerful for Kotlin developers.
 
+## Why Kastor (in one sentence)
+Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces with a side-channel back to RDF, plus a vocabulary-agnostic DSL that keeps RDF explicit without forcing RDF types into your business code.
+
+## Philosophy & Tradeoffs
+**Philosophy**
+- **Domain-first, RDF second**: work with pure Kotlin domain interfaces; access RDF through a side-channel when needed.
+- **Vocabulary-agnostic core**: no hardcoded vocab assumptions; your vocabularies drive the model.
+- **Explicit semantics over magic**: the DSL avoids hidden inference; validation and reasoning are explicit.
+- **Provider-agnostic**: swap Jena, RDF4J, Memory, or SPARQL without changing your app model.
+
+**Anti-goals**
+- Not a triple store or RDF database.
+- Not a SPARQL engine (it integrates with providers that are).
+- Not an ontology reasoner beyond provider capabilities.
+
+**Comparison (neutral)**
+| Concern | Kastor | Jena / RDF4J / rdflib |
+|---|---|---|
+| Domain objects without RDF dependencies | ✅ | ❌ |
+| Side-channel RDF access | ✅ | ❌ (typically direct RDF types) |
+| Vocabulary-agnostic DSL | ✅ | ⚠️ (varies) |
+| Provider-agnostic core API | ✅ | ❌ (engine-specific APIs) |
+
 ## 🌟 What Makes Kastor Special?
 
 Kastor provides a **dual-layer architecture** that serves both RDF experts and application developers:
@@ -36,6 +59,26 @@ Just as Castor revolutionized XML data binding in Java, Kastor aims to bring the
 Kastor honors Castor's legacy while embracing the future of semantic technologies and the Kotlin ecosystem.
 
 ## 🚀 Core Capabilities
+
+## ✅ Standards & Versions Supported
+
+**Core Standards**
+- **RDF 1.1**
+- **SPARQL 1.1**
+- **SPARQL 1.2** (see docs)
+
+**Validation & Semantics**
+- **SHACL** (core constraints; provider-dependent)
+- **RDFS** reasoning
+- **OWL** reasoning (EL / RL / DL via providers)
+
+**Serialization Formats**
+- **Turtle**, **RDF/XML**, **JSON-LD**, **N-Triples**, **N-Quads**
+
+**Other**
+- **RDF-star** (provider-dependent)
+
+> Note: Support for reasoning, SHACL validation, and RDF-star depends on the backend provider (Jena, RDF4J, Memory, or SPARQL endpoint).
 
 ### 📊 **RDF Core Framework**
 - **🔄 Repository Management**: Seamlessly switch between Memory, Jena, RDF4J, and SPARQL backends
@@ -377,17 +420,17 @@ cd kastor
 - **Stephane Fellah** - Principal Developer
 - **Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 
-### Support
-We welcome community support and contributions! If you find Kastor useful, please consider:
+### Support This Project
+Kastor is open-source infrastructure for RDF in Kotlin. Keeping it correct, secure, and well-maintained takes ongoing work.
+
+If Kastor helps you or your organization, consider supporting its long-term sustainability through sponsorship, contributions, or advocacy. Your support funds maintenance, security, performance improvements, and documentation.
+
+You can help by:
 
 - 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
 - 🐛 **Report issues** or suggest improvements
 - 💬 **Join discussions** in our [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 - 📖 **Improve documentation** through pull requests
-
-### Financial Support
-If you'd like to support the development of Kastor financially, you can:
-
 - 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)
 - ☕ **Buy us a coffee** via [Ko-fi](https://ko-fi.com/geoknoesis)
 - 🏢 **Enterprise support** - Contact us at [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com) for commercial licensing and support options

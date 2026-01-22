@@ -11,11 +11,13 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 - **[Getting Started Guide](kastor/getting-started/README.md)** - 5-minute setup and first steps
 - **[Hello World Tutorial](kastor/tutorials/hello-world.md)** - Your first RDF program
 - **[Quick Start Examples](kastor/getting-started/quick-start.md)** - Copy-paste examples
+- **[How-To Guides](kastor/guides/README.md)** - Task-oriented workflows
 
 ### New to RDF?
 - **[RDF Fundamentals](kastor/concepts/rdf-fundamentals.md)** - Understanding RDF basics
 - **[SPARQL Fundamentals](kastor/concepts/sparql-fundamentals.md)** - Query language introduction
 - **[Vocabularies Guide](kastor/concepts/vocabularies.md)** - Working with RDF vocabularies
+- **[Design Philosophy](kastor/philosophy.md)** - Core principles
 
 ## 🏗️ Architecture Overview
 
@@ -37,6 +39,7 @@ Kastor Framework
 - **[DSL Guide](kastor/api/compact-dsl-guide.md)** - Domain-specific language
 - **[Repository Management](kastor/api/repository-manager.md)** - Working with repositories
 - **[Transactions](kastor/api/transactions.md)** - ACID transaction support
+- **[How-To Guides](kastor/guides/README.md)** - Task-oriented workflows
 
 #### **Reasoning** (`rdf/reasoning`)
 - **[Reasoning Guide](kastor/features/reasoning.md)** - RDFS, OWL reasoning
@@ -173,8 +176,12 @@ Kastor Framework
 - [Stack Overflow](https://stackoverflow.com/questions/tagged/kastor) - Technical questions
 - **Direct Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 
-### **Support the Project**
-We welcome community support and contributions! If you find Kastor useful:
+### **Support This Project**
+Kastor is open-source infrastructure for RDF in Kotlin. Keeping it correct, secure, and well-maintained takes ongoing work.
+
+If Kastor helps you or your organization, consider supporting its long-term sustainability through sponsorship, contributions, or advocacy. Your support funds maintenance, security, performance improvements, and documentation.
+
+You can help by:
 
 - 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
 - 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)

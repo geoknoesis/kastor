@@ -109,7 +109,15 @@ class IntegrationTest {
                 return if (hasName) {
                     ValidationResult.Ok
                 } else {
-                    ValidationResult.Violations(listOf(ShaclViolation(FOAF.name, "Person must have a name")))
+                    ValidationResult.Violations(listOf(
+                      ShaclViolation(
+                        focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+                        shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,
+                        constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,
+                        path = FOAF.name,
+                        message = "Person must have a name"
+                      )
+                    ))
                 }
             }
         }

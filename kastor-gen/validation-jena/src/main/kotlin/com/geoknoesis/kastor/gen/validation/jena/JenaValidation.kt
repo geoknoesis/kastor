@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import org.apache.jena.rdf.model.AnonId
 import org.apache.jena.rdf.model.Model
@@ -68,7 +69,14 @@ class JenaValidation : ValidationContext {
         is Iri -> jenaModel.createResource(focus.value)
         is BlankNode -> jenaModel.createResource(AnonId(focus.id))
         else -> null
-      } ?: return ValidationResult.Violations(listOf(ShaclViolation(null, ERROR_NO_FOCUS_RESULTS)))
+      } ?: return ValidationResult.Violations(listOf(
+        ShaclViolation(
+          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
+          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
+          message = ERROR_NO_FOCUS_RESULTS
+        )
+      ))
 
       val dataModel = extractFocusDataModel(jenaModel, focusResource, shapesModel)
       val violations = validateMinCount(shapesModel, dataModel, focusResource)
@@ -78,7 +86,14 @@ class JenaValidation : ValidationContext {
 
       ValidationResult.Violations(violations)
     } catch (e: Exception) {
-      ValidationResult.Violations(listOf(ShaclViolation(null, "SHACL validation failed: ${e.message}")))
+      ValidationResult.Violations(listOf(
+        ShaclViolation(
+          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
+          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
+          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
+          message = "SHACL validation failed: ${e.message}"
+        )
+      ))
     }
   }
 
@@ -140,7 +155,17 @@ class JenaValidation : ValidationContext {
     }
 
     return if (!dataModel.contains(focus, nameProperty, null as RDFNode?)) {
-      listOf(ShaclViolation(Iri(nameProperty.uri), "Name is required"))
+      val focusIri = Iri.of(focus.uri)
+      val pathIri = Iri.of(nameProperty.uri)
+      listOf(
+        ShaclViolation(
+          focusNode = focusIri,
+          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,
+          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,
+          path = pathIri,
+          message = "Name is required"
+        )
+      )
     } else {
       emptyList()
     }

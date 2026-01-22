@@ -6,10 +6,8 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.math.BigInteger
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.ZonedDateTime
+import java.time.*
+import java.util.Base64
 
 class RdfTermsTest {
     
@@ -18,7 +16,6 @@ class RdfTermsTest {
         // Test valid IRIs
         val httpIri = Iri("http://example.org/resource")
         assertEquals("http://example.org/resource", httpIri.value, "HTTP IRI should preserve value")
-        assertTrue(httpIri is Iri, "Should be instance of Iri")
         
         val httpsIri = Iri("https://example.org/secure")
         assertEquals("https://example.org/secure", httpsIri.value, "HTTPS IRI should preserve value")
@@ -35,7 +32,28 @@ class RdfTermsTest {
         // Test blank node with explicit ID
         val bnode1 = bnode("b1")
         assertEquals("b1", bnode1.id, "Blank node should preserve ID")
-        assertTrue(bnode1 is BlankNode, "Should be instance of BlankNode")
+        
+        // Test type alias
+        val bnode2: BNode = bnode("b2")
+        assertEquals("b2", bnode2.id, "BNode alias should work")
+    }
+    
+    @Test
+    fun `blank node validation rejects blank id`() {
+        // Test that blank node rejects empty string
+        assertThrows(IllegalArgumentException::class.java) {
+            BlankNode("")
+        }
+        
+        // Test that blank node rejects whitespace-only string
+        assertThrows(IllegalArgumentException::class.java) {
+            BlankNode("   ")
+        }
+        
+        // Test that blank node rejects newline-only string
+        assertThrows(IllegalArgumentException::class.java) {
+            BlankNode("\n")
+        }
     }
     
     @Test
@@ -124,6 +142,246 @@ class RdfTermsTest {
             val zonedDateTimeLit = Literal(ZonedDateTime.parse("2023-12-25T14:30:45Z"))
             assertTrue(zonedDateTimeLit.lexical.startsWith("2023-12-25T14:30:45"), "ZonedDateTime literal should format correctly")
             assertEquals(XSD.string, zonedDateTimeLit.datatype, "ZonedDateTime literal should have xsd:string datatype")
+        
+        // Test OffsetDateTime literal
+        val offsetDateTimeLit = Literal(OffsetDateTime.parse("2023-12-25T14:30:45+01:00"))
+        assertTrue(offsetDateTimeLit.lexical.contains("2023-12-25T14:30:45"), "OffsetDateTime literal should format correctly")
+        assertEquals(XSD.dateTime, offsetDateTimeLit.datatype, "OffsetDateTime literal should have xsd:dateTime datatype")
+        
+        // Test Instant literal
+        val instantLit = Literal(Instant.parse("2023-12-25T14:30:45Z"))
+        assertTrue(instantLit.lexical.contains("2023-12-25T14:30:45"), "Instant literal should format correctly")
+        assertEquals(XSD.dateTimeStamp, instantLit.datatype, "Instant literal should have xsd:dateTimeStamp datatype")
+        
+        // Test Year literal
+        val yearLit = Literal(Year.of(2023))
+        assertEquals("2023", yearLit.lexical, "Year literal should format correctly")
+        assertEquals(XSD.gYear, yearLit.datatype, "Year literal should have xsd:gYear datatype")
+        
+        // Test YearMonth literal
+        val yearMonthLit = Literal(YearMonth.of(2023, 12))
+        assertEquals("2023-12", yearMonthLit.lexical, "YearMonth literal should format correctly")
+        assertEquals(XSD.gYearMonth, yearMonthLit.datatype, "YearMonth literal should have xsd:gYearMonth datatype")
+    }
+    
+    @Test
+    fun `literal creation with ByteArray works`() {
+        val bytes = "Hello, World!".toByteArray()
+        val byteArrayLit = Literal(bytes)
+        
+        val expectedBase64 = Base64.getEncoder().encodeToString(bytes)
+        assertEquals(expectedBase64, byteArrayLit.lexical, "ByteArray literal should be Base64 encoded")
+        assertEquals(XSD.base64Binary, byteArrayLit.datatype, "ByteArray literal should have xsd:base64Binary datatype")
+        
+        // Test extension function
+        val byteArrayLit2 = bytes.toLiteral()
+        assertEquals(expectedBase64, byteArrayLit2.lexical, "Extension function should work")
+        assertEquals(XSD.base64Binary, byteArrayLit2.datatype, "Extension function should have correct datatype")
+    }
+    
+    @Test
+    fun `boolean literal creation with different lexical forms works`() {
+        // Test "true" lexical form
+        val trueLit1 = Literal("true", XSD.boolean)
+        assertSame(TrueLiteral, trueLit1, "Literal('true', XSD.boolean) should return TrueLiteral")
+        
+        // Test "1" lexical form
+        val trueLit2 = Literal("1", XSD.boolean)
+        assertSame(TrueLiteral, trueLit2, "Literal('1', XSD.boolean) should return TrueLiteral")
+        
+        // Test "false" lexical form
+        val falseLit1 = Literal("false", XSD.boolean)
+        assertSame(FalseLiteral, falseLit1, "Literal('false', XSD.boolean) should return FalseLiteral")
+        
+        // Test "0" lexical form
+        val falseLit2 = Literal("0", XSD.boolean)
+        assertSame(FalseLiteral, falseLit2, "Literal('0', XSD.boolean) should return FalseLiteral")
+        
+        // Test boolean extension function
+        val trueLit3 = true.toLiteral()
+        assertSame(TrueLiteral, trueLit3, "true.toLiteral() should return TrueLiteral")
+        
+        val falseLit3 = false.toLiteral()
+        assertSame(FalseLiteral, falseLit3, "false.toLiteral() should return FalseLiteral")
+        
+        // Test boolean factory function
+        val trueLit4 = boolean(true)
+        assertSame(TrueLiteral, trueLit4, "boolean(true) should return TrueLiteral")
+        
+        val falseLit4 = boolean(false)
+        assertSame(FalseLiteral, falseLit4, "boolean(false) should return FalseLiteral")
+    }
+    
+    @Test
+    fun `boolean literal creation with invalid lexical forms throws exception`() {
+        // Test invalid boolean lexical forms
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("maybe", XSD.boolean)
+        }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("yes", XSD.boolean)
+        }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("no", XSD.boolean)
+        }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("2", XSD.boolean)
+        }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("True", XSD.boolean)  // Case sensitive
+        }
+        
+        assertThrows(IllegalArgumentException::class.java) {
+            Literal("FALSE", XSD.boolean)  // Case sensitive
+        }
+    }
+    
+    @Test
+    fun `BigDecimal literal strips trailing zeros`() {
+        val decimalWithZeros = BigDecimal("123.4500")
+        val decimalLit = Literal(decimalWithZeros)
+        
+        assertEquals("123.45", decimalLit.lexical, "BigDecimal literal should strip trailing zeros")
+        assertEquals(XSD.decimal, decimalLit.datatype, "BigDecimal literal should have xsd:decimal datatype")
+        
+        // Test extension function
+        val decimalLit2 = decimalWithZeros.toLiteral()
+        assertEquals("123.45", decimalLit2.lexical, "Extension function should strip trailing zeros")
+    }
+    
+    @Test
+    fun `int factory function works`() {
+        val intLit = int(42)
+        assertEquals("42", intLit.lexical, "int() should create integer literal")
+        assertEquals(XSD.integer, intLit.datatype, "int() should have xsd:integer datatype")
+    }
+    
+    @Test
+    fun `lang factory function works`() {
+        val langLit = lang("Hello", "en")
+        assertEquals("Hello", langLit.lexical, "lang() should preserve value")
+        assertTrue(langLit is LangString, "lang() should create LangString")
+        assertEquals("en", (langLit as LangString).lang, "lang() should set language tag")
+        assertEquals(RDF.langString, langLit.datatype, "lang() should have rdf:langString datatype")
+        
+        // Test Literal factory with language tag
+        val langLit2 = Literal("Bonjour", "fr")
+        assertTrue(langLit2 is LangString, "Literal(value, lang) should create LangString")
+        assertEquals("fr", (langLit2 as LangString).lang, "Literal(value, lang) should set language tag")
+    }
+    
+    @Test
+    fun `literal creation with Any type falls back to string`() {
+        // Test with unsupported type
+        val customObject = object {
+            override fun toString() = "CustomObject"
+        }
+        val anyLit = Literal(customObject)
+        assertEquals("CustomObject", anyLit.lexical, "Literal(Any) should use toString()")
+        assertEquals(XSD.string, anyLit.datatype, "Literal(Any) should have xsd:string datatype")
+        
+        // Test with null (should throw or handle gracefully)
+        // Note: This depends on implementation, but typically null.toString() throws
+    }
+    
+    @Test
+    fun `triple term and quoted triple works`() {
+        val baseTriple = RdfTriple(
+            Iri("http://example.org/person"),
+            Iri("http://example.org/name"),
+            string("John Doe")
+        )
+        
+        // Test TripleTerm creation
+        val tripleTerm = TripleTerm(baseTriple)
+        assertEquals(baseTriple, tripleTerm.triple, "TripleTerm should preserve triple")
+        
+        // Test quoted function
+        val quoted = quoted(baseTriple)
+        assertEquals(baseTriple, quoted.triple, "quoted() should create TripleTerm")
+        
+        // Test using quoted triple as subject
+        val metadataTriple = RdfTriple(
+            quoted,
+            Iri("http://example.org/source"),
+            string("Wikipedia")
+        )
+        assertEquals(quoted, metadataTriple.subject, "Quoted triple should be usable as subject")
+    }
+    
+    @Test
+    fun `type aliases work correctly`() {
+        // Test IRI alias
+        val iri1: IRI = Iri("http://example.org/resource")
+        val iri2: Iri = IRI("http://example.org/resource")
+        assertEquals(iri1, iri2, "IRI and Iri should be equivalent")
+        
+        // Test BNode alias
+        val bnode1: BNode = BlankNode("b1")
+        val bnode2: BlankNode = BNode("b1")
+        assertEquals(bnode1, bnode2, "BNode and BlankNode should be equivalent")
+    }
+    
+    @Test
+    fun `extension functions for toLiteral work`() {
+        // Test all extension functions
+        assertEquals(XSD.integer, 42.toLiteral().datatype)
+        assertEquals(XSD.integer, 123456789L.toLiteral().datatype)
+        assertEquals(XSD.double, 3.14.toLiteral().datatype)
+        assertEquals(XSD.float, 2.5f.toLiteral().datatype)
+        assertEquals(XSD.decimal, BigDecimal("123.45").toLiteral().datatype)
+        assertEquals(XSD.integer, BigInteger("123456789").toLiteral().datatype)
+        assertEquals(XSD.date, LocalDate.of(2023, 12, 25).toLiteral().datatype)
+        assertEquals(XSD.time, LocalTime.of(14, 30, 45).toLiteral().datatype)
+        assertEquals(XSD.dateTime, LocalDateTime.of(2023, 12, 25, 14, 30, 45).toLiteral().datatype)
+        assertEquals(XSD.dateTimeStamp, Instant.parse("2023-12-25T14:30:45Z").toLiteral().datatype)
+        assertEquals(XSD.gYear, Year.of(2023).toLiteral().datatype)
+        assertEquals(XSD.gYearMonth, YearMonth.of(2023, 12).toLiteral().datatype)
+        assertEquals(XSD.base64Binary, "Hello".toByteArray().toLiteral().datatype)
+    }
+    
+    @Test
+    fun `graph editor operations work`() {
+        val repo = Rdf.memory()
+        val graph = repo.defaultGraph
+        val editor = repo.editDefaultGraph()
+        
+        val triple1 = RdfTriple(Iri("http://example.org/s1"), Iri("http://example.org/p1"), string("o1"))
+        val triple2 = RdfTriple(Iri("http://example.org/s2"), Iri("http://example.org/p2"), string("o2"))
+        val triple3 = RdfTriple(Iri("http://example.org/s3"), Iri("http://example.org/p3"), string("o3"))
+        
+        // Test addTriples
+        editor.addTriples(listOf(triple1, triple2, triple3))
+        assertEquals(3, graph.size(), "Graph should have 3 triples after addTriples")
+        
+        // Test removeTriples
+        val removed = editor.removeTriples(listOf(triple1, triple2))
+        assertTrue(removed, "removeTriples should return true when triples are removed")
+        assertEquals(1, graph.size(), "Graph should have 1 triple after removeTriples")
+        assertTrue(graph.hasTriple(triple3), "Graph should still contain triple3")
+        
+        // Test clear
+        editor.addTriple(triple1)
+        editor.addTriple(triple2)
+        assertEquals(3, graph.size(), "Graph should have 3 triples before clear")
+        
+        val cleared = editor.clear()
+        assertTrue(cleared, "clear() should return true when triples are removed")
+        assertEquals(0, graph.size(), "Graph should be empty after clear")
+        
+        // Test removeTriples with non-existent triples
+        val removedNone = editor.removeTriples(listOf(triple1, triple2))
+        assertFalse(removedNone, "removeTriples should return false when no triples are removed")
+        
+        // Test clear on empty graph
+        val clearedEmpty = editor.clear()
+        assertFalse(clearedEmpty, "clear() should return false when graph is already empty")
+        
+        repo.close()
     }
     
     @Test

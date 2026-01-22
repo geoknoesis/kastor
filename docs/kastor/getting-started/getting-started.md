@@ -1,5 +1,17 @@
 ## Getting Started
 
+{% include version-banner.md %}
+
+## Why Kastor (quick comparison)
+Kastor is for **domain-first RDF** in Kotlin: work with pure domain interfaces and reach RDF through a side-channel, with a vocabulary-agnostic DSL that keeps semantics explicit.
+
+| Concern | Kastor | Jena / RDF4J / rdflib |
+|---|---|---|
+| Domain objects without RDF dependencies | ✅ | ❌ |
+| Side-channel RDF access | ✅ | ❌ (typically direct RDF types) |
+| Vocabulary-agnostic DSL | ✅ | ⚠️ (varies) |
+| Provider-agnostic core API | ✅ | ❌ (engine-specific APIs) |
+
 ### Requirements
 - Kotlin JVM 17
 - Gradle with Kotlin plugin
@@ -22,25 +34,30 @@ dependencies {
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
 
-val api = Rdf.factory {
-  providerId = "jena"
-  variantId = "memory"
-}
-val repo = api.repository
+val repo = Rdf.memory()
+```
+
+### Data flow overview
+
+```mermaid
+flowchart LR
+    A[Create repository] --> B[Add triples]
+    B --> C[Query graph]
+    C --> D[Process results]
 ```
 
 ### Provider discovery
-Providers are discovered via Java `ServiceLoader`. If you add a provider dependency, it becomes available to `RdfApiRegistry` and the factory DSL.
+Providers are discovered via Java `ServiceLoader`. If you add a provider dependency, it becomes available to `RdfProviderRegistry` and the factory DSL.
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.RdfApiRegistry
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 
-val ids: List<String> = RdfApiRegistry.providerIds() // e.g., ["jena", "rdf4j", "sparql"]
+val providers = RdfProviderRegistry.discoverProviders() // e.g., [JenaProvider, Rdf4jProvider, SparqlProvider]
 ```
 
 ### Creating RDF Terms
 
-The library provides strongly typed functions for creating RDF terms, especially literals:
+The library provides strongly typed functions for creating RDF terms, especially literals. Short aliases are available for common literal types:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
@@ -52,12 +69,12 @@ val nameProperty = iri("http://example.org/name")
 // Blank nodes
 val person1 = bnode("person1")
 
-// Literals - strongly typed for better safety
-val personName = langLiteral("John Smith", "en")           // Language-tagged literal
-val personAge = integerLiteral(30)                         // Typed literal (xsd:integer)
-val personHeight = decimalLiteral(175.5)                   // Typed literal (xsd:decimal)
-val personActive = booleanLiteral(true)                    // Typed literal (xsd:boolean)
-val plainText = plainLiteral("Some text")                 // Plain literal (xsd:string)
+// Literals - strongly typed for better safety (short aliases)
+val personName = lang("John Smith", "en")      // Language-tagged literal
+val personAge = int(30)                       // Typed literal (xsd:integer)
+val personHeight = decimal(175.5)             // Typed literal (xsd:decimal)
+val personActive = boolean(true)              // Typed literal (xsd:boolean)
+val plainText = string("Some text")           // Plain literal (xsd:string)
 
 // Triples
 val triple = triple(person1, nameProperty, personName)

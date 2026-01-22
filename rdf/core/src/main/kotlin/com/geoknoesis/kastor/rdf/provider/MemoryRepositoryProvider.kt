@@ -6,7 +6,7 @@ import com.geoknoesis.kastor.rdf.*
  * Memory repository provider implementation.
  * Provides in-memory RDF repositories for testing and development.
  */
-class MemoryRepositoryProvider : RdfApiProvider {
+class MemoryRepositoryProvider : RdfProvider {
     
     override val id: String = "memory"
     
@@ -39,10 +39,15 @@ class MemoryRepositoryProvider : RdfApiProvider {
 
 /**
  * Simple in-memory RDF repository implementation.
+ * 
+ * **Resource Management:**
+ * - Always use [use] or call [close] explicitly
+ * - In development, finalizer warnings help detect leaks
  */
 class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     private val graphs = mutableMapOf<Iri, MutableRdfGraph>()
+    @Volatile
     private var closed = false
     
     override val defaultGraph: RdfGraph by lazy { MemoryGraph() }
@@ -76,7 +81,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         return getGraph(name) as MutableRdfGraph
     }
     
-    override fun select(query: SparqlSelect): QueryResult {
+    override fun select(query: SparqlSelect): SparqlQueryResult {
         throw UnsupportedOperationException("Memory repository does not support SPARQL queries.")
     }
     
@@ -118,6 +123,24 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         closed = true
         graphs.clear()
         editDefaultGraph().clear()
+    }
+    
+    /**
+     * Finalizer that warns if repository was not properly closed.
+     * This helps detect resource leaks in development.
+     * 
+     * **Note:** Finalizers are not guaranteed to run immediately,
+     * but they help catch leaks during testing and development.
+     */
+    @Suppress("unused")
+    protected fun finalize() {
+        if (!closed) {
+            System.err.println(
+                "WARNING: MemoryRepository was not closed properly! " +
+                "Always use 'use' block or call 'close()' explicitly. " +
+                "This is a resource leak."
+            )
+        }
     }
     
     override fun getCapabilities(): ProviderCapabilities {
@@ -164,6 +187,10 @@ class MemoryGraph(initialTriples: Collection<RdfTriple> = emptyList()) : Mutable
         return triples.toList()
     }
     
+    override fun getTriplesSequence(): Sequence<RdfTriple> {
+        return triples.asSequence()
+    }
+    
     override fun size(): Int {
         return triples.size
     }
@@ -176,9 +203,10 @@ class MemoryGraph(initialTriples: Collection<RdfTriple> = emptyList()) : Mutable
 }
 
 /**
- * Simple empty query result implementation.
+ * Simple empty SPARQL query result implementation.
+ * Implemented as a singleton object for efficiency.
  */
-class EmptyQueryResult : QueryResult {
+object EmptySparqlQueryResult : SparqlQueryResult {
     
     override fun iterator(): Iterator<BindingSet> = emptyList<BindingSet>().iterator()
     

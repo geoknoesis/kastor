@@ -62,17 +62,17 @@ class SparqlServiceDescriptionTest {
     
     @Test
     fun `test unified provider registry`() {
-        val providers = RdfApiRegistry.getAllProviders()
+        val providers = RdfProviderRegistry.getAllProviders()
         assertTrue(providers.isNotEmpty())
         
         // Check that we have at least the memory provider
         assertTrue(providers.any { it.id == "memory" })
         
-        val capabilities = RdfApiRegistry.discoverAllCapabilities()
+        val capabilities = RdfProviderRegistry.discoverAllCapabilities()
         assertTrue(capabilities.isNotEmpty())
         
         // Test feature support for available providers
-        val memoryProvider = RdfApiRegistry.getProvider("memory")
+        val memoryProvider = RdfProviderRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
         memoryProvider?.let { provider ->
             // Just check that we can get capabilities, don't assume specific features
@@ -123,7 +123,7 @@ class SparqlServiceDescriptionTest {
     @Test
     fun `test provider capabilities`() {
         // Test memory provider capabilities
-        val memoryProvider = RdfApiRegistry.getProvider("memory")
+        val memoryProvider = RdfProviderRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
         memoryProvider?.let { provider ->
             val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
@@ -134,7 +134,7 @@ class SparqlServiceDescriptionTest {
         }
         
         // Test specialized providers if available (they may not be available in isolated tests)
-        val sparqlProvider = RdfApiRegistry.getProvider("sparql-endpoint")
+        val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
         sparqlProvider?.let { provider ->
             val sparqlCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.SPARQL_ENDPOINT, sparqlCapabilities.providerCategory)
@@ -143,7 +143,7 @@ class SparqlServiceDescriptionTest {
             assertTrue(sparqlCapabilities.basic.supportsVersionDeclaration)
         }
         
-        val reasonerProvider = RdfApiRegistry.getProvider("reasoner")
+        val reasonerProvider = RdfProviderRegistry.getProvider("reasoner")
         reasonerProvider?.let { provider ->
             val reasonerCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.REASONER, reasonerCapabilities.providerCategory)
@@ -151,7 +151,7 @@ class SparqlServiceDescriptionTest {
             assertTrue(reasonerCapabilities.basic.supportsInference)
         }
         
-        val shaclProvider = RdfApiRegistry.getProvider("shacl-validator")
+        val shaclProvider = RdfProviderRegistry.getProvider("shacl-validator")
         shaclProvider?.let { provider ->
             val shaclCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             assertEquals(ProviderCategory.SHACL_VALIDATOR, shaclCapabilities.providerCategory)
@@ -190,14 +190,14 @@ class SparqlServiceDescriptionTest {
     @Test
     fun `test unified registry operations`() {
         // Test getting all service descriptions
-        val allDescriptions = RdfApiRegistry.getAllServiceDescriptions("https://example.com")
+        val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions("https://example.com")
         assertTrue(allDescriptions.isNotEmpty())
         
         // At minimum, we should have the memory provider
         assertTrue(allDescriptions.containsKey("memory"))
         
         // Test getting supported features
-        val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+        val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
         assertTrue(supportedFeatures.isNotEmpty())
         
         // Check that each provider has some features (or at least empty list)
@@ -206,10 +206,10 @@ class SparqlServiceDescriptionTest {
         }
         
         // Test feature support checking - use a generic feature that might exist
-        val memoryProvider = RdfApiRegistry.getProvider("memory")
+        val memoryProvider = RdfProviderRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
         // Don't assume specific features exist, just test the method works
-        val hasSomeFeature = RdfApiRegistry.supportsFeature("memory", "Some Feature")
+        val hasSomeFeature = RdfProviderRegistry.supportsFeature("memory", "Some Feature")
         // The result doesn't matter, just that the method doesn't throw an exception
         assertTrue(hasSomeFeature || !hasSomeFeature) // Always true, just testing method works
     }
@@ -217,43 +217,43 @@ class SparqlServiceDescriptionTest {
     @Test
     fun `test unified registry features`() {
         // Test hasProviderWithFeature - use a generic feature
-        val hasNamedGraphs = RdfApiRegistry.hasProviderWithFeature("Named Graphs")
+        val hasNamedGraphs = RdfProviderRegistry.hasProviderWithFeature("Named Graphs")
         // Don't assume the result, just test that the method works
         assertTrue(hasNamedGraphs || !hasNamedGraphs) // Always true, just testing method works
         
         // Test getProviderStatistics
-        val statistics = RdfApiRegistry.getProviderStatistics()
+        val statistics = RdfProviderRegistry.getProviderStatistics()
         assertTrue(statistics.isNotEmpty())
         assertTrue(statistics[ProviderCategory.RDF_STORE]!! >= 1) // At least memory provider
         
         // Test getProvider
-        val memoryProvider = RdfApiRegistry.getProvider("memory")
+        val memoryProvider = RdfProviderRegistry.getProvider("memory")
         assertNotNull(memoryProvider)
         assertEquals("memory", memoryProvider?.id)
         
-        val nonExistentProvider = RdfApiRegistry.getProvider("non-existent")
+        val nonExistentProvider = RdfProviderRegistry.getProvider("non-existent")
         assertNull(nonExistentProvider)
         
         // Test basic registry operations
-        assertTrue(RdfApiRegistry.supports("memory"))
-        assertTrue(RdfApiRegistry.supportsVariant("memory", "memory"))
-        assertFalse(RdfApiRegistry.supports("non-existent"))
+        assertTrue(RdfProviderRegistry.supports("memory"))
+        assertTrue(RdfProviderRegistry.supportsVariant("memory", "memory"))
+        assertFalse(RdfProviderRegistry.supports("non-existent"))
         
-        val supportedTypes = RdfApiRegistry.getSupportedTypes()
+        val supportedTypes = RdfProviderRegistry.getSupportedTypes()
         assertTrue(supportedTypes.contains("memory:memory"))
     }
     
     @Test
     fun `test registry consistency`() {
         // Test that getAllProviders() and discoverProviders() return the same results
-        val allProviders = RdfApiRegistry.getAllProviders()
-        val discoveredProviders = RdfApiRegistry.discoverProviders()
+        val allProviders = RdfProviderRegistry.getAllProviders()
+        val discoveredProviders = RdfProviderRegistry.discoverProviders()
         
         assertEquals(allProviders.size, discoveredProviders.size)
         assertEquals(allProviders.toSet(), discoveredProviders.toSet())
         
         // Test that getSupportedTypes() matches actual provider types
-        val supportedTypes = RdfApiRegistry.getSupportedTypes()
+        val supportedTypes = RdfProviderRegistry.getSupportedTypes()
         val providerTypes = allProviders.map { it.id }.toSet()
         val supportedProviders = supportedTypes.map { it.substringBefore(":", it) }.toSet()
         
@@ -263,7 +263,7 @@ class SparqlServiceDescriptionTest {
         supportedTypes.forEach { type ->
             val parts = type.split(":", limit = 2)
             assertEquals(2, parts.size, "Type '$type' should include provider and variant")
-            val provider = RdfApiRegistry.getProvider(parts[0])
+            val provider = RdfProviderRegistry.getProvider(parts[0])
             assertNotNull(provider, "Provider for type '$type' should not be null")
             assertEquals(parts[0], provider?.id)
         }

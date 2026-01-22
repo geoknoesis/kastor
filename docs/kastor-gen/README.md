@@ -259,7 +259,7 @@ cd kastor
 
 ## License
 
-Kastor Gen is licensed under the [Apache License 2.0](LICENSE).
+Kastor Gen is licensed under the [Apache License 2.0](../../LICENSE).
 
 ## Acknowledgments
 
