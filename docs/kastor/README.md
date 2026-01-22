@@ -165,8 +165,9 @@ if (result is ValidationResult.Violations) {
 Integrate with SPARQL endpoints and build web services.
 
 ```kotlin
-val repo = Rdf.factory {
-    sparql("https://dbpedia.org/sparql")
+val repo = Rdf.repository {
+    providerId = "sparql"
+    variantId = "endpoint"
 }
 
 val results = repo.select(SparqlSelectQuery("""

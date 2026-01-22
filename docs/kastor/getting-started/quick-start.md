@@ -377,19 +377,17 @@ val repo = Rdf.factory {
 Now that you've completed the quick start, here's what to explore next:
 
 ### 📚 Documentation
-- **[Super Sleek API Guide](super-sleek-api-guide.md)** - Comprehensive feature showcase
-- **[Compact DSL Guide](compact-dsl-guide.md)** - Multiple syntax styles
-- **[RDF Fundamentals](rdf-fundamentals.md)** - Understanding RDF basics
-- **[SPARQL Fundamentals](sparql-fundamentals.md)** - Query language introduction
+- **[Compact DSL Guide](../api/compact-dsl-guide.md)** - Multiple syntax styles
+- **[RDF Fundamentals](../concepts/rdf-fundamentals.md)** - Understanding RDF basics
+- **[SPARQL Fundamentals](../concepts/sparql-fundamentals.md)** - Query language introduction
 
 ### 🎯 Examples
-- **[Super Sleek Example](examples/src/main/kotlin/com/geoknoesis/kastor/rdf/examples/SuperSleekExample.kt)** - Complete feature showcase
-- **[Ultra-Compact with Variables](examples/src/main/kotlin/com/geoknoesis/kastor/rdf/examples/UltraCompactWithVariablesExample.kt)** - Variable usage patterns
+- **[Examples Overview](../examples/README.md)** - Complete working examples
 
 ### 🛠️ Tutorials
-- **[Hello World Tutorial](tutorials/hello-world.md)** - Your first RDF application
-- **[Load and Query Tutorial](tutorials/load-and-query.md)** - Working with data
-- **[Remote Endpoint Tutorial](tutorials/remote-endpoint.md)** - Connecting to remote repositories
+- **[Hello World Tutorial](../tutorials/hello-world.md)** - Your first RDF application
+- **[Load and Query Tutorial](../tutorials/load-and-query.md)** - Working with data
+- **[Remote Endpoint Tutorial](../tutorials/remote-endpoint.md)** - Connecting to remote repositories
 
 ## 🚀 Complete Example
 

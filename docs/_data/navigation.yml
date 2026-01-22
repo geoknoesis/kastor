@@ -57,6 +57,8 @@ main:
         url: /kastor/api/core-api.html
       - title: DSL Reference
         url: /kastor/reference/dsl.html
+      - title: Repository Reference
+        url: /kastor/reference/repository.html
       - title: Types Reference
         url: /kastor/reference/types.html
 
