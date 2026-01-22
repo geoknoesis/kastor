@@ -1,6 +1,6 @@
 main:
   - title: Getting Started
-    url: /kastor/getting-started/README.html
+    url: /kastor/getting-started/
     children:
       - title: Getting Started
         url: /kastor/getting-started/getting-started.html
@@ -11,10 +11,10 @@ main:
       - title: Configuration Variants
         url: /kastor/getting-started/configuration-variants.html
   - title: Concepts
-    url: /kastor/concepts/README.html
+    url: /kastor/concepts/
     children:
       - title: Concepts Overview
-        url: /kastor/concepts/README.html
+        url: /kastor/concepts/
       - title: RDF Fundamentals
         url: /kastor/concepts/rdf-fundamentals.html
       - title: SPARQL Fundamentals
@@ -26,7 +26,7 @@ main:
       - title: Design Philosophy
         url: /kastor/philosophy.html
   - title: How-To Guides
-    url: /kastor/guides/README.html
+    url: /kastor/guides/
     children:
       - title: Guides Overview
         url: /kastor/guides/guides.html
@@ -49,7 +49,7 @@ main:
       - title: Troubleshooting
         url: /kastor/guides/troubleshooting.html
   - title: Reference
-    url: /kastor/reference/README.html
+    url: /kastor/reference/
     children:
       - title: API Reference
         url: /kastor/api/api-reference.html
