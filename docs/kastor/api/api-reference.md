@@ -531,10 +531,9 @@ Interface for SPARQL query results.
 
 ```kotlin
 interface SparqlQueryResult : Iterable<BindingSet> {
-    fun count(): Long
-    fun firstOrNull(): BindingSet?
+    fun first(): BindingSet?
     fun toList(): List<BindingSet>
-    fun toMap(keySelector: (BindingSet) -> String, valueSelector: (BindingSet) -> String): Map<String, String>
+    fun asSequence(): Sequence<BindingSet>
 }
 ```
 
@@ -544,15 +543,19 @@ Interface for individual query result bindings.
 
 ```kotlin
 interface BindingSet {
-    fun get(name: String): RdfTerm?
-    fun getString(name: String): String?
-    fun getInt(name: String): Int?
-    fun getDouble(name: String): Double?
-    fun getBoolean(name: String): Boolean?
-    fun getIri(name: String): Iri?
-    fun getResource(name: String): RdfResource?
-    fun getNames(): Set<String>
-    fun hasBinding(name: String): Boolean
+    fun get(variable: String): RdfTerm?
+    fun getVariableNames(): Set<String>
+    fun hasBinding(variable: String): Boolean
+    fun getString(variable: String): String?
+    fun getInt(variable: String): Int?
+    fun getDouble(variable: String): Double?
+    fun getBoolean(variable: String): Boolean?
+    fun getStringOr(variable: String, default: String): String
+    fun getIntOr(variable: String, default: Int): Int
+    fun getDoubleOr(variable: String, default: Double): Double
+    fun getBooleanOr(variable: String, default: Boolean): Boolean
+    fun getStringOrThrow(variable: String): String
+    fun getIntOrThrow(variable: String): Int
 }
 ```
 
@@ -572,30 +575,27 @@ data class Iri(val value: String) : RdfResource {
 }
 ```
 
-### RdfLiteral
+### Literal
 
 Represents an RDF literal value.
 
 ```kotlin
-sealed class RdfLiteral : RdfTerm {
-    data class StringLiteral(val value: String, val language: String? = null, val datatype: Iri? = null) : RdfLiteral()
-    data class IntegerLiteral(val value: Int) : RdfLiteral()
-    data class DoubleLiteral(val value: Double) : RdfLiteral()
-    data class BooleanLiteral(val value: Boolean) : RdfLiteral()
+sealed interface Literal : RdfTerm {
+    val lexical: String
+    val datatype: Iri
 }
 ```
 
 ### Literal Factory Functions
 
 ```kotlin
-fun string(value: String, language: String? = null, datatype: Iri? = null): RdfLiteral
-fun int(value: Int): RdfLiteral
-fun double(value: Double): RdfLiteral
-fun boolean(value: Boolean): RdfLiteral
-fun literal(value: String): RdfLiteral
-fun literal(value: Int): RdfLiteral
-fun literal(value: Double): RdfLiteral
-fun literal(value: Boolean): RdfLiteral
+fun string(value: String): Literal
+fun lang(value: String, lang: String): Literal
+fun int(value: Int): Literal
+fun double(value: Double): Literal
+fun decimal(value: Double): Literal
+fun boolean(value: Boolean): Literal
+fun Literal(lexical: String, datatype: Iri = XSD.string): Literal
 ```
 
 ## 🎯 Convenience Functions
@@ -605,10 +605,12 @@ fun literal(value: Boolean): RdfLiteral
 ```kotlin
 fun resource(iri: String): RdfResource
 fun iri(value: String): Iri
-fun literal(value: String): RdfLiteral
-fun literal(value: Int): RdfLiteral
-fun literal(value: Double): RdfLiteral
-fun literal(value: Boolean): RdfLiteral
+fun string(value: String): Literal
+fun lang(value: String, lang: String): Literal
+fun int(value: Int): Literal
+fun double(value: Double): Literal
+fun decimal(value: Double): Literal
+fun boolean(value: Boolean): Literal
 fun triple(subject: RdfResource, predicate: Iri, obj: RdfTerm): RdfTriple
 fun triple(subject: RdfResource, predicate: String, obj: RdfTerm): RdfTriple
 fun triple(subject: RdfResource, predicate: Iri, obj: String): RdfTriple
@@ -621,10 +623,12 @@ fun triple(subject: RdfResource, predicate: Iri, obj: Boolean): RdfTriple
 
 ### RdfProviderRegistry
 
-Service loader for discovering RDF providers.
+Default registry used by the factory DSL and `Rdf.repository`. You can supply a custom
+registry for tests or isolation by passing a registry instance to `Rdf.repository(...)`
+or by swapping the delegate.
 
 ```kotlin
-object RdfProviderRegistry {
+interface ProviderRegistry {
     fun discoverProviders(): List<RdfProvider>
     fun getProvider(providerId: String): RdfProvider?
     fun getSupportedTypes(): List<String>
@@ -633,6 +637,16 @@ object RdfProviderRegistry {
     fun selectProvider(requirements: ProviderRequirements): ProviderSelection?
     fun register(provider: RdfProvider)
     fun create(config: RdfConfig): RdfRepository
+}
+```
+
+```kotlin
+// Use a custom registry for tests
+val registry = DefaultProviderRegistry(autoDiscover = false)
+registry.register(CustomProvider())
+val repo = Rdf.repository(registry) {
+    providerId = "custom"
+    variantId = "memory"
 }
 ```
 
@@ -663,19 +677,21 @@ RdfException (base)
 ```kotlin
 // Create repository
 val repo = Rdf.memory()
+val namePred = iri("http://example.org/person/name")
+val agePred = iri("http://example.org/person/age")
 
 // Add data
 repo.add {
     val person = iri("http://example.org/person/alice")
-    person["http://example.org/person/name"] = "Alice"
-    person["http://example.org/person/age"] = 30
+    person[namePred] = "Alice"
+    person[agePred] = 30
 }
 
 // Query data
 val results = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age WHERE { 
-        ?person <http://example.org/person/name> ?name ;
-                <http://example.org/person/age> ?age 
+        ?person ${namePred} ?name ;
+                ${agePred} ?age 
     }
 """))
 
@@ -693,12 +709,13 @@ repo.close()
 ```kotlin
 // Repository operations
 val repo = Rdf.memory()
+val namePred = iri("http://example.org/person/name")
 repo.add {
     val person = iri("http://example.org/person/alice")
-    person["http://example.org/person/name"] = "Alice"
+    person[namePred] = "Alice"
 }
 
-val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person ${namePred} ?name }"))
 results.forEach { binding ->
     println("Found: ${binding.getString("name")}")
 }
@@ -709,7 +726,7 @@ repo.close()
 // Performance monitoring
 val started = System.nanoTime()
 repo.select(SparqlSelectQuery("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
+    SELECT ?name WHERE { ?person ${namePred} ?name }
 """))
 val durationMs = (System.nanoTime() - started) / 1_000_000
 println("Query took: ${durationMs}ms")
@@ -718,7 +735,7 @@ println("Query took: ${durationMs}ms")
 repo.add {
     for (i in 1..10000) {
         val person = iri("http://example.org/person/person$i")
-        person["http://example.org/person/name"] = "Person $i"
+        person[namePred] = "Person $i"
     }
 }
 ```

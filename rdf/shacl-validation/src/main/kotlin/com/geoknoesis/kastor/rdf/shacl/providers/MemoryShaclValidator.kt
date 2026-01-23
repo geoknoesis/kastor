@@ -180,23 +180,23 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         val constraints = mutableListOf<ShaclConstraint>()
         
         // Look for property constraints
-        val propertyConstraints = triples.filter {
+        val propertyShapeTriples = triples.filter {
             it.subject is Iri && (it.subject as Iri).value == shapeUri &&
             it.predicate.value == "http://www.w3.org/ns/shacl#property"
         }
         
-        for (propertyTriple in propertyConstraints) {
+        for (propertyTriple in propertyShapeTriples) {
             // Extract property shape constraints
             when (propertyTriple.obj) {
                 is BlankNode -> {
                     val propertyShapeUri = (propertyTriple.obj as BlankNode).id
-                    val propertyConstraints = extractPropertyConstraints(triples, propertyShapeUri)
-                    constraints.addAll(propertyConstraints)
+                    val propertyShapeConstraints = extractPropertyConstraints(triples, propertyShapeUri)
+                    constraints.addAll(propertyShapeConstraints)
                 }
                 is Iri -> {
                     val propertyShapeUri = (propertyTriple.obj as Iri).value
-                    val propertyConstraints = extractPropertyConstraints(triples, propertyShapeUri)
-                    constraints.addAll(propertyConstraints)
+                    val propertyShapeConstraints = extractPropertyConstraints(triples, propertyShapeUri)
+                    constraints.addAll(propertyShapeConstraints)
                 }
                 else -> {
                     // Skip non-resource objects
@@ -226,7 +226,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
     private fun extractPropertyConstraints(triples: List<RdfTriple>, propertyShapeUri: String): List<ShaclConstraint> {
         val constraints = mutableListOf<ShaclConstraint>()
         
-        val propertyConstraints = triples.filter {
+        val propertyShapeTriples = triples.filter {
             when (it.subject) {
                 is BlankNode -> (it.subject as BlankNode).id == propertyShapeUri
                 is Iri -> (it.subject as Iri).value == propertyShapeUri
@@ -236,7 +236,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         
         // Extract the path first
         var path: String? = null
-        for (constraintTriple in propertyConstraints) {
+        for (constraintTriple in propertyShapeTriples) {
             if (constraintTriple.predicate.value == "http://www.w3.org/ns/shacl#path") {
                 path = (constraintTriple.obj as? Iri)?.value
                 break
@@ -244,7 +244,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         }
         
         // Extract other constraints and set the path
-        for (constraintTriple in propertyConstraints) {
+        for (constraintTriple in propertyShapeTriples) {
             val constraint = createConstraintFromTriple(constraintTriple)
             if (constraint != null) {
                 // Set the path for the constraint
@@ -463,7 +463,10 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         
         val constraintsByType = violations.groupBy { it.constraint.constraintType }.mapValues { it.value.size }
         val violationsByType = violations.groupBy { it.constraint.constraintType }.mapValues { it.value.size }
-        val warningsByType = warnings.groupBy { it.constraint?.constraintType }.filterKeys { it != null }.mapValues { it.value.size } as Map<ConstraintType, Int>
+        val warningsByType = warnings
+            .mapNotNull { warning -> warning.constraint?.constraintType }
+            .groupingBy { it }
+            .eachCount()
         
         return ValidationStatistics(
             totalResources = triples.map { it.subject }.distinct().size,

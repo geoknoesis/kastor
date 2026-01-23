@@ -63,8 +63,33 @@ class Rdf4jProvider : RdfProvider {
             supportsAggregation = true,
             supportsSubSelect = true,
             supportsVersionDeclaration = true,
-            supportsServiceDescription = true
+            supportsServiceDescription = true,
+            supportedInputFormats = listOf("TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ")
         )
+    }
+    
+    override fun supportsFormat(format: String): Boolean {
+        val normalized = format.uppercase().trim()
+        return normalized in listOf(
+            "TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", 
+            "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ"
+        )
+    }
+    
+    override fun serializeGraph(graph: RdfGraph, format: String): String {
+        return Rdf4jFormatSupport.serializeGraph(graph, format)
+    }
+    
+    override fun serializeDataset(repository: RdfRepository, format: String): String {
+        return Rdf4jFormatSupport.serializeDataset(repository, format)
+    }
+    
+    override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
+        return Rdf4jFormatSupport.parseGraph(inputStream, format)
+    }
+    
+    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
+        Rdf4jFormatSupport.parseDataset(repository, inputStream, format)
     }
 }
 

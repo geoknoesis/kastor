@@ -79,7 +79,7 @@ class JenaValidation : ValidationContext {
       ))
 
       val dataModel = extractFocusDataModel(jenaModel, focusResource, shapesModel)
-      val violations = validateMinCount(shapesModel, dataModel, focusResource)
+      val violations = validateMinCount(dataModel, focusResource)
       if (violations.isEmpty()) {
         return ValidationResult.Ok
       }
@@ -145,7 +145,6 @@ class JenaValidation : ValidationContext {
   }
 
   private fun validateMinCount(
-    shapesModel: Model,
     dataModel: Model,
     focus: Resource
   ): List<ShaclViolation> {

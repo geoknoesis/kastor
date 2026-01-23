@@ -1,6 +1,6 @@
 # Registry Management
 
-Kastor features a unified registry system that provides comprehensive provider management, capability discovery, and service description generation. The `RdfApiRegistry` serves as the central hub for all provider operations, combining basic and enhanced functionality in a single, easy-to-use interface.
+Kastor features a unified registry system that provides comprehensive provider management, capability discovery, and service description generation. The `RdfProviderRegistry` serves as the central hub for all provider operations, combining basic and enhanced functionality in a single, easy-to-use interface.
 
 ## 🎯 Overview
 
@@ -19,12 +19,12 @@ The unified registry system provides:
 
 ```kotlin
 // Get all registered providers
-val allProviders = RdfApiRegistry.getAllProviders()
+val allProviders = RdfProviderRegistry.getAllProviders()
 println("Available providers: ${allProviders.map { it.id }}")
 
 // Get specific provider
-val memoryProvider = RdfApiRegistry.getProvider("memory")
-val jenaProvider = RdfApiRegistry.getProvider("jena")
+val memoryProvider = RdfProviderRegistry.getProvider("memory")
+val jenaProvider = RdfProviderRegistry.getProvider("jena")
 
 // Check provider availability
 if (memoryProvider != null) {
@@ -38,9 +38,9 @@ if (memoryProvider != null) {
 
 ```kotlin
 // Get providers by category
-val sparqlProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
-val reasonerProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.REASONER)
-val shaclProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.SHACL_VALIDATOR)
+val sparqlProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
+val reasonerProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.REASONER)
+val shaclProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.SHACL_VALIDATOR)
 
 println("SPARQL providers: ${sparqlProviders.size}")
 println("Reasoner providers: ${reasonerProviders.size}")
@@ -51,7 +51,7 @@ println("SHACL providers: ${shaclProviders.size}")
 
 ```kotlin
 // Discover all provider capabilities
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 allCapabilities.forEach { (providerType, capabilities) ->
     println("Provider: $providerType")
@@ -68,12 +68,12 @@ allCapabilities.forEach { (providerType, capabilities) ->
 
 ```kotlin
 // Generate service description for specific provider
-val memoryDescription = RdfApiRegistry.generateServiceDescription(
+val memoryDescription = RdfProviderRegistry.generateServiceDescription(
     providerId = "memory",
     serviceUri = "http://example.org/memory"
 )
 
-val jenaDescription = RdfApiRegistry.generateServiceDescription(
+val jenaDescription = RdfProviderRegistry.generateServiceDescription(
     providerId = "jena",
     serviceUri = "http://example.org/jena"
 )
@@ -88,7 +88,7 @@ if (memoryDescription != null) {
 ```kotlin
 // Generate service descriptions for all providers
 val baseUri = "http://example.org"
-val allDescriptions = RdfApiRegistry.getAllServiceDescriptions(baseUri)
+val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions(baseUri)
 
 allDescriptions.forEach { (providerType, description) ->
     println("Provider: $providerType")
@@ -97,7 +97,7 @@ allDescriptions.forEach { (providerType, description) ->
     // Print as Turtle
     val generator = SparqlServiceDescriptionGenerator(
         "$baseUri/$providerType", 
-        RdfApiRegistry.getProvider(providerType)!!.getCapabilities()
+        RdfProviderRegistry.getProvider(providerType)!!.getCapabilities()
     )
     val turtle = generator.generateAsTurtle()
     println("Turtle:\n$turtle")
@@ -110,9 +110,12 @@ allDescriptions.forEach { (providerType, description) ->
 
 ```kotlin
 // Check if any provider supports specific features
-val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
-val hasInferenceSupport = RdfApiRegistry.hasProviderWithFeature("supportsInference")
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+val hasInferenceSupport = RdfProviderRegistry
+    .discoverAllCapabilities()
+    .values
+    .any { it.basic.supportsInference }
 
 println("RDF-star support available: $hasRdfStarSupport")
 println("Federation support available: $hasFederationSupport")
@@ -123,8 +126,8 @@ println("Inference support available: $hasInferenceSupport")
 
 ```kotlin
 // Check specific provider capabilities
-val memorySupportsRdfStar = RdfApiRegistry.supportsFeature("memory", "supportsRdfStar")
-val jenaSupportsRdfStar = RdfApiRegistry.supportsFeature("jena", "supportsRdfStar")
+val memorySupportsRdfStar = RdfProviderRegistry.supportsFeature("memory", "RDF-star")
+val jenaSupportsRdfStar = RdfProviderRegistry.supportsFeature("jena", "RDF-star")
 
 println("Memory supports RDF-star: $memorySupportsRdfStar")
 println("Jena supports RDF-star: $jenaSupportsRdfStar")
@@ -134,7 +137,7 @@ println("Jena supports RDF-star: $jenaSupportsRdfStar")
 
 ```kotlin
 // Get all supported features organized by provider
-val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
 
 supportedFeatures.forEach { (providerType, features) ->
     println("$providerType supports:")
@@ -151,7 +154,7 @@ supportedFeatures.forEach { (providerType, features) ->
 
 ```kotlin
 // Get provider statistics by category
-val statistics = RdfApiRegistry.getProviderStatistics()
+val statistics = RdfProviderRegistry.getProviderStatistics()
 
 statistics.forEach { (category, count) ->
     println("$category: $count providers")
@@ -168,7 +171,7 @@ statistics.forEach { (category, count) ->
 
 ```kotlin
 // Analyze capability distribution
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 // Count providers by capability
 val rdfStarProviders = allCapabilities.values.count { it.basic.supportsRdfStar }
@@ -188,7 +191,7 @@ println("SPARQL 1.2 providers: $sparql12Providers")
 
 ```kotlin
 // Analyze extension function support
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 val totalFunctions = allCapabilities.values.sumOf { it.basic.extensionFunctions.size }
 val providersWithFunctions = allCapabilities.values.count { it.basic.extensionFunctions.isNotEmpty() }
@@ -222,9 +225,9 @@ Specialized providers are automatically registered when available:
 
 ```kotlin
 // Check for specialized providers
-val sparqlProvider = RdfApiRegistry.getProvider("sparql-endpoint")
-val reasonerProvider = RdfApiRegistry.getProvider("reasoner")
-val shaclProvider = RdfApiRegistry.getProvider("shacl-validator")
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
+val reasonerProvider = RdfProviderRegistry.getProvider("reasoner")
+val shaclProvider = RdfProviderRegistry.getProvider("shacl-validator")
 
 println("SPARQL Endpoint Provider: ${sparqlProvider?.name ?: "Not available"}")
 println("Reasoner Provider: ${reasonerProvider?.name ?: "Not available"}")
@@ -258,10 +261,10 @@ class CustomProvider : RdfApiProvider {
 }
 
 // Register the custom provider
-RdfApiRegistry.register(CustomProvider())
+RdfProviderRegistry.register(CustomProvider())
 
 // Verify registration
-val customProvider = RdfApiRegistry.getProvider("custom")
+val customProvider = RdfProviderRegistry.getProvider("custom")
 println("Custom provider registered: ${customProvider?.name}")
 ```
 
@@ -276,7 +279,7 @@ fun selectProvider(
     requiresFederation: Boolean = false,
     requiresInference: Boolean = false
 ): RdfApiProvider? {
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     
     return allProviders.find { provider ->
         val capabilities = provider.getCapabilities(provider.defaultVariantId())
@@ -300,7 +303,7 @@ val inferenceProvider = selectProvider(requiresInference = true)
 ```kotlin
 // Select provider by category
 fun selectProviderByCategory(category: ProviderCategory): RdfApiProvider? {
-    val providers = RdfApiRegistry.getProvidersByCategory(category)
+    val providers = RdfProviderRegistry.getProvidersByCategory(category)
     return providers.firstOrNull()
 }
 
@@ -315,7 +318,7 @@ val shaclProvider = selectProviderByCategory(ProviderCategory.SHACL_VALIDATOR)
 ```kotlin
 // Select provider based on performance characteristics
 fun selectBestProvider(useCase: String): RdfApiProvider? {
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     
     return when (useCase) {
         "memory-intensive" -> allProviders.minByOrNull { 
@@ -340,7 +343,7 @@ fun selectBestProvider(useCase: String): RdfApiProvider? {
 ```kotlin
 // Check provider health and availability
 fun checkProviderHealth(): Map<String, Boolean> {
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     val healthStatus = mutableMapOf<String, Boolean>()
     
     allProviders.forEach { provider ->
@@ -368,7 +371,7 @@ healthStatus.forEach { (provider, healthy) ->
 ```kotlin
 // Verify capability consistency across providers
 fun checkCapabilityConsistency(): Map<String, List<String>> {
-    val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+    val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
     val inconsistencies = mutableMapOf<String, MutableList<String>>()
     
     // Check for inconsistent SPARQL versions
@@ -404,7 +407,7 @@ if (inconsistencies.isNotEmpty()) {
 ```kotlin
 // Always check provider availability before use
 fun getProviderSafely(type: String): RdfApiProvider? {
-    return RdfApiRegistry.getProvider(type)?.also { provider ->
+    return RdfProviderRegistry.getProvider(type)?.also { provider ->
         println("Using provider: ${provider.name} v${provider.version}")
     }
 }
@@ -441,7 +444,7 @@ fun useAdvancedFeatures(provider: RdfApiProvider) {
 ```kotlin
 // Generate and validate service descriptions
 fun generateServiceDescriptions(baseUri: String) {
-    val allDescriptions = RdfApiRegistry.getAllServiceDescriptions(baseUri)
+    val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions(baseUri)
     
     allDescriptions.forEach { (providerType, description) ->
         val triples = description.getTriples()
@@ -471,7 +474,7 @@ fun registryManagementExample() {
     
     // 1. Basic provider operations
     println("\n1. Basic Provider Operations")
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     println("Available providers: ${allProviders.map { it.id }}")
     
     allProviders.forEach { provider ->
@@ -488,13 +491,13 @@ fun registryManagementExample() {
     )
     
     categories.forEach { category ->
-        val providers = RdfApiRegistry.getProvidersByCategory(category)
+        val providers = RdfProviderRegistry.getProvidersByCategory(category)
         println("  $category: ${providers.size} providers")
     }
     
     // 3. Capability discovery
     println("\n3. Capability Discovery")
-    val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+    val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
     println("Providers with detailed capabilities: ${allCapabilities.size}")
     
     allCapabilities.forEach { (type, capabilities) ->
@@ -508,16 +511,16 @@ fun registryManagementExample() {
     
     // 4. Feature support checking
     println("\n4. Feature Support Checking")
-    val features = listOf("supportsRdfStar", "supportsFederation", "supportsInference")
+    val features = listOf("RDF-star", "Federation", "Property Paths")
     
     features.forEach { feature ->
-        val hasSupport = RdfApiRegistry.hasProviderWithFeature(feature)
+        val hasSupport = RdfProviderRegistry.hasProviderWithFeature(feature)
         println("  $feature: $hasSupport")
     }
     
     // 5. Provider statistics
     println("\n5. Provider Statistics")
-    val statistics = RdfApiRegistry.getProviderStatistics()
+    val statistics = RdfProviderRegistry.getProviderStatistics()
     statistics.forEach { (category, count) ->
         println("  $category: $count providers")
     }
@@ -525,7 +528,7 @@ fun registryManagementExample() {
     // 6. Service description generation
     println("\n6. Service Description Generation")
     val baseUri = "http://example.org"
-    val allDescriptions = RdfApiRegistry.getAllServiceDescriptions(baseUri)
+    val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions(baseUri)
     
     allDescriptions.forEach { (type, description) ->
         println("  $type: ${description.getTriples().size} triples")
@@ -565,7 +568,7 @@ fun registryManagementExample() {
 
 // Helper functions
 fun checkProviderHealth(): Map<String, Boolean> {
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     val healthStatus = mutableMapOf<String, Boolean>()
     
     allProviders.forEach { provider ->
@@ -581,7 +584,7 @@ fun checkProviderHealth(): Map<String, Boolean> {
 }
 
 fun checkCapabilityConsistency(): Map<String, List<String>> {
-    val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+    val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
     val inconsistencies = mutableMapOf<String, MutableList<String>>()
     
     val sparqlVersions = allCapabilities.values.map { it.basic.sparqlVersion }.distinct()

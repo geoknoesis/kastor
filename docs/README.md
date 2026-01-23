@@ -19,6 +19,15 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 - **[Vocabularies Guide](kastor/concepts/vocabularies.md)** - Working with RDF vocabularies
 - **[Design Philosophy](kastor/philosophy.md)** - Core principles
 
+## 🧭 Documentation Pillars
+
+The documentation is structured into four pillars, each with a distinct intent:
+
+- **Getting Started** — install, create a graph, run a first query: [Overview](kastor/getting-started/README.md)
+- **Concepts** — RDF mental model, terminology, and standards context: [Concepts](kastor/concepts/README.md)
+- **How‑To Guides** — task‑oriented workflows with reproducible steps: [Guides](kastor/guides/README.md)
+- **Reference** — definitive API and DSL behavior: [Reference](kastor/reference/README.md)
+
 ## 🏗️ Architecture Overview
 
 ```
@@ -107,7 +116,7 @@ Kastor Framework
 ## 🔧 Use Case Guides
 
 ### **Data Catalogs**
-- [DCAT Examples](kastor/examples.md#dcat) - Data catalog modeling
+- [DCAT Examples](kastor/examples/README.md) - Data catalog modeling
 - [Ontology Generation](kastor-gen/tutorials/ontology-generation.md) - Schema generation
 - [Validation](kastor/features/shacl-validation.md) - Data quality checks
 

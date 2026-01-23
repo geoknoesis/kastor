@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.provider
 
 import com.geoknoesis.kastor.rdf.*
+import java.lang.ref.Cleaner
 
 /**
  * Memory repository provider implementation.
@@ -49,6 +50,8 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private val graphs = mutableMapOf<Iri, MutableRdfGraph>()
     @Volatile
     private var closed = false
+    private val leakState = LeakState()
+    private val cleanable = cleaner.register(this, leakState)
     
     override val defaultGraph: RdfGraph by lazy { MemoryGraph() }
     
@@ -60,6 +63,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun listGraphs(): List<Iri> = graphs.keys.toList()
     
+    override val namedGraphs: Map<Iri, RdfGraph>
+        get() {
+            return graphs.toMap()
+        }
+    
     override fun createGraph(name: Iri): RdfGraph {
         if (graphs.containsKey(name)) {
             throw IllegalArgumentException("Graph $name already exists")
@@ -70,7 +78,8 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     }
     
     override fun removeGraph(name: Iri): Boolean {
-        return graphs.remove(name) != null
+        val removed = graphs.remove(name) != null
+        return removed
     }
 
     override fun editDefaultGraph(): GraphEditor {
@@ -103,44 +112,48 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun transaction(operations: RdfRepository.() -> Unit) {
         // Simple implementation - just execute operations directly
-        operations()
+        operations.invoke(this)
     }
     
     override fun readTransaction(operations: RdfRepository.() -> Unit) {
         // Simple implementation - just execute operations directly
-        operations()
+        operations.invoke(this)
     }
     
     override fun clear(): Boolean {
-        editDefaultGraph().clear()
+        val hadDefault = editDefaultGraph().clear()
+        val hadNamed = graphs.isNotEmpty()
         graphs.clear()
-        return true
+        return hadDefault || hadNamed
     }
     
     override fun isClosed(): Boolean = closed
     
     override fun close() {
         closed = true
+        leakState.closed = true
+        cleanable.clean()
         graphs.clear()
         editDefaultGraph().clear()
     }
     
-    /**
-     * Finalizer that warns if repository was not properly closed.
-     * This helps detect resource leaks in development.
-     * 
-     * **Note:** Finalizers are not guaranteed to run immediately,
-     * but they help catch leaks during testing and development.
-     */
-    @Suppress("unused")
-    protected fun finalize() {
-        if (!closed) {
-            System.err.println(
-                "WARNING: MemoryRepository was not closed properly! " +
-                "Always use 'use' block or call 'close()' explicitly. " +
-                "This is a resource leak."
-            )
+    private class LeakState : Runnable {
+        @Volatile
+        var closed: Boolean = false
+
+        override fun run() {
+            if (!closed) {
+                System.err.println(
+                    "WARNING: MemoryRepository was not closed properly! " +
+                        "Always use 'use' block or call 'close()' explicitly. " +
+                        "This is a resource leak."
+                )
+            }
         }
+    }
+
+    private companion object {
+        val cleaner: Cleaner = Cleaner.create()
     }
     
     override fun getCapabilities(): ProviderCapabilities {

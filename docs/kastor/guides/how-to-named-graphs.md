@@ -21,9 +21,11 @@ repo.createGraph(graphName)
 ## Step 2: Add data to the named graph
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+
 repo.addToGraph(graphName) {
     val dataset = iri("http://example.org/dataset/1")
-    dataset has "http://purl.org/dc/terms/title" with "Sample Dataset"
+    dataset has DCTERMS.title with "Sample Dataset"
 }
 ```
 
@@ -31,11 +33,12 @@ repo.addToGraph(graphName) {
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 
 val results = repo.select(SparqlSelectQuery("""
     SELECT ?title WHERE {
-        GRAPH <http://example.org/graphs/metadata> {
-            <http://example.org/dataset/1> <http://purl.org/dc/terms/title> ?title .
+        GRAPH ${graphName} {
+            <http://example.org/dataset/1> ${DCTERMS.title} ?title .
         }
     }
 """))
@@ -54,4 +57,5 @@ Sample Dataset
 ## Notes
 - Use `addToGraph` to target a specific named graph.
 - Use `GRAPH <iri>` in SPARQL to query named graphs.
+
 

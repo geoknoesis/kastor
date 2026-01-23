@@ -1,5 +1,9 @@
 package com.geoknoesis.kastor.rdf
 
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.RDFS
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
@@ -18,7 +22,7 @@ class Sparql12ComplianceTest {
             version("1.2")
             prefix("foaf", "http://xmlns.com/foaf/0.1/")
             where {
-                pattern(var_("person"), Iri("foaf:name"), var_("name"))
+                pattern(var_("person"), FOAF.name, var_("name"))
             }
         }
 
@@ -234,13 +238,13 @@ class Sparql12ComplianceTest {
             
             where {
                 // Regular triple pattern
-                pattern(var_("person"), Iri("foaf:name"), var_("name"))
+                pattern(var_("person"), FOAF.name, var_("name"))
                 
                 // RDF-star quoted triple pattern
-                quotedTriple(var_("person"), Iri("foaf:name"), var_("name"))
+                quotedTriple(var_("person"), FOAF.name, var_("name"))
                 
                 // RDF-star functions
-                bind(var_("tripleTerm"), triple(var_("person"), Iri("foaf:name"), var_("name")))
+                bind(var_("tripleTerm"), triple(var_("person"), FOAF.name, var_("name")))
                 bind(var_("confidence"), var_("confidence"))
                 
                 // Filters with new functions
@@ -265,8 +269,8 @@ class Sparql12ComplianceTest {
         assertTrue(queryString.contains("SELECT ?person ?confidence"))
         
         // Check WHERE clause with RDF-star
-        assertTrue(queryString.contains("<< ?person <foaf:name> ?name >>"))
-        assertTrue(queryString.contains("TRIPLE(?person, <foaf:name>, ?name) AS ?tripleTerm"))
+        assertTrue(queryString.contains("<< ?person <http://xmlns.com/foaf/0.1/name> ?name >>"))
+        assertTrue(queryString.contains("TRIPLE(?person, <http://xmlns.com/foaf/0.1/name>, ?name) AS ?tripleTerm"))
         assertTrue(queryString.contains("hasLANG(?name"))
         assertTrue(queryString.contains("isTRIPLE(?tripleTerm)"))
         
@@ -283,14 +287,14 @@ class Sparql12ComplianceTest {
             
             where {
                 // Property path pattern using regular patterns for now
-                pattern(var_("person"), Iri("foaf:knows"), var_("friend"))
-                pattern(var_("person"), Iri("foaf:friend"), var_("friend"))
+                pattern(var_("person"), FOAF.knows, var_("friend"))
+                pattern(var_("person"), Iri("http://xmlns.com/foaf/0.1/friend"), var_("friend"))
             }
         }
 
         val queryString = query.toString()
-        assertTrue(queryString.contains("foaf:knows"))
-        assertTrue(queryString.contains("foaf:friend"))
+        assertTrue(queryString.contains("http://xmlns.com/foaf/0.1/knows"))
+        assertTrue(queryString.contains("http://xmlns.com/foaf/0.1/friend"))
     }
 
     @Test
@@ -339,91 +343,91 @@ class Sparql12ComplianceTest {
     fun `test property paths - one or more`() {
         val query = select {
             where {
-                propertyPath(var_("person"), OneOrMore(BasicPath(Iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), OneOrMore(BasicPath(FOAF.knows)), var_("friend"))
             }
         }
         val queryString = query.toString()
         assertTrue(queryString.contains("SELECT"))
         assertTrue(queryString.contains("?person"))
         assertTrue(queryString.contains("?friend"))
-        assertTrue(queryString.contains("<foaf:knows>+"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>+"))
     }
 
     @Test
     fun `test property paths - zero or more`() {
         val query = select {
             where {
-                propertyPath(var_("person"), ZeroOrMore(BasicPath(Iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), ZeroOrMore(BasicPath(FOAF.knows)), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>*"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>*"))
     }
 
     @Test
     fun `test property paths - zero or one`() {
         val query = select {
             where {
-                propertyPath(var_("person"), ZeroOrOne(BasicPath(Iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), ZeroOrOne(BasicPath(FOAF.knows)), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>?"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>?"))
     }
 
     @Test
     fun `test property paths - alternative`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Alternative(BasicPath(Iri("foaf:knows")), BasicPath(Iri("foaf:friendOf"))), var_("friend"))
+                propertyPath(var_("person"), Alternative(BasicPath(FOAF.knows), BasicPath(Iri("http://xmlns.com/foaf/0.1/friendOf"))), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>|<foaf:friendOf>"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>|<http://xmlns.com/foaf/0.1/friendOf>"))
     }
 
     @Test
     fun `test property paths - sequence`() {
         val query = select {
             where {
-                propertyPath(var_("person"), PathSequence(BasicPath(Iri("foaf:knows")), BasicPath(Iri("foaf:friendOf"))), var_("friend"))
+                propertyPath(var_("person"), PathSequence(BasicPath(FOAF.knows), BasicPath(Iri("http://xmlns.com/foaf/0.1/friendOf"))), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>/<foaf:friendOf>"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>/<http://xmlns.com/foaf/0.1/friendOf>"))
     }
 
     @Test
     fun `test property paths - range`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Range(BasicPath(Iri("foaf:knows")), 2, 4), var_("friend"))
+                propertyPath(var_("person"), Range(BasicPath(FOAF.knows), 2, 4), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>{2,4}"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>{2,4}"))
     }
 
     @Test
     fun `test property paths - negation`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Negation(BasicPath(Iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), Negation(BasicPath(FOAF.knows)), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("!<foaf:knows>"))
+        assertTrue(queryString.contains("!<http://xmlns.com/foaf/0.1/knows>"))
     }
 
     @Test
     fun `test property paths - inverse`() {
         val query = select {
             where {
-                propertyPath(var_("person"), Inverse(BasicPath(Iri("foaf:knows"))), var_("friend"))
+                propertyPath(var_("person"), Inverse(BasicPath(FOAF.knows)), var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("^<foaf:knows>"))
+        assertTrue(queryString.contains("^<http://xmlns.com/foaf/0.1/knows>"))
     }
 
     @Test
@@ -431,12 +435,12 @@ class Sparql12ComplianceTest {
         val query = select {
             where {
                 propertyPath(var_("person"), 
-                    OneOrMore(Alternative(BasicPath(Iri("foaf:knows")), Inverse(BasicPath(Iri("foaf:friendOf"))))), 
+                    OneOrMore(Alternative(BasicPath(FOAF.knows), Inverse(BasicPath(Iri("http://xmlns.com/foaf/0.1/friendOf"))))), 
                     var_("friend"))
             }
         }
         val queryString = query.toString()
-        assertTrue(queryString.contains("<foaf:knows>|^<foaf:friendOf>+"))
+        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>|^<http://xmlns.com/foaf/0.1/friendOf>+"))
     }
 
     @Test
@@ -446,8 +450,8 @@ class Sparql12ComplianceTest {
             aggregate(count(var_("employee")), "employeeCount")
             aggregate(avg(var_("salary")), "avgSalary")
             where {
-                pattern(var_("employee"), Iri("worksFor"), var_("department"))
-                pattern(var_("employee"), Iri("hasSalary"), var_("salary"))
+                pattern(var_("employee"), Iri("http://example.org/worksFor"), var_("department"))
+                pattern(var_("employee"), Iri("http://example.org/hasSalary"), var_("salary"))
             }
             groupBy(var_("department"))
             having {
@@ -476,8 +480,8 @@ class Sparql12ComplianceTest {
             aggregate(max(var_("value")), "maximum")
             aggregate(groupConcat(var_("name")), "names")
             where {
-                pattern(var_("item"), Iri("hasValue"), var_("value"))
-                pattern(var_("item"), Iri("hasName"), var_("name"))
+                pattern(var_("item"), Iri("http://example.org/hasValue"), var_("value"))
+                pattern(var_("item"), Iri("http://example.org/hasName"), var_("name"))
             }
         }
         val queryString = query.toString()
@@ -496,7 +500,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("name"))
             where {
-                pattern(var_("person"), Iri("foaf:name"), var_("name"))
+                pattern(var_("person"), FOAF.name, var_("name"))
                 filter(var_("name") eq string("John"))
             }
         }
@@ -509,7 +513,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("age"))
             where {
-                pattern(var_("person"), Iri("foaf:age"), var_("age"))
+                pattern(var_("person"), FOAF.age, var_("age"))
                 filter(var_("age") eq int(25))
             }
         }
@@ -522,7 +526,7 @@ class Sparql12ComplianceTest {
         val query3 = select {
             variable(var_("label"))
             where {
-                pattern(var_("resource"), Iri("rdfs:label"), var_("label"))
+                pattern(var_("resource"), RDFS.label, var_("label"))
                 filter(var_("label") eq lang("Hello", "en"))
             }
         }
@@ -538,7 +542,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("text"))
             where {
-                pattern(var_("resource"), Iri("dc:description"), var_("text"))
+                pattern(var_("resource"), DCTERMS.description, var_("text"))
                 filter(var_("text") eq string("Hello \u0041\u0042\u0043")) // ABC in Unicode escapes
             }
         }
@@ -551,7 +555,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("unicode"))
             where {
-                pattern(var_("resource"), Iri("rdfs:label"), var_("unicode"))
+                pattern(var_("resource"), RDFS.label, var_("unicode"))
                 filter(var_("unicode") eq string("Unicode: \u03B1\u03B2\u03B3")) // Greek letters
             }
         }
@@ -564,7 +568,7 @@ class Sparql12ComplianceTest {
         val query3 = select {
             variable(var_("special"))
             where {
-                pattern(var_("resource"), Iri("dc:title"), var_("special"))
+                pattern(var_("resource"), DCTERMS.title, var_("special"))
                 filter(var_("special") eq string("Special: \"quotes\" 'apostrophes' \\backslashes\\"))
             }
         }
@@ -581,7 +585,7 @@ class Sparql12ComplianceTest {
         val query = select {
             variable(var_("resource"))
             where {
-                pattern(var_("resource"), Iri("rdf:type"), var_("type"))
+                pattern(var_("resource"), RDF.type, var_("type"))
                 // Test boolean literals (true/false)
                 filter(var_("active") eq boolean(true))
                 // Test numeric literals (0 = false, non-zero = true)
@@ -610,7 +614,7 @@ class Sparql12ComplianceTest {
         val query2 = select {
             variable(var_("result"))
             where {
-                pattern(var_("resource"), Iri("hasValue"), var_("value"))
+                pattern(var_("resource"), Iri("http://example.org/hasValue"), var_("value"))
                 bind(var_("result"), if_(var_("value") gt int(10), string("high"), string("low")))
             }
         }
@@ -618,6 +622,8 @@ class Sparql12ComplianceTest {
         assertTrue(queryString2.contains("IF(?value > \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>, \"high\"^^<http://www.w3.org/2001/XMLSchema#string>, \"low\"^^<http://www.w3.org/2001/XMLSchema#string>) AS ?result"))
     }
 }
+
+
 
 
 

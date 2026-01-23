@@ -2,12 +2,14 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import org.apache.jena.graph.NodeFactory
+import org.apache.jena.graph.Triple
+import org.apache.jena.rdf.model.Model
+import org.apache.jena.rdf.model.ModelFactory
+import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.RDFNode
 import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.Property
 import org.apache.jena.rdf.model.Literal as JenaLiteral
-import org.apache.jena.rdf.model.ModelFactory
-import org.apache.jena.rdf.model.Model
 
 /**
  * Internal utility for converting between Kastor RDF terms and Jena types.
@@ -18,22 +20,39 @@ internal object JenaTerms {
      * Converts a Kastor RDF term to a Jena RDFNode.
      */
     fun toNode(term: RdfTerm?): RDFNode? {
+        val model = ModelFactory.createDefaultModel()
+        return toNode(model, term)
+    }
+
+    /**
+     * Converts a Kastor RDF term to a Jena RDFNode using a target model.
+     */
+    fun toNode(model: Model, term: RdfTerm?): RDFNode? {
         return when (term) {
-            is Iri -> ModelFactory.createDefaultModel().createResource(term.value)
-            is BlankNode -> ModelFactory.createDefaultModel().createResource(term.id)
+            is Iri -> model.createResource(term.value)
+            is BlankNode -> {
+                val anonId = org.apache.jena.rdf.model.AnonId.create(term.id.removePrefix("_:"))
+                model.createResource(anonId)
+            }
             is TripleTerm -> {
-                // RDF-star support: convert the embedded triple to a Jena statement
-                val model = ModelFactory.createDefaultModel()
-                val subj = toNode(term.triple.subject) as Resource
-                val pred = toNode(term.triple.predicate) as Property
-                val obj = toNode(term.triple.obj)
-                val statement = model.createStatement(subj, pred, obj)
-                model.createResource(statement)
+                val subj = toNode(model, term.triple.subject) as Resource
+                val pred = toNode(model, term.triple.predicate) as Property
+                val obj = toNode(model, term.triple.obj) as RDFNode
+                val triple = Triple.create(subj.asNode(), pred.asNode(), obj.asNode())
+                @Suppress("DEPRECATION")
+                val tripleNode = NodeFactory.createTripleNode(triple)
+                model.asRDFNode(tripleNode)
             }
             is Literal -> {
-                val model = ModelFactory.createDefaultModel()
-                // Use a simpler approach without specific type checks
-                model.createLiteral(term.lexical)
+                when (term) {
+                    is LangString -> model.createLiteral(term.lexical, term.lang)
+                    is TypedLiteral -> {
+                        val datatype = org.apache.jena.datatypes.TypeMapper.getInstance()
+                            .getSafeTypeByName(term.datatype.value)
+                        model.createTypedLiteral(term.lexical, datatype)
+                    }
+                    else -> model.createLiteral(term.lexical)
+                }
             }
             null -> null
             else -> throw IllegalArgumentException("Unsupported RDF term type: ${term.javaClass}")
@@ -93,17 +112,25 @@ internal object JenaTerms {
      * Convenience method for subjects and predicates.
      */
     fun toResource(term: RdfResource): Resource {
+        val model = ModelFactory.createDefaultModel()
+        return toResource(model, term)
+    }
+
+    fun toResource(model: Model, term: RdfResource): Resource {
         return when (term) {
-            is Iri -> ModelFactory.createDefaultModel().createResource(term.value)
-            is BlankNode -> ModelFactory.createDefaultModel().createResource(term.id)
+            is Iri -> model.createResource(term.value)
+            is BlankNode -> {
+                val anonId = org.apache.jena.rdf.model.AnonId.create(term.id.removePrefix("_:"))
+                model.createResource(anonId)
+            }
             is TripleTerm -> {
-                // RDF-star support: convert the embedded triple to a Jena statement
-                val model = ModelFactory.createDefaultModel()
-                val subj = toNode(term.triple.subject) as Resource
-                val pred = toNode(term.triple.predicate) as Property
-                val obj = toNode(term.triple.obj)
-                val statement = model.createStatement(subj, pred, obj)
-                model.createResource(statement) as Resource
+                val subj = toNode(model, term.triple.subject) as Resource
+                val pred = toNode(model, term.triple.predicate) as Property
+                val obj = toNode(model, term.triple.obj) as RDFNode
+                val triple = Triple.create(subj.asNode(), pred.asNode(), obj.asNode())
+                @Suppress("DEPRECATION")
+                val tripleNode = NodeFactory.createTripleNode(triple)
+                model.asRDFNode(tripleNode) as Resource
             }
         }
     }
@@ -115,6 +142,10 @@ internal object JenaTerms {
     fun toProperty(iri: Iri): Property {
         return ModelFactory.createDefaultModel().createProperty(iri.value)
     }
+
+    fun toProperty(model: Model, iri: Iri): Property {
+        return model.createProperty(iri.value)
+    }
     
     /**
      * Converts a Kastor RDF term to a Jena Value.
@@ -122,6 +153,23 @@ internal object JenaTerms {
      */
     fun toValue(term: RdfTerm): org.apache.jena.rdf.model.RDFNode {
         return toNode(term) ?: throw IllegalArgumentException("Cannot convert null term to Jena value")
+    }
+    
+    /**
+     * Converts a Jena Resource to a Kastor RDF resource.
+     */
+    fun fromResource(resource: Resource): RdfResource {
+        return when {
+            resource.isURIResource -> Iri(resource.uri)
+            else -> BlankNode(resource.id.toString())
+        }
+    }
+    
+    /**
+     * Converts a Jena Property to a Kastor IRI.
+     */
+    fun fromProperty(property: Property): Iri {
+        return Iri(property.uri)
     }
 }
 

@@ -26,12 +26,12 @@ Ensure the resource is packaged with your provider module.
 
 ### 3) Or register programmatically
 ```kotlin
-RdfApiRegistry.register(MyProvider())
+RdfProviderRegistry.register(MyProvider())
 ```
 
 ### 4) Use it
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
   providerId = "my"
   variantId = "memory"
 }

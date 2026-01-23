@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.gen.runtime
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.add
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.vocab.FOAF

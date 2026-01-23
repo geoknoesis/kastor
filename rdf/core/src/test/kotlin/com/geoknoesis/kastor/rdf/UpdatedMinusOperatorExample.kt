@@ -112,7 +112,14 @@ class UpdatedMinusOperatorExample {
             
             person - FOAF.name - "Alice"
             // Mixed types: IRI, BlankNode, String, Int, Boolean
-            person - DCTERMS.subject - listOf(friend1, friend2, bnode, "Technology", 42, true)
+            person - DCTERMS.subject - listOf(
+                friend1,
+                friend2,
+                bnode,
+                string("Technology"),
+                42.toLiteral(),
+                true.toLiteral()
+            )
         }
         
         val triples5 = repo5.defaultGraph.getTriples()
@@ -127,7 +134,7 @@ class UpdatedMinusOperatorExample {
             val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Alice"
-            person - FOAF.knows - emptyList<Any>()  // Creates rdf:nil
+            person - FOAF.knows - emptyList<RdfTerm>()  // Creates rdf:nil
         }
         
         val triples6 = repo6.defaultGraph.getTriples()

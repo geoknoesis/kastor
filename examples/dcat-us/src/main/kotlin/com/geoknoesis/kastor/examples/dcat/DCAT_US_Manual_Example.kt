@@ -58,7 +58,7 @@ class DCAT_US_Manual_Example {
         triples.add(RdfTriple(publisherUri, Iri("http://xmlns.com/foaf/0.1/homepage"), Iri(catalog.publisher.homepage)))
         
         val graph = MemoryGraph(triples)
-        repo.add { graph }
+        repo.add { addTriples(graph.getTriples()) }
         
         return catalog
     }
@@ -136,7 +136,7 @@ class DCAT_US_Manual_Example {
         }
         
         val graph = MemoryGraph(triples)
-        repo.add { graph }
+        repo.add { addTriples(graph.getTriples()) }
         
         return dataset
     }

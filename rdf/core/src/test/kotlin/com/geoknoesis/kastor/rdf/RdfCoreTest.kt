@@ -46,7 +46,6 @@ class RdfCoreTest {
     
     @Test
     fun `persistent repository creation works`() {
-        val location = tempDir!!.resolve("test-repo").toString()
         val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"
@@ -84,7 +83,6 @@ class RdfCoreTest {
     
     @Test
     fun `repository method with persistent configuration works`() {
-        val location = tempDir!!.resolve("factory-repo").toString()
         val repo = Rdf.repository {
             providerId = "memory"
             variantId = "memory"

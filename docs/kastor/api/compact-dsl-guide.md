@@ -30,13 +30,29 @@ val name = iri("http://example.org/name")
 val age = iri("http://example.org/age")
 person[name] = "Alice"
 person[age] = 30
+```
+
+```kotlin
+// Typed IRI alternative (recommended)
+val namePred = iri("http://example.org/name")
+val agePred = iri("http://example.org/age")
+val emailPred = iri("http://example.org/email")
+val friendPred = iri("http://example.org/friend")
+
+person[namePred] = "Alice"
+person[agePred] = 30
+person[emailPred] = "alice@example.com"
+person[friendPred] = bob
 
 // With QNames (requires prefix mapping)
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     // Built-in prefixes: rdf, rdfs, owl, sh, xsd (no need to declare!)
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     person["foaf:name"] = "Alice"
@@ -65,20 +81,27 @@ repo.add {
 
 ```kotlin
 // Natural language syntax with any predicate IRI
-person has name with "Alice"
-person has age with 30
-person has email with "alice@example.com"
-person has friend with bob
+val namePred = iri("http://example.org/name")
+val agePred = iri("http://example.org/age")
+val emailPred = iri("http://example.org/email")
+val friendPred = iri("http://example.org/friend")
 
-// With IRI predicates
-val name = iri("http://example.org/name")
-person has name with "Alice"
+person has namePred with "Alice"
+person has agePred with 30
+person has emailPred with "alice@example.com"
+person has friendPred with bob
+
+// Typed IRI predicates (recommended)
+person has namePred with "Alice"
 
 // With QNames (requires prefix mapping)
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     person has "foaf:name" with "Alice"
@@ -89,6 +112,9 @@ repo.add {
     person `is` "foaf:Person"
     document `is` "dcterms:Dataset"
 }
+
+// String IRI alternative (supported, less explicit)
+person has "http://example.org/name" with "Alice"
 ```
 
 **Benefits:**
@@ -101,14 +127,23 @@ repo.add {
 
 ```kotlin
 // Generic infix operator with any predicate IRI
-person has name with "Alice"
-person has age with 30
-person has email with "alice@example.com"
-person has friend with bob
+val namePred = iri("http://example.org/name")
+val agePred = iri("http://example.org/age")
+val emailPred = iri("http://example.org/email")
+val friendPred = iri("http://example.org/friend")
 
-// With IRI predicates
-val name = iri("http://example.org/name")
-person has name with "Alice"
+person has namePred with "Alice"
+person has agePred with 30
+person has emailPred with "alice@example.com"
+person has friendPred with bob
+
+// Typed IRI predicates (recommended)
+person has namePred with "Alice"
+```
+
+```kotlin
+// String IRI alternative (supported, less explicit)
+person has "http://example.org/name" with "Alice"
 ```
 
 **Benefits:**
@@ -121,16 +156,22 @@ person has name with "Alice"
 The minus operator (`-`) provides intuitive syntax for creating multiple triples with the same subject-predicate pair:
 
 ```kotlin
-// Single values
-person - name - "Alice"
-person - age - 30
-person - email - "alice@example.com"
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-// With QNames (requires prefix mapping)
+// Single values
+val namePred = iri("http://example.org/name")
+val agePred = iri("http://example.org/age")
+val emailPred = iri("http://example.org/email")
+
+person - namePred - "Alice"
+person - agePred - 30
+person - emailPred - "alice@example.com"
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     person - "foaf:name" - "Alice"
@@ -157,6 +198,13 @@ person - FOAF.mbox - alt("alice@example.com", "alice@work.com")     // rdf:Alt
 person - DCTERMS.subject - values("Technology", "Programming", "RDF", 42, true)
 ```
 
+```kotlin
+// String IRI alternative (supported, less explicit)
+person - "http://example.org/name" - "Alice"
+person - "http://example.org/age" - 30
+person - "http://example.org/email" - "alice@example.com"
+```
+
 **Benefits:**
 - ✅ Intuitive `values()` function for individual triples
 - ✅ Intuitive `list()` function for RDF lists
@@ -172,30 +220,36 @@ person - DCTERMS.subject - values("Technology", "Programming", "RDF", 42, true)
 All syntax options provide compile-time type safety:
 
 ```kotlin
+// Use typed predicates to avoid stringly-typed IRIs
 // String literals
-person["http://example.org/name"] = "Alice"           // ✅ Compiles
-person has name with "Alice"                            // ✅ Compiles
-person - name - "Alice"                                // ✅ Compiles
+val namePred = iri("http://example.org/name")
+person[namePred] = "Alice"                           // ✅ Compiles
+person has namePred with "Alice"                     // ✅ Compiles
+person - namePred - "Alice"                          // ✅ Compiles
 
 // Integer literals
-person["http://example.org/age"] = 30                  // ✅ Compiles
-person has age with 30                                 // ✅ Compiles
-person - age - 30                                      // ✅ Compiles
+val agePred = iri("http://example.org/age")
+person[agePred] = 30                                 // ✅ Compiles
+person has agePred with 30                            // ✅ Compiles
+person - agePred - 30                                 // ✅ Compiles
 
 // Double literals
-person["http://example.org/salary"] = 75000.0          // ✅ Compiles
-person has salary with 75000.0                         // ✅ Compiles
-person - salary - 75000.0                              // ✅ Compiles
+val salaryPred = iri("http://example.org/salary")
+person[salaryPred] = 75000.0                          // ✅ Compiles
+person has salaryPred with 75000.0                    // ✅ Compiles
+person - salaryPred - 75000.0                         // ✅ Compiles
 
 // Boolean literals
-person["http://example.org/active"] = true             // ✅ Compiles
-person has active with true                            // ✅ Compiles
-person - active - true                                 // ✅ Compiles
+val activePred = iri("http://example.org/active")
+person[activePred] = true                             // ✅ Compiles
+person has activePred with true                       // ✅ Compiles
+person - activePred - true                            // ✅ Compiles
 
 // Resource references
-person["http://example.org/friend"] = bob              // ✅ Compiles
-person has friend with bob                             // ✅ Compiles
-person - friend - bob                                  // ✅ Compiles
+val friendPred = iri("http://example.org/friend")
+person[friendPred] = bob                              // ✅ Compiles
+person has friendPred with bob                        // ✅ Compiles
+person - friendPred - bob                             // ✅ Compiles
 
 // Multiple values with minus operator
 person - FOAF.knows - values(friend1, friend2, friend3) // ✅ Compiles
@@ -205,15 +259,16 @@ person - FOAF.mbox - list("email1", "email2")           // ✅ Compiles
 ### Predicate Flexibility
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 // String predicates (auto-converted to IRIs)
 person["http://example.org/name"] = "Alice"
-person["http://xmlns.com/foaf/0.1/name"] = "Alice"
-person["http://purl.org/dc/terms/title"] = "My Document"
 
-// IRI predicates
+// IRI predicates via vocab constants
 val name = iri("http://example.org/name")
-val foafName = iri("http://xmlns.com/foaf/0.1/name")
-val dcTitle = iri("http://purl.org/dc/terms/title")
+val foafName = FOAF.name
+val dcTitle = DCTERMS.title
 
 person[name] = "Alice"
 person has foafName with "Alice"
@@ -313,10 +368,13 @@ Kastor automatically detects and resolves QNames in object position, making the 
 ### How It Works
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDFS
+
 repo.add {
     prefixes {
-        put("foaf", "http://xmlns.com/foaf/0.1/")
-        put("rdfs", "http://www.w3.org/2000/01/rdf-schema#")
+        put("foaf", FOAF.namespace)
+        put("rdfs", RDFS.namespace)
     }
     
     val person = iri("http://example.org/person")
@@ -358,7 +416,7 @@ When you need explicit control over the object type, use the dedicated functions
 person - "foaf:knows" - qname("foaf:Person")    // → <http://xmlns.com/foaf/0.1/Person>
 
 // Explicit string literal
-person - "foaf:name" - literal("foaf:Person")   // → "foaf:Person"^^xsd:string
+person - "foaf:name" - string("foaf:Person")   // → "foaf:Person"^^xsd:string
 
 // Explicit IRI
 person - "foaf:homepage" - iri("http://example.org")  // → <http://example.org>
@@ -402,12 +460,13 @@ repo.add {
     // Use built-in prefixes directly
     person["rdf:type"] = "rdfs:Class"              // → <http://www.w3.org/2000/01/rdf-schema#Class>
     person - "rdfs:label" - "Person Class"         // → "Person Class"^^xsd:string
-    person - "owl:sameAs" - "http://example.org/person2"  // → <http://example.org/person2>
+    val sameAsTarget = iri("http://example.org/person2")
+    person - "owl:sameAs" - sameAsTarget           // → <http://example.org/person2>
     person - "sh:targetClass" - "rdfs:Class"       // → <http://www.w3.org/2000/01/rdf-schema#Class>
     
     // Mix with custom prefixes
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
+        "foaf" to FOAF.namespace
     }
     person - "foaf:name" - "Alice"                 // Custom prefix
     person - "rdfs:comment" - "A person"           // Built-in prefix
@@ -419,10 +478,12 @@ repo.add {
 You can override built-in prefixes if needed:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
         "rdf" to "http://example.org/custom-rdf#"  // Override built-in rdf prefix
-        "foaf" to "http://xmlns.com/foaf/0.1/"     // Custom prefix
+        "foaf" to FOAF.namespace     // Custom prefix
     }
     
     val resource = iri("http://example.org/resource")
@@ -498,10 +559,13 @@ Kastor provides convenient aliases for declaring RDF types, making your code mor
 The `"a"` alias is a Turtle-style shortcut for `rdf:type`:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -519,10 +583,13 @@ repo.add {
 The `is` keyword provides natural language syntax for type declarations:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -539,10 +606,14 @@ repo.add {
 You can mix different type declaration styles in the same code:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -592,12 +663,17 @@ repo.add {
 Use QNames for cleaner, more readable code with prefix mappings:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.SCHEMA
+
 repo.add {
     // Configure prefix mappings
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcat" to DCAT.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -609,14 +685,15 @@ repo.add {
     
     // Mix QNames and full IRIs
     person - "foaf:knows" - iri("http://example.org/bob")
-    person - "http://example.org/customProp" - "value"
+    val customProp = iri("http://example.org/customProp")
+    person - customProp - "value"
     
     // Create IRIs from QNames
     val nameIri = qname("foaf:name")
     person - nameIri - "Alice"
     
     // Add single prefix mapping
-    prefix("schema", "http://schema.org/")
+    prefix("schema", SCHEMA.namespace)
     person - "schema:name" - "Alice"
 }
 ```
@@ -634,6 +711,9 @@ The minus operator (`-`) provides a powerful and intuitive way to create RDF tri
 ### Basic Syntax
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 // Single values
 person - name - "Alice"
 person - age - 30
@@ -643,8 +723,8 @@ person - friend - bob
 // With QNames
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     person - "foaf:name" - "Alice"
@@ -775,8 +855,10 @@ repo.add {
 
 ```kotlin
 // For simple data entry - Ultra-compact
-person["http://example.org/name"] = "Alice"
-person["http://example.org/age"] = 30
+val namePred = iri("http://example.org/name")
+val agePred = iri("http://example.org/age")
+person[namePred] = "Alice"
+person[agePred] = 30
 
 // For multiple values - Minus operator
 person - FOAF.knows - values(friend1, friend2, friend3)
@@ -788,9 +870,15 @@ person has manager with bob
 
 // For batch operations - Mix and match
 people.forEach { person ->
-    person["http://example.org/name"] = person.name
+    person[namePred] = person.name
     person has worksFor with company
 }
+```
+
+```kotlin
+// String IRI alternative (supported, less explicit)
+person["http://example.org/name"] = "Alice"
+person["http://example.org/age"] = 30
 ```
 
 ### Vocabulary Management

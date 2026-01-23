@@ -177,13 +177,25 @@ Choose the appropriate backend for your needs:
 val repo = Rdf.memory()
 
 // Jena backend (production)
-val repo = Rdf.jena()
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
 
 // RDF4J backend (production)
-val repo = Rdf.rdf4j()
+val repo = Rdf.repository {
+    providerId = "rdf4j"
+    variantId = "memory"
+}
 
 // SPARQL backend (remote)
-val repo = Rdf.sparql("http://example.org/sparql")
+val repo = RdfProviderRegistry.create(
+    RdfConfig.of(
+        providerId = ProviderId("sparql"),
+        variantId = VariantId("sparql"),
+        options = mapOf("location" to "http://example.org/sparql")
+    )
+)
 ```
 
 ## Ontology Generation

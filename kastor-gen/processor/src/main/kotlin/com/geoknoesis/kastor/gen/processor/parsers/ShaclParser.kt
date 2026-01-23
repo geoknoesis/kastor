@@ -53,8 +53,6 @@ class ShaclParser(private val logger: KSPLogger) {
             // Find all NodeShapes
             val nodeShapeClass = model.createResource("${SHACL_NS}NodeShape")
             val targetClassProp = model.createProperty("${SHACL_NS}targetClass")
-            val propertyProp = model.createProperty("${SHACL_NS}property")
-            
             val nodeShapes = model.listSubjectsWithProperty(RDF.type, nodeShapeClass).toList()
             logger.info("Found ${nodeShapes.size} NodeShapes")
             
@@ -138,7 +136,7 @@ class ShaclParser(private val logger: KSPLogger) {
             // Extract sh:in values (RDF list)
             val inValues = propertyShape.getProperty(inProp)?.resource?.let { listResource ->
                 val listValues = mutableListOf<String>()
-                var current = listResource
+                var current: org.apache.jena.rdf.model.Resource? = listResource
                 while (current != null && !current.hasProperty(model.createProperty("${RDF_NS}nil"))) {
                     val first = current.getProperty(model.createProperty("${RDF_NS}first"))
                     first?.let {

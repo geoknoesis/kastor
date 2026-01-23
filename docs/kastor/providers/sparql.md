@@ -14,12 +14,15 @@ The SPARQL provider allows Kastor to work with remote SPARQL endpoints, enabling
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.sparql.*
 
 // Create a SPARQL repository
-val repo = Rdf.factory {
-    sparql("https://dbpedia.org/sparql")
-}
+val repo = RdfProviderRegistry.create(
+    RdfConfig.of(
+        providerId = ProviderId("sparql"),
+        variantId = VariantId("sparql"),
+        options = mapOf("location" to "https://dbpedia.org/sparql")
+    )
+)
 
 // Query remote data
 val results = repo.select(SparqlSelectQuery("""
@@ -39,68 +42,22 @@ results.forEach { binding ->
 
 ## Configuration Options
 
-### Basic Configuration
+The SPARQL provider currently accepts a single required option:
 
 ```kotlin
-val repo = Rdf.factory {
-    sparql {
-        endpoint = "https://dbpedia.org/sparql"
-        timeout = Duration.ofMinutes(5)
-        userAgent = "MyApp/1.0"
-    }
-}
-```
-
-### Authentication
-
-```kotlin
-val repo = Rdf.factory {
-    sparql {
-        endpoint = "https://secure-endpoint.com/sparql"
-        authentication = BasicAuth("username", "password")
-    }
-}
-```
-
-### Custom Headers
-
-```kotlin
-val repo = Rdf.factory {
-    sparql {
-        endpoint = "https://api.example.com/sparql"
-        headers = mapOf(
-            "X-API-Key" to "your-api-key",
-            "Accept" to "application/sparql-results+json"
-        )
-    }
-}
+val repo = RdfProviderRegistry.create(
+    RdfConfig.of(
+        providerId = ProviderId("sparql"),
+        variantId = VariantId("sparql"),
+        options = mapOf("location" to "https://dbpedia.org/sparql")
+    )
+)
 ```
 
 ## Federation
 
-Query multiple endpoints simultaneously:
-
-```kotlin
-val repo = Rdf.factory {
-    federation {
-        endpoint("https://dbpedia.org/sparql", "dbpedia")
-        endpoint("https://wikidata.org/sparql", "wikidata")
-        endpoint("https://data.gov/sparql", "data.gov")
-    }
-}
-
-val results = repo.select(SparqlSelectQuery("""
-    SELECT ?person ?name ?birthDate WHERE {
-        SERVICE <https://dbpedia.org/sparql> {
-            ?person rdfs:label ?name .
-            ?person dbo:birthDate ?birthDate .
-        }
-        SERVICE <https://wikidata.org/sparql> {
-            ?person wdt:P31 wd:Q5 .  # human
-        }
-    } LIMIT 10
-"""))
-```
+Federation is performed via SPARQL `SERVICE` clauses against endpoints that support it.
+Use a SPARQL-capable provider and write federated queries explicitly.
 
 ## Error Handling
 

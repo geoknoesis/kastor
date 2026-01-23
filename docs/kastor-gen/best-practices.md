@@ -405,7 +405,13 @@ Validate RDF sources and use secure connections:
 fun loadSecureCatalog(url: String): Catalog {
     require(url.startsWith("https://")) { "Only HTTPS URLs allowed" }
     
-    val repo = Rdf.sparql(url, credentials = secureCredentials)
+    val repo = RdfProviderRegistry.create(
+        RdfConfig.of(
+            providerId = ProviderId("sparql"),
+            variantId = VariantId("sparql"),
+            options = mapOf("location" to url)
+        )
+    )
     val graph = repo.defaultGraph
     return loadCatalog(url, graph)
 }

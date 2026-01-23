@@ -314,7 +314,7 @@ class JenaValidationAdvancedTest {
 
             ageShape - shPath - FOAF.age
             ageShape - shOr - list(intConstraint, stringConstraint)
-            ageShape - shMessage - "Age must be int or string"
+            ageShape - shMessage - string("Age must be int or string")
 
             intConstraint - shDatatype - Iri("${xsd}int")
             stringConstraint - shDatatype - Iri("${xsd}string")

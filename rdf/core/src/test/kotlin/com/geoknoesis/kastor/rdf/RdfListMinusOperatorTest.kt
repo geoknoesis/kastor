@@ -65,7 +65,7 @@ class RdfListMinusOperatorTest {
             val person = Iri("http://example.org/person")
             
             person - FOAF.name - "Alice"
-            person - FOAF.knows - emptyList<Any>()  // Creates rdf:nil
+            person - FOAF.knows - emptyList<RdfTerm>()  // Creates rdf:nil
         }
         
         val allTriples = repo.defaultGraph.getTriples()
@@ -89,11 +89,14 @@ class RdfListMinusOperatorTest {
         repo.add {
             val person = Iri("http://example.org/person")
             val friend1 = Iri("http://example.org/friend1")
-            val friend2 = Iri("http://example.org/friend2")
-            
             person - FOAF.name - "Alice"
             // Mixed types: IRI, String, Int, Boolean
-            person - DCTERMS.subject - listOf(friend1, "Technology", 42, true)
+            person - DCTERMS.subject - listOf(
+                friend1,
+                string("Technology"),
+                42.toLiteral(),
+                true.toLiteral()
+            )
         }
         
         val allTriples = repo.defaultGraph.getTriples()

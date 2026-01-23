@@ -153,7 +153,7 @@ val query = """
 ### Checking RDF-star Support
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getCapabilities()
 
 if (capabilities.supportsRdfStar) {
@@ -169,11 +169,11 @@ if (capabilities.supportsRdfStar) {
 
 ```kotlin
 // Check if any provider supports RDF-star
-val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
 println("RDF-star support available: $hasRdfStarSupport")
 
 // Find providers that support RDF-star
-val rdfStarProviders = RdfApiRegistry.getAllProviders().filter { 
+val rdfStarProviders = RdfProviderRegistry.getAllProviders().filter { 
     it.getCapabilities(it.defaultVariantId()).supportsRdfStar 
 }
 println("Providers supporting RDF-star: ${rdfStarProviders.size}")
@@ -182,7 +182,7 @@ println("Providers supporting RDF-star: ${rdfStarProviders.size}")
 ### Service Description Integration
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val serviceDescription = provider.generateServiceDescription(
     "http://example.org/sparql",
     provider.defaultVariantId()
@@ -354,7 +354,7 @@ repo.add {
 
 ```kotlin
 // Always check RDF-star support before using
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 if (provider.getCapabilities().supportsRdfStar) {
     // Use RDF-star features
     val query = """
@@ -433,7 +433,7 @@ fun rdfStarExample() {
     val repo = Rdf.memory()
     
     // Check RDF-star support
-    val provider = RdfApiRegistry.getProvider("memory")
+    val provider = RdfProviderRegistry.getProvider("memory")
     if (!provider.getCapabilities().supportsRdfStar) {
         println("Provider does not support RDF-star")
         return

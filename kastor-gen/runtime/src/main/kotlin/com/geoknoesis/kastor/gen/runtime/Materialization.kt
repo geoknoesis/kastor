@@ -55,8 +55,14 @@ object OntoMapper {
    */
   @JvmStatic
   fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T {
-    val instance = materialize(ref, type)
-    instance.asRdf().validate(validation).orThrow()
+    val factory = registry[type] ?: run {
+      loadWrapperClass(type)
+      registry[type]
+    } ?: error("$ERROR_NO_FACTORY ${type.name}")
+    val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet(), validationContext = validation)
+    @Suppress("UNCHECKED_CAST")
+    val instance = factory(handle) as T
+    handle.validate().orThrow()
     return instance
   }
   
@@ -77,9 +83,7 @@ object OntoMapper {
     types.forEach { loadWrapperClass(it) }
   }
 
-  companion object {
-    private const val WRAPPER_SUFFIX = "Wrapper"
-  }
+  private const val WRAPPER_SUFFIX = "Wrapper"
   
   private fun loadWrapperClass(type: Class<*>) {
     val wrapperName = "${type.name}$WRAPPER_SUFFIX"

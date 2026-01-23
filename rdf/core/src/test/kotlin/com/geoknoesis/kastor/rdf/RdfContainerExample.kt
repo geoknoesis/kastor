@@ -20,22 +20,32 @@ fun main() {
 
     repo.add {
         // Basic properties
-        person - FOAF.name - "Alice"
+        person - FOAF.name - string("Alice")
         person - FOAF.age - 30
         
         // Multiple individual triples using values() function
         person - FOAF.knows - values(friend1, friend2, friend3)
         
         // RDF List using list() function
-        person - FOAF.mbox - list("alice@example.com", "alice@work.com")
+        person - FOAF.mbox - list(string("alice@example.com"), string("alice@work.com"))
         
         // RDF Containers using bag(), seq(), alt() functions
-        person - DCTERMS.subject - bag("Technology", "AI", "RDF", "Technology")  // rdf:Bag (duplicates allowed)
+        person - DCTERMS.subject - bag(
+            string("Technology"),
+            string("AI"),
+            string("RDF"),
+            string("Technology")
+        )  // rdf:Bag (duplicates allowed)
         person - FOAF.knows - seq(friend1, friend2, friend3)                    // rdf:Seq (ordered)
-        person - FOAF.mbox - alt("alice@example.com", "alice@work.com")        // rdf:Alt (alternatives)
+        person - FOAF.mbox - alt(string("alice@example.com"), string("alice@work.com"))        // rdf:Alt (alternatives)
         
         // Mixed types work with all functions
-        person - DCTERMS.creator - values("Alice", "Bob", 42, true)
+        person - DCTERMS.creator - values(
+            string("Alice"),
+            string("Bob"),
+            42.toLiteral(),
+            true.toLiteral()
+        )
     }
 
     // Query the results

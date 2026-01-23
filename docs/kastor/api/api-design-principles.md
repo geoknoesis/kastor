@@ -11,18 +11,17 @@ The Kastor RDF API is designed following modern API design principles and Kotlin
 
 **Implementation:**
 - **Simple**: `Rdf.memory()` - One line to get started
-- **Advanced**: `Rdf.factory { jenaTdb2("./data") { inference() } }` - Full control when needed
+- **Advanced**: `Rdf.repository { providerId = "jena"; variantId = "tdb2-inference"; location = "./data" }` - Full control when needed
 
 ```kotlin
 // Simple - for beginners
 val repo = Rdf.memory()
 
 // Advanced - for experts
-val repo = Rdf.factory {
-    jenaTdb2("./data/storage")
-    inference()
-    validation()
-    param("maxSize", "1000000")
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2-inference"
+    location = "./data/storage"
 }
 ```
 
@@ -151,13 +150,19 @@ Works with multiple RDF backends seamlessly
 val repo = Rdf.memory() // Uses default provider
 
 // Explicit provider selection
-val jenaRepo = Rdf.factory { jena() }
-val rdf4jRepo = Rdf.factory { rdf4j() }
+val jenaRepo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
+val rdf4jRepo = Rdf.repository {
+    providerId = "rdf4j"
+    variantId = "memory"
+}
 
 // Capability discovery
 val provider = RdfProviderRegistry.getProvider("jena")
 val capabilities = provider.getCapabilities()
-if (capabilities.contains(Capability.RDFS_INFERENCE)) {
+if (capabilities.supportsInference) {
     // Use inference features
 }
 ```
@@ -167,30 +172,30 @@ Components can be combined in flexible ways
 
 **Implementation:**
 - **Builder pattern** for complex configurations
-- **Repository manager** for multiple repositories
-- **Federated queries** across repositories
+- **Repository maps** for multiple repositories
+- **Federated queries** via SPARQL providers (when supported)
 - **Plugin architecture** for extensions
 
 ```kotlin
-// Composable repository manager
-val manager = Rdf.manager {
-    repository("people") {
-        memory()
-        inference()
+// Composable repository map
+val repositories = mapOf(
+    "people" to Rdf.repository {
+        providerId = "jena"
+        variantId = "memory-inference"
+    },
+    "products" to Rdf.repository {
+        providerId = "jena"
+        variantId = "tdb2"
+        location = "./data/products"
+    },
+    "analytics" to Rdf.repository {
+        providerId = "rdf4j"
+        variantId = "native"
+        location = "./data/analytics"
     }
-    repository("products") {
-        jenaTdb2("./data/products")
-    }
-    repository("analytics") {
-        rdf4jNative("./data/analytics")
-    }
-}
-
-// Federated queries
-val results = manager.federatedQuery(
-    "SELECT ?name WHERE { ?s ?p ?name }",
-    setOf("people", "products")
 )
+
+// Federated queries should use a SPARQL-capable provider or your own composition.
 ```
 
 ### 3. **Performance Conscious**
@@ -220,12 +225,10 @@ repo.addTriples(triples) // Efficient batch addition
 For complex object construction
 
 ```kotlin
-val repo = Rdf.factory {
-    jenaTdb2("./data/storage")
-    inference()
-    validation()
-    param("maxSize", "1000000")
-    param("enableStats", "true")
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data/storage"
 }
 ```
 
@@ -253,10 +256,17 @@ fun Boolean.toLiteral(): Literal = boolean(this)
 For type-safe hierarchies
 
 ```kotlin
-sealed class RdfTerm {
-    data class Iri(val value: String) : RdfTerm()
-    data class Literal(val lexical: String, val datatype: String?) : RdfTerm()
-    data class BlankNode(val id: String) : RdfTerm()
+sealed interface RdfTerm
+
+@JvmInline
+value class Iri(val value: String) : RdfResource
+
+@JvmInline
+value class BlankNode(val id: String) : RdfResource
+
+sealed interface Literal : RdfTerm {
+    val lexical: String
+    val datatype: Iri
 }
 ```
 

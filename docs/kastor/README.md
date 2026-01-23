@@ -59,6 +59,7 @@ dependencies {
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 fun main() {
     // Create a repository
@@ -67,17 +68,17 @@ fun main() {
     // Add some data using natural language DSL
     repo.add {
         val alice = iri("http://example.org/alice")
-        alice has name with "Alice Johnson"
-        alice has age with 30
-        alice has email with "alice@example.org"
-        alice is "http://xmlns.com/foaf/0.1/Person"
+        alice has FOAF.name with "Alice Johnson"
+        alice has FOAF.age with 30
+        alice has FOAF.mbox with "alice@example.org"
+        alice is FOAF.Person
     }
     
     // Query the data
     val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE {
-            ?person foaf:name ?name .
-            ?person ex:age ?age .
+            ?person ${FOAF.name} ?name .
+            ?person ${FOAF.age} ?age .
         }
     """)))
     
@@ -88,6 +89,13 @@ fun main() {
 ```
 
 ## 📚 Documentation Structure
+
+The documentation is organized into four distinct pillars:
+
+- **Getting Started** — installation, first graph, first query
+- **Concepts** — RDF mental model and vocabulary fundamentals
+- **How‑To Guides** — task‑oriented workflows and recipes
+- **Reference** — definitive API and DSL behavior
 
 ### **Getting Started**
 - **[Getting Started Guide](getting-started/README.md)** - Complete setup and introduction
@@ -110,6 +118,7 @@ fun main() {
 
 ### **Resources**
 - **[Vocabularies](concepts/vocabularies.md)** - Working with RDF vocabularies
+- **[Datasets](concepts/datasets.md)** - Default graph and named graph semantics
 - **[RDF Fundamentals](concepts/rdf-fundamentals.md)** - Understanding RDF basics
 - **[SPARQL Fundamentals](concepts/sparql-fundamentals.md)** - Query language introduction
 - **[Troubleshooting](guides/troubleshooting.md)** - Common issues and solutions
@@ -121,12 +130,15 @@ fun main() {
 Build comprehensive data catalogs with DCAT vocabulary support and validation.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+
 val catalog = Rdf.graph {
     val dataset = iri("http://example.org/dataset1")
-    dataset is "http://www.w3.org/ns/dcat#Dataset"
-    dataset has title with "My Dataset"
-    dataset has description with "A sample dataset"
-    dataset has contactPoint with "admin@example.org"
+    dataset is DCAT.Dataset
+    dataset has DCTERMS.title with "My Dataset"
+    dataset has DCTERMS.description with "A sample dataset"
+    dataset has DCAT.contactPoint with "admin@example.org"
 }
 ```
 
@@ -134,12 +146,15 @@ val catalog = Rdf.graph {
 Create and query knowledge graphs with reasoning capabilities.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDFS
+
 val graph = Rdf.graph {
     val person = iri("http://example.org/alice")
     val employee = iri("http://example.org/Employee")
     
     person is employee
-    employee subclassOf "http://xmlns.com/foaf/0.1/Person"
+    employee subclassOf FOAF.Person
 }
 
 // Reasoning will infer that Alice is a Person
@@ -165,10 +180,13 @@ if (result is ValidationResult.Violations) {
 Integrate with SPARQL endpoints and build web services.
 
 ```kotlin
-val repo = Rdf.repository {
-    providerId = "sparql"
-    variantId = "endpoint"
-}
+val repo = RdfProviderRegistry.create(
+    RdfConfig.of(
+        providerId = ProviderId("sparql"),
+        variantId = VariantId("sparql"),
+        options = mapOf("location" to "https://dbpedia.org/sparql")
+    )
+)
 
 val results = repo.select(SparqlSelectQuery("""
     SELECT ?name WHERE {
@@ -258,5 +276,6 @@ Kastor is open source and available under the [Apache License 2.0](../../LICENSE
 ---
 
 **Ready to get started?** Check out the [Getting Started Guide](getting-started/README.md) or jump right into [Hello World](tutorials/hello-world.md)!
+
 
 

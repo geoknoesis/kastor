@@ -173,14 +173,23 @@ class VocabularyTest {
     @Test
     fun `vocabulary terms are IRIs`() {
         // Test that all vocabulary terms are IRI instances
-        assertTrue(DCTERMS.title is Iri, "DCTERMS title should be an IRI")
-        assertTrue(FOAF.name is Iri, "FOAF name should be an IRI")
-        assertTrue(RDF.type is Iri, "RDF type should be an IRI")
-        assertTrue(RDFS.label is Iri, "RDFS label should be an IRI")
-        assertTrue(OWL.Class is Iri, "OWL Class should be an IRI")
-        assertTrue(XSD.string is Iri, "XSD string should be an IRI")
-        assertTrue(SKOS.Concept is Iri, "SKOS Concept should be an IRI")
-        assertTrue(SHACL.NodeShape is Iri, "SHACL NodeShape should be an IRI")
+        val dctermsTitle: RdfTerm = DCTERMS.title
+        val foafName: RdfTerm = FOAF.name
+        val rdfType: RdfTerm = RDF.type
+        val rdfsLabel: RdfTerm = RDFS.label
+        val owlClass: RdfTerm = OWL.Class
+        val xsdString: RdfTerm = XSD.string
+        val skosConcept: RdfTerm = SKOS.Concept
+        val shaclNodeShape: RdfTerm = SHACL.NodeShape
+
+        assertTrue(dctermsTitle is Iri, "DCTERMS title should be an IRI")
+        assertTrue(foafName is Iri, "FOAF name should be an IRI")
+        assertTrue(rdfType is Iri, "RDF type should be an IRI")
+        assertTrue(rdfsLabel is Iri, "RDFS label should be an IRI")
+        assertTrue(owlClass is Iri, "OWL Class should be an IRI")
+        assertTrue(xsdString is Iri, "XSD string should be an IRI")
+        assertTrue(skosConcept is Iri, "SKOS Concept should be an IRI")
+        assertTrue(shaclNodeShape is Iri, "SHACL NodeShape should be an IRI")
     }
     
     @Test

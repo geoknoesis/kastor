@@ -121,7 +121,12 @@ class MinusOperatorMultipleValuesTest {
             person - FOAF.knows - arrayOf(friend1, friend2, bnode)
             
             // Mixed types in list
-            person - DCTERMS.subject - listOf("Technology", "Programming", 42, true)
+            person - DCTERMS.subject - listOf(
+                string("Technology"),
+                string("Programming"),
+                42.toLiteral(),
+                true.toLiteral()
+            )
         }
         
         val allTriples = repo.defaultGraph.getTriples()

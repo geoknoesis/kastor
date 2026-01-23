@@ -8,11 +8,15 @@
 Configure multiple prefix mappings at once.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "dcat" to DCAT.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -24,8 +28,10 @@ repo.add {
 Add a single prefix mapping.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     val person = iri("http://example.org/person")
     person - "foaf:name" - "Alice"
@@ -36,8 +42,10 @@ repo.add {
 Create an IRI from a QName or full IRI string.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     val nameIri = qname("foaf:name")  // Returns Iri("http://xmlns.com/foaf/0.1/name")
     val person = iri("http://example.org/person")
@@ -50,20 +58,22 @@ repo.add {
 #### Ultra-Compact Syntax (Bracket Notation)
 
 ```kotlin
-// With full IRIs
-person["http://xmlns.com/foaf/0.1/name"] = "Alice"
-person["http://xmlns.com/foaf/0.1/age"] = 30
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+// With vocabulary constants
+person[FOAF.name] = "Alice"
+person[FOAF.age] = 30
 
 // With QNames (requires prefix mapping)
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     person["foaf:name"] = "Alice"
     person["foaf:age"] = 30
 }
 
 // With IRI objects
-val name = iri("http://xmlns.com/foaf/0.1/name")
+val name = FOAF.name
 person[name] = "Alice"
 ```
 
@@ -78,38 +88,42 @@ person[name] = "Alice"
 #### Natural Language Syntax
 
 ```kotlin
-// With full IRIs
-person has iri("http://xmlns.com/foaf/0.1/name") with "Alice"
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+// With vocabulary constants
+person has FOAF.name with "Alice"
 
 // With QNames (requires prefix mapping)
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     person has "foaf:name" with "Alice"
     person has "foaf:age" with 30
 }
 
 // With IRI objects
-val name = iri("http://xmlns.com/foaf/0.1/name")
+val name = FOAF.name
 person has name with "Alice"
 ```
 
 #### Minus Operator Syntax
 
 ```kotlin
-// With full IRIs
-person - iri("http://xmlns.com/foaf/0.1/name") - "Alice"
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+// With vocabulary constants
+person - FOAF.name - "Alice"
 
 // With QNames (requires prefix mapping)
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     person - "foaf:name" - "Alice"
     person - "foaf:age" - 30
 }
 
 // With IRI objects
-val name = iri("http://xmlns.com/foaf/0.1/name")
+val name = FOAF.name
 person - name - "Alice"
 ```
 
@@ -119,10 +133,13 @@ person - name - "Alice"
 QNames are automatically resolved to full IRIs using the configured prefix mappings.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
+        "foaf" to FOAF.namespace
+        "dcat" to DCAT.namespace
     }
     
     // These QNames are automatically resolved:
@@ -156,8 +173,10 @@ A string is considered a QName if:
 
 #### Error Handling
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     // This will throw IllegalArgumentException: Unknown prefix: 'unknown'
     person - "unknown:name" - "Alice"
@@ -170,10 +189,13 @@ repo.add {
 Create a standalone RDF graph with the same DSL syntax.
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 val graph = Rdf.graph {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
+        "foaf" to FOAF.namespace
+        "dcat" to DCAT.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -190,13 +212,20 @@ println("Graph has ${graph.getTriples().size} triples")
 
 #### 1. Configure Prefixes at the Top
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.SCHEMA
+
 repo.add {
     // Configure all prefixes at the beginning
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "dcat" to "http://www.w3.org/ns/dcat#"
-        "dcterms" to "http://purl.org/dc/terms/"
-        "schema" to "http://schema.org/"
+        "foaf" to FOAF.namespace
+        "dcat" to DCAT.namespace
+        "dcterms" to DCTERMS.namespace
+        "rdf" to RDF.namespace
+        "schema" to SCHEMA.namespace
     }
     
     // Use QNames throughout
@@ -209,8 +238,10 @@ repo.add {
 
 #### 2. Mix QNames and Full IRIs When Needed
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     val person = iri("http://example.org/person")
     
@@ -218,7 +249,8 @@ repo.add {
     person - "foaf:name" - "Alice"
     
     // Use full IRIs for custom properties
-    person - "http://example.org/customProperty" - "value"
+    val customProp = iri("http://example.org/customProperty")
+    person - customProp - "value"
     
     // Use qname() for dynamic QName creation
     val dynamicProp = qname("foaf:${propertyName}")
@@ -229,17 +261,21 @@ repo.add {
 #### 3. Use Consistent Naming
 ```kotlin
 // Good: Consistent prefix names
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 prefixes {
-    "foaf" to "http://xmlns.com/foaf/0.1/"
-    "dcat" to "http://www.w3.org/ns/dcat#"
-    "dcterms" to "http://purl.org/dc/terms/"
+    "foaf" to FOAF.namespace
+    "dcat" to DCAT.namespace
+    "dcterms" to DCTERMS.namespace
 }
 
 // Avoid: Inconsistent prefix names
 prefixes {
-    "f" to "http://xmlns.com/foaf/0.1/"           // Too short
-    "data-catalog" to "http://www.w3.org/ns/dcat#"  // Too long
-    "DC" to "http://purl.org/dc/terms/"           // Inconsistent case
+    "f" to FOAF.namespace                 // Too short
+    "data-catalog" to DCAT.namespace      // Too long
+    "DC" to DCTERMS.namespace             // Inconsistent case
 }
 ```
 
@@ -250,8 +286,11 @@ Prefix mappings are scoped to the DSL block where they're defined.
 
 ```kotlin
 // Each add block has its own prefix mappings
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     person - "foaf:name" - "Alice"
 }
 
@@ -259,7 +298,7 @@ repo.add {
     // This block doesn't have the foaf prefix
     // person - "foaf:name" - "Bob"  // ❌ Would throw error
     
-    prefix("dcat", "http://www.w3.org/ns/dcat#")
+    prefix("dcat", DCAT.namespace)
     catalog - "dcat:title" - "My Catalog"
 }
 ```
@@ -269,8 +308,10 @@ QName resolution is performed during triple creation and is very fast. The resol
 
 ```kotlin
 // Efficient: QName resolution happens once per triple
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     
     // Each of these resolves "foaf:name" once
     person1 - "foaf:name" - "Alice"

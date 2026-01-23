@@ -74,24 +74,24 @@ class BasicShaclValidationExample {
             personShape - Iri("http://www.w3.org/ns/shacl#property") - nameProperty
             nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
             nameProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/name")
-            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
-            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
+            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1
             nameProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
             
             // Email property constraints
             personShape - Iri("http://www.w3.org/ns/shacl#property") - emailProperty
             emailProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
             emailProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/email")
-            emailProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
-            emailProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            emailProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
+            emailProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1
             emailProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
             
             // Age property constraints
             personShape - Iri("http://www.w3.org/ns/shacl#property") - ageProperty
             ageProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
             ageProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/age")
-            ageProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
-            ageProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            ageProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
+            ageProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1
             ageProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.integer
         }
     }

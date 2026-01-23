@@ -129,11 +129,11 @@ object CompanyVocab {
 }
 
 // ✅ Good: Use standard vocabularies when possible
-object Foaf {
-    val name = iri("http://xmlns.com/foaf/0.1/name")
-    val mbox = iri("http://xmlns.com/foaf/0.1/mbox")
-    val homepage = iri("http://xmlns.com/foaf/0.1/homepage")
-}
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+val name = FOAF.name
+val mbox = FOAF.mbox
+val homepage = FOAF.homepage
 ```
 
 ## ⚡ Performance Optimization
@@ -153,7 +153,7 @@ val prodRepo = Rdf.persistent("production-data")
 val reasoningRepo = Rdf.memoryWithInference()
 
 // ✅ Good: Custom configuration for specific needs
-val customRepo = Rdf.factory {
+val customRepo = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "/data/storage"
@@ -251,9 +251,10 @@ val results = repo.select(SparqlSelectQuery("""
 
 ```kotlin
 // ✅ Good: Monitor performance
+val namePred = iri("http://example.org/person/name")
 val started = System.nanoTime()
 val results = repo.select(SparqlSelectQuery("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
+    SELECT ?name WHERE { ?person ${namePred} ?name }
 """))
 val queryDurationMs = (System.nanoTime() - started) / 1_000_000
 println("Query duration: ${queryDurationMs}ms")
@@ -269,7 +270,8 @@ println("Query duration: ${queryDurationMs}ms")
 ```kotlin
 // ✅ Good: Handle specific exceptions
 try {
-    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+    val namePred = iri("http://example.org/person/name")
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person ${namePred} ?name }"))
     results.forEach { binding ->
         println(binding.getString("name"))
     }
@@ -310,15 +312,19 @@ fun addPerson(name: String, age: Int): RdfResource {
 // ✅ Good: Graceful degradation for optional features
 fun getPersonWithOptionalData(id: String): PersonData? {
     return try {
+        val personIri = iri(id)
+        val namePred = iri("http://example.org/person/name")
+        val agePred = iri("http://example.org/person/age")
+        val emailPred = iri("http://example.org/person/email")
         val results = repo.select(SparqlSelectQuery("""
             SELECT ?name ?age ?email WHERE { 
-                <$id> <http://example.org/person/name> ?name ;
-                      <http://example.org/person/age> ?age .
-                OPTIONAL { <$id> <http://example.org/person/email> ?email }
+                ${personIri} ${namePred} ?name ;
+                      ${agePred} ?age .
+                OPTIONAL { ${personIri} ${emailPred} ?email }
             }
         """))
         
-        results.firstOrNull()?.let { binding ->
+        results.first()?.let { binding ->
             PersonData(
                 name = binding.getString("name") ?: "Unknown",
                 age = binding.getInt("age") ?: 0,
@@ -341,12 +347,13 @@ fun getPersonWithOptionalData(id: String): PersonData? {
 ```kotlin
 // ✅ Good: Use Kotlin's use function
 Rdf.memory().use { repo ->
+    val namePred = iri("http://example.org/person/name")
     repo.add {
         val person = iri("http://example.org/person/alice")
         person[PersonVocab.name] = "Alice"
     }
     
-    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person ${namePred} ?name }"))
     results.forEach { binding ->
         println(binding.getString("name"))
     }
@@ -362,35 +369,26 @@ try {
 }
 ```
 
-#### Repository Manager Usage
+#### Multiple Repository Usage
 
 ```kotlin
-// ✅ Good: Use repository manager for multiple repositories
-Rdf.manager {
-    repository("users") {
+val repositories = mapOf(
+    "users" to Rdf.repository {
         providerId = "jena"
         variantId = "memory"
-    }
-    repository("products") {
+    },
+    "products" to Rdf.repository {
         providerId = "rdf4j"
         variantId = "native"
         location = "/data/products"
     }
-}.use { manager ->
-    val userRepo = manager.getRepository("users")
-    val productRepo = manager.getRepository("products")
-    
-    // Use repositories
-    userRepo.add { /* ... */ }
-    productRepo.add { /* ... */ }
-    
-    // Federated query
-    val results = manager.federatedQuery("""
-        SELECT ?user ?product WHERE { 
-            ?user <http://example.org/bought> ?product 
-        }
-    """, listOf("users", "products"))
-}
+)
+
+val userRepo = repositories.getValue("users")
+val productRepo = repositories.getValue("products")
+
+userRepo.add { /* ... */ }
+productRepo.add { /* ... */ }
 ```
 
 ### Transaction Management
@@ -417,8 +415,9 @@ repo.transaction {
 
 // ✅ Good: Use read transactions for better performance
 repo.readTransaction {
-    val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }"))
-        .firstOrNull()?.getInt("count") ?: 0
+    val namePred = iri("http://example.org/person/name")
+    val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person ${namePred} ?name }"))
+        .first()?.getInt("count") ?: 0
     
     println("Total people: $count")
 }
@@ -479,9 +478,9 @@ object Ontology {
 
 // ✅ Good: Use standard vocabularies
 object Foaf {
-    val Person = iri("http://xmlns.com/foaf/0.1/Person")
-    val name = iri("http://xmlns.com/foaf/0.1/name")
-    val mbox = iri("http://xmlns.com/foaf/0.1/mbox")
+    val Person = FOAF.Person
+    val name = FOAF.name
+    val mbox = FOAF.mbox
 }
 ```
 
@@ -502,8 +501,8 @@ repo.add {
 // ✅ Good: Use typed literals when needed
 repo.add {
     val person = iri("http://example.org/person/alice")
-    person[PersonVocab.birthDate] = literal("1994-05-15", datatype = "http://www.w3.org/2001/XMLSchema#date")
-    person[PersonVocab.salary] = literal(75000.50, datatype = "http://www.w3.org/2001/XMLSchema#decimal")
+    person[PersonVocab.birthDate] = date("1994-05-15")
+    person[PersonVocab.salary] = decimal(75000.50)
 }
 ```
 
@@ -623,7 +622,7 @@ class RdfPersonRepository(private val repo: RdfRepository) : PersonRepository {
             }
         """))
         
-        return results.firstOrNull()?.let { binding ->
+        return results.first()?.let { binding ->
             Person(
                 id = id,
                 name = binding.getString("name") ?: "",

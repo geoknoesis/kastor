@@ -197,7 +197,7 @@ class JenaRepository private constructor(
     override fun transaction(operations: RdfRepository.() -> Unit) {
         dataset.begin(ReadWrite.WRITE)
         try {
-            operations()
+            operations.invoke(this)
             dataset.commit()
         } catch (e: Exception) {
             dataset.abort()
@@ -210,7 +210,7 @@ class JenaRepository private constructor(
     override fun readTransaction(operations: RdfRepository.() -> Unit) {
         dataset.begin(ReadWrite.READ)
         try {
-            operations()
+            operations.invoke(this)
             dataset.commit()
         } catch (e: Exception) {
             dataset.abort()
@@ -246,6 +246,12 @@ class JenaRepository private constructor(
     override fun close() {
         dataset.close()
     }
+    
+    /**
+     * Internal method to access the underlying Jena Dataset.
+     * Used by JenaProvider for dataset serialization/parsing.
+     */
+    internal fun getJenaDataset(): Dataset = dataset
     
     private fun convertResource(resource: Resource): RdfResource {
         return if (resource.isAnon) {

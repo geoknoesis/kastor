@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.gen.runtime
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 
 enum class ShaclSeverity {
@@ -36,7 +37,6 @@ data class ShaclViolation(
 sealed interface ValidationResult {
     data object Ok : ValidationResult
     data class Violations(val items: List<ShaclViolation>) : ValidationResult
-    data object NotConfigured : ValidationResult
 }
 
 interface ValidationContext {
@@ -56,7 +56,6 @@ fun ValidationResult.orThrow() {
             val message = items.joinToString("; ") { it.message }
             throw ValidationException(message.ifBlank { "SHACL validation failed" }, items)
         }
-        is ValidationResult.NotConfigured -> Unit
     }
 }
 

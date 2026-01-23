@@ -4,6 +4,12 @@ import com.geoknoesis.kastor.rdf.*
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.graph.Graph
+import org.apache.jena.query.Dataset
+import org.apache.jena.query.DatasetFactory
+import org.apache.jena.reasoner.ReasonerRegistry
+import org.apache.jena.riot.RDFDataMgr
+import org.apache.jena.riot.RDFFormat as JenaRDFFormat
+import java.io.StringWriter
 
 /**
  * Bridge utilities for converting between Jena and Kastor RDF APIs.
@@ -48,9 +54,9 @@ object JenaBridge {
                 // For non-Jena graphs, create a new model and copy triples
                 val model = ModelFactory.createDefaultModel()
                 rdfGraph.getTriples().forEach { triple ->
-                    val subject = JenaTerms.toResource(triple.subject)
-                    val predicate = JenaTerms.toProperty(triple.predicate)
-                    val obj = JenaTerms.toNode(triple.obj)
+                    val subject = JenaTerms.toResource(model, triple.subject)
+                    val predicate = JenaTerms.toProperty(model, triple.predicate)
+                    val obj = JenaTerms.toNode(model, triple.obj)
                     model.add(subject, predicate, obj)
                 }
                 model
@@ -103,8 +109,9 @@ object JenaBridge {
      * @return A Kastor RdfGraph backed by a Jena Model with OWL inference
      */
     fun createOwlInferenceModel(): MutableRdfGraph {
-        val model = ModelFactory.createOntologyModel()
-        return fromJenaModel(model)
+        val baseModel = ModelFactory.createDefaultModel()
+        val infModel = ModelFactory.createInfModel(ReasonerRegistry.getOWLReasoner(), baseModel)
+        return fromJenaModel(infModel)
     }
 
     /**
@@ -209,6 +216,42 @@ object JenaBridge {
      */
     fun getJenaGraph(rdfGraph: RdfGraph): Graph? {
         return if (rdfGraph is JenaGraph) rdfGraph.model.graph else null
+    }
+    
+    /**
+     * Serializes a Jena Dataset to a string in the specified quad format.
+     * 
+     * @param dataset The Jena Dataset to serialize
+     * @param format The output format (e.g., "TRIG", "N-QUADS")
+     * @return The serialized RDF dataset as a string
+     */
+    fun serializeDataset(dataset: Dataset, format: String = "TRIG"): String {
+        val jenaFormat = when (format.uppercase()) {
+            "TRIG", "TRI-G" -> JenaRDFFormat.TRIG
+            "N-QUADS", "NQUADS", "NQ" -> JenaRDFFormat.NQUADS
+            else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
+        }
+        val writer = StringWriter()
+        RDFDataMgr.write(writer, dataset, jenaFormat)
+        return writer.toString()
+    }
+    
+    /**
+     * Parses RDF dataset data from an input stream into a Jena Dataset.
+     * 
+     * @param inputStream The input stream containing RDF dataset data
+     * @param format The RDF format (e.g., "TRIG", "N-QUADS")
+     * @return A Jena Dataset containing the loaded data
+     */
+    fun parseDatasetFromStream(inputStream: java.io.InputStream, format: String = "TRIG"): Dataset {
+        val lang = when (format.uppercase()) {
+            "TRIG", "TRI-G" -> org.apache.jena.riot.Lang.TRIG
+            "N-QUADS", "NQUADS", "NQ" -> org.apache.jena.riot.Lang.NQUADS
+            else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
+        }
+        val dataset = DatasetFactory.create()
+        RDFDataMgr.read(dataset, inputStream, lang)
+        return dataset
     }
 }
 

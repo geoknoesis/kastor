@@ -52,6 +52,8 @@ rdf/
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.reasoning.*
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.RDFS
 
 // Create a graph with RDFS schema
 val graph = Rdf.graph {
@@ -64,7 +66,7 @@ val graph = Rdf.graph {
     val student = iri("ex:Student")
     val teacher = iri("ex:Teacher")
     
-    person - RDFS.subClassOf - iri("rdfs:Resource")
+    person - RDFS.subClassOf - RDFS.Resource
     student - RDFS.subClassOf - person
     teacher - RDFS.subClassOf - person
     
@@ -72,7 +74,7 @@ val graph = Rdf.graph {
     val knows = iri("ex:knows")
     val teaches = iri("ex:teaches")
     
-    knows - RDFS.subPropertyOf - iri("rdfs:seeAlso")
+    knows - RDFS.subPropertyOf - RDFS.seeAlso
     teaches - RDFS.subPropertyOf - knows
     
     // Domain and range

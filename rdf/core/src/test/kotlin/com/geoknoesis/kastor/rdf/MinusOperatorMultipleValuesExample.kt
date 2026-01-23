@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
+import com.geoknoesis.kastor.rdf.dsl.values
 import org.junit.jupiter.api.Test
 
 /**
@@ -19,8 +20,8 @@ class MinusOperatorMultipleValuesExample {
     fun `demonstrate minus operator multiple values functionality`() {
         println("=== Minus Operator Multiple Values Demo ===\n")
         
-        // 1. Basic multiple values with arrays
-        println("1. Multiple Values with Arrays:")
+        // 1. Basic multiple values with varargs
+        println("1. Multiple Values with Varargs:")
         val repo1 = Rdf.memory()
         repo1.add {
             val person = Iri("http://example.org/person")
@@ -31,8 +32,8 @@ class MinusOperatorMultipleValuesExample {
             )
             
             person - FOAF.name - "Alice"
-            person - FOAF.knows - friends  // Creates 3 triples: person knows friend1, friend2, friend3
-            person - FOAF.mbox - arrayOf("alice@example.com", "alice@work.com")  // Creates 2 triples
+            person - FOAF.knows - values(*friends)  // Creates 3 triples: person knows friend1, friend2, friend3
+            person - FOAF.mbox - values("alice@example.com", "alice@work.com")  // Creates 2 triples
         }
         
         val triples1 = repo1.defaultGraph.getTriples()
@@ -40,8 +41,8 @@ class MinusOperatorMultipleValuesExample {
         triples1.forEach { println("   - $it") }
         println()
         
-        // 2. Multiple values with lists
-        println("2. Multiple Values with Lists:")
+        // 2. Multiple values with collections
+        println("2. Multiple Values with Collections:")
         val repo2 = Rdf.memory()
         repo2.add {
             val document = Iri("http://example.org/document")
@@ -53,8 +54,8 @@ class MinusOperatorMultipleValuesExample {
             val tags = listOf("Technology", "Programming", "Kotlin", "RDF")
             
             document - DCTERMS.title - "RDF in Kotlin"
-            document - DCTERMS.creator - authors  // Creates 3 triples
-            document - DCTERMS.subject - tags  // Creates 4 triples
+            document - DCTERMS.creator - values(*authors.toTypedArray())  // Creates 3 triples
+            document - DCTERMS.subject - values(*tags.toTypedArray())  // Creates 4 triples
         }
         
         val triples2 = repo2.defaultGraph.getTriples()
@@ -67,10 +68,12 @@ class MinusOperatorMultipleValuesExample {
         val repo3 = Rdf.memory()
         repo3.add {
             val person = Iri("http://example.org/person")
+            val (homepage1, homepage2) = "http://bob.com" to "http://bob.blog.com"
+            val (friend1, friend2) = Iri("http://example.org/friend1") to Iri("http://example.org/friend2")
             
             person - FOAF.name - "Bob"
-            person - FOAF.homepage - ("http://bob.com" to "http://bob.blog.com")  // Creates 2 triples
-            person - FOAF.knows - (Iri("http://example.org/friend1") to Iri("http://example.org/friend2"))  // Creates 2 triples
+            person - FOAF.homepage - values(homepage1, homepage2)  // Creates 2 triples
+            person - FOAF.knows - values(friend1, friend2)  // Creates 2 triples
         }
         
         val triples3 = repo3.defaultGraph.getTriples()
@@ -83,10 +86,12 @@ class MinusOperatorMultipleValuesExample {
         val repo4 = Rdf.memory()
         repo4.add {
             val resource = Iri("http://example.org/resource")
+            val types = Triple("Document", "Report", "Publication")
+            val subjects = Triple("Technology", "Programming", "RDF")
             
             resource - RDFS.label - "Sample Resource"
-            resource - RDF.type - Triple("Document", "Report", "Publication")  // Creates 3 triples
-            resource - DCTERMS.subject - Triple("Technology", "Programming", "RDF")  // Creates 3 triples
+            resource - RDF.type - values(types.first, types.second, types.third)  // Creates 3 triples
+            resource - DCTERMS.subject - values(subjects.first, subjects.second, subjects.third)  // Creates 3 triples
         }
         
         val triples4 = repo4.defaultGraph.getTriples()
@@ -94,7 +99,7 @@ class MinusOperatorMultipleValuesExample {
         triples4.forEach { println("   - $it") }
         println()
         
-        // 5. Mixed types in collections
+        // 5. Mixed types in collections (explicit literals)
         println("5. Mixed Types in Collections:")
         val repo5 = Rdf.memory()
         repo5.add {
@@ -105,10 +110,10 @@ class MinusOperatorMultipleValuesExample {
             
             person - FOAF.name - "Charlie"
             // Mixed types: IRI, BlankNode, String
-            person - FOAF.knows - arrayOf(friend1, friend2, bnode)  // Creates 3 triples
+            person - FOAF.knows - values(friend1, friend2, bnode)  // Creates 3 triples
             
             // Mixed types: String, Int, Boolean
-            person - DCTERMS.subject - listOf("Technology", 42, true)  // Creates 3 triples
+            person - DCTERMS.subject - values(string("Technology"), 42.toLiteral(), true.toLiteral())  // Creates 3 triples
         }
         
         val triples5 = repo5.defaultGraph.getTriples()
@@ -128,8 +133,8 @@ class MinusOperatorMultipleValuesExample {
             
             project - RDFS.label - "Kastor RDF Library"
             project - DCTERMS.description - "A modern RDF library for Kotlin"
-            project - DCTERMS.contributor - contributors  // Creates 3 triples
-            project - DCTERMS.subject - arrayOf("RDF", "Kotlin", "DSL", "Library")  // Creates 4 triples
+            project - DCTERMS.contributor - values(*contributors.toTypedArray())  // Creates 3 triples
+            project - DCTERMS.subject - values("RDF", "Kotlin", "DSL", "Library")  // Creates 4 triples
         }
         
         val graphTriples = graph.getTriples()
@@ -149,14 +154,15 @@ class MinusOperatorMultipleValuesExample {
                 Iri("http://example.org/speaker/diana")
             )
             val topics = arrayOf("Kotlin", "RDF", "DSL", "Semantic Web", "Graph Databases")
-            val locations = ("Copenhagen" to "Denmark")
+            val (city, country) = ("Copenhagen" to "Denmark")
+            val eventTypes = Triple("Event", "Conference", "Workshop")
             
             conference - DCTERMS.title - "KotlinConf 2024"
             conference - DCTERMS.description - "Annual Kotlin conference"
-            conference - DCTERMS.creator - speakers  // Creates 4 triples
-            conference - DCTERMS.subject - topics  // Creates 5 triples
-            conference - DCTERMS.coverage - locations  // Creates 2 triples
-            conference - RDF.type - Triple("Event", "Conference", "Workshop")  // Creates 3 triples
+            conference - DCTERMS.creator - values(*speakers.toTypedArray())  // Creates 4 triples
+            conference - DCTERMS.subject - values(*topics)  // Creates 5 triples
+            conference - DCTERMS.coverage - values(city, country)  // Creates 2 triples
+            conference - RDF.type - values(eventTypes.first, eventTypes.second, eventTypes.third)  // Creates 3 triples
         }
         
         val triples7 = repo7.defaultGraph.getTriples()
@@ -165,13 +171,12 @@ class MinusOperatorMultipleValuesExample {
         println()
         
         println("=== Summary ===")
-        println("The minus operator (-) now supports multiple values in the object position!")
+        println("The minus operator (-) supports multiple values via values(...).")
         println("You can use:")
-        println("- Arrays: person - FOAF.knows - arrayOf(friend1, friend2, friend3)")
-        println("- Lists: document - DCTERMS.creator - listOf(author1, author2, author3)")
-        println("- Pairs: person - FOAF.homepage - (url1 to url2)")
-        println("- Triples: resource - RDF.type - Triple(type1, type2, type3)")
-        println("- Mixed types: person - DCTERMS.subject - listOf(\"Tech\", 42, true)")
+        println("- Varargs: person - FOAF.knows - values(friend1, friend2, friend3)")
+        println("- Collections: document - DCTERMS.creator - values(*authors.toTypedArray())")
+        println("- Pairs/Triples: values(pair.first, pair.second)")
+        println("- Mixed types: use explicit literals (string(...), 42.toLiteral(), true.toLiteral())")
         println()
         println("This creates multiple triples efficiently in a single, readable expression!")
         

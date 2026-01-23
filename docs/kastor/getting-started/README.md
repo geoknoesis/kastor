@@ -3,6 +3,7 @@
 {% include version-banner.md %}
 
 This section contains everything you need to get up and running with the Kastor RDF framework.
+By the end of these pages, you will have a working repository, a small graph, and your first query result.
 
 ## Why Kastor (quick orientation)
 Kastor is **domain-first RDF**: build pure Kotlin domain interfaces and keep RDF access in a side-channel, while the core DSL stays vocabulary-agnostic and explicit. If that is your goal, start here; for the full rationale, see [Design Philosophy](../philosophy.md).

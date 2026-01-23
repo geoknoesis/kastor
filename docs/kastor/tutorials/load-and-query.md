@@ -2,7 +2,7 @@
 
 1) Start with an in-memory repository
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
   providerId = "jena"
   variantId = "memory"
 }

@@ -32,7 +32,7 @@ interface MutableRdfGraph : RdfGraph, GraphEditor
 
 ### Repository abstraction
 ```kotlin
-interface RdfRepository : SparqlRepository {
+interface RdfRepository : Dataset, SparqlMutable {
   val defaultGraph: RdfGraph
 
   fun getGraph(name: Iri): RdfGraph
@@ -56,6 +56,10 @@ interface RdfRepository : SparqlRepository {
   fun getCapabilities(): ProviderCapabilities
 }
 ```
+
+**Note:** `RdfRepository` implements `Dataset`, so every repository is a SPARQL‑compliant
+dataset (default graph + named graphs). Use `Dataset` for read‑only query scope, and
+`RdfRepository` when you need mutations.
 
 ### Factory DSL
 ```kotlin

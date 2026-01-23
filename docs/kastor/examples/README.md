@@ -34,7 +34,7 @@ Demonstrates the enhanced configuration system with rich parameter metadata:
 @Test
 fun `demonstrate enhanced parameter information`() {
     // Get all available variants with detailed parameter info
-    val variants = RdfApiRegistry.getAllConfigVariants()
+    val variants = RdfProviderRegistry.getAllConfigVariants()
     variants.forEach { variant ->
         println("${variant.type}: ${variant.description}")
         variant.parameters.forEach { param ->
@@ -46,7 +46,7 @@ fun `demonstrate enhanced parameter information`() {
     }
     
     // Get parameter information for specific variant
-    val locationParam = RdfApiRegistry.getParameterInfo("jena:tdb2", "location")
+    val locationParam = RdfProviderRegistry.getParameterInfo("jena:tdb2", "location")
     locationParam?.let { param ->
         println("Parameter: ${param.name}")
         println("Type: ${param.type}")
@@ -55,7 +55,7 @@ fun `demonstrate enhanced parameter information`() {
     }
     
     // Validate configuration before creating repository
-    val requiredParams = RdfApiRegistry.getRequiredParameters("sparql")
+    val requiredParams = RdfProviderRegistry.getRequiredParameters("sparql")
     val config = RdfConfig(
         providerId = "sparql",
         variantId = "sparql",
@@ -83,19 +83,21 @@ Demonstrates fundamental RDF operations:
 fun main() {
     // Create repository
     val repo = Rdf.memory()
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
     
     // Add data
     repo.add {
         val person = iri("http://example.org/person/alice")
-        person["http://example.org/person/name"] = "Alice Johnson"
-        person["http://example.org/person/age"] = 30
+        person[namePred] = "Alice Johnson"
+        person[agePred] = 30
     }
     
     // Query data
     val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE { 
-            ?person <http://example.org/person/name> ?name ;
-                    <http://example.org/person/age> ?age 
+            ?person ${namePred} ?name ;
+                    ${agePred} ?age 
         }
     """))
     
@@ -125,7 +127,7 @@ fun main() {
     val inferenceRepo = Rdf.memoryWithInference()
     
     // Custom configuration
-    val customRepo = Rdf.factory {
+    val customRepo = Rdf.repository {
         providerId = "jena"
         variantId = "tdb2"
         location = "/path/to/storage"
@@ -145,23 +147,31 @@ fun main() {
 Demonstrates all available DSL syntaxes:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 fun main() {
     val repo = Rdf.memory()
     val person = iri("http://example.org/person/alice")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
+    val cityPred = iri("http://example.org/person/city")
+    val phonePred = iri("http://example.org/person/phone")
     
     repo.add {
         // Ultra-compact syntax
-        person["http://example.org/person/name"] = "Alice"
-        person["http://example.org/person/age"] = 30
+        person[namePred] = "Alice"
+        person[agePred] = 30
         
         // Natural language syntax
-        person has "http://example.org/person/email" with "alice@example.com"
+        person has emailPred with "alice@example.com"
         
         // Generic infix operator
-        person has "http://example.org/person/city" with "New York"
+        person has cityPred with "New York"
         
         // Minus operator syntax
-        person - "http://example.org/person/phone" - "+1-555-1234"
+        person - phonePred - "+1-555-1234"
         
         // Multiple values using values() function (individual triples)
         person - FOAF.knows - values(friend1, friend2, friend3)
@@ -181,6 +191,10 @@ fun main() {
 Shows how to use the core API without vocabulary assumptions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.SCHEMA
+
 fun main() {
     val repo = Rdf.memory()
     
@@ -297,14 +311,16 @@ fun main() {
     
     // Elegant factory methods
     val repo = Rdf.memory()
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
     
     // Repository operations
     repo.add {
         val alice = iri("http://example.org/person/alice")
-        alice["http://example.org/person/name"] = "Alice Johnson"
-        alice["http://example.org/person/age"] = 30
+        alice[namePred] = "Alice Johnson"
+        alice[agePred] = 30
     }
-    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }"))
+    val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?person ${namePred} ?name }"))
     results.forEach { binding ->
         println("Found: ${binding.getString("name")}")
     }
@@ -312,7 +328,7 @@ fun main() {
     // Performance monitoring
     val started = System.nanoTime()
     repo.select(SparqlSelectQuery("""
-        SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
+        SELECT ?name WHERE { ?person ${namePred} ?name }
     """))
     val queryDurationMs = (System.nanoTime() - started) / 1_000_000
     println("Query took: ${queryDurationMs}ms")
@@ -321,14 +337,14 @@ fun main() {
     repo.add {
         for (i in 1..100) {
             val person = iri("http://example.org/person/person$i")
-            person["http://example.org/person/name"] = "Person $i"
-            person["http://example.org/person/age"] = 20 + (i % 50)
+            person[namePred] = "Person $i"
+            person[agePred] = 20 + (i % 50)
         }
     }
     
     // Advanced query features
     val firstPerson = repo.select(SparqlSelectQuery("""
-        SELECT ?name WHERE { ?person <http://example.org/person/name> ?name } LIMIT 1
+        SELECT ?name WHERE { ?person ${namePred} ?name } LIMIT 1
     """)).first()
     println("First person: ${firstPerson?.getString("name")}")
     
@@ -336,28 +352,28 @@ fun main() {
     repo.transaction {
         add {
             val david = iri("http://example.org/person/david")
-            david["http://example.org/person/name"] = "David Wilson"
-            david["http://example.org/person/age"] = 40
+            david[namePred] = "David Wilson"
+            david[agePred] = 40
         }
         
-        val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person <http://example.org/person/name> ?name }"))
+        val count = select(SparqlSelectQuery("SELECT (COUNT(?person) AS ?count) WHERE { ?person ${namePred} ?name }"))
             .firstOrNull()?.getInt("count") ?: 0
         println("People count in transaction: $count")
     }
     
     // Operator overloads
-    val triple1 = alice -> ("http://example.org/person/name" to "Alice")
-    val triple2 = alice -> ("http://example.org/person/age" to 30)
+    val triple1 = alice -> (namePred to "Alice")
+    val triple2 = alice -> (agePred to 30)
     repo.addTriples(listOf(triple1, triple2))
     
     // Convenience functions
     val eve = resource("http://example.org/person/eve")
-    val eveName = literal("Eve Anderson")
-    val eveAge = literal(28)
+    val eveName = string("Eve Anderson")
+    val eveAge = int(28)
     
     val eveTriples = listOf(
-        triple(eve, Iri("http://example.org/person/name"), eveName),
-        triple(eve, Iri("http://example.org/person/age"), eveAge)
+        triple(eve, namePred, eveName),
+        triple(eve, agePred, eveAge)
     )
     repo.addTriples(eveTriples)
     
@@ -365,8 +381,10 @@ fun main() {
     val metadataGraph = repo.createGraph(iri("http://example.org/graphs/metadata"))
     repo.addToGraph(iri("http://example.org/graphs/metadata")) {
         val metadata = iri("http://example.org/metadata")
-        metadata["http://example.org/metadata/created"] = "2024-01-01"
-        metadata["http://example.org/metadata/version"] = "1.0"
+        val createdPred = iri("http://example.org/metadata/created")
+        val versionPred = iri("http://example.org/metadata/version")
+        metadata[createdPred] = "2024-01-01"
+        metadata[versionPred] = "1.0"
     }
     
     // Final statistics
@@ -390,6 +408,9 @@ Demonstrates performance optimization techniques:
 ```kotlin
 fun main() {
     val repo = Rdf.memory()
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
     // Batch operations for large datasets
     val startTime = System.currentTimeMillis()
@@ -397,9 +418,9 @@ fun main() {
     repo.add {
         for (i in 1..10000) {
             val person = iri("http://example.org/person/person$i")
-            person["http://example.org/person/name"] = "Person $i"
-            person["http://example.org/person/age"] = 20 + (i % 50)
-            person["http://example.org/person/email"] = "person$i@example.com"
+            person[namePred] = "Person $i"
+            person[agePred] = 20 + (i % 50)
+            person[emailPred] = "person$i@example.com"
         }
     }
     
@@ -539,23 +560,24 @@ fun main() {
     repo.add {
         // FOAF data
         val alice = iri("http://example.org/person/alice")
-        alice["http://xmlns.com/foaf/0.1/name"] = "Alice Johnson"
-        alice["http://xmlns.com/foaf/0.1/mbox"] = "alice@example.com"
-        alice["http://xmlns.com/foaf/0.1/homepage"] = "http://alice.example.com"
+        alice[FOAF.name] = "Alice Johnson"
+        alice[FOAF.mbox] = "alice@example.com"
+        alice[FOAF.homepage] = iri("http://alice.example.com")
         
         // Dublin Core metadata
-        alice["http://purl.org/dc/terms/created"] = "2024-01-01"
-        alice["http://purl.org/dc/terms/modified"] = "2024-01-15"
+        alice[DCTERMS.created] = "2024-01-01"
+        alice[DCTERMS.modified] = "2024-01-15"
         
         // Schema.org data
-        alice["http://schema.org/jobTitle"] = "Software Engineer"
-        alice["http://schema.org/worksFor"] = "http://example.org/company/techcorp"
+        val techCorp = iri("http://example.org/company/techcorp")
+        alice[SCHEMA.jobTitle] = "Software Engineer"
+        alice[SCHEMA.worksFor] = techCorp
         
         // Friend relationships
         val bob = iri("http://example.org/person/bob")
-        alice["http://xmlns.com/foaf/0.1/knows"] = bob
-        bob["http://xmlns.com/foaf/0.1/name"] = "Bob Smith"
-        bob["http://xmlns.com/foaf/0.1/mbox"] = "bob@example.com"
+        alice[FOAF.knows] = bob
+        bob[FOAF.name] = "Bob Smith"
+        bob[FOAF.mbox] = "bob@example.com"
     }
     
     // Query across different vocabularies
@@ -565,9 +587,9 @@ fun main() {
     println("People with Contact Information:")
     repo.select(SparqlSelectQuery("""
         SELECT ?name ?email ?homepage WHERE { 
-            ?person <http://xmlns.com/foaf/0.1/name> ?name ;
-                    <http://xmlns.com/foaf/0.1/mbox> ?email .
-            OPTIONAL { ?person <http://xmlns.com/foaf/0.1/homepage> ?homepage }
+            ?person ${FOAF.name} ?name ;
+                    ${FOAF.mbox} ?email .
+            OPTIONAL { ?person ${FOAF.homepage} ?homepage }
         }
     """)).forEach { binding ->
         val name = binding.getString("name")
@@ -584,9 +606,9 @@ fun main() {
     println("\nSocial Network:")
     repo.select(SparqlSelectQuery("""
         SELECT ?personName ?friendName WHERE { 
-            ?person <http://xmlns.com/foaf/0.1/name> ?personName ;
-                    <http://xmlns.com/foaf/0.1/knows> ?friend .
-            ?friend <http://xmlns.com/foaf/0.1/name> ?friendName
+            ?person ${FOAF.name} ?personName ;
+                    ${FOAF.knows} ?friend .
+            ?friend ${FOAF.name} ?friendName
         }
     """)).forEach { binding ->
         println("- ${binding.getString("personName")} knows ${binding.getString("friendName")}")
@@ -596,7 +618,7 @@ fun main() {
     println("\nPeople with Job Information:")
     repo.select(SparqlSelectQuery("""
         SELECT ?name ?jobTitle ?company WHERE { 
-            ?person <http://xmlns.com/foaf/0.1/name> ?name ;
+            ?person ${FOAF.name} ?name ;
                     <http://schema.org/jobTitle> ?jobTitle ;
                     <http://schema.org/worksFor> ?company
         }
@@ -779,6 +801,7 @@ After exploring the examples:
 ---
 
 **🎉 Ready to explore? Start with the basic examples and work your way up to building amazing RDF applications!**
+
 
 
 

@@ -20,6 +20,9 @@ The extension function system includes:
 The central registry for managing SPARQL extension functions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 object SparqlExtensionFunctionRegistry {
     // Register a function
     fun register(function: SparqlExtensionFunction)
@@ -49,6 +52,9 @@ object SparqlExtensionFunctionRegistry {
 Represents a SPARQL extension function:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 data class SparqlExtensionFunction(
     val iri: String,                    // Function IRI
     val name: String,                   // Function name
@@ -67,6 +73,9 @@ data class SparqlExtensionFunction(
 Functions for working with quoted triples:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // TRIPLE(subject, predicate, object)
 SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#TRIPLE",
@@ -77,7 +86,7 @@ SparqlExtensionFunction(
         "http://www.w3.org/2001/XMLSchema#anyType", 
         "http://www.w3.org/2001/XMLSchema#anyType"
     ),
-    returnType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement",
+    returnType = RDF.Statement.value,
     isBuiltIn = true
 )
 
@@ -87,7 +96,7 @@ SparqlExtensionFunction(
     name = "isTRIPLE",
     description = "Returns true if the term is a quoted triple",
     argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#anyType"),
-    returnType = "http://www.w3.org/2001/XMLSchema#boolean",
+    returnType = XSD.boolean.value,
     isBuiltIn = true
 )
 
@@ -96,7 +105,7 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#SUBJECT",
     name = "SUBJECT",
     description = "Returns the subject of a quoted triple",
-    argumentTypes = listOf("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement"),
+    argumentTypes = listOf(RDF.Statement.value),
     returnType = "http://www.w3.org/2001/XMLSchema#anyType",
     isBuiltIn = true
 )
@@ -106,7 +115,7 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#PREDICATE",
     name = "PREDICATE",
     description = "Returns the predicate of a quoted triple",
-    argumentTypes = listOf("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement"),
+    argumentTypes = listOf(RDF.Statement.value),
     returnType = "http://www.w3.org/2001/XMLSchema#anyType",
     isBuiltIn = true
 )
@@ -116,7 +125,7 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#OBJECT",
     name = "OBJECT",
     description = "Returns the object of a quoted triple",
-    argumentTypes = listOf("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement"),
+    argumentTypes = listOf(RDF.Statement.value),
     returnType = "http://www.w3.org/2001/XMLSchema#anyType",
     isBuiltIn = true
 )
@@ -127,17 +136,20 @@ SparqlExtensionFunction(
 Enhanced string manipulation functions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // replaceAll(string, pattern, replacement)
 SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#replaceAll",
     name = "replaceAll",
     description = "Replaces all occurrences of a pattern in a string",
     argumentTypes = listOf(
-        "http://www.w3.org/2001/XMLSchema#string",
-        "http://www.w3.org/2001/XMLSchema#string",
-        "http://www.w3.org/2001/XMLSchema#string"
+        XSD.string.value,
+        XSD.string.value,
+        XSD.string.value
     ),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    returnType = XSD.string.value,
     isBuiltIn = true
 )
 
@@ -146,8 +158,8 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#encodeForUri",
     name = "encodeForUri",
     description = "Encodes a string for use in URIs",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isBuiltIn = true
 )
 
@@ -156,8 +168,8 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#decodeForUri",
     name = "decodeForUri",
     description = "Decodes a URI-encoded string",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isBuiltIn = true
 )
 ```
@@ -167,13 +179,16 @@ SparqlExtensionFunction(
 Functions for internationalization support:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // LANGDIR(term)
 SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#LANGDIR",
     name = "LANGDIR",
     description = "Returns the language direction of a term",
     argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#anyType"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    returnType = XSD.string.value,
     isBuiltIn = true
 )
 
@@ -184,9 +199,9 @@ SparqlExtensionFunction(
     description = "Returns true if the term has the specified language",
     argumentTypes = listOf(
         "http://www.w3.org/2001/XMLSchema#anyType",
-        "http://www.w3.org/2001/XMLSchema#string"
+        XSD.string.value
     ),
-    returnType = "http://www.w3.org/2001/XMLSchema#boolean",
+    returnType = XSD.boolean.value,
     isBuiltIn = true
 )
 
@@ -197,9 +212,9 @@ SparqlExtensionFunction(
     description = "Returns true if the term has the specified language direction",
     argumentTypes = listOf(
         "http://www.w3.org/2001/XMLSchema#anyType",
-        "http://www.w3.org/2001/XMLSchema#string"
+        XSD.string.value
     ),
-    returnType = "http://www.w3.org/2001/XMLSchema#boolean",
+    returnType = XSD.boolean.value,
     isBuiltIn = true
 )
 
@@ -209,10 +224,10 @@ SparqlExtensionFunction(
     name = "STRLANGDIR",
     description = "Creates a language-tagged string with direction",
     argumentTypes = listOf(
-        "http://www.w3.org/2001/XMLSchema#string",
-        "http://www.w3.org/2001/XMLSchema#string"
+        XSD.string.value,
+        XSD.string.value
     ),
-    returnType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString",
+    returnType = RDF.langString.value,
     isBuiltIn = true
 )
 ```
@@ -222,13 +237,16 @@ SparqlExtensionFunction(
 Functions for temporal data handling:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // now()
 SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#now",
     name = "now",
     description = "Returns the current date and time",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#dateTime",
+    returnType = XSD.dateTime.value,
     isBuiltIn = true
 )
 
@@ -238,7 +256,7 @@ SparqlExtensionFunction(
     name = "timezone",
     description = "Returns the current timezone",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    returnType = XSD.string.value,
     isBuiltIn = true
 )
 
@@ -247,8 +265,8 @@ SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#dateTime",
     name = "dateTime",
     description = "Creates a dateTime from a string",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#dateTime",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.dateTime.value,
     isBuiltIn = true
 )
 
@@ -258,7 +276,7 @@ SparqlExtensionFunction(
     name = "date",
     description = "Returns the current date",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#date",
+    returnType = XSD.date.value,
     isBuiltIn = true
 )
 
@@ -268,7 +286,7 @@ SparqlExtensionFunction(
     name = "time",
     description = "Returns the current time",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#time",
+    returnType = XSD.time.value,
     isBuiltIn = true
 )
 
@@ -278,10 +296,10 @@ SparqlExtensionFunction(
     name = "tz",
     description = "Converts a datetime to a different timezone",
     argumentTypes = listOf(
-        "http://www.w3.org/2001/XMLSchema#dateTime",
-        "http://www.w3.org/2001/XMLSchema#string"
+        XSD.dateTime.value,
+        XSD.string.value
     ),
-    returnType = "http://www.w3.org/2001/XMLSchema#dateTime",
+    returnType = XSD.dateTime.value,
     isBuiltIn = true
 )
 ```
@@ -291,13 +309,16 @@ SparqlExtensionFunction(
 Functions for statistical and sampling operations:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // random()
 SparqlExtensionFunction(
     iri = "http://www.w3.org/ns/sparql#random",
     name = "random",
     description = "Returns a random number between 0 and 1",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#double",
+    returnType = XSD.double.value,
     isBuiltIn = true
 )
 
@@ -307,7 +328,7 @@ SparqlExtensionFunction(
     name = "rand",
     description = "Returns a random integer",
     argumentTypes = emptyList(),
-    returnType = "http://www.w3.org/2001/XMLSchema#integer",
+    returnType = XSD.integer.value,
     isBuiltIn = true
 )
 ```
@@ -319,6 +340,9 @@ SparqlExtensionFunction(
 Built-in functions are automatically registered when the system starts:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 object Sparql12BuiltInFunctions {
     private val functions = listOf(
         // All SPARQL 1.2 built-in functions
@@ -339,12 +363,15 @@ object Sparql12BuiltInFunctions {
 Register custom functions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val customFunction = SparqlExtensionFunction(
     iri = "http://example.org/functions#customFunction",
     name = "customFunction",
     description = "A custom SPARQL function that does something useful",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isAggregate = false,
     isBuiltIn = false
 )
@@ -357,12 +384,15 @@ SparqlExtensionFunctionRegistry.register(customFunction)
 Register aggregate functions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val aggregateFunction = SparqlExtensionFunction(
     iri = "http://example.org/functions#customAggregate",
     name = "customAggregate",
     description = "A custom aggregate function",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#double"),
-    returnType = "http://www.w3.org/2001/XMLSchema#double",
+    argumentTypes = listOf(XSD.double.value),
+    returnType = XSD.double.value,
     isAggregate = true,
     isBuiltIn = false
 )
@@ -375,6 +405,9 @@ SparqlExtensionFunctionRegistry.register(aggregateFunction)
 ### Getting All Functions
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val allFunctions = SparqlExtensionFunctionRegistry.getAllFunctions()
 println("Total functions: ${allFunctions.size}")
 
@@ -391,6 +424,9 @@ allFunctions.forEach { func ->
 ### Getting Built-in Functions
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val builtInFunctions = SparqlExtensionFunctionRegistry.getBuiltInFunctions()
 println("Built-in functions: ${builtInFunctions.size}")
 
@@ -402,6 +438,9 @@ builtInFunctions.forEach { func ->
 ### Getting Custom Functions
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val customFunctions = SparqlExtensionFunctionRegistry.getCustomFunctions()
 println("Custom functions: ${customFunctions.size}")
 
@@ -413,6 +452,9 @@ customFunctions.forEach { func ->
 ### Function Lookup
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // Get function by IRI
 val tripleFunction = SparqlExtensionFunctionRegistry.getFunction(
     "http://www.w3.org/ns/sparql#TRIPLE"
@@ -441,7 +483,10 @@ println("TRIPLE function registered: $isRegistered")
 Providers advertise their function capabilities:
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getCapabilities()
 
 println("Extension Functions: ${capabilities.extensionFunctions.size}")
@@ -455,6 +500,9 @@ capabilities.extensionFunctions.forEach { func ->
 Functions are automatically included in service descriptions:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val serviceDescription = provider.generateServiceDescription("http://example.org/sparql")
 val triples = serviceDescription.getTriples()
 
@@ -471,6 +519,9 @@ println("Service advertises ${functionTriples.size} extension functions")
 ### By Type
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val allFunctions = SparqlExtensionFunctionRegistry.getAllFunctions()
 
 // RDF-star functions
@@ -501,6 +552,9 @@ val randomFunctions = allFunctions.filter {
 ### By Aggregation
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val allFunctions = SparqlExtensionFunctionRegistry.getAllFunctions()
 
 // Aggregate functions
@@ -517,13 +571,16 @@ println("Non-aggregate functions: ${nonAggregateFunctions.size}")
 ### 1. Function Registration
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // Register functions with complete metadata
 val function = SparqlExtensionFunction(
     iri = "http://example.org/functions#myFunction",
     name = "myFunction",
     description = "Clear, descriptive function description",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isAggregate = false,
     isBuiltIn = false
 )
@@ -534,6 +591,9 @@ SparqlExtensionFunctionRegistry.register(function)
 ### 2. Function Discovery
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // Check if function is available before using
 val functionIri = "http://www.w3.org/ns/sparql#TRIPLE"
 if (SparqlExtensionFunctionRegistry.isRegistered(functionIri)) {
@@ -547,8 +607,11 @@ if (SparqlExtensionFunctionRegistry.isRegistered(functionIri)) {
 ### 3. Provider Capabilities
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 // Check provider function capabilities
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getCapabilities()
 
 if (capabilities.extensionFunctions.isNotEmpty()) {
@@ -562,6 +625,9 @@ if (capabilities.extensionFunctions.isNotEmpty()) {
 ## 📖 Complete Example
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 fun extensionFunctionExample() {
     // Get all functions
     val allFunctions = SparqlExtensionFunctionRegistry.getAllFunctions()
@@ -580,8 +646,8 @@ fun extensionFunctionExample() {
         iri = "http://example.org/functions#customFunction",
         name = "customFunction",
         description = "A custom SPARQL function",
-        argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-        returnType = "http://www.w3.org/2001/XMLSchema#string",
+        argumentTypes = listOf(XSD.string.value),
+        returnType = XSD.string.value,
         isAggregate = false,
         isBuiltIn = false
     )
@@ -609,7 +675,7 @@ fun extensionFunctionExample() {
     println("Functions named 'TRIPLE': ${tripleFunctions.size}")
     
     // Check provider capabilities
-    val provider = RdfApiRegistry.getProvider("memory")
+    val provider = RdfProviderRegistry.getProvider("memory")
     val capabilities = provider.getCapabilities()
     println("Provider extension functions: ${capabilities.extensionFunctions.size}")
     
@@ -655,6 +721,7 @@ For questions about SPARQL extension functions in Kastor:
 ---
 
 *Kastor SPARQL extension function system is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
+
 
 
 

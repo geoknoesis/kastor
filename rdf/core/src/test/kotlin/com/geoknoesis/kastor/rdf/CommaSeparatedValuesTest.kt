@@ -25,7 +25,7 @@ class CurlyBracesParenthesesSyntaxTest {
         val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Curly braces: creates 3 individual triples
             person - FOAF.knows - values(friend1, friend2, friend3)
@@ -61,10 +61,16 @@ class CurlyBracesParenthesesSyntaxTest {
         val bnode = bnode("anon1")
 
         repo.add {
-            person - FOAF.name - "Bob"
+            person - FOAF.name - string("Bob")
             
             // Curly braces with mixed types
-            person - DCTERMS.subject - values(friend1, bnode, "Technology", 42, true)
+            person - DCTERMS.subject - values(
+                friend1,
+                bnode,
+                string("Technology"),
+                42.toLiteral(),
+                true.toLiteral()
+            )
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -95,13 +101,17 @@ class CurlyBracesParenthesesSyntaxTest {
         val friend3 = Iri("http://example.org/friend3")
 
         val graph = Rdf.graph {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Curly braces: creates 3 individual triples
             person - FOAF.knows - values(friend1, friend2, friend3)
             
             // Curly braces with mixed types
-            person - DCTERMS.subject - values("Technology", "Programming", "RDF")
+            person - DCTERMS.subject - values(
+                string("Technology"),
+                string("Programming"),
+                string("RDF")
+            )
         }
 
         val allTriples = graph.getTriples()
@@ -138,19 +148,23 @@ class CurlyBracesParenthesesSyntaxTest {
         val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Method 1: Curly braces (individual triples)
             person - FOAF.knows - values(friend1, friend2, friend3)
             
             // Method 2: Parentheses (RDF List)
-            person - FOAF.mbox - list("alice@example.com", "alice@work.com")
+            person - FOAF.mbox - list(string("alice@example.com"), string("alice@work.com"))
             
-            // Method 3: Array (individual triples)
-            person - DCTERMS.subject - arrayOf("Technology", "Programming", "RDF")
+            // Method 3: Values (individual triples)
+            person - DCTERMS.subject - values(
+                string("Technology"),
+                string("Programming"),
+                string("RDF")
+            )
             
             // Method 4: List (RDF List)
-            person - DCTERMS.type - listOf("Person", "Agent")
+            person - DCTERMS.type - list(string("Person"), string("Agent"))
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -189,7 +203,7 @@ class CurlyBracesParenthesesSyntaxTest {
         val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Parentheses: creates RDF List
             person - FOAF.knows - list(friend1, friend2, friend3)

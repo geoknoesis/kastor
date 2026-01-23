@@ -21,8 +21,12 @@ class BnodeFactoryTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
-            person - FOAF.mbox - list("alice@example.com", "alice@work.com", "alice@personal.com")
+            person - FOAF.name - string("Alice")
+            person - FOAF.mbox - list(
+                string("alice@example.com"),
+                string("alice@work.com"),
+                string("alice@personal.com")
+            )
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -51,10 +55,10 @@ class BnodeFactoryTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
-            person - DCTERMS.subject - bag("Tech", "AI", "RDF")     // Creates bag_1
+            person - FOAF.name - string("Alice")
+            person - DCTERMS.subject - bag(string("Tech"), string("AI"), string("RDF"))     // Creates bag_1
             person - FOAF.knows - seq(person, person, person)      // Creates seq_2
-            person - FOAF.mbox - alt("email1", "email2")          // Creates alt_3
+            person - FOAF.mbox - alt(string("email1"), string("email2"))          // Creates alt_3
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -82,10 +86,10 @@ class BnodeFactoryTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // First operation: list
-            person - FOAF.mbox - list("email1", "email2")
+            person - FOAF.mbox - list(string("email1"), string("email2"))
         }
 
         val firstRunTriples = repo.defaultGraph.getTriples()
@@ -100,7 +104,7 @@ class BnodeFactoryTest {
         // Add more data to the same repository
         repo.add {
             // Second operation: bag
-            person - DCTERMS.subject - bag("Tech", "AI")
+            person - DCTERMS.subject - bag(string("Tech"), string("AI"))
         }
 
         val secondRunTriples = repo.defaultGraph.getTriples()
@@ -128,11 +132,11 @@ class BnodeFactoryTest {
         val person = Iri("http://example.org/person")
 
         val graph = Rdf.graph {
-            person - FOAF.name - "Alice"
-            person - FOAF.mbox - list("email1", "email2")      // Creates list_1, list_2
-            person - DCTERMS.subject - bag("Tech", "AI")       // Creates bag_3
+            person - FOAF.name - string("Alice")
+            person - FOAF.mbox - list(string("email1"), string("email2"))      // Creates list_1, list_2
+            person - DCTERMS.subject - bag(string("Tech"), string("AI"))       // Creates bag_3
             person - FOAF.knows - seq(person, person)          // Creates seq_4
-            person - FOAF.mbox - alt("email1", "email2")       // Creates alt_5
+            person - FOAF.mbox - alt(string("email1"), string("email2"))       // Creates alt_5
         }
 
         val allTriples = graph.getTriples()
@@ -165,14 +169,14 @@ class BnodeFactoryTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Mix different container types
-            person - FOAF.mbox - list("email1", "email2")          // list_1, list_2
-            person - DCTERMS.subject - bag("Tech", "AI")           // bag_3
+            person - FOAF.mbox - list(string("email1"), string("email2"))          // list_1, list_2
+            person - DCTERMS.subject - bag(string("Tech"), string("AI"))           // bag_3
             person - FOAF.knows - seq(person, person)              // seq_4
-            person - FOAF.mbox - alt("email1", "email2")           // alt_5
-            person - DCTERMS.subject - bag("More", "Tech")         // bag_6
+            person - FOAF.mbox - alt(string("email1"), string("email2"))           // alt_5
+            person - DCTERMS.subject - bag(string("More"), string("Tech"))         // bag_6
         }
 
         val allTriples = repo.defaultGraph.getTriples()

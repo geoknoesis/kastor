@@ -21,10 +21,10 @@ This document summarizes the implementation of modern API design principles and 
 val repo = Rdf.memory()
 
 // Advanced - for experts
-val repo = Rdf.factory {
-    jenaTdb2("./data/storage")
-    inference()
-    validation()
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2-inference"
+    location = "./data/storage"
 }
 
 // Natural language DSL
@@ -44,7 +44,7 @@ repo.add {
 - Convenient query methods
 - Transaction support
 - Graph management
-- Repository manager
+- Multiple repositories
 - Federated queries
 - Error handling
 - Resource cleanup
@@ -76,8 +76,8 @@ repo.add {
 val repo = Rdf.memory()
 
 // Explicit provider selection
-val jenaRepo = Rdf.factory { jena() }
-val rdf4jRepo = Rdf.factory { rdf4j() }
+val jenaRepo = Rdf.repository { providerId = "jena"; variantId = "memory" }
+val rdf4jRepo = Rdf.repository { providerId = "rdf4j"; variantId = "memory" }
 ```
 
 ### 2. **Type-Safe Query Results**
@@ -99,13 +99,21 @@ repo.add {
 }
 ```
 
-### 4. **Repository Manager**
+### 4. **Multiple Repositories**
 ```kotlin
-val manager = Rdf.manager {
-    repository("people") { memory() }
-    repository("products") { jenaTdb2("./data/products") }
-    repository("analytics") { rdf4jNative("./data/analytics") }
-}
+val repositories = mapOf(
+    "people" to Rdf.memory(),
+    "products" to Rdf.repository {
+        providerId = "jena"
+        variantId = "tdb2"
+        location = "./data/products"
+    },
+    "analytics" to Rdf.repository {
+        providerId = "rdf4j"
+        variantId = "native"
+        location = "./data/analytics"
+    }
+)
 ```
 
 ## 🎨 User Experience Principles

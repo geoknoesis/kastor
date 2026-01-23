@@ -45,12 +45,14 @@ SPARQL is the standard query language for RDF (Resource Description Framework) d
 SPARQL 1.2 introduces explicit version declarations to specify which version of SPARQL to use:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 val query = select("name", "age") {
     version("1.2")  // Explicit SPARQL 1.2 declaration
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("foaf", FOAF.namespace)
     where {
-        pattern(var_("person"), iri("foaf:name"), var_("name"))
-        pattern(var_("person"), iri("foaf:age"), var_("age"))
+        pattern(var_("person"), FOAF.name, var_("name"))
+        pattern(var_("person"), FOAF.age, var_("age"))
     }
 }
 ```
@@ -87,12 +89,15 @@ WHERE {
 In Kastor, you can add prefixes using:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 val query = select("name", "type") {
     addCommonPrefixes("foaf", "rdf", "rdfs")  // Common vocabularies
     prefix("ex", "http://example.org/")       // Custom prefix
     where {
-        `var`("person") has iri("foaf:name") with `var`("name")
-        `var`("person") has iri("rdf:type") with `var`("type")
+        `var`("person") has FOAF.name with `var`("name")
+        `var`("person") has RDF.type with `var`("type")
     }
 }
 ```
@@ -440,14 +445,19 @@ SPARQL 1.2 introduces comprehensive support for RDF-star, allowing you to work w
 RDF-star allows using triples as subjects or objects:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 val query = select(SparqlSelectQuery("confidence"))) {
     version("1.2")
+    prefix("foaf", FOAF.namespace)
+    prefix("ex", "http://example.org/")
     where {
         // Quoted triple pattern
-        quotedTriple(var_("person"), iri("foaf:name"), var_("name"))
+        quotedTriple(var_("person"), FOAF.name, var_("name"))
         
         // Use quoted triple in patterns
-        pattern(quotedTriple(var_("person"), iri("foaf:name"), var_("name")), 
+        pattern(quotedTriple(var_("person"), FOAF.name, var_("name")), 
                 iri("ex:confidence"), var_("confidence"))
     }
 }
@@ -456,6 +466,9 @@ val query = select(SparqlSelectQuery("confidence"))) {
 This generates:
 ```sparql
 VERSION 1.2
+
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX ex: <http://example.org/>
 
 SELECT ?confidence
 WHERE {
@@ -476,7 +489,7 @@ val query = select {
     expression(`object`(var_("triple")), "obj")
     where {
         pattern(var_("s"), var_("p"), var_("o"))
-        pattern(var_("triple"), iri("rdf:type"), iri("rdf:Statement"))
+        pattern(var_("triple"), RDF.type, RDF.Statement)
         filter(isTriple(var_("triple")))
     }
 }

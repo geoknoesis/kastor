@@ -109,6 +109,7 @@ sealed interface RdfResource : RdfTerm
  * ```
  *
  * @property value The string representation of the IRI
+ * @note toString() returns the `<iri>` form suitable for SPARQL/N-Triples serialization.
  * @throws IllegalArgumentException if the IRI is invalid according to RFC 3987
  * @see [RdfResource]
  */
@@ -147,7 +148,7 @@ value class Iri(val value: String) : RdfResource {
         internal fun unsafe(value: String): Iri = Iri(value)
     }
     
-    override fun toString(): String = "<$value>" // debugging only
+    override fun toString(): String = "<$value>"
 }
 
 /**
@@ -379,47 +380,6 @@ sealed interface Literal : RdfTerm {
         operator fun invoke(value: Year): Literal = Literal(value.toString(), XSD.gYear)
         operator fun invoke(value: YearMonth): Literal = Literal(value.toString(), XSD.gYearMonth)
         operator fun invoke(value: ByteArray): Literal = Literal(Base64.getEncoder().encodeToString(value), XSD.base64Binary)
-
-        /**
-         * Creates a literal with automatic type inference from any value.
-         * This is a catch-all function that delegates to the appropriate
-         * typed overload or falls back to string representation.
-         *
-         * ## Examples
-         * ```kotlin
-         * // Supported types (use specific overloads)
-         * 42.toLiteral()                    // "42"^^xsd:integer
-         * Literal(3.14)                  // "3.14"^^xsd:double
-         * true.toLiteral()                  // Returns TrueLiteral
-         * 
-         * // Unsupported types (fallback to string)
-         * Literal(SomeCustomClass())     // "SomeCustomClass@123456"^^xsd:string
-         * Literal(Any())                 // "kotlin.Any@123456"^^xsd:string
-         * ```
-         *
-         * @param value The value to convert to a literal
-         * @return A new [Literal] with the appropriate datatype
-         * @see [TypedLiteral]
-         */
-        operator fun invoke(value: Any): Literal = when (value) {
-            is Int -> invoke(value)
-            is Long -> invoke(value)
-            is Double -> invoke(value)
-            is Float -> invoke(value)
-            is Boolean -> invoke(value)
-            is BigDecimal -> invoke(value)
-            is BigInteger -> invoke(value)
-            is LocalDate -> invoke(value)
-            is LocalTime -> invoke(value)
-            is LocalDateTime -> invoke(value)
-            is OffsetDateTime -> invoke(value)
-            is Instant -> invoke(value)
-            is Year -> invoke(value)
-            is YearMonth -> invoke(value)
-            is ByteArray -> invoke(value)
-            is String -> invoke(value)
-            else -> Literal(value.toString(), XSD.string)
-        }
 
         /**
          * Creates a language-tagged string literal.
@@ -662,6 +622,13 @@ data class TripleTerm(val triple: RdfTriple) : RdfResource {
 fun bnode(id: String) = BlankNode(id)
 
 /**
+ * Creates an IRI from a string with validation.
+ *
+ * Prefer this helper in DSLs and call-sites to avoid stringly IRIs.
+ */
+fun iri(value: String): Iri = Iri.of(value)
+
+/**
  * Creates a string literal with `xsd:string` datatype.
  *
  * This is the standard way to represent strings in RDF. The function creates
@@ -682,6 +649,13 @@ fun bnode(id: String) = BlankNode(id)
  * @see [XSD.string]
  */
 fun string(value: String): Literal = Literal(value, XSD.string)
+
+/**
+ * Creates a literal from a lexical value and datatype.
+ *
+ * Prefer this helper for explicit literal construction.
+ */
+fun lit(value: String, datatype: Iri = XSD.string): Literal = Literal(value, datatype)
 
 /**
  * Creates an integer literal.
@@ -964,6 +938,35 @@ interface GraphEditor {
  * Mutable RDF graph operations.
  */
 interface MutableRdfGraph : RdfGraph, GraphEditor
+
+/**
+ * Interface for graphs that know their source repository and graph name.
+ * 
+ * This follows the industry pattern of tracking graph provenance for optimization.
+ * When graphs implement this interface, datasets can optimize query execution
+ * by using FROM clauses instead of materializing unions.
+ * 
+ * **Implementation Note:**
+ * Graph implementations (like SparqlGraph) should implement this interface
+ * to enable dataset optimization.
+ */
+interface SourceTrackedGraph : RdfGraph {
+    /**
+     * The repository this graph comes from, if known.
+     * 
+     * @return The source repository, or null if not tracked
+     */
+    val sourceRepository: RdfRepository?
+    
+    /**
+     * The name of this graph in the source repository, if known.
+     * 
+     * null means this is the default graph of the repository.
+     * 
+     * @return The graph name in the source repository, or null for default graph
+     */
+    val sourceGraphName: Iri?
+}
 
 
 

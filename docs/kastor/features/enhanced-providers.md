@@ -175,19 +175,19 @@ data class DetailedProviderCapabilities(
 
 ### Unified Registry
 
-The `RdfApiRegistry` provides unified access to all providers:
+The `RdfProviderRegistry` provides unified access to all providers:
 
 ```kotlin
 // Get all providers
-val allProviders = RdfApiRegistry.getAllProviders()
+val allProviders = RdfProviderRegistry.getAllProviders()
 
 // Get providers by category
-val sparqlProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
-val reasonerProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.REASONER)
+val sparqlProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
+val reasonerProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.REASONER)
 
 // Get specific provider
-val memoryProvider = RdfApiRegistry.getProvider("memory")
-val sparqlProvider = RdfApiRegistry.getProvider("sparql-endpoint")
+val memoryProvider = RdfProviderRegistry.getProvider("memory")
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
 ```
 
 ### Dynamic Registration
@@ -196,7 +196,7 @@ Providers are automatically registered when available:
 
 ```kotlin
 // Specialized providers are registered automatically
-val sparqlProvider = RdfApiRegistry.getProvider("sparql-endpoint")
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
 if (sparqlProvider != null) {
     println("SPARQL Endpoint Provider available")
 } else {
@@ -208,14 +208,14 @@ if (sparqlProvider != null) {
 
 ```kotlin
 // Discover all capabilities
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 // Check feature support across providers
-val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
 
 // Get provider statistics
-val statistics = RdfApiRegistry.getProviderStatistics()
+val statistics = RdfProviderRegistry.getProviderStatistics()
 println("Provider Statistics: $statistics")
 ```
 
@@ -226,7 +226,7 @@ println("Provider Statistics: $statistics")
 All providers can generate service descriptions:
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val serviceUri = "http://example.org/sparql"
 val description = provider.generateServiceDescription(serviceUri)
 
@@ -278,12 +278,14 @@ builtInFunctions.forEach { func ->
 
 ```kotlin
 // Register custom function
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val customFunction = SparqlExtensionFunction(
     iri = "http://example.org/functions#customFunction",
     name = "customFunction",
     description = "A custom SPARQL function",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isAggregate = false,
     isBuiltIn = false
 )
@@ -296,7 +298,7 @@ SparqlExtensionFunctionRegistry.register(customFunction)
 ### Creating Custom Providers
 
 ```kotlin
-class CustomProvider : RdfApiProvider {
+class CustomProvider : RdfProvider {
     override val id: String = "custom"
     override val name: String = "Custom Provider"
     override val version: String = "1.0.0"
@@ -331,9 +333,9 @@ class CustomProvider : RdfApiProvider {
             basic = getCapabilities(variantId),
             providerCategory = getProviderCategory(),
             supportedSparqlFeatures = mapOf(
-                "supportsRdfStar" to true,
-                "supportsPropertyPaths" to true,
-                "supportsAggregation" to true
+                "RDF-star" to true,
+                "Property Paths" to true,
+                "Aggregation" to true
             ),
             customExtensionFunctions = emptyList()
         )
@@ -345,10 +347,10 @@ class CustomProvider : RdfApiProvider {
 
 ```kotlin
 // Register custom provider
-RdfApiRegistry.register(CustomProvider())
+RdfProviderRegistry.register(CustomProvider())
 
 // Use custom provider
-val customProvider = RdfApiRegistry.getProvider("custom")
+val customProvider = RdfProviderRegistry.getProvider("custom")
 val repo = customProvider.createRepository(
     customProvider.defaultVariantId(),
     RdfConfig(providerId = "custom")
@@ -361,7 +363,7 @@ val repo = customProvider.createRepository(
 
 ```kotlin
 // Implement only necessary methods for basic providers
-class BasicProvider : RdfApiProvider {
+class BasicProvider : RdfProvider {
     // Implement core methods only
     // Enhanced methods use default implementations
 }
@@ -383,7 +385,7 @@ class SpecializedProvider : RdfApiProvider {
 
 ```kotlin
 // Check capabilities before using features
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getDetailedCapabilities()
 
 if (capabilities.basic.supportsRdfStar) {
@@ -414,15 +416,15 @@ if (description != null) {
 ```kotlin
 fun enhancedProviderExample() {
     // Get all providers
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     println("Available providers: ${allProviders.map { it.id }}")
     
     // Get providers by category
-    val sparqlProviders = RdfApiRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
+    val sparqlProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCategory.SPARQL_ENDPOINT)
     println("SPARQL Endpoint providers: ${sparqlProviders.size}")
     
     // Get specific provider
-    val memoryProvider = RdfApiRegistry.getProvider("memory")
+    val memoryProvider = RdfProviderRegistry.getProvider("memory")
     if (memoryProvider != null) {
         println("Memory provider: ${memoryProvider.name} v${memoryProvider.version}")
         println("Category: ${memoryProvider.getProviderCategory()}")
@@ -449,17 +451,17 @@ fun enhancedProviderExample() {
     }
     
     // Discover all capabilities
-    val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+    val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
     println("Total providers with detailed capabilities: ${allCapabilities.size}")
     
     // Check feature support
-    val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-    val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
+    val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("supportsRdfStar")
+    val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("supportsFederation")
     println("RDF-star support available: $hasRdfStarSupport")
     println("Federation support available: $hasFederationSupport")
     
     // Get provider statistics
-    val statistics = RdfApiRegistry.getProviderStatistics()
+    val statistics = RdfProviderRegistry.getProviderStatistics()
     println("Provider statistics: $statistics")
 }
 ```

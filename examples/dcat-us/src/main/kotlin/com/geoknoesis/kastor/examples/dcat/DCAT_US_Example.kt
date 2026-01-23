@@ -42,7 +42,7 @@ class DCAT_US_Example {
         val graph = MemoryGraph(triples)
         
         // Add to repository
-        repo.add { graph }
+        repo.add { addTriples(graph.getTriples()) }
         
         return graph
     }
@@ -72,7 +72,7 @@ class DCAT_US_Example {
         val graph = MemoryGraph(triples)
         
         // Add to repository
-        repo.add { graph }
+        repo.add { addTriples(graph.getTriples()) }
         
         return graph
     }
@@ -98,7 +98,7 @@ class DCAT_US_Example {
         val graph = MemoryGraph(triples)
         
         // Add to repository
-        repo.add { graph }
+        repo.add { addTriples(graph.getTriples()) }
         
         return graph
     }
@@ -161,15 +161,6 @@ class DCAT_US_Example {
      * Example 6: Export catalog as JSON-LD
      */
     fun exportCatalogAsJsonLd(): String {
-        val allTriples = repo.select(SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o }"))
-            .map { binding ->
-                RdfTriple(
-                    binding.get("s") as Iri,
-                    binding.get("p") as Iri,
-                    binding.get("o") as RdfTerm
-                )
-            }
-        
         // Simple JSON-LD serialization
         return buildString {
             appendLine("{")

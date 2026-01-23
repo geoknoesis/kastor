@@ -20,7 +20,7 @@ SPARQL Service Description allows services to describe:
 Kastor can automatically generate service descriptions for any provider:
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val serviceUri = "http://example.org/sparql"
 val description = provider.generateServiceDescription(serviceUri)
 
@@ -136,6 +136,8 @@ val description = generator.generateServiceDescription()
 ### Custom Capabilities
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 val customCapabilities = ProviderCapabilities(
     sparqlVersion = "1.2",
     supportsRdfStar = true,
@@ -153,7 +155,7 @@ val customCapabilities = ProviderCapabilities(
             iri = "http://www.w3.org/ns/sparql#TRIPLE",
             name = "TRIPLE",
             description = "Creates a quoted triple",
-            returnType = "http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement"
+            returnType = RDF.Statement.value
         )
     )
 )
@@ -188,7 +190,7 @@ val jsonLd = generator.generateAsJsonLd()
 
 ```kotlin
 val baseUri = "http://example.org"
-val allDescriptions = RdfApiRegistry.getAllServiceDescriptions(baseUri)
+val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions(baseUri)
 
 allDescriptions.forEach { (providerType, description) ->
     println("Provider: $providerType")
@@ -199,13 +201,13 @@ allDescriptions.forEach { (providerType, description) ->
 ### Provider-Specific Service Descriptions
 
 ```kotlin
-val memoryDescription = RdfApiRegistry.generateServiceDescription(
-    providerType = "memory",
+val memoryDescription = RdfProviderRegistry.generateServiceDescription(
+    providerId = "memory",
     serviceUri = "http://example.org/memory"
 )
 
-val jenaDescription = RdfApiRegistry.generateServiceDescription(
-    providerType = "jena",
+val jenaDescription = RdfProviderRegistry.generateServiceDescription(
+    providerId = "jena",
     serviceUri = "http://example.org/jena"
 )
 ```
@@ -214,14 +216,14 @@ val jenaDescription = RdfApiRegistry.generateServiceDescription(
 
 ```kotlin
 // Discover all provider capabilities
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 // Check specific features across providers
-val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
 
 // Get supported features by provider
-val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
 supportedFeatures.forEach { (provider, features) ->
     println("$provider supports: $features")
 }
@@ -279,7 +281,7 @@ println("Validation Support: ${capabilities.supportsValidation}")
 ## 📊 Provider Statistics
 
 ```kotlin
-val statistics = RdfApiRegistry.getProviderStatistics()
+val statistics = RdfProviderRegistry.getProviderStatistics()
 
 statistics.forEach { (category, count) ->
     println("$category: $count providers")
@@ -312,12 +314,14 @@ builtInFunctions.forEach { func ->
 
 ```kotlin
 // Register custom function
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val customFunction = SparqlExtensionFunction(
     iri = "http://example.org/functions#customFunction",
     name = "customFunction",
     description = "A custom SPARQL function",
-    argumentTypes = listOf("http://www.w3.org/2001/XMLSchema#string"),
-    returnType = "http://www.w3.org/2001/XMLSchema#string",
+    argumentTypes = listOf(XSD.string.value),
+    returnType = XSD.string.value,
     isAggregate = false,
     isBuiltIn = false
 )
@@ -369,7 +373,7 @@ val capabilities = ProviderCapabilities(
 
 ```kotlin
 // Check capabilities before using features
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getDetailedCapabilities()
 
 if (capabilities.basic.supportsRdfStar) {
@@ -408,7 +412,7 @@ if (description != null) {
 ```kotlin
 fun serviceDescriptionExample() {
     // Get a provider
-    val provider = RdfApiRegistry.getProvider("memory")
+    val provider = RdfProviderRegistry.getProvider("memory")
     
     // Generate service description
     val serviceUri = "http://example.org/sparql"
@@ -440,7 +444,7 @@ fun serviceDescriptionExample() {
     println("Extension Functions: ${capabilities.basic.extensionFunctions.size}")
     
     // Check specific features
-    val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+    val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
     println("\nSupported Features by Provider:")
     supportedFeatures.forEach { (providerType, features) ->
         println("$providerType: $features")

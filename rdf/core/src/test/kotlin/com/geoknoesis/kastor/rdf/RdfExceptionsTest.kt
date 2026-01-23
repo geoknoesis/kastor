@@ -41,7 +41,7 @@ class RdfExceptionsTest {
     @Test
     fun `RdfException can have a cause`() {
         val cause = IllegalArgumentException("Root cause")
-        val exception = RdfQueryException("Query failed", cause)
+        val exception = RdfQueryException("Query failed", cause = cause)
         
         assertEquals("Query failed", exception.message)
         assertEquals(cause, exception.cause)

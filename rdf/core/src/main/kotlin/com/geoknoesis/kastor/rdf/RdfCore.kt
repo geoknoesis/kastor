@@ -1,11 +1,14 @@
 package com.geoknoesis.kastor.rdf
 
 import java.io.Closeable
-import java.util.ServiceLoader
+import java.io.InputStream
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
+import java.util.concurrent.ForkJoinPool
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.dsl.GraphDsl
-import com.geoknoesis.kastor.rdf.provider.MemoryGraph
-import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
+import com.geoknoesis.kastor.rdf.provider.EmptySparqlQueryResult
+import com.geoknoesis.kastor.rdf.RdfFormat
 
 /**
  * Kastor RDF - The Most Elegant RDF API for Kotlin
@@ -124,8 +127,21 @@ object Rdf {
      * @param configure Lambda to configure the repository builder
      * @return A configured RdfRepository instance
      */
-    fun repository(configure: RdfRepositoryBuilder.() -> Unit): RdfRepository {
-        val builder = RdfRepositoryBuilder().apply(configure)
+    fun repository(
+        configure: RdfRepositoryBuilder.() -> Unit
+    ): RdfRepository {
+        return repository(RdfProviderRegistry, configure)
+    }
+
+    /**
+     * Create a repository using a specific provider registry.
+     * Useful for tests or custom registry instances.
+     */
+    fun repository(
+        registry: ProviderRegistry,
+        configure: RdfRepositoryBuilder.() -> Unit
+    ): RdfRepository {
+        val builder = RdfRepositoryBuilder(registry).apply(configure)
         return builder.build()
     }
     
@@ -145,6 +161,384 @@ object Rdf {
     fun graph(configure: GraphDsl.() -> Unit): MutableRdfGraph {
         val dsl = GraphDsl().apply(configure)
         return dsl.build()
+    }
+    
+    // === PARSING FACTORY METHODS ===
+    
+    /**
+     * Parse RDF data from a string into a graph.
+     * 
+     * This method is provider-agnostic and automatically uses an available provider
+     * that supports the requested format. The format can be specified as either
+     * a string (e.g., "TURTLE", "JSON-LD") or an [RdfFormat] enum value.
+     * 
+     * **Example:**
+     * ```kotlin
+     * val turtleData = """
+     *     @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+     *     <http://example.org/alice> foaf:name "Alice" .
+     * """
+     * val graph = Rdf.parse(turtleData, format = "TURTLE")
+     * 
+     * // Or using enum (type-safe)
+     * val graph2 = Rdf.parse(turtleData, format = RdfFormat.TURTLE)
+     * ```
+     * 
+     * @param data The RDF data as a string
+     * @param format The RDF format (default: "TURTLE")
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parse(data: String, format: String = "TURTLE"): MutableRdfGraph {
+        return parseFromInputStream(data.byteInputStream(), format)
+    }
+    
+    /**
+     * Parse RDF data from a string into a graph (type-safe version).
+     * 
+     * @param data The RDF data as a string
+     * @param format The RDF format enum value
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parse(data: String, format: RdfFormat): MutableRdfGraph {
+        return parseFromInputStream(data.byteInputStream(), format.formatName)
+    }
+    
+    /**
+     * Parse RDF data from a file into a graph.
+     * 
+     * **Example:**
+     * ```kotlin
+     * val graph = Rdf.parseFromFile("data.ttl", format = "TURTLE")
+     * val graph2 = Rdf.parseFromFile("data.jsonld", format = RdfFormat.JSON_LD)
+     * ```
+     * 
+     * @param filePath The path to the RDF file
+     * @param format The RDF format (default: "TURTLE")
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.FileNotFoundException if the file does not exist
+     */
+    fun parseFromFile(filePath: String, format: String = "TURTLE"): MutableRdfGraph {
+        val file = java.io.File(filePath)
+        if (!file.exists()) {
+            throw java.io.FileNotFoundException("RDF file not found: $filePath")
+        }
+        return file.inputStream().use { stream -> parseFromInputStream(stream, format) }
+    }
+    
+    /**
+     * Parse RDF data from a file into a graph (type-safe version).
+     * 
+     * @param filePath The path to the RDF file
+     * @param format The RDF format enum value
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.FileNotFoundException if the file does not exist
+     */
+    fun parseFromFile(filePath: String, format: RdfFormat): MutableRdfGraph {
+        return parseFromFile(filePath, format.formatName)
+    }
+    
+    /**
+     * Parse RDF data from a URL into a graph.
+     * 
+     * **Example:**
+     * ```kotlin
+     * val graph = Rdf.parseFromUrl(
+     *     "https://example.org/data.ttl",
+     *     format = "TURTLE"
+     * )
+     * ```
+     * 
+     * @param url The URL to load RDF data from
+     * @param format The RDF format (default: "TURTLE")
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.IOException if network access fails
+     */
+    fun parseFromUrl(url: String, format: String = "TURTLE"): MutableRdfGraph {
+        val connection = java.net.URL(url).openConnection()
+        connection.connectTimeout = 30000 // 30 seconds
+        connection.readTimeout = 30000
+        return connection.getInputStream().use { stream -> parseFromInputStream(stream, format) }
+    }
+    
+    /**
+     * Parse RDF data from a URL into a graph (type-safe version).
+     * 
+     * @param url The URL to load RDF data from
+     * @param format The RDF format enum value
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.IOException if network access fails
+     */
+    fun parseFromUrl(url: String, format: RdfFormat): MutableRdfGraph {
+        return parseFromUrl(url, format.formatName)
+    }
+
+    /**
+     * Parse RDF data from a URL asynchronously into a graph.
+     *
+     * This runs the blocking network call on the provided executor.
+     *
+     * @param url The URL to load RDF data from
+     * @param format The RDF format (default: "TURTLE")
+     * @param executor Executor used for the blocking operation
+     * @return A future with the parsed graph
+     */
+    fun parseFromUrlAsync(
+        url: String,
+        format: String = "TURTLE",
+        executor: Executor = ForkJoinPool.commonPool()
+    ): CompletableFuture<MutableRdfGraph> {
+        return CompletableFuture.supplyAsync({ parseFromUrl(url, format) }, executor)
+    }
+
+    /**
+     * Parse RDF data from a URL asynchronously into a graph (type-safe version).
+     *
+     * @param url The URL to load RDF data from
+     * @param format The RDF format enum value
+     * @param executor Executor used for the blocking operation
+     * @return A future with the parsed graph
+     */
+    fun parseFromUrlAsync(
+        url: String,
+        format: RdfFormat,
+        executor: Executor = ForkJoinPool.commonPool()
+    ): CompletableFuture<MutableRdfGraph> {
+        return parseFromUrlAsync(url, format.formatName, executor)
+    }
+    
+    /**
+     * Parse RDF data from an input stream into a graph.
+     * 
+     * **Note:** The input stream is automatically closed after parsing.
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseFromInputStream(inputStream: InputStream, format: String): MutableRdfGraph {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        val providers = RdfProviderRegistry.discoverProviders()
+        
+        // Try to find a provider that supports this format
+        for (provider in providers) {
+            if (provider.supportsFormat(formatEnum.formatName)) {
+                try {
+                    // Read stream into byte array to allow multiple attempts if needed
+                    val data = inputStream.readBytes()
+                    return provider.parseGraph(data.inputStream(), formatEnum.formatName)
+                } catch (e: UnsupportedOperationException) {
+                    // Provider doesn't actually support it, try next
+                    continue
+                } catch (e: RdfFormatException) {
+                    // Format error, rethrow
+                    throw e
+                } catch (e: Exception) {
+                    // Other error, wrap and throw
+                    throw RdfFormatException(
+                        "Failed to parse RDF from input stream (format: ${formatEnum.formatName}) using provider ${provider.id}: ${e.message}",
+                        e
+                    )
+                }
+            }
+        }
+        
+        throw RdfFormatException(
+            "No provider found that supports format: ${formatEnum.formatName}. " +
+            "Available providers: ${providers.map { it.id }.joinToString()}"
+        )
+    }
+    
+    /**
+     * Parse RDF data from an input stream into a graph (type-safe version).
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format enum value
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseFromInputStream(inputStream: InputStream, format: RdfFormat): MutableRdfGraph {
+        return parseFromInputStream(inputStream, format.formatName)
+    }
+    
+    // === DATASET PARSING (QUAD FORMATS) ===
+    
+    /**
+     * Parse RDF dataset (with named graphs) from a string.
+     * 
+     * Quad formats (TriG, N-Quads) support parsing of multiple named graphs.
+     * The parsed data will be added to a new in-memory repository, which is returned as a Dataset.
+     * 
+     * **Example:**
+     * ```kotlin
+     * val trigData = """
+     *     <http://example.org/alice> <http://xmlns.com/foaf/0.1/name> "Alice" .
+     *     GRAPH <http://example.org/graph1> {
+     *         <http://example.org/bob> <http://xmlns.com/foaf/0.1/name> "Bob" .
+     *     }
+     * """
+     * val dataset = Rdf.parseDataset(trigData, format = "TRIG")
+     * ```
+     * 
+     * @param data The RDF dataset data as a string
+     * @param format The RDF quad format (default: "TRIG")
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws IllegalArgumentException if the format is not a quad format
+     */
+    fun parseDataset(data: String, format: String = "TRIG"): Dataset {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        if (!RdfFormat.isQuadFormat(formatEnum)) {
+            throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parse() for graph formats, or use TRIG or N-QUADS for datasets.")
+        }
+        val repo = memory()
+        parseDataset(repo, data.byteInputStream(), format)
+        return repo
+    }
+    
+    /**
+     * Parse RDF dataset from a string (type-safe version).
+     * 
+     * @param data The RDF dataset data as a string
+     * @param format The RDF quad format enum value
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDataset(data: String, format: RdfFormat): Dataset {
+        return parseDataset(data, format.formatName)
+    }
+    
+    /**
+     * Parse RDF dataset (with named graphs) from a file.
+     * 
+     * @param filePath The path to the RDF dataset file
+     * @param format The RDF quad format (default: "TRIG")
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.FileNotFoundException if the file does not exist
+     */
+    fun parseDatasetFromFile(filePath: String, format: String = "TRIG"): Dataset {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        if (!RdfFormat.isQuadFormat(formatEnum)) {
+            throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromFile() for graph formats, or use TRIG or N-QUADS for datasets.")
+        }
+        val file = java.io.File(filePath)
+        if (!file.exists()) {
+            throw java.io.FileNotFoundException("RDF file not found: $filePath")
+        }
+        val repo = memory()
+        file.inputStream().use { stream -> parseDataset(repo, stream, format) }
+        return repo
+    }
+    
+    /**
+     * Parse RDF dataset from a file (type-safe version).
+     * 
+     * @param filePath The path to the RDF dataset file
+     * @param format The RDF quad format enum value
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDatasetFromFile(filePath: String, format: RdfFormat): Dataset {
+        return parseDatasetFromFile(filePath, format.formatName)
+    }
+    
+    /**
+     * Parse RDF dataset (with named graphs) from a URL.
+     * 
+     * @param url The URL to load RDF dataset data from
+     * @param format The RDF quad format (default: "TRIG")
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws java.io.IOException if network access fails
+     */
+    fun parseDatasetFromUrl(url: String, format: String = "TRIG"): Dataset {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        if (!RdfFormat.isQuadFormat(formatEnum)) {
+            throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromUrl() for graph formats, or use TRIG or N-QUADS for datasets.")
+        }
+        val connection = java.net.URL(url).openConnection()
+        connection.connectTimeout = 30000 // 30 seconds
+        connection.readTimeout = 30000
+        val repo = memory()
+        connection.getInputStream().use { stream -> parseDataset(repo, stream, format) }
+        return repo
+    }
+    
+    /**
+     * Parse RDF dataset from a URL (type-safe version).
+     * 
+     * @param url The URL to load RDF dataset data from
+     * @param format The RDF quad format enum value
+     * @return A new Dataset containing the parsed data
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDatasetFromUrl(url: String, format: RdfFormat): Dataset {
+        return parseDatasetFromUrl(url, format.formatName)
+    }
+    
+    /**
+     * Parse RDF dataset (with named graphs) from an input stream into a repository.
+     * 
+     * The parsed data will be added to the provided repository, preserving
+     * named graph structure.
+     * 
+     * @param repository The repository to populate with parsed data
+     * @param inputStream The input stream containing RDF dataset data
+     * @param format The RDF quad format
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: String) {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        if (!RdfFormat.isQuadFormat(formatEnum)) {
+            throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromInputStream() for graph formats, or use TRIG or N-QUADS for datasets.")
+        }
+        val providers = RdfProviderRegistry.discoverProviders()
+        
+        // Try to find a provider that supports this format
+        for (provider in providers) {
+            if (provider.supportsFormat(formatEnum.formatName)) {
+                try {
+                    provider.parseDataset(repository, inputStream, formatEnum.formatName)
+                    return
+                } catch (e: UnsupportedOperationException) {
+                    // Provider doesn't actually support it, try next
+                    continue
+                } catch (e: RdfFormatException) {
+                    // Format error, rethrow
+                    throw e
+                } catch (e: Exception) {
+                    // Other error, wrap and throw
+                    throw RdfFormatException(
+                        "Failed to parse RDF dataset from input stream (format: ${formatEnum.formatName}) using provider ${provider.id}: ${e.message}",
+                        e
+                    )
+                }
+            }
+        }
+        
+        throw RdfFormatException(
+            "No provider found that supports format: ${formatEnum.formatName}. " +
+            "Available providers: ${providers.map { it.id }.joinToString()}"
+        )
+    }
+    
+    /**
+     * Parse RDF dataset from an input stream into a repository (type-safe version).
+     * 
+     * @param repository The repository to populate with parsed data
+     * @param inputStream The input stream containing RDF dataset data
+     * @param format The RDF quad format enum value
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: RdfFormat) {
+        parseDataset(repository, inputStream, format.formatName)
     }
     
     
@@ -168,12 +562,23 @@ object Rdf {
     /**
      * Builder for configuring individual RDF repositories.
      */
-    class RdfRepositoryBuilder {
+    class RdfRepositoryBuilder(
+        defaultRegistry: ProviderRegistry = RdfProviderRegistry
+    ) {
         var providerId: String? = null
         var variantId: String? = null
         var requirements: ProviderRequirements = ProviderRequirements()
         var location: String? = null
         var inference: Boolean = false
+        var registry: ProviderRegistry = defaultRegistry
+
+        fun provider(id: ProviderId) {
+            providerId = id.value
+        }
+
+        fun variant(id: VariantId) {
+            variantId = id.value
+        }
         
         fun build(): RdfRepository {
             val config = RdfConfig(
@@ -186,7 +591,7 @@ object Rdf {
                 requirements = requirements.takeIf { it != ProviderRequirements() }
             )
             
-            return RdfProviderRegistry.create(config)
+            return registry.create(config)
         }
     }
     
@@ -201,14 +606,16 @@ object Rdf {
  * Main interface for RDF repository operations.
  * Provides a unified API for all RDF operations including graph management and SPARQL queries.
  * 
- * **Relationship with [SparqlRepository]:**
- * - [SparqlRepository] is the minimal interface providing only SPARQL query operations
- * - [RdfRepository] extends [SparqlRepository] and adds graph management (named graphs, editing, etc.)
+ * **Relationship with [Dataset], [SparqlQueryable], and [SparqlMutable]:**
+ * - [SparqlQueryable] is the minimal interface providing read-only SPARQL query operations
+ * - [SparqlMutable] extends [SparqlQueryable] and adds [update] for SPARQL UPDATE operations
+ * - [Dataset] extends [SparqlQueryable] and represents a SPARQL dataset (read-only, multiple default/named graphs)
+ * - [RdfRepository] extends [Dataset] and [SparqlMutable], adding graph management operations (create/remove graphs, editing, etc.)
  * 
- * All [RdfRepository] implementations also implement [SparqlRepository], so you can use either interface
- * depending on your needs. Use [RdfRepository] when you need full graph management capabilities.
+ * A repository is essentially a mutable dataset. All [RdfRepository] implementations also implement [Dataset],
+ * [SparqlMutable], and [SparqlQueryable], so you can use any interface depending on your needs.
  */
-interface RdfRepository : SparqlRepository {
+interface RdfRepository : Dataset, SparqlMutable {
     
     // === GRAPH OPERATIONS ===
     
@@ -236,6 +643,41 @@ interface RdfRepository : SparqlRepository {
      * List all named graphs in the repository.
      */
     fun listGraphs(): List<Iri>
+    
+    // === DATASET INTERFACE IMPLEMENTATION ===
+    
+    /**
+     * List of graphs whose union forms the default graph.
+     * For a repository, this is just the single default graph.
+     */
+    override val defaultGraphs: List<RdfGraph>
+        get() = listOf(defaultGraph)
+    
+    /**
+     * Map of graph names to graphs for named graph access.
+     * For a repository, this includes all named graphs.
+     * 
+     * Note: Implementations should cache this value to avoid expensive recomputation.
+     */
+    override val namedGraphs: Map<Iri, RdfGraph>
+        get() = listGraphs().associateWith { getGraph(it) }
+    
+    /**
+     * Get a named graph by IRI (Dataset interface method).
+     */
+    override fun getNamedGraph(name: Iri): RdfGraph? {
+        return if (hasGraph(name)) getGraph(name) else null
+    }
+    
+    /**
+     * Check if a named graph exists (Dataset interface method).
+     */
+    override fun hasNamedGraph(name: Iri): Boolean = hasGraph(name)
+    
+    /**
+     * List all named graph IRIs (Dataset interface method).
+     */
+    override fun listNamedGraphs(): List<Iri> = listGraphs()
     
     /**
      * Create a new named graph.
@@ -538,7 +980,29 @@ data class RdfConfig(
     val variantId: String? = null,
     val options: Map<String, String> = emptyMap(),
     val requirements: ProviderRequirements? = null
-)
+) {
+    fun providerIdTyped(): ProviderId? = providerId?.let(::ProviderId)
+
+    fun variantIdTyped(): VariantId? = variantId?.let(::VariantId)
+
+    companion object {
+        fun of(
+            providerId: ProviderId?,
+            variantId: VariantId? = null,
+            options: Map<String, String> = emptyMap(),
+            requirements: ProviderRequirements? = null
+        ): RdfConfig = RdfConfig(providerId?.value, variantId?.value, options, requirements)
+    }
+}
+
+/**
+ * Typed provider identifiers to avoid stringly-typed APIs.
+ */
+@JvmInline
+value class ProviderId(val value: String)
+
+@JvmInline
+value class VariantId(val value: String)
 
 /**
  * Provider variant metadata.
@@ -567,254 +1031,79 @@ data class ProviderRequirements(
 /**
  * Unified registry for RDF providers with enhanced capabilities.
  */
-object RdfProviderRegistry {
-    
-    private val providers = mutableMapOf<String, RdfProvider>()
-    private val providersByType = mutableMapOf<String, RdfProvider>()
-    
-    init {
-        // Register default memory provider
-        register(MemoryRepositoryProvider())
+object RdfProviderRegistry : ProviderRegistry {
+    @Volatile
+    private var delegate: ProviderRegistry = DefaultProviderRegistry()
 
-        // Discover providers via ServiceLoader to keep registration portable.
-        discoverWithServiceLoader()
+    fun setDelegate(registry: ProviderRegistry) {
+        delegate = registry
     }
 
-    data class ProviderSelection(val provider: RdfProvider, val variantId: String)
-
-    private fun toTypeKey(providerId: String, variantId: String): String {
-        return "$providerId:$variantId"
+    fun resetDelegate() {
+        delegate = DefaultProviderRegistry()
     }
 
-    private fun resolveSelection(config: RdfConfig): ProviderSelection? {
-        if (config.providerId != null) {
-            val provider = providers[config.providerId] ?: return null
-            val resolvedVariant = config.variantId ?: provider.defaultVariantId()
-            if (!provider.supportsVariant(resolvedVariant)) return null
-            if (config.requirements != null &&
-                !matchesRequirements(provider, resolvedVariant, config.requirements)
-            ) {
-                return selectProvider(config.requirements, config.providerId, config.variantId)
-            }
-            return ProviderSelection(provider, resolvedVariant)
-        }
-
-        if (config.requirements != null) {
-            return selectProvider(config.requirements, config.providerId, config.variantId)
-        }
-
-        val defaultProviderId = DefaultRdfProvider.get()
-        val provider = providers[defaultProviderId] ?: return null
-        val resolvedVariant = config.variantId ?: provider.defaultVariantId()
-        return ProviderSelection(provider, resolvedVariant)
-    }
-
-    fun selectProvider(
+    override fun selectProvider(
         requirements: ProviderRequirements,
-        preferredProviderId: String? = null,
-        preferredVariantId: String? = null
-    ): ProviderSelection? {
-        val orderedProviders = buildList {
-            preferredProviderId?.let { providers[it] }?.let { add(it) }
-            providers.values.filterNot { it.id == preferredProviderId }.forEach { add(it) }
-        }
-        orderedProviders.forEach { provider ->
-            val variants = if (preferredVariantId != null) {
-                provider.variants().filter { it.id == preferredVariantId }
-            } else {
-                provider.variants()
-            }
-            variants.forEach { variant ->
-                if (matchesRequirements(provider, variant.id, requirements)) {
-                    return ProviderSelection(provider, variant.id)
-                }
-            }
-        }
-        return null
-    }
+        preferredProviderId: String?,
+        preferredVariantId: String?
+    ): ProviderSelection? = delegate.selectProvider(requirements, preferredProviderId, preferredVariantId)
 
-    private fun matchesRequirements(
-        provider: RdfProvider,
-        variantId: String,
-        requirements: ProviderRequirements
-    ): Boolean {
-        requirements.providerCategory?.let {
-            if (provider.getProviderCategory() != it) return false
-        }
-        val capabilities = provider.getCapabilities(variantId)
-        fun matches(required: Boolean?, actual: Boolean): Boolean {
-            return when (required) {
-                null -> true
-                true -> actual
-                false -> !actual
-            }
-        }
-        if (!matches(requirements.supportsInference, capabilities.supportsInference)) return false
-        if (!matches(requirements.supportsTransactions, capabilities.supportsTransactions)) return false
-        if (!matches(requirements.supportsNamedGraphs, capabilities.supportsNamedGraphs)) return false
-        if (!matches(requirements.supportsUpdates, capabilities.supportsUpdates)) return false
-        if (!matches(requirements.supportsRdfStar, capabilities.supportsRdfStar)) return false
-        if (!matches(requirements.supportsFederation, capabilities.supportsFederation)) return false
-        if (!matches(requirements.supportsServiceDescription, capabilities.supportsServiceDescription)) return false
-        return true
-    }
+    override fun register(provider: RdfProvider) = delegate.register(provider)
 
-    private fun discoverWithServiceLoader() {
-        try {
-            ServiceLoader.load(RdfProvider::class.java).forEach { provider ->
-                register(provider)
-            }
-        } catch (e: Exception) {
-            // If discovery fails, keep going with explicitly registered providers.
-        }
-    }
-    
-    // === BASIC PROVIDER OPERATIONS ===
-    
-    /**
-     * Register an RDF provider.
-     */
-    fun register(provider: RdfProvider) {
-        providers[provider.id] = provider
-        provider.variants().forEach { variant ->
-            providersByType[toTypeKey(provider.id, variant.id)] = provider
-        }
-    }
-    
-    /**
-     * Create a repository from configuration.
-     */
-    fun create(config: RdfConfig): RdfRepository {
-        val selection = resolveSelection(config)
-            ?: throw IllegalArgumentException("No provider found for repository config: $config")
-        val variant = selection.provider.variants().firstOrNull { it.id == selection.variantId }
-        val mergedOptions = (variant?.defaultOptions ?: emptyMap()) + config.options
-        val mergedConfig = config.copy(
-            providerId = selection.provider.id,
-            variantId = selection.variantId,
-            options = mergedOptions
-        )
-        return selection.provider.createRepository(selection.variantId, mergedConfig)
-    }
-    
-    /**
-     * Discover available providers.
-     */
-    fun discoverProviders(): List<RdfProvider> {
-        return providers.values.toList()
-    }
-    
-    /**
-     * Get all providers (alias for discoverProviders for consistency).
-     */
-    fun getAllProviders(): List<RdfProvider> = discoverProviders()
-    
-    /**
-     * Get supported repository types.
-     */
-    fun getSupportedTypes(): List<String> {
-        if (providersByType.isNotEmpty()) {
-            return providersByType.keys.toList().distinct()
-        }
-        return providers.values
-            .flatMap { provider -> provider.variants().map { toTypeKey(provider.id, it.id) } }
-            .distinct()
-    }
-    
-    /**
-     * Check if a provider supports a specific type.
-     */
-    fun supports(providerId: String): Boolean = providers.containsKey(providerId)
+    override fun create(config: RdfConfig): RdfRepository = delegate.create(config)
 
-    fun supportsVariant(providerId: String, variantId: String): Boolean {
-        return providersByType.containsKey(toTypeKey(providerId, variantId))
-    }
-    
-    /**
-     * Check if a provider supports a specific type (alias for supports).
-     */
-    fun isSupported(type: String): Boolean {
-        return supports(type)
-    }
-    
-    /**
-     * Get provider by type.
-     */
-    fun getProvider(providerId: String): RdfProvider? = providers[providerId]
-    
-    // === ENHANCED PROVIDER OPERATIONS ===
-    
-    /**
-     * Get providers by category.
-     */
-    fun getProvidersByCategory(category: ProviderCategory): List<RdfProvider> {
-        return providers.values.filter { it.getProviderCategory() == category }
-    }
-    
-    /**
-     * Generate service description for a specific provider.
-     */
-    fun generateServiceDescription(providerId: String, serviceUri: String, variantId: String? = null): RdfGraph? {
-        val provider = providers[providerId] ?: return null
-        val resolvedVariant = variantId ?: provider.defaultVariantId()
-        return provider.generateServiceDescription(serviceUri, resolvedVariant)
-    }
-    
-    /**
-     * Get all service descriptions.
-     */
-    fun getAllServiceDescriptions(baseUri: String): Map<String, RdfGraph> {
-        return providers.mapValues { (_, provider) ->
-            val serviceUri = "$baseUri/${provider.id}"
-            provider.generateServiceDescription(serviceUri, provider.defaultVariantId()) ?: MemoryGraph(emptyList())
-        }
-    }
-    
-    /**
-     * Discover capabilities for all providers.
-     */
-    fun discoverAllCapabilities(): Map<String, DetailedProviderCapabilities> {
-        return providers.mapValues { (_, provider) ->
-            provider.getDetailedCapabilities(provider.defaultVariantId())
-        }
-    }
-    
-    /**
-     * Check if a provider supports a specific SPARQL feature.
-     */
-    fun supportsFeature(providerId: String, feature: String, variantId: String? = null): Boolean {
-        val provider = providers[providerId] ?: return false
-        val capabilities = provider.getDetailedCapabilities(variantId ?: provider.defaultVariantId())
-        return capabilities.supportedSparqlFeatures[feature] ?: false
-    }
-    
-    /**
-     * Get all supported SPARQL features across providers.
-     */
-    fun getSupportedFeatures(): Map<String, List<String>> {
-        return providers.mapValues { (_, provider) ->
-            val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
-            capabilities.supportedSparqlFeatures.filter { it.value }.keys.toList()
-        }
-    }
-    
-    /**
-     * Check if any provider supports a specific feature.
-     */
-    fun hasProviderWithFeature(feature: String): Boolean {
-        return providers.values.any { provider ->
-            val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
-            capabilities.supportedSparqlFeatures[feature] == true
-        }
-    }
-    
-    /**
-     * Get provider statistics.
-     */
-    fun getProviderStatistics(): Map<ProviderCategory, Int> {
-        val categories = providers.values.groupBy { it.getProviderCategory() }
-        return categories.mapValues { it.value.size }
-    }
+    override fun discoverProviders(): List<RdfProvider> = delegate.discoverProviders()
+
+    override fun getAllProviders(): List<RdfProvider> = delegate.getAllProviders()
+
+    override fun getSupportedTypes(): List<String> = delegate.getSupportedTypes()
+
+    override fun supports(providerId: String): Boolean = delegate.supports(providerId)
+
+    override fun supports(providerId: ProviderId): Boolean = delegate.supports(providerId)
+
+    override fun supportsVariant(providerId: String, variantId: String): Boolean =
+        delegate.supportsVariant(providerId, variantId)
+
+    override fun supportsVariant(providerId: ProviderId, variantId: VariantId): Boolean =
+        delegate.supportsVariant(providerId, variantId)
+
+    override fun isSupported(type: String): Boolean = delegate.isSupported(type)
+
+    override fun getProvider(providerId: String): RdfProvider? = delegate.getProvider(providerId)
+
+    override fun getProvider(providerId: ProviderId): RdfProvider? = delegate.getProvider(providerId)
+
+    override fun getProvidersByCategory(category: ProviderCategory): List<RdfProvider> =
+        delegate.getProvidersByCategory(category)
+
+    override fun generateServiceDescription(
+        providerId: String,
+        serviceUri: String,
+        variantId: String?
+    ): RdfGraph? = delegate.generateServiceDescription(providerId, serviceUri, variantId)
+
+    override fun getAllServiceDescriptions(baseUri: String): Map<String, RdfGraph> =
+        delegate.getAllServiceDescriptions(baseUri)
+
+    override fun discoverAllCapabilities(): Map<String, DetailedProviderCapabilities> =
+        delegate.discoverAllCapabilities()
+
+    override fun supportsFeature(
+        providerId: String,
+        feature: String,
+        variantId: String?
+    ): Boolean = delegate.supportsFeature(providerId, feature, variantId)
+
+    override fun getSupportedFeatures(): Map<String, List<String>> =
+        delegate.getSupportedFeatures()
+
+    override fun hasProviderWithFeature(feature: String): Boolean =
+        delegate.hasProviderWithFeature(feature)
+
+    override fun getProviderStatistics(): Map<ProviderCategory, Int> =
+        delegate.getProviderStatistics()
 }
 
 /**
@@ -888,6 +1177,101 @@ interface RdfProvider {
             customExtensionFunctions = emptyList()
         )
     }
+    
+    // === FORMAT SUPPORT (Optional) ===
+    
+    /**
+     * Check if this provider supports a specific RDF format for serialization/parsing.
+     * 
+     * Default implementation checks against [ProviderCapabilities.supportedInputFormats]
+     * and common format names.
+     * 
+     * @param format The RDF format (can be a string or RdfFormat enum value)
+     * @return true if the format is supported, false otherwise
+     */
+    fun supportsFormat(format: String): Boolean {
+        val normalized = format.uppercase().trim()
+        val capabilities = getCapabilities()
+        
+        // Check explicit format support
+        if (normalized in capabilities.supportedInputFormats.map { it.uppercase() }) {
+            return true
+        }
+        
+        // Check common format aliases
+        val formatEnum = RdfFormat.fromString(normalized)
+        return formatEnum != null && formatEnum.formatName in capabilities.supportedInputFormats.map { it.uppercase() }
+    }
+    
+    /**
+     * Serialize a graph to the specified format.
+     * 
+     * Default implementation throws [UnsupportedOperationException].
+     * Providers that support serialization should override this method.
+     * 
+     * @param graph The graph to serialize
+     * @param format The target format
+     * @return The serialized RDF data as a string
+     * @throws RdfFormatException if the format is not supported or serialization fails
+     * @throws UnsupportedOperationException if the provider doesn't support serialization
+     */
+    fun serializeGraph(graph: RdfGraph, format: String): String {
+        throw UnsupportedOperationException("Provider '${id}' does not support graph serialization")
+    }
+    
+    /**
+     * Serialize a repository (dataset with named graphs) to the specified quad format.
+     * 
+     * Quad formats (TriG, N-Quads) support serialization of multiple named graphs.
+     * For graph-only formats, use [serializeGraph] instead.
+     * 
+     * Default implementation throws [UnsupportedOperationException].
+     * Providers that support dataset serialization should override this method.
+     * 
+     * @param repository The repository to serialize
+     * @param format The target quad format (TRIG, N-QUADS)
+     * @return The serialized RDF dataset as a string
+     * @throws RdfFormatException if the format is not supported or serialization fails
+     * @throws UnsupportedOperationException if the provider doesn't support dataset serialization
+     */
+    fun serializeDataset(repository: RdfRepository, format: String): String {
+        throw UnsupportedOperationException("Provider '${id}' does not support dataset serialization")
+    }
+    
+    /**
+     * Parse RDF data from an input stream into a graph.
+     * 
+     * Default implementation throws [UnsupportedOperationException].
+     * Providers that support parsing should override this method.
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if the format is not supported or parsing fails
+     * @throws UnsupportedOperationException if the provider doesn't support parsing
+     */
+    fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
+        throw UnsupportedOperationException("Provider '${id}' does not support graph parsing")
+    }
+    
+    /**
+     * Parse RDF dataset (with named graphs) from an input stream into a repository.
+     * 
+     * Quad formats (TriG, N-Quads) support parsing of multiple named graphs.
+     * The parsed data will be added to the provided repository.
+     * 
+     * Default implementation throws [UnsupportedOperationException].
+     * Providers that support dataset parsing should override this method.
+     * 
+     * @param repository The repository to populate with parsed data
+     * @param inputStream The input stream containing RDF dataset data
+     * @param format The RDF quad format (TRIG, N-QUADS)
+     * @throws RdfFormatException if the format is not supported or parsing fails
+     * @throws UnsupportedOperationException if the provider doesn't support dataset parsing
+     */
+    fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
+        throw UnsupportedOperationException("Provider '${id}' does not support dataset parsing")
+    }
 }
 
 /**
@@ -922,6 +1306,7 @@ data class DetailedProviderCapabilities(
     val basic: ProviderCapabilities,
     val providerCategory: ProviderCategory,
     val supportedSparqlFeatures: Map<String, Boolean>,
+    val sparqlFeatures: Set<SparqlFeature> = emptySet(),
     val customExtensionFunctions: List<SparqlExtensionFunction>,
     val performanceMetrics: PerformanceMetrics? = null,
     val limitations: List<String> = emptyList()
@@ -966,8 +1351,38 @@ data class ProviderCapabilities(
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
-    val defaultGraphs: List<String> = emptyList()
+    val defaultGraphs: List<String> = emptyList(),
+    val sparqlFeatures: Set<SparqlFeature> = emptySet()
 )
+
+/**
+ * Canonical SPARQL feature identifiers for typed capability checks.
+ */
+enum class SparqlFeature {
+    RDF_STAR,
+    PROPERTY_PATHS,
+    AGGREGATION,
+    SUBSELECT,
+    INFERENCE,
+    ENTAILMENT,
+    FEDERATION,
+    SERVICE_DESCRIPTION,
+    VERSION_DECLARATION
+}
+
+/**
+ * Map legacy booleans to a typed feature set.
+ */
+fun ProviderCapabilities.featureSet(): Set<SparqlFeature> = buildSet {
+    if (supportsRdfStar) add(SparqlFeature.RDF_STAR)
+    if (supportsPropertyPaths) add(SparqlFeature.PROPERTY_PATHS)
+    if (supportsAggregation) add(SparqlFeature.AGGREGATION)
+    if (supportsSubSelect) add(SparqlFeature.SUBSELECT)
+    if (supportsInference) add(SparqlFeature.INFERENCE)
+    if (supportsFederation) add(SparqlFeature.FEDERATION)
+    if (supportsServiceDescription) add(SparqlFeature.SERVICE_DESCRIPTION)
+    if (supportsVersionDeclaration) add(SparqlFeature.VERSION_DECLARATION)
+}
 
 // === DEFAULT PROVIDER MANAGEMENT ===
 
@@ -985,8 +1400,14 @@ object DefaultRdfProvider {
     fun set(provider: String) {
         current = provider
     }
+
+    fun set(provider: ProviderId) {
+        current = provider.value
+    }
     
     fun get(): String = current
+
+    fun getId(): ProviderId = ProviderId(current)
 }
 
 

@@ -14,6 +14,8 @@ The Memory provider provides in-memory RDF storage, ideal for development, testi
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
 
 // Create a memory repository
 val repo = Rdf.memory()
@@ -21,44 +23,17 @@ val repo = Rdf.memory()
 // Add some data
 repo.add {
     val person = iri("http://example.org/alice")
-    person - RDF.type - "http://xmlns.com/foaf/0.1/Person"
-    person - "http://xmlns.com/foaf/0.1/name" - "Alice"
-    person - "http://xmlns.com/foaf/0.1/age" - 30
+    person - RDF.type - FOAF.Person
+    person - FOAF.name - "Alice"
+    person - FOAF.age - 30
 }
 
 // Query the data
-val results = repo.select(SparqlSelectQuery("SELECT ?name WHERE { ?s foaf:name ?name }"))
+val results = repo.select(
+    SparqlSelectQuery("SELECT ?name WHERE { ?s ${FOAF.name} ?name }")
+)
 results.forEach { binding ->
     println(binding.getString("name"))
-}
-```
-
-## Configuration Options
-
-### Basic Configuration
-
-```kotlin
-val repo = Rdf.factory {
-    memory {
-        // Default configuration - usually no options needed
-    }
-}
-```
-
-### With Custom Settings
-
-```kotlin
-val repo = Rdf.factory {
-    memory {
-        // Enable transaction support
-        transactions = true
-        
-        // Set initial capacity
-        initialCapacity = 10000
-        
-        // Enable indexing
-        indexing = true
-    }
 }
 ```
 
@@ -74,23 +49,6 @@ val repo = Rdf.factory {
 - **Persistence**: Data is lost on application restart
 - **Scalability**: Not suitable for very large datasets
 
-## Memory Usage Optimization
-
-```kotlin
-val repo = Rdf.factory {
-    memory {
-        // Enable compression for large datasets
-        compression = true
-        
-        // Set memory limits
-        maxMemory = 1024 * 1024 * 1024 // 1GB
-        
-        // Enable garbage collection hints
-        gcOptimization = true
-    }
-}
-```
-
 ## Thread Safety
 
 The memory provider is thread-safe and supports concurrent operations:
@@ -103,8 +61,8 @@ val futures = (1..10).map { i ->
     GlobalScope.async {
         repo.add {
             val person = iri("http://example.org/person$i")
-            person - RDF.type - "http://xmlns.com/foaf/0.1/Person"
-            person - "http://xmlns.com/foaf/0.1/name" - "Person $i"
+            person - RDF.type - FOAF.Person
+            person - FOAF.name - "Person $i"
         }
     }
 }
@@ -116,26 +74,12 @@ futures.forEach { it.await() }
 ## Transactions
 
 ```kotlin
-val repo = Rdf.factory {
-    memory {
-        transactions = true
-    }
-}
+val repo = Rdf.memory()
 
 repo.transaction {
-    try {
-        // Add data
-        repo.add { /* ... */ }
-        
-        // Query data
-        val results = repo.select(SparqlSelectQuery("SELECT ?s WHERE { ?s ?p ?o }"))
-        
-        // If everything is good, commit
-        commit()
-    } catch (e: Exception) {
-        // Rollback on error
-        rollback()
-        throw e
+    add {
+        val person = iri("http://example.org/person/alice")
+        person - FOAF.name - "Alice"
     }
 }
 ```
@@ -167,13 +111,16 @@ val memoryRepo = Rdf.memory()
 // ... populate with data ...
 
 // Migrate to persistent storage
-val persistentRepo = Rdf.factory {
-    jenaTdb2("./data/storage")
+val persistentRepo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data/storage"
 }
 
 // Copy all data
-val triples = memoryRepo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
-persistentRepo.addTriples(triples.toList())
+val data = memoryRepo.defaultGraph.serialize(RdfFormat.TURTLE)
+val graph = Rdf.parse(data, RdfFormat.TURTLE)
+persistentRepo.addTriples(graph.getTriples())
 
 // Switch to persistent repository
 // memoryRepo can now be discarded
@@ -201,6 +148,7 @@ persistentRepo.addTriples(triples.toList())
 - Production systems requiring persistence
 - Multi-process applications
 - Long-running services with critical data
+
 
 
 

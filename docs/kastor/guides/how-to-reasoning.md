@@ -20,14 +20,17 @@ dependencies {
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.iri
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.RDFS
 
 val graph = Rdf.graph {
     val employee = iri("http://example.org/Employee")
-    val person = iri("http://xmlns.com/foaf/0.1/Person")
+    val person = FOAF.Person
     val alice = iri("http://example.org/alice")
 
-    employee - "http://www.w3.org/2000/01/rdf-schema#subClassOf" - person
-    alice - "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" - employee
+    employee - RDFS.subClassOf - person
+    alice - RDF.type - employee
 }
 ```
 
@@ -47,8 +50,8 @@ println("Inferred triples: ${result.inferredTriples.size}")
 
 ```kotlin
 val alice = iri("http://example.org/alice")
-val person = iri("http://xmlns.com/foaf/0.1/Person")
-val rdfType = iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+val person = FOAF.Person
+val rdfType = RDF.type
 
 val inferredPerson = result.inferredTriples.any { triple ->
     triple.subject == alice && triple.predicate == rdfType && triple.obj == person

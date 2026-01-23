@@ -24,7 +24,8 @@ class DefaultRdfHandle(
   }
 
   override fun validate(): ValidationResult {
-    return validationContext?.validate(graph, node) ?: ValidationResult.NotConfigured
+    return validationContext?.validate(graph, node)
+      ?: error("Validation context not configured for this handle")
   }
   
   /**

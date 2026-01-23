@@ -180,7 +180,7 @@ class RdfExtensionsTest {
         // Test DSL with string predicates
         repo.add {
             person[Iri("http://example.org/customProperty")] = "custom value"
-            person[Iri("name")] = "John"
+            person[Iri("http://example.org/name")] = "John"
         }
         
         // Verify triples were added
@@ -189,7 +189,7 @@ class RdfExtensionsTest {
         
         // Find specific triples
         val customTriple = allTriples.find { it.predicate.value == "http://example.org/customProperty" }
-        val nameTriple = allTriples.find { it.predicate.value == "name" }
+        val nameTriple = allTriples.find { it.predicate.value == "http://example.org/name" }
         
         assertNotNull(customTriple, "Should have custom property triple")
         assertNotNull(nameTriple, "Should have name triple")

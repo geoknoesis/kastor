@@ -13,7 +13,11 @@ interface RdfHandle {
   val graph: RdfGraph        // Kastor Graph (Jena/RDF4J under the hood)
   val extras: PropertyBag    // Unmapped triples (lazy & memoized)
 
-  /** Validate the focus node against configured SHACL shapes. */
+  /**
+   * Validate the focus node against configured SHACL shapes.
+   *
+   * Implementations should throw if no validation context is configured.
+   */
   fun validate(): ValidationResult
 
   /** Validate and throw on failure. */

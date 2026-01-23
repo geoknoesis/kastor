@@ -38,20 +38,52 @@ Kastor is a Kotlin-first SDK that makes RDF and knowledge-graph development prac
 - **Data integration** across SPARQL endpoints
 - **Ontology-driven apps** with generated, type-safe domain models
 
-## Get Started
+## Documentation Pillars
 
-- Documentation hub: [Documentation Overview](README.md)
-- API reference: [API Reference](kastor/api/api-reference.md)
-- Kastor Gen: [Kastor Gen](kastor-gen/README.md)
-- GitHub: https://github.com/geoknoesis/kastor
+Each pillar serves a distinct developer intent. Start with the one that matches your goal:
+
+- **Getting Started** — install, first graph, first query: [Overview](kastor/getting-started/README.md)
+- **Concepts** — RDF mental model, terms, graphs, and vocabularies: [Concepts](kastor/concepts/README.md)
+- **How‑To Guides** — task-driven workflows: [Guides](kastor/guides/README.md)
+- **Reference** — authoritative API and DSL details: [Reference](kastor/reference/README.md)
 
 ## Hello RDF in 5 minutes
 
-Follow the canonical walkthrough and run your first RDF program:
+Minimal, runnable example that creates a graph and runs a query:
 
-- [Hello World Tutorial](kastor/tutorials/hello-world.md)
+```kotlin
+import com.geoknoesis.kastor.rdf.*
+
+fun main() {
+    val repo = Rdf.memory()
+
+    repo.add {
+        val alice = iri("http://example.org/alice")
+        alice has "http://xmlns.com/foaf/0.1/name" with "Alice"
+        alice has "http://xmlns.com/foaf/0.1/knows" with iri("http://example.org/bob")
+    }
+
+    repo.select(SparqlSelectQuery("""
+        SELECT ?name WHERE {
+            <http://example.org/alice> <http://xmlns.com/foaf/0.1/name> ?name .
+        }
+    """.trimIndent()))
+        .forEach { binding -> println(binding.getString("name")) }
+}
+```
+
+```mermaid
+flowchart LR
+    A[Create repository] --> B[Add triples]
+    B --> C[Query graph]
+    C --> D[Process results]
+```
+
+Next steps:
+
 - [Getting Started](kastor/getting-started/getting-started.md)
-- [How-To Guides](kastor/guides/README.md)
+- [Hello World Tutorial](kastor/tutorials/hello-world.md)
+- [API Reference](kastor/api/api-reference.md)
 
 ## Contact and Feedback
 

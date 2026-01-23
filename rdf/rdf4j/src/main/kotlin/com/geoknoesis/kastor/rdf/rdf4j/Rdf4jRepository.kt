@@ -31,6 +31,18 @@ class Rdf4jRepository(
     private val connection: RepositoryConnection = repository.connection
 ) : RdfRepository {
     
+    /**
+     * Internal method to access the underlying RDF4J RepositoryConnection.
+     * Used by Rdf4jProvider for dataset serialization/parsing.
+     */
+    internal fun getRdf4jConnection(): RepositoryConnection = connection
+    
+    /**
+     * Internal method to access the underlying RDF4J Repository.
+     * Used by Rdf4jProvider for dataset operations.
+     */
+    internal fun getRdf4jRepository(): Repository = repository
+    
     companion object {
         fun MemoryRepository(): Rdf4jRepository {
             val memoryStore = MemoryStore()

@@ -138,10 +138,11 @@ class RdfTermsTest {
         assertEquals("2023-12-25T14:30:45", dateTimeLit.lexical, "LocalDateTime literal should format correctly")
         assertEquals(XSD.dateTime, dateTimeLit.datatype, "LocalDateTime literal should have xsd:dateTime datatype")
         
-            // Test ZonedDateTime literal
-            val zonedDateTimeLit = Literal(ZonedDateTime.parse("2023-12-25T14:30:45Z"))
-            assertTrue(zonedDateTimeLit.lexical.startsWith("2023-12-25T14:30:45"), "ZonedDateTime literal should format correctly")
-            assertEquals(XSD.string, zonedDateTimeLit.datatype, "ZonedDateTime literal should have xsd:string datatype")
+        // Test ZonedDateTime literal (explicit string)
+        val zonedDateTime = ZonedDateTime.parse("2023-12-25T14:30:45Z")
+        val zonedDateTimeLit = Literal(zonedDateTime.toString(), XSD.string)
+        assertTrue(zonedDateTimeLit.lexical.startsWith("2023-12-25T14:30:45"), "ZonedDateTime literal should format correctly")
+        assertEquals(XSD.string, zonedDateTimeLit.datatype, "ZonedDateTime literal should have xsd:string datatype")
         
         // Test OffsetDateTime literal
         val offsetDateTimeLit = Literal(OffsetDateTime.parse("2023-12-25T14:30:45+01:00"))
@@ -274,19 +275,7 @@ class RdfTermsTest {
         assertEquals("fr", (langLit2 as LangString).lang, "Literal(value, lang) should set language tag")
     }
     
-    @Test
-    fun `literal creation with Any type falls back to string`() {
-        // Test with unsupported type
-        val customObject = object {
-            override fun toString() = "CustomObject"
-        }
-        val anyLit = Literal(customObject)
-        assertEquals("CustomObject", anyLit.lexical, "Literal(Any) should use toString()")
-        assertEquals(XSD.string, anyLit.datatype, "Literal(Any) should have xsd:string datatype")
-        
-        // Test with null (should throw or handle gracefully)
-        // Note: This depends on implementation, but typically null.toString() throws
-    }
+    // Literal(Any) overload removed to enforce explicit conversions.
     
     @Test
     fun `triple term and quoted triple works`() {

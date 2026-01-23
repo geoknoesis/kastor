@@ -236,7 +236,7 @@ val capabilities = ProviderCapabilities(
 
 ```kotlin
 // Discover all provider capabilities
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 allCapabilities.forEach { (providerType, capabilities) ->
     println("Provider: $providerType")
@@ -250,10 +250,15 @@ allCapabilities.forEach { (providerType, capabilities) ->
 ### Feature-Specific Discovery
 
 ```kotlin
-// Check if any provider supports a specific feature
-val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
-val hasInferenceSupport = RdfApiRegistry.hasProviderWithFeature("supportsInference")
+// Check if any provider supports a specific SPARQL feature
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+
+// Check inference support via capabilities
+val hasInferenceSupport = RdfProviderRegistry
+    .discoverAllCapabilities()
+    .values
+    .any { it.basic.supportsInference }
 
 println("RDF-star support available: $hasRdfStarSupport")
 println("Federation support available: $hasFederationSupport")
@@ -264,9 +269,9 @@ println("Inference support available: $hasInferenceSupport")
 
 ```kotlin
 // Check specific provider capabilities
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 if (provider != null) {
-    val supportsFeature = RdfApiRegistry.supportsFeature("memory", "supportsRdfStar")
+val supportsFeature = RdfProviderRegistry.supportsFeature("memory", "RDF-star")
     println("Memory provider supports RDF-star: $supportsFeature")
 }
 ```
@@ -274,16 +279,14 @@ if (provider != null) {
 ### Supported Features by Provider
 
 ```kotlin
-val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
 
 supportedFeatures.forEach { (providerType, features) ->
     println("$providerType supports: $features")
 }
 
 // Example output:
-// memory: [supportsPropertyPaths, supportsAggregation, supportsSubSelect, ...]
-// jena: [supportsRdfStar, supportsPropertyPaths, supportsAggregation, ...]
-// sparql-endpoint: [supportsRdfStar, supportsPropertyPaths, supportsFederation, ...]
+// sparql-endpoint: [RDF-star, Property Paths, Aggregation, Federation, ...]
 ```
 
 ## 📋 Provider Statistics
@@ -291,7 +294,7 @@ supportedFeatures.forEach { (providerType, features) ->
 ### Category Statistics
 
 ```kotlin
-val statistics = RdfApiRegistry.getProviderStatistics()
+val statistics = RdfProviderRegistry.getProviderStatistics()
 
 statistics.forEach { (category, count) ->
     println("$category: $count providers")
@@ -307,7 +310,7 @@ statistics.forEach { (category, count) ->
 ### Capability Statistics
 
 ```kotlin
-val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
 // Count providers by capability
 val rdfStarProviders = allCapabilities.values.count { it.basic.supportsRdfStar }
@@ -324,7 +327,7 @@ println("Inference providers: $inferenceProviders")
 ### Getting Detailed Capabilities
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val detailedCapabilities = provider.getDetailedCapabilities()
 
 println("Provider Category: ${detailedCapabilities.providerCategory}")
@@ -374,7 +377,7 @@ featureMap.forEach { (feature, supported) ->
 
 ```kotlin
 // Always check capabilities before using features
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getCapabilities()
 
 if (capabilities.supportsRdfStar) {
@@ -400,7 +403,7 @@ if (capabilities.supportsRdfStar) {
 ```kotlin
 // Select provider based on required capabilities
 fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfApiProvider? {
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     
     return allProviders.find { provider ->
         val capabilities = provider.getCapabilities(provider.defaultVariantId())
@@ -440,7 +443,7 @@ fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
 ```kotlin
 fun providerCapabilitiesExample() {
     // Get all providers
-    val allProviders = RdfApiRegistry.getAllProviders()
+    val allProviders = RdfProviderRegistry.getAllProviders()
     println("Available providers: ${allProviders.map { it.id }}")
     
     // Check each provider's capabilities
@@ -486,25 +489,25 @@ fun providerCapabilitiesExample() {
     // Registry-level capability discovery
     println("\n=== Registry Capabilities ===")
     
-    val allCapabilities = RdfApiRegistry.discoverAllCapabilities()
+    val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
     println("Providers with detailed capabilities: ${allCapabilities.size}")
     
-    val supportedFeatures = RdfApiRegistry.getSupportedFeatures()
+    val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
     println("Supported features by provider:")
     supportedFeatures.forEach { (provider, features) ->
         println("  $provider: $features")
     }
     
-    val statistics = RdfApiRegistry.getProviderStatistics()
+    val statistics = RdfProviderRegistry.getProviderStatistics()
     println("Provider statistics:")
     statistics.forEach { (category, count) ->
         println("  $category: $count")
     }
     
     // Feature availability
-    val hasRdfStarSupport = RdfApiRegistry.hasProviderWithFeature("supportsRdfStar")
-    val hasFederationSupport = RdfApiRegistry.hasProviderWithFeature("supportsFederation")
-    val hasInferenceSupport = RdfApiRegistry.hasProviderWithFeature("supportsInference")
+val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+val hasInferenceSupport = RdfProviderRegistry.hasProviderWithFeature("Inference")
     
     println("Feature availability:")
     println("  RDF-star: $hasRdfStarSupport")

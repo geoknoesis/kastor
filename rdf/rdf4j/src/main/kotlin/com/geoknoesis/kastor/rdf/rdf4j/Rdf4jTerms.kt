@@ -37,7 +37,12 @@ internal object Rdf4jTerms {
         return when (term) {
             is Iri -> valueFactory.createIRI(term.value)
             is BlankNode -> valueFactory.createBNode(term.id)
-            is Literal -> valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
+            is com.geoknoesis.kastor.rdf.LangString -> {
+                valueFactory.createLiteral(term.lexical, term.lang)
+            }
+            is Literal -> {
+                valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
+            }
             is TripleTerm -> valueFactory.createTriple(
                 toRdf4jResource(term.triple.subject),
                 toRdf4jIri(term.triple.predicate),
@@ -69,11 +74,12 @@ internal object Rdf4jTerms {
             is IRI -> Iri(value.stringValue())
             is BNode -> BlankNode(value.id)
             is Rdf4jLiteral -> {
+                val lang = value.language.orElse(null)
                 val datatype = value.datatype?.let { Iri(it.stringValue()) }
-                if (datatype != null) {
-                    Literal(value.stringValue(), datatype)
-                } else {
-                    Literal(value.stringValue())
+                when {
+                    lang != null -> com.geoknoesis.kastor.rdf.LangString(value.stringValue(), lang)
+                    datatype != null -> Literal(value.stringValue(), datatype)
+                    else -> Literal(value.stringValue())
                 }
             }
             is Triple -> TripleTerm(RdfTriple(

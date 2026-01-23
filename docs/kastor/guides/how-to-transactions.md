@@ -11,13 +11,14 @@
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.iri
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 val repo = Rdf.memory()
 
 repo.transaction {
     add {
         val alice = iri("http://example.org/alice")
-        alice has "http://xmlns.com/foaf/0.1/name" with "Alice Johnson"
+        alice has FOAF.name with "Alice Johnson"
     }
 }
 ```
@@ -30,7 +31,7 @@ import com.geoknoesis.kastor.rdf.SparqlSelectQuery
 repo.readTransaction {
     val results = select(SparqlSelectQuery("""
         SELECT ?name WHERE {
-            <http://example.org/alice> <http://xmlns.com/foaf/0.1/name> ?name .
+            <http://example.org/alice> ${FOAF.name} ?name .
         }
     """))
 
@@ -49,4 +50,5 @@ Alice Johnson
 ## Notes
 - Use `transaction` for atomic writes.
 - Use `readTransaction` for read-only operations when supported by the provider.
+
 

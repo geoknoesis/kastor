@@ -11,6 +11,7 @@ Understanding the basics of RDF (Resource Description Framework) is essential fo
 - [RDF Triples](#-rdf-triples)
 - [RDF Terms](#-rdf-terms)
 - [Named Graphs](#-named-graphs)
+- [Datasets](#-datasets)
 - [RDF Vocabularies](#-rdf-vocabularies)
 - [SPARQL Basics](#-sparql-basics)
 - [RDF Serialization Formats](#-rdf-serialization-formats)
@@ -134,16 +135,22 @@ A single resource can have multiple properties:
 repo.add {
     val alice = iri("http://example.org/person/alice")
     val company = iri("http://example.org/company/tech")
+    val name = iri("http://example.org/person/name")
+    val age = iri("http://example.org/person/age")
+    val email = iri("http://example.org/person/email")
+    val worksFor = iri("http://example.org/person/worksFor")
+    val companyName = iri("http://example.org/company/name")
+    val companyIndustry = iri("http://example.org/company/industry")
     
     // Multiple triples about Alice
-    alice["http://example.org/person/name"] = "Alice Johnson"
-    alice["http://example.org/person/age"] = 30
-    alice["http://example.org/person/email"] = "alice@example.com"
-    alice["http://example.org/person/worksFor"] = company
+    alice[name] = "Alice Johnson"
+    alice[age] = 30
+    alice[email] = "alice@example.com"
+    alice[worksFor] = company
     
     // Information about the company
-    company["http://example.org/company/name"] = "Tech Innovations Inc."
-    company["http://example.org/company/industry"] = "Software Development"
+    company[companyName] = "Tech Innovations Inc."
+    company[companyIndustry] = "Software Development"
 }
 ```
 
@@ -196,11 +203,13 @@ Resources are identified by IRIs and can be subjects or objects in triples.
 val alice = iri("http://example.org/person/alice")
 val bob = iri("http://example.org/person/bob")
 val company = iri("http://example.org/company/tech")
+val friend = iri("http://example.org/person/friend")
+val worksFor = iri("http://example.org/person/worksFor")
 
 // Using resources in relationships
 repo.add {
-    alice["http://example.org/person/friend"] = bob
-    alice["http://example.org/person/worksFor"] = company
+    alice[friend] = bob
+    alice[worksFor] = company
 }
 ```
 
@@ -219,9 +228,12 @@ val metadataGraph = repo.createGraph(iri("http://example.org/graphs/metadata"))
 // Add triples to the named graph
 repo.addToGraph(iri("http://example.org/graphs/metadata")) {
     val metadata = iri("http://example.org/metadata")
-    metadata["http://example.org/metadata/created"] = "2024-01-01"
-    metadata["http://example.org/metadata/version"] = "1.0"
-    metadata["http://example.org/metadata/description"] = "Sample dataset"
+    val created = iri("http://example.org/metadata/created")
+    val version = iri("http://example.org/metadata/version")
+    val description = iri("http://example.org/metadata/description")
+    metadata[created] = "2024-01-01"
+    metadata[version] = "1.0"
+    metadata[description] = "Sample dataset"
 }
 
 // List all named graphs
@@ -236,6 +248,57 @@ println("Named graphs: $graphs")
 - **Data Organization**: Group related information
 - **Versioning**: Different versions of the same data
 
+## 🧩 Datasets
+
+A **dataset** defines the query scope for SPARQL:
+- **Default graph**: the union of one or more graphs.
+- **Named graphs**: addressable via `GRAPH <name>` patterns.
+
+In Kastor:
+- `Dataset` is **read‑only** and models SPARQL semantics.
+- `RdfRepository` **implements** `Dataset` and adds mutation.
+
+### 🎯 Dataset Example (Union + Named Graphs)
+
+```kotlin
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+val peopleRepo = Rdf.memory()
+val orgRepo = Rdf.memory()
+
+peopleRepo.add {
+    val alice = iri("http://example.org/alice")
+    alice has FOAF.name with "Alice"
+}
+
+orgRepo.add {
+    val acme = iri("http://example.org/org/acme")
+    acme has FOAF.name with "ACME Corp"
+}
+
+val peopleGraph = iri("http://example.org/graphs/people")
+val orgGraph = iri("http://example.org/graphs/orgs")
+
+val dataset = Dataset {
+    defaultGraph(peopleRepo.defaultGraph)   // union component
+    namedGraph(peopleGraph, peopleRepo, null)
+    namedGraph(orgGraph, orgRepo, null)
+}
+
+val results = dataset.select(SparqlSelectQuery("""
+    SELECT ?name WHERE {
+        GRAPH ${peopleGraph} {
+            ?person ${FOAF.name} ?name .
+        }
+    }
+"""))
+```
+
+For full dataset semantics and usage patterns, see:
+- [Datasets](datasets.md)
+- [How to Use Datasets](../guides/how-to-use-datasets.md)
+
 ## 📚 RDF Vocabularies
 
 RDF vocabularies define sets of terms (properties and classes) for specific domains.
@@ -245,22 +308,15 @@ RDF vocabularies define sets of terms (properties and classes) for specific doma
 A vocabulary is a collection of IRIs that represent concepts in a specific domain.
 
 ```kotlin
-// Example: FOAF (Friend of a Friend) vocabulary
-object Foaf {
-    val Person = iri("http://xmlns.com/foaf/0.1/Person")
-    val name = iri("http://xmlns.com/foaf/0.1/name")
-    val age = iri("http://xmlns.com/foaf/0.1/age")
-    val email = iri("http://xmlns.com/foaf/0.1/mbox")
-    val knows = iri("http://xmlns.com/foaf/0.1/knows")
-}
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-// Using the vocabulary
+// Using a predefined vocabulary
 repo.add {
     val alice = iri("http://example.org/person/alice")
-    
-    alice[Foaf.name] = "Alice Johnson"
-    alice[Foaf.age] = 30
-    alice[Foaf.email] = "alice@example.com"
+
+    alice[FOAF.name] = "Alice Johnson"
+    alice[FOAF.age] = 30
+    alice[FOAF.mbox] = "alice@example.com"
 }
 ```
 

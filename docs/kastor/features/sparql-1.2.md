@@ -136,7 +136,7 @@ val query = """
 ### Checking SPARQL 1.2 Support
 
 ```kotlin
-val provider = RdfApiRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory")
 val capabilities = provider.getCapabilities()
 
 // Check SPARQL version
@@ -308,24 +308,23 @@ try {
 ### Enabling SPARQL 1.2 Features
 
 ```kotlin
-val config = RdfConfig {
-    sparqlVersion = "1.2"
-    enableRdfStar = true
-    enablePropertyPaths = true
-    enableAggregation = true
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
 }
 
-val repo = Rdf.factory(config) { memory() }
+val capabilities = repo.getCapabilities()
+println("SPARQL version: ${capabilities.sparqlVersion}")
+println("RDF-star: ${capabilities.supportsRdfStar}")
 ```
 
 ### Provider-Specific Configuration
 
 ```kotlin
-val jenaRepo = Rdf.factory {
-    jenaTdb2("./data") {
-        sparqlVersion = "1.2"
-        enableRdfStar = true
-    }
+val jenaRepo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data"
 }
 ```
 
@@ -356,9 +355,11 @@ fun sparql12Example() {
     
     val results = repo.select(SparqlSelectQuery(query))
     results.forEach { binding ->
-        println("Person: ${binding.getIri("person")}")
+        val person = binding.get("person") as? Iri
+        val source = binding.get("source") as? Iri
+        println("Person: $person")
         println("Certainty: ${binding.getDouble("certainty")}")
-        println("Source: ${binding.getIri("source")}")
+        println("Source: $source")
     }
 }
 ```

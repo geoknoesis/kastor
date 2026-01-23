@@ -9,14 +9,14 @@ Define how Kastor integrates multiple RDF backends (Jena, RDF4J, SPARQL endpoint
 - Changing public API behavior outside provider selection and discovery.
 
 ## Architecture Overview
-Kastor exposes a unified repository API (`RdfRepository`) and uses an SPI (`RdfApiProvider`) to create repositories for specific backend variants. The registry (`RdfApiRegistry`) is responsible for discovery, registration, and lookup.
+Kastor exposes a unified repository API (`RdfRepository`) and uses an SPI (`RdfApiProvider`) to create repositories for specific backend variants. The registry (`RdfProviderRegistry`) is responsible for discovery, registration, and lookup.
 
 ### Component Flow
 ```mermaid
 flowchart TD
-    RdfFactory[Rdf.factory] -->|builds| RdfConfig
-    RdfConfig --> RdfApiRegistry
-    RdfApiRegistry -->|lookup by type| ProviderImpl
+    RdfFactory[Rdf.repository] -->|builds| RdfConfig
+    RdfConfig --> RdfProviderRegistry
+    RdfProviderRegistry -->|lookup by type| ProviderImpl
     ProviderImpl -->|createRepository| RdfRepository
     subgraph providerLayer [ProviderLayer]
         ProviderImpl[JenaProvider/Rdf4jProvider/SparqlProvider]
@@ -116,8 +116,8 @@ val person = resourceViewFactory.createView(Person::class, context, validate = f
 ```
 
 ### Runtime Selection Path
-- `Rdf.factory` builds an `RdfConfig` with `providerId`, `variantId`, and options.
-- `RdfApiRegistry.create(config)` locates a provider/variant:
+- `Rdf.repository` builds an `RdfConfig` with `providerId`, `variantId`, and options.
+- `RdfProviderRegistry.create(config)` locates a provider/variant:
   - Exact provider/variant match (fast lookup).
   - Requirements-based selection when provided.
 - The provider constructs a concrete `RdfRepository`.

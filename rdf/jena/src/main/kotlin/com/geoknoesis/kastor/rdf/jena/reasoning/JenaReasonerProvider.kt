@@ -83,7 +83,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
         val inferredTriples = extractInferredTriples(jenaModel, infModel)
         
         // Check consistency
-        val consistencyResult = checkConsistency(infModel)
+        val consistencyResult = checkConsistency()
         
         // Perform classification
         val classificationResult = if (config.includeAxioms) performClassification(infModel) else null
@@ -113,7 +113,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
     override fun isConsistent(graph: RdfGraph): Boolean {
         return try {
             val jenaModel = convertToJenaModel(graph)
-            val infModel = ModelFactory.createInfModel(reasoner, jenaModel)
+            ModelFactory.createInfModel(reasoner, jenaModel)
             // Simple consistency check - if we can create the inference model, it's consistent
             true
         } catch (e: Exception) {
@@ -138,7 +138,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
         val warnings = mutableListOf<String>()
         
         // Basic validation using consistency check
-        val consistencyResult = checkConsistency(convertToJenaModel(graph))
+        val consistencyResult = checkConsistency()
         if (!consistencyResult.isConsistent) {
             consistencyResult.inconsistencies.forEach { inconsistency ->
                 violations.add(
@@ -181,7 +181,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
         return inferredTriples
     }
     
-    private fun checkConsistency(model: Model): ConsistencyResult {
+    private fun checkConsistency(): ConsistencyResult {
         val inconsistencies = mutableListOf<Inconsistency>()
         val warnings = mutableListOf<String>()
         
@@ -285,13 +285,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
             is Literal -> {
                 when (term) {
                     is LangString -> jenaModel.createLiteral(term.lexical, term.lang)
-                    else -> {
-                        if (term.datatype != null) {
-                            jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
-                        } else {
-                            jenaModel.createLiteral(term.lexical)
-                        }
-                    }
+                    else -> jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
                 }
             }
             else -> throw IllegalArgumentException("Cannot convert $term to Jena RDFNode")

@@ -15,9 +15,9 @@ import org.apache.jena.rdf.model.StmtIterator
 internal class JenaGraph(val model: Model) : MutableRdfGraph {
     
     override fun addTriple(triple: RdfTriple) {
-        val subject = JenaTerms.toResource(triple.subject)
-        val predicate = JenaTerms.toProperty(triple.predicate)
-        val obj = JenaTerms.toNode(triple.obj)
+        val subject = JenaTerms.toResource(model, triple.subject)
+        val predicate = JenaTerms.toProperty(model, triple.predicate)
+        val obj = JenaTerms.toNode(model, triple.obj)
         model.add(subject, predicate, obj)
     }
     
@@ -26,9 +26,9 @@ internal class JenaGraph(val model: Model) : MutableRdfGraph {
     }
     
     override fun removeTriple(triple: RdfTriple): Boolean {
-        val subject = JenaTerms.toResource(triple.subject)
-        val predicate = JenaTerms.toProperty(triple.predicate)
-        val obj = JenaTerms.toNode(triple.obj)
+        val subject = JenaTerms.toResource(model, triple.subject)
+        val predicate = JenaTerms.toProperty(model, triple.predicate)
+        val obj = JenaTerms.toNode(model, triple.obj)
         val removed = model.remove(subject, predicate, obj)
         return removed != null
     }
@@ -44,9 +44,9 @@ internal class JenaGraph(val model: Model) : MutableRdfGraph {
     }
     
     override fun hasTriple(triple: RdfTriple): Boolean {
-        val subject = JenaTerms.toResource(triple.subject)
-        val predicate = JenaTerms.toProperty(triple.predicate)
-        val obj = JenaTerms.toNode(triple.obj)
+        val subject = JenaTerms.toResource(model, triple.subject)
+        val predicate = JenaTerms.toProperty(model, triple.predicate)
+        val obj = JenaTerms.toNode(model, triple.obj)
         return model.contains(subject, predicate, obj)
     }
     

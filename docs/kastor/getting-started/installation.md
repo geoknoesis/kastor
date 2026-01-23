@@ -399,11 +399,11 @@ dependencies {
 
 ```kotlin
 // Choose backend at runtime
-val jenaRepo = Rdf.factory { 
+val jenaRepo = Rdf.repository { 
     providerId = "jena"
     variantId = "memory"
 }
-val rdf4jRepo = Rdf.factory { 
+val rdf4jRepo = Rdf.repository { 
     providerId = "rdf4j"
     variantId = "memory"
 }
@@ -424,19 +424,20 @@ fun main() {
     try {
         // Test repository creation
         val repo = Rdf.memory()
+        val namePred = iri("http://example.org/person/name")
         println("✅ Repository created successfully")
         
         // Test data addition
         repo.add {
             val person = iri("http://example.org/person/test")
-            person["http://example.org/person/name"] = "Test User"
+            person[namePred] = "Test User"
         }
         println("✅ Data added successfully")
         
         // Test query
         val results = repo.select(SparqlSelectQuery("""
             SELECT ?name WHERE { 
-                ?person <http://example.org/person/name> ?name 
+                ?person ${namePred} ?name 
             }
         """))
         
@@ -466,13 +467,14 @@ fun testBackends() {
     
     // Test Jena
     try {
-        val jenaRepo = Rdf.factory { 
+        val jenaRepo = Rdf.repository { 
             providerId = "jena"
             variantId = "memory"
         }
+        val namePred = iri("http://example.org/person/name")
         jenaRepo.add {
             val person = iri("http://example.org/person/jena")
-            person["http://example.org/person/name"] = "Jena User"
+            person[namePred] = "Jena User"
         }
         println("✅ Jena backend working")
         jenaRepo.close()
@@ -482,13 +484,14 @@ fun testBackends() {
     
     // Test RDF4J
     try {
-        val rdf4jRepo = Rdf.factory { 
+        val rdf4jRepo = Rdf.repository { 
             providerId = "rdf4j"
             variantId = "memory"
         }
+        val namePred = iri("http://example.org/person/name")
         rdf4jRepo.add {
             val person = iri("http://example.org/person/rdf4j")
-            person["http://example.org/person/name"] = "RDF4J User"
+            person[namePred] = "RDF4J User"
         }
         println("✅ RDF4J backend working")
         rdf4jRepo.close()
@@ -507,14 +510,16 @@ fun performanceTest() {
     println("⚡ Performance Test...")
     
     val repo = Rdf.memory()
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
     val startTime = System.currentTimeMillis()
     
     // Add 1000 triples
     repo.add {
         for (i in 1..1000) {
             val person = iri("http://example.org/person/person$i")
-            person["http://example.org/person/name"] = "Person $i"
-            person["http://example.org/person/age"] = 20 + (i % 50)
+            person[namePred] = "Person $i"
+            person[agePred] = 20 + (i % 50)
         }
     }
     
@@ -525,8 +530,8 @@ fun performanceTest() {
     val queryStart = System.currentTimeMillis()
     val results = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE { 
-            ?person <http://example.org/person/name> ?name ;
-                    <http://example.org/person/age> ?age 
+            ?person ${namePred} ?name ;
+                    ${agePred} ?age 
         }
     """))
     

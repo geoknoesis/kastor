@@ -36,7 +36,7 @@ Define a concrete redesign plan to make Kastor a reference-quality, RDF-engine-a
 ```kotlin
 val repo = Rdf.memory()
 
-val prod = Rdf.factory {
+val prod = Rdf.repository {
   providerId = "jena"
   variantId = "tdb2"
   location = "data"

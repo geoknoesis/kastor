@@ -21,10 +21,11 @@ dependencies {
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.iri
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 val dataGraph = Rdf.graph {
     val alice = iri("http://example.org/alice")
-    alice has "http://xmlns.com/foaf/0.1/name" with "Alice Johnson"
+    alice has FOAF.name with "Alice Johnson"
     // Missing age on purpose to trigger a violation
 }
 ```
@@ -34,17 +35,21 @@ val dataGraph = Rdf.graph {
 ```kotlin
 import com.geoknoesis.kastor.rdf.bnode
 import com.geoknoesis.kastor.rdf.int
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.SHACL
+import com.geoknoesis.kastor.rdf.vocab.XSD
 
 val shapesGraph = Rdf.graph {
     val shape = iri("http://example.org/shapes/PersonShape")
     val propertyShape = bnode("ageShape")
 
-    shape - "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" - "http://www.w3.org/ns/shacl#NodeShape"
-    shape - "http://www.w3.org/ns/shacl#property" - propertyShape
+    shape - RDF.type - SHACL.NodeShape
+    shape - SHACL.property - propertyShape
 
-    propertyShape - "http://www.w3.org/ns/shacl#path" - "http://xmlns.com/foaf/0.1/age"
-    propertyShape - "http://www.w3.org/ns/shacl#minCount" - int(1)
-    propertyShape - "http://www.w3.org/ns/shacl#datatype" - "http://www.w3.org/2001/XMLSchema#integer"
+    propertyShape - SHACL.path - FOAF.age
+    propertyShape - SHACL.minCount - int(1)
+    propertyShape - SHACL.datatype - XSD.integer
 }
 ```
 

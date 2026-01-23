@@ -79,12 +79,15 @@ println(agePred)   // Output: <http://example.org/age>
 Prefixes make queries more readable by allowing shortened names instead of full IRIs:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 val query = select("name", "age") {
-    prefix("foaf", "http://xmlns.com/foaf/0.1/")
-    prefix("xsd", "http://www.w3.org/2001/XMLSchema#")
+    prefix("foaf", FOAF.namespace)
+    prefix("xsd", XSD.namespace)
     where {
-        `var`("person") has iri("foaf:name") with `var`("name")
-        `var`("person") has iri("foaf:age") with `var`("age")
+        `var`("person") has FOAF.name with `var`("name")
+        `var`("person") has FOAF.age with `var`("age")
     }
 }
 ```
@@ -108,11 +111,14 @@ WHERE {
 Kastor provides built-in support for common vocabularies:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 val query = select("name", "type") {
     addCommonPrefixes("foaf", "rdf", "rdfs")  // Add multiple common prefixes
     where {
-        `var`("person") has iri("foaf:name") with `var`("name")
-        `var`("person") has iri("rdf:type") with `var`("type")
+        `var`("person") has FOAF.name with `var`("name")
+        `var`("person") has RDF.type with `var`("type")
     }
 }
 ```
@@ -702,11 +708,13 @@ val n = iri("http://example.org/n")
 4. **Use prefix declarations for readability**:
 ```kotlin
 // Good - with prefixes
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 val query = select("name", "age") {
     addCommonPrefixes("foaf", "rdf")
     prefix("ex", "http://example.org/")
     where {
-        `var`("person") has iri("foaf:name") with `var`("name")
+        `var`("person") has FOAF.name with `var`("name")
         `var`("person") has iri("ex:age") with `var`("age")
     }
 }
@@ -714,7 +722,7 @@ val query = select("name", "age") {
 // Avoid - without prefixes
 val query = select("name", "age") {
     where {
-        `var`("person") has iri("http://xmlns.com/foaf/0.1/name") with `var`("name")
+        `var`("person") has FOAF.name with `var`("name")
         `var`("person") has iri("http://example.org/age") with `var`("age")
     }
 }

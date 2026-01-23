@@ -25,6 +25,15 @@ The vocabularies package centralizes RDF vocabulary definitions, providing:
 | **DCTERMS** | `dcterms` | `http://purl.org/dc/terms/` | Dublin Core Terms |
 | **FOAF** | `foaf` | `http://xmlns.com/foaf/0.1/` | Friend of a Friend |
 
+For a full term index and quick reference:
+- [Vocabulary Index](../resources/vocabularies-index.md)
+- [Vocabulary Quick Reference](../resources/vocabularies-quickref.md)
+
+## Create a Custom Vocabulary
+
+When a term is not covered by a standard vocabulary, define your own:
+- [How to Create a Custom Vocabulary](../guides/how-to-create-vocabulary.md)
+
 ## Quick Start
 
 ### Basic Usage
@@ -494,11 +503,13 @@ import com.geoknoesis.kastor.rdf.vocab.FOAF
 ### Debugging
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 // Check which vocabularies are loaded
 println("Loaded vocabularies: ${Vocabularies.all.map { it.prefix }}")
 
 // Check if a term belongs to a vocabulary
-val term = iri("http://xmlns.com/foaf/0.1/name")
+val term = FOAF.name
 println("Term belongs to: ${Vocabularies.findVocabularyForTerm(term)?.prefix}")
 
 // List all terms in a vocabulary
@@ -512,8 +523,10 @@ println("FOAF terms: ${foafTerms?.keys}")
 
 **Before**:
 ```kotlin
-val personType = iri("http://xmlns.com/foaf/0.1/Person")
-val nameProperty = iri("http://xmlns.com/foaf/0.1/name")
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+val personType = iri(FOAF.Person.value)
+val nameProperty = iri(FOAF.name.value)
 ```
 
 **After**:

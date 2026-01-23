@@ -4,7 +4,7 @@ Use a SPARQL server (e.g., Apache Jena Fuseki) to store/query data remotely.
 
 1) Configure endpoints
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
   providerId = "sparql"
   variantId = "sparql"
   param("baseUrl", "http://localhost:3030")

@@ -15,19 +15,23 @@ fun main() {
     val person = Iri("http://example.org/person/alice")
 
     repo.add {
-        person - FOAF.name - "Alice"
+        person - FOAF.name - string("Alice")
         
         // RDF List with standard bnode names: _:b1, _:b2, _:b3
-        person - FOAF.mbox - list("alice@example.com", "alice@work.com", "alice@personal.com")
+        person - FOAF.mbox - list(
+            string("alice@example.com"),
+            string("alice@work.com"),
+            string("alice@personal.com")
+        )
         
         // RDF Bag with standard bnode name: _:b4
-        person - DCTERMS.subject - bag("Technology", "AI", "RDF")
+        person - DCTERMS.subject - bag(string("Technology"), string("AI"), string("RDF"))
         
         // RDF Seq with standard bnode name: _:b5
         person - FOAF.knows - seq(person, person, person)
         
         // RDF Alt with standard bnode name: _:b6
-        person - FOAF.mbox - alt("alice@example.com", "alice@work.com")
+        person - FOAF.mbox - alt(string("alice@example.com"), string("alice@work.com"))
     }
 
     // Query the results

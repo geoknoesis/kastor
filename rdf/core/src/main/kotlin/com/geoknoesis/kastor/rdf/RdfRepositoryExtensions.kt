@@ -1,93 +1,91 @@
 package com.geoknoesis.kastor.rdf
 
-import com.geoknoesis.kastor.rdf.dsl.TripleDsl
+import java.io.InputStream
 
 /**
- * Convenience extensions for working with repository graphs.
- * Kept out of the core interface to preserve a minimal contract.
+ * Provider-agnostic extensions for RDF repository (dataset) operations.
  * 
- * **API Stability:** These extensions are stable and part of the public API.
- * They follow Kotlin stdlib patterns and are designed for long-term compatibility.
+ * These extensions support quad formats (TriG, N-Quads) that can serialize
+ * and parse datasets with multiple named graphs.
  */
 
 /**
- * Adds triples to the default graph using DSL.
+ * Serializes this repository (dataset) to the specified quad format.
  * 
- * **API Stability:** Stable
+ * Quad formats (TriG, N-Quads) support serialization of multiple named graphs,
+ * including the default graph and all named graphs in the repository.
  * 
- * @param configure DSL configuration block
+ * **Format Support:**
+ * - The method automatically discovers providers that support the requested format
+ * - If multiple providers support the format, the first available one is used
+ * - Format names are case-insensitive
+ * 
+ * **Example:**
+ * ```kotlin
+ * val repo = Rdf.memory()
+ * // ... add data to default graph and named graphs ...
+ * 
+ * // Using string format
+ * val trig = repo.serializeDataset("TRIG")
+ * val nquads = repo.serializeDataset("N-QUADS")
+ * 
+ * // Using enum format (type-safe)
+ * val trig2 = repo.serializeDataset(RdfFormat.TRIG)
+ * ```
+ * 
+ * @param format The RDF quad format (string or RdfFormat enum)
+ * @return The serialized RDF dataset as a string
+ * @throws RdfFormatException if no provider supports the format or serialization fails
+ * @throws IllegalArgumentException if the format is not a quad format
  */
-fun RdfRepository.add(configure: TripleDsl.() -> Unit) {
-    val dsl = TripleDsl().apply(configure)
-    editDefaultGraph().addTriples(dsl.triples)
-}
-
-fun RdfRepository.addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit) {
-    val dsl = TripleDsl().apply(configure)
-    editGraph(graphName).addTriples(dsl.triples)
-}
-
-fun RdfRepository.addTriple(triple: RdfTriple) {
-    editDefaultGraph().addTriple(triple)
-}
-
-fun RdfRepository.addTriples(triples: Collection<RdfTriple>) {
-    editDefaultGraph().addTriples(triples)
-}
-
-fun RdfRepository.addTriple(graphName: Iri?, triple: RdfTriple) {
-    if (graphName == null) {
-        editDefaultGraph().addTriple(triple)
-    } else {
-        editGraph(graphName).addTriple(triple)
+fun RdfRepository.serializeDataset(format: String): String {
+    val formatEnum = RdfFormat.fromStringOrThrow(format)
+    if (!RdfFormat.isQuadFormat(formatEnum)) {
+        throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use serializeGraph() for graph formats, or use TRIG or N-QUADS for datasets.")
     }
-}
-
-fun RdfRepository.removeTriple(triple: RdfTriple): Boolean {
-    return editDefaultGraph().removeTriple(triple)
-}
-
-fun RdfRepository.removeTriples(triples: Collection<RdfTriple>): Boolean {
-    return editDefaultGraph().removeTriples(triples)
-}
-
-fun RdfRepository.hasTriple(triple: RdfTriple): Boolean {
-    return defaultGraph.hasTriple(triple)
-}
-
-fun RdfRepository.getTriples(): List<RdfTriple> {
-    return defaultGraph.getTriples()
+    return serializeDataset(formatEnum)
 }
 
 /**
- * Get all triples from a specific graph or the default graph.
+ * Serializes this repository (dataset) to the specified quad format.
  * 
- * **Performance:** O(n) where n is the number of triples in the graph.
- * For large graphs, consider using SPARQL queries with filters instead.
+ * Type-safe version using [RdfFormat] enum.
  * 
- * @param graphName The name of the graph, or null for the default graph
- * @return List of all triples in the specified graph
+ * @param format The RDF quad format enum value (TRIG or N_QUADS)
+ * @return The serialized RDF dataset as a string
+ * @throws RdfFormatException if no provider supports the format or serialization fails
+ * @throws IllegalArgumentException if the format is not a quad format
  */
-fun RdfRepository.getTriples(graphName: Iri?): List<RdfTriple> =
-    if (graphName == null) defaultGraph.getTriples()
-    else getGraph(graphName).getTriples()
-
-/**
- * Check if a triple exists in a specific graph or the default graph.
- * 
- * **Performance:** O(1) for most implementations (hash-based lookup).
- * 
- * @param graphName The name of the graph, or null for the default graph
- * @param triple The triple to check
- * @return true if the triple exists, false otherwise
- */
-fun RdfRepository.hasTriple(graphName: Iri?, triple: RdfTriple): Boolean =
-    if (graphName == null) defaultGraph.hasTriple(triple)
-    else getGraph(graphName).hasTriple(triple)
-
-
-
-
-
-
-
+fun RdfRepository.serializeDataset(format: RdfFormat): String {
+    if (!RdfFormat.isQuadFormat(format)) {
+        throw IllegalArgumentException("Format '${format.formatName}' is not a quad format. Use serializeGraph() for graph formats, or use TRIG or N-QUADS for datasets.")
+    }
+    
+    val providers = RdfProviderRegistry.discoverProviders()
+    
+    // Try to find a provider that supports this format
+    for (provider in providers) {
+        if (provider.supportsFormat(format.formatName)) {
+            try {
+                return provider.serializeDataset(this, format.formatName)
+            } catch (e: UnsupportedOperationException) {
+                // Provider doesn't actually support it, try next
+                continue
+            } catch (e: RdfFormatException) {
+                // Format error, rethrow
+                throw e
+            } catch (e: Exception) {
+                // Other error, wrap and throw
+                throw RdfFormatException(
+                    "Failed to serialize dataset to ${format.formatName} using provider ${provider.id}: ${e.message}",
+                    e
+                )
+            }
+        }
+    }
+    
+    throw RdfFormatException(
+        "No provider found that supports format: ${format.formatName}. " +
+        "Available providers: ${providers.map { it.id }.joinToString()}"
+    )
+}

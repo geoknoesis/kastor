@@ -10,6 +10,14 @@ class SparqlServiceDescriptionTest {
     
     @Test
     fun `test SPARQL service description generation`() {
+        val customFunction = SparqlExtensionFunction(
+            iri = "http://example.org/customFunction",
+            name = "customFunction",
+            description = "A custom SPARQL function",
+            argumentTypes = listOf("xsd:string"),
+            returnType = "application/sparql-results+json; charset=utf-8",
+            isBuiltIn = false
+        )
         val capabilities = ProviderCapabilities(
             sparqlVersion = "1.2",
             supportsRdfStar = true,
@@ -18,11 +26,14 @@ class SparqlServiceDescriptionTest {
             supportsSubSelect = true,
             supportsFederation = true,
             supportsVersionDeclaration = true,
-            extensionFunctions = Sparql12BuiltInFunctions.functions,
+            extensionFunctions = Sparql12BuiltInFunctions.functions + customFunction,
             supportedLanguages = listOf("sparql", "sparql12"),
             supportedResultFormats = listOf(
-                "application/sparql-results+json",
+                "Application/SPARQL-Results+JSON; charset=utf-8",
                 "application/sparql-results+xml"
+            ),
+            supportedInputFormats = listOf(
+                "Application/SPARQL-Query; charset=utf-8"
             )
         )
         
@@ -37,6 +48,33 @@ class SparqlServiceDescriptionTest {
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, Iri("${SPARQL_SD.namespace}Service"), Iri("${SPARQL_SD.namespace}Service"))))
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportedSparqlVersion, string("1.2"))))
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportsRdfStar, boolean(true))))
+        assertTrue(
+            serviceDescription.hasTriple(
+                RdfTriple(
+                    serviceUri,
+                    SPARQL_SD.resultFormatProp,
+                    Iri("https://www.iana.org/assignments/media-types/application/sparql-results+json")
+                )
+            )
+        )
+        assertTrue(
+            serviceDescription.hasTriple(
+                RdfTriple(
+                    serviceUri,
+                    SPARQL_SD.inputFormatProp,
+                    Iri("https://www.iana.org/assignments/media-types/application/sparql-query")
+                )
+            )
+        )
+        assertTrue(
+            serviceDescription.hasTriple(
+                RdfTriple(
+                    Iri(customFunction.iri),
+                    SPARQL_SD.returnType,
+                    Iri("https://www.iana.org/assignments/media-types/application/sparql-results+json")
+                )
+            )
+        )
     }
     
     @Test

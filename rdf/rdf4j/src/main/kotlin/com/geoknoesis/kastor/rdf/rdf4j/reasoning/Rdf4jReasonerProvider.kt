@@ -96,8 +96,8 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     override fun isConsistent(graph: RdfGraph): Boolean {
         return try {
             val rdf4jModel = convertToRdf4jModel(graph)
-            val infModel = createRDFSInferenceModel(rdf4jModel)
             // Simple consistency check
+            createRDFSInferenceModel(rdf4jModel).size
             true
         } catch (e: Exception) {
             false
@@ -181,6 +181,7 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
         
         // Basic consistency check - RDF4J handles most consistency issues automatically
         // More sophisticated checks could be added here
+        model.size
         
         return ConsistencyResult(
             isConsistent = inconsistencies.isEmpty(),
@@ -284,11 +285,7 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 when (term) {
                     is LangString -> valueFactory.createLiteral(term.lexical, term.lang)
                     else -> {
-                        if (term.datatype != null) {
-                            valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
-                        } else {
-                            valueFactory.createLiteral(term.lexical)
-                        }
+                        valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
                     }
                 }
             }

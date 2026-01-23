@@ -96,7 +96,7 @@ class DefaultRdfHandleTest {
     }
 
     @Test
-    fun `DefaultRdfHandle validate returns NotConfigured when no context`() {
+    fun `DefaultRdfHandle validate throws when no context`() {
         val repo = Rdf.memory()
         val node = Iri("http://example.org/person")
 
@@ -105,9 +105,9 @@ class DefaultRdfHandleTest {
         }
 
         val handle = DefaultRdfHandle(node, repo.defaultGraph, known = emptySet())
-        val result = handle.validate()
-
-        assertEquals(ValidationResult.NotConfigured, result)
+        assertThrows(IllegalStateException::class.java) {
+            handle.validate()
+        }
     }
     
     @Test

@@ -8,7 +8,7 @@ Kastor uses a pluggable provider architecture that allows you to choose the best
 ┌─────────────────────────────────────────────────────────────┐
 │                    Kastor API Layer                         │
 ├─────────────────────────────────────────────────────────────┤
-│              Provider Interface (RdfApiProvider)            │
+│              Provider Interface (RdfProvider)              │
 ├─────────────────────────────────────────────────────────────┤
 │  Memory  │  Jena  │  RDF4J  │  SPARQL  │  Custom Providers │
 └─────────────────────────────────────────────────────────────┘
@@ -32,23 +32,31 @@ val repo = Rdf.memory() // Fast, no setup required
 
 ### **Production with Persistence**
 ```kotlin
-val repo = Rdf.factory {
-    jenaTdb2("./data/storage") // Apache Jena with TDB2
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data/storage"
 }
 ```
 
 ### **Enterprise Features**
 ```kotlin
-val repo = Rdf.factory {
-    rdf4jNative("./data/store") // Eclipse RDF4J Native Store
+val repo = Rdf.repository {
+    providerId = "rdf4j"
+    variantId = "native"
+    location = "./data/store"
 }
 ```
 
 ### **Remote Data Access**
 ```kotlin
-val repo = Rdf.factory {
-    sparql("https://dbpedia.org/sparql") // Remote SPARQL endpoint
-}
+val repo = RdfProviderRegistry.create(
+    RdfConfig(
+        providerId = "sparql",
+        variantId = "sparql",
+        options = mapOf("location" to "https://dbpedia.org/sparql")
+    )
+)
 ```
 
 ## 📋 Provider Features
@@ -80,49 +88,36 @@ val repo = Rdf.factory {
 
 ### **Memory Provider**
 ```kotlin
-val repo = Rdf.factory {
-    memory {
-        transactions = true
-        initialCapacity = 10000
-        indexing = true
-    }
-}
+val repo = Rdf.memory()
 ```
 
 ### **Jena Provider**
 ```kotlin
-val repo = Rdf.factory {
-    jenaTdb2 {
-        location = "./data/storage"
-        enableInference = true
-        enableValidation = true
-        compression = true
-    }
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2-inference"
+    location = "./data/storage"
 }
 ```
 
 ### **RDF4J Provider**
 ```kotlin
-val repo = Rdf.factory {
-    rdf4jNative {
-        location = "./data/store"
-        enableInference = true
-        enableValidation = true
-        indexing = true
-    }
+val repo = Rdf.repository {
+    providerId = "rdf4j"
+    variantId = "native"
+    location = "./data/store"
 }
 ```
 
 ### **SPARQL Provider**
 ```kotlin
-val repo = Rdf.factory {
-    sparql {
-        endpoint = "https://dbpedia.org/sparql"
-        timeout = Duration.ofMinutes(5)
-        authentication = BasicAuth("user", "pass")
-        headers = mapOf("X-API-Key" to "key")
-    }
-}
+val repo = RdfProviderRegistry.create(
+    RdfConfig(
+        providerId = "sparql",
+        variantId = "sparql",
+        options = mapOf("location" to "https://dbpedia.org/sparql")
+    )
+)
 ```
 
 ## 🎯 Use Case Recommendations
@@ -145,16 +140,21 @@ val repo = Rdf.factory {
 
 ### **Hybrid Approaches**
 ```kotlin
-val manager = Rdf.manager {
-    // Local development data
-    repository("dev") { memory() }
-    
-    // Production data
-    repository("prod") { jenaTdb2("./data/prod") }
-    
-    // External data
-    repository("external") { sparql("https://api.example.com/sparql") }
-}
+val repositories = mapOf(
+    "dev" to Rdf.memory(),
+    "prod" to Rdf.repository {
+        providerId = "jena"
+        variantId = "tdb2"
+        location = "./data/prod"
+    },
+    "external" to RdfProviderRegistry.create(
+        RdfConfig(
+            providerId = "sparql",
+            variantId = "sparql",
+            options = mapOf("location" to "https://api.example.com/sparql")
+        )
+    )
+)
 ```
 
 ## 🌟 RDF-star Support
@@ -207,30 +207,44 @@ val memoryRepo = Rdf.memory()
 // ... populate with data ...
 
 // Migrate to Jena
-val jenaRepo = Rdf.factory { jenaTdb2("./data/storage") }
+val jenaRepo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data/storage"
+}
 
 // Copy all data
-val triples = memoryRepo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
-jenaRepo.addTriples(triples.toList())
+val data = memoryRepo.defaultGraph.serialize(RdfFormat.TURTLE)
+val graph = Rdf.parse(data, RdfFormat.TURTLE)
+jenaRepo.addTriples(graph.getTriples())
 ```
 
 ### **Jena to RDF4J**
 ```kotlin
 // Export from Jena
-val jenaRepo = Rdf.factory { jenaTdb2("./data/jena") }
-val data = jenaRepo.export(RdfFormat.TURTLE)
+val jenaRepo = Rdf.repository {
+    providerId = "jena"
+    variantId = "tdb2"
+    location = "./data/jena"
+}
+val data = jenaRepo.defaultGraph.serialize(RdfFormat.TURTLE)
 
 // Import to RDF4J
-val rdf4jRepo = Rdf.factory { rdf4jNative("./data/rdf4j") }
-rdf4jRepo.load(data, RdfFormat.TURTLE)
+val rdf4jRepo = Rdf.repository {
+    providerId = "rdf4j"
+    variantId = "native"
+    location = "./data/rdf4j"
+}
+val graph = Rdf.parse(data, RdfFormat.TURTLE)
+rdf4jRepo.addTriples(graph.getTriples())
 ```
 
 ## 🛠️ Custom Providers
 
-Create your own provider by implementing `RdfApiProvider`:
+Create your own provider by implementing `RdfProvider`:
 
 ```kotlin
-class CustomProvider : RdfApiProvider {
+class CustomProvider : RdfProvider {
     override val id: String = "custom"
     override val name: String = "Custom Provider"
     override val version: String = "1.0.0"
@@ -244,8 +258,10 @@ class CustomProvider : RdfApiProvider {
 }
 
 // Register and use
-RdfApiRegistry.register(CustomProvider())
-val repo = Rdf.factory { custom() }
+RdfProviderRegistry.register(CustomProvider())
+val repo = RdfProviderRegistry.create(
+    RdfConfig(providerId = "custom", variantId = "default")
+)
 ```
 
 ## 📈 Performance Guidelines

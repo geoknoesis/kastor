@@ -341,8 +341,10 @@ println("OWL has ${owlTerms?.size} terms")
 ### Discovering Term Properties
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 // Check which vocabulary a term belongs to
-val term = iri("http://xmlns.com/foaf/0.1/name")
+val term = FOAF.name
 val vocab = findVocabularyForTerm(term)
 println("Term belongs to: ${vocab?.prefix}")
 

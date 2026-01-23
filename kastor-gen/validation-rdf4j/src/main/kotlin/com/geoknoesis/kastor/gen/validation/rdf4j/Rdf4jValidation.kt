@@ -197,16 +197,11 @@ class Rdf4jValidation : ValidationContext {
             valueFactory.createLiteral(term.lexical)
           }
           else -> {
-            val datatype = term.datatype
-            if (datatype == null) {
-              valueFactory.createLiteral(term.lexical)
-            } else {
-              val datatypeValue = when (datatype.value) {
-                "http://www.w3.org/2001/XMLSchema#integer" -> "http://www.w3.org/2001/XMLSchema#int"
-                else -> datatype.value
-              }
-              valueFactory.createLiteral(term.lexical, valueFactory.createIRI(datatypeValue))
+            val datatypeValue = when (term.datatype.value) {
+              "http://www.w3.org/2001/XMLSchema#integer" -> "http://www.w3.org/2001/XMLSchema#int"
+              else -> term.datatype.value
             }
+            valueFactory.createLiteral(term.lexical, valueFactory.createIRI(datatypeValue))
           }
         }
       }

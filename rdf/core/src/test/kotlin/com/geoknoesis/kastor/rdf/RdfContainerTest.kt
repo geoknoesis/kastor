@@ -23,8 +23,13 @@ class RdfContainerTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
-            person - DCTERMS.subject - bag("Technology", "AI", "RDF", "Kotlin")
+            person - FOAF.name - string("Alice")
+            person - DCTERMS.subject - bag(
+                string("Technology"),
+                string("AI"),
+                string("RDF"),
+                string("Kotlin")
+            )
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -69,7 +74,7 @@ class RdfContainerTest {
         val friend3 = Iri("http://example.org/friend3")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             person - FOAF.knows - seq(friend1, friend2, friend3)
         }
 
@@ -113,8 +118,8 @@ class RdfContainerTest {
         val email2 = "alice@work.com"
 
         repo.add {
-            person - FOAF.name - "Alice"
-            person - FOAF.mbox - alt(email1, email2)
+            person - FOAF.name - string("Alice")
+            person - FOAF.mbox - alt(string(email1), string(email2))
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -157,8 +162,13 @@ class RdfContainerTest {
         val height = 165.5
 
         repo.add {
-            person - FOAF.name - "Alice"
-            person - DCTERMS.subject - bag("Technology", friend, age, height)
+            person - FOAF.name - string("Alice")
+            person - DCTERMS.subject - bag(
+                string("Technology"),
+                friend,
+                age.toLiteral(),
+                height.toLiteral()
+            )
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -194,10 +204,13 @@ class RdfContainerTest {
         val friend2 = Iri("http://example.org/friend2")
 
         val graph = Rdf.graph {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             person - FOAF.knows - seq(friend1, friend2)
-            person - DCTERMS.subject - bag("Tech", "AI")
-            person - FOAF.mbox - alt("email1@example.com", "email2@example.com")
+            person - DCTERMS.subject - bag(string("Tech"), string("AI"))
+            person - FOAF.mbox - alt(
+                string("email1@example.com"),
+                string("email2@example.com")
+            )
         }
 
         val allTriples = graph.getTriples()
@@ -244,22 +257,22 @@ class RdfContainerTest {
         val friend2 = Iri("http://example.org/friend2")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             
             // Individual values (creates 2 separate triples)
             person - FOAF.knows - values(friend1, friend2)
             
             // RDF List (creates list structure with rdf:first, rdf:rest, rdf:nil)
-            person - DCTERMS.subject - list("Tech", "AI")
+            person - DCTERMS.subject - list(string("Tech"), string("AI"))
             
             // RDF Bag (creates bag with rdf:_1, rdf:_2)
-            person - FOAF.mbox - bag("email1@example.com", "email2@example.com")
+            person - FOAF.mbox - bag(string("email1@example.com"), string("email2@example.com"))
             
             // RDF Seq (creates seq with rdf:_1, rdf:_2)
-            person - FOAF.age - seq(30, 35)
+            person - FOAF.age - seq(30.toLiteral(), 35.toLiteral())
             
             // RDF Alt (creates alt with rdf:_1, rdf:_2)
-            person - FOAF.interest - alt("Music", "Sports")
+            person - FOAF.interest - alt(string("Music"), string("Sports"))
         }
 
         val allTriples = repo.defaultGraph.getTriples()
@@ -311,7 +324,7 @@ class RdfContainerTest {
         val person = Iri("http://example.org/person")
 
         repo.add {
-            person - FOAF.name - "Alice"
+            person - FOAF.name - string("Alice")
             person - DCTERMS.subject - bag()
             person - FOAF.knows - seq()
             person - FOAF.mbox - alt()

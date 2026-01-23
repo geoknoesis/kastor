@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.rdf
 
+import com.geoknoesis.kastor.rdf.dsl.GraphDsl
+
 /**
  * Test utilities for RDF operations.
  * These utilities simplify common testing patterns and reduce boilerplate.

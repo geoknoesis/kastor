@@ -36,8 +36,8 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     override fun createGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
     
     override fun removeGraph(name: Iri): Boolean {
-        val update = UpdateQuery("DROP GRAPH <${name.value}>")
-        update(update)
+        val updateQuery = UpdateQuery("DROP GRAPH <${name.value}>")
+        update(updateQuery)
         return true
     }
 
@@ -86,8 +86,8 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     }
     
     override fun clear(): Boolean {
-        val update = UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }")
-        update(update)
+        val updateQuery = UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }")
+        update(updateQuery)
         return true
     }
     
@@ -140,9 +140,13 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
 }
 
 class SparqlGraph(
-    private val repository: SparqlRepository,
+    private val repository: SparqlMutable,
     private val graphName: Iri? = null
-) : MutableRdfGraph {
+) : MutableRdfGraph, SourceTrackedGraph {
+    
+    override val sourceRepository: RdfRepository? 
+        get() = repository as? RdfRepository
+    override val sourceGraphName: Iri? = graphName
     
     override fun addTriple(triple: RdfTriple) {
         val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""

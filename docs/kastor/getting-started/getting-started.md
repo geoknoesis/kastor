@@ -55,6 +55,18 @@ import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 val providers = RdfProviderRegistry.discoverProviders() // e.g., [JenaProvider, Rdf4jProvider, SparqlProvider]
 ```
 
+For tests or isolation, you can supply a custom registry:
+
+```kotlin
+val registry = DefaultProviderRegistry(autoDiscover = false)
+registry.register(CustomProvider())
+
+val repo = Rdf.repository(registry) {
+    providerId = "custom"
+    variantId = "memory"
+}
+```
+
 ### Creating RDF Terms
 
 The library provides strongly typed functions for creating RDF terms, especially literals. Short aliases are available for common literal types:
@@ -89,6 +101,9 @@ Use QNames for cleaner, more readable code with prefix mappings:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
 
 val repo = Rdf.memory()
 
@@ -96,9 +111,9 @@ val repo = Rdf.memory()
 repo.add {
     // Configure prefix mappings
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-        "dcterms" to "http://purl.org/dc/terms/"
+        "foaf" to FOAF.namespace
+        "rdf" to RDF.namespace
+        "dcterms" to DCTERMS.namespace
     }
     
     val person = iri("http://example.org/person")
@@ -119,7 +134,8 @@ repo.add {
     
     // Mix QNames and full IRIs
     person - "foaf:knows" - iri("http://example.org/bob")
-    person - "http://example.org/customProp" - "value"
+    val customProp = iri("http://example.org/customProp")
+    person - customProp - "value"
 }
 ```
 
@@ -135,7 +151,7 @@ repo.add {
 - **Better IDE support**: Improved autocomplete and documentation
 - **Validation**: Constraints enforced at compile time
 
-The old generic `literal()` function is still available for backward compatibility but is deprecated.
+Use `string(...)`, `lang(...)`, `int(...)`, `decimal(...)`, or `Literal(...)` for explicit literal creation.
 
 
 

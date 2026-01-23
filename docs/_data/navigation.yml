@@ -2,6 +2,8 @@ main:
   - title: Getting Started
     url: /kastor/getting-started/
     children:
+      - title: Overview
+        url: /kastor/getting-started/
       - title: Getting Started
         url: /kastor/getting-started/getting-started.html
       - title: Installation
@@ -17,6 +19,8 @@ main:
         url: /kastor/concepts/
       - title: RDF Fundamentals
         url: /kastor/concepts/rdf-fundamentals.html
+      - title: Datasets
+        url: /kastor/concepts/datasets.html
       - title: SPARQL Fundamentals
         url: /kastor/concepts/sparql-fundamentals.html
       - title: Vocabularies
@@ -28,8 +32,12 @@ main:
   - title: How-To Guides
     url: /kastor/guides/
     children:
-      - title: Guides Overview
-        url: /kastor/guides/guides.html
+      - title: Overview
+        url: /kastor/guides/
+      - title: Use Datasets
+        url: /kastor/guides/how-to-use-datasets.html
+      - title: Create a Vocabulary
+        url: /kastor/guides/how-to-create-vocabulary.html
       - title: Parse RDF
         url: /kastor/guides/how-to-parse-rdf.html
       - title: Serialize RDF
@@ -51,14 +59,20 @@ main:
   - title: Reference
     url: /kastor/reference/
     children:
+      - title: Overview
+        url: /kastor/reference/
       - title: API Reference
         url: /kastor/api/api-reference.html
       - title: Core API
         url: /kastor/api/core-api.html
+      - title: API Design Principles
+        url: /kastor/api/api-design-principles.html
       - title: DSL Reference
         url: /kastor/reference/dsl.html
       - title: Repository Reference
         url: /kastor/reference/repository.html
+      - title: Dataset Reference
+        url: /kastor/reference/dataset.html
       - title: Types Reference
         url: /kastor/reference/types.html
 

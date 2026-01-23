@@ -13,6 +13,11 @@ The enhanced Jena implementation provides:
 - **RDF-star Support**: Embedded triples support
 - **Repository Manager Integration**: Works seamlessly with the RepositoryManager
 
+### Version alignment
+
+Kastor currently integrates with **Apache Jena 5.6.0**. If you depend on a different Jena
+version in your application, align your dependency set to avoid classpath conflicts.
+
 ## Repository Variants
 
 ### Memory Repositories
@@ -21,7 +26,7 @@ The enhanced Jena implementation provides:
 Basic in-memory Jena dataset with default configuration.
 
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "memory"
 }
@@ -31,7 +36,7 @@ val api = Rdf.factory {
 In-memory Jena dataset with RDFS inference enabled.
 
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "memory-inference"
 }
@@ -43,7 +48,7 @@ val api = Rdf.factory {
 Persistent TDB2 dataset with high-performance storage.
 
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "/data/tdb2"
@@ -54,7 +59,7 @@ val api = Rdf.factory {
 Persistent TDB2 dataset with RDFS inference enabled.
 
 ```kotlin
-val api = Rdf.factory {
+val repo = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2-inference"
     location = "/data/tdb2"
@@ -68,8 +73,6 @@ val api = Rdf.factory {
 The enhanced implementation supports full SPARQL Dataset operations:
 
 ```kotlin
-val repo = api.repository
-
 // Default graph
 val defaultGraph = repo.defaultGraph
 
@@ -94,32 +97,28 @@ Full SPARQL 1.1 support including dataset queries:
 ```kotlin
 // Query default graph
 val results = repo.select(
-    "SELECT ?s ?p ?o WHERE { ?s ?p ?o }",
-    BindingSet.from(emptyMap())
+    SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
 )
 
 // Query named graph
+val graphIri = iri("http://example.org/graph")
 val results = repo.select(
-    "SELECT ?s ?p ?o WHERE { GRAPH <http://example.org/graph> { ?s ?p ?o } }",
-    BindingSet.from(emptyMap())
+    SparqlSelectQuery("SELECT ?s ?p ?o WHERE { GRAPH ${graphIri} { ?s ?p ?o } }")
 )
 
 // Construct query
 val graph = repo.construct(
-    "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
-    BindingSet.from(emptyMap())
+    SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
 )
 
 // Ask query
 val exists = repo.ask(
-    "ASK WHERE { ?s ?p ?o }",
-    BindingSet.from(emptyMap())
+    SparqlAskQuery("ASK WHERE { ?s ?p ?o }")
 )
 
 // Update
 repo.update(
-    "INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }",
-    BindingSet.from(emptyMap())
+    UpdateQuery("INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }")
 )
 ```
 
@@ -148,29 +147,27 @@ High-performance persistent storage with TDB2:
 
 ```kotlin
 // Create persistent repository
-val api = Rdf.factory {
+val repo = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "/data/tdb2"
 }
 
 // Add data
-val graph = api.repository.defaultGraph
-graph.add(triple(subject, predicate, object))
+repo.editDefaultGraph().addTriple(triple(subject, predicate, obj))
 
 // Close and reopen
-api.close()
+repo.close()
 
-val reopenedApi = Rdf.factory {
+val reopenedRepo = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "/data/tdb2"
 }
 
 // Data persists across sessions
-val results = reopenedApi.repository.select(
-    "SELECT ?s ?p ?o WHERE { ?s ?p ?o }",
-    BindingSet.from(emptyMap())
+val results = reopenedRepo.select(
+    SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o }")
 )
 ```
 
@@ -180,41 +177,33 @@ RDFS and OWL inference capabilities:
 
 ```kotlin
 // Memory with inference
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "memory-inference"
 }
 
 // TDB2 with inference
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2-inference"
     location = "/data/tdb2"
 }
 ```
 
-### 6. Repository Manager Integration
+**Semantic note:** inference is explicit and uses Jena reasoners; it does not introduce
+hidden ontology‑model behavior. If you need OntModel APIs, use Jena directly and convert
+to a Kastor graph via the Jena Bridge.
 
-Seamless integration with the RepositoryManager:
+### 6. Multiple Repository Usage
 
 ```kotlin
-val manager = createRepositoryManager()
-
-// Create multiple Jena repositories
-manager.createRepository("users", RdfConfig(providerId = "jena", variantId = "memory"))
-manager.createRepository(
-    "products",
-    RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/products"))
-)
-manager.createRepository(
-    "external",
-    RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "/data/external"))
-)
-
-// Federated queries across Jena repositories
-val results = manager.federatedQuery(
-    "SELECT ?s ?name WHERE { ?s <http://xmlns.com/foaf/0.1/name> ?name }",
-    setOf("users", "products")
+val repositories = mapOf(
+    "users" to Rdf.repository { providerId = "jena"; variantId = "memory" },
+    "products" to Rdf.repository {
+        providerId = "jena"
+        variantId = "tdb2"
+        location = "/data/products"
+    }
 )
 ```
 
@@ -272,12 +261,12 @@ The enhanced Jena implementation supports:
 The enhanced implementation is backward compatible with the basic Jena implementation:
 
 ```kotlin
-val api = Rdf.factory {
+val api = Rdf.repository {
     providerId = "jena"
     variantId = "memory"
 }
 
-val persistentApi = Rdf.factory {
+val persistentApi = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "/data/tdb2"

@@ -262,8 +262,8 @@ class ShaclValidatorProviderExample {
             
             nameProperty - RDF.type - Iri("http://www.w3.org/ns/shacl#PropertyShape")
             nameProperty - Iri("http://www.w3.org/ns/shacl#path") - Iri("http://example.org/name")
-            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1.toLiteral()
-            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1.toLiteral()
+            nameProperty - Iri("http://www.w3.org/ns/shacl#minCount") - 1
+            nameProperty - Iri("http://www.w3.org/ns/shacl#maxCount") - 1
             nameProperty - Iri("http://www.w3.org/ns/shacl#datatype") - XSD.string
         }
     }

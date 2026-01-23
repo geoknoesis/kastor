@@ -364,16 +364,36 @@ class JenaBridgeTest {
             it.obj is Literal && (it.obj as Literal).lexical == stringLiteral.lexical && 
             (it.obj as Literal).datatype == stringLiteral.datatype 
         })
-        assertTrue(triples.any { 
-            it.obj is Literal && (it.obj as Literal).datatype.value == "http://www.w3.org/2001/XMLSchema#string" &&
+        assertTrue(triples.any {
+            it.obj is Literal && (it.obj as Literal).datatype == com.geoknoesis.kastor.rdf.vocab.XSD.integer &&
             (it.obj as Literal).lexical == "42"
         })
-        assertTrue(triples.any { 
-            it.obj is Literal && (it.obj as Literal).lexical == languageLiteral.lexical && 
-            (it.obj as Literal).datatype.value == "http://www.w3.org/2001/XMLSchema#string"
+        assertTrue(triples.any {
+            it.obj is Literal && (it.obj as Literal).lexical == languageLiteral.lexical &&
+            (it.obj as Literal).datatype == com.geoknoesis.kastor.rdf.vocab.RDF.langString
         })
         // Check that the graphs are isomorphic (blank nodes may be relabeled)
         assertTrue(convertedGraph.isIsomorphicTo(rdfGraph))
+    }
+
+    @Test
+    fun `literal round trip preserves typed and language literals`() {
+        val subject = Iri("http://example.org/subject")
+        val predicate = Iri("http://example.org/predicate")
+        val typedLiteral = TypedLiteral("42", com.geoknoesis.kastor.rdf.vocab.XSD.integer)
+        val languageLiteral = LangString("Bonjour", "fr")
+
+        val graph = Rdf.graph {
+            subject - predicate - typedLiteral
+            subject - predicate - languageLiteral
+        }
+
+        val jenaModel = JenaBridge.toJenaModel(graph)
+        val roundTrip = JenaBridge.fromJenaModel(jenaModel)
+        val triples = roundTrip.getTriples()
+
+        assertTrue(triples.any { it.obj == typedLiteral })
+        assertTrue(triples.any { it.obj == languageLiteral })
     }
 }
 

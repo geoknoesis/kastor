@@ -39,9 +39,11 @@ Resources are the "nouns" of RDF—the things you describe. In our API, they are
   * **IRI (Internationalized Resource Identifier)**: An IRI is a unique, global identifier, like a URL. It's the most common way to identify a resource. In the API, this is a `value class` for maximum performance and type safety.
 
     ```kotlin
+    import com.geoknoesis.kastor.rdf.vocab.FOAF
+
     // Creating an IRI
     val person = iri("http://example.com/person/1")
-    val predicate = iri("http://xmlns.com/foaf/0.1/name")
+    val predicate = FOAF.name
     ```
 
   * **Blank Node**: A Blank Node represents a resource without a global identifier. It's an anonymous node that is only unique within a specific context.
@@ -90,9 +92,11 @@ A triple brings the subject, predicate, and object together to form a complete s
 <!-- end list -->
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 val alice = iri("ex:alice")
-val name = iri("foaf:name")
-val knows = iri("foaf:knows")
+val name = FOAF.name
+val knows = FOAF.knows
 val bob = iri("ex:bob")
 
 // A simple statement: "Alice has the name 'Alice'."
@@ -124,12 +128,14 @@ This reads naturally: "Alice has name with Alice" - which is exactly what the RD
 ### Complete DSL Examples
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 val alice = iri("ex:alice")
-val name = iri("foaf:name")
-val age = iri("foaf:age")
-val knows = iri("foaf:knows")
+val name = FOAF.name
+val age = FOAF.age
+val knows = FOAF.knows
 val bob = iri("ex:bob")
-val email = iri("foaf:mbox")
+val email = FOAF.mbox
 
 // Simple properties
 val nameTriple = alice has name with "Alice"

@@ -149,10 +149,13 @@ Kastor RDF provides multiple syntax styles to suit your preferences:
 ```kotlin
 repo.add {
     val person = iri("http://example.org/person/john")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
-    person["http://example.org/person/name"] = "John Doe"
-    person["http://example.org/person/age"] = 25
-    person["http://example.org/person/email"] = "john@example.com"
+    person[namePred] = "John Doe"
+    person[agePred] = 25
+    person[emailPred] = "john@example.com"
 }
 ```
 
@@ -161,10 +164,13 @@ repo.add {
 ```kotlin
 repo.add {
     val person = iri("http://example.org/person/jane")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
-    person has "http://example.org/person/name" with "Jane Smith"
-    person has "http://example.org/person/age" with 28
-    person has "http://example.org/person/email" with "jane@example.com"
+    person has namePred with "Jane Smith"
+    person has agePred with 28
+    person has emailPred with "jane@example.com"
 }
 ```
 
@@ -173,10 +179,13 @@ repo.add {
 ```kotlin
 repo.add {
     val person = iri("http://example.org/person/bob")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
-    person has "http://example.org/person/name" with "Bob Wilson"
-    person has "http://example.org/person/age" with 32
-    person has "http://example.org/person/email" with "bob@example.com"
+    person has namePred with "Bob Wilson"
+    person has agePred with 32
+    person has emailPred with "bob@example.com"
 }
 ```
 
@@ -185,19 +194,25 @@ repo.add {
 ```kotlin
 repo.add {
     val person = iri("http://example.org/person/bob")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
-    person has "http://example.org/person/name" with "Bob Wilson"
-    person has "http://example.org/person/age" with 32
-    person has "http://example.org/person/email" with "bob@example.com"
+    person has namePred with "Bob Wilson"
+    person has agePred with 32
+    person has emailPred with "bob@example.com"
 }
 
 // 3. Minus operator syntax (new!)
 repo.add {
     val person = iri("http://example.org/person/charlie")
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    val emailPred = iri("http://example.org/person/email")
     
-    person - "http://example.org/person/name" - "Charlie Brown"
-    person - "http://example.org/person/age" - 25
-    person - "http://example.org/person/email" - "charlie@example.com"
+    person - namePred - "Charlie Brown"
+    person - agePred - 25
+    person - emailPred - "charlie@example.com"
     
     // Multiple values with curly braces
     person - FOAF.knows - values(friend1, friend2, friend3)
@@ -239,12 +254,16 @@ Perform multiple operations in sequence:
 ```kotlin
 repo.add {
     val person = iri("http://example.org/person/fluent")
-    person["http://example.org/person/name"] = "Fluent User"
-    person["http://example.org/person/age"] = 35
+    val namePred = iri("http://example.org/person/name")
+    val agePred = iri("http://example.org/person/age")
+    person[namePred] = "Fluent User"
+    person[agePred] = 35
 }
 
+val namePred = iri("http://example.org/person/name")
+val agePred = iri("http://example.org/person/age")
 val results = repo.select(SparqlSelectQuery(
-    "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }"
+    "SELECT ?name ?age WHERE { ?person ${namePred} ?name ; ${agePred} ?age }"
 ))
 results.forEach { binding ->
     println("${binding.getString("name")} is ${binding.getInt("age")} years old")
@@ -259,9 +278,10 @@ Monitor your application's performance:
 
 ```kotlin
 // Time query execution
+val namePred = iri("http://example.org/person/name")
 val started = System.nanoTime()
 val results = repo.select(SparqlSelectQuery("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
+    SELECT ?name WHERE { ?person ${namePred} ?name }
 """))
 val queryDurationMs = (System.nanoTime() - started) / 1_000_000
 println("Query executed in: ${queryDurationMs}ms")
@@ -277,11 +297,14 @@ val people = (1..1000).map { i ->
     iri("http://example.org/person/person$i")
 }
 
+val namePred = iri("http://example.org/person/name")
+val agePred = iri("http://example.org/person/age")
+
 // Add in a single DSL block
 repo.add {
     people.forEachIndexed { index, person ->
-        person["http://example.org/person/name"] = "Person ${index + 1}"
-        person["http://example.org/person/age"] = 20 + (index % 50)
+        person[namePred] = "Person ${index + 1}"
+        person[agePred] = 20 + (index % 50)
     }
 }
 ```
@@ -291,15 +314,18 @@ repo.add {
 Use convenient query methods:
 
 ```kotlin
+val namePred = iri("http://example.org/person/name")
+val agePred = iri("http://example.org/person/age")
+
 // Get first result directly
 val firstPerson = repo.select(SparqlSelectQuery("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name } LIMIT 1
+    SELECT ?name WHERE { ?person ${namePred} ?name } LIMIT 1
 """)).first()
 println("First person: ${firstPerson?.getString("name")}")
 
 // Get results as a map
 val nameAgeMap = repo.select(SparqlSelectQuery(
-    "SELECT ?name ?age WHERE { ?person <http://example.org/person/name> ?name ; <http://example.org/person/age> ?age }"
+    "SELECT ?name ?age WHERE { ?person ${namePred} ?name ; ${agePred} ?age }"
 )).asSequence()
     .mapNotNull { binding ->
         val name = binding.getString("name")
@@ -311,7 +337,7 @@ println("Name-Age Map: $nameAgeMap")
 
 // Get results as specific types
 val names: List<String> = repo.select(SparqlSelectQuery("""
-    SELECT ?name WHERE { ?person <http://example.org/person/name> ?name }
+    SELECT ?name WHERE { ?person ${namePred} ?name }
 """)).asSequence()
     .mapNotNull { it.getString("name") }
     .toList()
@@ -323,12 +349,15 @@ println("Names: $names")
 Ensure data consistency with transactions:
 
 ```kotlin
+val namePred = iri("http://example.org/person/name")
+val agePred = iri("http://example.org/person/age")
+
 repo.transaction {
     // All operations in this block are atomic
     add {
         val person = iri("http://example.org/person/atomic")
-        person["http://example.org/person/name"] = "Atomic User"
-        person["http://example.org/person/age"] = 40
+        person[namePred] = "Atomic User"
+        person[agePred] = 40
     }
     
     // If any operation fails, all changes are rolled back
@@ -361,7 +390,7 @@ val repo = Rdf.memoryWithInference()  // Automatic RDFS reasoning
 ### Custom Configuration
 
 ```kotlin
-val repo = Rdf.factory {
+val repo = Rdf.repository {
     providerId = "jena"
     variantId = "tdb2"
     location = "custom-data"
