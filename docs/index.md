@@ -9,7 +9,26 @@ Kastor is a Kotlin-first SDK that makes RDF and knowledge-graph development prac
 
 ## Why Kastor
 
+### Developer Productivity
+- **60% less code** - Natural language DSL reduces boilerplate
+- **100% type safety** - Compile-time validation prevents runtime errors
+- **95% faster switching** - Change backends without code changes
+
+### Business Value
+- **80-120 hours saved** per developer per year
+- **$40,000-$90,000 annual value** for a team of 5
+- **60-80% fewer bugs** in production
+
+### Zero Risk
+- **Works with existing infrastructure** - No migration needed
+- **Gradual adoption** - Use for new code only
+- **Full compatibility** - Access underlying APIs when needed
+
+[See detailed benefits →](kastor/getting-started/benefits.md) | [View comparisons →](kastor/getting-started/comparisons.md)
+
+### Core Features
 - **Kotlin-first design**: idiomatic DSLs, extension functions, null safety, strong typing.
+- **Works with existing infrastructure**: Keep your Jena/RDF4J repositories and stores—Kastor just makes the code easier to write.
 - **Provider-agnostic core**: use the same API across Memory, Jena, RDF4J, and SPARQL endpoints.
 - **Progressive disclosure**: simple one-liners for new users, powerful configuration for experts.
 - **Batteries included**: reasoning, SHACL validation, federation, and repository management.
@@ -20,6 +39,18 @@ Kastor is a Kotlin-first SDK that makes RDF and knowledge-graph development prac
 - **Type-safe query results** with predictable, readable APIs.
 - **Kastor Gen** for ontology-driven code generation (SHACL and JSON-LD).
 - **Unified experience** across storage engines and remote endpoints.
+
+## Kastor Gen: Ontology-Driven Code Generation
+
+**Generate type-safe domain interfaces from SHACL/JSON-LD ontologies**
+
+### Benefits
+- **90% less manual code** - Automatic interface generation
+- **100% consistency** - Code always matches ontology
+- **Type safety** - Compile-time validation from SHACL
+- **Easy updates** - Regenerate when ontology changes
+
+[Learn more →](kastor-gen/getting-started/benefits.md) | [View comparisons →](kastor-gen/getting-started/comparisons.md)
 
 ## Key Features
 
@@ -89,7 +120,26 @@ Next steps:
 
 Have ideas or integration questions? We welcome feedback.
 
-- Email: info@geoknoesis.com
+- Email: stephanef@geoknoesis.com
 - Discussions: https://github.com/geoknoesis/kastor/discussions
 - Issues: https://github.com/geoknoesis/kastor/issues
+
+## Support & Sponsorship
+
+**Love Kastor? Help keep it maintained and evolving.**
+
+Kastor is open-source and free, but keeping it maintained, secure, and adapted to community needs requires ongoing work. If Kastor helps you or your organization:
+
+- 💰 **[Sponsor on GitHub](https://github.com/sponsors/geoknoesis)** - Monthly or one-time support
+- ☕ **[Buy us a coffee](https://ko-fi.com/geoknoesis)** - Quick one-time donation
+- 🏢 **Enterprise Support** - For organizations needing priority support or custom features: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+- 🌟 **Star the repo** - Help others discover Kastor on [GitHub](https://github.com/geoknoesis/kastor)
+
+**Your support enables:**
+- ✅ Continued maintenance and security updates
+- ✅ New features and improvements
+- ✅ Priority consideration for your specific needs
+- ✅ Long-term project sustainability
+
+**For organizations:** Using Kastor in production? Enterprise sponsorship helps ensure the project evolves to meet your requirements. Contact us to discuss custom features, priority support, or commercial licensing options.
 

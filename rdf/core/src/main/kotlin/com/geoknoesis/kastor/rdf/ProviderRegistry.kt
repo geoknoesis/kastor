@@ -3,6 +3,11 @@ package com.geoknoesis.kastor.rdf
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
 import java.util.ServiceLoader
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 data class ProviderSelection(val provider: RdfProvider, val variantId: String)
 
@@ -64,10 +69,10 @@ class DefaultProviderRegistry(
     private val registerDefaultMemoryProvider: Boolean = true,
     private val discoveryErrorHandler: (Throwable) -> Unit = {}
 ) : ProviderRegistry {
-    private val lock = Any()
-    private val providers = mutableMapOf<String, RdfProvider>()
-    private val providersByType = mutableMapOf<String, RdfProvider>()
-    private val discoveryErrors = mutableListOf<Throwable>()
+    private val lock = ReentrantReadWriteLock()
+    private val providers = ConcurrentHashMap<String, RdfProvider>()
+    private val providersByType = ConcurrentHashMap<String, RdfProvider>()
+    private val discoveryErrors = CopyOnWriteArrayList<Throwable>()
 
     init {
         if (registerDefaultMemoryProvider) {
@@ -83,7 +88,7 @@ class DefaultProviderRegistry(
         preferredProviderId: String?,
         preferredVariantId: String?
     ): ProviderSelection? {
-        val orderedProviders = synchronized(lock) {
+        val orderedProviders = lock.read {
             buildList {
                 preferredProviderId?.let { providers[it] }?.let { add(it) }
                 providers.values.filterNot { it.id == preferredProviderId }.forEach { add(it) }
@@ -105,7 +110,7 @@ class DefaultProviderRegistry(
     }
 
     override fun register(provider: RdfProvider) {
-        synchronized(lock) {
+        lock.write {
             providers[provider.id] = provider
             provider.variants().forEach { variant ->
                 providersByType[toTypeKey(provider.id, variant.id)] = provider
@@ -126,12 +131,12 @@ class DefaultProviderRegistry(
         return selection.provider.createRepository(selection.variantId, mergedConfig)
     }
 
-    override fun discoverProviders(): List<RdfProvider> = synchronized(lock) {
+    override fun discoverProviders(): List<RdfProvider> = lock.read {
         providers.values.toList()
     }
 
     override fun getSupportedTypes(): List<String> {
-        return synchronized(lock) {
+        return lock.read {
             if (providersByType.isNotEmpty()) {
                 providersByType.keys.toList().distinct()
             } else {
@@ -142,22 +147,22 @@ class DefaultProviderRegistry(
         }
     }
 
-    override fun supports(providerId: String): Boolean = synchronized(lock) {
+    override fun supports(providerId: String): Boolean = lock.read {
         providers.containsKey(providerId)
     }
 
     override fun supportsVariant(providerId: String, variantId: String): Boolean {
-        return synchronized(lock) {
+        return lock.read {
             providersByType.containsKey(toTypeKey(providerId, variantId))
         }
     }
 
-    override fun getProvider(providerId: String): RdfProvider? = synchronized(lock) {
+    override fun getProvider(providerId: String): RdfProvider? = lock.read {
         providers[providerId]
     }
 
     override fun getProvidersByCategory(category: ProviderCategory): List<RdfProvider> {
-        return synchronized(lock) {
+        return lock.read {
             providers.values.filter { it.getProviderCategory() == category }
         }
     }
@@ -167,13 +172,13 @@ class DefaultProviderRegistry(
         serviceUri: String,
         variantId: String?
     ): RdfGraph? {
-        val provider = synchronized(lock) { providers[providerId] } ?: return null
+        val provider = lock.read { providers[providerId] } ?: return null
         val resolvedVariant = variantId ?: provider.defaultVariantId()
         return provider.generateServiceDescription(serviceUri, resolvedVariant)
     }
 
     override fun getAllServiceDescriptions(baseUri: String): Map<String, RdfGraph> {
-        val providerSnapshot = synchronized(lock) { providers.toMap() }
+        val providerSnapshot = lock.read { providers.toMap() }
         return providerSnapshot.mapValues { (_, provider) ->
             val serviceUri = "$baseUri/${provider.id}"
             provider.generateServiceDescription(serviceUri, provider.defaultVariantId()) ?: MemoryGraph(emptyList())
@@ -181,20 +186,20 @@ class DefaultProviderRegistry(
     }
 
     override fun discoverAllCapabilities(): Map<String, DetailedProviderCapabilities> {
-        val providerSnapshot = synchronized(lock) { providers.toMap() }
+        val providerSnapshot = lock.read { providers.toMap() }
         return providerSnapshot.mapValues { (_, provider) ->
             provider.getDetailedCapabilities(provider.defaultVariantId())
         }
     }
 
     override fun supportsFeature(providerId: String, feature: String, variantId: String?): Boolean {
-        val provider = synchronized(lock) { providers[providerId] } ?: return false
+        val provider = lock.read { providers[providerId] } ?: return false
         val capabilities = provider.getDetailedCapabilities(variantId ?: provider.defaultVariantId())
         return capabilities.supportedSparqlFeatures[feature] ?: false
     }
 
     override fun getSupportedFeatures(): Map<String, List<String>> {
-        val providerSnapshot = synchronized(lock) { providers.toMap() }
+        val providerSnapshot = lock.read { providers.toMap() }
         return providerSnapshot.mapValues { (_, provider) ->
             val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             capabilities.supportedSparqlFeatures.filter { it.value }.keys.toList()
@@ -202,7 +207,7 @@ class DefaultProviderRegistry(
     }
 
     override fun hasProviderWithFeature(feature: String): Boolean {
-        val providerSnapshot = synchronized(lock) { providers.values.toList() }
+        val providerSnapshot = lock.read { providers.values.toList() }
         return providerSnapshot.any { provider ->
             val capabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
             capabilities.supportedSparqlFeatures[feature] == true
@@ -210,13 +215,13 @@ class DefaultProviderRegistry(
     }
 
     override fun getProviderStatistics(): Map<ProviderCategory, Int> {
-        val categories = synchronized(lock) {
+        val categories = lock.read {
             providers.values.groupBy { it.getProviderCategory() }
         }
         return categories.mapValues { it.value.size }
     }
 
-    fun getDiscoveryErrors(): List<Throwable> = synchronized(lock) { discoveryErrors.toList() }
+    fun getDiscoveryErrors(): List<Throwable> = discoveryErrors.toList()
 
     private fun toTypeKey(providerId: String, variantId: String): String {
         return "$providerId:$variantId"
@@ -224,7 +229,7 @@ class DefaultProviderRegistry(
 
     private fun resolveSelection(config: RdfConfig): ProviderSelection? {
         if (config.providerId != null) {
-            val provider = synchronized(lock) { providers[config.providerId] } ?: return null
+            val provider = lock.read { providers[config.providerId] } ?: return null
             val resolvedVariant = config.variantId ?: provider.defaultVariantId()
             if (!provider.supportsVariant(resolvedVariant)) return null
             if (config.requirements != null &&
@@ -240,7 +245,7 @@ class DefaultProviderRegistry(
         }
 
         val defaultProviderId = DefaultRdfProvider.get()
-        val provider = synchronized(lock) { providers[defaultProviderId] } ?: return null
+        val provider = lock.read { providers[defaultProviderId] } ?: return null
         val resolvedVariant = config.variantId ?: provider.defaultVariantId()
         return ProviderSelection(provider, resolvedVariant)
     }
@@ -277,7 +282,7 @@ class DefaultProviderRegistry(
                 register(provider)
             }
         } catch (e: Exception) {
-            synchronized(lock) { discoveryErrors.add(e) }
+            discoveryErrors.add(e)
             discoveryErrorHandler(e)
         }
     }

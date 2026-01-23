@@ -76,18 +76,15 @@ println(agePred)   // Output: <http://example.org/age>
 
 ### 4. Using Prefix Declarations
 
-Prefixes make queries more readable by allowing shortened names instead of full IRIs:
+Prefixes make queries more readable by allowing shortened names (QNames) instead of full IRIs:
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.XSD
-
 val query = select("name", "age") {
-    prefix("foaf", FOAF.namespace)
-    prefix("xsd", XSD.namespace)
+    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    prefix("xsd", "http://www.w3.org/2001/XMLSchema#")
     where {
-        `var`("person") has FOAF.name with `var`("name")
-        `var`("person") has FOAF.age with `var`("age")
+        triple(`var`("person"), iri("foaf:name"), `var`("name"))
+        triple(`var`("person"), iri("foaf:age"), `var`("age"))
     }
 }
 ```
@@ -104,24 +101,54 @@ WHERE {
 }
 ```
 
-**Key Concept**: Prefixes make queries shorter and more readable. You can also use common prefixes with `addCommonPrefixes()`.
+**Key Concept**: Prefixes make queries shorter and more readable. When you declare a prefix with `prefix("foaf", "http://xmlns.com/foaf/0.1/")`, you can then use QNames like `iri("foaf:name")` in your query, which will be expanded to the full IRI.
 
-### 4.1. Common Prefixes
+**Alternative: Using Vocabulary Constants**
 
-Kastor provides built-in support for common vocabularies:
+You can also use vocabulary constants directly (like `FOAF.name`) without declaring prefixes, as the vocabulary objects already contain the full IRIs:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.RDF
 
-val query = select("name", "type") {
-    addCommonPrefixes("foaf", "rdf", "rdfs")  // Add multiple common prefixes
+val query = select("name", "age") {
     where {
-        `var`("person") has FOAF.name with `var`("name")
-        `var`("person") has RDF.type with `var`("type")
+        triple(`var`("person"), FOAF.name, `var`("name"))
+        triple(`var`("person"), FOAF.age, `var`("age"))
     }
 }
 ```
+
+This approach is type-safe and doesn't require prefix declarations, but the generated SPARQL will use full IRIs unless you also declare the prefix. You can combine both approaches:
+
+```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
+val query = select("name", "age") {
+    prefix("foaf", FOAF.namespace)  // Declare prefix for readable output
+    where {
+        triple(`var`("person"), FOAF.name, `var`("name"))  // Use vocabulary constant
+        triple(`var`("person"), FOAF.age, `var`("age"))
+    }
+}
+```
+
+This will generate SPARQL with the `foaf:` prefix, making it more readable while still using type-safe vocabulary constants in your Kotlin code.
+
+### 4.1. Common Prefixes
+
+Kastor provides built-in support for common vocabularies. You can use `addCommonPrefixes()` to add multiple standard prefixes at once:
+
+```kotlin
+val query = select("name", "type") {
+    addCommonPrefixes("foaf", "rdf", "rdfs")  // Add multiple common prefixes
+    where {
+        triple(`var`("person"), iri("foaf:name"), `var`("name"))
+        triple(`var`("person"), iri("rdf:type"), `var`("type"))
+    }
+}
+```
+
+**Note**: When using `addCommonPrefixes()`, you still need to use QNames (like `iri("foaf:name")`) in your query. If you prefer to use vocabulary constants (like `FOAF.name`), declare the prefix explicitly with `prefix("foaf", FOAF.namespace)` instead.
 
 **Available Common Prefixes**:
 - `foaf`: Friend of a Friend vocabulary
@@ -143,13 +170,13 @@ val query = select("name", "type") {
 Let's write our first query to find people and their names:
 
 ```kotlin
-val query = select(SparqlSelectQuery("name"))) {
+val query = select("name") {
     where {
-        personVar has namePred with nameVar
+        triple(`var`("person"), namePred, `var`("name"))
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **What this does**:
@@ -174,12 +201,12 @@ Let's find both names and ages:
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **Generated SPARQL**:
@@ -202,13 +229,13 @@ Now let's find only people over 18:
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
-        filter(ageVar gt 18)
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
+        filter(`var`("age") gt 18)
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **Generated SPARQL**:
@@ -230,15 +257,15 @@ Let's add more conditions:
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
-        filter(ageVar gt 18)
-        filter(ageVar lte 65)
-        filter(nameVar eq "John")
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
+        filter(`var`("age") gt 18)
+        filter(`var`("age") lte 65)
+        filter(`var`("name") eq "John")
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **Generated SPARQL**:
@@ -266,13 +293,13 @@ val friendPred = iri("http://example.org/friend")
 
 val query = select("name", "friendName") {
     where {
-        personVar has namePred with nameVar
-        personVar has friendPred with `var`("friend")
-        `var`("friend") has namePred with `var`("friendName")
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), friendPred, `var`("friend"))
+        triple(`var`("friend"), namePred, `var`("friendName"))
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **Generated SPARQL**:
@@ -296,9 +323,9 @@ val emailPred = iri("http://example.org/email")
 
 val query = select("name", "email") {
     where {
-        personVar has namePred with nameVar
+        triple(`var`("person"), namePred, `var`("name"))
         optional {
-            personVar has emailPred with `var`("email")
+            triple(`var`("person"), emailPred, `var`("email"))
         }
     }
 }
@@ -359,11 +386,11 @@ Let's create age groups based on age:
 ```kotlin
 val query = select("name", "age", "ageGroup") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
         bind(`var`("ageGroup"), 
-            if_(ageVar gt 65, string("senior"), 
-                if_(ageVar gt 18, string("adult"), string("minor"))))
+            if_(`var`("age") gt 65, string("senior"), 
+                if_(`var`("age") gt 18, string("adult"), string("minor"))))
     }
 }
 
@@ -393,12 +420,12 @@ val phonePred = iri("http://example.org/phone")
 
 val query = select("name", "contact") {
     where {
-        personVar has namePred with nameVar
+        triple(`var`("person"), namePred, `var`("name"))
         union {
-            personVar has emailPred with `var`("contact")
+            triple(`var`("person"), emailPred, `var`("contact"))
         }
         union {
-            personVar has phonePred with `var`("contact")
+            triple(`var`("person"), phonePred, `var`("contact"))
         }
     }
 }
@@ -430,11 +457,11 @@ Let's find people who are NOT marked as deleted:
 ```kotlin
 val deletedPred = iri("http://example.org/deleted")
 
-val query = select(SparqlSelectQuery("name"))) {
+val query = select("name") {
     where {
-        personVar has namePred with nameVar
+        triple(`var`("person"), namePred, `var`("name"))
         minus {
-            personVar has deletedPred with string("true")
+            triple(`var`("person"), deletedPred, string("true"))
         }
     }
 }
@@ -466,8 +493,8 @@ val friendPred = iri("http://example.org/friend")
 
 val query = select("name", "friendOfFriend") {
     where {
-        personVar has namePred with nameVar
-        personVar has path(friendPred).oneOrMore() with `var`("friendOfFriend")
+        triple(`var`("person"), namePred, `var`("name"))
+        propertyPath(`var`("person"), path(friendPred).oneOrMore(), `var`("friendOfFriend"))
     }
 }
 
@@ -494,8 +521,8 @@ val colleaguePred = iri("http://example.org/colleague")
 
 val query = select("name", "contact") {
     where {
-        personVar has namePred with nameVar
-        personVar has path(friendPred).alternative(path(colleaguePred)) with `var`("contact")
+        triple(`var`("person"), namePred, `var`("name"))
+        propertyPath(`var`("person"), path(friendPred).alternative(path(colleaguePred)), `var`("contact"))
     }
 }
 
@@ -554,10 +581,10 @@ Let's find the oldest people, limited to 10 results:
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
     }
-    orderBy(ageVar, OrderDirection.DESC)
+    orderBy(`var`("age"), OrderDirection.DESC)
     limit(10)
 }
 
@@ -584,10 +611,10 @@ Let's add pagination to get results 11-20:
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
     }
-    orderBy(ageVar, OrderDirection.DESC)
+    orderBy(`var`("age"), OrderDirection.DESC)
     limit(10)
     offset(10)
 }
@@ -619,17 +646,17 @@ Let's create a complex query that demonstrates multiple features:
 val query = select("name", "email", "age", "graph") {
     where {
         graph(`var`("graph")) {
-            personVar has namePred with nameVar
-            personVar has agePred with ageVar
+            triple(`var`("person"), namePred, `var`("name"))
+            triple(`var`("person"), agePred, `var`("age"))
             optional {
-                personVar has emailPred with `var`("email")
+                triple(`var`("person"), emailPred, `var`("email"))
                 filter(`var`("email") ne string(""))
             }
         }
-        values(nameVar, string("John"), string("Jane"))
-        filter(ageVar gt 18)
+        values(`var`("name"), string("John"), string("Jane"))
+        filter(`var`("age") gt 18)
     }
-    orderBy(ageVar, OrderDirection.DESC)
+    orderBy(`var`("age"), OrderDirection.DESC)
     limit(10)
 }
 
@@ -679,17 +706,17 @@ val fn = `var`("fn")
 val query = select("name", "age", "email") {
     where {
         // Basic person information
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), agePred, `var`("age"))
         
         // Optional contact information
         optional {
-            personVar has emailPred with `var`("email")
+            triple(`var`("person"), emailPred, `var`("email"))
         }
         
         // Filters
-        filter(ageVar gt 18)
-        filter(nameVar ne string(""))
+        filter(`var`("age") gt 18)
+        filter(`var`("name") ne string(""))
     }
 }
 ```
@@ -714,16 +741,16 @@ val query = select("name", "age") {
     addCommonPrefixes("foaf", "rdf")
     prefix("ex", "http://example.org/")
     where {
-        `var`("person") has FOAF.name with `var`("name")
-        `var`("person") has iri("ex:age") with `var`("age")
+        triple(`var`("person"), FOAF.name, `var`("name"))
+        triple(`var`("person"), iri("ex:age"), `var`("age"))
     }
 }
 
 // Avoid - without prefixes
 val query = select("name", "age") {
     where {
-        `var`("person") has FOAF.name with `var`("name")
-        `var`("person") has iri("http://example.org/age") with `var`("age")
+        triple(`var`("person"), FOAF.name, `var`("name"))
+        triple(`var`("person"), iri("http://example.org/age"), `var`("age"))
     }
 }
 ```
@@ -736,10 +763,10 @@ val query = select("name", "age") {
 // Find people and their friends' friends
 val query = select("name", "friendOfFriend") {
     where {
-        personVar has namePred with nameVar
-        personVar has friendPred with `var`("friend")
-        `var`("friend") has friendPred with `var`("friendOfFriend")
-        `var`("friendOfFriend") has namePred with `var`("friendOfFriendName")
+        triple(`var`("person"), namePred, `var`("name"))
+        triple(`var`("person"), friendPred, `var`("friend"))
+        triple(`var`("friend"), friendPred, `var`("friendOfFriend"))
+        triple(`var`("friendOfFriend"), namePred, `var`("friendOfFriendName"))
     }
 }
 ```
@@ -750,10 +777,10 @@ val query = select("name", "friendOfFriend") {
 // Find average age by age group
 val query = select("ageGroup", "avgAge") {
     where {
-        personVar has agePred with ageVar
+        triple(`var`("person"), agePred, `var`("age"))
         bind(`var`("ageGroup"), 
-            if_(ageVar gt 65, string("senior"), 
-                if_(ageVar gt 18, string("adult"), string("minor"))))
+            if_(`var`("age") gt 65, string("senior"), 
+                if_(`var`("age") gt 18, string("adult"), string("minor"))))
     }
     groupBy(`var`("ageGroup"))
 }
@@ -765,13 +792,13 @@ val query = select("ageGroup", "avgAge") {
 // Find people with different contact methods
 val query = select("name", "contactType", "contactValue") {
     where {
-        personVar has namePred with nameVar
+        triple(`var`("person"), namePred, `var`("name"))
         union {
-            personVar has emailPred with `var`("contactValue")
+            triple(`var`("person"), emailPred, `var`("contactValue"))
             bind(`var`("contactType"), string("email"))
         }
         union {
-            personVar has phonePred with `var`("contactValue")
+            triple(`var`("person"), phonePred, `var`("contactValue"))
             bind(`var`("contactType"), string("phone"))
         }
     }

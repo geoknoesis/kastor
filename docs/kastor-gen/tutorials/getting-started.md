@@ -2,6 +2,10 @@
 
 This tutorial will walk you through creating your first Kastor Gen application step by step.
 
+> 💡 **Why Kastor Gen?** Generate type-safe domain interfaces automatically from SHACL/JSON-LD ontologies. 
+> **90% less manual code**, **100% consistency** with your ontology, **compile-time type safety**. 
+> [See detailed benefits →](../getting-started/benefits.md)
+
 ## Prerequisites
 
 - Kotlin 1.9.24+

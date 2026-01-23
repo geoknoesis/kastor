@@ -185,17 +185,23 @@ Kastor Framework
 - [Stack Overflow](https://stackoverflow.com/questions/tagged/kastor) - Technical questions
 - **Direct Contact**: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 
-### **Support This Project**
-Kastor is open-source infrastructure for RDF in Kotlin. Keeping it correct, secure, and well-maintained takes ongoing work.
+### **Support & Sponsorship**
 
-If Kastor helps you or your organization, consider supporting its long-term sustainability through sponsorship, contributions, or advocacy. Your support funds maintenance, security, performance improvements, and documentation.
+**Kastor is open-source and free to use, but maintaining and evolving it requires ongoing effort.**
 
-You can help by:
+If Kastor is valuable to you or your organization, your financial support helps ensure:
+- ✅ **Continued maintenance** - Bug fixes, security updates, and compatibility with new Kotlin/Jena/RDF4J versions
+- ✅ **Feature development** - New capabilities and improvements based on community needs
+- ✅ **Custom adaptations** - Priority consideration for features that align with your specific requirements
+- ✅ **Long-term sustainability** - Keeping the project active and well-maintained for the community
 
-- 🌟 **Star the repository** on [GitHub](https://github.com/geoknoesis/kastor)
-- 💰 **Sponsor the project** on [GitHub Sponsors](https://github.com/sponsors/geoknoesis)
-- ☕ **Buy us a coffee** via [Ko-fi](https://ko-fi.com/geoknoesis)
-- 🏢 **Enterprise support** - Contact us for commercial licensing and support options
+**Ways to support:**
+- 💰 **[GitHub Sponsors](https://github.com/sponsors/geoknoesis)** - Monthly or one-time sponsorship
+- ☕ **[Ko-fi](https://ko-fi.com/geoknoesis)** - One-time donations
+- 🏢 **Enterprise Support** - For organizations needing priority support, custom features, or commercial licensing: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
+- 🌟 **Star the repository** - Help others discover Kastor on [GitHub](https://github.com/geoknoesis/kastor)
+
+**For organizations:** If you're using Kastor in production or need specific features, consider enterprise sponsorship. This helps prioritize your needs and ensures the project continues to evolve in ways that benefit your use case.
 
 ### **Contributing**
 - [GitHub Repository](https://github.com/geoknoesis/kastor) - Source code and issues
