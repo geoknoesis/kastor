@@ -4,7 +4,10 @@
 
 The Kastor RDF API provides a **vocabulary-agnostic** core API with multiple syntax options for creating RDF triples. The core API makes **no assumptions** about specific vocabularies, allowing you to work with any RDF vocabulary. Optional vocabulary extensions provide domain-specific compact syntax when needed.
 
-> **Note**: For creating SHACL shapes graphs, see the [SHACL DSL Guide](shacl-dsl-guide.md) which provides a specialized DSL for validation constraints.
+> **Note**: For creating ontologies and vocabularies, see the specialized DSL guides:
+> - [RDFS DSL Guide](rdfs-dsl-guide.md) - For RDF Schema vocabulary creation
+> - [OWL DSL Guide](owl-dsl-guide.md) - For OWL 2 ontology creation
+> - [SHACL DSL Guide](shacl-dsl-guide.md) - For SHACL shapes and validation constraints
 
 ## 🎯 Core Design Principle: Vocabulary Agnostic
 

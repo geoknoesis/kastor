@@ -107,6 +107,8 @@ The documentation is organized into four distinct pillars:
 
 ### **Core Features**
 - **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
+- **[RDFS DSL Guide](api/rdfs-dsl-guide.md)** - Type-safe RDF Schema vocabulary creation
+- **[OWL DSL Guide](api/owl-dsl-guide.md)** - Type-safe OWL 2 ontology creation
 - **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation (SHACL 1.2 Core & SPARQL Extensions)
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
 - **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints (SHACL 1.2 support)

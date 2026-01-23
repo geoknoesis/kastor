@@ -71,6 +71,10 @@ main:
         url: /kastor/api/api-design-principles.html
       - title: Compact DSL Guide
         url: /kastor/api/compact-dsl-guide.html
+      - title: RDFS DSL Guide
+        url: /kastor/api/rdfs-dsl-guide.html
+      - title: OWL DSL Guide
+        url: /kastor/api/owl-dsl-guide.html
       - title: SHACL DSL Guide
         url: /kastor/api/shacl-dsl-guide.html
       - title: DSL Reference
