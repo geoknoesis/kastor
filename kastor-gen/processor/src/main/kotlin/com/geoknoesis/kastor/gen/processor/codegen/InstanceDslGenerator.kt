@@ -243,13 +243,12 @@ internal class InstanceDslGenerator(
                 .build()
         )
         
-        val listType = KotlinPoetUtils.mutableListOf(
-            ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource")
-        )
+        val rdfResourceType = ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource")
+        val listType = KotlinPoetUtils.mutableListOf(rdfResourceType)
         classBuilder.addProperty(
             PropertySpec.builder("instances", listType)
                 .addModifiers(PRIVATE)
-                .initializer("mutableListOf<%T>()", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
+                .initializer("mutableListOf<%T>()", rdfResourceType)
                 .build()
         )
         
@@ -268,9 +267,7 @@ internal class InstanceDslGenerator(
         )
         
         // Add instances method
-        val returnListType = KotlinPoetUtils.listOf(
-            ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource")
-        )
+        val returnListType = KotlinPoetUtils.listOf(rdfResourceType)
         classBuilder.addFunction(
             FunSpec.builder("instances")
                 .addKdoc("Get all created instances.")
