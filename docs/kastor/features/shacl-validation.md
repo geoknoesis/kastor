@@ -41,6 +41,25 @@ person.asRdf().validateOrThrow()
 Use the `rdf/shacl-validation` module when you want to validate graphs directly (without materialization):
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
+
+// Create shapes using the SHACL DSL (recommended)
+val shapesGraph = shacl {
+    nodeShape("http://example.org/PersonShape") {
+        targetClass(FOAF.Person)
+        property(FOAF.name) {
+            minCount = 1
+        }
+    }
+}
+
+// Or create shapes manually
+val shapesGraph = Rdf.graph {
+    // ... manual RDF triples
+}
+
+// Validate
 val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
 val report = validator.validate(dataGraph, shapesGraph)
 
@@ -48,6 +67,8 @@ if (!report.isValid) {
     report.violations.forEach { println(it.message) }
 }
 ```
+
+> **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples.
 
 ## Notes
 

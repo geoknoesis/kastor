@@ -42,6 +42,8 @@ main:
         url: /kastor/guides/how-to-parse-rdf.html
       - title: Serialize RDF
         url: /kastor/guides/how-to-serialize-rdf.html
+      - title: Create SHACL Shapes
+        url: /kastor/guides/how-to-create-shacl-shapes.html
       - title: Validate with SHACL
         url: /kastor/guides/how-to-validate-shacl.html
       - title: Perform Reasoning
@@ -67,6 +69,10 @@ main:
         url: /kastor/api/core-api.html
       - title: API Design Principles
         url: /kastor/api/api-design-principles.html
+      - title: Compact DSL Guide
+        url: /kastor/api/compact-dsl-guide.html
+      - title: SHACL DSL Guide
+        url: /kastor/api/shacl-dsl-guide.html
       - title: DSL Reference
         url: /kastor/reference/dsl.html
       - title: Repository Reference

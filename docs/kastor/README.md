@@ -105,6 +105,7 @@ The documentation is organized into four distinct pillars:
 
 ### **Core Features**
 - **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
+- **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
 - **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints
 - **[RDF-star Support](api/compact-dsl-guide.md#rdf-star-support)** - Metadata about statements

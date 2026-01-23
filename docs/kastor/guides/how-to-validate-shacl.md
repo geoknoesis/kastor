@@ -32,6 +32,31 @@ val dataGraph = Rdf.graph {
 
 ## Step 2: Create a shapes graph
 
+You can create shapes graphs using either the **SHACL DSL** (recommended) or manual RDF triples.
+
+### Using SHACL DSL (Recommended)
+
+```kotlin
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
+val shapesGraph = shacl {
+    nodeShape("http://example.org/shapes/PersonShape") {
+        targetClass(FOAF.Person)
+        
+        property(FOAF.age) {
+            minCount = 1
+            datatype = XSD.integer
+        }
+    }
+}
+```
+
+The SHACL DSL is more readable and type-safe. See the [SHACL DSL Guide](../api/shacl-dsl-guide.md) for complete documentation.
+
+### Using Manual RDF (Alternative)
+
 ```kotlin
 import com.geoknoesis.kastor.rdf.bnode
 import com.geoknoesis.kastor.rdf.int
@@ -76,4 +101,5 @@ Property 'http://xmlns.com/foaf/0.1/age' has 0 values, but minimum is 1
 
 ## Notes
 - The memory validator supports basic SHACL Core constraints such as `sh:minCount`, `sh:maxCount`, `sh:datatype`, and `sh:class`.
+- For creating shapes graphs, prefer the [SHACL DSL](../api/shacl-dsl-guide.md) over manual RDF for better readability and type safety.
 

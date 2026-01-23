@@ -76,6 +76,66 @@ object SHACL : Vocabulary {
     val sourceConstraintComponent: Iri by lazy { term("sourceConstraintComponent") }
     val sourceShape: Iri by lazy { term("sourceShape") }
     val value: Iri by lazy { term("value") }
+    
+    // Additional constraint properties
+    val minLength: Iri by lazy { term("minLength") }
+    val maxLength: Iri by lazy { term("maxLength") }
+    val minInclusive: Iri by lazy { term("minInclusive") }
+    val maxInclusive: Iri by lazy { term("maxInclusive") }
+    val minExclusive: Iri by lazy { term("minExclusive") }
+    val maxExclusive: Iri by lazy { term("maxExclusive") }
+    val totalDigits: Iri by lazy { term("totalDigits") }
+    val fractionDigits: Iri by lazy { term("fractionDigits") }
+    val `class`: Iri by lazy { term("class") }
+    val nodeKind: Iri by lazy { term("nodeKind") }
+    val name: Iri by lazy { term("name") }
+    val description: Iri by lazy { term("description") }
+    val order: Iri by lazy { term("order") }
+    val group: Iri by lazy { term("group") }
+    
+    // Path properties
+    val alternativePath: Iri by lazy { term("alternativePath") }
+    val sequencePath: Iri by lazy { term("sequencePath") }
+    val inversePath: Iri by lazy { term("inversePath") }
+    val zeroOrMorePath: Iri by lazy { term("zeroOrMorePath") }
+    val oneOrMorePath: Iri by lazy { term("oneOrMorePath") }
+    val zeroOrOnePath: Iri by lazy { term("zeroOrOnePath") }
+    
+    // Node kind values
+    val IRI: Iri by lazy { term("IRI") }
+    val BlankNode: Iri by lazy { term("BlankNode") }
+    val Literal: Iri by lazy { term("Literal") }
+    val BlankNodeOrIRI: Iri by lazy { term("BlankNodeOrIRI") }
+    val BlankNodeOrLiteral: Iri by lazy { term("BlankNodeOrLiteral") }
+    val IRIOrLiteral: Iri by lazy { term("IRIOrLiteral") }
+    
+    // Severity values
+    val Violation: Iri by lazy { term("Violation") }
+    val Warning: Iri by lazy { term("Warning") }
+    val Info: Iri by lazy { term("Info") }
+    
+    // SHACL 1.2 features
+    val targetWhere: Iri by lazy { term("targetWhere") }
+    @get:JvmName("shapeProperty")
+    val shape: Iri by lazy { term("shape") }
+    val singleLine: Iri by lazy { term("singleLine") }
+    val reifierShape: Iri by lazy { term("reifierShape") }
+    val reificationRequired: Iri by lazy { term("reificationRequired") }
+    val conformanceDisallows: Iri by lazy { term("conformanceDisallows") }
+    
+    // SHACL 1.2 SPARQL Extensions
+    val sparql: Iri by lazy { term("sparql") }
+    val select: Iri by lazy { term("select") }
+    val ask: Iri by lazy { term("ask") }
+    val prefixes: Iri by lazy { term("prefixes") }
+    @get:JvmName("parameterProperty")
+    val parameter: Iri by lazy { term("parameter") }
+    val labelTemplate: Iri by lazy { term("labelTemplate") }
+    val SelectExpression: Iri by lazy { term("SelectExpression") }
+    val SPARQLExprExpression: Iri by lazy { term("SPARQLExprExpression") }
+    @get:JvmName("selectExpressionProperty")
+    val selectExpression: Iri by lazy { term("selectExpression") }
+    val exprExpression: Iri by lazy { term("exprExpression") }
 }
 
 

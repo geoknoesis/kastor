@@ -1,8 +1,10 @@
 # Compact DSL Guide - Vocabulary Agnostic
 
-## Overview
+{% include version-banner.md %}
 
 The Kastor RDF API provides a **vocabulary-agnostic** core API with multiple syntax options for creating RDF triples. The core API makes **no assumptions** about specific vocabularies, allowing you to work with any RDF vocabulary. Optional vocabulary extensions provide domain-specific compact syntax when needed.
+
+> **Note**: For creating SHACL shapes graphs, see the [SHACL DSL Guide](shacl-dsl-guide.md) which provides a specialized DSL for validation constraints.
 
 ## 🎯 Core Design Principle: Vocabulary Agnostic
 

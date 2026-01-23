@@ -166,6 +166,27 @@ object Rdf {
         return dsl.build()
     }
     
+    /**
+     * Create a SHACL shapes graph using the DSL.
+     * 
+     * **Example:**
+     * ```kotlin
+     * val shapesGraph = Rdf.shacl {
+     *     nodeShape("PersonShape") {
+     *         targetClass(FOAF.Person)
+     *         property(FOAF.name) {
+     *             minCount = 1
+     *             datatype = XSD.string
+     *         }
+     *     }
+     * }
+     * ```
+     */
+    fun shacl(configure: com.geoknoesis.kastor.rdf.dsl.ShaclDsl.() -> Unit): MutableRdfGraph {
+        val dsl = com.geoknoesis.kastor.rdf.dsl.ShaclDsl().apply(configure)
+        return dsl.build()
+    }
+    
     // === PARSING FACTORY METHODS ===
     
     /**
