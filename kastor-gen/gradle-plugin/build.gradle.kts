@@ -1,5 +1,5 @@
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "1.9.24"
+    id("org.jetbrains.kotlin.jvm") version "2.1.0"
     id("java-gradle-plugin")
     id("maven-publish")
 }
@@ -14,10 +14,13 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
 
     // KSP
-    implementation("com.google.devtools.ksp:symbol-processing-api:1.9.10-1.0.13")
+    implementation("com.google.devtools.ksp:symbol-processing-api:2.1.0-1.0.29")
+    
+    // KotlinPoet (transitive from processor, but needed for FileSpec)
+    implementation("com.squareup:kotlinpoet:2.2.0")
 
     // Testing
-    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.24")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
     testImplementation("org.gradle:gradle-tooling-api:8.0")
     testImplementation("org.gradle:gradle-test-kit:8.0")

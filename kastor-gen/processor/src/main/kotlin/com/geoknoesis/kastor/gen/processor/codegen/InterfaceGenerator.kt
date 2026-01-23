@@ -1,16 +1,22 @@
 package com.geoknoesis.kastor.gen.processor.codegen
 
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
+import com.geoknoesis.kastor.gen.processor.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.utils.KotlinPoetUtils
+import com.geoknoesis.kastor.gen.processor.utils.NamingUtils
+import com.geoknoesis.kastor.gen.processor.utils.TypeMapper
 import com.google.devtools.ksp.processing.KSPLogger
+import com.squareup.kotlinpoet.*
+import com.squareup.kotlinpoet.KModifier.*
 
 /**
- * Generator for Kotlin domain interfaces from SHACL shapes.
+ * Generator for Kotlin domain interfaces from SHACL shapes using KotlinPoet.
  * Creates pure domain interfaces with no RDF dependencies.
  */
-class InterfaceGenerator(
+internal class InterfaceGenerator(
     private val logger: KSPLogger,
     private val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA
 ) {
@@ -20,15 +26,15 @@ class InterfaceGenerator(
      * 
      * @param ontologyModel The combined SHACL + JSON-LD model
      * @param packageName The target package name
-     * @return Map of interface names to generated code
+     * @return Map of interface names to generated FileSpec
      */
-    fun generateInterfaces(ontologyModel: OntologyModel, packageName: String): Map<String, String> {
-        val interfaces = mutableMapOf<String, String>()
+    fun generateInterfaces(ontologyModel: OntologyModel, packageName: String): Map<String, FileSpec> {
+        val interfaces = mutableMapOf<String, FileSpec>()
         
         ontologyModel.shapes.forEach { shape ->
-            val interfaceName = extractInterfaceName(shape.targetClass)
-            val interfaceCode = generateInterface(shape, ontologyModel.context, packageName)
-            interfaces[interfaceName] = interfaceCode
+            val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+            val fileSpec = generateInterface(shape, ontologyModel.context, packageName)
+            interfaces[interfaceName] = fileSpec
             
             logger.info("Generated interface: $interfaceName")
         }
@@ -36,119 +42,109 @@ class InterfaceGenerator(
         return interfaces
     }
 
-    private fun generateInterface(shape: ShaclShape, context: com.geoknoesis.kastor.gen.processor.model.JsonLdContext, packageName: String): String {
-        val interfaceName = extractInterfaceName(shape.targetClass)
+    private fun generateInterface(
+        shape: ShaclShape,
+        context: JsonLdContext,
+        packageName: String
+    ): FileSpec {
+        val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
         
-        return buildString {
-            appendLine("// GENERATED FILE - DO NOT EDIT")
-            appendLine("// Generated from SHACL shape: ${shape.shapeIri}")
-            appendLine("package $packageName")
-            appendLine()
-            appendLine("import com.geoknoesis.kastor.gen.annotations.RdfClass")
-            appendLine("import com.geoknoesis.kastor.gen.annotations.RdfProperty")
-            if (validationAnnotations != ValidationAnnotations.NONE) {
-                appendLine("import ${validationPackage()}.constraints.*")
-            }
-            appendLine()
-            
-            // Interface declaration with RdfClass annotation
-            appendLine("/**")
-            appendLine(" * Domain interface for ${shape.targetClass}")
-            appendLine(" * Pure domain interface with no RDF dependencies.")
-            appendLine(" * Generated from SHACL shape: ${shape.shapeIri}")
-            appendLine(" */")
-            appendLine("@RdfClass(iri = \"${shape.targetClass}\")")
-            appendLine("interface $interfaceName {")
-            appendLine()
-            
-            // Generate properties
-            shape.properties.forEach { property ->
-                appendLine(generateProperty(property, context))
-                appendLine()
-            }
-            
-            appendLine("}")
+        val fileBuilder = FileSpec.builder(packageName, interfaceName)
+            .addFileComment("GENERATED FILE - DO NOT EDIT")
+            .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
+        
+        // Add imports
+        fileBuilder.addImport("com.geoknoesis.kastor.gen.annotations", "RdfClass", "RdfProperty")
+        if (validationAnnotations != ValidationAnnotations.NONE) {
+            fileBuilder.addImport("${validationPackage()}.constraints", "NotNull", "NotEmpty", "Size", "Min", "Max", "Pattern", "NotBlank")
         }
+        
+        // Build interface
+        val interfaceBuilder = TypeSpec.interfaceBuilder(interfaceName)
+            .addKdoc(
+                "Domain interface for %L\nPure domain interface with no RDF dependencies.\nGenerated from SHACL shape: %L",
+                shape.targetClass, shape.shapeIri
+            )
+            .addAnnotation(
+                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "RdfClass"))
+                    .addMember("iri = %S", shape.targetClass)
+                    .build()
+            )
+        
+        // Generate properties
+        shape.properties.forEach { property ->
+            interfaceBuilder.addProperty(generateProperty(property, context))
+        }
+        
+        fileBuilder.addType(interfaceBuilder.build())
+        return fileBuilder.build()
     }
 
-    private fun generateProperty(property: ShaclProperty, context: com.geoknoesis.kastor.gen.processor.model.JsonLdContext): String {
-        val kotlinType = determineKotlinType(property, context)
-        val propertyName = toValidKotlinIdentifier(property.name)
+    private fun generateProperty(
+        property: ShaclProperty,
+        @Suppress("UNUSED_PARAMETER") context: JsonLdContext
+    ): PropertySpec {
+        val kotlinType = TypeMapper.toKotlinType(property, context)
+        val propertyName = NamingUtils.toValidKotlinIdentifier(property.name)
         
-        return buildString {
-            appendLine("    /**")
-            appendLine("     * ${property.description}")
-            appendLine("     * Path: ${property.path}")
-            if (property.minCount != null) appendLine("     * Min count: ${property.minCount}")
-            if (property.maxCount != null) appendLine("     * Max count: ${property.maxCount}")
-            appendLine("     */")
-            appendLine("    @get:RdfProperty(iri = \"${property.path}\")")
-            validationAnnotationsForProperty(property).forEach { annotation ->
-                appendLine("    $annotation")
+        val kdoc = buildString {
+            append(property.description)
+            append("\nPath: ${property.path}")
+            if (property.minCount != null) {
+                append("\nMin count: ${property.minCount}")
             }
-            appendLine("    val $propertyName: $kotlinType")
-        }
-    }
-
-    private fun determineKotlinType(property: ShaclProperty, @Suppress("UNUSED_PARAMETER") context: com.geoknoesis.kastor.gen.processor.model.JsonLdContext): String {
-        // Check if it's an object property (has targetClass)
-        if (property.targetClass != null) {
-            val targetInterfaceName = extractInterfaceName(property.targetClass)
-            return if (property.maxCount == 1) {
-                if (property.minCount == null || property.minCount == 0) {
-                    "$targetInterfaceName?"
-                } else {
-                    targetInterfaceName
-                }
-            } else {
-                "List<$targetInterfaceName>"
+            if (property.maxCount != null) {
+                append("\nMax count: ${property.maxCount}")
             }
         }
         
-        // It's a literal property
-        val kotlinType = when (property.datatype) {
-            "http://www.w3.org/2001/XMLSchema#string" -> "String"
-            "http://www.w3.org/2001/XMLSchema#int" -> "Int"
-            "http://www.w3.org/2001/XMLSchema#integer" -> "Int"
-            "http://www.w3.org/2001/XMLSchema#double" -> "Double"
-            "http://www.w3.org/2001/XMLSchema#float" -> "Double"
-            "http://www.w3.org/2001/XMLSchema#boolean" -> "Boolean"
-            "http://www.w3.org/2001/XMLSchema#anyURI" -> "String"
-            else -> "String" // Default to String for unknown types
+        val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
+            .addKdoc(kdoc)
+            .addAnnotation(
+                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "RdfProperty"))
+                    .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
+                    .addMember("iri = %S", property.path)
+                    .build()
+            )
+        
+        // Add validation annotations
+        validationAnnotationsForProperty(property).forEach { annotationSpec ->
+            propertyBuilder.addAnnotation(annotationSpec)
         }
         
-        // Return as list if maxCount > 1 or maxCount is null (unbounded)
-        return if (property.maxCount == null || property.maxCount > 1) {
-            "List<$kotlinType>"
-        } else if (property.minCount == null || property.minCount == 0) {
-            "$kotlinType?"
-        } else {
-            kotlinType
-        }
+        return propertyBuilder.build()
     }
 
-    private fun validationAnnotationsForProperty(property: ShaclProperty): List<String> {
+
+    private fun validationAnnotationsForProperty(property: ShaclProperty): List<AnnotationSpec> {
         if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
-        val annotations = mutableListOf<String>()
+        val annotations = mutableListOf<AnnotationSpec>()
         val isList = property.maxCount == null || property.maxCount > 1
         val min = property.minCount
         val max = property.maxCount
 
         if (!isList) {
             if (min != null && min > 0) {
-                annotations.add("@get:NotNull")
+                annotations.add(
+                    AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "NotNull"))
+                        .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
+                        .build()
+                )
             }
         } else {
             if (min != null && min > 0) {
-                annotations.add("@get:NotEmpty")
+                annotations.add(
+                    AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "NotEmpty"))
+                        .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
+                        .build()
+                )
             }
             if (min != null || max != null) {
-                val parts = mutableListOf<String>()
-                min?.let { parts.add("min = $it") }
-                max?.let { parts.add("max = $it") }
-                if (parts.isNotEmpty()) {
-                    annotations.add("@get:Size(${parts.joinToString(", ")})")
-                }
+                val annotationBuilder = AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "Size"))
+                    .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
+                min?.let { annotationBuilder.addMember("min = %L", it) }
+                max?.let { annotationBuilder.addMember("max = %L", it) }
+                annotations.add(annotationBuilder.build())
             }
         }
 
@@ -163,39 +159,4 @@ class InterfaceGenerator(
         }
     }
 
-    private fun extractInterfaceName(classIri: String): String {
-        // Extract local name from IRI
-        val localName = classIri.substringAfterLast('/').substringAfterLast('#')
-        
-        // Convert to PascalCase if needed
-        return localName.split('-', '_').joinToString("") { word ->
-            word.replaceFirstChar { it.uppercaseChar() }
-        }
-    }
-
-    /**
-     * Converts a property name to a valid Kotlin identifier by converting hyphens and underscores to camelCase.
-     */
-    private fun toValidKotlinIdentifier(name: String): String {
-        // Split on hyphens and underscores
-        val parts = name.split('-', '_')
-        
-        // First part stays lowercase, rest are capitalized
-        return parts.mapIndexed { index, part ->
-            if (index == 0) part.replaceFirstChar { it.lowercaseChar() }
-            else part.replaceFirstChar { it.uppercaseChar() }
-        }.joinToString("")
-    }
 }
-
-
-
-
-
-
-
-
-
-
-
-

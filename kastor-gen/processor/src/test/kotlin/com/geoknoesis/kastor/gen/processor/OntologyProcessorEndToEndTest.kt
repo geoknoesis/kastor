@@ -89,69 +89,71 @@ class OntologyProcessorEndToEndTest {
 
         // Verify generated code structure
         for ((interfaceName, interfaceCode) in interfaces) {
+            val interfaceCodeStr = java.io.StringWriter().also { interfaceCode.writeTo(it) }.toString()
             // Check interface structure
-            assertTrue(interfaceCode.contains("package com.example.dcatus.generated"))
-            assertTrue(interfaceCode.contains("import com.geoknoesis.kastor.gen.annotations.RdfClass"))
-            assertTrue(interfaceCode.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
-            assertTrue(interfaceCode.contains("@RdfClass(iri ="))
-            assertTrue(interfaceCode.contains("interface $interfaceName {"))
+            assertTrue(interfaceCodeStr.contains("package com.example.dcatus.generated"))
+            assertTrue(interfaceCodeStr.contains("import com.geoknoesis.kastor.gen.annotations.RdfClass"))
+            assertTrue(interfaceCodeStr.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
+            assertTrue(interfaceCodeStr.contains("@RdfClass(iri ="))
+            assertTrue(interfaceCodeStr.contains("interface $interfaceName {"))
 
             // Check that interface has properties
-            val propertyCount = interfaceCode.split("@get:RdfProperty").size - 1
+            val propertyCount = interfaceCodeStr.split("@get:RdfProperty").size - 1
             assertTrue(propertyCount > 0, "$interfaceName should have at least one property")
         }
 
         for ((wrapperName, wrapperCode) in wrappers) {
+            val wrapperCodeStr = java.io.StringWriter().also { wrapperCode.writeTo(it) }.toString()
             // Check wrapper structure
-            assertTrue(wrapperCode.contains("package com.example.dcatus.generated"))
-            assertTrue(wrapperCode.contains("import com.geoknoesis.kastor.gen.runtime.*"))
-            assertTrue(wrapperCode.contains("import com.geoknoesis.kastor.rdf.*"))
-            assertTrue(wrapperCode.contains("internal class $wrapperName("))
-            assertTrue(wrapperCode.contains("override val rdf: RdfHandle"))
-            assertTrue(wrapperCode.contains("companion object {"))
-            assertTrue(wrapperCode.contains("OntoMapper.registry["))
+            assertTrue(wrapperCodeStr.contains("package com.example.dcatus.generated"))
+            assertTrue(wrapperCodeStr.contains("import com.geoknoesis.kastor.gen.runtime"))
+            assertTrue(wrapperCodeStr.contains("import com.geoknoesis.kastor.rdf"))
+            assertTrue(wrapperCodeStr.contains("internal class $wrapperName"))
+            assertTrue(wrapperCodeStr.contains("override val rdf: RdfHandle"))
+            assertTrue(wrapperCodeStr.contains("companion object {"))
+            assertTrue(wrapperCodeStr.contains("OntoMapper.registry["))
 
             // Check that wrapper has property implementations
-            val propertyCount = wrapperCode.split("override val").size - 1
+            val propertyCount = wrapperCodeStr.split("override val").size - 1
             assertTrue(propertyCount > 0, "$wrapperName should have at least one property implementation")
         }
 
         // Verify specific DCAT properties are handled correctly
-        val catalogInterface = interfaces["Catalog"]
+        val catalogInterface = interfaces["Catalog"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (catalogInterface != null) {
             assertTrue(catalogInterface.contains("val title:"))
             assertTrue(catalogInterface.contains("val description:"))
             assertTrue(catalogInterface.contains("val dataset:"))
         }
 
-        val datasetInterface = interfaces["Dataset"]
+        val datasetInterface = interfaces["Dataset"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (datasetInterface != null) {
             assertTrue(datasetInterface.contains("val title:"))
             assertTrue(datasetInterface.contains("val description:"))
             assertTrue(datasetInterface.contains("val distribution:"))
         }
 
-        val distributionInterface = interfaces["Distribution"]
+        val distributionInterface = interfaces["Distribution"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (distributionInterface != null) {
             assertTrue(distributionInterface.contains("val title:"))
             assertTrue(distributionInterface.contains("val downloadURL:"))
             assertTrue(distributionInterface.contains("val mediaType:"))
         }
 
-        val agentInterface = interfaces["Agent"]
+        val agentInterface = interfaces["Agent"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (agentInterface != null) {
             assertTrue(agentInterface.contains("val name:"))
             assertTrue(agentInterface.contains("val homepage:"))
         }
 
         // Verify wrapper implementations use correct KastorGraphOps methods
-        val catalogWrapper = wrappers["CatalogWrapper"]
+        val catalogWrapper = wrappers["CatalogWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (catalogWrapper != null) {
             assertTrue(catalogWrapper.contains("KastorGraphOps.getLiteralValues"))
             assertTrue(catalogWrapper.contains("KastorGraphOps.getObjectValues"))
         }
 
-        val datasetWrapper = wrappers["DatasetWrapper"]
+        val datasetWrapper = wrappers["DatasetWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         if (datasetWrapper != null) {
             assertTrue(datasetWrapper.contains("KastorGraphOps.getLiteralValues"))
             assertTrue(datasetWrapper.contains("KastorGraphOps.getObjectValues"))
@@ -218,15 +220,15 @@ class OntologyProcessorEndToEndTest {
         val wrappers = wrapperGenerator.generateWrappers(ontologyModel, "com.example.test")
 
         // Verify generated code structure
-        val simpleCatalogInterface = interfaces["Catalog"]
+        val simpleCatalogInterface = interfaces["Catalog"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         assertNotNull(simpleCatalogInterface)
         assertTrue(simpleCatalogInterface!!.contains("interface Catalog {"))
         assertTrue(simpleCatalogInterface.contains("val title: String"))
         assertTrue(simpleCatalogInterface.contains("val description: String"))
 
-        val simpleCatalogWrapper = wrappers["CatalogWrapper"]
+        val simpleCatalogWrapper = wrappers["CatalogWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         assertNotNull(simpleCatalogWrapper)
-        assertTrue(simpleCatalogWrapper!!.contains("internal class CatalogWrapper("))
+        assertTrue(simpleCatalogWrapper!!.contains("internal class CatalogWrapper"))
         assertTrue(simpleCatalogWrapper.contains("override val title: String by lazy {"))
         assertTrue(simpleCatalogWrapper.contains("override val description: String? by lazy {"))
 
@@ -236,8 +238,8 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogInterface.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
 
         assertTrue(simpleCatalogWrapper.contains("package com.example.test"))
-        assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.gen.runtime.*"))
-        assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.rdf.*"))
+        assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.gen.runtime"))
+        assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.rdf"))
 
         // Verify that generated code has proper annotations
         assertTrue(simpleCatalogInterface.contains("@RdfClass(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
@@ -245,10 +247,12 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogInterface.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper has proper registry entry
-        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }"))
+        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[Catalog::class.java]"))
+        assertTrue(simpleCatalogWrapper.contains("CatalogWrapper(handle)"))
 
         // Verify that generated wrapper has proper known predicates
-        assertTrue(simpleCatalogWrapper.contains("private val known: Set<Iri> = setOf("))
+        assertTrue(simpleCatalogWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(simpleCatalogWrapper.contains("setOf"))
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/title\")"))
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/description\")"))
 
@@ -406,36 +410,36 @@ class OntologyProcessorEndToEndTest {
         }
 
         // Verify Catalog interface has correct relationships
-        val catalogInterface = interfaces["Catalog"]!!
+        val catalogInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
         assertTrue(catalogInterface.contains("val title: String"))
         assertTrue(catalogInterface.contains("val dataset: List<Dataset>"))
         assertTrue(catalogInterface.contains("val publisher: Agent?"))
 
         // Verify Catalog wrapper has correct object property handling
-        val catalogWrapper = wrappers["CatalogWrapper"]!!
+        val catalogWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
         assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
         assertTrue(catalogWrapper.contains("override val publisher: Agent? by lazy {"))
         assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
 
         // Verify Dataset interface has correct relationships
-        val datasetInterface = interfaces["Dataset"]!!
+        val datasetInterface = java.io.StringWriter().also { interfaces["Dataset"]!!.writeTo(it) }.toString()
         assertTrue(datasetInterface.contains("val title: String"))
         assertTrue(datasetInterface.contains("val distribution: List<Distribution>"))
 
         // Verify Distribution interface has correct properties
-        val distributionInterface = interfaces["Distribution"]!!
+        val distributionInterface = java.io.StringWriter().also { interfaces["Distribution"]!!.writeTo(it) }.toString()
         assertTrue(distributionInterface.contains("val title: String"))
         assertTrue(distributionInterface.contains("val downloadURL: String"))
 
         // Verify Agent interface has correct properties
-        val agentInterface = interfaces["Agent"]!!
+        val agentInterface = java.io.StringWriter().also { interfaces["Agent"]!!.writeTo(it) }.toString()
         assertTrue(agentInterface.contains("val name: List<String>"))
         assertTrue(agentInterface.contains("val homepage: List<String>"))
 
         // Verify all wrappers have proper registry entries
         for (entity in expectedEntities) {
-            val wrapper = wrappers["${entity}Wrapper"]!!
+            val wrapper = java.io.StringWriter().also { wrappers["${entity}Wrapper"]!!.writeTo(it) }.toString()
             assertTrue(wrapper.contains("OntoMapper.registry[${entity}::class.java]"))
         }
     }

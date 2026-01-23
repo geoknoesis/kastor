@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
 import com.geoknoesis.kastor.gen.processor.parsers.JsonLdContextParser
 import com.geoknoesis.kastor.gen.gradle.VocabularyGenerator
 import com.google.devtools.ksp.processing.KSPLogger
+import com.squareup.kotlinpoet.FileSpec
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
@@ -16,6 +17,7 @@ import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
 import java.io.File
 import java.io.FileInputStream
+import java.nio.charset.StandardCharsets
 
 /**
  * Gradle task for generating domain interfaces and wrappers from SHACL and JSON-LD context files.
@@ -210,18 +212,26 @@ abstract class OntologyGenerationTask : DefaultTask() {
             if (generateInterfaces) {
                 val interfaceDir = File(outputDir, actualInterfacePackage.replace('.', '/'))
                 interfaceDir.mkdirs()
-                val interfaceCode = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), actualInterfacePackage)[className] ?: ""
+                val interfaceFileSpec = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), actualInterfacePackage)[className]
                 val interfaceFile = File(interfaceDir, "$className.kt")
-                interfaceFile.writeText(interfaceCode)
+                interfaceFileSpec?.let {
+                    interfaceFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+                        it.writeTo(writer)
+                    }
+                }
                 logger.info("Generated interface: ${interfaceFile.absolutePath}")
             }
             
             if (generateWrappers) {
                 val wrapperDir = File(outputDir, wrapperPackage.replace('.', '/'))
                 wrapperDir.mkdirs()
-                val wrapperCode = wrapperGenerator.generateWrappers(OntologyModel(listOf(shape), jsonLdContext), wrapperPackage)["${className}Wrapper"] ?: ""
+                val wrapperFileSpec = wrapperGenerator.generateWrappers(OntologyModel(listOf(shape), jsonLdContext), wrapperPackage)["${className}Wrapper"]
                 val wrapperFile = File(wrapperDir, "${className}Wrapper.kt")
-                wrapperFile.writeText(wrapperCode)
+                wrapperFileSpec?.let {
+                    wrapperFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+                        it.writeTo(writer)
+                    }
+                }
                 logger.info("Generated wrapper: ${wrapperFile.absolutePath}")
             }
         }

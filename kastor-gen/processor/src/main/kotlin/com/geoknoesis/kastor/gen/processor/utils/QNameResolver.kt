@@ -3,7 +3,7 @@ package com.geoknoesis.kastor.gen.processor.utils
 /**
  * Utility class for resolving QNames (qualified names) to full IRIs using prefix mappings.
  */
-object QNameResolver {
+internal object QNameResolver {
 
     /**
      * Resolves a QName to a full IRI using the provided prefix mappings.

@@ -19,7 +19,7 @@ import java.io.InputStream
  * Parser for JSON-LD context files.
  * Extracts type mappings and property definitions for code generation.
  */
-class JsonLdContextParser(private val logger: KSPLogger) {
+internal class JsonLdContextParser(private val logger: KSPLogger) {
 
     private val json = Json { ignoreUnknownKeys = true }
 

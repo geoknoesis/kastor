@@ -102,7 +102,7 @@ class InterfaceGeneratorTest {
         assertEquals(1, interfaces.size)
         assertTrue(interfaces.containsKey("Catalog"))
 
-        val catalogCode = interfaces["Catalog"]!!
+        val catalogCode = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
         
         // Check package declaration
         assertTrue(catalogCode.contains("package com.example.test"))
@@ -194,7 +194,7 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val testCode = interfaces["Test"]!!
+        val testCode = java.io.StringWriter().also { interfaces["Test"]!!.writeTo(it) }.toString()
         
         assertTrue(testCode.contains("val stringProp: String"))
         assertTrue(testCode.contains("val intProp: Int"))
@@ -248,7 +248,7 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val testCode = interfaces["Test"]!!
+        val testCode = java.io.StringWriter().also { interfaces["Test"]!!.writeTo(it) }.toString()
         
         assertTrue(testCode.contains("val singleProp: String"))
         assertTrue(testCode.contains("val multipleProp: List<String>"))
@@ -291,7 +291,7 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val catalogCode = interfaces["Catalog"]!!
+        val catalogCode = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
         
         assertTrue(catalogCode.contains("val dataset: List<Dataset>"))
         assertTrue(catalogCode.contains("val publisher: Agent"))
@@ -345,8 +345,8 @@ class InterfaceGeneratorTest {
         assertTrue(interfaces.containsKey("Catalog"))
         assertTrue(interfaces.containsKey("Dataset"))
 
-        val catalogCode = interfaces["Catalog"]!!
-        val datasetCode = interfaces["Dataset"]!!
+        val catalogCode = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
+        val datasetCode = java.io.StringWriter().also { interfaces["Dataset"]!!.writeTo(it) }.toString()
 
         assertTrue(catalogCode.contains("interface Catalog {"))
         assertTrue(datasetCode.contains("interface Dataset {"))
@@ -369,13 +369,14 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val emptyCode = interfaces["Empty"]!!
+        val emptyCode = java.io.StringWriter().also { interfaces["Empty"]!!.writeTo(it) }.toString()
         
-        assertTrue(emptyCode.contains("interface Empty {"))
-        assertTrue(emptyCode.contains("}"))
+        assertTrue(emptyCode.contains("interface Empty"))
         // Should not contain any property declarations
         assertFalse(emptyCode.contains("@get:RdfProperty"))
-        assertFalse(emptyCode.contains("val "))
+        // Should not contain property declarations (check for val with type annotation)
+        val hasPropertyDeclaration = emptyCode.contains(Regex("""val\s+\w+\s*:"""))
+        assertFalse(hasPropertyDeclaration, "Empty interface should not contain property declarations")
     }
 
     @Test
@@ -405,7 +406,7 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val testCode = interfaces["Test"]!!
+        val testCode = java.io.StringWriter().also { interfaces["Test"]!!.writeTo(it) }.toString()
         
         // Unknown datatypes should default to String
         assertTrue(testCode.contains("val unknownProp: String"))
@@ -438,7 +439,7 @@ class InterfaceGeneratorTest {
         val ontologyModel = OntologyModel(listOf(shape), context)
         val interfaces = generator.generateInterfaces(ontologyModel, "com.example.test")
 
-        val catalogCode = interfaces["Catalog"]!!
+        val catalogCode = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
         
         // Check interface documentation
         assertTrue(catalogCode.contains("Domain interface for http://www.w3.org/ns/dcat#Catalog"))

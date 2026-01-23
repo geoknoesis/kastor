@@ -1,7 +1,7 @@
 plugins {
-  id("org.jetbrains.kotlin.jvm") version "1.9.24" apply false
-  id("com.google.devtools.ksp") version "1.9.24-1.0.20" apply false
-  id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24" apply false
+  id("org.jetbrains.kotlin.jvm") version "2.1.0" apply false
+  id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
+  id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0" apply false
 }
 
 allprojects {
@@ -34,7 +34,7 @@ subprojects {
   }
 
   dependencies {
-    add("testImplementation", "org.jetbrains.kotlin:kotlin-test:1.9.24")
+    add("testImplementation", "org.jetbrains.kotlin:kotlin-test:2.1.0")
     add("testImplementation", "org.junit.jupiter:junit-jupiter:5.10.3")
     add("testRuntimeOnly", "org.junit.platform:junit-platform-launcher:1.10.3")
     add("implementation", "org.slf4j:slf4j-api:2.0.13")

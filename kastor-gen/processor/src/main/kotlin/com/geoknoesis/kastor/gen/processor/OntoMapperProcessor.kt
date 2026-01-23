@@ -232,15 +232,17 @@ class OntoMapperProcessor(
     }
     
     private fun generateWrapper(classModel: ClassModel) {
-        val fileName = "${classModel.simpleName}Wrapper"
+        val fileSpec = wrapperGenerator.generateWrapper(classModel)
+        val fileName = "${fileSpec.name}.kt"
         val file = codeGenerator.createNewFile(
             dependencies = Dependencies(false),
             packageName = classModel.packageName,
             fileName = fileName
         )
         
-        val code = wrapperGenerator.generateWrapper(classModel)
-        file.write(code.toByteArray())
+        val writer = file.bufferedWriter(Charsets.UTF_8)
+        fileSpec.writeTo(writer)
+        writer.close()
         file.close()
     }
 

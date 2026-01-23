@@ -1,16 +1,9 @@
 package com.geoknoesis.kastor.gen.processor
 
-import com.geoknoesis.kastor.gen.processor.codegen.InterfaceGenerator
-import com.geoknoesis.kastor.gen.processor.codegen.OntologyWrapperGenerator
-import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
-import com.geoknoesis.kastor.gen.annotations.ValidationMode
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.parsers.JsonLdContextParser
-import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.exceptions.ProcessingException
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
-import java.io.InputStream
 
 /**
  * KSP processor for generating domain interfaces and wrappers from SHACL and JSON-LD context files.
@@ -22,152 +15,89 @@ class OntologyProcessor(
     private val options: Map<String, String>
 ) : SymbolProcessor {
 
-    private val shaclParser = ShaclParser(logger)
-    private val contextParser = JsonLdContextParser(logger)
-    private var interfaceGenerator = InterfaceGenerator(logger)
-    private var wrapperGenerator = OntologyWrapperGenerator(logger)
+    private val annotationParser = AnnotationParser(logger)
+    private val fileReader = OntologyFileReader(logger)
+    private val coordinator = GenerationCoordinator(logger, codeGenerator)
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         logger.info("Ontology processor starting...")
         
-        // Look for GenerateFromOntology annotations
-        val ontologyAnnotations = resolver.getSymbolsWithAnnotation("com.geoknoesis.kastor.gen.annotations.GenerateFromOntology")
-        
-        val allSymbols = ontologyAnnotations.toList()
-        
-        logger.info("Found ${allSymbols.size} ontology generation annotations")
-        
-        if (allSymbols.isEmpty()) {
-            logger.info("No ontology annotations found, returning empty list")
-            return emptyList()
-        }
-
         val processedAnnotations = mutableListOf<KSAnnotated>()
         
-        allSymbols.forEach { symbol ->
-            if (symbol is KSClassDeclaration) {
-                val annotation = symbol.annotations.find { 
-                    it.shortName.asString() == "GenerateFromOntology" 
-                }
-                if (annotation != null) {
-                    processOntologyAnnotation(annotation, symbol.packageName.asString())
-                    processedAnnotations.add(symbol)
-                }
-            } else {
-                logger.error("GenerateFromOntology annotation can only be applied to classes", symbol)
+        // Process ontology generation annotations
+        val ontologyAnnotations = resolver.getSymbolsWithAnnotation("com.geoknoesis.kastor.gen.annotations.GenerateFromOntology")
+        
+        ontologyAnnotations
+            .filterIsInstance<KSClassDeclaration>()
+            .forEach { symbol ->
+                symbol.annotations
+                    .find { it.shortName.asString() == "GenerateFromOntology" }
+                    ?.let { ann ->
+                        annotationParser.parseOntologyAnnotation(ann, symbol.packageName.asString())
+                    }
+                    ?.let { request ->
+                        try {
+                            val model = fileReader.loadOntologyModel(request.shaclPath, request.contextPath)
+                            coordinator.generateFromOntology(
+                                model = model,
+                                packageName = request.targetPackage,
+                                generateInterfaces = request.generateInterfaces,
+                                generateWrappers = request.generateWrappers,
+                                validationMode = request.validationMode,
+                                validationAnnotations = request.validationAnnotations,
+                                externalValidatorClass = request.externalValidatorClass
+                            )
+                            processedAnnotations.add(symbol)
+                        } catch (e: Exception) {
+                            logger.error("Error processing ontology generation: ${e.message}", symbol)
+                            logger.exception(e)
+                            throw ProcessingException(
+                                message = "Failed to process GenerateFromOntology annotation",
+                                annotationName = "GenerateFromOntology",
+                                cause = e
+                            )
+                        }
+                    }
             }
+        
+        // Process instance DSL generation annotations
+        val dslAnnotations = resolver.getSymbolsWithAnnotation("com.geoknoesis.kastor.gen.annotations.GenerateInstanceDsl")
+        
+        dslAnnotations
+            .filterIsInstance<KSClassDeclaration>()
+            .forEach { symbol ->
+                symbol.annotations
+                    .find { it.shortName.asString() == "GenerateInstanceDsl" }
+                    ?.let { ann ->
+                        annotationParser.parseInstanceDslAnnotation(ann, symbol.packageName.asString())
+                    }
+                    ?.let { request ->
+                        try {
+                            val model = fileReader.loadOntologyModel(request.shaclPath, request.contextPath)
+                            coordinator.generateInstanceDsl(
+                                model = model,
+                                dslName = request.dslName,
+                                packageName = request.targetPackage
+                            )
+                            processedAnnotations.add(symbol)
+                        } catch (e: Exception) {
+                            logger.error("Error processing instance DSL generation: ${e.message}", symbol)
+                            logger.exception(e)
+                            throw ProcessingException(
+                                message = "Failed to process GenerateInstanceDsl annotation",
+                                annotationName = "GenerateInstanceDsl",
+                                cause = e
+                            )
+                        }
+                    }
+            }
+        
+        if (processedAnnotations.isEmpty()) {
+            logger.info("No annotations found, returning empty list")
+            return emptyList()
         }
         
         return processedAnnotations.filterNot { it.validate() }.toList()
-    }
-    
-    private fun processOntologyAnnotation(annotation: KSAnnotation, packageName: String) {
-        val shaclPath = getAnnotationValue(annotation, "shaclPath") as? String
-        val contextPath = getAnnotationValue(annotation, "contextPath") as? String
-        val targetPackage = getAnnotationValue(annotation, "packageName") as? String ?: packageName
-        val generateInterfaces = getAnnotationValue(annotation, "generateInterfaces") as? Boolean ?: true
-        val generateWrappers = getAnnotationValue(annotation, "generateWrappers") as? Boolean ?: true
-        val validationMode = parseValidationMode(getAnnotationValue(annotation, "validationMode"))
-        val validationAnnotations = parseValidationAnnotations(getAnnotationValue(annotation, "validationAnnotations"))
-        val externalValidatorClass = getAnnotationValue(annotation, "externalValidatorClass") as? String
-        
-        if (shaclPath == null || contextPath == null) {
-            logger.error("Both shaclPath and contextPath must be specified")
-            return
-        }
-        
-        interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
-        wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
-
-        processOntologyFiles(shaclPath, contextPath, targetPackage, generateInterfaces, generateWrappers)
-    }
-    
-    
-    private fun processOntologyFiles(
-        shaclPath: String, 
-        contextPath: String, 
-        packageName: String,
-        generateInterfaces: Boolean,
-        generateWrappers: Boolean
-    ) {
-        try {
-            logger.info("Processing SHACL file: $shaclPath")
-            logger.info("Processing context file: $contextPath")
-            logger.info("Target package: $packageName")
-            
-            // Parse SHACL file
-            val shaclInputStream = javaClass.classLoader.getResourceAsStream(shaclPath)
-                ?: throw IllegalArgumentException("SHACL file not found: $shaclPath")
-            
-            val shapes = shaclParser.parseShacl(shaclInputStream)
-            logger.info("Parsed ${shapes.size} SHACL shapes")
-            
-            // Parse JSON-LD context file
-            val contextInputStream = javaClass.classLoader.getResourceAsStream(contextPath)
-                ?: throw IllegalArgumentException("Context file not found: $contextPath")
-            
-            val context = contextParser.parseContext(contextInputStream)
-            logger.info("Parsed context with ${context.prefixes.size} prefixes and ${context.propertyMappings.size} properties")
-            
-            // Create ontology model
-            val ontologyModel = OntologyModel(shapes, context)
-            
-            // Generate interfaces
-            if (generateInterfaces) {
-                val interfaces = interfaceGenerator.generateInterfaces(ontologyModel, packageName)
-                interfaces.forEach { (name, code) ->
-                    generateFile("$name.kt", packageName, code)
-                }
-            }
-            
-            // Generate wrappers
-            if (generateWrappers) {
-                val wrappers = wrapperGenerator.generateWrappers(ontologyModel, packageName)
-                wrappers.forEach { (name, code) ->
-                    generateFile("$name.kt", packageName, code)
-                }
-            }
-            
-        } catch (e: Exception) {
-            logger.error("Error processing ontology files: ${e.message}", null)
-        }
-    }
-    
-    private fun generateFile(fileName: String, packageName: String, code: String) {
-        val file = codeGenerator.createNewFile(
-            dependencies = Dependencies(false),
-            packageName = packageName,
-            fileName = fileName
-        )
-        
-        file.write(code.toByteArray())
-        file.close()
-        
-        logger.info("Generated file: $fileName in package $packageName")
-    }
-    
-    private fun getAnnotationValue(annotation: KSAnnotation, name: String): Any? {
-        return annotation.arguments.find { it.name?.asString() == name }?.value
-    }
-
-    private fun parseValidationMode(value: Any?): ValidationMode {
-        return when (value) {
-            is ValidationMode -> value
-            is KSType -> ValidationMode.valueOf(value.declaration.simpleName.asString())
-            is KSName -> ValidationMode.valueOf(value.asString())
-            is String -> ValidationMode.valueOf(value)
-            else -> ValidationMode.EMBEDDED
-        }
-    }
-
-    private fun parseValidationAnnotations(value: Any?): ValidationAnnotations {
-        return when (value) {
-            is ValidationAnnotations -> value
-            is KSType -> ValidationAnnotations.valueOf(value.declaration.simpleName.asString())
-            is KSName -> ValidationAnnotations.valueOf(value.asString())
-            is String -> ValidationAnnotations.valueOf(value)
-            else -> ValidationAnnotations.JAKARTA
-        }
     }
 }
 
