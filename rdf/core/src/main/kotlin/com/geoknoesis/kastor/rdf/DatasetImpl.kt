@@ -335,7 +335,7 @@ internal class OptimizedUnionGraph(
             ASK
             $fromClauseText
             WHERE {
-                <${triple.subject}> <${triple.predicate}> ${formatTerm(triple.obj)} .
+                ${formatResource(triple.subject)} ${formatResource(triple.predicate)} ${formatTerm(triple.obj)} .
             }
         """.trimIndent()
         
@@ -407,19 +407,36 @@ internal class OptimizedUnionGraph(
         }
     }
     
+    private fun formatResource(resource: RdfResource): String {
+        return when (resource) {
+            is Iri -> "<${resource.value}>"
+            is BlankNode -> if (resource.id.startsWith("_:")) resource.id else "_:${resource.id}"
+            else -> resource.toString()
+        }
+    }
+
     private fun formatTerm(term: RdfTerm): String {
         return when (term) {
-            is Iri -> "<${term.value}>"
-            is BlankNode -> if (term.id.startsWith("_:")) term.id else "_:${term.id}"
+            is RdfResource -> formatResource(term)
             is Literal -> {
+                val escaped = escapeLiteral(term.lexical)
                 when (term) {
-                    is LangString -> "\"${term.lexical}\"@${term.lang}"
-                    is TypedLiteral -> "\"${term.lexical}\"^^<${term.datatype.value}>"
-                    else -> "\"${term.lexical}\""
+                    is LangString -> "\"$escaped\"@${term.lang}"
+                    is TypedLiteral -> "\"$escaped\"^^<${term.datatype.value}>"
+                    else -> "\"$escaped\""
                 }
             }
             else -> term.toString()
         }
+    }
+
+    private fun escapeLiteral(value: String): String {
+        return value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
     }
 }
 

@@ -249,7 +249,7 @@ private fun hasValidIriStructure(value: String): Boolean {
 @JvmInline
 value class BlankNode(val id: String) : RdfResource {
     init { require(id.isNotBlank()) { "Blank node id must not be blank" } }
-    override fun toString(): String = "_:$id" // debugging only
+    override fun toString(): String = "_:$id"
 }
 
 /**
@@ -431,7 +431,7 @@ sealed interface Literal : RdfTerm {
  */
 data class LangString(override val lexical: String, val lang: String) : Literal {
     override val datatype: Iri get() = RDF.langString
-    override fun toString(): String = "\"$lexical\"@$lang" // debugging only
+    override fun toString(): String = "\"$lexical\"@$lang"
 }
 
 /**
@@ -464,7 +464,7 @@ data class LangString(override val lexical: String, val lang: String) : Literal 
  * @see [Literal]
  */
 data class TypedLiteral(override val lexical: String, override val datatype: Iri) : Literal {
-    override fun toString(): String = "\"$lexical\"^^${datatype}" // debugging only
+    override fun toString(): String = "\"$lexical\"^^${datatype}"
 }
 
 /**
@@ -557,7 +557,7 @@ data object FalseLiteral : Literal {
  * @see [RdfTerm]
  */
 data class RdfTriple(val subject: RdfResource, val predicate: Iri, val obj: RdfTerm) {
-    override fun toString(): String = "$subject $predicate $obj ." // debugging only
+    override fun toString(): String = "$subject $predicate $obj ."
 }
 
 /**

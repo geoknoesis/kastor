@@ -4,7 +4,7 @@ import java.io.Closeable
 import java.io.InputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
-import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.Executors
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.dsl.GraphDsl
 import com.geoknoesis.kastor.rdf.provider.EmptySparqlQueryResult
@@ -20,6 +20,9 @@ import com.geoknoesis.kastor.rdf.RdfFormat
  * and `graph()` DSL are stable and part of the public API.
  */
 object Rdf {
+    private val urlIoExecutor: Executor = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "kastor-url-io").apply { isDaemon = true }
+    }
     
     /**
      * Default location for persistent repositories.
@@ -291,7 +294,7 @@ object Rdf {
     fun parseFromUrlAsync(
         url: String,
         format: String = "TURTLE",
-        executor: Executor = ForkJoinPool.commonPool()
+        executor: Executor = urlIoExecutor
     ): CompletableFuture<MutableRdfGraph> {
         return CompletableFuture.supplyAsync({ parseFromUrl(url, format) }, executor)
     }
@@ -307,7 +310,7 @@ object Rdf {
     fun parseFromUrlAsync(
         url: String,
         format: RdfFormat,
-        executor: Executor = ForkJoinPool.commonPool()
+        executor: Executor = urlIoExecutor
     ): CompletableFuture<MutableRdfGraph> {
         return parseFromUrlAsync(url, format.formatName, executor)
     }
