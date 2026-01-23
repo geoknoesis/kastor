@@ -1,8 +1,8 @@
 package com.geoknoesis.kastor.gen.processor
 
-import com.geoknoesis.kastor.gen.processor.model.ClassModel
-import com.geoknoesis.kastor.gen.processor.model.PropertyModel
-import com.geoknoesis.kastor.gen.processor.model.PropertyType
+import com.geoknoesis.kastor.gen.processor.internal.model.ClassModel
+import com.geoknoesis.kastor.gen.processor.internal.model.PropertyModel
+import com.geoknoesis.kastor.gen.processor.internal.model.PropertyType
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
@@ -144,6 +144,7 @@ class OntoMapperProcessorTest {
             .replace("List<kotlin.Boolean>", "List<Boolean>")
     }
 }
+
 
 
 

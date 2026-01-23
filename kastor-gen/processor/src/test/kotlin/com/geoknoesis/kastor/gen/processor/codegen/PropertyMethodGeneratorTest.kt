@@ -1,11 +1,12 @@
 package com.geoknoesis.kastor.gen.processor.codegen
 
-import com.geoknoesis.kastor.gen.processor.model.*
+import com.geoknoesis.kastor.gen.processor.internal.codegen.PropertyMethodGenerator
+import com.geoknoesis.kastor.gen.processor.api.model.*
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FileSpec
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.KModifier
-import com.geoknoesis.kastor.gen.processor.utils.KotlinPoetUtils
+import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.squareup.kotlinpoet.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -338,4 +339,6 @@ class PropertyMethodGeneratorTest {
         assertTrue(code.contains("Pattern:"))
     }
 }
+
+
 

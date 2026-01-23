@@ -1,9 +1,9 @@
 package com.geoknoesis.kastor.gen.processor
 
-import com.geoknoesis.kastor.gen.processor.codegen.InstanceDslGenerator
-import com.geoknoesis.kastor.gen.processor.model.*
-import com.geoknoesis.kastor.gen.processor.parsers.OntologyExtractor
-import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
+import com.geoknoesis.kastor.gen.processor.api.model.*
+import com.geoknoesis.kastor.gen.processor.internal.parsers.OntologyExtractor
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FileSpec
 import org.junit.jupiter.api.Assertions.*
@@ -393,4 +393,5 @@ class InstanceDslIntegrationTest {
         assertFalse(code.contains("class ConceptSchemeBuilder"))
     }
 }
+
 

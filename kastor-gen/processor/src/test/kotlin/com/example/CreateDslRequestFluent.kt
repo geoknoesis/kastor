@@ -1,6 +1,7 @@
 package com.example
 
-import com.geoknoesis.kastor.gen.processor.extensions.dsl
+import com.geoknoesis.kastor.gen.processor.api.extensions.dsl
+import com.geoknoesis.kastor.gen.processor.api.model.NamingStrategy
 import com.google.devtools.ksp.processing.KSPLogger
 
 /**
@@ -23,7 +24,7 @@ fun example(logger: KSPLogger) {
                 mode = com.geoknoesis.kastor.gen.annotations.ValidationMode.EMBEDDED
             }
             naming {
-                strategy = com.geoknoesis.kastor.gen.processor.model.NamingStrategy.CAMEL_CASE
+                strategy = com.geoknoesis.kastor.gen.processor.api.model.NamingStrategy.CAMEL_CASE
             }
             output {
                 supportLanguageTags = true
@@ -32,4 +33,5 @@ fun example(logger: KSPLogger) {
         }
     }
 }
+
 

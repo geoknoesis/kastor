@@ -1,11 +1,12 @@
 package com.geoknoesis.kastor.gen.processor.codegen
 
-import com.geoknoesis.kastor.gen.processor.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.model.JsonLdProperty
-import com.geoknoesis.kastor.gen.processor.model.JsonLdType
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.model.ShaclProperty
-import com.geoknoesis.kastor.gen.processor.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdProperty
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdType
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
@@ -517,6 +518,8 @@ class OntologyWrapperGeneratorTest {
         assertTrue(wrappers.containsKey("DataDistributionWrapper"))
     }
 }
+
+
 
 
 

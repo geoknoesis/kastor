@@ -1,7 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.parsers
 
-import com.geoknoesis.kastor.gen.processor.model.JsonLdContainer
-import com.geoknoesis.kastor.gen.processor.model.JsonLdType
+import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContainer
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdType
 import com.geoknoesis.kastor.rdf.Iri
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
@@ -447,6 +448,8 @@ class JsonLdContextParserTest {
         assertEquals(JsonLdType.Iri(Iri("http://www.w3.org/2001/XMLSchema#string")), context.propertyMappings["keyword"]!!.type)
     }
 }
+
+
 
 
 

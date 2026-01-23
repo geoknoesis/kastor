@@ -1,10 +1,10 @@
 package com.example
 
-import com.geoknoesis.kastor.gen.processor.extensions.dsl
-import com.geoknoesis.kastor.gen.processor.extensions.instanceDslRequest
-import com.geoknoesis.kastor.gen.processor.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.api.extensions.dsl
+import com.geoknoesis.kastor.gen.processor.api.extensions.instanceDslRequest
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.rdf.Iri
 
 /**
@@ -67,4 +67,5 @@ fun example2() {
         }
     }
 }
+
 

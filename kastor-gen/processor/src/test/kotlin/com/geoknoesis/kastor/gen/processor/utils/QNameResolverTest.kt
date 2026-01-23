@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.utils
 
+import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 

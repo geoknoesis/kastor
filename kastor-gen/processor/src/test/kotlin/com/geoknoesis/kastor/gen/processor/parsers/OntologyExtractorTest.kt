@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.parsers
 
-import com.geoknoesis.kastor.gen.processor.model.OntologyClass
+import com.geoknoesis.kastor.gen.processor.internal.parsers.OntologyExtractor
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyClass
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -248,4 +249,6 @@ class OntologyExtractorTest {
         assertTrue(matches.isEmpty())
     }
 }
+
+
 

@@ -1,9 +1,9 @@
 package com.geoknoesis.kastor.gen.processor
 
-import com.geoknoesis.kastor.gen.processor.model.ClassModel
-import com.geoknoesis.kastor.gen.processor.model.PropertyModel
-import com.geoknoesis.kastor.gen.processor.model.PropertyType
-import com.geoknoesis.kastor.gen.processor.utils.QNameResolver
+import com.geoknoesis.kastor.gen.processor.internal.model.ClassModel
+import com.geoknoesis.kastor.gen.processor.internal.model.PropertyModel
+import com.geoknoesis.kastor.gen.processor.internal.model.PropertyType
+import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -200,6 +200,7 @@ class PrefixMappingProcessorTest {
         assertEquals("simpleName", QNameResolver.resolveQName("simpleName", singleMapping))
     }
 }
+
 
 
 

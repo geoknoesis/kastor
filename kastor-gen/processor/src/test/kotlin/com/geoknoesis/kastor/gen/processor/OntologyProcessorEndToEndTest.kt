@@ -1,10 +1,10 @@
 package com.geoknoesis.kastor.gen.processor
 
-import com.geoknoesis.kastor.gen.processor.codegen.InterfaceGenerator
-import com.geoknoesis.kastor.gen.processor.codegen.OntologyWrapperGenerator
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.parsers.JsonLdContextParser
-import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
@@ -451,6 +451,7 @@ class OntologyProcessorEndToEndTest {
         }
     }
 }
+
 
 
 

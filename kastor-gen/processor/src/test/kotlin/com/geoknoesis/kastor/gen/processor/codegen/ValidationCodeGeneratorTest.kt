@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.codegen
 
-import com.geoknoesis.kastor.gen.processor.model.*
+import com.geoknoesis.kastor.gen.processor.api.model.*
+import com.geoknoesis.kastor.gen.processor.internal.codegen.ValidationCodeGenerator
+import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FunSpec
 import com.squareup.kotlinpoet.*
@@ -233,7 +235,7 @@ class ValidationCodeGeneratorTest {
                 PropertyBuilderModel(
                     propertyName = "altLabel",
                     propertyIri = "http://www.w3.org/2004/02/skos/core#altLabel",
-                    kotlinType = com.geoknoesis.kastor.gen.processor.utils.KotlinPoetUtils.listOf(String::class.asTypeName()),
+                    kotlinType = KotlinPoetUtils.listOf(String::class.asTypeName()),
                     isRequired = false,
                     isList = true,
                     constraints = PropertyConstraints(minLength = 1)
@@ -288,4 +290,6 @@ class ValidationCodeGeneratorTest {
         assertTrue(code.contains("SHACL constraints"))
     }
 }
+
+
 

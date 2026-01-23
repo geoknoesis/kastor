@@ -1,7 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.parsers
 
-import com.geoknoesis.kastor.gen.processor.model.ShaclProperty
-import com.geoknoesis.kastor.gen.processor.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.google.devtools.ksp.processing.KSPLogger
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -340,6 +341,7 @@ class ShaclParserTest {
         assertEquals("http://www.w3.org/ns/dcat#Catalog", shapes[0].targetClass)
     }
 }
+
 
 
 

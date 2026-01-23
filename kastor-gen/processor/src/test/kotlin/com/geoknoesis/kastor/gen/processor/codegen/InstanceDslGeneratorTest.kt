@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.codegen
 
-import com.geoknoesis.kastor.gen.processor.model.*
+import com.geoknoesis.kastor.gen.processor.api.model.*
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FileSpec
 import org.junit.jupiter.api.Assertions.*
@@ -386,4 +387,5 @@ class InstanceDslGeneratorTest {
         assertFalse(code.contains("fun concept("))
     }
 }
+
 
