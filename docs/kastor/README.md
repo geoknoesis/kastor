@@ -38,7 +38,9 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 
 ### **Advanced Features**
 - **Reasoning**: RDFS, OWL-EL, OWL-RL, and OWL-DL inference
-- **SHACL Validation**: Data validation and constraint checking
+- **SHACL Validation**: Data validation and constraint checking with SHACL 1.2 support
+  - SHACL 1.2 Core features (targetWhere, shape targets, singleLine, reifierShape)
+  - SHACL 1.2 SPARQL Extensions (SPARQL-based constraints)
 - **Transactions**: ACID compliance for data integrity
 - **Repository Management**: Multi-repository setup and federation
 - **Kastor Gen Integration**: Code generation from ontologies
@@ -105,9 +107,9 @@ The documentation is organized into four distinct pillars:
 
 ### **Core Features**
 - **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
-- **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation
+- **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation (SHACL 1.2 Core & SPARQL Extensions)
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
-- **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints
+- **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints (SHACL 1.2 support)
 - **[RDF-star Support](api/compact-dsl-guide.md#rdf-star-support)** - Metadata about statements
 
 ### **Guides**

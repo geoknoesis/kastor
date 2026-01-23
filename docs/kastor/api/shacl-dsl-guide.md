@@ -6,14 +6,15 @@ The SHACL DSL provides a type-safe, natural language syntax for creating SHACL s
 
 ## Overview
 
-The SHACL DSL allows you to define validation constraints using Kotlin code that reads like natural language. It supports all SHACL Core constraints and generates standard RDF that works with any SHACL validator.
+The SHACL DSL allows you to define validation constraints using Kotlin code that reads like natural language. It supports **all SHACL Core constraints** and **SHACL 1.2 features**, including Core enhancements and SPARQL Extensions. The DSL generates standard RDF that works with any SHACL validator.
 
 ### Benefits
 
 - **Type-safe**: Compile-time validation of constraint combinations
 - **Readable**: Natural language syntax that's easy to understand
 - **Maintainable**: Less boilerplate than manual RDF triple creation
-- **Complete**: Supports all SHACL Core constraint types
+- **Complete**: Supports all SHACL Core constraint types and SHACL 1.2 features
+- **SHACL 1.2 Support**: Full support for SHACL 1.2 Core and SPARQL Extensions
 - **Standard**: Generates standard RDF/Turtle that works with any validator
 
 ## Quick Start

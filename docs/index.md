@@ -57,7 +57,7 @@ Kastor is a Kotlin-first SDK that makes RDF and knowledge-graph development prac
 - Natural language DSL: `person has name with "Alice"`
 - Multi-backend support: Memory, Jena, RDF4J, SPARQL
 - Reasoning: RDFS, OWL-EL, OWL-RL, OWL-DL
-- SHACL validation and constraints
+- SHACL validation and constraints (SHACL 1.2 Core & SPARQL Extensions)
 - RDF-star support
 - Repository and graph management
 - Ontology-driven code generation (Kastor Gen)

@@ -53,7 +53,7 @@ val shapesGraph = shacl {
 }
 ```
 
-The SHACL DSL is more readable and type-safe. See the [SHACL DSL Guide](../api/shacl-dsl-guide.md) for complete documentation.
+The SHACL DSL is more readable and type-safe, and supports all SHACL 1.2 features including Core enhancements and SPARQL Extensions. See the [SHACL DSL Guide](../api/shacl-dsl-guide.md) for complete documentation.
 
 ### Using Manual RDF (Alternative)
 

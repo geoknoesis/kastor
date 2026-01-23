@@ -1,6 +1,6 @@
 # SHACL Validation
 
-Kastor supports SHACL validation in two complementary ways:
+Kastor supports SHACL validation with full **SHACL 1.2** support, including Core features and SPARQL Extensions. Validation is available in two complementary ways:
 
 - **Kastor Gen ValidationContext** for domain materialization and `RdfHandle` validation.
 - **Repository-level SHACL validation** via the `rdf/shacl-validation` module.
@@ -68,7 +68,11 @@ if (!report.isValid) {
 }
 ```
 
-> **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples.
+> **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. The DSL supports all SHACL 1.2 features including:
+> - **SHACL 1.2 Core**: `targetWhere` with node expressions, `shape` targets, `singleLine` constraint, `reifierShape` and `reificationRequired` for RDF-star
+> - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT and ASK queries
+> 
+> See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples.
 
 ## Notes
 
