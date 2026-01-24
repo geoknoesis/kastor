@@ -212,3 +212,4 @@ shacl {
 - [SHACL DSL Guide](../api/shacl-dsl-guide.md) - Complete documentation
 - [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) - Step-by-step guide
 
+

@@ -442,3 +442,4 @@ property("ex:name") {
 - [RDF Fundamentals](../concepts/rdf-fundamentals.md) - Understanding RDF basics
 - [Vocabularies Guide](../concepts/vocabularies.md) - Working with RDF vocabularies
 
+

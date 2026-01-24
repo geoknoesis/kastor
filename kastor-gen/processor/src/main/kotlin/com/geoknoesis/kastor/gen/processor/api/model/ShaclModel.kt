@@ -133,3 +133,4 @@ data class OntologyModel(
     val context: JsonLdContext
 )
 
+

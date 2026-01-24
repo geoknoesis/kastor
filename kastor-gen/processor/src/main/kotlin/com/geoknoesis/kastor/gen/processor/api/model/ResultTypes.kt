@@ -201,3 +201,4 @@ fun <T> validationError(message: String, violations: List<String>): GenerationRe
 fun <T> processingError(message: String, context: ErrorContext, cause: Throwable? = null): GenerationResult<T> =
     GenerationResult.Failure.ProcessingError(message, context, cause)
 
+

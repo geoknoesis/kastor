@@ -911,3 +911,4 @@ objectProperty("ex:knows") {
 - [RDF Fundamentals](../concepts/rdf-fundamentals.md) - Understanding RDF basics
 - [Reasoning Guide](../features/reasoning.md) - Using OWL with reasoners
 
+

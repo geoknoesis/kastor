@@ -286,3 +286,4 @@ Kastor Gen provides measurable benefits for ontology-driven development:
 - [See best practices →](../best-practices.md)
 - [View comparisons →](comparisons.md)
 
+

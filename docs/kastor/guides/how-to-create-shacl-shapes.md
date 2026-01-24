@@ -178,3 +178,4 @@ if (!report.isValid) {
 - [How to Validate with SHACL](how-to-validate-shacl.md) - Validation workflow
 - [SHACL Validation Features](../features/shacl-validation.md) - Validation capabilities
 
+

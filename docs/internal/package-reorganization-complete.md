@@ -55,12 +55,12 @@ The package reorganization has been successfully completed, achieving clear sepa
 
 ### 4. Backward Compatibility
 
-- ✅ Created type aliases in old package locations:
-  - `model/BackwardCompatibility.kt` - Model type aliases
-  - `exceptions/BackwardCompatibility.kt` - Exception type aliases
-  - `extensions/BackwardCompatibility.kt` - Extension re-exports
-- ✅ Added deprecation warnings with migration guidance
-- ✅ Old imports continue to work with warnings
+- ✅ Created type aliases in old package locations (now removed):
+  - `model/BackwardCompatibility.kt` - Model type aliases (removed)
+  - `exceptions/BackwardCompatibility.kt` - Exception type aliases (removed)
+  - `extensions/BackwardCompatibility.kt` - Extension re-exports (removed)
+- ⚠️ **Breaking Change**: Backward compatibility aliases have been removed
+- ✅ All code now uses the new `api/` package structure
 
 ### 5. Documentation Updates
 
@@ -76,15 +76,12 @@ com.geoknoesis.kastor.gen.processor
 │   ├── model/           # Data models (DslModel, ShaclModel, etc.)
 │   ├── exceptions/      # Exception classes
 │   └── extensions/      # Public extension functions
-├── internal/            # Implementation details
-│   ├── codegen/         # Code generators
-│   ├── parsers/         # File parsers
-│   ├── utils/           # Utilities
-│   ├── model/           # Internal models
-│   └── core/            # Core processor classes
-├── model/               # Backward compatibility aliases
-├── exceptions/          # Backward compatibility aliases
-└── extensions/          # Backward compatibility aliases
+└── internal/            # Implementation details
+    ├── codegen/         # Code generators
+    ├── parsers/         # File parsers
+    ├── utils/           # Utilities
+    ├── model/           # Internal models
+    └── core/            # Core processor classes
 ```
 
 ## Benefits Achieved
@@ -93,7 +90,7 @@ com.geoknoesis.kastor.gen.processor
 2. **Better Encapsulation** - Internal details are hidden from users
 3. **Improved Maintainability** - Easier to understand what's public vs internal
 4. **Better IDE Support** - IDEs can hide internal packages
-5. **Backward Compatible** - Existing code continues to work with warnings
+5. **Clean API Surface** - No deprecated code, only clean public API
 
 ## Migration Guide for Users
 
@@ -110,16 +107,20 @@ import com.geoknoesis.kastor.gen.processor.api.extensions.instanceDslRequest
 
 ### For Existing Code
 
-Old imports still work but show deprecation warnings:
+**⚠️ Breaking Change**: Old package imports no longer work. You must migrate to the new `api/` package structure:
 
 ```kotlin
-// ⚠️ Old (deprecated, but still works)
+// ❌ Old (no longer works - removed)
 import com.geoknoesis.kastor.gen.processor.model.InstanceDslRequest
 import com.geoknoesis.kastor.gen.processor.model.DslGenerationOptions
+
+// ✅ New (required)
+import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
+import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 ```
 
 **Migration Steps:**
-1. Update imports to use `api/` prefix
+1. Update all imports to use `api/` prefix
 2. Remove any direct imports from `internal/` (these should not be used)
 3. Test your code to ensure everything still works
 
@@ -133,14 +134,15 @@ This reorganization was the final piece needed to achieve a **10/10 API score**:
 ## Next Steps
 
 1. ✅ Package reorganization - **COMPLETE**
-2. Users can migrate to new package structure at their convenience
-3. Backward compatibility will be maintained until next major version
-4. Type aliases can be removed in a future major version (2.0.0+)
+2. ✅ Deprecated backward compatibility code - **REMOVED**
+3. All code now uses the new `api/` package structure
+4. Breaking change: Old package imports no longer work
 
 ## Notes
 
 - All test files have been updated and should pass
-- Backward compatibility ensures no breaking changes for existing users
+- **Breaking change**: Backward compatibility aliases have been removed
+- All code must use the new `api/` package structure
 - The reorganization improves code organization without changing functionality
 - This was a major refactoring affecting 30+ files
 
@@ -148,4 +150,5 @@ This reorganization was the final piece needed to achieve a **10/10 API score**:
 
 **Status:** ✅ **COMPLETE**  
 **API Score:** 🎉 **10/10 ACHIEVED**
+
 
