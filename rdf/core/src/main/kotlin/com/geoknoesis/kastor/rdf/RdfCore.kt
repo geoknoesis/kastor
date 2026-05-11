@@ -9,6 +9,64 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.dsl.GraphDsl
 import com.geoknoesis.kastor.rdf.provider.EmptySparqlQueryResult
 import com.geoknoesis.kastor.rdf.RdfFormat
+import java.util.regex.Pattern
+
+/**
+ * Helper function to extract parsing error context from provider exceptions.
+ * Attempts to extract line/column information from exception messages.
+ */
+private fun extractParseErrorContext(
+    exception: Throwable,
+    format: String,
+    data: ByteArray? = null
+): ParseErrorDetails {
+    val message = exception.message ?: "Unknown parsing error"
+    
+    // Try to extract line/column from common error message patterns
+    var line: Int? = null
+    var column: Int? = null
+    var snippet: String? = null
+    
+    // Pattern for "line X" or "line X, column Y"
+    val linePattern = Pattern.compile("line\\s+(\\d+)", Pattern.CASE_INSENSITIVE)
+    val columnPattern = Pattern.compile("column\\s+(\\d+)", Pattern.CASE_INSENSITIVE)
+    
+    val messageMatcher = linePattern.matcher(message)
+    if (messageMatcher.find()) {
+        line = messageMatcher.group(1)?.toIntOrNull()
+    }
+    
+    val columnMatcher = columnPattern.matcher(message)
+    if (columnMatcher.find()) {
+        column = columnMatcher.group(1)?.toIntOrNull()
+    }
+    
+    // Extract snippet around error location if we have line number and data
+    if (line != null && data != null) {
+        try {
+            val text = data.toString(Charsets.UTF_8)
+            val lines = text.lines()
+            if (line > 0 && line <= lines.size) {
+                val errorLine = lines[line - 1]
+                // Include error line and context (previous and next line if available)
+                val start = maxOf(0, line - 2)
+                val end = minOf(lines.size, line + 1)
+                snippet = lines.subList(start, end).joinToString("\n")
+            }
+        } catch (e: Exception) {
+            // Ignore snippet extraction errors
+        }
+    }
+    
+    return ParseErrorDetails(
+        message = message,
+        line = line,
+        column = column,
+        snippet = snippet,
+        format = format,
+        cause = exception
+    )
+}
 
 /**
  * Kastor RDF - The Most Elegant RDF API for Kotlin
@@ -33,8 +91,16 @@ object Rdf {
     // === FACTORY METHODS ===
     
     /**
-     * Create an in-memory repository with default settings.
-     * Perfect for quick prototyping and testing.
+     * Create an in-memory repository backed by a real SPARQL-capable provider.
+     *
+     * **Required runtime dependency:** Either `:rdf:jena` or `:rdf:rdf4j` (or any other
+     * provider that exposes a `memory` variant) must be on the classpath. The bundled
+     * `MemoryRepositoryProvider` is intentionally not used here because it does not
+     * support SPARQL queries or RDF parsing/serialization. To use that provider for
+     * graph-only testing, opt in explicitly via [repository] with `providerId = "memory"`.
+     *
+     * @throws RdfProviderException if no SPARQL-capable provider with a `memory`
+     * variant is registered.
      */
     fun memory(): RdfRepository = repository {
         when {
@@ -46,16 +112,24 @@ object Rdf {
                 providerId = "rdf4j"
                 variantId = "memory"
             }
-            else -> {
-                providerId = "memory"
-                variantId = "memory"
-            }
+            else -> throw RdfProviderException(
+                "Rdf.memory() requires a SPARQL-capable provider on the classpath. " +
+                    "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
+                    "to your dependencies, or call Rdf.repository { providerId = \"memory\" } " +
+                    "to use the limited graph-only memory provider explicitly.",
+                RdfErrorCode.PROVIDER_NOT_FOUND
+            )
         }
     }
     
     /**
      * Create an in-memory repository with RDFS inference.
      * Automatically infers additional triples based on RDFS rules.
+     *
+     * **Required runtime dependency:** Either `:rdf:jena` (provides `memory-inference`)
+     * or `:rdf:rdf4j` (provides `memory-rdfs`) must be on the classpath.
+     *
+     * @throws RdfProviderException if no inference-capable in-memory provider is registered.
      */
     fun memoryWithInference(): RdfRepository = repository {
         when {
@@ -67,17 +141,24 @@ object Rdf {
                 providerId = "rdf4j"
                 variantId = "memory-rdfs"
             }
-            else -> {
-                providerId = "memory"
-                variantId = "memory"
-            }
+            else -> throw RdfProviderException(
+                "Rdf.memoryWithInference() requires a provider that supports RDFS inference. " +
+                    "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
+                    "to your dependencies.",
+                RdfErrorCode.PROVIDER_NOT_FOUND
+            )
         }
         inference = true
     }
     
     /**
-     * Create a persistent repository with TDB2 backend.
+     * Create a persistent repository with TDB2 (Jena) or NativeStore (RDF4J) backend.
      * Data persists between application restarts.
+     *
+     * **Required runtime dependency:** Either `:rdf:jena` (provides `tdb2`) or
+     * `:rdf:rdf4j` (provides `native`) must be on the classpath.
+     *
+     * @throws RdfProviderException if no persistent-capable provider is registered.
      */
     fun persistent(location: String = DEFAULT_PERSISTENT_LOCATION): RdfRepository = repository {
         when {
@@ -89,10 +170,12 @@ object Rdf {
                 providerId = "rdf4j"
                 variantId = "native"
             }
-            else -> {
-                providerId = "memory"
-                variantId = "memory"
-            }
+            else -> throw RdfProviderException(
+                "Rdf.persistent() requires a provider with a persistent backend. " +
+                    "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
+                    "to your dependencies.",
+                RdfErrorCode.PROVIDER_NOT_FOUND
+            )
         }
         this.location = location
     }
@@ -364,18 +447,16 @@ object Rdf {
                     // Format error, rethrow
                     throw e
                 } catch (e: Exception) {
-                    // Other error, wrap and throw
-                    throw RdfFormatException(
-                        "Failed to parse RDF from input stream (format: ${formatEnum.formatName}) using provider ${provider.id}: ${e.message}",
-                        e
-                    )
+                    // Extract parsing error context with line/column information
+                    val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
+                    throw RdfFormatException.ParseError(parseError)
                 }
             }
         }
         
-        throw RdfFormatException(
-            "No provider found that supports format: ${formatEnum.formatName}. " +
-            "Available providers: ${providers.map { it.id }.joinToString()}"
+        throw RdfFormatException.UnsupportedFormat(
+            formatEnum.formatName,
+            providers.flatMap { it.getCapabilities().supportedInputFormats }.distinct()
         )
     }
     
@@ -389,6 +470,72 @@ object Rdf {
      */
     fun parseFromInputStream(inputStream: InputStream, format: RdfFormat): MutableRdfGraph {
         return parseFromInputStream(inputStream, format.formatName)
+    }
+    
+    /**
+     * Parse RDF data from an input stream as a sequence of triples (streaming).
+     * 
+     * This method enables memory-efficient parsing of large RDF files by returning
+     * triples as a lazy sequence rather than loading everything into memory at once.
+     * 
+     * **Memory Efficiency:**
+     * - The input stream is processed incrementally
+     * - Triples are yielded as they are parsed (lazy evaluation)
+     * - Suitable for processing large files without running out of memory
+     * 
+     * **Example:**
+     * ```kotlin
+     * Rdf.parseStreaming(File("large.ttl").inputStream(), RdfFormat.TURTLE)
+     *     .chunked(1000) // Process in batches
+     *     .forEach { batch ->
+     *         repo.addTriples(batch)
+     *     }
+     * ```
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @return A sequence of RDF triples (lazy evaluation)
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseStreaming(inputStream: InputStream, format: String): Sequence<RdfTriple> {
+        val formatEnum = RdfFormat.fromStringOrThrow(format)
+        val providers = RdfProviderRegistry.discoverProviders()
+        
+        // Try to find a provider that supports this format
+        for (provider in providers) {
+            if (provider.supportsFormat(formatEnum.formatName)) {
+                try {
+                    return provider.parseStreaming(inputStream, formatEnum.formatName)
+                } catch (e: UnsupportedOperationException) {
+                    // Provider doesn't actually support it, try next
+                    continue
+                } catch (e: RdfFormatException) {
+                    // Format error, rethrow
+                    throw e
+                } catch (e: Exception) {
+                    // Extract parsing error context
+                    val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
+                    throw RdfFormatException.ParseError(parseError)
+                }
+            }
+        }
+        
+        throw RdfFormatException.UnsupportedFormat(
+            formatEnum.formatName,
+            providers.flatMap { it.getCapabilities().supportedInputFormats }.distinct()
+        )
+    }
+    
+    /**
+     * Parse RDF data from an input stream as a sequence of triples (streaming, type-safe version).
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format enum value
+     * @return A sequence of RDF triples (lazy evaluation)
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseStreaming(inputStream: InputStream, format: RdfFormat): Sequence<RdfTriple> {
+        return parseStreaming(inputStream, format.formatName)
     }
     
     // === DATASET PARSING (QUAD FORMATS) ===
@@ -538,18 +685,16 @@ object Rdf {
                     // Format error, rethrow
                     throw e
                 } catch (e: Exception) {
-                    // Other error, wrap and throw
-                    throw RdfFormatException(
-                        "Failed to parse RDF dataset from input stream (format: ${formatEnum.formatName}) using provider ${provider.id}: ${e.message}",
-                        e
-                    )
+                    // Extract parsing error context with line/column information
+                    val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
+                    throw RdfFormatException.ParseError(parseError)
                 }
             }
         }
         
-        throw RdfFormatException(
-            "No provider found that supports format: ${formatEnum.formatName}. " +
-            "Available providers: ${providers.map { it.id }.joinToString()}"
+        throw RdfFormatException.UnsupportedFormat(
+            formatEnum.formatName,
+            providers.flatMap { it.getCapabilities().supportedInputFormats }.distinct()
         )
     }
     
@@ -605,16 +750,20 @@ object Rdf {
         }
         
         fun build(): RdfRepository {
+            val options = buildMap<String, String> {
+                // Only thread `location` through when the caller explicitly set it.
+                // This avoids handing a phantom `data` directory to memory variants
+                // that do not need any storage path.
+                location?.let { put("location", it) }
+                put("inference", inference.toString())
+            }
             val config = RdfConfig(
                 providerId = providerId,
                 variantId = variantId,
-                options = mapOf(
-                    "location" to (location ?: DEFAULT_PERSISTENT_LOCATION),
-                    "inference" to inference.toString()
-                ),
+                options = options,
                 requirements = requirements.takeIf { it != ProviderRequirements() }
             )
-            
+
             return registry.create(config)
         }
     }
@@ -714,14 +863,14 @@ interface RdfRepository : Dataset, SparqlMutable {
     fun removeGraph(name: Iri): Boolean
 
     /**
-     * Get an editor for the default graph.
+     * Get a mutable graph for the default graph.
      */
-    fun editDefaultGraph(): GraphEditor
+    fun editDefaultGraph(): MutableRdfGraph
 
     /**
-     * Get an editor for a named graph.
+     * Get a mutable graph for a named graph.
      */
-    fun editGraph(name: Iri): GraphEditor
+    fun editGraph(name: Iri): MutableRdfGraph
     
     // === QUERY OPERATIONS ===
     
@@ -934,8 +1083,17 @@ interface BindingSet {
     
     /**
      * Get a boolean value for a variable.
+     *
+     * Accepts the same lexical forms as the [Literal] factory for `xsd:boolean`:
+     * `"true"` / `"false"` (case-insensitive) and `"1"` / `"0"`. Any other
+     * lexical form returns null.
      */
-    fun getBoolean(variable: String): Boolean? = getString(variable)?.toBooleanStrictOrNull()
+    fun getBoolean(variable: String): Boolean? = when (getString(variable)?.lowercase()) {
+        "true", "1" -> true
+        "false", "0" -> false
+        null -> null
+        else -> null
+    }
     
     /**
      * Get a string value for a variable, or return the default if not bound.
@@ -1074,6 +1232,18 @@ object RdfProviderRegistry : ProviderRegistry {
     ): ProviderSelection? = delegate.selectProvider(requirements, preferredProviderId, preferredVariantId)
 
     override fun register(provider: RdfProvider) = delegate.register(provider)
+    
+    /**
+     * Register multiple providers at once.
+     * Useful for Android/KMP initialization where ServiceLoader may not work.
+     * 
+     * @param providers The providers to register
+     * 
+     * @sample com.example.RegisterMultipleProviders
+     */
+    fun registerAll(vararg providers: RdfProvider) {
+        providers.forEach { register(it) }
+    }
 
     override fun create(config: RdfConfig): RdfRepository = delegate.create(config)
 
@@ -1207,7 +1377,8 @@ interface RdfProvider {
     /**
      * Check if this provider supports a specific RDF format for serialization/parsing.
      * 
-     * Default implementation checks against [ProviderCapabilities.supportedInputFormats]
+     * Default implementation checks against [ProviderCapabilities.supportedOutputFormats]
+     * (for serialization) or [ProviderCapabilities.supportedInputFormats] (for parsing),
      * and common format names.
      * 
      * @param format The RDF format (can be a string or RdfFormat enum value)
@@ -1217,14 +1388,21 @@ interface RdfProvider {
         val normalized = format.uppercase().trim()
         val capabilities = getCapabilities()
         
+        // Check output formats first (for serialization), then input formats (for parsing)
+        val supportedFormats = if (capabilities.supportedOutputFormats.isNotEmpty()) {
+            capabilities.supportedOutputFormats
+        } else {
+            capabilities.supportedInputFormats
+        }
+        
         // Check explicit format support
-        if (normalized in capabilities.supportedInputFormats.map { it.uppercase() }) {
+        if (normalized in supportedFormats.map { it.uppercase() }) {
             return true
         }
         
         // Check common format aliases
         val formatEnum = RdfFormat.fromString(normalized)
-        return formatEnum != null && formatEnum.formatName in capabilities.supportedInputFormats.map { it.uppercase() }
+        return formatEnum != null && formatEnum.formatName in supportedFormats.map { it.uppercase() }
     }
     
     /**
@@ -1235,11 +1413,12 @@ interface RdfProvider {
      * 
      * @param graph The graph to serialize
      * @param format The target format
+     * @param options Serialization options (optional, defaults to [SerializationOptions.DEFAULT])
      * @return The serialized RDF data as a string
      * @throws RdfFormatException if the format is not supported or serialization fails
      * @throws UnsupportedOperationException if the provider doesn't support serialization
      */
-    fun serializeGraph(graph: RdfGraph, format: String): String {
+    fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         throw UnsupportedOperationException("Provider '${id}' does not support graph serialization")
     }
     
@@ -1254,11 +1433,12 @@ interface RdfProvider {
      * 
      * @param repository The repository to serialize
      * @param format The target quad format (TRIG, N-QUADS)
+     * @param options Serialization options (optional, defaults to [SerializationOptions.DEFAULT])
      * @return The serialized RDF dataset as a string
      * @throws RdfFormatException if the format is not supported or serialization fails
      * @throws UnsupportedOperationException if the provider doesn't support dataset serialization
      */
-    fun serializeDataset(repository: RdfRepository, format: String): String {
+    fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         throw UnsupportedOperationException("Provider '${id}' does not support dataset serialization")
     }
     
@@ -1276,6 +1456,46 @@ interface RdfProvider {
      */
     fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
         throw UnsupportedOperationException("Provider '${id}' does not support graph parsing")
+    }
+
+    /**
+     * Parse RDF data from an input stream into a graph using an explicit base
+     * IRI for resolving relative IRIs in the input.
+     *
+     * The default implementation ignores [baseIri] and calls [parseGraph];
+     * providers that can honour an external base should override this method.
+     *
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @param baseIri Absolute IRI used to resolve relative references in the
+     *   input. Pass null to fall back to the format's default behaviour.
+     */
+    fun parseGraph(
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+    ): MutableRdfGraph = parseGraph(inputStream, format)
+    
+    /**
+     * Parse RDF data from an input stream as a sequence of triples (streaming).
+     * 
+     * This method enables memory-efficient parsing of large RDF files by returning
+     * triples as a lazy sequence rather than loading everything into memory.
+     * 
+     * Default implementation reads the stream and delegates to [parseGraph], then
+     * returns the triples as a sequence. Providers that support true streaming
+     * should override this method for better performance.
+     * 
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @return A sequence of RDF triples (lazy evaluation)
+     * @throws RdfFormatException if the format is not supported or parsing fails
+     * @throws UnsupportedOperationException if the provider doesn't support parsing
+     */
+    fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
+        // Default implementation: parse to graph, then return triples as sequence
+        val graph = parseGraph(inputStream, format)
+        return graph.getTriplesSequence()
     }
     
     /**
@@ -1295,6 +1515,23 @@ interface RdfProvider {
      */
     fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
         throw UnsupportedOperationException("Provider '${id}' does not support dataset parsing")
+    }
+
+    /**
+     * Parse RDF dataset data from an input stream into the given repository,
+     * using an explicit base IRI for relative-IRI resolution.
+     *
+     * The default implementation ignores [baseIri] and delegates to the
+     * single-arg [parseDataset]. Providers that can honour an external base
+     * should override.
+     */
+    fun parseDataset(
+        repository: RdfRepository,
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+    ) {
+        parseDataset(repository, inputStream, format)
     }
 }
 
@@ -1351,12 +1588,32 @@ data class PerformanceMetrics(
  * Enhanced provider capabilities with SPARQL 1.2 support.
  */
 data class ProviderCapabilities(
+    /**
+     * The RDF specification version this provider conforms to. `"1.1"` for
+     * the bundled in-memory provider; `"1.2"` for Jena/RDF4J in their current
+     * pinned versions. Used by callers that need to make spec-version aware
+     * decisions (for example: should we emit `<<( s p o )>>` or use the legacy
+     * RDF-star reification model when constructing data).
+     */
+    val rdfVersion: String = "1.1",
+    /**
+     * True if the provider supports RDF 1.2 triple terms (`<<( s p o )>>`)
+     * including `rdf:reifies`. False on legacy RDF 1.1-only providers.
+     */
+    val supportsTripleTerms: Boolean = false,
     // Existing capabilities
     val supportsInference: Boolean = false,
     val supportsTransactions: Boolean = false,
     val supportsNamedGraphs: Boolean = false,
     val supportsUpdates: Boolean = false,
+    /**
+     * True if the provider preserves RDF-star quoted triples (legacy semantics)
+     * during round-trip. In RDF 1.2 [supportsTripleTerms] is the relevant flag;
+     * this field stays for backwards compatibility.
+     */
     val supportsRdfStar: Boolean = false,
+    /** True if the provider validates writes against SHACL shapes (e.g. RDF4J `ShaclSail`). */
+    val supportsShacl: Boolean = false,
     val maxMemoryUsage: Long = Long.MAX_VALUE,
     
     // SPARQL 1.2 specific capabilities
@@ -1372,6 +1629,7 @@ data class ProviderCapabilities(
     val supportedLanguages: List<String> = emptyList(),
     val supportedResultFormats: List<String> = emptyList(),
     val supportedInputFormats: List<String> = emptyList(),
+    val supportedOutputFormats: List<String> = emptyList(), // Formats supported for serialization
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),

@@ -45,6 +45,9 @@ class OntoMapperPlugin : Plugin<Project> {
                     task.vocabularyName.set(ontologyConfig.vocabularyName)
                     task.vocabularyNamespace.set(ontologyConfig.vocabularyNamespace)
                     task.vocabularyPrefix.set(ontologyConfig.vocabularyPrefix)
+                    task.generateDsl.set(ontologyConfig.generateDsl)
+                    task.dslPackage.set(ontologyConfig.dslPackage)
+                    task.dslName.set(ontologyConfig.dslName)
                     task.outputDirectory.set(project.file(ontologyConfig.outputDirectory))
                 }
             }

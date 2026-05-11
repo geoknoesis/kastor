@@ -204,8 +204,20 @@ class JenaValidation : ValidationContext {
       is BlankNode -> jenaModel.createResource(AnonId(term.id))
       is Literal -> {
         when (term) {
-          is LangString -> {
-            jenaModel.createLiteral(term.lexical, term.lang)
+          is com.geoknoesis.kastor.rdf.LangString -> {
+            // RDF 1.2: when a base direction is set, build the literal as a
+            // typed `rdf:dirLangString` so SHACL `sh:datatype rdf:dirLangString`
+            // constraints validate. Plain language strings stay as
+            // `rdf:langString`.
+            val direction = term.direction
+            if (direction != null) {
+              jenaModel.createTypedLiteral(
+                "${term.lexical}@${term.lang}--${direction.token}",
+                term.datatype.value,
+              )
+            } else {
+              jenaModel.createLiteral(term.lexical, term.lang)
+            }
           }
           else -> {
             jenaModel.createTypedLiteral(term.lexical, term.datatype.value)

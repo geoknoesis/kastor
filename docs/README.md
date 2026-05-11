@@ -1,5 +1,9 @@
 # 📚 Kastor Documentation Hub
 
+**Published site:** after you enable [GitHub Pages](https://docs.github.com/en/pages) with the **GitHub Actions** source, the site is available at `https://<owner>.github.io/<repo>/` (for example `https://geoknoesis.github.io/kastor/`). The build workflow lives at [`.github/workflows/pages.yml`](../.github/workflows/pages.yml).
+
+**Local preview:** from this `docs/` folder, run `bundle install` and `bundle exec jekyll serve --livereload` (requires [Ruby](https://www.ruby-lang.org/) + [Bundler](https://bundler.io/)).
+
 Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF framework that makes semantic web development accessible and powerful.
 
 ## 🚀 Quick Start
@@ -204,11 +208,16 @@ If Kastor is valuable to you or your organization, your financial support helps 
 **For organizations:** If you're using Kastor in production or need specific features, consider enterprise sponsorship. This helps prioritize your needs and ensures the project continues to evolve in ways that benefit your use case.
 
 ### **Contributing**
-- [GitHub Repository](https://github.com/geoknoesis/kastor) - Source code and issues
-- [Community Discussions](https://github.com/geoknoesis/kastor/discussions) - Ask questions and share ideas
+- [Contributing guide](../CONTRIBUTING.md) — build, test, pull requests
+- [Support](../SUPPORT.md) — questions, bugs, security routing
+- [Code of Conduct](../CODE_OF_CONDUCT.md)
+- [Security policy](../SECURITY.md)
+- [GitHub Repository](https://github.com/geoknoesis/kastor) — source code and issues
+- [Community Discussions](https://github.com/geoknoesis/kastor/discussions) — ask questions and share ideas
 
 ### **External Resources**
-- [RDF 1.1 Specification](https://www.w3.org/TR/rdf11-concepts/) - W3C standard
+- [RDF 1.2 Concepts](https://www.w3.org/TR/rdf12-concepts/) — W3C RDF data model (Kastor targets RDF 1.2; see repo [CHANGELOG](../CHANGELOG.md))
+- [RDF 1.1 Specification](https://www.w3.org/TR/rdf11-concepts/) — earlier RDF concepts (legacy interop)
 - [SPARQL 1.1 Specification](https://www.w3.org/TR/sparql11-query/) - Query language
 - [SHACL Specification](https://www.w3.org/TR/shacl/) - Validation language
 - [JSON-LD Specification](https://www.w3.org/TR/json-ld11/) - JSON serialization

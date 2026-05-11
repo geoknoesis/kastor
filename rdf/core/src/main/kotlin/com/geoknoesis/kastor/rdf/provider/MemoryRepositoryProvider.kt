@@ -5,7 +5,18 @@ import java.lang.ref.Cleaner
 
 /**
  * Memory repository provider implementation.
- * Provides in-memory RDF repositories for testing and development.
+ *
+ * Provides a minimal in-memory RDF repository intended for graph-only testing
+ * and development. It does **not** support:
+ * - SPARQL queries (`select`, `ask`, `construct`, `describe`, `update`)
+ * - RDF parsing or serialization
+ *
+ * For full functionality (SPARQL, parsing, serialization), depend on
+ * `:rdf:jena` or `:rdf:rdf4j` and use [Rdf.memory] / [Rdf.persistent], which
+ * pick a real provider via `ServiceLoader`. This provider is registered
+ * unconditionally so that `Rdf.repository { providerId = "memory" }` always
+ * resolves, but it is never selected by the `Rdf.memory()` / `Rdf.persistent()`
+ * factory methods.
  */
 class MemoryRepositoryProvider : RdfProvider {
     
@@ -27,9 +38,21 @@ class MemoryRepositoryProvider : RdfProvider {
     }
     
     override fun getCapabilities(variantId: String?): ProviderCapabilities {
+        // The memory provider's `transaction { ... }` succeeds, but it offers no
+        // isolation or rollback. We advertise it as a no-op transaction so callers
+        // who write `repo.transaction { ... }` for symmetry with real providers
+        // do not break, while making it clear the provider does not implement
+        // ACID semantics.
+        //
+        // The provider does not parse or serialise RDF, but it does store
+        // [TripleTerm] objects faithfully via [MemoryGraph], so we advertise
+        // RDF 1.1 conformance with no triple-term capability declared at the
+        // provider level.
         return ProviderCapabilities(
+            rdfVersion = "1.1",
+            supportsTripleTerms = false,
             supportsInference = false,
-            supportsTransactions = false,
+            supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = false,
             supportsRdfStar = true,
@@ -82,11 +105,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         return removed
     }
 
-    override fun editDefaultGraph(): GraphEditor {
+    override fun editDefaultGraph(): MutableRdfGraph {
         return defaultGraph as MutableRdfGraph
     }
 
-    override fun editGraph(name: Iri): GraphEditor {
+    override fun editGraph(name: Iri): MutableRdfGraph {
         return getGraph(name) as MutableRdfGraph
     }
     
@@ -158,8 +181,10 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
     override fun getCapabilities(): ProviderCapabilities {
         return ProviderCapabilities(
+            rdfVersion = "1.1",
+            supportsTripleTerms = false,
             supportsInference = false,
-            supportsTransactions = false,
+            supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = false,
             supportsRdfStar = true,

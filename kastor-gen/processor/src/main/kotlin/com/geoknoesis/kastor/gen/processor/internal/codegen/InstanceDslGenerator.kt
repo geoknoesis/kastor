@@ -26,7 +26,7 @@ import com.squareup.kotlinpoet.CodeBlock
  * Generator for instance DSL builders from ontology classes and SHACL shapes.
  * Creates type-safe DSL builders for creating RDF instances using KotlinPoet.
  */
-internal class InstanceDslGenerator(
+class InstanceDslGenerator(
     private val logger: KSPLogger
 ) {
     private val propertyMethodGenerator = PropertyMethodGenerator(logger)
@@ -82,11 +82,14 @@ internal class InstanceDslGenerator(
             }
         }
         
+        // Sort shapes by targetClass IRI for deterministic output
         val fromShapes = model.shapes
+            .sortedBy { it.targetClass }
             .filter { it.targetClass !in classIris }
             .map { buildClassBuilderFromShape(it, model.context, options) }
         
-        return fromClasses + fromShapes
+        // Sort final result by classIri for deterministic output
+        return (fromClasses + fromShapes).sortedBy { it.classIri }
     }
     
     private fun extractClasses(model: OntologyModel): List<OntologyClass> {
@@ -106,7 +109,8 @@ internal class InstanceDslGenerator(
         context: JsonLdContext,
         options: DslGenerationOptions
     ): ClassBuilderModel {
-        val properties = buildPropertyBuilders(shape.properties, context, options)
+        // Sort properties by path IRI for deterministic output
+        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options)
         val builderName = NamingUtils.toCamelCase(ontologyClass.className)
         
         return ClassBuilderModel(
@@ -125,7 +129,8 @@ internal class InstanceDslGenerator(
     ): ClassBuilderModel {
         val className = VocabularyMapper.extractLocalName(shape.targetClass)
         val builderName = NamingUtils.toCamelCase(className)
-        val properties = buildPropertyBuilders(shape.properties, context, options)
+        // Sort properties by path IRI for deterministic output
+        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options)
         
         return ClassBuilderModel(
             className = className,
@@ -347,8 +352,10 @@ internal class InstanceDslGenerator(
                     .build()
             )
         
-        // Generate property methods
-        classBuilder.properties.forEach { property ->
+        // Generate property methods - sort by propertyIri for deterministic output
+        classBuilder.properties
+            .sortedBy { it.propertyIri }
+            .forEach { property ->
             classBuilderSpec.addFunctions(
                 propertyMethodGenerator.generatePropertyMethods(property, options)
             )

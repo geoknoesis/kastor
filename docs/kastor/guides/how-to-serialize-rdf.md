@@ -46,6 +46,51 @@ val rdfXml = graph.serialize(RdfFormat.RDF_XML)
 val nTriples = graph.serialize(RdfFormat.N_TRIPLES)
 ```
 
+## Step 5: Serialize with options
+
+You can customize serialization behavior using `SerializationOptions`:
+
+```kotlin
+import com.geoknoesis.kastor.rdf.SerializationOptions
+
+// Using explicit options
+val options = SerializationOptions(
+    prettyPrint = true,
+    baseUri = "http://example.org/",
+    prefixMappings = mapOf("ex" to "http://example.org/"),
+    lineWidth = 120
+)
+val turtle = graph.serialize(RdfFormat.TURTLE, options)
+
+// Using builder lambda (fluent API)
+val turtle2 = graph.serialize(RdfFormat.TURTLE) {
+    prettyPrint = true
+    baseUri = "http://example.org/"
+    prefix("ex", "http://example.org/")
+    prefix("foaf", "http://xmlns.com/foaf/0.1/")
+    lineWidth = 120
+}
+
+// Using predefined options
+val compact = graph.serialize(RdfFormat.TURTLE, SerializationOptions.COMPACT)
+val pretty = graph.serialize(RdfFormat.TURTLE, SerializationOptions.PRETTY)
+```
+
+## Serialization Options
+
+The `SerializationOptions` class provides control over serialization:
+
+- **prettyPrint**: Enable/disable pretty-printed output with indentation (default: `true`)
+- **baseUri**: Base URI for resolving relative IRIs (default: `null`)
+- **prefixMappings**: Custom prefix mappings (e.g., `"ex" -> "http://example.org/"`)
+- **useAbbreviatedSyntax**: Use abbreviated syntax when possible (default: `true`)
+- **lineWidth**: Maximum line width for pretty printing, 0 = no limit (default: `80`)
+- **jsonLdContext**: JSON-LD context for compaction (JSON-LD format only)
+- **jsonLdCompact**: Enable JSON-LD compaction (JSON-LD format only, default: `false`)
+- **jsonLdFrame**: JSON-LD frame for framing (JSON-LD format only)
+
+**⚠️ Important**: JSON-LD compaction and framing may not preserve all RDF data. See [JSON-LD Compaction and Framing Guide](json-ld-compaction-framing.md) for details.
+
 ## Expected output
 
 ```
@@ -68,4 +113,5 @@ The following formats are supported:
 - Use `RdfFormat` enum for **type-safe** format specification
 - If no provider supports the requested format, a `RdfFormatException` is thrown
 - The serialization automatically uses the first available provider that supports the format
+- Options are optional - default options are used if not specified
 

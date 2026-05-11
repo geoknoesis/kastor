@@ -1,4 +1,12 @@
-# RDF-star Support in Kastor
+# RDF-star (legacy) and RDF 1.2 triple terms in Kastor
+
+> **Kastor 0.2.0 update.** Kastor now follows the W3C RDF 1.2 model: triple
+> terms (`<<( s p o )>>`) are object-position-only and metadata is attached
+> through `rdf:reifies`. The RDF-star idioms below still parse on the
+> Jena/RDF4J side because both libraries' parsers accept the legacy syntax,
+> but new code should use the RDF 1.2 reifier pattern documented in
+> [RDF 1.2 in Kastor](../concepts/rdf-1.2.md). The migration guide is
+> [here](../guides/migrating-to-rdf-1.2.md).
 
 Kastor provides comprehensive support for RDF-star (also known as RDF*), enabling you to make statements about statements. This powerful feature allows for rich metadata modeling, provenance tracking, and complex knowledge representation scenarios.
 

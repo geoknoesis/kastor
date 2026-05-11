@@ -180,3 +180,60 @@ fun RdfRepository.getTriplesSequence(graphName: Iri? = null): Sequence<RdfTriple
     if (graphName == null) defaultGraph.getTriplesSequence()
     else getGraph(graphName).getTriplesSequence()
 
+// === CBD CLOSURE UTILITIES ===
+
+/**
+ * Extracts the Concise Bounded Description (CBD) closure for a resource.
+ * 
+ * CBD includes:
+ * 1. All triples where the resource is the subject (direct properties)
+ * 2. Recursively, for any blank node object, all triples where that blank node is the subject
+ * 
+ * This follows the standard CBD definition where blank nodes are followed recursively
+ * to get complete anonymous resource descriptions, but IRIs are not followed.
+ * 
+ * **Example:**
+ * ```kotlin
+ * // Graph structure:
+ * // :alice foaf:name "Alice"
+ * // :alice foaf:knows _:b1
+ * // _:b1 foaf:name "Bob"
+ * // _:b1 foaf:email "bob@example.com"
+ * // _:b1 foaf:knows _:b2
+ * // _:b2 foaf:name "Charlie"
+ * 
+ * val cbd = graph.getCbdClosure(Iri("http://example.org/alice"))
+ * // Returns all 6 triples above
+ * ```
+ * 
+ * @param resource The resource to extract CBD for
+ * @return Set of all triples in the CBD closure
+ */
+fun RdfGraph.getCbdClosure(resource: RdfResource): Set<RdfTriple> {
+    val visited = mutableSetOf<RdfResource>()
+    val result = mutableSetOf<RdfTriple>()
+    
+    fun collectCbd(resource: RdfResource) {
+        // Skip if already visited (prevent cycles)
+        if (resource in visited) return
+        visited.add(resource)
+        
+        // Get all triples where this resource is the subject (direct properties)
+        val directTriples = getTriplesSequence()
+            .filter { it.subject == resource }
+            .toSet()
+        
+        result.addAll(directTriples)
+        
+        // For each triple, if the object is a blank node, recursively collect its CBD
+        directTriples.forEach { triple ->
+            if (triple.obj is BlankNode) {
+                collectCbd(triple.obj as BlankNode)
+            }
+        }
+    }
+    
+    collectCbd(resource)
+    return result
+}
+

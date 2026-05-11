@@ -7,21 +7,21 @@ This page shows side-by-side comparisons between manually writing domain interfa
 ### Manual Approach
 ```kotlin
 // You write this manually - 30-60 minutes
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String  // Did you verify minCount/maxCount?
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String?  // Is this really optional?
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/publisher")
+    @Rdf(iri = "http://purl.org/dc/terms/publisher")
     val publisher: Agent?
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/issued")
+    @Rdf(iri = "http://purl.org/dc/terms/issued")
     val issued: String?  // Should this be a Date type?
     
     // ... 20+ more properties
@@ -30,12 +30,14 @@ interface Catalog {
 ```
 **Time**: 30-60 minutes | **Risk**: High | **Maintenance**: Manual
 
-### Kastor Gen Approach
+### Kastor Gen approach
 ```kotlin
 // You configure this - 2 minutes
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
 )
 class OntologyGenerator
 
@@ -81,12 +83,12 @@ class OntologyGenerator
 
 ```kotlin
 // Manual interface - no compile-time validation
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String?  // ❌ Wrong! SHACL says minCount 1 (required)
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: List<String>  // ❌ Wrong! SHACL says maxCount 1
 }
 
@@ -119,12 +121,12 @@ println(catalog.title)  // ✅ Always has value (type system guarantees it)
 
 ```kotlin
 // Manual interface - easy to get relationships wrong
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Dataset")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Dataset")
 interface Dataset {
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#distribution")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#distribution")
     val distribution: List<Distribution>  // Is this correct?
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/theme")
+    @Rdf(iri = "http://purl.org/dc/terms/theme")
     val theme: List<Concept>  // Or is it List<String>?
     
     // ... many more properties
@@ -201,13 +203,13 @@ interface Catalog {
 
 ```kotlin
 // You must manually write interfaces for each ontology
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog { /* ... */ }
 
-@RdfClass(iri = "http://schema.org/DataCatalog")
+@Rdf(iri = "http://schema.org/DataCatalog")
 interface DataCatalog { /* ... */ }
 
-@RdfClass(iri = "http://purl.org/dc/terms/Agent")
+@Rdf(iri = "http://purl.org/dc/terms/Agent")
 interface Agent { /* ... */ }
 
 // ... 50+ more interfaces
@@ -219,15 +221,17 @@ interface Agent { /* ... */ }
 
 ```kotlin
 // Configure once for each ontology
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
 )
 class DCATGenerator
 
-@GenerateFromOntology(
-    shaclPath = "ontologies/schema.shacl.ttl",
-    contextPath = "ontologies/schema.context.jsonld"
+@Rdf(
+    shacl = "ontologies/schema.shacl.ttl",
+    context = "ontologies/schema.context.jsonld",
 )
 class SchemaGenerator
 
@@ -253,7 +257,7 @@ class SchemaGenerator
 
 **Next Steps:**
 - [See detailed benefits →](benefits.md)
-- [Get started →](tutorials/getting-started.md)
+- [Get started →](../tutorials/getting-started.md)
 - [View examples →](../examples/)
 
 

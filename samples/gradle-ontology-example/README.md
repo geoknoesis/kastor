@@ -71,18 +71,18 @@ The plugin generates the following files:
 
 ### Domain Interfaces
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/publisher")
+    @Rdf(iri = "http://purl.org/dc/terms/publisher")
     val publisher: Agent
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```

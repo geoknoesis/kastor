@@ -18,71 +18,62 @@ kastorGen {
     ontologies {
         // DCAT-US with separate packages
         create("dcat") {
-            shaclPath.set("ontologies/dcat-us.shacl.ttl")
-            contextPath.set("ontologies/dcat-us.context.jsonld")
-            
-            // Separate packages for each component
-            interfacePackage.set("com.example.dcatus.interfaces")
-            wrapperPackage.set("com.example.dcatus.wrappers")
-            vocabularyPackage.set("com.example.dcatus.vocab")
-            
-            // Generate all components
-            generateInterfaces.set(true)
-            generateWrappers.set(true)
-            generateVocabulary.set(true)
-            
-            // Vocabulary configuration
-            vocabularyName.set("DCAT")
-            vocabularyNamespace.set("http://www.w3.org/ns/dcat#")
-            vocabularyPrefix.set("dcat")
-            
-            outputDirectory.set("build/generated/sources/dcat")
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+
+            interfacePackage = "com.example.dcatus.interfaces"
+            wrapperPackage = "com.example.dcatus.wrappers"
+            vocabularyPackage = "com.example.dcatus.vocab"
+
+            generateInterfaces = true
+            generateWrappers = true
+            generateVocabulary = true
+
+            vocabularyName = "DCAT"
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
+            vocabularyPrefix = "dcat"
+
+            outputDirectory = "build/generated/sources/dcat"
         }
-        
+
         // Schema.org with separate packages
         create("schema") {
-            shaclPath.set("ontologies/schema.shacl.ttl")
-            contextPath.set("ontologies/schema.context.jsonld")
-            
-            // Separate packages for each component
-            interfacePackage.set("com.example.schema.interfaces")
-            wrapperPackage.set("com.example.schema.wrappers")
-            vocabularyPackage.set("com.example.schema.vocab")
-            
-            // Generate all components
-            generateInterfaces.set(true)
-            generateWrappers.set(true)
-            generateVocabulary.set(true)
-            
-            // Vocabulary configuration
-            vocabularyName.set("SCHEMA")
-            vocabularyNamespace.set("https://schema.org/")
-            vocabularyPrefix.set("schema")
-            
-            outputDirectory.set("build/generated/sources/schema")
+            shaclPath = "ontologies/schema.shacl.ttl"
+            contextPath = "ontologies/schema.context.jsonld"
+
+            interfacePackage = "com.example.schema.interfaces"
+            wrapperPackage = "com.example.schema.wrappers"
+            vocabularyPackage = "com.example.schema.vocab"
+
+            generateInterfaces = true
+            generateWrappers = true
+            generateVocabulary = true
+
+            vocabularyName = "SCHEMA"
+            vocabularyNamespace = "https://schema.org/"
+            vocabularyPrefix = "schema"
+
+            outputDirectory = "build/generated/sources/schema"
         }
-        
+
         // FOAF with separate packages
         create("foaf") {
-            shaclPath.set("ontologies/foaf.shacl.ttl")
-            contextPath.set("ontologies/foaf.context.jsonld")
-            
-            // Separate packages for each component
-            interfacePackage.set("com.example.foaf.interfaces")
-            wrapperPackage.set("com.example.foaf.wrappers")
-            vocabularyPackage.set("com.example.foaf.vocab")
-            
-            // Generate all components
-            generateInterfaces.set(true)
-            generateWrappers.set(true)
-            generateVocabulary.set(true)
-            
-            // Vocabulary configuration
-            vocabularyName.set("FOAF")
-            vocabularyNamespace.set("http://xmlns.com/foaf/0.1/")
-            vocabularyPrefix.set("foaf")
-            
-            outputDirectory.set("build/generated/sources/foaf")
+            shaclPath = "ontologies/foaf.shacl.ttl"
+            contextPath = "ontologies/foaf.context.jsonld"
+
+            interfacePackage = "com.example.foaf.interfaces"
+            wrapperPackage = "com.example.foaf.wrappers"
+            vocabularyPackage = "com.example.foaf.vocab"
+
+            generateInterfaces = true
+            generateWrappers = true
+            generateVocabulary = true
+
+            vocabularyName = "FOAF"
+            vocabularyNamespace = "http://xmlns.com/foaf/0.1/"
+            vocabularyPrefix = "foaf"
+
+            outputDirectory = "build/generated/sources/foaf"
         }
     }
 }

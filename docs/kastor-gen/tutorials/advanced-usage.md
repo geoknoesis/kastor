@@ -9,60 +9,60 @@ This tutorial covers advanced usage patterns, complex scenarios, and sophisticat
 Model complex hierarchical relationships:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Organization")
+@Rdf(iri = "http://example.org/Organization")
 interface Organization {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/description")
+    @Rdf(iri = "http://example.org/description")
     val description: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/parentOrganization")
+    @Rdf(iri = "http://example.org/parentOrganization")
     val parentOrganization: List<Organization>
     
-    @get:RdfProperty(iri = "http://example.org/subOrganization")
+    @Rdf(iri = "http://example.org/subOrganization")
     val subOrganizations: List<Organization>
     
-    @get:RdfProperty(iri = "http://example.org/department")
+    @Rdf(iri = "http://example.org/department")
     val departments: List<Department>
     
-    @get:RdfProperty(iri = "http://example.org/employee")
+    @Rdf(iri = "http://example.org/employee")
     val employees: List<Employee>
 }
 
-@RdfClass(iri = "http://example.org/Department")
+@Rdf(iri = "http://example.org/Department")
 interface Department {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/organization")
+    @Rdf(iri = "http://example.org/organization")
     val organization: List<Organization>
     
-    @get:RdfProperty(iri = "http://example.org/manager")
+    @Rdf(iri = "http://example.org/manager")
     val manager: List<Employee>
     
-    @get:RdfProperty(iri = "http://example.org/employee")
+    @Rdf(iri = "http://example.org/employee")
     val employees: List<Employee>
 }
 
-@RdfClass(iri = "http://example.org/Employee")
+@Rdf(iri = "http://example.org/Employee")
 interface Employee {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/employeeId")
+    @Rdf(iri = "http://example.org/employeeId")
     val employeeId: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/organization")
+    @Rdf(iri = "http://example.org/organization")
     val organization: List<Organization>
     
-    @get:RdfProperty(iri = "http://example.org/department")
+    @Rdf(iri = "http://example.org/department")
     val department: List<Department>
     
-    @get:RdfProperty(iri = "http://example.org/manager")
+    @Rdf(iri = "http://example.org/manager")
     val manager: List<Employee>
     
-    @get:RdfProperty(iri = "http://example.org/subordinate")
+    @Rdf(iri = "http://example.org/subordinate")
     val subordinates: List<Employee>
 }
 ```
@@ -72,21 +72,21 @@ interface Employee {
 Handle collections of different types:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Event")
+@Rdf(iri = "http://example.org/Event")
 interface Event {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/participant")
+    @Rdf(iri = "http://example.org/participant")
     val participants: List<Person>  // Can be Employee, Customer, or Person
 }
 
-@RdfClass(iri = "http://example.org/Project")
+@Rdf(iri = "http://example.org/Project")
 interface Project {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/stakeholder")
+    @Rdf(iri = "http://example.org/stakeholder")
     val stakeholders: List<Person>  // Different types of stakeholders
 }
 
@@ -115,27 +115,27 @@ fun processEvent(event: Event) {
 Model temporal aspects of data:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Product")
+@Rdf(iri = "http://example.org/Product")
 interface Product {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/price")
+    @Rdf(iri = "http://example.org/price")
     val price: List<Double>
     
-    @get:RdfProperty(iri = "http://example.org/version")
+    @Rdf(iri = "http://example.org/version")
     val version: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/effectiveDate")
+    @Rdf(iri = "http://example.org/effectiveDate")
     val effectiveDate: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/expirationDate")
+    @Rdf(iri = "http://example.org/expirationDate")
     val expirationDate: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/previousVersion")
+    @Rdf(iri = "http://example.org/previousVersion")
     val previousVersion: List<Product>
     
-    @get:RdfProperty(iri = "http://example.org/nextVersion")
+    @Rdf(iri = "http://example.org/nextVersion")
     val nextVersion: List<Product>
 }
 
@@ -182,7 +182,7 @@ class CustomMaterializationService {
         )
         
         // Get factory from registry
-        val factory = kastor.gen.registry[type]
+        val factory = OntoMapper.registry[type]
             ?: error("No wrapper factory registered for ${type.name}")
         
         // Materialize with custom handle
@@ -260,7 +260,7 @@ class PaginatedMaterializationService {
     
     private fun getTypeIri(type: Class<*>): Iri {
         // Extract type IRI from annotation
-        val annotation = type.getAnnotation(RdfClass::class.java)
+        val annotation = type.getAnnotation(Rdf::class.java)
         return iri(annotation.iri)
     }
 }
@@ -457,7 +457,7 @@ class CachingMaterializationService {
         val cacheKey = CacheKey(ref.node, ref.graph, type)
         
         return materializationCache.get(cacheKey) {
-            val factory = kastor.gen.registry[type]
+            val factory = OntoMapper.registry[type]
                 ?: error("No wrapper factory registered for ${type.name}")
             
             val handle = CachingRdfHandle(ref.node, ref.graph)
@@ -509,7 +509,7 @@ class CachingMaterializationService {
                 when (term) {
                     is Iri, is BlankNode -> {
                         try {
-                            kastor.gen.materialize(RdfRef(term, graph), asType)
+                            OntoMapper.materialize(RdfRef(term, graph), asType)
                         } catch (e: Exception) {
                             null
                         }
@@ -656,7 +656,7 @@ class OntoMapperRepository<T : Any>(
     }
     
     private fun getTypeIri(type: Class<*>): Iri {
-        val annotation = type.getAnnotation(RdfClass::class.java)
+        val annotation = type.getAnnotation(Rdf::class.java)
         return iri(annotation.iri)
     }
     

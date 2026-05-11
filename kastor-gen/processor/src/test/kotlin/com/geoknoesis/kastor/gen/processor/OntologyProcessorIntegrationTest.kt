@@ -158,7 +158,7 @@ class OntologyProcessorIntegrationTest {
 
         // Verify Catalog interface
         val catalogInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        assertTrue(catalogInterface.contains("@RdfClass(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
+        assertTrue(catalogInterface.contains("@Rdf(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
         assertTrue(catalogInterface.contains("interface Catalog {"))
         assertTrue(catalogInterface.contains("val title: String"))
         assertTrue(catalogInterface.contains("val description: String"))
@@ -174,7 +174,7 @@ class OntologyProcessorIntegrationTest {
 
         // Verify Dataset interface
         val datasetInterface = java.io.StringWriter().also { interfaces["Dataset"]!!.writeTo(it) }.toString()
-        assertTrue(datasetInterface.contains("@RdfClass(iri = \"http://www.w3.org/ns/dcat#Dataset\")"))
+        assertTrue(datasetInterface.contains("@Rdf(iri = \"http://www.w3.org/ns/dcat#Dataset\")"))
         assertTrue(datasetInterface.contains("interface Dataset {"))
         assertTrue(datasetInterface.contains("val title: String"))
         assertTrue(datasetInterface.contains("val description: String"))
@@ -426,7 +426,7 @@ class OntologyProcessorIntegrationTest {
 
         // Verify empty interface
         assertTrue(emptyInterface.contains("interface Catalog"))
-        assertFalse(emptyInterface.contains("@get:RdfProperty"))
+        assertFalse(emptyInterface.contains("@get:Rdf"))
 
         // Verify empty wrapper
         assertTrue(emptyWrapper.contains("internal class CatalogWrapper"))
@@ -479,7 +479,7 @@ class OntologyProcessorIntegrationTest {
 
         // Should generate empty interface and wrapper (no properties due to malformed SHACL)
         assertTrue(malformedInterface.contains("interface Catalog"))
-        assertFalse(malformedInterface.contains("@get:RdfProperty"))
+        assertFalse(malformedInterface.contains("@get:Rdf"))
 
         assertTrue(malformedWrapper.contains("internal class CatalogWrapper"))
         assertTrue(malformedWrapper.contains("private val known: Set<Iri>"))

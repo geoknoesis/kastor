@@ -14,12 +14,18 @@ dependencies {
 
 // Configure Kastor Gen plugin
 kastorGen {
-    shaclPath.set("ontologies/dcat-us.shacl.ttl")
-    contextPath.set("ontologies/dcat-us.context.jsonld")
-    targetPackage.set("com.example.dcatus.generated")
-    generateInterfaces.set(true)
-    generateWrappers.set(true)
-    outputDirectory.set("build/generated/sources/kastor-gen")
+    ontologies {
+        create("dcat") {
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            interfacePackage = "com.example.dcatus.generated"
+            wrapperPackage = "com.example.dcatus.generated"
+            vocabularyPackage = "com.example.dcatus.generated"
+            generateInterfaces = true
+            generateWrappers = true
+            outputDirectory = "build/generated/sources/kastor-gen"
+        }
+    }
 }
 
 // Add generated sources to source sets

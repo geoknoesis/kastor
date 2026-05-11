@@ -193,15 +193,15 @@ package com.example.dcatus.interfaces
 import com.example.dcatus.vocab.DCAT
 import com.geoknoesis.kastor.rdf.*
 
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -234,7 +234,7 @@ internal class CatalogWrapper(
     
     companion object {
         init {
-            kastor.gen.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
+            OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
         }
     }
 }

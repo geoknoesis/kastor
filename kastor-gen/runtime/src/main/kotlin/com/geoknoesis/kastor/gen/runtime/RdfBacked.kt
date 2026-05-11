@@ -14,6 +14,12 @@ interface RdfHandle {
   val extras: PropertyBag    // Unmapped triples (lazy & memoized)
 
   /**
+   * Whether [validate] has a rules engine attached.
+   * When false, [validate] / [validateOrThrow] will error (see [DefaultRdfHandle]).
+   */
+  val isValidationConfigured: Boolean get() = false
+
+  /**
    * Validate the focus node against configured SHACL shapes.
    *
    * Implementations should throw if no validation context is configured.

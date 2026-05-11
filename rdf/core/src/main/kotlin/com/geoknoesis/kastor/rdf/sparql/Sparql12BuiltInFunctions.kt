@@ -77,19 +77,19 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         
-        // Language and direction functions
+        // RDF 1.2 / SPARQL 1.2 language and direction functions
         SparqlExtensionFunction(
             iri = SPARQL12.LANGDIR.value,
             name = "LANGDIR",
-            description = "Returns the language direction of a language-tagged string",
-            argumentTypes = listOf("rdf:langString"),
+            description = "Returns the base direction of a directional language-tagged string (rdf:dirLangString)",
+            argumentTypes = listOf("rdf:dirLangString"),
             returnType = "xsd:string",
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
             iri = SPARQL12.hasLANG.value,
             name = "hasLANG",
-            description = "Tests if a string has a specific language tag",
+            description = "Tests if a literal carries a specific language tag",
             argumentTypes = listOf("rdf:langString", "xsd:string"),
             returnType = "xsd:boolean",
             isBuiltIn = true
@@ -97,17 +97,17 @@ object Sparql12BuiltInFunctions {
         SparqlExtensionFunction(
             iri = SPARQL12.hasLANGDIR.value,
             name = "hasLANGDIR",
-            description = "Tests if a string has a specific language direction",
-            argumentTypes = listOf("rdf:langString", "xsd:string"),
+            description = "Tests if a literal carries a specific base direction",
+            argumentTypes = listOf("rdf:dirLangString", "xsd:string"),
             returnType = "xsd:boolean",
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
             iri = SPARQL12.STRLANGDIR.value,
             name = "STRLANGDIR",
-            description = "Creates a language-tagged string with direction",
+            description = "Constructs an rdf:dirLangString from lexical, language, and direction (RDF 1.2)",
             argumentTypes = listOf("xsd:string", "xsd:string", "xsd:string"),
-            returnType = "rdf:langString",
+            returnType = "rdf:dirLangString",
             isBuiltIn = true
         ),
         

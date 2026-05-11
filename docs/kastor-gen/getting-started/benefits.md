@@ -29,15 +29,15 @@ Kastor Gen eliminates the manual work of writing domain interfaces and ensures y
 **Before (Manual Interface Definition):**
 ```kotlin
 // You write this manually - error-prone and time-consuming
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String?
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
     
     // ... 20+ more properties to define manually
@@ -46,12 +46,14 @@ interface Catalog {
 // Risk: Typos, wrong IRIs, missing properties
 ```
 
-**After (Automatic Generation):**
+**After (automatic generation):**
 ```kotlin
 // Kastor Gen generates this automatically from SHACL
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
 )
 class OntologyGenerator
 // Time: 2 minutes to configure
@@ -226,12 +228,12 @@ val allProperties = extras.predicates()
 
 ```kotlin
 // You write this manually
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String  // Did you check minCount/maxCount?
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String?  // Is this really optional?
     
     // ... 20 more properties
@@ -250,9 +252,11 @@ interface Catalog {
 
 ```kotlin
 // You configure this once
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
 )
 class OntologyGenerator
 
@@ -281,8 +285,8 @@ Kastor Gen provides measurable benefits for ontology-driven development:
 | **Quality** | Single source of truth | Better architecture |
 
 **Next Steps:**
-- [View code generation examples →](tutorials/ontology-generation.md)
-- [Get started →](tutorials/getting-started.md)
+- [View code generation examples →](../tutorials/ontology-generation.md)
+- [Get started →](../tutorials/getting-started.md)
 - [See best practices →](../best-practices.md)
 - [View comparisons →](comparisons.md)
 

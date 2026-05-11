@@ -38,12 +38,27 @@ import java.io.InputStream
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * @throws IllegalArgumentException if the format is not a quad format
  */
-fun RdfRepository.serializeDataset(format: String): String {
+fun RdfRepository.serializeDataset(format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val formatEnum = RdfFormat.fromStringOrThrow(format)
     if (!RdfFormat.isQuadFormat(formatEnum)) {
         throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use serializeGraph() for graph formats, or use TRIG or N-QUADS for datasets.")
     }
-    return serializeDataset(formatEnum)
+    return serializeDataset(formatEnum, options)
+}
+
+/**
+ * Serializes this repository (dataset) to the specified quad format with options.
+ * 
+ * @param format The RDF quad format string
+ * @param configure Options builder lambda
+ * @return The serialized RDF dataset as a string
+ */
+fun RdfRepository.serializeDataset(
+    format: String,
+    configure: SerializationOptions.Builder.() -> Unit
+): String {
+    val formatEnum = RdfFormat.fromStringOrThrow(format)
+    return serializeDataset(formatEnum, configure)
 }
 
 /**
@@ -56,7 +71,7 @@ fun RdfRepository.serializeDataset(format: String): String {
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * @throws IllegalArgumentException if the format is not a quad format
  */
-fun RdfRepository.serializeDataset(format: RdfFormat): String {
+fun RdfRepository.serializeDataset(format: RdfFormat, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     if (!RdfFormat.isQuadFormat(format)) {
         throw IllegalArgumentException("Format '${format.formatName}' is not a quad format. Use serializeGraph() for graph formats, or use TRIG or N-QUADS for datasets.")
     }
@@ -67,7 +82,7 @@ fun RdfRepository.serializeDataset(format: RdfFormat): String {
     for (provider in providers) {
         if (provider.supportsFormat(format.formatName)) {
             try {
-                return provider.serializeDataset(this, format.formatName)
+                return provider.serializeDataset(this, format.formatName, options)
             } catch (e: UnsupportedOperationException) {
                 // Provider doesn't actually support it, try next
                 continue
@@ -76,16 +91,42 @@ fun RdfRepository.serializeDataset(format: RdfFormat): String {
                 throw e
             } catch (e: Exception) {
                 // Other error, wrap and throw
-                throw RdfFormatException(
+                throw RdfFormatException.Generic(
                     "Failed to serialize dataset to ${format.formatName} using provider ${provider.id}: ${e.message}",
+                    RdfErrorCode.FORMAT_SERIALIZATION_ERROR,
                     e
                 )
             }
         }
     }
     
-    throw RdfFormatException(
-        "No provider found that supports format: ${format.formatName}. " +
-        "Available providers: ${providers.map { it.id }.joinToString()}"
+    val availableFormats = providers.flatMap { provider ->
+        val caps = provider.getCapabilities()
+        // Prefer supportedOutputFormats if available, fallback to supportedInputFormats
+        if (caps.supportedOutputFormats.isNotEmpty()) {
+            caps.supportedOutputFormats
+        } else {
+            caps.supportedInputFormats
+        }
+    }.distinct()
+    
+    throw RdfFormatException.UnsupportedFormat(
+        format.formatName,
+        availableFormats
     )
+}
+
+/**
+ * Serializes this repository (dataset) to the specified quad format with options.
+ * 
+ * @param format The RDF quad format enum value
+ * @param configure Options builder lambda
+ * @return The serialized RDF dataset as a string
+ */
+fun RdfRepository.serializeDataset(
+    format: RdfFormat,
+    configure: SerializationOptions.Builder.() -> Unit
+): String {
+    val options = SerializationOptions.Builder().apply(configure).build()
+    return serializeDataset(format, options)
 }

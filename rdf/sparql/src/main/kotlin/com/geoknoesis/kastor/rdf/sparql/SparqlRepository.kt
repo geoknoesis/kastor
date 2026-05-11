@@ -41,38 +41,106 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         return true
     }
 
-    override fun editDefaultGraph(): GraphEditor {
+    override fun editDefaultGraph(): MutableRdfGraph {
         return defaultGraph as MutableRdfGraph
     }
 
-    override fun editGraph(name: Iri): GraphEditor {
+    override fun editGraph(name: Iri): MutableRdfGraph {
         return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): SparqlQueryResult {
-        val response = executeQuery(query.sparql)
-        return SparqlResultSet(response)
+        val startTime = System.currentTimeMillis()
+        try {
+            val response = executeQuery(query.sparql)
+            val resultSet = SparqlResultSet(response)
+            val executionTime = System.currentTimeMillis() - startTime
+            // Note: Result count not available without parsing the response
+            RdfDebug.logQueryTrace("SELECT", query.sparql, null, executionTime, null)
+            return resultSet
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun ask(query: SparqlAsk): Boolean {
-        val response = executeQuery(query.sparql)
-        return response.trim().equals("true", ignoreCase = true)
+        val startTime = System.currentTimeMillis()
+        try {
+            val response = executeQuery(query.sparql)
+            val result = response.trim().equals("true", ignoreCase = true)
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("ASK", query.sparql, null, executionTime, if (result) 1 else 0)
+            return result
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("ASK", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL ASK query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
-        executeQuery(query.sparql)
-        // Simple parsing - in practice would use proper RDF parser
-        return emptySequence() // Placeholder
+        val startTime = System.currentTimeMillis()
+        try {
+            executeQuery(query.sparql)
+            // Simple parsing - in practice would use proper RDF parser
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("CONSTRUCT", query.sparql, null, executionTime, null)
+            return emptySequence() // Placeholder
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("CONSTRUCT", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL CONSTRUCT query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
-        executeQuery(query.sparql)
-        // Simple parsing - in practice would use proper RDF parser
-        return emptySequence() // Placeholder
+        val startTime = System.currentTimeMillis()
+        try {
+            executeQuery(query.sparql)
+            // Simple parsing - in practice would use proper RDF parser
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("DESCRIBE", query.sparql, null, executionTime, null)
+            return emptySequence() // Placeholder
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("DESCRIBE", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL DESCRIBE query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun update(query: UpdateQuery) {
-        executeUpdate(query.sparql)
+        val startTime = System.currentTimeMillis()
+        try {
+            executeUpdate(query.sparql)
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL UPDATE: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun transaction(operations: RdfRepository.() -> Unit) {

@@ -21,8 +21,10 @@ internal class ValidationCodeGenerator(
             .addKdoc("Validate the %L against SHACL constraints.", classBuilder.className.lowercase())
             .addStatement("val violations = mutableListOf<%T>()", String::class)
         
-        // Check required properties
-        classBuilder.properties.forEach { property ->
+        // Check required properties - sort by propertyIri for deterministic output
+        classBuilder.properties
+            .sortedBy { it.propertyIri }
+            .forEach { property ->
             if (property.isRequired) {
                 val propertyIriConstant = VocabularyMapper.getVocabularyConstant(property.propertyIri)
                     ?: "Iri(\"${property.propertyIri}\")"
@@ -38,8 +40,10 @@ internal class ValidationCodeGenerator(
             }
         }
         
-        // Check value constraints on existing values
-        classBuilder.properties.forEach { property ->
+        // Check value constraints on existing values - sort by propertyIri for deterministic output
+        classBuilder.properties
+            .sortedBy { it.propertyIri }
+            .forEach { property ->
             val propertyIriConstant = VocabularyMapper.getVocabularyConstant(property.propertyIri)
                 ?: "Iri(\"${property.propertyIri}\")"
             val propertyIriCodeBlock = CodeBlock.of("%L", propertyIriConstant)

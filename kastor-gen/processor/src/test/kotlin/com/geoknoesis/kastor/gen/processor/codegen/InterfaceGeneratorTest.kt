@@ -109,21 +109,20 @@ class InterfaceGeneratorTest {
         assertTrue(catalogCode.contains("package com.example.test"))
         
         // Check imports
-        assertTrue(catalogCode.contains("import com.geoknoesis.kastor.gen.annotations.RdfClass"))
-        assertTrue(catalogCode.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
+        assertTrue(catalogCode.contains("import com.geoknoesis.kastor.gen.annotations.Rdf"))
         
         // Check interface declaration
-        assertTrue(catalogCode.contains("@RdfClass(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
+        assertTrue(catalogCode.contains("@Rdf(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
         assertTrue(catalogCode.contains("interface Catalog {"))
         
         // Check properties
-        assertTrue(catalogCode.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/title\")"))
+        assertTrue(catalogCode.contains("@Rdf(iri = \"http://purl.org/dc/terms/title\")"))
         assertTrue(catalogCode.contains("val title: String"))
         
-        assertTrue(catalogCode.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/description\")"))
+        assertTrue(catalogCode.contains("@Rdf(iri = \"http://purl.org/dc/terms/description\")"))
         assertTrue(catalogCode.contains("val description: String"))
         
-        assertTrue(catalogCode.contains("@get:RdfProperty(iri = \"http://www.w3.org/ns/dcat#dataset\")"))
+        assertTrue(catalogCode.contains("@Rdf(iri = \"http://www.w3.org/ns/dcat#dataset\")"))
         assertTrue(catalogCode.contains("val dataset: List<Dataset>"))
         
         // Check documentation
@@ -374,7 +373,7 @@ class InterfaceGeneratorTest {
         
         assertTrue(emptyCode.contains("interface Empty"))
         // Should not contain any property declarations
-        assertFalse(emptyCode.contains("@get:RdfProperty"))
+        assertFalse(emptyCode.contains("@get:Rdf"))
         // Should not contain property declarations (check for val with type annotation)
         val hasPropertyDeclaration = emptyCode.contains(Regex("""val\s+\w+\s*:"""))
         assertFalse(hasPropertyDeclaration, "Empty interface should not contain property declarations")

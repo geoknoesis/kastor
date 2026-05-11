@@ -204,10 +204,12 @@ All exception classes are public for error handling:
 Users typically interact with the processor through annotations:
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/my-ontology.shacl.ttl",
-    contextPath = "ontologies/my-ontology.context.jsonld",
-    packageName = "com.example.generated"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/my-ontology.shacl.ttl",
+    context = "ontologies/my-ontology.context.jsonld",
+    packageName = "com.example.generated",
 )
 class OntologyGenerator
 ```

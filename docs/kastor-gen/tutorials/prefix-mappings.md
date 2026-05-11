@@ -16,65 +16,79 @@ This guide explains how to use prefix mappings and QNames (qualified names) in K
 Instead of using full IRIs in your annotations:
 
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
 }
 ```
 
-You can use QNames with prefix mappings:
+You can use QNames when prefixes are in scope. Prefer **`@file:Rdf(prefixes = …)`** at the top of the Kotlin file (applies to every `@Rdf(iri = …)` in that file), or pass **`prefixes = […]`** on the domain **`@Rdf`** for type-local bindings:
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
+
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "dcat:Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
 }
 ```
 
 ## Basic Usage
 
-### Declaring Prefix Mappings
+### Declaring prefix mappings
 
-Use the `@PrefixMapping` annotation to declare prefix mappings:
+Declare prefixes with **`@file:Rdf(prefixes = …)`** (recommended for a whole file) or with **`prefixes = […]`** on a domain **`@Rdf`** alongside **`iri`**:
 
 ```kotlin
-@PrefixMapping(
+@Rdf(
+    iri = "dcat:Catalog",
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/"),
         Prefix("foaf", "http://xmlns.com/foaf/0.1/")
-    ]
+    ],
 )
+interface Catalog { /* … */ }
 ```
 
 ### Using QNames in Annotations
 
-Once declared, you can use QNames in `@RdfClass` and `@RdfProperty` annotations:
+Once declared, you can use QNames in **`@Rdf(iri = …)`** on types and properties:
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
+
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "dcat:Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
     
-    @get:RdfProperty(iri = "dcterms:description")
+    @Rdf(iri = "dcterms:description")
     val description: String
     
-    @get:RdfProperty(iri = "dcat:dataset")
+    @Rdf(iri = "dcat:dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -84,22 +98,27 @@ interface Catalog {
 You can declare prefix mappings at the file level for all classes in the file:
 
 ```kotlin
-@file:PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("vcard", "http://www.w3.org/2006/vcard/ns#"),
         Prefix("org", "http://www.w3.org/ns/org#")
     ]
 )
 
-@RdfClass(iri = "vcard:Individual")
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "vcard:Individual")
 interface Person {
-    @get:RdfProperty(iri = "vcard:fn")
+    @Rdf(iri = "vcard:fn")
     val fullName: String
 }
 
-@RdfClass(iri = "org:Organization")
+@Rdf(iri = "org:Organization")
 interface Organization {
-    @get:RdfProperty(iri = "vcard:fn")
+    @Rdf(iri = "vcard:fn")
     val name: String
 }
 ```
@@ -111,21 +130,21 @@ interface Organization {
 You can mix QNames and full IRIs in the same interface:
 
 ```kotlin
-@PrefixMapping(
+@Rdf(
+    iri = "http://www.w3.org/ns/dcat#Catalog",
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/")
-    ]
+    ],
 )
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog") // Full IRI
 interface Catalog {
-    @get:RdfProperty(iri = "dcterms:title") // QName
+    @Rdf(iri = "dcterms:title") // QName
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description") // Full IRI
+    @Rdf(iri = "http://purl.org/dc/terms/description") // Full IRI
     val description: String
     
-    @get:RdfProperty(iri = "dcat:dataset") // QName
+    @Rdf(iri = "dcat:dataset") // QName
     val dataset: List<Dataset>
 }
 ```
@@ -135,25 +154,25 @@ interface Catalog {
 Define your own prefixes for custom vocabularies:
 
 ```kotlin
-@PrefixMapping(
+@Rdf(
+    iri = "ex:Location",
     prefixes = [
         Prefix("ex", "http://example.org/vocab#"),
         Prefix("schema", "http://schema.org/"),
         Prefix("geo", "http://www.w3.org/2003/01/geo/wgs84_pos#")
-    ]
+    ],
 )
-@RdfClass(iri = "ex:Location")
 interface Location {
-    @get:RdfProperty(iri = "ex:name")
+    @Rdf(iri = "ex:name")
     val name: String
     
-    @get:RdfProperty(iri = "schema:address")
+    @Rdf(iri = "schema:address")
     val address: String
     
-    @get:RdfProperty(iri = "geo:lat")
+    @Rdf(iri = "geo:lat")
     val latitude: Double
     
-    @get:RdfProperty(iri = "geo:long")
+    @Rdf(iri = "geo:long")
     val longitude: Double
 }
 ```
@@ -164,22 +183,22 @@ You can declare multiple prefix mappings for different contexts:
 
 ```kotlin
 // For DCAT vocabulary
-@PrefixMapping(
+@Rdf(
+    iri = "dcat:Catalog",
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/")
-    ]
+    ],
 )
-@RdfClass(iri = "dcat:Catalog")
 interface Catalog { /* ... */ }
 
 // For FOAF vocabulary
-@PrefixMapping(
+@Rdf(
+    iri = "foaf:Person",
     prefixes = [
         Prefix("foaf", "http://xmlns.com/foaf/0.1/")
-    ]
+    ],
 )
-@RdfClass(iri = "foaf:Person")
 interface Person { /* ... */ }
 ```
 
@@ -191,7 +210,7 @@ Use well-known prefixes for common vocabularies:
 
 ```kotlin
 // ✅ Good: Standard prefixes
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/"),
@@ -203,7 +222,7 @@ Use well-known prefixes for common vocabularies:
 )
 
 // ❌ Avoid: Non-standard prefixes
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dc", "http://www.w3.org/ns/dcat#"), // Should be "dcat"
         Prefix("dublin", "http://purl.org/dc/terms/") // Should be "dcterms"
@@ -217,7 +236,7 @@ Group related prefixes together:
 
 ```kotlin
 // ✅ Good: Grouped by domain
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         // Data catalog vocabulary
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
@@ -240,7 +259,7 @@ Group related prefixes together:
 Use file-level mappings when multiple classes share the same prefixes:
 
 ```kotlin
-@file:PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("vcard", "http://www.w3.org/2006/vcard/ns#"),
         Prefix("org", "http://www.w3.org/ns/org#")
@@ -248,10 +267,10 @@ Use file-level mappings when multiple classes share the same prefixes:
 )
 
 // All classes in this file can use vcard: and org: prefixes
-@RdfClass(iri = "vcard:Individual")
+@Rdf(iri = "vcard:Individual")
 interface Person { /* ... */ }
 
-@RdfClass(iri = "org:Organization")
+@Rdf(iri = "org:Organization")
 interface Organization { /* ... */ }
 ```
 
@@ -261,7 +280,7 @@ Ensure your prefix mappings are correct:
 
 ```kotlin
 // ✅ Good: Verified namespace URIs
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"), // Verified
         Prefix("dcterms", "http://purl.org/dc/terms/") // Verified
@@ -269,7 +288,7 @@ Ensure your prefix mappings are correct:
 )
 
 // ❌ Avoid: Unverified or incorrect URIs
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://example.org/dcat#"), // Wrong namespace
         Prefix("dcterms", "http://purl.org/dc/terms") // Missing trailing slash
@@ -282,7 +301,7 @@ Ensure your prefix mappings are correct:
 ### Complete DCAT Example
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/"),
@@ -291,60 +310,60 @@ Ensure your prefix mappings are correct:
     ]
 )
 
-@RdfClass(iri = "dcat:Catalog")
+@Rdf(iri = "dcat:Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
     
-    @get:RdfProperty(iri = "dcterms:description")
+    @Rdf(iri = "dcterms:description")
     val description: String
     
-    @get:RdfProperty(iri = "dcterms:publisher")
+    @Rdf(iri = "dcterms:publisher")
     val publisher: Agent
     
-    @get:RdfProperty(iri = "dcat:dataset")
+    @Rdf(iri = "dcat:dataset")
     val dataset: List<Dataset>
     
-    @get:RdfProperty(iri = "skos:altLabel")
+    @Rdf(iri = "skos:altLabel")
     val alternativeLabels: List<String>
 }
 
-@RdfClass(iri = "dcat:Dataset")
+@Rdf(iri = "dcat:Dataset")
 interface Dataset {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
     
-    @get:RdfProperty(iri = "dcterms:description")
+    @Rdf(iri = "dcterms:description")
     val description: String
     
-    @get:RdfProperty(iri = "dcat:distribution")
+    @Rdf(iri = "dcat:distribution")
     val distribution: List<Distribution>
     
-    @get:RdfProperty(iri = "dcterms:keyword")
+    @Rdf(iri = "dcterms:keyword")
     val keywords: List<String>
 }
 
-@RdfClass(iri = "dcat:Distribution")
+@Rdf(iri = "dcat:Distribution")
 interface Distribution {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
     
-    @get:RdfProperty(iri = "dcat:downloadURL")
+    @Rdf(iri = "dcat:downloadURL")
     val downloadUrl: String
     
-    @get:RdfProperty(iri = "dcat:mediaType")
+    @Rdf(iri = "dcat:mediaType")
     val mediaType: String
     
-    @get:RdfProperty(iri = "dcterms:format")
+    @Rdf(iri = "dcterms:format")
     val format: String
 }
 
-@RdfClass(iri = "foaf:Agent")
+@Rdf(iri = "foaf:Agent")
 interface Agent {
-    @get:RdfProperty(iri = "foaf:name")
+    @Rdf(iri = "foaf:name")
     val name: String
     
-    @get:RdfProperty(iri = "foaf:homepage")
+    @Rdf(iri = "foaf:homepage")
     val homepage: String
 }
 ```
@@ -352,46 +371,46 @@ interface Agent {
 ### Schema.org Example
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("schema", "http://schema.org/"),
         Prefix("geo", "http://www.w3.org/2003/01/geo/wgs84_pos#")
     ]
 )
 
-@RdfClass(iri = "schema:Place")
+@Rdf(iri = "schema:Place")
 interface Place {
-    @get:RdfProperty(iri = "schema:name")
+    @Rdf(iri = "schema:name")
     val name: String
     
-    @get:RdfProperty(iri = "schema:address")
+    @Rdf(iri = "schema:address")
     val address: String
     
-    @get:RdfProperty(iri = "geo:lat")
+    @Rdf(iri = "geo:lat")
     val latitude: Double
     
-    @get:RdfProperty(iri = "geo:long")
+    @Rdf(iri = "geo:long")
     val longitude: Double
 }
 
-@RdfClass(iri = "schema:Person")
+@Rdf(iri = "schema:Person")
 interface Person {
-    @get:RdfProperty(iri = "schema:name")
+    @Rdf(iri = "schema:name")
     val name: String
     
-    @get:RdfProperty(iri = "schema:email")
+    @Rdf(iri = "schema:email")
     val email: String
     
-    @get:RdfProperty(iri = "schema:worksFor")
+    @Rdf(iri = "schema:worksFor")
     val worksFor: Organization
 }
 
-@RdfClass(iri = "schema:Organization")
+@Rdf(iri = "schema:Organization")
 interface Organization {
-    @get:RdfProperty(iri = "schema:name")
+    @Rdf(iri = "schema:name")
     val name: String
     
-    @get:RdfProperty(iri = "schema:address")
+    @Rdf(iri = "schema:address")
     val address: String
 }
 ```
@@ -399,7 +418,7 @@ interface Organization {
 ### Custom Vocabulary Example
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("ex", "http://example.org/vocab#"),
         Prefix("time", "http://www.w3.org/2006/time#"),
@@ -407,33 +426,33 @@ interface Organization {
     ]
 )
 
-@RdfClass(iri = "ex:Event")
+@Rdf(iri = "ex:Event")
 interface Event {
-    @get:RdfProperty(iri = "ex:name")
+    @Rdf(iri = "ex:name")
     val name: String
     
-    @get:RdfProperty(iri = "ex:description")
+    @Rdf(iri = "ex:description")
     val description: String
     
-    @get:RdfProperty(iri = "time:hasBeginning")
+    @Rdf(iri = "time:hasBeginning")
     val startTime: String
     
-    @get:RdfProperty(iri = "time:hasEnd")
+    @Rdf(iri = "time:hasEnd")
     val endTime: String
     
-    @get:RdfProperty(iri = "ex:location")
+    @Rdf(iri = "ex:location")
     val location: Place
 }
 
-@RdfClass(iri = "ex:Place")
+@Rdf(iri = "ex:Place")
 interface Place {
-    @get:RdfProperty(iri = "ex:name")
+    @Rdf(iri = "ex:name")
     val name: String
     
-    @get:RdfProperty(iri = "qudt:latitude")
+    @Rdf(iri = "qudt:latitude")
     val latitude: Double
     
-    @get:RdfProperty(iri = "qudt:longitude")
+    @Rdf(iri = "qudt:longitude")
     val longitude: Double
 }
 ```
@@ -446,19 +465,27 @@ interface Place {
 
 **Error**: `Unknown prefix: dcat in QName: dcat:Catalog`
 
-**Solution**: Ensure the prefix is declared in a `@PrefixMapping` annotation:
+**Solution**: Declare the prefix with **`@file:Rdf(prefixes = …)`** on the Kotlin file, or with **`prefixes = […]`** on the domain **`@Rdf`** next to **`iri`**:
 
 ```kotlin
-// ✅ Correct
-@PrefixMapping(
+// ✅ Correct — file-level prefixes
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
 
-// ❌ Incorrect - missing prefix declaration
-@RdfClass(iri = "dcat:Catalog")
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "dcat:Catalog")
+interface Catalog
+
+// ❌ Incorrect — missing prefix declaration
+@Rdf(iri = "dcat:Catalog")
+interface BrokenCatalog
 ```
 
 #### 2. Case Sensitivity Issues
@@ -469,15 +496,23 @@ interface Place {
 
 ```kotlin
 // ✅ Correct
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
+
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "dcat:Catalog")
+interface Catalog
 
 // ❌ Incorrect - case mismatch
-@RdfClass(iri = "DCAT:Catalog")
+@Rdf(iri = "DCAT:Catalog")
+interface BrokenCatalog
 ```
 
 #### 3. Missing Namespace URI
@@ -488,14 +523,14 @@ interface Place {
 
 ```kotlin
 // ✅ Correct
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#")
     ]
 )
 
 // ❌ Incorrect - missing namespace
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "") // Empty namespace
     ]
@@ -510,13 +545,13 @@ interface Place {
 
 ```kotlin
 // ✅ Correct
-@RdfClass(iri = "dcat:Catalog")
+@Rdf(iri = "dcat:Catalog")
 
 // ❌ Incorrect - missing prefix
-@RdfClass(iri = ":Catalog")
+@Rdf(iri = ":Catalog")
 
 // ❌ Incorrect - missing local name
-@RdfClass(iri = "dcat:")
+@Rdf(iri = "dcat:")
 ```
 
 ### Debugging Tips
@@ -526,7 +561,7 @@ interface Place {
 Check that your prefix mappings are correct:
 
 ```kotlin
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"), // Should end with #
         Prefix("dcterms", "http://purl.org/dc/terms/") // Should end with /
@@ -540,10 +575,10 @@ If QNames aren't working, try using full IRIs temporarily:
 
 ```kotlin
 // Test with full IRI
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 
 // Then convert to QName
-@RdfClass(iri = "dcat:Catalog")
+@Rdf(iri = "dcat:Catalog")
 ```
 
 #### 3. Check Annotation Processing
@@ -552,12 +587,12 @@ Ensure KSP is processing your annotations:
 
 ```kotlin
 // Add logging to see if annotations are processed
-@PrefixMapping(
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
+@Rdf(iri = "dcat:Catalog")
 interface Catalog {
     // Check build logs for annotation processing messages
 }

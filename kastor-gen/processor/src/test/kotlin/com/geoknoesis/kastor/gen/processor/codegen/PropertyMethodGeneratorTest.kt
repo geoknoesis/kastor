@@ -170,13 +170,18 @@ class PropertyMethodGeneratorTest {
 
         assertEquals(1, methods.size)
         val method = methods[0]
-        assertEquals(2, method.parameters.size)
+        // RDF 1.2: the generated method now also accepts an optional Direction.
+        assertEquals(3, method.parameters.size)
         assertEquals("lang", method.parameters[1].name)
         assertTrue(method.parameters[1].type.isNullable)
+        assertEquals("direction", method.parameters[2].name)
+        assertTrue(method.parameters[2].type.isNullable)
 
         val code = method.toString()
         assertTrue(code.contains("LangString"))
         assertTrue(code.contains("lang != null"))
+        // The 3-arg LangString factory is what carries direction through.
+        assertTrue(code.contains("LangString(value, lang, direction)"))
     }
 
     @Test

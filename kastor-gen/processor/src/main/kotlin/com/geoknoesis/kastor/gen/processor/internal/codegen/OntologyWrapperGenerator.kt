@@ -17,7 +17,7 @@ import com.squareup.kotlinpoet.KModifier.*
  * Generator for Kotlin wrapper classes from SHACL shapes and JSON-LD context using KotlinPoet.
  * Creates RDF-backed wrapper implementations.
  */
-internal class OntologyWrapperGenerator(
+class OntologyWrapperGenerator(
     private val logger: KSPLogger,
     private val validationMode: ValidationMode = ValidationMode.EMBEDDED,
     private val externalValidatorClass: String? = null
@@ -59,7 +59,9 @@ internal class OntologyWrapperGenerator(
         
         // Add imports
         fileBuilder.addImport(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked", "OntoMapper", "KastorGraphOps", "RdfRef", "RdfHandle", "DefaultRdfHandle", "ShaclViolation", "ValidationResult")
-        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfHandle", "RdfResource")
+        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfHandle", "RdfResource", "MutableRdfGraph", "BlankNode")
+        // Note: getCbdClosure is an extension function on RdfGraph in the same package
+        // It will be available when the RDF package is imported
         
         // Build wrapper class
         val classBuilder = TypeSpec.classBuilder(wrapperName)
@@ -77,10 +79,12 @@ internal class OntologyWrapperGenerator(
             .addSuperinterface(ClassName("", interfaceName))
             .addSuperinterface(ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked"))
         
-        // Known predicates set
-        val knownIris = shape.properties.map { 
-            CodeBlock.of("Iri(%S)", it.path)
-        }
+        // Known predicates set - sort by path IRI for deterministic output
+        val knownIris = shape.properties
+            .sortedBy { it.path }
+            .map { 
+                CodeBlock.of("Iri(%S)", it.path)
+            }
         val setType = KotlinPoetUtils.setOf(
             ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
         )
@@ -106,10 +110,12 @@ internal class OntologyWrapperGenerator(
                 .build()
         )
         
-        // Generate property implementations
-        shape.properties.forEach { property ->
-            classBuilder.addProperty(generatePropertyImplementation(property, context))
-        }
+        // Generate property implementations - sort by path IRI for deterministic output
+        shape.properties
+            .sortedBy { it.path }
+            .forEach { property ->
+                classBuilder.addProperty(generatePropertyImplementation(property, context))
+            }
         
         // Add validation method
         when (validationMode) {
@@ -127,17 +133,22 @@ internal class OntologyWrapperGenerator(
             }
         }
         
+        // Add writeToGraph method
+        classBuilder.addFunction(generateWriteToGraph())
+        
         // Companion object
         val companionBuilder = TypeSpec.companionObjectBuilder()
         
-        // Property mappings
-        val mappingEntries = shape.properties.map { property ->
-            val jsonLdName = context.propertyMappings.entries
-                .find { it.value.id.value == property.path }
-                ?.key
-                ?: property.name
-            CodeBlock.of("%S to Iri(%S)", jsonLdName, property.path)
-        }
+        // Property mappings - sort by path IRI for deterministic output
+        val mappingEntries = shape.properties
+            .sortedBy { it.path }
+            .map { property ->
+                val jsonLdName = context.propertyMappings.entries
+                    .find { it.value.id.value == property.path }
+                    ?.key
+                    ?: property.name
+                CodeBlock.of("%S to Iri(%S)", jsonLdName, property.path)
+            }
         val mapType = KotlinPoetUtils.mapOf(
             String::class.asTypeName(),
             ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
@@ -184,7 +195,10 @@ internal class OntologyWrapperGenerator(
             .returns(ClassName(CodegenConstants.RUNTIME_PACKAGE, "ValidationResult"))
             .addStatement("val violations = mutableListOf<%T>()", ClassName(CodegenConstants.RUNTIME_PACKAGE, "ShaclViolation"))
         
-        shape.properties.forEach { property ->
+        // Sort properties by path IRI for deterministic output
+        shape.properties
+            .sortedBy { it.path }
+            .forEach { property ->
             val pred = property.path
             val min = property.minCount
             val max = property.maxCount
@@ -351,6 +365,57 @@ internal class OntologyWrapperGenerator(
             "Boolean" -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical.toBooleanStrict()", path)
             else -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical", path)
         }
+    }
+
+    private fun generateWriteToGraph(): FunSpec {
+        return FunSpec.builder("writeToGraph")
+            .addKdoc(
+                "Writes the CBD (Concise Bounded Description) closure of this instance to the target graph.\n\n" +
+                "CBD includes:\n" +
+                "1. All triples where this resource is the subject (direct properties)\n" +
+                "2. Recursively, for any blank node object, all triples where that blank node is the subject\n\n" +
+                "This method extracts the complete resource description from the backing graph and writes it\n" +
+                "to the target graph, following blank nodes recursively but not following IRIs.\n\n" +
+                "@param targetGraph The mutable graph to write triples to\n" +
+                "@param subject Optional subject IRI. If not provided, uses rdf.node as Iri\n" +
+                "@throws IllegalArgumentException if subject is required but not available"
+            )
+            .addParameter(
+                ParameterSpec.builder("targetGraph", ClassName(CodegenConstants.RDF_PACKAGE, "MutableRdfGraph"))
+                    .build()
+            )
+            .addParameter(
+                ParameterSpec.builder("subject", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
+                    .defaultValue("null")
+                    .build()
+            )
+            .addCode(
+                CodeBlock.builder()
+                    .addStatement("val originalSubject = (rdf.node as? %T)", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
+                    .addStatement("  ?: (rdf.node as? %T)", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
+                    .addStatement("  ?: throw IllegalArgumentException(%S)", "Subject resource required")
+                    .addStatement("")
+                    .addStatement("// Extract CBD closure from backing graph using original subject")
+                    .addStatement("val cbdTriples = rdf.graph.getCbdClosure(originalSubject)")
+                    .addStatement("")
+                    .addStatement("// If a different subject is provided, remap triples")
+                    .addStatement("val triplesToWrite = if (subject != null && subject != originalSubject) {")
+                    .addStatement("  cbdTriples.map { triple ->")
+                    .addStatement("    if (triple.subject == originalSubject) {")
+                    .addStatement("      %T(subject, triple.predicate, triple.obj)", ClassName(CodegenConstants.RDF_PACKAGE, "RdfTriple"))
+                    .addStatement("    } else {")
+                    .addStatement("      triple")
+                    .addStatement("    }")
+                    .addStatement("  }")
+                    .addStatement("} else {")
+                    .addStatement("  cbdTriples")
+                    .addStatement("}")
+                    .addStatement("")
+                    .addStatement("// Write to target graph")
+                    .addStatement("targetGraph.addTriples(triplesToWrite)")
+                    .build()
+            )
+            .build()
     }
 
 }

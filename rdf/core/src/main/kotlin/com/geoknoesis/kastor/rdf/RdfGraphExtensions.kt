@@ -38,9 +38,24 @@ import java.io.InputStream
  * @return The serialized RDF data as a string
  * @throws RdfFormatException if no provider supports the format or serialization fails
  */
-fun RdfGraph.serialize(format: String): String {
+fun RdfGraph.serialize(format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val formatEnum = RdfFormat.fromStringOrThrow(format)
-    return serialize(formatEnum)
+    return serialize(formatEnum, options)
+}
+
+/**
+ * Serializes this graph to the specified RDF format with options.
+ * 
+ * @param format The RDF format string
+ * @param configure Options builder lambda
+ * @return The serialized RDF data as a string
+ */
+fun RdfGraph.serialize(
+    format: String,
+    configure: SerializationOptions.Builder.() -> Unit
+): String {
+    val formatEnum = RdfFormat.fromStringOrThrow(format)
+    return serialize(formatEnum, configure)
 }
 
 /**
@@ -49,17 +64,18 @@ fun RdfGraph.serialize(format: String): String {
  * Type-safe version using [RdfFormat] enum.
  * 
  * @param format The RDF format enum value
+ * @param options Serialization options (optional)
  * @return The serialized RDF data as a string
  * @throws RdfFormatException if no provider supports the format or serialization fails
  */
-fun RdfGraph.serialize(format: RdfFormat): String {
+fun RdfGraph.serialize(format: RdfFormat, options: SerializationOptions = SerializationOptions.DEFAULT): String {
     val providers = RdfProviderRegistry.discoverProviders()
     
     // Try to find a provider that supports this format
     for (provider in providers) {
         if (provider.supportsFormat(format.formatName)) {
             try {
-                return provider.serializeGraph(this, format.formatName)
+                return provider.serializeGraph(this, format.formatName, options)
             } catch (e: UnsupportedOperationException) {
                 // Provider doesn't actually support it, try next
                 continue
@@ -68,17 +84,48 @@ fun RdfGraph.serialize(format: RdfFormat): String {
                 throw e
             } catch (e: Exception) {
                 // Other error, wrap and throw
-                throw RdfFormatException(
+                throw RdfFormatException.Generic(
                     "Failed to serialize graph to ${format.formatName} using provider ${provider.id}: ${e.message}",
+                    RdfErrorCode.FORMAT_SERIALIZATION_ERROR,
                     e
                 )
             }
         }
     }
     
-    throw RdfFormatException(
-        "No provider found that supports format: ${format.formatName}. " +
-        "Available providers: ${providers.map { it.id }.joinToString()}"
+    val availableFormats = providers.flatMap { provider ->
+        val caps = provider.getCapabilities()
+        // Prefer supportedOutputFormats if available, fallback to supportedInputFormats
+        if (caps.supportedOutputFormats.isNotEmpty()) {
+            caps.supportedOutputFormats
+        } else {
+            caps.supportedInputFormats
+        }
+    }.distinct()
+    
+    throw RdfFormatException.UnsupportedFormat(
+        format.formatName,
+        availableFormats
     )
+}
+
+/**
+ * Serializes this graph to the specified RDF format with options.
+ * 
+ * Convenience method that allows configuring serialization options using a builder lambda.
+ * 
+ * @param format The RDF format enum value
+ * @param configure Options builder lambda
+ * @return The serialized RDF data as a string
+ * @throws RdfFormatException if no provider supports the format or serialization fails
+ * 
+ * @sample com.example.SerializeWithOptionsBuilder
+ */
+fun RdfGraph.serialize(
+    format: RdfFormat,
+    configure: SerializationOptions.Builder.() -> Unit
+): String {
+    val options = SerializationOptions.Builder().apply(configure).build()
+    return serialize(format, options)
 }
 

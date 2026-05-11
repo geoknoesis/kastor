@@ -10,20 +10,20 @@ Domain interfaces should contain only business logic and use pure Kotlin types:
 
 ```kotlin
 // ✅ Good - Pure domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val friends: List<Person>
 }
 
 // ❌ Bad - RDF types in domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
     val name: List<String>
     val rdfNode: RdfTerm        // Don't do this!
@@ -38,19 +38,19 @@ Choose the right collection type for your use case:
 ```kotlin
 interface Product {
     // Single value (use List and take firstOrNull())
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
     // Multiple values
-    @get:RdfProperty(iri = "http://example.org/tags")
+    @Rdf(iri = "http://example.org/tags")
     val tags: List<String>
     
     // Related objects
-    @get:RdfProperty(iri = "http://example.org/category")
+    @Rdf(iri = "http://example.org/category")
     val categories: List<Category>
     
     // Optional single object (use List and take firstOrNull())
-    @get:RdfProperty(iri = "http://example.org/manufacturer")
+    @Rdf(iri = "http://example.org/manufacturer")
     val manufacturer: List<Manufacturer>
 }
 ```
@@ -61,17 +61,17 @@ Design interfaces that can grow over time:
 
 ```kotlin
 // ✅ Good - Extensible design
-@RdfClass(iri = "http://example.org/Product")
+@Rdf(iri = "http://example.org/Product")
 interface Product {
     // Core properties
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/price")
+    @Rdf(iri = "http://example.org/price")
     val price: List<Double>
     
     // Related objects
-    @get:RdfProperty(iri = "http://example.org/category")
+    @Rdf(iri = "http://example.org/category")
     val categories: List<Category>
     
     // New properties can be added without breaking existing code
@@ -88,22 +88,22 @@ Map RDF literals to appropriate Kotlin types:
 ```kotlin
 interface Example {
     // String literals
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
     // Numeric literals
-    @get:RdfProperty(iri = "http://example.org/age")
+    @Rdf(iri = "http://example.org/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://example.org/height")
+    @Rdf(iri = "http://example.org/height")
     val height: List<Double>
     
     // Boolean literals
-    @get:RdfProperty(iri = "http://example.org/isActive")
+    @Rdf(iri = "http://example.org/isActive")
     val isActive: List<Boolean>
     
     // Date literals (as strings, parse as needed)
-    @get:RdfProperty(iri = "http://example.org/birthDate")
+    @Rdf(iri = "http://example.org/birthDate")
     val birthDate: List<String>
 }
 ```
@@ -113,24 +113,24 @@ interface Example {
 Map RDF objects to domain interfaces:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Person")
+@Rdf(iri = "http://example.org/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
     // Single related object
-    @get:RdfProperty(iri = "http://example.org/employer")
+    @Rdf(iri = "http://example.org/employer")
     val employer: List<Organization>
     
     // Multiple related objects
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val friends: List<Person>
     
     // Self-referential properties
-    @get:RdfProperty(iri = "http://example.org/parent")
+    @Rdf(iri = "http://example.org/parent")
     val parents: List<Person>
     
-    @get:RdfProperty(iri = "http://example.org/child")
+    @Rdf(iri = "http://example.org/child")
     val children: List<Person>
 }
 ```
@@ -140,30 +140,30 @@ interface Person {
 Model complex relationships between entities:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Order")
+@Rdf(iri = "http://example.org/Order")
 interface Order {
-    @get:RdfProperty(iri = "http://example.org/orderNumber")
+    @Rdf(iri = "http://example.org/orderNumber")
     val orderNumber: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/customer")
+    @Rdf(iri = "http://example.org/customer")
     val customer: List<Customer>
     
-    @get:RdfProperty(iri = "http://example.org/orderItem")
+    @Rdf(iri = "http://example.org/orderItem")
     val items: List<OrderItem>
     
-    @get:RdfProperty(iri = "http://example.org/shippingAddress")
+    @Rdf(iri = "http://example.org/shippingAddress")
     val shippingAddress: List<Address>
 }
 
-@RdfClass(iri = "http://example.org/OrderItem")
+@Rdf(iri = "http://example.org/OrderItem")
 interface OrderItem {
-    @get:RdfProperty(iri = "http://example.org/product")
+    @Rdf(iri = "http://example.org/product")
     val product: List<Product>
     
-    @get:RdfProperty(iri = "http://example.org/quantity")
+    @Rdf(iri = "http://example.org/quantity")
     val quantity: List<Int>
     
-    @get:RdfProperty(iri = "http://example.org/unitPrice")
+    @Rdf(iri = "http://example.org/unitPrice")
     val unitPrice: List<Double>
 }
 ```
@@ -176,18 +176,18 @@ Use `List<T>` and access with `firstOrNull()`:
 
 ```kotlin
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val email: List<String>
 }
 
 // Usage
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val name = person.name.firstOrNull() ?: "Unknown"
 val age = person.age.firstOrNull() ?: 0
 val email = person.email.firstOrNull()
@@ -199,18 +199,18 @@ Use `List<T>` and filter as needed:
 
 ```kotlin
 interface Product {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/description")
+    @Rdf(iri = "http://example.org/description")
     val descriptions: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/tags")
+    @Rdf(iri = "http://example.org/tags")
     val tags: List<String>
 }
 
 // Usage
-val product: Product = materializeFromRdf(...)
+val product: Product = graph.materialize(node)
 val primaryName = product.name.firstOrNull() ?: "Unnamed Product"
 val allDescriptions = product.descriptions.filter { it.isNotBlank() }
 val activeTags = product.tags.filter { it.isNotEmpty() }
@@ -223,30 +223,30 @@ val activeTags = product.tags.filter { it.isNotEmpty() }
 Use interface inheritance to model type hierarchies:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Person")
+@Rdf(iri = "http://example.org/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
 }
 
-@RdfClass(iri = "http://example.org/Employee")
+@Rdf(iri = "http://example.org/Employee")
 interface Employee : Person {
-    @get:RdfProperty(iri = "http://example.org/employeeId")
+    @Rdf(iri = "http://example.org/employeeId")
     val employeeId: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/salary")
+    @Rdf(iri = "http://example.org/salary")
     val salary: List<Double>
 }
 
-@RdfClass(iri = "http://example.org/Customer")
+@Rdf(iri = "http://example.org/Customer")
 interface Customer : Person {
-    @get:RdfProperty(iri = "http://example.org/customerId")
+    @Rdf(iri = "http://example.org/customerId")
     val customerId: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/loyaltyPoints")
+    @Rdf(iri = "http://example.org/loyaltyPoints")
     val loyaltyPoints: List<Int>
 }
 ```
@@ -256,18 +256,18 @@ interface Customer : Person {
 Handle collections of different types:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Organization")
+@Rdf(iri = "http://example.org/Organization")
 interface Organization {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
     // Collection of different person types
-    @get:RdfProperty(iri = "http://example.org/member")
+    @Rdf(iri = "http://example.org/member")
     val members: List<Person>  // Can be Employee, Customer, or Person
 }
 
 // Usage
-val org: Organization = materializeFromRdf(...)
+val org: Organization = graph.materialize(node)
 org.members.forEach { member ->
     when (member) {
         is Employee -> println("Employee: ${member.employeeId.firstOrNull()}")
@@ -284,15 +284,15 @@ org.members.forEach { member ->
 Add validation logic to your domain interfaces:
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Product")
+@Rdf(iri = "http://example.org/Product")
 interface Product {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/price")
+    @Rdf(iri = "http://example.org/price")
     val price: List<Double>
     
-    @get:RdfProperty(iri = "http://example.org/stockQuantity")
+    @Rdf(iri = "http://example.org/stockQuantity")
     val stockQuantity: List<Int>
     
     // Validation helper methods (optional)
@@ -350,15 +350,15 @@ Properties are evaluated lazily, so expensive operations are deferred:
 
 ```kotlin
 interface LargeDataset {
-    @get:RdfProperty(iri = "http://example.org/item")
+    @Rdf(iri = "http://example.org/item")
     val items: List<Item>  // Only evaluated when accessed
     
-    @get:RdfProperty(iri = "http://example.org/statistics")
+    @Rdf(iri = "http://example.org/statistics")
     val statistics: List<String>  // Only evaluated when accessed
 }
 
 // Usage
-val dataset: LargeDataset = materializeFromRdf(...)
+val dataset: LargeDataset = graph.materialize(node)
 // No expensive operations yet
 
 val firstItem = dataset.items.firstOrNull()  // Now items are loaded
@@ -370,7 +370,7 @@ val stats = dataset.statistics.firstOrNull()  // Now statistics are loaded
 Results are cached after first access:
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 
 // First access - queries RDF graph
 val name1 = person.name.firstOrNull()

@@ -124,8 +124,22 @@ object JenaBridge {
     fun fromString(rdfData: String, format: String = "TURTLE"): MutableRdfGraph {
         val model = ModelFactory.createDefaultModel()
         val inputStream = rdfData.byteInputStream()
-        model.read(inputStream, null, format)
+        model.read(inputStream, null, normalizeJenaLang(format))
         return fromJenaModel(model)
+    }
+
+    /**
+     * Normalises a Kastor format alias (including the RDF 1.2 spellings such as
+     * `TURTLE-1.2`) to the language string Jena expects in `Model.read(...)`.
+     */
+    internal fun normalizeJenaLang(format: String): String = when (format.uppercase()) {
+        "TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR" -> "TURTLE"
+        "RDF/XML", "RDFXML", "XML" -> "RDF/XML"
+        "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12" -> "N-TRIPLES"
+        "JSON-LD", "JSONLD", "JSON-LD-1.2", "JSONLD12" -> "JSON-LD"
+        "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> "TRIG"
+        "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> "N-QUADS"
+        else -> format
     }
 
     /**
@@ -159,28 +173,35 @@ object JenaBridge {
      * 
      * @param rdfGraph The Kastor RdfGraph to serialize
      * @param format The output format (e.g., "TURTLE", "RDF/XML", "JSON-LD")
+     * @param options Serialization options (optional)
      * @return The serialized RDF data as a string
      */
-    fun toString(rdfGraph: RdfGraph, format: String = "TURTLE"): String {
+    fun toString(rdfGraph: RdfGraph, format: String = "TURTLE", options: SerializationOptions = SerializationOptions.DEFAULT): String {
         val model = toJenaModel(rdfGraph)
+        
+        // Apply base URI if specified
+        options.baseUri?.let { model.setNsPrefix("", it) }
+        
+        // Apply prefix mappings
+        options.prefixMappings.forEach { (prefix, uri) ->
+            model.setNsPrefix(prefix, uri)
+        }
+        
+        val stringWriter = java.io.StringWriter()
         return when (format.uppercase()) {
-            "TURTLE", "TTL" -> {
-                val stringWriter = java.io.StringWriter()
+            "TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR" -> {
                 model.write(stringWriter, "TURTLE")
                 stringWriter.toString()
             }
             "RDF/XML", "RDFXML", "XML" -> {
-                val stringWriter = java.io.StringWriter()
                 model.write(stringWriter, "RDF/XML")
                 stringWriter.toString()
             }
-            "N-TRIPLES", "NT" -> {
-                val stringWriter = java.io.StringWriter()
+            "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12" -> {
                 model.write(stringWriter, "N-TRIPLES")
                 stringWriter.toString()
             }
-            "JSON-LD", "JSONLD" -> {
-                val stringWriter = java.io.StringWriter()
+            "JSON-LD", "JSONLD", "JSON-LD-1.2", "JSONLD12" -> {
                 model.write(stringWriter, "JSON-LD")
                 stringWriter.toString()
             }
@@ -223,12 +244,20 @@ object JenaBridge {
      * 
      * @param dataset The Jena Dataset to serialize
      * @param format The output format (e.g., "TRIG", "N-QUADS")
+     * @param options Serialization options (optional)
      * @return The serialized RDF dataset as a string
      */
-    fun serializeDataset(dataset: Dataset, format: String = "TRIG"): String {
+    fun serializeDataset(dataset: Dataset, format: String = "TRIG", options: SerializationOptions = SerializationOptions.DEFAULT): String {
+        // Apply base URI and prefix mappings to default model
+        val defaultModel = dataset.defaultModel
+        options.baseUri?.let { defaultModel.setNsPrefix("", it) }
+        options.prefixMappings.forEach { (prefix, uri) ->
+            defaultModel.setNsPrefix(prefix, uri)
+        }
+        
         val jenaFormat = when (format.uppercase()) {
-            "TRIG", "TRI-G" -> JenaRDFFormat.TRIG
-            "N-QUADS", "NQUADS", "NQ" -> JenaRDFFormat.NQUADS
+            "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> JenaRDFFormat.TRIG
+            "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> JenaRDFFormat.NQUADS
             else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
         }
         val writer = StringWriter()
@@ -245,8 +274,8 @@ object JenaBridge {
      */
     fun parseDatasetFromStream(inputStream: java.io.InputStream, format: String = "TRIG"): Dataset {
         val lang = when (format.uppercase()) {
-            "TRIG", "TRI-G" -> org.apache.jena.riot.Lang.TRIG
-            "N-QUADS", "NQUADS", "NQ" -> org.apache.jena.riot.Lang.NQUADS
+            "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> org.apache.jena.riot.Lang.TRIG
+            "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> org.apache.jena.riot.Lang.NQUADS
             else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
         }
         val dataset = DatasetFactory.create()
@@ -295,8 +324,15 @@ fun RdfGraph.getJenaModel(): Model? = JenaBridge.getJenaModel(this)
 fun RdfGraph.getJenaGraph(): Graph? = JenaBridge.getJenaGraph(this)
 
 /**
- * Serializes a Kastor RdfGraph to a string.
+ * @deprecated Use the unified serialization API: `graph.serialize(RdfFormat.TURTLE)` instead.
+ * This Jena-specific extension is kept for backward compatibility but may be removed in future versions.
+ * The unified API in `rdf-core` automatically uses the best available provider.
  */
+@Deprecated(
+    message = "Use the unified serialization API: graph.serialize(RdfFormat.TURTLE)",
+    replaceWith = ReplaceWith("serialize(RdfFormat.fromStringOrThrow(format))"),
+    level = DeprecationLevel.WARNING
+)
 fun RdfGraph.serialize(format: String = "TURTLE"): String = JenaBridge.toString(this, format)
 
 

@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.examples
 import com.geoknoesis.kastor.rdf.*
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.nio.file.Files
 
 class ConfigVariantsTest {
     
@@ -25,31 +26,39 @@ class ConfigVariantsTest {
             )
         }
         
-        // Verify we have the expected variants
-        // Only memory provider is currently registered by default
-        val expectedTypes = listOf("memory:memory")
+        // With Jena, RDF4J, and SPARQL on the test classpath, ServiceLoader must
+        // discover all three providers in addition to the built-in memory provider.
+        val expectedTypes = listOf(
+            "memory:memory",
+            "jena:memory",
+            "rdf4j:memory",
+            "sparql:sparql"
+        )
         
         expectedTypes.forEach { expectedType ->
-            assertTrue(allSupportedTypes.contains(expectedType), 
-                "Expected type $expectedType should be in supported types")
+            assertTrue(
+                allSupportedTypes.contains(expectedType),
+                "Expected type $expectedType should be in supported types: $allSupportedTypes"
+            )
         }
     }
     
     @Test
     fun `jena variants work correctly`() {
-        val jenaVariants = listOf(
-            "memory",
-            "memory-inference",
-            "tdb2",
-            "tdb2-inference"
-        )
-        
-        jenaVariants.forEach { variant ->
-            println("Testing Jena variant: jena:$variant")
-            
-            try {
+        val tempDir = Files.createTempDirectory("kastor-jena-tdb2").toFile()
+        try {
+            val jenaVariants = listOf(
+                "memory",
+                "memory-inference",
+                "tdb2",
+                "tdb2-inference"
+            )
+
+            jenaVariants.forEach { variant ->
+                println("Testing Jena variant: jena:$variant")
+
                 val options = if (variant.contains("tdb2")) {
-                    mapOf("location" to "test-data")
+                    mapOf("location" to java.io.File(tempDir, variant).absolutePath)
                 } else {
                     emptyMap()
                 }
@@ -58,40 +67,43 @@ class ConfigVariantsTest {
                     variantId = variant,
                     options = options
                 )
-                
+
                 val repo = RdfProviderRegistry.create(config)
-                assertNotNull(repo, "Repository should be created for jena:$variant")
-                assertFalse(repo.isClosed(), "Repository should not be closed")
-                assertNotNull(repo.defaultGraph, "Repository should have a default graph")
-                
+                try {
+                    assertNotNull(repo, "Repository should be created for jena:$variant")
+                    assertFalse(repo.isClosed(), "Repository should not be closed")
+                    assertNotNull(repo.defaultGraph, "Repository should have a default graph")
+                } finally {
+                    repo.close()
+                }
+
                 println("  ✓ Successfully created repository for jena:$variant")
-                
-            } catch (e: Exception) {
-                println("  ⚠ Failed to create repository for jena:$variant: ${e.message}")
-                // Some variants might fail due to missing dependencies or file system issues
             }
+        } finally {
+            tempDir.deleteRecursively()
         }
     }
     
     @Test
     fun `rdf4j variants work correctly`() {
-        val rdf4jVariants = listOf(
-            "memory",
-            "native",
-            "memory-star",
-            "native-star",
-            "memory-rdfs",
-            "native-rdfs",
-            "memory-shacl",
-            "native-shacl"
-        )
-        
-        rdf4jVariants.forEach { variant ->
-            println("Testing RDF4J variant: rdf4j:$variant")
-            
-            try {
+        val tempDir = Files.createTempDirectory("kastor-rdf4j-native").toFile()
+        try {
+            val rdf4jVariants = listOf(
+                "memory",
+                "native",
+                "memory-star",
+                "native-star",
+                "memory-rdfs",
+                "native-rdfs",
+                "memory-shacl",
+                "native-shacl"
+            )
+
+            rdf4jVariants.forEach { variant ->
+                println("Testing RDF4J variant: rdf4j:$variant")
+
                 val options = if (variant.contains("native")) {
-                    mapOf("location" to "test-data")
+                    mapOf("location" to java.io.File(tempDir, variant).absolutePath)
                 } else {
                     emptyMap()
                 }
@@ -100,71 +112,60 @@ class ConfigVariantsTest {
                     variantId = variant,
                     options = options
                 )
-                
+
                 val repo = RdfProviderRegistry.create(config)
-                assertNotNull(repo, "Repository should be created for rdf4j:$variant")
-                assertFalse(repo.isClosed(), "Repository should not be closed")
-                assertNotNull(repo.defaultGraph, "Repository should have a default graph")
-                
+                try {
+                    assertNotNull(repo, "Repository should be created for rdf4j:$variant")
+                    assertFalse(repo.isClosed(), "Repository should not be closed")
+                    assertNotNull(repo.defaultGraph, "Repository should have a default graph")
+                } finally {
+                    repo.close()
+                }
+
                 println("  ✓ Successfully created repository for rdf4j:$variant")
-                
-            } catch (e: Exception) {
-                println("  ⚠ Failed to create repository for rdf4j:$variant: ${e.message}")
-                // Some variants might fail due to missing dependencies or file system issues
             }
+        } finally {
+            tempDir.deleteRecursively()
         }
     }
     
     @Test
-    fun `sparql variant works correctly`() {
-        println("Testing SPARQL variant: sparql")
-        
-        try {
+    fun `sparql variant constructs a remote endpoint repository`() {
+        // Construction is purely local; we never hit the network in this test.
         val config = RdfConfig(
             providerId = "sparql",
             variantId = "sparql",
-            options = mapOf("location" to "http://dbpedia.org/sparql")
+            options = mapOf("location" to "http://example.org/sparql")
         )
-            val repo = RdfProviderRegistry.create(config)
-            
+        val repo = RdfProviderRegistry.create(config)
+        try {
             assertNotNull(repo, "Repository should be created for sparql")
             assertFalse(repo.isClosed(), "Repository should not be closed")
             assertNotNull(repo.defaultGraph, "Repository should have a default graph")
-            
-            println("  ✓ Successfully created repository for sparql")
-            
-        } catch (e: Exception) {
-            println("  ⚠ Failed to create repository for sparql: ${e.message}")
-            // SPARQL might fail due to network issues
+        } finally {
+            repo.close()
         }
     }
     
     @Test
-    fun `memory fallback still works`() {
+    fun `memory variant still works`() {
         val repo = RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
         
-        assertNotNull(repo, "Memory repository should be created")
-        assertFalse(repo.isClosed(), "Repository should not be closed")
-        assertNotNull(repo.defaultGraph, "Repository should have a default graph")
-        
-        // Test basic operations
-        val s = Iri("urn:test:s")
-        val p = Iri("urn:test:p")
-        val o = Literal("test")
-        
-        repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
-        
-        assertTrue(repo.defaultGraph.hasTriple(RdfTriple(s, p, o)))
-        
-        println("✓ Memory repository fallback works correctly")
+        try {
+            assertNotNull(repo, "Memory repository should be created")
+            assertFalse(repo.isClosed(), "Repository should not be closed")
+            assertNotNull(repo.defaultGraph, "Repository should have a default graph")
+            
+            // Test basic operations
+            val s = Iri("urn:test:s")
+            val p = Iri("urn:test:p")
+            val o = Literal("test")
+            
+            repo.editDefaultGraph().addTriple(RdfTriple(s, p, o))
+            
+            assertTrue(repo.defaultGraph.hasTriple(RdfTriple(s, p, o)))
+        } finally {
+            repo.close()
+        }
     }
 }
-
-
-
-
-
-
-
-
-

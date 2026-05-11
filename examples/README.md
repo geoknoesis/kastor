@@ -4,7 +4,38 @@ This directory contains comprehensive examples demonstrating various features an
 
 ## 🎯 Available Examples
 
-### 1. **DCAT-US 3.0 Kastor Gen Example** (`dcat-us/`)
+### 1. **Hello World** (`hello-world/`)
+A simple, runnable example demonstrating basic Kastor RDF operations:
+- Creating an RDF repository
+- Adding RDF data using the DSL
+- Querying the data
+- Serializing the graph
+
+**Run it:**
+```bash
+./gradlew helloWorld
+```
+
+### 2. **Hello Codegen** (`hello-codegen/`)
+A minimal example demonstrating Kastor Gen code generation:
+- Defining a simple SHACL shape
+- Generating Kotlin interfaces from SHACL
+- Using the generated interfaces
+
+**Run it:**
+```bash
+./gradlew helloCodegen
+```
+
+**To enable code generation:**
+```bash
+# Uncomment the @GenerateFromOntology annotation in HelloCodegen.kt
+# Then run:
+./gradlew :examples:hello-codegen:kspKotlin
+./gradlew helloCodegen
+```
+
+### 3. **DCAT-US 3.0 Kastor Gen Example** (`dcat-us/`)
 Demonstrates how to use Kastor Gen to generate interfaces, wrappers, and vocabulary from DCAT-US 3.0 SHACL shapes.
 
 **Features:**
@@ -48,6 +79,11 @@ cd examples/dcat-us
 
 3. **Run a specific example** (from project root):
    ```bash
+   # Quick start examples
+   ./gradlew helloWorld      # Basic RDF operations
+   ./gradlew helloCodegen    # Code generation example
+   
+   # Or run specific examples
    ./gradlew :examples:[example-name]:run
    ```
 

@@ -14,6 +14,10 @@ exact signatures, semantics, edge cases, and error behavior.
 - [Dataset Reference](dataset.md)
 - [Types Reference](types.md)
 
+### Versioning & Compatibility
+- [Versioning Policy](versioning-policy.md) - Semver strategy, backward compatibility, deprecation
+- [Compatibility Matrix](compatibility.md) - Platform, dependency, and provider compatibility
+
 ### Related References
 - [Transactions](../api/transactions.md)
 - [Repository Manager](../api/repository-manager.md)

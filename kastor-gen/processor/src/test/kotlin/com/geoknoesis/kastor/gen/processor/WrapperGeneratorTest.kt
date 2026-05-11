@@ -57,17 +57,43 @@ class WrapperGeneratorTest {
         assertTrue(code.contains("class PersonWrapper"))
         assertTrue(code.contains("override val rdf: RdfHandle"))
         assertTrue(code.contains("Person") && code.contains("RdfBacked"))
-        assertTrue(code.contains("private val known: Set<Iri>"))
+        assertTrue(code.contains("withKnownPredicates(KNOWN)"))
         assertTrue(code.contains("setOf"))
         assertTrue(code.contains("Iri(\"http://xmlns.com/foaf/0.1/name\")"))
         assertTrue(code.contains("Iri(\"http://xmlns.com/foaf/0.1/age\")"))
         assertTrue(code.contains("Iri(\"http://xmlns.com/foaf/0.1/knows\")"))
-        assertTrue(code.contains("override val name: String"))
-        assertTrue(code.contains("override val age: Int"))
-        assertTrue(code.contains("override val friends: List<Person>"))
+        assertTrue(code.contains("by rdfString("))
+        assertTrue(code.contains("by rdfInt("))
+        assertTrue(code.contains("by rdfObjects<Person>"))
         assertTrue(code.contains("companion object"))
         assertTrue(code.contains("OntoMapper.registry[Person::class.java]"))
         assertTrue(code.contains("PersonWrapper") && code.contains("handle"))
+    }
+
+    @Test
+    fun `mutable scalar literal emits override var with graph replace`() {
+        val generator = WrapperGenerator(mockLogger)
+        val classModel = ClassModel(
+            qualifiedName = "com.example.test.Doc",
+            simpleName = "Doc",
+            packageName = "com.example.test",
+            classIri = "http://example.org/Doc",
+            properties = listOf(
+                PropertyModel(
+                    name = "title",
+                    kotlinType = "String",
+                    predicateIri = "http://purl.org/dc/terms/title",
+                    type = PropertyType.LITERAL,
+                    mutable = true,
+                ),
+            ),
+        )
+        val code = java.io.StringWriter().also { generator.generateWrapper(classModel).writeTo(it) }.toString()
+        assertTrue(Regex("override var title:\\s*kotlin\\.String").containsMatchIn(code) || code.contains("override var title: String"))
+        assertTrue(code.contains("get()"))
+        assertTrue(code.contains("set("))
+        assertTrue(code.contains("replacePredicateLiterals"))
+        assertTrue(code.contains("KastorGraphOps.getLiteralValues"))
     }
     
     @Test
@@ -104,7 +130,7 @@ class WrapperGeneratorTest {
         assertTrue(code.contains("Iri(\"http://example.org/prop2\")"))
         
         // Check that the known set is properly formatted (KotlinPoet may format differently)
-        assertTrue(code.contains("private val known: Set<Iri>"))
+        assertTrue(code.contains("val KNOWN"))
         assertTrue(code.contains("setOf"))
         assertTrue(code.contains("Iri(\"http://example.org/prop1\")"))
         assertTrue(code.contains("Iri(\"http://example.org/prop2\")"))

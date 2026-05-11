@@ -18,7 +18,9 @@ internal object QNameResolver {
             val (prefix, localName) = iriOrQName.split(":", limit = 2)
             val namespace = prefixMappings[prefix]
                 ?: throw IllegalArgumentException("Unknown prefix: '$prefix' in QName: '$iriOrQName'")
-            return namespace + localName
+            val resolved = namespace + localName
+            RdfDebug.logPrefixExpansion(iriOrQName, resolved, prefixMappings)
+            return resolved
         }
         // If not a QName, return as-is
         return iriOrQName

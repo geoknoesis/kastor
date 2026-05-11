@@ -13,12 +13,10 @@
 Read-only graph view.
 `getTriples(): List<RdfTriple>`, `hasTriple(triple: RdfTriple): Boolean`, `size(): Int`
 
-### GraphEditor
-Mutable graph operations.
-`addTriple(...)`, `addTriples(...)`, `removeTriple(...)`, `removeTriples(...)`, `clear()`
-
 ### MutableRdfGraph
-Combination of `RdfGraph` + `GraphEditor`.
+Mutable RDF graph operations. Provides both read and write operations.
+`addTriple(...)`, `addTriples(...)`, `removeTriple(...)`, `removeTriples(...)`, `clear()`
+Extends `RdfGraph` to provide both read and write capabilities.
 
 ### Query results
 - `ResultBinding(name: String, value: RdfTerm)`

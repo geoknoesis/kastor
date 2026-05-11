@@ -292,14 +292,18 @@ class RdfTermsTest {
         // Test quoted function
         val quoted = quoted(baseTriple)
         assertEquals(baseTriple, quoted.triple, "quoted() should create TripleTerm")
-        
-        // Test using quoted triple as subject
-        val metadataTriple = RdfTriple(
-            quoted,
-            Iri("http://example.org/source"),
-            string("Wikipedia")
+
+        // RDF 1.2: a triple term may appear as the object of a triple. Use a
+        // reifier (here: a blank node) as the subject and rdf:reifies as the
+        // predicate; the triple term goes in the object position.
+        val reifier = BlankNode("r1")
+        val reifiesTriple = RdfTriple(
+            reifier,
+            com.geoknoesis.kastor.rdf.vocab.RDF.reifies,
+            quoted
         )
-        assertEquals(quoted, metadataTriple.subject, "Quoted triple should be usable as subject")
+        assertEquals(quoted, reifiesTriple.obj, "Triple term should be the object of an rdf:reifies triple")
+        assertEquals(reifier, reifiesTriple.subject)
     }
     
     @Test

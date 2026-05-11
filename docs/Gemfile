@@ -1,0 +1,7 @@
+# Local preview: cd docs && bundle install && bundle exec jekyll serve --livereload
+# Mirrors the GitHub Pages build image closely enough for layout and links.
+source "https://rubygems.org"
+
+group :jekyll_plugins do
+  gem "github-pages"
+end

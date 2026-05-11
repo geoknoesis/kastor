@@ -6,20 +6,28 @@ plugins {
 
 allprojects {
   group = "com.geoknoesis.kastor"
-  version = "0.1.0"
+  version = "0.2.0"
 }
 
 subprojects {
-  apply(plugin = "org.jetbrains.kotlin.jvm")
-  apply(plugin = "java-library")
-  
-  // Apply KSP plugin to projects that need it (but not the processor itself or runtime)
-  if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
+  // The `:bom` module is a Gradle platform; it must not apply Kotlin/java-library.
+  val isBom = project.path == ":bom"
+
+  if (!isBom) {
+    apply(plugin = "org.jetbrains.kotlin.jvm")
+    apply(plugin = "java-library")
+  }
+
+  // Apply KSP plugin to projects that need it (but not the processor itself or runtime).
+  if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") ||
+      project.path.startsWith(":examples:")) {
     apply(plugin = "com.google.devtools.ksp")
   }
 
-  extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
-    jvmToolchain(17)
+  if (!isBom) {
+    extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+      jvmToolchain(17)
+    }
   }
 
   // Place each module's build under root build/modules/<path>
@@ -33,36 +41,40 @@ subprojects {
     mavenCentral()
   }
 
-  dependencies {
-    add("testImplementation", "org.jetbrains.kotlin:kotlin-test:2.1.0")
-    add("testImplementation", "org.junit.jupiter:junit-jupiter:5.10.3")
-    add("testRuntimeOnly", "org.junit.platform:junit-platform-launcher:1.10.3")
-    add("implementation", "org.slf4j:slf4j-api:2.0.13")
-    
-    // Add KSP dependencies for projects that use it (but not the processor itself or runtime)
-    if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") || project.path.startsWith(":samples:") || project.path.startsWith(":examples:")) {
-      add("ksp", project(":kastor-gen:processor"))
+  if (!isBom) {
+    dependencies {
+      add("testImplementation", "org.jetbrains.kotlin:kotlin-test:2.1.0")
+      add("testImplementation", "org.junit.jupiter:junit-jupiter:5.10.3")
+      add("testRuntimeOnly", "org.junit.platform:junit-platform-launcher:1.10.3")
+      add("implementation", "org.slf4j:slf4j-api:2.0.13")
+
+      // Add KSP dependencies for projects that use it (but not the processor itself or runtime).
+      // Exclude simple hello-world and hello-codegen examples (they can enable KSP manually if needed).
+      if ((project.path.startsWith(":kastor-gen:") && project.path != ":kastor-gen:processor" && project.path != ":kastor-gen:runtime") ||
+          (project.path.startsWith(":examples:") && project.path != ":examples:hello-world" && project.path != ":examples:hello-codegen")) {
+        add("ksp", project(":kastor-gen:processor"))
+      }
     }
-  }
 
-  tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
-    useJUnitPlatform()
-  }
+    tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
+      useJUnitPlatform()
+    }
 
-  // Sources JAR
-  val sourcesJar = tasks.register<org.gradle.jvm.tasks.Jar>("sourcesJar") {
-    archiveClassifier.set("sources")
-    val sourceSets = project.extensions.getByType(org.gradle.api.tasks.SourceSetContainer::class.java)
-    from(sourceSets.getByName("main").allSource)
-  }
+    // Sources JAR
+    tasks.register<org.gradle.jvm.tasks.Jar>("sourcesJar") {
+      archiveClassifier.set("sources")
+      val sourceSets = project.extensions.getByType(org.gradle.api.tasks.SourceSetContainer::class.java)
+      from(sourceSets.getByName("main").allSource)
+    }
 
-  // Javadoc JAR (may be empty for pure Kotlin projects)
-  val javadocJar = tasks.register<org.gradle.jvm.tasks.Jar>("javadocJar") {
-    archiveClassifier.set("javadoc")
-    val javadoc = tasks.findByName("javadoc") as? org.gradle.api.tasks.javadoc.Javadoc
-    if (javadoc != null) {
-      dependsOn(javadoc)
-      from(javadoc.destinationDir)
+    // Javadoc JAR (may be empty for pure Kotlin projects)
+    tasks.register<org.gradle.jvm.tasks.Jar>("javadocJar") {
+      archiveClassifier.set("javadoc")
+      val javadoc = tasks.findByName("javadoc") as? org.gradle.api.tasks.javadoc.Javadoc
+      if (javadoc != null) {
+        dependsOn(javadoc)
+        from(javadoc.destinationDir)
+      }
     }
   }
 }
@@ -72,8 +84,11 @@ val collectArtifacts = tasks.register<org.gradle.api.tasks.Copy>("collectArtifac
   duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.INCLUDE
   subprojects.forEach { p ->
     dependsOn("${p.path}:assemble")
-    dependsOn("${p.path}:sourcesJar")
-    dependsOn("${p.path}:javadocJar")
+    // The :bom module is a Gradle platform and has no sources/javadoc jars.
+    if (p.path != ":bom") {
+      dependsOn("${p.path}:sourcesJar")
+      dependsOn("${p.path}:javadocJar")
+    }
     from(p.layout.buildDirectory.dir("libs"))
   }
   into(layout.buildDirectory.dir("artifacts"))
@@ -82,6 +97,20 @@ val collectArtifacts = tasks.register<org.gradle.api.tasks.Copy>("collectArtifac
 // Root aggregate build task
 tasks.register("build") {
   dependsOn(collectArtifacts)
+}
+
+// Hello World example task
+tasks.register("helloWorld") {
+  group = "examples"
+  description = "Run the hello-world example"
+  dependsOn(":examples:hello-world:run")
+}
+
+// Hello Codegen example task
+tasks.register("helloCodegen") {
+  group = "examples"
+  description = "Run the hello-codegen example"
+  dependsOn(":examples:hello-codegen:run")
 }
 
 

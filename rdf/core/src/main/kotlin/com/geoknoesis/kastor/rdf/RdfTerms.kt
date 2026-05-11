@@ -67,12 +67,14 @@ sealed interface RdfTerm
 /**
  * A sub-interface of [RdfTerm] for values that can appear as subjects in RDF triples.
  *
- * In RDF, only certain types of values can be subjects:
- * - [Iri]: Internationalized Resource Identifiers
+ * In RDF 1.2 only IRIs and blank nodes can occupy the subject position:
+ * - [Iri]: Internationalised Resource Identifiers
  * - [BlankNode]: Anonymous resources
- * - [TripleTerm]: Quoted triples (RDF-star)
  *
- * Note that [Literal] values cannot be subjects in standard RDF.
+ * Triple terms ([TripleTerm]) and literals ([Literal]) are *not* resources and
+ * therefore cannot be subjects. Triple terms are object-position only; to
+ * attach metadata to a triple, use the [`rdf:reifies`][RDF.reifies] pattern
+ * with an IRI or blank node as the reifier.
  *
  * ## Usage
  * ```kotlin
@@ -402,6 +404,42 @@ sealed interface Literal : RdfTerm {
          */
         operator fun invoke(lexical: String, lang: String): Literal = LangString(lexical, lang)
 
+        /**
+         * Creates a directional language-tagged string literal (RDF 1.2).
+         *
+         * Equivalent to `LangString(lexical, lang, direction)`. The resulting
+         * literal has datatype `rdf:dirLangString` and serialises as
+         * `"text"@lang--ltr` or `"text"@lang--rtl`.
+         */
+        operator fun invoke(lexical: String, lang: String, direction: Direction): Literal =
+            LangString(lexical, lang, direction)
+
+    }
+}
+
+/**
+ * Base text direction for an RDF 1.2 directional language string.
+ *
+ * RDF 1.2 introduces a new datatype, [`rdf:dirLangString`][RDF.dirLangString],
+ * that pairs a language tag with an explicit base direction so that
+ * bi-directional content (Arabic, Hebrew, mixed scripts, ...) round-trips
+ * correctly through serialisation.
+ *
+ * The Turtle 1.2 lexical form for a directional literal is
+ * `"text"@lang--ltr` or `"text"@lang--rtl`.
+ */
+enum class Direction(val token: String) {
+    LTR("ltr"),
+    RTL("rtl");
+
+    companion object {
+        /** Parse a direction token (`"ltr"` / `"rtl"`, case-insensitive). Returns null on miss. */
+        fun fromToken(token: String?): Direction? = when (token?.lowercase()) {
+            null, "" -> null
+            "ltr" -> LTR
+            "rtl" -> RTL
+            else -> null
+        }
     }
 }
 
@@ -409,29 +447,44 @@ sealed interface Literal : RdfTerm {
  * Represents a language-tagged string literal in RDF.
  *
  * Language-tagged strings are used when the literal has a specific language
- * (e.g., "Hello"@en, "Bonjour"@fr). The datatype is automatically set to
- * `rdf:langString` as per the RDF specification.
+ * (e.g., "Hello"@en, "Bonjour"@fr). When [direction] is null the datatype is
+ * `rdf:langString` (RDF 1.1 / 1.2 plain language string). When [direction] is
+ * set, the datatype is `rdf:dirLangString` (RDF 1.2 directional language
+ * string) and the literal serialises as `"text"@lang--ltr` / `--rtl`.
  *
  * ## Usage
  * ```kotlin
- * val english = LangString("Hello", "en")  // "Hello"@en
- * val french = LangString("Bonjour", "fr") // "Bonjour"@fr
- * 
+ * val english = LangString("Hello", "en")                       // "Hello"@en
+ * val arabic  = LangString("\u0645\u0631\u062D\u0628\u0627", "ar", Direction.RTL) // "..."@ar--rtl
+ *
  * // Or use the Literal factory
- * val german = Literal("Hallo", "de")      // "Hallo"@de
- * 
+ * val german  = Literal("Hallo", "de")                          // "Hallo"@de
+ * val hebrew  = Literal("\u05E9\u05DC\u05D5\u05DD", "he", Direction.RTL)
+ *
  * // Or use the top-level function
- * val spanish = lang("Hola", "es")         // "Hola"@es
+ * val spanish = lang("Hola", "es")                              // "Hola"@es
  * ```
  *
  * @property lexical The string content of the literal
  * @property lang The language tag (e.g., "en", "fr", "de")
+ * @property direction Optional base direction (RDF 1.2). null means the
+ *   literal is a plain `rdf:langString`.
  * @see [Literal]
  * @see [RDF.langString]
+ * @see [RDF.dirLangString]
  */
-data class LangString(override val lexical: String, val lang: String) : Literal {
-    override val datatype: Iri get() = RDF.langString
-    override fun toString(): String = "\"$lexical\"@$lang"
+data class LangString(
+    override val lexical: String,
+    val lang: String,
+    val direction: Direction? = null,
+) : Literal {
+    override val datatype: Iri
+        get() = if (direction == null) RDF.langString else RDF.dirLangString
+
+    override fun toString(): String = when (direction) {
+        null -> "\"$lexical\"@$lang"
+        else -> "\"$lexical\"@$lang--${direction.token}"
+    }
 }
 
 /**
@@ -561,41 +614,41 @@ data class RdfTriple(val subject: RdfResource, val predicate: Iri, val obj: RdfT
 }
 
 /**
- * Represents a quoted triple as a resource, enabling RDF-star functionality.
+ * An RDF 1.2 triple term (`<<( s p o )>>`).
  *
- * RDF-star allows triples to be quoted and used as subjects or objects in other
- * triples. This enables representing statements about statements (metadata).
- *
- * A TripleTerm wraps an [RdfTriple] and makes it usable as a [RdfResource],
- * allowing it to appear as a subject in other triples.
+ * In RDF 1.2 a triple term is a *kind of RDF term* that names a triple without
+ * asserting it. It can appear only as the **object** of another triple - it is
+ * not a resource, so it cannot occupy subject or predicate position. To attach
+ * metadata to a triple, use the [`rdf:reifies`][RDF.reifies] pattern: an IRI or
+ * blank node (the *reifier*) names the triple term, and metadata properties hang
+ * off the reifier.
  *
  * ## Usage
  * ```kotlin
- * val baseTriple = triple(
- *     Iri("http://example.org/person"),
- *     Iri("http://example.org/name"),
- *     string("John Doe")
+ * val claim = triple(
+ *     Iri("http://example.org/alice"),
+ *     Iri("http://example.org/age"),
+ *     30.toLiteral()
  * )
- * 
- * val quotedTriple = TripleTerm(baseTriple)
- * 
- * // Or use the top-level function
- * val quoted2 = quoted(baseTriple)
- * 
- * // Now you can use the quoted triple as a subject
- * val metadataTriple = triple(
- *     quotedTriple,  // Subject: the quoted triple
- *     Iri("http://example.org/source"),  // Predicate: source
- *     string("Wikipedia")  // Object: source value
- * )
+ *
+ * val tt = TripleTerm(claim)            // <<( :alice :age 30 )>>
+ * val tt2 = quoted(claim)               // same thing, helper form
+ *
+ * // RDF 1.2 reifier pattern: an IRI/bnode names the triple term, metadata
+ * // hangs off the reifier.
+ * val reifier = bnode("r1")
+ * val reifies   = triple(reifier, RDF.reifies, tt)
+ * val certainty = triple(reifier, Iri("http://example.org/certainty"), 0.9.toLiteral())
  * ```
  *
- * @property triple The RDF triple being quoted
+ * @property triple The RDF triple this triple term names. The triple is *not*
+ *   asserted; it is merely referenced.
+ * @see [RDF.reifies]
  * @see [RdfTriple]
- * @see [RdfResource]
+ * @see [RdfTerm]
  */
-data class TripleTerm(val triple: RdfTriple) : RdfResource {
-    override fun toString(): String = "<<${triple.subject} ${triple.predicate} ${triple.obj}>>"
+data class TripleTerm(val triple: RdfTriple) : RdfTerm {
+    override fun toString(): String = "<<( ${triple.subject} ${triple.predicate} ${triple.obj} )>>"
 }
 
 
@@ -723,6 +776,18 @@ fun boolean(value: Boolean): Literal = Literal(value.toString(), XSD.boolean)
  * @see [LangString]
  */
 fun lang(value: String, lang: String): Literal = Literal(value, lang)
+
+/**
+ * Creates a directional language-tagged string literal (RDF 1.2,
+ * `rdf:dirLangString`).
+ *
+ * ```kotlin
+ * lang("\u0645\u0631\u062D\u0628\u0627", "ar", Direction.RTL)  // "..."@ar--rtl
+ * lang("Hello",   "en", Direction.LTR)  // "Hello"@en--ltr
+ * ```
+ */
+fun lang(value: String, lang: String, direction: Direction): Literal =
+    LangString(value, lang, direction)
 
 
 
@@ -892,9 +957,11 @@ interface RdfGraph {
 }
 
 /**
- * Write operations for RDF graphs.
+ * Mutable RDF graph operations.
+ * 
+ * Provides both read and write operations for RDF graphs.
  */
-interface GraphEditor {
+interface MutableRdfGraph : RdfGraph {
     /**
      * Adds a single triple to the graph.
      * 
@@ -933,11 +1000,6 @@ interface GraphEditor {
      */
     fun clear(): Boolean
 }
-
-/**
- * Mutable RDF graph operations.
- */
-interface MutableRdfGraph : RdfGraph, GraphEditor
 
 /**
  * Interface for graphs that know their source repository and graph name.

@@ -51,12 +51,35 @@ class Rdf4jProvider : RdfProvider {
     }
     
     override fun getCapabilities(variantId: String?): ProviderCapabilities {
+        val formats = listOf(
+            "TURTLE", "TTL", "TURTLE-1.2", "TURTLESTAR",
+            "JSON-LD", "JSONLD", "JSON-LD-1.2",
+            "RDF/XML", "RDFXML", "XML",
+            "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2",
+            "TRIG", "TRI-G", "TRIG-1.2", "TRIGSTAR",
+            "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2",
+        )
+
+        // Variant-specific capability flags. The plain `memory`/`native` variants
+        // do not perform inference and have no SHACL validation; the dedicated
+        // `*-rdfs` and `*-shacl` variants advertise those capabilities. The
+        // `*-star` variants explicitly advertise RDF-star, although RDF4J 5.x
+        // enables RDF-star on every store by default.
+        val supportsInference = variantId?.contains("rdfs") == true
+        val supportsShacl = variantId?.contains("shacl") == true
+        // RDF4J's MemoryStore/NativeStore support RDF-star (RDF 1.2 triple terms
+        // for newer versions). All variants advertise it.
+        val supportsRdfStar = true
+
         return ProviderCapabilities(
-            supportsInference = true,
+            rdfVersion = "1.2",
+            supportsTripleTerms = true,
+            supportsInference = supportsInference,
             supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = true,
-            supportsRdfStar = true,
+            supportsRdfStar = supportsRdfStar,
+            supportsShacl = supportsShacl,
             maxMemoryUsage = Long.MAX_VALUE,
             sparqlVersion = "1.2",
             supportsPropertyPaths = true,
@@ -64,7 +87,8 @@ class Rdf4jProvider : RdfProvider {
             supportsSubSelect = true,
             supportsVersionDeclaration = true,
             supportsServiceDescription = true,
-            supportedInputFormats = listOf("TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ")
+            supportedInputFormats = formats,
+            supportedOutputFormats = formats // RDF4J supports same formats for input and output
         )
     }
     
@@ -76,20 +100,41 @@ class Rdf4jProvider : RdfProvider {
         )
     }
     
-    override fun serializeGraph(graph: RdfGraph, format: String): String {
-        return Rdf4jFormatSupport.serializeGraph(graph, format)
+    override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
+        return Rdf4jFormatSupport.serializeGraph(graph, format, options)
     }
     
-    override fun serializeDataset(repository: RdfRepository, format: String): String {
-        return Rdf4jFormatSupport.serializeDataset(repository, format)
+    override fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions): String {
+        return Rdf4jFormatSupport.serializeDataset(repository, format, options)
     }
     
     override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
         return Rdf4jFormatSupport.parseGraph(inputStream, format)
     }
-    
+
+    override fun parseGraph(
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+    ): MutableRdfGraph =
+        if (baseIri == null) Rdf4jFormatSupport.parseGraph(inputStream, format)
+        else Rdf4jFormatSupport.parseGraph(inputStream, format, baseIri)
+
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
         Rdf4jFormatSupport.parseDataset(repository, inputStream, format)
+    }
+
+    override fun parseDataset(
+        repository: RdfRepository,
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+    ) {
+        if (baseIri == null) {
+            Rdf4jFormatSupport.parseDataset(repository, inputStream, format)
+        } else {
+            Rdf4jFormatSupport.parseDataset(repository, inputStream, format, baseIri)
+        }
     }
 }
 

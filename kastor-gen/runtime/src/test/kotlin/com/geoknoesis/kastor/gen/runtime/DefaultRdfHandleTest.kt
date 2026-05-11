@@ -109,6 +109,22 @@ class DefaultRdfHandleTest {
             handle.validate()
         }
     }
+
+    @Test
+    fun `DefaultRdfHandle isValidationConfigured reflects context`() {
+        val repo = Rdf.memory()
+        val node = Iri("http://example.org/person")
+        repo.add {
+            node - FOAF.name - "John Doe"
+        }
+        val without = DefaultRdfHandle(node, repo.defaultGraph, known = emptySet())
+        assertFalse(without.isValidationConfigured)
+        val validator = object : ValidationContext {
+            override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult = ValidationResult.Ok
+        }
+        val with = DefaultRdfHandle(node, repo.defaultGraph, known = emptySet(), validationContext = validator)
+        assertTrue(with.isValidationConfigured)
+    }
     
     @Test
     fun `DefaultRdfHandle works with empty known set`() {

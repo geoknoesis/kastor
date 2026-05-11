@@ -41,8 +41,8 @@ interface RdfRepository : Closeable {
     fun createGraph(graphName: Iri): RdfGraph
     fun listGraphs(): List<Iri>
     fun removeGraph(graphName: Iri): Boolean
-    fun editDefaultGraph(): GraphEditor
-    fun editGraph(graphName: Iri): GraphEditor
+    fun editDefaultGraph(): MutableRdfGraph
+    fun editGraph(graphName: Iri): MutableRdfGraph
 
     // Utility operations
     fun clear(): Boolean
@@ -63,24 +63,18 @@ interface RdfGraph {
 }
 ```
 
-### GraphEditor
+### MutableRdfGraph
 
-Mutable graph operations.
+Mutable RDF graph operations. Provides both read and write operations.
 
 ```kotlin
-interface GraphEditor {
+interface MutableRdfGraph : RdfGraph {
     fun addTriple(triple: RdfTriple)
     fun addTriples(triples: Collection<RdfTriple>)
     fun removeTriple(triple: RdfTriple): Boolean
     fun removeTriples(triples: Collection<RdfTriple>): Boolean
     fun clear(): Boolean
 }
-```
-
-### MutableRdfGraph
-
-```kotlin
-interface MutableRdfGraph : RdfGraph, GraphEditor
 ```
 
 ### RdfProvider

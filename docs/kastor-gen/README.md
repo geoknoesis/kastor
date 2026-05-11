@@ -1,6 +1,8 @@
 # Kastor Gen Documentation
 
-Welcome to the Kastor Gen documentation! Kastor Gen (formerly OntoMapper) is a Kotlin library that bridges the gap between RDF ontologies and domain objects, providing type-safe access to RDF data through pure domain interfaces.
+Welcome to the Kastor Gen documentation. Kastor Gen is the Kotlin code-generation layer for Kastor: it turns SHACL shapes and JSON-LD context into **pure domain interfaces** plus **RDF-backed wrappers**, wired together at runtime by **`OntoMapper`**.
+
+> **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; the [`examples/dcat-us`](../../examples/dcat-us) Gradle module shows DCAT-oriented usage in the build.
 
 ## Why Kastor Gen?
 
@@ -39,10 +41,23 @@ Kastor Gen generates type-safe interfaces automatically:
 - [RDF Integration](tutorials/rdf-integration.md) - Working with RDF side-channels
 - [Ontology Generation](tutorials/ontology-generation.md) - Generating code from SHACL/JSON-LD
 - [Gradle Configuration](tutorials/gradle-configuration.md) - Gradle-only ontology generation
+- [Gradle Plugin Reference](reference/gradle-plugin.md) - Complete Gradle plugin documentation
+- [Incremental Builds](guides/incremental-builds.md) - Understanding KSP task inputs/outputs and incremental compilation
+- [Serializing Domain Instances](guides/serializing-domain-instances.md) - Serializing generated interface instances to RDF formats
 - [API Reference](reference/) - Detailed API documentation
 - [Examples](examples/) - Sample applications and use cases
 - [Best Practices](best-practices.md) - Guidelines for effective usage
 - [FAQ](faq.md) - Frequently asked questions
+
+```mermaid
+flowchart LR
+  Ontology["SHACL + JSON-LD"] --> KSP["KSP processor"]
+  KSP --> Dom["Domain interfaces"]
+  KSP --> Wrap["Wrappers + OntoMapper.registry"]
+  Graph["RdfGraph / RdfRepository"] --> Mat["materialize / asType"]
+  Wrap --> Mat
+  Mat --> Dom
+```
 
 ## What is Kastor Gen?
 
@@ -55,34 +70,40 @@ Create clean, RDF-free domain interfaces that represent your business concepts:
 
 ```kotlin
 // Using full IRIs
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 
-// Using prefix mappings and QNames (recommended)
-@PrefixMapping(
+// Using QNames (recommended): `@file:Rdf(prefixes = …)` then `@Rdf(iri = "prefix:local")`
+@file:Rdf(
     prefixes = [
         Prefix("dcat", "http://www.w3.org/ns/dcat#"),
         Prefix("dcterms", "http://purl.org/dc/terms/")
     ]
 )
-@RdfClass(iri = "dcat:Catalog")
+
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "dcat:Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "dcterms:title")
+    @Rdf(iri = "dcterms:title")
     val title: String
     
-    @get:RdfProperty(iri = "dcterms:description")
+    @Rdf(iri = "dcterms:description")
     val description: String
     
-    @get:RdfProperty(iri = "dcat:dataset")
+    @Rdf(iri = "dcat:dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -91,8 +112,7 @@ interface Catalog {
 Convert RDF nodes to domain objects seamlessly:
 
 ```kotlin
-val catalogRef = RdfRef(iri("https://data.example.org/catalog"), graph)
-val catalog: Catalog = catalogRef.asType()
+val catalog: Catalog = graph.materialize(iri("https://data.example.org/catalog"))
 
 // Pure domain usage
 println("Title: ${catalog.title}")
@@ -115,14 +135,19 @@ val allPredicates = extras.predicates()
 rdfHandle.validateOrThrow()
 ```
 
-### 🏗️ **Ontology-Driven Code Generation**
-Generate interfaces and wrappers automatically from SHACL shapes and JSON-LD context:
+### Ontology-driven code generation
+
+Annotate a small **generator** class (or use `@file:Rdf` on the package file) with **`@Rdf(shacl = …, context = …)`**. Paths are under `src/main/resources`. KSP emits interfaces and wrappers into the target package.
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld",
-    packageName = "com.example.generated"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
+    packageName = "com.example.generated",
+    generateInterfaces = true,
+    generateWrappers = true,
 )
 class OntologyGenerator
 ```
@@ -176,12 +201,12 @@ dependencies {
 ### 2. Define Domain Interface
 
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -190,8 +215,7 @@ interface Catalog {
 
 ```kotlin
 // KSP generates CatalogWrapper automatically
-val catalogRef = RdfRef(iri("https://data.example.org/catalog"), graph)
-val catalog: Catalog = catalogRef.asType()
+val catalog: Catalog = graph.materialize(iri("https://data.example.org/catalog"))
 
 // Pure domain usage - no RDF dependencies in business code
 println("Title: ${catalog.title}")

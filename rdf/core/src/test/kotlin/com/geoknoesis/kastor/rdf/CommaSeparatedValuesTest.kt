@@ -85,7 +85,8 @@ class CurlyBracesParenthesesSyntaxTest {
 
         val subjectObjects = subjectTriples.map { it.obj }
         assertTrue(subjectObjects.contains(friend1), "Should contain friend1")
-        assertTrue(subjectObjects.contains(bnode), "Should contain blank node")
+        // Some providers rename blank node IDs when storing them, so check by type only.
+        assertTrue(subjectObjects.any { it is BlankNode }, "Should contain a blank node")
         assertTrue(subjectObjects.contains(Literal("Technology", XSD.string)), "Should contain Technology")
         assertTrue(subjectObjects.contains(Literal("42", XSD.integer)), "Should contain 42")
         assertTrue(subjectObjects.contains(Literal("true", XSD.boolean)), "Should contain true")

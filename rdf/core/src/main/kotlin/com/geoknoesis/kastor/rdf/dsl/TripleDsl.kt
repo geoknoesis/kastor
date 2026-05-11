@@ -184,11 +184,11 @@ fun alt(vararg values: Boolean): RdfAltValues =
 
 
 /**
- * Create an embedded triple for RDF-star using angle brackets syntax: <<subject predicate object>>
- * This creates a quoted triple that can be used as a subject or object in other triples.
- * 
- * Note: This function only creates the embedded triple structure. The actual RdfTriple
- * creation with TripleTerm will be handled by the DSL processing logic.
+ * Create an embedded triple structure (RDF 1.2 triple term: `<<( s p o )>>`).
+ *
+ * In RDF 1.2 a triple term may only appear as the **object** of another triple
+ * (it is not a resource and cannot be a subject). The DSL helpers that consume
+ * this struct emit it accordingly.
  */
 fun embedded(subject: RdfResource, predicate: Iri, obj: RdfTerm): RdfStarTriple {
     return RdfStarTriple(subject, predicate, obj)
@@ -601,7 +601,72 @@ class TripleDsl {
     fun triple(subject: RdfResource, predicate: Iri, obj: RdfTerm) {
         triples.add(RdfTriple(subject, predicate, obj))
     }
-    
+
+    // === RDF 1.2 LANGUAGE / DIRECTION HELPERS ===
+
+    /**
+     * Create a directional language-tagged literal (RDF 1.2,
+     * `rdf:dirLangString`).
+     *
+     * ```kotlin
+     * person - FOAF.name - lang("\u0645\u0631\u062D\u0628\u0627", "ar", Direction.RTL)
+     * ```
+     */
+    fun lang(value: String, language: String, direction: Direction): Literal =
+        LangString(value, language, direction)
+
+    /**
+     * Create a plain language-tagged literal.
+     */
+    fun lang(value: String, language: String): Literal = LangString(value, language)
+
+    // === RDF 1.2 REIFIER BUILDER ===
+
+    /**
+     * Attach metadata to a triple via the RDF 1.2 reifier pattern.
+     *
+     * Emits `_:r rdf:reifies <<( s p o )>> .` and runs [configure] with `_:r`
+     * (the reifier) bound as the subject of further triples added inside the
+     * block. The triple identified by [subject], [predicate], and [obj] is **not**
+     * itself asserted - if you want to assert it, call `triple(subject, predicate, obj)`
+     * separately.
+     *
+     * ```kotlin
+     * repo.add {
+     *     val alice = iri("http://example.org/alice")
+     *     val claim = RdfTriple(alice, FOAF.age, 30.toLiteral())
+     *     triple(claim.subject, claim.predicate, claim.obj)         // assert it
+     *     reifies(claim) { reifier ->                               // and annotate it
+     *         reifier - iri("http://example.org/certainty") - 0.9
+     *         reifier - iri("http://example.org/source") - "wikipedia"
+     *     }
+     * }
+     * ```
+     *
+     * @return The reifier blank node, in case the caller wants to attach further
+     *   triples after the block.
+     */
+    fun reifies(
+        triple: RdfTriple,
+        reifier: RdfResource = nextBnode("r"),
+        configure: TripleDsl.(RdfResource) -> Unit = {},
+    ): RdfResource {
+        triples.add(RdfTriple(reifier, RDF.reifies, TripleTerm(triple)))
+        this.configure(reifier)
+        return reifier
+    }
+
+    /**
+     * Convenience overload: `reifies(subject, predicate, obj) { reifier -> ... }`.
+     */
+    fun reifies(
+        subject: RdfResource,
+        predicate: Iri,
+        obj: RdfTerm,
+        reifier: RdfResource = nextBnode("r"),
+        configure: TripleDsl.(RdfResource) -> Unit = {},
+    ): RdfResource = reifies(RdfTriple(subject, predicate, obj), reifier, configure)
+
     /**
      * Add multiple triples to the DSL.
      */

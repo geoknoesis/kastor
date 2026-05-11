@@ -19,7 +19,7 @@ class RdfExceptionsTest {
         val validationException = RdfValidationException("Validation failed")
         assertEquals("Validation failed", validationException.message)
         
-        val formatException = RdfFormatException("Format failed")
+        val formatException = RdfFormatException.Generic("Format failed")
         assertEquals("Format failed", formatException.message)
         
         val repositoryException = RdfRepositoryException("Repository failed")
@@ -67,7 +67,7 @@ class RdfExceptionsTest {
         }
         
         assertThrows(RdfFormatException::class.java) {
-            throw RdfFormatException("Format failed")
+            throw RdfFormatException.Generic("Format failed")
         }
         
         assertThrows(RdfRepositoryException::class.java) {
@@ -98,7 +98,7 @@ class RdfExceptionsTest {
             RdfTransactionException("Transaction failed"),
             RdfProviderException("Provider failed"),
             RdfValidationException("Validation failed"),
-            RdfFormatException("Format failed"),
+            RdfFormatException.Generic("Format failed"),
             RdfRepositoryException("Repository failed"),
             RdfGraphException("Graph failed"),
             RdfFederationException("Federation failed"),
@@ -113,6 +113,48 @@ class RdfExceptionsTest {
                 assertNotNull(e.message, "Exception should have a message")
             }
         }
+    }
+    
+    @Test
+    fun `RdfException has error code`() {
+        val queryException = RdfQueryException("Query failed")
+        assertEquals(RdfErrorCode.QUERY_EXECUTION_ERROR, queryException.errorCode)
+        
+        val formatException = RdfFormatException.Generic("Format failed", RdfErrorCode.FORMAT_PARSE_ERROR)
+        assertEquals(RdfErrorCode.FORMAT_PARSE_ERROR, formatException.errorCode)
+        
+        val unsupportedFormat = RdfFormatException.UnsupportedFormat("X", listOf())
+        assertEquals(RdfErrorCode.FORMAT_UNSUPPORTED, unsupportedFormat.errorCode)
+    }
+    
+    @Test
+    fun `Error codes can be used for programmatic handling`() {
+        val exception = RdfQueryException(
+            "Query failed",
+            errorCode = RdfErrorCode.QUERY_SYNTAX_ERROR
+        )
+        
+        when (exception.errorCode) {
+            RdfErrorCode.QUERY_SYNTAX_ERROR -> {
+                // Handle syntax errors
+                assertTrue(true)
+            }
+            RdfErrorCode.QUERY_EXECUTION_ERROR -> {
+                // Handle execution errors
+                fail("Should not reach here")
+            }
+            else -> fail("Should not reach here")
+        }
+    }
+    
+    @Test
+    fun `Error code context is included in exception context`() {
+        val exception = RdfQueryException("Query failed", query = "SELECT ?s")
+        val context = exception.context
+        
+        assertNotNull(context)
+        assertEquals(RdfErrorCode.QUERY_EXECUTION_ERROR.code, context?.get("errorCode"))
+        assertEquals("SELECT ?s", context?.get("query"))
     }
 }
 

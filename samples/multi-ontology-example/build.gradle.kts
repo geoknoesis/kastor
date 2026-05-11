@@ -18,26 +18,32 @@ kastorGen {
     ontologies {
         // DCAT-US ontology
         create("dcat") {
-            shaclPath.set("ontologies/dcat-us.shacl.ttl")
-            contextPath.set("ontologies/dcat-us.context.jsonld")
-            targetPackage.set("com.example.dcatus.generated")
-            outputDirectory.set("build/generated/sources/dcat")
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            interfacePackage = "com.example.dcatus.generated"
+            wrapperPackage = "com.example.dcatus.generated"
+            vocabularyPackage = "com.example.dcatus.generated"
+            outputDirectory = "build/generated/sources/dcat"
         }
-        
+
         // Schema.org ontology
         create("schema") {
-            shaclPath.set("ontologies/schema.shacl.ttl")
-            contextPath.set("ontologies/schema.context.jsonld")
-            targetPackage.set("com.example.schema.generated")
-            outputDirectory.set("build/generated/sources/schema")
+            shaclPath = "ontologies/schema.shacl.ttl"
+            contextPath = "ontologies/schema.context.jsonld"
+            interfacePackage = "com.example.schema.generated"
+            wrapperPackage = "com.example.schema.generated"
+            vocabularyPackage = "com.example.schema.generated"
+            outputDirectory = "build/generated/sources/schema"
         }
-        
+
         // FOAF ontology
         create("foaf") {
-            shaclPath.set("ontologies/foaf.shacl.ttl")
-            contextPath.set("ontologies/foaf.context.jsonld")
-            targetPackage.set("com.example.foaf.generated")
-            outputDirectory.set("build/generated/sources/foaf")
+            shaclPath = "ontologies/foaf.shacl.ttl"
+            contextPath = "ontologies/foaf.context.jsonld"
+            interfacePackage = "com.example.foaf.generated"
+            wrapperPackage = "com.example.foaf.generated"
+            vocabularyPackage = "com.example.foaf.generated"
+            outputDirectory = "build/generated/sources/foaf"
         }
     }
 }

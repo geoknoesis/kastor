@@ -12,7 +12,9 @@ data class PropertyModel(
     val name: String,
     val kotlinType: String,
     val predicateIri: String,
-    val type: PropertyType
+    val type: PropertyType,
+    /** When true, generated wrapper uses `override var` and writes through a [MutableRdfGraph]. */
+    val mutable: Boolean = false,
 )
 
 enum class PropertyType {

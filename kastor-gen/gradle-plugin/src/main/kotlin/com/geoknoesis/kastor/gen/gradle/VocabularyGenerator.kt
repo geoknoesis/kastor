@@ -1,9 +1,9 @@
 package com.geoknoesis.kastor.gen.gradle
 
-import com.geoknoesis.kastor.gen.processor.model.ShaclShape
-import com.geoknoesis.kastor.gen.processor.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
-import com.geoknoesis.kastor.gen.processor.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
 import com.google.devtools.ksp.processing.KSPLogger
 import java.io.File
 import java.io.FileInputStream
@@ -163,22 +163,32 @@ class VocabularyGenerator(private val logger: KSPLogger) {
     ): String {
         val className = vocabularyName.uppercase()
         
-        val classTerms = classes.joinToString("\n    ") { term ->
-            val kotlinName = toKotlinIdentifier(term.name)
-            val comment = if (term.description != null) "    // ${term.description}" else ""
-            "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
+        // Handle empty lists gracefully
+        val classTerms = if (classes.isEmpty()) {
+            "    // No classes found"
+        } else {
+            classes.joinToString("\n    ") { term ->
+                val kotlinName = toKotlinIdentifier(term.name)
+                val comment = if (term.description != null) "    // ${term.description}" else ""
+                "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
+            }
         }
         
-        val propertyTerms = properties.joinToString("\n    ") { term ->
-            val kotlinName = toKotlinIdentifier(term.name)
-            val comment = if (term.description != null) "    // ${term.description}" else ""
-            "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
+        val propertyTerms = if (properties.isEmpty()) {
+            "    // No properties found"
+        } else {
+            properties.joinToString("\n    ") { term ->
+                val kotlinName = toKotlinIdentifier(term.name)
+                val comment = if (term.description != null) "    // ${term.description}" else ""
+                "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
+            }
         }
         
         return """
 package $packageName
 
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.vocab.Vocabulary
 
 /**
  * $vocabularyName vocabulary.

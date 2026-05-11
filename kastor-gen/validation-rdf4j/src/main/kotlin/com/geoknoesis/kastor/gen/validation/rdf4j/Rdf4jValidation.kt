@@ -193,8 +193,20 @@ class Rdf4jValidation : ValidationContext {
       is Literal -> {
         when (term) {
           is LangString -> {
-            // Treat language-tagged literals as plain strings for validation tolerance.
-            valueFactory.createLiteral(term.lexical)
+            // RDF 1.2: a directional language string round-trips with its
+            // datatype set to rdf:dirLangString so SHACL constraints over the
+            // directional datatype validate correctly. Plain language strings
+            // continue to be created as language-tagged plain literals.
+            val direction = term.direction
+            if (direction != null) {
+              valueFactory.createLiteral(
+                "${term.lexical}@${term.lang}--${direction.token}",
+                valueFactory.createIRI(term.datatype.value),
+              )
+            } else {
+              // Treat language-tagged literals as plain strings for validation tolerance.
+              valueFactory.createLiteral(term.lexical)
+            }
           }
           else -> {
             val datatypeValue = when (term.datatype.value) {

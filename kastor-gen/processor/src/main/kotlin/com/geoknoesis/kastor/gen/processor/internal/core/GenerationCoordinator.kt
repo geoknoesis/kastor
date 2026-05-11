@@ -41,14 +41,16 @@ class GenerationCoordinator(
         
         if (generateInterfaces) {
             val interfaces = interfaceGenerator.generateInterfaces(model, packageName)
-            interfaces.forEach { (name, fileSpec) ->
+            // Sort by name for deterministic output
+            interfaces.toSortedMap().forEach { (name, fileSpec) ->
                 writeFile(fileSpec, packageName)
             }
         }
         
         if (generateWrappers) {
             val wrappers = wrapperGenerator.generateWrappers(model, packageName)
-            wrappers.forEach { (name, fileSpec) ->
+            // Sort by name for deterministic output
+            wrappers.toSortedMap().forEach { (name, fileSpec) ->
                 writeFile(fileSpec, packageName)
             }
         }

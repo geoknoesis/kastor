@@ -16,15 +16,15 @@ Practical examples and use cases demonstrating Kastor Gen capabilities.
 ### Simple Person Model
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val email: List<String>
 }
 
@@ -49,12 +49,12 @@ fun main() {
 ### Organization with Employees
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Organization")
+@Rdf(iri = "http://example.org/Organization")
 interface Organization {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/employee")
+    @Rdf(iri = "http://example.org/employee")
     val employees: List<Person>
 }
 

@@ -140,9 +140,10 @@ class DatasetImplTest {
             defaultGraph(graph2)
         }
 
-        assertThrows(UnsupportedOperationException::class.java) {
-            dataset.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }"))
-        }
+        // Cross-repository default graphs force the materialization fallback,
+        // which copies triples into a fresh in-memory repository before querying.
+        val results = dataset.select(SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")).toList()
+        assertEquals(2, results.size)
 
         dataset.close()
         repo1.close()
@@ -164,12 +165,12 @@ class DatasetImplTest {
             namedGraph(namedGraphName, repo, namedGraphName)
         }
 
-        // Execute query to force materialization path (untracked default graph)
-        assertThrows(UnsupportedOperationException::class.java) {
-            dataset.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"))
-        }
+        // Execute query to force materialization path (untracked default graph).
+        val triples = dataset.construct(
+            SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <${namedGraphName.value}> { ?s ?p ?o } }")
+        ).toList()
+        assertTrue(triples.any { it.subject == subject && it.predicate == predicate && it.obj == obj })
 
-        // The materialized union is internal, but we can at least ensure no exception is thrown.
         dataset.close()
         repo.close()
     }

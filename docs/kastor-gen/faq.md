@@ -53,12 +53,12 @@ Follow these principles:
 4. **Make properties immutable** - Use `val` instead of `var`
 
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -89,10 +89,10 @@ Use nullable types for optional properties:
 
 ```kotlin
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String // Required
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: Int? // Optional
 }
 ```
@@ -106,7 +106,7 @@ Yes, but you need to register them:
 data class CustomDate(val year: Int, val month: Int, val day: Int)
 
 // Register converter
-kastor.gen.registry[CustomDate::class.java] = { handle ->
+OntoMapper.registry[CustomDate::class.java] = { handle ->
     // Custom materialization logic
     CustomDate(2024, 1, 1)
 }
@@ -202,13 +202,15 @@ val repo = RdfProviderRegistry.create(
 
 ### How do I generate code from SHACL and JSON-LD?
 
-Use the `@GenerateFromOntology` annotation:
+Use **`@Rdf(shacl = …, context = …)`** on a generator class (or `@file:Rdf`):
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld",
-    packageName = "com.example.generated"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
+    packageName = "com.example.generated",
 )
 class OntologyGenerator
 ```
@@ -247,20 +249,22 @@ sh:property [
 
 ### Can I generate code from multiple ontologies?
 
-Yes, use multiple generator classes:
+Yes. Use one generator class (or `@file:Rdf`) per ontology bundle:
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld",
-    packageName = "com.example.dcatus.generated"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
+    packageName = "com.example.dcatus.generated",
 )
 class DcatGenerator
 
-@GenerateFromOntology(
-    shaclPath = "ontologies/foaf.shacl.ttl",
-    contextPath = "ontologies/foaf.context.jsonld",
-    packageName = "com.example.foaf.generated"
+@Rdf(
+    shacl = "ontologies/foaf.shacl.ttl",
+    context = "ontologies/foaf.context.jsonld",
+    packageName = "com.example.foaf.generated",
 )
 class FoafGenerator
 ```
@@ -332,7 +336,7 @@ Common issues:
 
 Check these:
 
-1. **Property annotations** - Ensure `@get:RdfProperty` is correct
+1. **Property annotations** — Ensure `@Rdf(iri = …)` is present on the property or its getter/setter, and that the import is `com.geoknoesis.kastor.gen.annotations.Rdf`.
 2. **IRI matching** - Verify IRI matches RDF data
 3. **Type mapping** - Check datatype conversion
 4. **Graph content** - Ensure RDF data exists
@@ -374,7 +378,7 @@ Circular references are handled automatically:
 
 ```kotlin
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val knows: List<Person> // Circular reference
 }
 
@@ -391,7 +395,7 @@ val friendsOfFriends = friends.flatMap { it.knows }
 Migration steps:
 
 1. **Define domain interfaces** - Create pure Kotlin interfaces
-2. **Map RDF properties** - Add `@RdfProperty` annotations
+2. **Map RDF properties** - Add `@Rdf` annotations
 3. **Replace RDF access** - Use OntoMapper materialization
 4. **Update business logic** - Work with domain objects
 5. **Add side-channel access** - For advanced RDF operations

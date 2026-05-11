@@ -191,8 +191,49 @@ data class PropertyPathPatternAst(
 ) : GraphPatternAst
 
 /**
- * RDF-star quoted triple pattern: << subject predicate object >>
+ * RDF 1.2 triple-term pattern: `<<( subject predicate object )>>`.
+ *
+ * Triple terms in RDF 1.2 are object-position only. This AST node is consumed
+ * by [TripleTermObjectPatternAst] and [ReifierPatternAst] which place it in a
+ * legal position.
  */
+data class TripleTermPatternAst(
+    val subject: RdfTerm,
+    val predicate: RdfTerm,
+    val obj: RdfTerm
+) : GraphPatternAst
+
+/**
+ * Triple pattern with a triple term in the object position:
+ * `subject predicate <<( s p o )>>` (RDF 1.2).
+ */
+data class TripleTermObjectPatternAst(
+    val subject: RdfTerm,
+    val predicate: RdfTerm,
+    val tripleTerm: TripleTermPatternAst,
+) : GraphPatternAst
+
+/**
+ * RDF 1.2 reifier pattern: `subject rdf:reifies <<( s p o )>>`.
+ *
+ * `subject` is the reifier (an IRI, blank node, or variable) and the triple
+ * term is the triple it names. Other graph patterns can attach metadata to the
+ * same reifier alongside this one.
+ */
+data class ReifierPatternAst(
+    val reifier: RdfTerm,
+    val tripleTerm: TripleTermPatternAst,
+) : GraphPatternAst
+
+/**
+ * Legacy RDF-star quoted triple pattern: `<< subject predicate object >>`.
+ * Renders as the RDF 1.2 form `<<( s p o )>>` for compatibility, but new code
+ * should use [TripleTermPatternAst].
+ */
+@Deprecated(
+    message = "Use TripleTermPatternAst (RDF 1.2). The renderer still emits valid RDF 1.2 syntax.",
+    replaceWith = ReplaceWith("TripleTermPatternAst(subject, predicate, obj)"),
+)
 data class QuotedTriplePatternAst(
     val subject: RdfTerm,
     val predicate: RdfTerm,
@@ -200,8 +241,14 @@ data class QuotedTriplePatternAst(
 ) : GraphPatternAst
 
 /**
- * RDF-star triple pattern with quoted triple as subject/object.
+ * Legacy RDF-star triple pattern with a quoted triple as subject. Deprecated
+ * because RDF 1.2 forbids subject-position triple terms; use
+ * [ReifierPatternAst] (with `rdf:reifies`) instead.
  */
+@Deprecated(
+    message = "Subject-position triple terms are forbidden in RDF 1.2. Use ReifierPatternAst.",
+    replaceWith = ReplaceWith("ReifierPatternAst(reifier, tripleTerm)"),
+)
 data class RdfStarTriplePatternAst(
     val quotedTriple: QuotedTriplePatternAst,
     val predicate: RdfTerm,

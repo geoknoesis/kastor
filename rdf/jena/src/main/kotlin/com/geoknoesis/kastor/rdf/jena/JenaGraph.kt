@@ -29,8 +29,14 @@ internal class JenaGraph(val model: Model) : MutableRdfGraph {
         val subject = JenaTerms.toResource(model, triple.subject)
         val predicate = JenaTerms.toProperty(model, triple.predicate)
         val obj = JenaTerms.toNode(model, triple.obj)
-        val removed = model.remove(subject, predicate, obj)
-        return removed != null
+        // Model.remove(Resource, Property, RDFNode) returns the model itself, so
+        // we have to consult containsment to know whether anything was actually
+        // removed.
+        val existed = model.contains(subject, predicate, obj)
+        if (existed) {
+            model.remove(subject, predicate, obj)
+        }
+        return existed
     }
     
     override fun removeTriples(triples: Collection<RdfTriple>): Boolean {

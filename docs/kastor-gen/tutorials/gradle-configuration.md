@@ -212,12 +212,12 @@ kastorGen {
             shaclPath.set("ontologies/schema.shacl.ttl")
             contextPath.set("ontologies/schema.context.jsonld")
             targetPackage.set("com.example.schema.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("SCHEMA")
-            vocabularyNamespace.set("https://schema.org/")
-            vocabularyPrefix.set("schema")
+            generateInterfaces = false
+            generateWrappers = false
+            // Vocabulary generation auto-enabled by providing metadata
+            vocabularyName = "SCHEMA"
+            vocabularyNamespace = "https://schema.org/"
+            vocabularyPrefix = "schema"
             outputDirectory.set("build/generated/sources/schema-vocab")
         }
     }
@@ -238,10 +238,10 @@ Each ontology configuration supports the following options:
 | `vocabularyPackage` | String | `targetPackage` | Package for generated vocabulary |
 | `generateInterfaces` | Boolean | `true` | Whether to generate domain interfaces |
 | `generateWrappers` | Boolean | `true` | Whether to generate wrapper implementations |
-| `generateVocabulary` | Boolean | `false` | Whether to generate vocabulary file |
-| `vocabularyName` | String | `Vocabulary` | Name of the vocabulary object |
-| `vocabularyNamespace` | String | `http://example.org/vocab#` | Namespace URI for the vocabulary |
-| `vocabularyPrefix` | String | `vocab` | Prefix for the vocabulary |
+| `generateVocabulary` | Boolean | Auto-enabled if metadata provided | Whether to generate vocabulary file. **Auto-enabled** when `vocabularyName`, `vocabularyNamespace`, and `vocabularyPrefix` are all provided |
+| `vocabularyName` | String | `""` | Name of the vocabulary object (e.g., "DCAT"). If provided along with namespace and prefix, vocabulary generation is auto-enabled |
+| `vocabularyNamespace` | String | `""` | Namespace URI for the vocabulary (e.g., "http://www.w3.org/ns/dcat#"). If provided along with name and prefix, vocabulary generation is auto-enabled |
+| `vocabularyPrefix` | String | `""` | Prefix for the vocabulary (e.g., "dcat"). If provided along with name and namespace, vocabulary generation is auto-enabled |
 | `outputDirectory` | String | `build/generated/sources/kastor-gen` | Output directory for generated files |
 
 ### Advanced Configuration
@@ -283,9 +283,61 @@ kastorGen {
 
 ## Generated Code
 
-### Vocabulary Files
+## Vocabulary Generation
 
-When `generateVocabulary` is enabled, the plugin generates vocabulary files following the Kastor pattern:
+Vocabulary generation creates type-safe vocabulary constants from your ontology files, following the Kastor vocabulary pattern. This is especially useful for:
+
+- **Type Safety**: All vocabulary terms are strongly typed as `Iri` objects
+- **Consistency**: Follows the established Kastor vocabulary structure
+- **Auto-sync**: Automatically stays in sync with ontology changes
+- **IDE Support**: Full autocomplete and navigation support
+
+### Auto-Enablement
+
+Vocabulary generation is **automatically enabled** when you provide all three vocabulary metadata fields:
+
+```kotlin
+kastorGen {
+    ontologies {
+        create("dcat") {
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            
+            // Providing all three auto-enables vocabulary generation
+            vocabularyName = "DCAT"
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
+            vocabularyPrefix = "dcat"
+            
+            // No need to set generateVocabulary = true
+        }
+    }
+}
+```
+
+### Manual Control
+
+You can also explicitly control vocabulary generation:
+
+```kotlin
+kastorGen {
+    ontologies {
+        create("dcat") {
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            
+            // Explicitly enable/disable
+            generateVocabulary = true
+            vocabularyName = "DCAT"
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
+            vocabularyPrefix = "dcat"
+        }
+    }
+}
+```
+
+### Generated Vocabulary Files
+
+When vocabulary generation is enabled, the plugin generates vocabulary files following the Kastor pattern:
 
 ```kotlin
 package com.example.dcatus.vocab
@@ -325,30 +377,30 @@ object DCAT : Vocabulary {
 The plugin generates clean domain interfaces based on SHACL shapes:
 
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/publisher")
+    @Rdf(iri = "http://purl.org/dc/terms/publisher")
     val publisher: Agent
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Dataset")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Dataset")
 interface Dataset {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#distribution")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#distribution")
     val distribution: List<Distribution>
 }
 ```
@@ -389,7 +441,7 @@ internal class CatalogWrapper(
     
     companion object {
         init {
-            kastor.gen.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
+            OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
         }
     }
 }

@@ -1,0 +1,61 @@
+# Build and deploy the Jekyll site under docs/ to GitHub Pages.
+# Repository settings: Settings → Pages → Build and deployment → Source: GitHub Actions
+name: Deploy documentation to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set Jekyll baseurl for project site
+        # https://USER.github.io/REPO/ — required for theme assets and relative_url
+        run: |
+          OWNER="${GITHUB_REPOSITORY%%/*}"
+          RNAME="${GITHUB_REPOSITORY#*/}"
+          {
+            echo ""
+            echo "# Injected in CI for github.io project pages"
+            echo "baseurl: \"/${RNAME}\""
+            echo "url: \"https://${OWNER}.github.io\""
+          } >> docs/_config.yml
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

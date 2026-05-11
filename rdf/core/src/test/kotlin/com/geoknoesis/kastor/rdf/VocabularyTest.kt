@@ -55,6 +55,7 @@ class VocabularyTest {
     }
     
     @Test
+    @Suppress("DEPRECATION") // intentionally exercises the deprecated RDF 1.1 reification IRIs
     fun `RDF vocabulary terms are created correctly`() {
         // Test core terms
         assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", RDF.type.value, "RDF type should have correct IRI")
@@ -63,6 +64,11 @@ class VocabularyTest {
         assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#subject", RDF.subject.value, "RDF subject should have correct IRI")
         assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate", RDF.predicate.value, "RDF predicate should have correct IRI")
         assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#object", RDF.`object`.value, "RDF object should have correct IRI")
+
+        // RDF 1.2 additions
+        assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies", RDF.reifies.value)
+        assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString", RDF.dirLangString.value)
+        assertEquals("http://www.w3.org/1999/02/22-rdf-syntax-ns#TripleTerm", RDF.TripleTerm.value)
     }
     
     @Test

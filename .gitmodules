@@ -1,0 +1,4 @@
+[submodule "rdf/conformance/test-data"]
+	path = rdf/conformance/test-data
+	url = https://github.com/w3c/rdf-tests.git
+	branch = main

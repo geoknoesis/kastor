@@ -61,7 +61,11 @@ object KastorGraphOps {
 
   /**
    * Retrieves and materializes object values for a given subject and predicate.
-   * 
+   *
+   * For each object term, [factory] is invoked. [Error], [IllegalStateException], and
+   * [ValidationException] propagate (failed wiring or validation). Any other exception
+   * is treated as a failed materialization for that object only and omitted from the result.
+   *
    * @param graph The RDF graph to query
    * @param subj The subject node
    * @param pred The predicate IRI
@@ -78,7 +82,15 @@ object KastorGraphOps {
       .filter { it.subject == subj && it.predicate == pred }
       .mapNotNull { triple ->
         when (val obj = triple.obj) {
-          is Iri, is BlankNode -> try { factory(obj) } catch (e: Exception) { null }
+          is Iri, is BlankNode ->
+            runCatching { factory(obj) }.getOrElse { e ->
+              when (e) {
+                is Error -> throw e
+                is IllegalStateException -> throw e
+                is ValidationException -> throw e
+                else -> null
+              }
+            }
           else -> null
         }
       }
@@ -92,10 +104,6 @@ object KastorGraphOps {
       .count { it.subject == subj && it.predicate == pred && (it.obj is Iri || it.obj is BlankNode) }
   }
 }
-
-
-
-
 
 
 

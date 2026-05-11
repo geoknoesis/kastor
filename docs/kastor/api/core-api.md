@@ -19,16 +19,50 @@ interface RdfGraph {
   fun size(): Int
 }
 
-interface GraphEditor {
+interface MutableRdfGraph : RdfGraph {
   fun addTriple(triple: RdfTriple)
   fun addTriples(triples: Collection<RdfTriple>)
   fun removeTriple(triple: RdfTriple): Boolean
   fun removeTriples(triples: Collection<RdfTriple>): Boolean
   fun clear(): Boolean
 }
-
-interface MutableRdfGraph : RdfGraph, GraphEditor
 ```
+
+### Graph utilities
+
+#### CBD Closure
+
+**CBD (Concise Bounded Description)** is a standard RDF pattern for extracting a complete description of a resource.
+
+```kotlin
+fun RdfGraph.getCbdClosure(resource: RdfResource): Set<RdfTriple>
+```
+
+**What it includes:**
+1. All triples where the resource is the subject (direct properties)
+2. Recursively, for any blank node object, all triples where that blank node is the subject
+
+**Key characteristics:**
+- ✅ Follows blank nodes recursively (complete anonymous resource descriptions)
+- ✅ Does not follow IRIs (IRI objects remain as references)
+- ✅ Prevents cycles (uses visited set to avoid infinite recursion)
+
+**Example:**
+```kotlin
+import com.geoknoesis.kastor.rdf.getCbdClosure
+
+// Extract CBD closure for a resource
+val cbdTriples = graph.getCbdClosure(Iri("http://example.org/person"))
+
+// Create a new graph with CBD closure
+val cbdGraph = Rdf.graph {
+    cbdTriples.forEach { add(it) }
+}
+```
+
+**See also:**
+- [Serializing Domain Instances](../../kastor-gen/guides/serializing-domain-instances.md) - Using CBD closure with domain instances
+- [Runtime API](../../kastor-gen/reference/runtime.md#cbd-closure) - CBD closure in Kastor Gen runtime
 
 ### Repository abstraction
 ```kotlin
@@ -39,8 +73,8 @@ interface RdfRepository : Dataset, SparqlMutable {
   fun listGraphs(): List<Iri>
   fun createGraph(name: Iri): RdfGraph
   fun removeGraph(name: Iri): Boolean
-  fun editDefaultGraph(): GraphEditor
-  fun editGraph(name: Iri): GraphEditor
+  fun editDefaultGraph(): MutableRdfGraph
+  fun editGraph(name: Iri): MutableRdfGraph
 
   fun select(query: SparqlSelect): SparqlQueryResult
   fun ask(query: SparqlAsk): Boolean

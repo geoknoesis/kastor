@@ -129,6 +129,7 @@ object SparqlRenderer {
     // GRAPH PATTERNS
     // ============================================================================
     
+    @Suppress("DEPRECATION") // QuotedTriplePatternAst / RdfStarTriplePatternAst are kept for back-compat
     private fun renderGraphPattern(pattern: GraphPatternAst, sb: StringBuilder) {
         when (pattern) {
             is TriplePatternAst -> {
@@ -201,17 +202,43 @@ object SparqlRenderer {
                 sb.append(renderTerm(pattern.obj))
                 sb.append(" .")
             }
-            is QuotedTriplePatternAst -> {
-                sb.append("<< ")
+            is TripleTermPatternAst -> {
+                sb.append(renderTripleTerm(pattern))
+            }
+            is TripleTermObjectPatternAst -> {
                 sb.append(renderTerm(pattern.subject))
                 sb.append(" ")
                 sb.append(renderTerm(pattern.predicate))
                 sb.append(" ")
-                sb.append(renderTerm(pattern.obj))
-                sb.append(" >>")
+                sb.append(renderTripleTerm(pattern.tripleTerm))
+                sb.append(" .")
+            }
+            is ReifierPatternAst -> {
+                sb.append(renderTerm(pattern.reifier))
+                sb.append(" rdf:reifies ")
+                sb.append(renderTripleTerm(pattern.tripleTerm))
+                sb.append(" .")
+            }
+            is QuotedTriplePatternAst -> {
+                // Legacy RDF-star pattern: render in RDF 1.2 syntax for compatibility.
+                sb.append(
+                    renderTripleTerm(
+                        TripleTermPatternAst(pattern.subject, pattern.predicate, pattern.obj)
+                    )
+                )
             }
             is RdfStarTriplePatternAst -> {
-                renderGraphPattern(pattern.quotedTriple, sb)
+                // Legacy: subject-position triple term. RDF 1.2 forbids this, but we
+                // render it verbatim to allow callers to migrate gradually.
+                sb.append(
+                    renderTripleTerm(
+                        TripleTermPatternAst(
+                            pattern.quotedTriple.subject,
+                            pattern.quotedTriple.predicate,
+                            pattern.quotedTriple.obj,
+                        )
+                    )
+                )
                 sb.append(" ")
                 sb.append(renderTerm(pattern.predicate))
                 sb.append(" ")
@@ -464,8 +491,18 @@ object SparqlRenderer {
         is Var -> term.toString()
         is Iri -> term.toString()
         is BlankNode -> term.toString()
+        is LangString -> when (term.direction) {
+            null -> "\"${escapeLiteral(term.lexical)}\"@${term.lang}"
+            else -> "\"${escapeLiteral(term.lexical)}\"@${term.lang}--${term.direction.token}"
+        }
         is Literal -> term.toString()
-        is TripleTerm -> term.toString()
+        is TripleTerm -> "<<( ${renderTerm(term.triple.subject)} ${renderTerm(term.triple.predicate)} ${renderTerm(term.triple.obj)} )>>"
     }
+
+    private fun renderTripleTerm(term: TripleTermPatternAst): String =
+        "<<( ${renderTerm(term.subject)} ${renderTerm(term.predicate)} ${renderTerm(term.obj)} )>>"
+
+    private fun escapeLiteral(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 

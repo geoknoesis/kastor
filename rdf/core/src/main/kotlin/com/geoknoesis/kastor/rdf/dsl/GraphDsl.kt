@@ -397,7 +397,52 @@ class GraphDsl {
     fun triple(subject: RdfResource, predicate: Iri, obj: RdfTerm) {
         triples.add(RdfTriple(subject, predicate, obj))
     }
-    
+
+    // === RDF 1.2 LANGUAGE / DIRECTION HELPERS ===
+
+    /**
+     * Create a directional language-tagged literal (RDF 1.2,
+     * `rdf:dirLangString`).
+     */
+    fun lang(value: String, language: String, direction: Direction): Literal =
+        LangString(value, language, direction)
+
+    /**
+     * Create a plain language-tagged literal.
+     */
+    fun lang(value: String, language: String): Literal = LangString(value, language)
+
+    // === RDF 1.2 REIFIER BUILDER ===
+
+    /**
+     * Attach metadata to a triple via the RDF 1.2 reifier pattern.
+     *
+     * Emits `_:r rdf:reifies <<( s p o )>> .` and runs [configure] with `_:r`
+     * bound as the subject of further triples added inside the block. The
+     * referenced triple is **not** itself asserted unless the caller adds it
+     * separately.
+     */
+    fun reifies(
+        triple: RdfTriple,
+        reifier: RdfResource = nextBnode("r"),
+        configure: GraphDsl.(RdfResource) -> Unit = {},
+    ): RdfResource {
+        triples.add(RdfTriple(reifier, RDF.reifies, TripleTerm(triple)))
+        this.configure(reifier)
+        return reifier
+    }
+
+    /**
+     * Convenience overload: `reifies(subject, predicate, obj) { reifier -> ... }`.
+     */
+    fun reifies(
+        subject: RdfResource,
+        predicate: Iri,
+        obj: RdfTerm,
+        reifier: RdfResource = nextBnode("r"),
+        configure: GraphDsl.(RdfResource) -> Unit = {},
+    ): RdfResource = reifies(RdfTriple(subject, predicate, obj), reifier, configure)
+
     /**
      * Add multiple triples to the DSL.
      */

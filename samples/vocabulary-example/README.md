@@ -47,12 +47,12 @@ kastorGen {
             shaclPath.set("ontologies/dcat-us.shacl.ttl")
             contextPath.set("ontologies/dcat-us.context.jsonld")
             targetPackage.set("com.example.dcatus.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("DCAT")
-            vocabularyNamespace.set("http://www.w3.org/ns/dcat#")
-            vocabularyPrefix.set("dcat")
+            generateInterfaces = false
+            generateWrappers = false
+            // Vocabulary generation is auto-enabled when all three metadata fields are provided
+            vocabularyName = "DCAT"
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
+            vocabularyPrefix = "dcat"
             outputDirectory.set("build/generated/sources/dcat-vocab")
         }
         
@@ -61,12 +61,12 @@ kastorGen {
             shaclPath.set("ontologies/schema.shacl.ttl")
             contextPath.set("ontologies/schema.context.jsonld")
             targetPackage.set("com.example.schema.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("SCHEMA")
-            vocabularyNamespace.set("https://schema.org/")
-            vocabularyPrefix.set("schema")
+            generateInterfaces = false
+            generateWrappers = false
+            // Vocabulary generation is auto-enabled when all three metadata fields are provided
+            vocabularyName = "SCHEMA"
+            vocabularyNamespace = "https://schema.org/"
+            vocabularyPrefix = "schema"
             outputDirectory.set("build/generated/sources/schema-vocab")
         }
         
@@ -75,12 +75,12 @@ kastorGen {
             shaclPath.set("ontologies/foaf.shacl.ttl")
             contextPath.set("ontologies/foaf.context.jsonld")
             targetPackage.set("com.example.foaf.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("FOAF")
-            vocabularyNamespace.set("http://xmlns.com/foaf/0.1/")
-            vocabularyPrefix.set("foaf")
+            generateInterfaces = false
+            generateWrappers = false
+            // Vocabulary generation is auto-enabled when all three metadata fields are provided
+            vocabularyName = "FOAF"
+            vocabularyNamespace = "http://xmlns.com/foaf/0.1/"
+            vocabularyPrefix = "foaf"
             outputDirectory.set("build/generated/sources/foaf-vocab")
         }
     }
@@ -96,7 +96,7 @@ Each vocabulary configuration supports the following options:
 | `shaclPath` | String | Required | Path to SHACL file |
 | `contextPath` | String | Required | Path to JSON-LD context file |
 | `targetPackage` | String | `com.example.generated` | Target package for generated vocabulary |
-| `generateVocabulary` | Boolean | `false` | Whether to generate vocabulary file |
+| `generateVocabulary` | Boolean | Auto-enabled if metadata provided | Whether to generate vocabulary file. Auto-enabled when `vocabularyName`, `vocabularyNamespace`, and `vocabularyPrefix` are all provided |
 | `vocabularyName` | String | `Vocabulary` | Name of the vocabulary object |
 | `vocabularyNamespace` | String | `http://example.org/vocab#` | Namespace URI for the vocabulary |
 | `vocabularyPrefix` | String | `vocab` | Prefix for the vocabulary |

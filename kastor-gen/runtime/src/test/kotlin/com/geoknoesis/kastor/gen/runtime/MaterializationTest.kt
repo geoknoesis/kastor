@@ -58,6 +58,39 @@ class MaterializationTest {
     }
     
     @Test
+    fun `graph ref materialize and repository shortcuts match RdfRef asType`() {
+        OntoMapper.registry[TestPerson::class.java] = { handle ->
+            object : TestPerson, RdfBacked {
+                override val rdf = handle
+                override val name: List<String> by lazy {
+                    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, FOAF.name).map { it.lexical }
+                }
+                override val age: List<Int> by lazy {
+                    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, FOAF.age).mapNotNull { it.lexical.toIntOrNull() }
+                }
+            }
+        }
+
+        val repo = Rdf.memory()
+        val subject = Iri("http://example.org/person")
+        repo.add {
+            subject - FOAF.name - "Eve"
+            subject - FOAF.age - 22
+        }
+        val g = repo.defaultGraph
+
+        val viaRef = RdfRef(subject, g).asType<TestPerson>()
+        assertEquals(viaRef.name, g.ref(subject).asType<TestPerson>().name)
+        assertEquals(viaRef.name, g.materialize<TestPerson>(subject).name)
+        assertEquals(viaRef.name, subject.materializeIn<TestPerson>(g).name)
+        assertEquals(viaRef.name, repo.materialize<TestPerson>(subject).name)
+        assertEquals(
+            listOf(viaRef.name, viaRef.name),
+            listOf(subject, subject).materializeIn<TestPerson>(g).map { it.name },
+        )
+    }
+
+    @Test
     fun `materialization fails for unregistered type`() {
         val repo = Rdf.memory()
         val subject = Iri("http://example.org/person")

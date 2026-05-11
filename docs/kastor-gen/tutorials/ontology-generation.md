@@ -7,15 +7,15 @@ Kastor Gen supports generating domain interfaces and wrapper implementations dir
 Instead of manually writing domain interfaces like this:
 
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -91,24 +91,26 @@ JSON-LD context provides type mappings and property definitions:
 
 ## Code Generation
 
-### 1. Create a Generator Class
+### 1. Create a generator class
 
-Create a class annotated with `@GenerateFromOntology`:
+Create a class annotated with **`@Rdf`**, pointing at SHACL (required) and JSON-LD context (recommended) under `src/main/resources`:
 
 ```kotlin
 package com.example.mydomain.generated
 
-import com.geoknoesis.kastor.gen.annotations.GenerateFromOntology
+import com.geoknoesis.kastor.gen.annotations.Rdf
 
-@GenerateFromOntology(
-    shaclPath = "ontologies/my-ontology.shacl.ttl",
-    contextPath = "ontologies/my-ontology.context.jsonld",
+@Rdf(
+    shacl = "ontologies/my-ontology.shacl.ttl",
+    context = "ontologies/my-ontology.context.jsonld",
     packageName = "com.example.mydomain.generated",
     generateInterfaces = true,
-    generateWrappers = true
+    generateWrappers = true,
 )
 class OntologyGenerator
 ```
+
+You can instead put the same `@Rdf(shacl = …, context = …, …)` on a **`@file:Rdf`** annotation at the top of a Kotlin file if you prefer file-level configuration.
 
 ### 2. Generated Interfaces
 
@@ -119,15 +121,14 @@ The processor generates pure domain interfaces:
 // Generated from SHACL shape: http://example.org/shapes/Catalog
 package com.example.mydomain.generated
 
-import com.geoknoesis.kastor.gen.annotations.RdfClass
-import com.geoknoesis.kastor.gen.annotations.RdfProperty
+import com.geoknoesis.kastor.gen.annotations.Rdf
 
 /**
  * Domain interface for http://www.w3.org/ns/dcat#Catalog
  * Pure domain interface with no RDF dependencies.
  * Generated from SHACL shape: http://example.org/shapes/Catalog
  */
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
     /**
      * A name given to the catalog.
@@ -135,7 +136,7 @@ interface Catalog {
      * Min count: 1
      * Max count: 1
      */
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
 
     /**
@@ -144,14 +145,14 @@ interface Catalog {
      * Min count: 0
      * Max count: 1
      */
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
 
     /**
      * A collection of data that is listed in the catalog.
      * Path: http://www.w3.org/ns/dcat#dataset
      */
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
@@ -173,14 +174,18 @@ import com.geoknoesis.kastor.rdf.*
  * Generated from SHACL shape: http://example.org/shapes/Catalog
  */
 internal class CatalogWrapper(
-  override val rdf: RdfHandle
+  input: RdfHandle,
 ) : Catalog, RdfBacked {
 
   private val known: Set<Iri> = setOf(
     Iri("http://purl.org/dc/terms/title"),
     Iri("http://purl.org/dc/terms/description"),
-    Iri("http://www.w3.org/ns/dcat#dataset")
+    Iri("http://www.w3.org/ns/dcat#dataset"),
   )
+
+  override val rdf: RdfHandle by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    if (input is DefaultRdfHandle) DefaultRdfHandle(input.node, input.graph, known) else input
+  }
 
   /**
    * A name given to the catalog.
@@ -206,13 +211,13 @@ internal class CatalogWrapper(
    */
   override val dataset: List<Dataset> by lazy {
     KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri("http://www.w3.org/ns/dcat#dataset")) { child ->
-      kastor.gen.materialize(RdfRef(child, rdf.graph), Dataset::class.java)
+      OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)
     }
   }
 
   companion object {
     init {
-      kastor.gen.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
+      OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
     }
   }
 }
@@ -258,18 +263,24 @@ println("Alternative labels: ${altLabels.joinToString()}")
 catalog.asRdf().validateOrThrow()
 ```
 
-## Configuration Options
+## Configuration options
 
-The `@GenerateFromOntology` annotation supports several options:
+Ontology-driven generation uses the **`@Rdf` annotation fields** documented in [`reference/annotations.md`](../reference/annotations.md). Common options:
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/my-ontology.shacl.ttl",     // Required
-    contextPath = "ontologies/my-ontology.context.jsonld", // Required
-    packageName = "com.example.mydomain.generated",     // Optional, defaults to current package
-    generateInterfaces = true,                          // Optional, defaults to true
-    generateWrappers = true                             // Optional, defaults to true
+import com.geoknoesis.kastor.gen.annotations.Rdf
+import com.geoknoesis.kastor.gen.annotations.ValidationMode
+
+@Rdf(
+    shacl = "ontologies/my-ontology.shacl.ttl",              // Required for ontology mode
+    context = "ontologies/my-ontology.context.jsonld",       // Recommended (property / type names)
+    packageName = "com.example.mydomain.generated",          // Optional; defaults to declaration package
+    generateInterfaces = true,                               // Default true
+    generateWrappers = true,                                 // Default true
+    generateDsl = false,                                     // Optional instance-DSL output
+    validationMode = ValidationMode.EMBEDDED,                // How validation is wired into wrappers
 )
+class OntologyGenerator
 ```
 
 ## Benefits

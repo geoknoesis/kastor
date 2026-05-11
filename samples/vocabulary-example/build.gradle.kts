@@ -18,44 +18,44 @@ kastorGen {
     ontologies {
         // DCAT-US vocabulary
         create("dcat") {
-            shaclPath.set("ontologies/dcat-us.shacl.ttl")
-            contextPath.set("ontologies/dcat-us.context.jsonld")
-            targetPackage.set("com.example.dcatus.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("DCAT")
-            vocabularyNamespace.set("http://www.w3.org/ns/dcat#")
-            vocabularyPrefix.set("dcat")
-            outputDirectory.set("build/generated/sources/dcat-vocab")
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            vocabularyPackage = "com.example.dcatus.vocab"
+            generateInterfaces = false
+            generateWrappers = false
+            generateVocabulary = true
+            vocabularyName = "DCAT"
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
+            vocabularyPrefix = "dcat"
+            outputDirectory = "build/generated/sources/dcat-vocab"
         }
-        
+
         // Schema.org vocabulary
         create("schema") {
-            shaclPath.set("ontologies/schema.shacl.ttl")
-            contextPath.set("ontologies/schema.context.jsonld")
-            targetPackage.set("com.example.schema.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("SCHEMA")
-            vocabularyNamespace.set("https://schema.org/")
-            vocabularyPrefix.set("schema")
-            outputDirectory.set("build/generated/sources/schema-vocab")
+            shaclPath = "ontologies/schema.shacl.ttl"
+            contextPath = "ontologies/schema.context.jsonld"
+            vocabularyPackage = "com.example.schema.vocab"
+            generateInterfaces = false
+            generateWrappers = false
+            generateVocabulary = true
+            vocabularyName = "SCHEMA"
+            vocabularyNamespace = "https://schema.org/"
+            vocabularyPrefix = "schema"
+            outputDirectory = "build/generated/sources/schema-vocab"
         }
-        
+
         // FOAF vocabulary
         create("foaf") {
-            shaclPath.set("ontologies/foaf.shacl.ttl")
-            contextPath.set("ontologies/foaf.context.jsonld")
-            targetPackage.set("com.example.foaf.vocab")
-            generateInterfaces.set(false)
-            generateWrappers.set(false)
-            generateVocabulary.set(true)
-            vocabularyName.set("FOAF")
-            vocabularyNamespace.set("http://xmlns.com/foaf/0.1/")
-            vocabularyPrefix.set("foaf")
-            outputDirectory.set("build/generated/sources/foaf-vocab")
+            shaclPath = "ontologies/foaf.shacl.ttl"
+            contextPath = "ontologies/foaf.context.jsonld"
+            vocabularyPackage = "com.example.foaf.vocab"
+            generateInterfaces = false
+            generateWrappers = false
+            generateVocabulary = true
+            vocabularyName = "FOAF"
+            vocabularyNamespace = "http://xmlns.com/foaf/0.1/"
+            vocabularyPrefix = "foaf"
+            outputDirectory = "build/generated/sources/foaf-vocab"
         }
     }
 }

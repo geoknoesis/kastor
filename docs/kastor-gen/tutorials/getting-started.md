@@ -60,19 +60,18 @@ Let's create a simple `Person` interface:
 // src/main/kotlin/com/example/Person.kt
 package com.example
 
-import com.geoknoesis.kastor.gen.annotations.RdfClass
-import com.geoknoesis.kastor.gen.annotations.RdfProperty
+import com.geoknoesis.kastor.gen.annotations.Rdf
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val email: List<String>
 }
 ```
@@ -210,15 +209,15 @@ import com.geoknoesis.kastor.gen.runtime.*
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val email: List<String>
 }
 
@@ -287,7 +286,7 @@ Congratulations! You've successfully created your first Kastor Gen application. 
 A: Make sure KSP is properly configured and the build completed successfully. The wrapper classes need to be generated first.
 
 **Q: Annotations not found**
-A: Ensure you have the correct import statements for `@RdfClass` and `@RdfProperty`.
+A: Ensure you import `com.geoknoesis.kastor.gen.annotations.Rdf` (and `Prefix` when you declare prefix maps).
 
 **Q: Validation not working**
 A: Check that you've added the validation dependencies and that a ValidationContext is registered.

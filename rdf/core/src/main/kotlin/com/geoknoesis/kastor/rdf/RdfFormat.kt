@@ -21,48 +21,49 @@ package com.geoknoesis.kastor.rdf
  */
 enum class RdfFormat(val formatName: String, vararg val aliases: String) {
     /**
-     * Turtle format - human-readable RDF syntax.
-     * 
-     * Aliases: "TURTLE", "TTL"
+     * Turtle (RDF 1.2) - human-readable RDF syntax. The Kastor renderer emits
+     * RDF 1.2 syntax for triple terms (`<<( s p o )>>`) and directional
+     * language strings (`"text"@lang--ltr`); both Jena and RDF4J parsers
+     * accept the older RDF-star variants too, so legacy input still parses.
+     *
+     * Aliases: "TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR".
      */
-    TURTLE("TURTLE", "TTL"),
-    
+    TURTLE("TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR"),
+
     /**
      * JSON-LD format - JSON-based RDF serialization.
-     * 
-     * Aliases: "JSON-LD", "JSONLD"
+     *
+     * Aliases: "JSON-LD", "JSONLD", "JSON-LD-1.2", "JSONLD12".
      */
-    JSON_LD("JSON-LD", "JSONLD"),
-    
+    JSON_LD("JSON-LD", "JSONLD", "JSON-LD-1.2", "JSONLD12"),
+
     /**
      * RDF/XML format - XML-based RDF serialization.
-     * 
-     * Aliases: "RDF/XML", "RDFXML", "XML"
+     *
+     * Aliases: "RDF/XML", "RDFXML", "XML".
      */
     RDF_XML("RDF/XML", "RDFXML", "XML"),
-    
+
     /**
-     * N-Triples format - simple line-based RDF syntax.
-     * 
-     * Aliases: "N-TRIPLES", "NT", "NTRIPLES"
+     * N-Triples (RDF 1.2) - simple line-based RDF syntax.
+     *
+     * Aliases: "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12".
      */
-    N_TRIPLES("N-TRIPLES", "NT", "NTRIPLES"),
-    
+    N_TRIPLES("N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12"),
+
     /**
-     * TriG format - Turtle syntax extended for RDF datasets (named graphs).
-     * Supports serialization of multiple named graphs in a single document.
-     * 
-     * Aliases: "TRIG", "TRI-G"
+     * TriG (RDF 1.2) - Turtle syntax extended for RDF datasets (named graphs).
+     *
+     * Aliases: "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR".
      */
-    TRIG("TRIG", "TRI-G"),
-    
+    TRIG("TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR"),
+
     /**
-     * N-Quads format - N-Triples syntax extended for RDF datasets (named graphs).
-     * Each line contains subject, predicate, object, and graph name.
-     * 
-     * Aliases: "N-QUADS", "NQUADS", "NQ"
+     * N-Quads (RDF 1.2) - N-Triples extended with named-graph context.
+     *
+     * Aliases: "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12".
      */
-    N_QUADS("N-QUADS", "NQUADS", "NQ");
+    N_QUADS("N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12");
     
     companion object {
         /**
@@ -116,7 +117,10 @@ enum class RdfFormat(val formatName: String, vararg val aliases: String) {
          */
         fun fromStringOrThrow(formatString: String): RdfFormat {
             return fromString(formatString)
-                ?: throw RdfFormatException("Unsupported RDF format: $formatString. Supported formats: ${values().joinToString { it.formatName }}")
+                ?: throw RdfFormatException.Generic(
+                    "Unsupported RDF format: $formatString. Supported formats: ${values().joinToString { it.formatName }}",
+                    RdfErrorCode.FORMAT_UNSUPPORTED
+                )
         }
     }
 }

@@ -14,7 +14,7 @@ interface Person {
 }
 
 // RDF access via side-channel
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()  // Side-channel access
 ```
 
@@ -36,7 +36,7 @@ interface RdfHandle {
 ### Accessing the Underlying RDF Node
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 val repo = Rdf.memory()
 
@@ -55,7 +55,7 @@ println("Graph contains ${graph.getTriples().size} triples")
 ### Direct RDF Operations
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 
 // Add new triples to the graph
@@ -92,7 +92,7 @@ interface PropertyBag {
 ### Discovering Unmapped Properties
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val extras = person.asRdf().extras
 
 // Get all unmapped predicates
@@ -111,7 +111,7 @@ if (extras.predicates().contains(SKOS.altLabel)) {
 ### Accessing Unmapped Values
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val extras = person.asRdf().extras
 
 // Get string values
@@ -137,7 +137,7 @@ relatedIris.forEach { iri ->
 ### Materializing Unmapped Objects
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val extras = person.asRdf().extras
 
 // Materialize related objects
@@ -156,7 +156,7 @@ val events = extras.objects(FOAF.attended, Event::class.java)
 ### Custom RDF Queries
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 
 // Custom SPARQL query
@@ -178,7 +178,7 @@ results.forEach { bindingSet ->
 ### RDF Graph Manipulation
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 
 // Add new properties
@@ -207,7 +207,7 @@ rdfHandle.graph.add {
 ### Working with Multiple Graphs
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 
 // Get the default graph
@@ -253,7 +253,7 @@ val validatedPerson: Person = rdfRef.asValidatedType(validation)
 ### Custom Validation
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 
 // Custom validation logic
@@ -296,7 +296,7 @@ if (validationErrors.isNotEmpty()) {
 ### Lazy Evaluation
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 
 // Properties are evaluated lazily
 println("Before accessing name")  // No RDF queries yet
@@ -310,7 +310,8 @@ val name2 = person.name.firstOrNull()  // Uses cached result
 ### Batch Operations
 
 ```kotlin
-val people: List<Person> = materializeMultipleFromRdf(...)
+// e.g. subjectNodes from a SPARQL result or graph.walk over (s a foaf:Person)
+val people: List<Person> = subjectNodes.materializeIn<Person>(graph)
 
 // Process in batches to avoid memory issues
 people.chunked(100).forEach { batch ->
@@ -328,7 +329,7 @@ people.chunked(100).forEach { batch ->
 ### Selective Property Access
 
 ```kotlin
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 
 // Only access needed properties
 val name = person.name.firstOrNull()

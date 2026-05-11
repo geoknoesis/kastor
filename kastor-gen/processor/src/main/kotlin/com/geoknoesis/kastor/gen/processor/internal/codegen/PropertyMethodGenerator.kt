@@ -59,10 +59,23 @@ sealed class PropertyTypeStrategy {
                         .defaultValue(CodeBlock.of("null"))
                         .build()
                 )
+                // RDF 1.2: an optional base direction. When supplied, the
+                // resulting literal carries the rdf:dirLangString datatype.
+                functionBuilder.addParameter(
+                    ParameterSpec.builder(
+                        "direction",
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Direction").copy(nullable = true),
+                    )
+                        .defaultValue(CodeBlock.of("null"))
+                        .build()
+                )
                 functionBuilder.addStatement("val literal = if (lang != null) {")
-                functionBuilder.addStatement("    %T(value, lang)", ClassName(CodegenConstants.RDF_PACKAGE, "LangString"))
+                functionBuilder.addStatement(
+                    "    %T(value, lang, direction)",
+                    ClassName(CodegenConstants.RDF_PACKAGE, "LangString"),
+                )
                 functionBuilder.addStatement("} else {")
-                functionBuilder.addStatement("    %T(value, %T.string)", 
+                functionBuilder.addStatement("    %T(value, %T.string)",
                     ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
                     ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
                 functionBuilder.addStatement("}")
@@ -99,10 +112,21 @@ sealed class PropertyTypeStrategy {
                         .defaultValue(CodeBlock.of("null"))
                         .build()
                 )
+                functionBuilder.addParameter(
+                    ParameterSpec.builder(
+                        "direction",
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Direction").copy(nullable = true),
+                    )
+                        .defaultValue(CodeBlock.of("null"))
+                        .build()
+                )
                 functionBuilder.addStatement("values.forEach { value ->")
                 addImmediateValidation(functionBuilder, property, "value", indent = "    ")
                 functionBuilder.addStatement("    val literal = if (lang != null) {")
-                functionBuilder.addStatement("        %T(value, lang)", ClassName(CodegenConstants.RDF_PACKAGE, "LangString"))
+                functionBuilder.addStatement(
+                    "        %T(value, lang, direction)",
+                    ClassName(CodegenConstants.RDF_PACKAGE, "LangString"),
+                )
                 functionBuilder.addStatement("    } else {")
                 functionBuilder.addStatement("        %T(value, %T.string)",
                     ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),

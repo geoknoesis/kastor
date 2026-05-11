@@ -1,12 +1,15 @@
 package com.geoknoesis.kastor.gen.gradle.tasks
 
-import com.geoknoesis.kastor.gen.processor.codegen.InterfaceGenerator
-import com.geoknoesis.kastor.gen.processor.codegen.OntologyWrapperGenerator
-import com.geoknoesis.kastor.gen.processor.model.ShaclShape
-import com.geoknoesis.kastor.gen.processor.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.parsers.ShaclParser
-import com.geoknoesis.kastor.gen.processor.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
+import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
+import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
 import com.geoknoesis.kastor.gen.gradle.VocabularyGenerator
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.FileSpec
@@ -67,6 +70,18 @@ abstract class OntologyGenerationTask : DefaultTask() {
     @get:Input
     @get:Optional
     abstract val vocabularyPrefix: Property<String>
+    
+    @get:Input
+    @get:Optional
+    abstract val generateDsl: Property<Boolean>
+    
+    @get:Input
+    @get:Optional
+    abstract val dslPackage: Property<String>
+    
+    @get:Input
+    @get:Optional
+    abstract val dslName: Property<String>
     
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
@@ -161,6 +176,24 @@ abstract class OntologyGenerationTask : DefaultTask() {
         }
     })
     
+    private val dslGenerator = InstanceDslGenerator(object : KSPLogger {
+        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.info(message)
+        }
+        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.warn(message)
+        }
+        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
+            logger.error(message)
+        }
+        override fun exception(e: Throwable) {
+            logger.error("Exception occurred", e)
+        }
+    })
+    
     @TaskAction
     fun generateOntology() {
         logger.info("Starting ontology generation...")
@@ -173,10 +206,16 @@ abstract class OntologyGenerationTask : DefaultTask() {
         val vocabularyPackage = vocabularyPackage.getOrElse(basePackage)
         val generateInterfaces = generateInterfaces.getOrElse(true)
         val generateWrappers = generateWrappers.getOrElse(true)
-        val generateVocabulary = generateVocabulary.getOrElse(false)
-        val vocabularyName = vocabularyName.getOrElse("Vocabulary")
-        val vocabularyNamespace = vocabularyNamespace.getOrElse("http://example.org/vocab#")
-        val vocabularyPrefix = vocabularyPrefix.getOrElse("vocab")
+        val vocabularyName = vocabularyName.getOrElse("")
+        val vocabularyNamespace = vocabularyNamespace.getOrElse("")
+        val vocabularyPrefix = vocabularyPrefix.getOrElse("")
+        // Auto-enable vocabulary generation if vocabulary metadata is provided
+        val generateVocabulary = generateVocabulary.getOrElse(
+            vocabularyName.isNotBlank() && vocabularyNamespace.isNotBlank() && vocabularyPrefix.isNotBlank()
+        )
+        val generateDsl = generateDsl.getOrElse(false)
+        val dslPackage = dslPackage.getOrElse(basePackage + ".dsl")
+        val dslName = dslName.getOrElse("")
         
         logger.info("SHACL file: ${shaclFile.absolutePath}")
         logger.info("Context file: ${contextFile.absolutePath}")
@@ -187,10 +226,15 @@ abstract class OntologyGenerationTask : DefaultTask() {
         logger.info("Generate interfaces: $generateInterfaces")
         logger.info("Generate wrappers: $generateWrappers")
         logger.info("Generate vocabulary: $generateVocabulary")
+        logger.info("Generate DSL: $generateDsl")
         if (generateVocabulary) {
             logger.info("Vocabulary name: $vocabularyName")
             logger.info("Vocabulary namespace: $vocabularyNamespace")
             logger.info("Vocabulary prefix: $vocabularyPrefix")
+        }
+        if (generateDsl) {
+            logger.info("DSL package: $dslPackage")
+            logger.info("DSL name: ${if (dslName.isBlank()) "(auto)" else dslName}")
         }
         
         // Parse SHACL and JSON-LD context
@@ -238,6 +282,17 @@ abstract class OntologyGenerationTask : DefaultTask() {
         
         // Generate vocabulary file if requested
         if (generateVocabulary) {
+            // Validate vocabulary metadata
+            if (vocabularyName.isBlank()) {
+                throw IllegalStateException("vocabularyName is required when generateVocabulary is true")
+            }
+            if (vocabularyNamespace.isBlank()) {
+                throw IllegalStateException("vocabularyNamespace is required when generateVocabulary is true")
+            }
+            if (vocabularyPrefix.isBlank()) {
+                throw IllegalStateException("vocabularyPrefix is required when generateVocabulary is true")
+            }
+            
             val vocabularyDir = File(outputDir, vocabularyPackage.replace('.', '/'))
             vocabularyDir.mkdirs()
             val vocabularyCode = vocabularyGenerator.generateVocabulary(
@@ -251,6 +306,39 @@ abstract class OntologyGenerationTask : DefaultTask() {
             val vocabularyFile = File(vocabularyDir, "${vocabularyName}.kt")
             vocabularyFile.writeText(vocabularyCode)
             logger.info("Generated vocabulary: ${vocabularyFile.absolutePath}")
+        }
+        
+        // Generate DSL if requested
+        if (generateDsl) {
+            val dslDir = File(outputDir, dslPackage.replace('.', '/'))
+            dslDir.mkdirs()
+            
+            // Determine DSL name - use provided name or derive from ontology
+            val actualDslName = if (dslName.isNotBlank()) {
+                dslName
+            } else {
+                // Derive from context file name or use default
+                val contextFileName = contextFile.nameWithoutExtension
+                contextFileName.replace("-", "").replace("_", "").lowercase()
+            }
+            
+            // Create ontology model from all shapes
+            val ontologyModel = OntologyModel(shaclShapes, jsonLdContext)
+            
+            // Generate DSL
+            val dslRequest = InstanceDslRequest(
+                dslName = actualDslName,
+                ontologyModel = ontologyModel,
+                packageName = dslPackage,
+                options = DslGenerationOptions()
+            )
+            
+            val dslFileSpec = dslGenerator.generate(dslRequest)
+            val dslFile = File(dslDir, "${actualDslName.replaceFirstChar { it.uppercaseChar() }}Dsl.kt")
+            dslFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+                dslFileSpec.writeTo(writer)
+            }
+            logger.info("Generated DSL: ${dslFile.absolutePath}")
         }
         
         logger.info("Ontology generation completed successfully")

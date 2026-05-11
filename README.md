@@ -1,5 +1,9 @@
 # Kastor
 
+[![CI](https://github.com/geoknoesis/kastor/actions/workflows/ci.yml/badge.svg)](https://github.com/geoknoesis/kastor/actions/workflows/ci.yml)
+
+**[Documentation website](https://geoknoesis.github.io/kastor/)** — Jekyll site in [`docs/`](docs/), deployed with [GitHub Actions](.github/workflows/pages.yml). On a fork, enable **Settings → Pages → Build and deployment: GitHub Actions**.
+
 **Kastor** is a modern, comprehensive Kotlin framework for RDF (Resource Description Framework) and semantic web development. It bridges the gap between traditional object-oriented programming and semantic technologies, making RDF accessible and powerful for Kotlin developers.
 
 > 💝 **Support Kastor**: If this project helps you, consider [sponsoring](https://github.com/sponsors/geoknoesis) to ensure continued maintenance and feature development. Organizations using Kastor in production can contact us for enterprise support and custom adaptations.
@@ -143,9 +147,10 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 ## ✅ Standards & Versions Supported
 
 **Core Standards**
-- **RDF 1.1**
+- **RDF 1.2** (data model: triple terms, `rdf:reifies`, `rdf:dirLangString`)
+- **RDF 1.1** (still parses; legacy reification still works)
 - **SPARQL 1.1**
-- **SPARQL 1.2** (see docs)
+- **SPARQL 1.2** (`<<( s p o )>>` syntax, `LANGDIR` / `STRLANGDIR`, `TRIPLE` family)
 
 **Validation & Semantics**
 - **SHACL** (core constraints; provider-dependent)
@@ -153,12 +158,24 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **OWL** reasoning (EL / RL / DL via providers)
 
 **Serialization Formats**
-- **Turtle**, **RDF/XML**, **JSON-LD**, **N-Triples**, **N-Quads**
+- **Turtle 1.2**, **TriG 1.2**, **N-Triples 1.2**, **N-Quads 1.2**
+- **JSON-LD**, **RDF/XML**
 
 **Other**
-- **RDF-star** (provider-dependent)
+- **Triple terms / `rdf:reifies`** (RDF 1.2 native; provider-dependent)
 
-> Note: Support for reasoning, SHACL validation, and RDF-star depends on the backend provider (Jena, RDF4J, Memory, or SPARQL endpoint).
+> The bundled in-memory provider is RDF 1.1 only. RDF 1.2 features (triple
+> terms, directional language strings, the new format syntaxes) require
+> `rdf-jena` or `rdf-rdf4j` on the classpath. See
+> [docs/kastor/concepts/rdf-1.2.md](docs/kastor/concepts/rdf-1.2.md) and the
+> [migration guide](docs/kastor/guides/migrating-to-rdf-1.2.md) for upgrading
+> from 0.1.x.
+
+**Conformance**: Kastor ships a W3C RDF 1.2 conformance harness in
+`:rdf:conformance` that runs the official Turtle 1.2 / TriG 1.2 /
+N-Triples 1.2 / N-Quads 1.2 syntax suites against both providers. See
+[docs/kastor/concepts/rdf-1.2-conformance.md](docs/kastor/concepts/rdf-1.2-conformance.md)
+for how to enable and read the report.
 
 ### 📊 **RDF Core Framework**
 - **🔄 Repository Management**: Seamlessly switch between Memory, Jena, RDF4J, and SPARQL backends
@@ -198,6 +215,8 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **🔐 Security**: Authentication and authorization for SPARQL endpoints
 
 ## Quick Start
+
+> **Required runtime dependency:** `Rdf.memory()` and `Rdf.persistent()` need a SPARQL-capable provider on the classpath. Add either `com.geoknoesis.kastor:rdf-jena` or `com.geoknoesis.kastor:rdf-rdf4j` to your dependencies. Without one, both factories throw `RdfProviderException`. The bundled `:rdf:core`-only memory provider is graph-only and must be opted into explicitly via `Rdf.repository { providerId = "memory" }`.
 
 ### Basic RDF Operations
 
@@ -246,18 +265,19 @@ val results = repo.query("""
 
 ```kotlin
 // Define domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String
-    
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: Int
 }
 
-// Materialize from RDF
-val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
-val person: Person = personRef.asType()
+// Materialize from RDF (idiomatic — reified domain type)
+val person: Person = repo.materialize(iri("http://example.org/person"))
+// Equivalently: repo.defaultGraph.materialize(iri("http://example.org/person"))
+// or: iri("http://example.org/person").materializeIn(repo.defaultGraph)
 
 // Use domain object
 println("Name: ${person.name}, Age: ${person.age}")
@@ -518,7 +538,7 @@ If Kastor is valuable to you or your organization, your financial support helps 
 
 **Ways to support:**
 - 💰 **[GitHub Sponsors](https://github.com/sponsors/geoknoesis)** - Monthly or one-time sponsorship
-- ☕ **[Ko-fi](https://ko-fi.com/geoknoesis)** - One-time donations
+- ☕ **[Ko-fi](https://ko-fi.com/fellahst)** - One-time donations
 - 🏢 **Enterprise Support** - For organizations needing priority support, custom features, or commercial licensing: [stephanef@geoknoesis.com](mailto:stephanef@geoknoesis.com)
 - 🌟 **Star the repository** - Help others discover Kastor on [GitHub](https://github.com/geoknoesis/kastor)
 
@@ -529,7 +549,18 @@ If Kastor is valuable to you or your organization, your financial support helps 
 - 🐛 **Report issues** or suggest improvements
 - 💬 **Join discussions** in our [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 - 📖 **Improve documentation** through pull requests
-- 🔧 **Contribute code** - Pull requests are welcome!
+- 🔧 **Contribute code** — See [CONTRIBUTING.md](CONTRIBUTING.md); pull requests are welcome.
+
+## Community
+
+- **[Contributing](CONTRIBUTING.md)** — build, test, and pull request guidelines  
+- **[Support](SUPPORT.md)** — where to ask questions, file bugs, and security reports  
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** — expected behavior in community spaces  
+- **[Security policy](SECURITY.md)** — how to report vulnerabilities responsibly  
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list of changes between releases.
 
 ## License
 
@@ -541,9 +572,9 @@ Kastor is licensed under the [Apache License 2.0](LICENSE).
 - Compatible with [Apache Jena](https://jena.apache.org/)
 - Compatible with [RDF4J](https://rdf4j.org/)
 - Supports [SHACL](https://www.w3.org/TR/shacl/) validation
-- Follows [RDF 1.1](https://www.w3.org/TR/rdf11-concepts/) specification
+- Follows the [RDF 1.2](https://www.w3.org/TR/rdf12-concepts/) data model (see [CHANGELOG.md](CHANGELOG.md) for migration notes from earlier snapshots)
 - Inspired by [Castor](http://www.castor.org/) XML data binding framework
 
 ---
 
-**Ready to get started?** Check out our [Getting Started Guide](docs/kastor/getting-started/README.md) or explore the [examples](samples/)!
+**Ready to get started?** Check out our [Getting Started Guide](docs/kastor/getting-started/README.md) or explore the [examples](examples/)!

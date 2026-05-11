@@ -19,8 +19,8 @@
 - `listGraphs(): List<Iri>`
 - `createGraph(name: Iri): RdfGraph`
 - `removeGraph(name: Iri): Boolean`
-- `editDefaultGraph(): GraphEditor`
-- `editGraph(name: Iri): GraphEditor`
+- `editDefaultGraph(): MutableRdfGraph`
+- `editGraph(name: Iri): MutableRdfGraph`
 
 ### Behavior by provider
 - Jena: transactions are supported; performance varies by backend.

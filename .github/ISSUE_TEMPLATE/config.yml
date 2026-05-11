@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question (Discussions)
+    url: https://github.com/geoknoesis/kastor/discussions
+    about: Usage, design questions, and community help — please use Discussions instead of issues when possible.
+  - name: Support overview
+    url: https://github.com/geoknoesis/kastor/blob/main/SUPPORT.md
+    about: Where to report bugs, security issues, and how we handle support.
+  - name: Security report
+    url: https://github.com/geoknoesis/kastor/blob/main/SECURITY.md
+    about: Follow SECURITY.md for vulnerabilities (do not file a public issue).

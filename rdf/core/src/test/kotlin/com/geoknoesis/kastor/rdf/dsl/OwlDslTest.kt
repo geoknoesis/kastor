@@ -270,9 +270,9 @@ class OwlDslTest {
         
         val triples = graph.getTriples().toList()
         
-        // Find restriction
+        // Find restriction (a node typed as owl:Restriction via rdf:type).
         val restrictionTriple = triples.find {
-            it.predicate == OWL.Restriction
+            it.predicate == RDF.type && it.obj == OWL.Restriction
         }
         
         assertNotNull(restrictionTriple)

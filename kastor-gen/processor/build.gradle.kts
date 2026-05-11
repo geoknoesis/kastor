@@ -4,9 +4,12 @@ plugins {
   id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    kotlinOptions {
-        freeCompilerArgs = listOf("-Xexplicit-api=warning")
+// Limit explicit-api enforcement to *main* sources only; tests don't need to
+// declare visibility on every symbol. We keep it as a warning rather than an
+// error because the legacy modules still have unannotated public API.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin").configure {
+    compilerOptions {
+        freeCompilerArgs.add("-Xexplicit-api=warning")
     }
 }
 

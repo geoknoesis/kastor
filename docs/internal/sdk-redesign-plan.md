@@ -114,9 +114,9 @@ person.asRdf().validateOrThrow()
 
 **Before**
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-  @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+  @Rdf(iri = "http://purl.org/dc/terms/title")
   val title: String
 }
 ```
@@ -128,9 +128,9 @@ object DcatContext : Context {
   val title = term("dcterms:title", type = XSD.string)
 }
 
-@RdfClass(DcatContext.Catalog)
+@Rdf(DcatContext.Catalog)
 interface Catalog {
-  @get:RdfProperty(DcatContext.title)
+  @Rdf(DcatContext.title)
   val title: String
 }
 ```
@@ -147,7 +147,7 @@ interface Catalog {
 ```kotlin
 val ref = RdfRef(node, graph)
 val validation = JenaValidation()
-val catalog = kastor.gen.materializeValidated(ref, Catalog::class.java, validation)
+val catalog = OntoMapper.materializeValidated(ref, Catalog::class.java, validation)
 ```
 
 **After**

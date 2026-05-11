@@ -14,7 +14,7 @@ import java.io.StringReader
  * Extracts NodeShapes and their property constraints for code generation.
  * Uses Apache Jena for proper RDF parsing.
  */
-internal class ShaclParser(private val logger: KSPLogger) {
+class ShaclParser(private val logger: KSPLogger) {
 
     companion object {
         private const val SHACL_NS = "http://www.w3.org/ns/shacl#"

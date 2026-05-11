@@ -60,18 +60,19 @@ class KastorGraphOpsTest {
     }
     
     @Test
-    fun `getRequiredLiteralValue returns first literal`() {
+    fun `getRequiredLiteralValue returns one of the matching literals`() {
         val repo = Rdf.memory()
         val subject = Iri("http://example.org/person")
-        
+
         repo.add {
             subject - FOAF.name - "John Doe"
             subject - FOAF.name - "Johnny"
         }
-        
+
+        // The underlying graph does not guarantee insertion order across providers,
+        // so we just assert that the returned literal is one of the asserted values.
         val literal = KastorGraphOps.getRequiredLiteralValue(repo.defaultGraph, subject, FOAF.name)
-        
-        assertEquals("John Doe", literal.lexical)
+        assertTrue(literal.lexical in setOf("John Doe", "Johnny"))
     }
     
     @Test
@@ -131,7 +132,7 @@ class KastorGraphOpsTest {
     }
     
     @Test
-    fun `getObjectValues handles factory exceptions gracefully`() {
+    fun `getObjectValues omits object when factory throws RuntimeException`() {
         val repo = Rdf.memory()
         val subject = Iri("http://example.org/person")
         val friend = Iri("http://example.org/friend")
@@ -148,8 +149,40 @@ class KastorGraphOpsTest {
             }
         }
         
-        // Should exclude the problematic object
+        // IllegalStateException / ValidationException propagate; generic RuntimeException is skipped
         assertTrue(objects.isEmpty())
+    }
+
+    @Test
+    fun `getObjectValues propagates IllegalStateException from factory`() {
+        val repo = Rdf.memory()
+        val subject = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
+
+        repo.add {
+            subject - FOAF.knows - friend
+        }
+
+        assertThrows(IllegalStateException::class.java) {
+            KastorGraphOps.getObjectValues(repo.defaultGraph, subject, FOAF.knows) {
+                throw IllegalStateException("materialization wiring failed")
+            }
+        }
+    }
+
+    @Test
+    fun `getObjectValues propagates ValidationException from factory`() {
+        val repo = Rdf.memory()
+        val subject = Iri("http://example.org/person")
+        val friend = Iri("http://example.org/friend")
+        repo.add {
+            subject - FOAF.knows - friend
+        }
+        assertThrows(ValidationException::class.java) {
+            KastorGraphOps.getObjectValues(repo.defaultGraph, subject, FOAF.knows) {
+                throw ValidationException("shape violation")
+            }
+        }
     }
     
     @Test

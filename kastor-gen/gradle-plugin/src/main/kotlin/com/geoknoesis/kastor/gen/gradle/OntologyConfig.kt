@@ -76,6 +76,22 @@ class OntologyConfig {
      */
     var vocabularyPrefix: String = ""
     
+    /**
+     * Whether to generate domain-specific DSL builders (default: false).
+     */
+    var generateDsl: Boolean = false
+    
+    /**
+     * Package name for generated DSL code.
+     */
+    var dslPackage: String = "dsl"
+    
+    /**
+     * Name of the DSL (e.g., "dcat", "skos"). Used as the top-level DSL function name.
+     * If not specified, derived from ontology name.
+     */
+    var dslName: String = ""
+    
 }
 
 

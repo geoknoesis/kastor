@@ -1,83 +1,86 @@
 # Annotations API Reference
 
-Complete reference for Kastor Gen annotations used in domain modeling.
+Complete reference for Kastor Gen annotations used in domain modeling and ontology-driven generation.
 
-## RdfClass
+## `@Rdf`
 
-Annotation for marking domain classes that should be backed by RDF.
+Single source-level annotation (`com.geoknoesis.kastor.gen.annotations.Rdf`) used for:
+
+- **Domain interfaces** — mark the RDF **class** IRI (`iri`) and optional **prefix map** (`prefixes`) for expanding **QNames** in this declaration and its properties.
+- **Domain properties** — mark the **predicate** IRI or QName for each mapped property.
+- **File scope** — `@file:Rdf(prefixes = …)` supplies default prefix bindings for every `@Rdf(iri = …)` in that Kotlin file (merged with per-type `prefixes`, which override on name clash).
+- **Ontology entry points** — on a class or file, set `shacl`, optional `context`, and generation flags for SHACL-driven interfaces and wrappers (see tutorials).
+
+Relevant declaration (simplified; see source in `kastor-gen:runtime` for the full signature):
 
 ```kotlin
-@Target(AnnotationTarget.CLASS)
+@Target(CLASS, PROPERTY, PROPERTY_GETTER, PROPERTY_SETTER, FILE)
 @Retention(AnnotationRetention.SOURCE)
-annotation class RdfClass(val iri: String = "")
+annotation class Rdf(
+  val iri: String = "",
+  val prefixes: Array<Prefix> = [],
+  val shacl: String = "",
+  val context: String = "",
+  val packageName: String = "",
+  val generateInterfaces: Boolean = true,
+  val generateWrappers: Boolean = true,
+  val generateDsl: Boolean = false,
+  val dslName: String = "",
+  val ontologyPath: String = "",
+  val validationMode: ValidationMode = ValidationMode.EMBEDDED,
+  val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
+  val externalValidatorClass: String = "",
+)
 ```
 
-**Parameters:**
-- `iri: String = ""` - The RDF class IRI
+### `Prefix`
 
-**Target:**
-- Classes and interfaces
-
-**Retention:**
-- Source (used by KSP processor)
-
-**Usage:**
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
-interface Person {
-    // ...
-}
+annotation class Prefix(val name: String, val namespace: String)
+```
 
-@RdfClass(iri = "http://example.org/Product")
-interface Product {
-    // ...
+Used inside `@Rdf(prefixes = [Prefix("dcat", "http://www.w3.org/ns/dcat#"), …])` or `@file:Rdf(prefixes = […])`.
+
+### Domain modeling conventions
+
+- Put **`@Rdf(iri = …)` on the property line** (preferred). You may still use **`@get:Rdf(iri = …)`** or **`@set:Rdf(iri = …)`** if you need use-site targets; the processor resolves `iri` from **property, then getter, then setter**.
+- **`iri`** may be an absolute IRI or a **QName** (`prefix:local`) when the prefix is bound on **`@file:Rdf`** or on the **interface** `@Rdf(prefixes = …)`.
+- Use **`val`** for read-only generated accessors (delegates). Use **`var`** only when you need a **mutable** wrapper: supported for scalar literals (`String`, `Int`, `Double`, `Boolean`) and a **single object** reference; **`List<…>` stays read-only** even with `var`. Mutation requires a **`MutableRdfGraph`** backing the same handle the wrapper reads from.
+
+**Class example:**
+
+```kotlin
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
+interface Person {
+  // ...
+}
+```
+
+**Property example (absolute IRI or QName):**
+
+```kotlin
+@file:Rdf(
+  prefixes = [
+    Prefix("foaf", "http://xmlns.com/foaf/0.1/"),
+  ],
+)
+
+package com.example
+
+import com.geoknoesis.kastor.gen.annotations.Prefix
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(iri = "foaf:Person")
+interface Person {
+  @Rdf(iri = "foaf:name")
+  val name: List<String>
 }
 ```
 
 **Notes:**
-- The IRI should be a valid RDF class identifier
-- Used by KSP processor to generate wrapper classes
-- Should be applied to interfaces, not concrete classes
 
-## RdfProperty
-
-Annotation for marking properties that map to RDF predicates.
-
-```kotlin
-@Target(AnnotationTarget.PROPERTY_GETTER)
-@Retention(AnnotationRetention.SOURCE)
-annotation class RdfProperty(val iri: String)
-```
-
-**Parameters:**
-- `iri: String` - The RDF predicate IRI
-
-**Target:**
-- Property getters
-
-**Retention:**
-- Source (used by KSP processor)
-
-**Usage:**
-```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
-interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
-    val name: List<String>
-    
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
-    val age: List<Int>
-    
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
-    val friends: List<Person>
-}
-```
-
-**Notes:**
-- Must be applied to property getters using `@get:` syntax
-- The IRI should be a valid RDF predicate identifier
-- Used by KSP processor to generate property accessors
-- Properties should use `List<T>` type for consistency
+- Apply `@Rdf` with a **non-blank `iri`** and **no `shacl`** on the interface to opt into **OntoMapper** wrapper generation for that domain type.
+- Prefer **interfaces**, not concrete classes, for generated wrappers.
 
 ## Annotation Processing
 
@@ -87,62 +90,58 @@ The Kastor Gen KSP processor scans for these annotations and generates wrapper c
 
 ```kotlin
 // Input: Domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
 }
 
-// Output: Generated wrapper class
+// Output: Generated wrapper class (simplified)
 internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
-    override val name: List<String> by lazy {
-        KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, FOAF.name)
-            .map { it.lexical }
-    }
-    
+    override val name: List<String> by rdfStrings(Iri("http://xmlns.com/foaf/0.1/name"))
+
     companion object {
         init {
-            kastor.gen.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+            OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
         }
     }
 }
 ```
 
-### Processing Rules
+### Processing rules
 
-1. **Class Processing:**
-   - Only classes annotated with `@RdfClass` are processed
-   - Both interfaces and classes are supported
-   - Inheritance is preserved in generated wrappers
+1. **Type processing**
+   - Only Kotlin **interfaces** annotated with `@Rdf` and a **non-blank `iri`**, with **`shacl` left blank**, are treated as **domain** types for OntoMapper wrapper generation.
+   - Inheritance is preserved in generated wrappers.
 
-2. **Property Processing:**
-   - Only properties annotated with `@RdfProperty` are processed
-   - Must be applied to getters using `@get:` syntax
-   - Properties must use `List<T>` type
+2. **Property processing**
+   - Mapped properties are those carrying `@Rdf` with an **`iri`** on the **property**, **getter**, or **setter** (checked in that order).
+   - Supported shapes: literals and literal lists (`String`, `Int`, `Double`, `Boolean`), single object references, and lists of domain objects (`List<YourInterface>`).
 
-3. **Type Support:**
-   - Primitive types: `String`, `Int`, `Double`, `Boolean`
-   - Collections: `List<T>` where T is supported
-   - Domain objects: Interfaces annotated with `@RdfClass`
+3. **Type support**
+   - Literals: `String`, `Int`, `Double`, `Boolean` (and `List` of those for multi-valued literals).
+   - Objects: other `@Rdf` domain interfaces.
 
 ## Common Patterns
+
+Materialize a domain view with **`graph.materialize<YourType>(node)`** (recommended), **`node.materializeIn(graph)`**, or **`repo.materialize<YourType>(node)`** when using a repository. These use **`OntoMapper`** and the same path as **`RdfRef(node, graph).asType()`**. Here `node` is the RDF subject (`Iri` or `BlankNode`) and `graph` is the `RdfGraph` that contains its triples.
 
 ### Single Value Properties
 
 Use `List<T>` and access with `firstOrNull()`:
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>  // Single name
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>      // Single age
 }
 
 // Usage
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val name = person.name.firstOrNull() ?: "Unknown"
 val age = person.age.firstOrNull() ?: 0
 ```
@@ -152,17 +151,17 @@ val age = person.age.firstOrNull() ?: 0
 Use `List<T>` for multiple values:
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val names: List<String>     // Multiple names
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val emails: List<String>    // Multiple email addresses
 }
 
 // Usage
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val allNames = person.names
 val primaryEmail = person.emails.firstOrNull()
 ```
@@ -172,17 +171,17 @@ val primaryEmail = person.emails.firstOrNull()
 Map to domain interfaces:
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val friends: List<Person>   // Related Person objects
     
-    @get:RdfProperty(iri = "http://example.org/employer")
+    @Rdf(iri = "http://example.org/employer")
     val employer: List<Organization>  // Related Organization objects
 }
 
 // Usage
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val friends = person.friends
 val employer = person.employer.firstOrNull()
 ```
@@ -192,18 +191,18 @@ val employer = person.employer.firstOrNull()
 Inheritance is supported:
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
 }
 
-@RdfClass(iri = "http://example.org/Employee")
+@Rdf(iri = "http://example.org/Employee")
 interface Employee : Person {
-    @get:RdfProperty(iri = "http://example.org/employeeId")
+    @Rdf(iri = "http://example.org/employeeId")
     val employeeId: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/salary")
+    @Rdf(iri = "http://example.org/salary")
     val salary: List<Double>
 }
 ```
@@ -233,21 +232,18 @@ ksp {
 
 ### ✅ Do
 
-- Use descriptive IRIs for classes and properties
-- Apply `@RdfClass` to interfaces, not concrete classes
-- Use `@get:` syntax for property annotations
-- Use `List<T>` for all properties
-- Group related properties logically
-- Use inheritance for type hierarchies
+- Use descriptive IRIs or QNames with an explicit **`@file:Rdf(prefixes = …)`** or **`@Rdf(prefixes = …)`** map.
+- Apply **`@Rdf` to interfaces**, not concrete classes, for generated wrappers.
+- Prefer **`@Rdf(iri = …)` on the property** itself.
+- Use **`List<T>`** for properties that may have multiple RDF objects.
+- Group related properties logically and use inheritance where it matches the ontology.
 
 ### ❌ Don't
 
-- Use invalid IRIs
-- Apply annotations to concrete classes
-- Forget the `@get:` prefix for properties
-- Use nullable types directly
-- Mix RDF types in domain interfaces
-- Create deep inheritance hierarchies
+- Use invalid IRIs or QNames without a prefix binding.
+- Annotate concrete classes when you expect the Kastor OntoMapper wrapper to be generated.
+- Rely on **`var` + `List<…>`** for mutation (wrappers keep lists read-only; use a mutable graph and replace triples via RDF APIs if you need bulk updates).
+- Mix unrelated RDF predicates into a single domain type without a clear model.
 
 ## Error Handling
 
@@ -255,12 +251,12 @@ ksp {
 
 1. **Missing IRI:**
    ```
-   Error: @RdfProperty requires an IRI
+   Error: @Rdf requires an IRI
    ```
 
 2. **Invalid Target:**
    ```
-   Error: @RdfProperty can only be applied to property getters
+   Error: @Rdf is not applicable here
    ```
 
 3. **Unsupported Type:**
@@ -276,9 +272,9 @@ ksp {
    - Verify build completes successfully
 
 2. **Properties not mapped:**
-   - Check `@get:` syntax
-   - Verify IRI is valid
-   - Ensure property uses `List<T>` type
+   - Ensure `@Rdf(iri = …)` is present on the property or its getter/setter.
+   - Verify `iri` is a valid IRI or expandable QName.
+   - Ensure the property uses a supported `List<…>` or scalar type (for `var`, see mutability rules above).
 
 3. **Inheritance issues:**
    - Check parent class annotations
@@ -291,32 +287,32 @@ ksp {
 
 ```kotlin
 // Domain interfaces
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val email: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val friends: List<Person>
 }
 
-@RdfClass(iri = "http://example.org/Organization")
+@Rdf(iri = "http://example.org/Organization")
 interface Organization {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/employee")
+    @Rdf(iri = "http://example.org/employee")
     val employees: List<Person>
 }
 
 // Usage
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val name = person.name.firstOrNull() ?: "Unknown"
 val friends = person.friends
 val employer = person.asRdf().extras.objects(EMPLOYER, Organization::class.java).firstOrNull()
@@ -325,48 +321,48 @@ val employer = person.asRdf().extras.objects(EMPLOYER, Organization::class.java)
 ### Complex Example
 
 ```kotlin
-@RdfClass(iri = "http://example.org/Project")
+@Rdf(iri = "http://example.org/Project")
 interface Project {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/description")
+    @Rdf(iri = "http://example.org/description")
     val description: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/startDate")
+    @Rdf(iri = "http://example.org/startDate")
     val startDate: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/endDate")
+    @Rdf(iri = "http://example.org/endDate")
     val endDate: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/manager")
+    @Rdf(iri = "http://example.org/manager")
     val manager: List<Person>
     
-    @get:RdfProperty(iri = "http://example.org/teamMember")
+    @Rdf(iri = "http://example.org/teamMember")
     val teamMembers: List<Person>
     
-    @get:RdfProperty(iri = "http://example.org/task")
+    @Rdf(iri = "http://example.org/task")
     val tasks: List<Task>
     
-    @get:RdfProperty(iri = "http://example.org/budget")
+    @Rdf(iri = "http://example.org/budget")
     val budget: List<Double>
     
-    @get:RdfProperty(iri = "http://example.org/isActive")
+    @Rdf(iri = "http://example.org/isActive")
     val isActive: List<Boolean>
 }
 
-@RdfClass(iri = "http://example.org/Task")
+@Rdf(iri = "http://example.org/Task")
 interface Task {
-    @get:RdfProperty(iri = "http://example.org/name")
+    @Rdf(iri = "http://example.org/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/status")
+    @Rdf(iri = "http://example.org/status")
     val status: List<String>
     
-    @get:RdfProperty(iri = "http://example.org/assignee")
+    @Rdf(iri = "http://example.org/assignee")
     val assignee: List<Person>
     
-    @get:RdfProperty(iri = "http://example.org/dueDate")
+    @Rdf(iri = "http://example.org/dueDate")
     val dueDate: List<String>
 }
 ```

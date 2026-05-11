@@ -3,3 +3,13 @@ description: Modern Kotlin SDK for RDF and knowledge graphs
 theme: jekyll-theme-minimal
 markdown: kramdown
 
+# Internal maintainer notes (not for public doc site)
+exclude:
+  - internal
+  - Gemfile
+  - Gemfile.lock
+  - SUMMARY.md
+
+# baseurl and url for https://<owner>.github.io/<repo>/ are appended in CI
+# (.github/workflows/pages.yml). For local preview, run from this directory:
+#   bundle install && bundle exec jekyll serve --livereload

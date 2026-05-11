@@ -122,45 +122,45 @@ build/generated/sources/
 
 ### DCAT-US (com.example.dcatus.generated)
 ```kotlin
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/description")
+    @Rdf(iri = "http://purl.org/dc/terms/description")
     val description: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 ```
 
 ### Schema.org (com.example.schema.generated)
 ```kotlin
-@RdfClass(iri = "https://schema.org/Person")
+@Rdf(iri = "https://schema.org/Person")
 interface Person {
-    @get:RdfProperty(iri = "https://schema.org/name")
+    @Rdf(iri = "https://schema.org/name")
     val name: String
     
-    @get:RdfProperty(iri = "https://schema.org/email")
+    @Rdf(iri = "https://schema.org/email")
     val email: String
     
-    @get:RdfProperty(iri = "https://schema.org/address")
+    @Rdf(iri = "https://schema.org/address")
     val address: PostalAddress?
 }
 ```
 
 ### FOAF (com.example.foaf.generated)
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/mbox")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/mbox")
     val mbox: String
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val knows: List<Person>
 }
 ```

@@ -1,6 +1,12 @@
 # SPARQL 1.2 Support in Kastor
 
-Kastor provides comprehensive support for SPARQL 1.2, the latest version of the SPARQL query language specification. This includes new functions, enhanced syntax, RDF-star support, and improved query capabilities.
+Kastor provides comprehensive support for SPARQL 1.2, the latest version of the SPARQL query language specification. This includes new functions, enhanced syntax, RDF 1.2 triple terms, and improved query capabilities.
+
+> **RDF 1.2 syntax note.** Quoted triples now use the RDF 1.2 form
+> `<<( s p o )>>` (with parentheses) and may appear only as the object of a
+> triple. Kastor's renderer emits this form everywhere; both Jena and RDF4J
+> parsers continue to accept the legacy `<<s p o>>` for backwards
+> compatibility. See [RDF 1.2 in Kastor](../concepts/rdf-1.2.md).
 
 ## 🎯 Overview
 

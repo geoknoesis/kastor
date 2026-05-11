@@ -9,12 +9,17 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 
 ### **Best Practices**
 - [Best Practices](best-practices.md) - Guidelines for effective Kastor usage
+- [Error Handling](error-handling.md) - Comprehensive guide to error handling and error codes
 - [Extending Kastor](extending.md) - How to extend Kastor with custom functionality
+- [Android & KMP Support](android-kmp.md) - Platform-specific setup and ServiceLoader alternatives
 
 ### **How‑To Guides**
 - [How to Create a Custom Vocabulary](how-to-create-vocabulary.md) - Define typed vocabulary constants
 - [How to Parse RDF](how-to-parse-rdf.md) - Load RDF data into graphs
 - [How to Serialize RDF](how-to-serialize-rdf.md) - Export graphs to standard formats
+- [JSON-LD Compaction and Framing](json-ld-compaction-framing.md) - Understanding JSON-LD transformations and data preservation
+- [Debug Mode](debug-mode.md) - Enable prefix expansion and query tracing for troubleshooting
+- [Performance Guide](performance.md) - Performance best practices and benchmarks
 - [How to Validate with SHACL](how-to-validate-shacl.md) - Validate data with shapes
 - [How to Perform Reasoning](how-to-reasoning.md) - Run RDFS inference
 - [How to Use Datasets](how-to-use-datasets.md) - Query across named graphs

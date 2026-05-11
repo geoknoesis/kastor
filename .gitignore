@@ -1,3 +1,8 @@
+# Jekyll (documentation site local preview under docs/)
+docs/_site/
+docs/.jekyll-cache/
+docs/vendor/
+
 # Gradle
 .gradle/
 build/

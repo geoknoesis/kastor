@@ -105,13 +105,22 @@ flowchart LR
 ```
 
 ### Provider discovery
-Providers are discovered via Java `ServiceLoader`. If you add a provider dependency, it becomes available to `RdfProviderRegistry` and the factory DSL.
+Providers are discovered via Java `ServiceLoader` on JVM. If you add a provider dependency, it becomes available to `RdfProviderRegistry` and the factory DSL.
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 
 val providers = RdfProviderRegistry.discoverProviders() // e.g., [JenaProvider, Rdf4jProvider, SparqlProvider]
 ```
+
+**⚠️ Android/KMP Note**: ServiceLoader may not work on Android or KMP native targets. For these platforms, register providers explicitly:
+
+```kotlin
+// For Android/KMP: Register providers explicitly
+RdfProviderRegistry.register(JenaProvider())
+```
+
+See [Android/KMP Guide](../guides/android-kmp.md) for details.
 
 For tests or isolation, you can supply a custom registry:
 

@@ -1,0 +1,4 @@
+@prefix ex: <http://example.org/> .
+
+# Missing predicate between subject and object: malformed Turtle.
+ex:alice 30 .

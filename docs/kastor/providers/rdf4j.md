@@ -88,7 +88,8 @@ val api = Rdf.repository {
 ### Validation Repositories
 
 #### `rdf4j:memory:shacl`
-In-memory repository with SHACL validation enabled.
+In-memory repository wrapped with RDF4J's `ShaclSail`. Writes that violate
+SHACL constraints fail at commit time with `ShaclSailValidationException`.
 
 ```kotlin
 val api = Rdf.repository {
@@ -98,7 +99,7 @@ val api = Rdf.repository {
 ```
 
 #### `rdf4j:native:shacl`
-Persistent repository with SHACL validation enabled.
+Persistent `ShaclSail` over `NativeStore`.
 
 ```kotlin
 val api = Rdf.repository {
@@ -107,6 +108,11 @@ val api = Rdf.repository {
     location = "/data/rdf4j"
 }
 ```
+
+> **Loading shapes:** SHACL shapes must be loaded into the reserved
+> `RDF4J.SHACL_SHAPE_GRAPH` named graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`)
+> before validation kicks in. See the example in
+> [Rdf4jVariantsTest](../../../rdf/rdf4j/src/test/kotlin/com/geoknoesis/kastor/rdf/rdf4j/Rdf4jVariantsTest.kt).
 
 ## Managing Multiple Repositories
 

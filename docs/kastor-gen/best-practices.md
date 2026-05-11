@@ -21,12 +21,12 @@ Design domain interfaces that focus on business logic without RDF dependencies:
 
 ```kotlin
 // ✅ Good: Pure domain interface
-@RdfClass(iri = "http://www.w3.org/ns/dcat#Catalog")
+@Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
 interface Catalog {
-    @get:RdfProperty(iri = "http://purl.org/dc/terms/title")
+    @Rdf(iri = "http://purl.org/dc/terms/title")
     val title: String
     
-    @get:RdfProperty(iri = "http://www.w3.org/ns/dcat#dataset")
+    @Rdf(iri = "http://www.w3.org/ns/dcat#dataset")
     val dataset: List<Dataset>
 }
 
@@ -45,19 +45,19 @@ Choose property names that reflect business concepts:
 ```kotlin
 // ✅ Good: Business-focused names
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val fullName: String
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val acquaintances: List<Person>
 }
 
 // ❌ Avoid: Technical RDF names
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val foafName: String
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val foafKnows: List<Person>
 }
 ```
@@ -69,19 +69,19 @@ Design properties based on expected cardinality:
 ```kotlin
 // ✅ Good: Appropriate cardinality
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String // Single value expected
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val knows: List<Person> // Multiple values expected
 }
 
 // ❌ Avoid: Inappropriate cardinality
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String> // Overkill for single name
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val knows: Person // Should be List<Person>
 }
 ```
@@ -116,10 +116,14 @@ Define SHACL shapes for your ontologies:
 Use ontology-driven code generation for consistency:
 
 ```kotlin
-@GenerateFromOntology(
-    shaclPath = "ontologies/dcat.shacl.ttl",
-    contextPath = "ontologies/dcat.context.jsonld",
-    packageName = "com.example.generated"
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
+    packageName = "com.example.generated",
+    generateInterfaces = true,
+    generateWrappers = true,
 )
 class OntologyGenerator
 ```
@@ -200,10 +204,10 @@ Design interfaces to handle optional properties:
 ```kotlin
 // ✅ Good: Optional properties
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String // Required
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: Int? // Optional
 }
 
@@ -388,7 +392,7 @@ Be careful with sensitive information in RDF:
 ```kotlin
 // ✅ Good: Sensitive data handling
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: String
     
     // Don't expose sensitive data through domain interface
@@ -446,16 +450,18 @@ ksp {
 Configure runtime behavior:
 
 ```kotlin
+import com.geoknoesis.kastor.gen.runtime.OntoMapper
+import com.geoknoesis.kastor.gen.validation.jena.JenaValidation
+import org.slf4j.LoggerFactory
+
 // ✅ Good: Runtime configuration
 fun initializeOntoMapper() {
-    // Register validation port
-    val validation = JenaValidation()
-    
-    // Initialize generated wrappers
-    kastor.gen.initialize()
-    
-    // Configure logging
-    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper initialized")
+    val validation = JenaValidation() // optional module: `kastor-gen:validation-jena`
+
+    // Eager-load wrapper classes you materialize in hot paths
+    OntoMapper.initialize(Person::class.java, Catalog::class.java)
+
+    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper ready ({} factories)", OntoMapper.registry.size)
 }
 ```
 
@@ -473,7 +479,7 @@ class OntoMapperMetrics {
     
     fun <T> materializeWithMetrics(ref: RdfRef, type: Class<T>): T {
         materializationCounter.inc()
-        return kastor.gen.materialize(ref, type)
+        return OntoMapper.materialize(ref, type)
     }
 }
 ```

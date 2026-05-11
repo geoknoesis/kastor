@@ -35,17 +35,17 @@ Kastor Gen keeps domain interfaces pure and provides RDF access through a side-c
 
 ```kotlin
 // Pure domain interface - no RDF types
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
 }
 
 // RDF access via side-channel
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()  // Side-channel access
 val extras = rdfHandle.extras   // Unmapped properties
 ```
@@ -64,15 +64,15 @@ val extras = rdfHandle.extras   // Unmapped properties
 Domain interfaces define your business model using pure Kotlin types:
 
 ```kotlin
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/name")
     val name: List<String>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/age")
     val age: List<Int>
     
-    @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/knows")
+    @Rdf(iri = "http://xmlns.com/foaf/0.1/knows")
     val friends: List<Person>
 }
 ```
@@ -102,7 +102,7 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
     
     override val friends: List<Person> by lazy {
         KastorGraphOps.getObjectValues(rdf.graph, rdf.node, FOAF.knows) { child ->
-            kastor.gen.materialize(RdfRef(child, rdf.graph), Person::class.java)
+            OntoMapper.materialize(RdfRef(child, rdf.graph), Person::class.java)
         }
     }
 }
@@ -166,7 +166,7 @@ Wrapper factories are registered automatically during KSP compilation:
 // Generated registration code
 companion object {
     init {
-        kastor.gen.registry[Person::class.java] = { handle -> 
+        OntoMapper.registry[Person::class.java] = { handle -> 
             PersonWrapper(handle) 
         }
     }
@@ -182,11 +182,10 @@ val person: Person = rdfRef.asType()
 ```
 
 **Process:**
-1. `RdfRef.asType()` calls `kastor.gen.materialize()`
-2. `OntoMapper` looks up the factory in the registry
-3. Factory creates a `DefaultRdfHandle` with the RDF node and graph
-4. Factory creates the wrapper instance with the handle
-5. Wrapper implements both `Person` and `RdfBacked` interfaces
+1. `RdfRef.asType()` delegates to `OntoMapper.materialize` (see `Materialization.kt` in the runtime)
+2. `OntoMapper` looks up the factory in the registry (or triggers lazy class-load of `PersonWrapper`)
+3. The factory receives an `RdfHandle`; generated wrappers typically expose `rdf` as a lazy `DefaultRdfHandle` that carries **known** mapped predicates for `extras`
+4. The wrapper instance implements both `Person` and `RdfBacked`
 
 ### 3. Property Access
 
@@ -293,14 +292,14 @@ val age: Int? = person.age.mapNotNull {
 
 ```kotlin
 // ✅ Good - Pure domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
     val name: List<String>
     val age: List<Int>
 }
 
 // ❌ Bad - RDF types in domain interface
-@RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
+@Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
     val name: List<String>
     val rdfNode: RdfTerm  // Don't do this!
@@ -311,7 +310,7 @@ interface Person {
 
 ```kotlin
 // ✅ Good - Use side-channel for RDF operations
-val person: Person = materializeFromRdf(...)
+val person: Person = graph.materialize(node)
 val rdfHandle = person.asRdf()
 val extras = rdfHandle.extras
 val unmappedProperties = extras.predicates()

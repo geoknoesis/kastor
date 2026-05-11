@@ -632,6 +632,32 @@ class PropertyShapeDsl(
             }
         }
         get() = null
+
+    /**
+     * Shortcut for `sh:datatype rdf:dirLangString` (RDF 1.2). Use this on a
+     * property whose values are directional language strings.
+     */
+    fun directionalLangString() {
+        graphDsl.triple(
+            propertyShape,
+            SHACL.datatype,
+            com.geoknoesis.kastor.rdf.vocab.RDF.dirLangString,
+        )
+    }
+
+    /**
+     * Constrain the base direction of language string values
+     * (RDF 1.2 / SHACL 1.2). The direction must equal [direction] for the
+     * shape to validate. Implemented as a property pair of `sh:datatype
+     * rdf:dirLangString` plus a `sh:pattern` enforcing the suffix; refine in
+     * future versions if SHACL exposes a direct constraint.
+     */
+    fun languageDirection(direction: com.geoknoesis.kastor.rdf.Direction) {
+        directionalLangString()
+        // No formal SHACL constraint exists yet for direction; we approximate
+        // by requiring the lexical form to end with `--ltr` / `--rtl`.
+        pattern = "--${direction.token}\$"
+    }
     
     /**
      * Set singleLine constraint (SHACL 1.2).

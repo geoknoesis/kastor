@@ -34,7 +34,7 @@ class Sparql12ComplianceTest {
     }
 
     @Test
-    fun `test RDF-star quoted triple patterns`() {
+    fun `test RDF 1 dot 2 quoted triple patterns`() {
         val query = select("subject", "predicate", "object") {
             version("1.2")
             where {
@@ -43,7 +43,11 @@ class Sparql12ComplianceTest {
         }
 
         val queryString = query.sparql
-        assertTrue(queryString.contains("<< ?subject ?predicate ?object >>"))
+        // RDF 1.2 uses parenthesised triple-term syntax.
+        assertTrue(
+            queryString.contains("<<( ?subject ?predicate ?object )>>"),
+            "Expected RDF 1.2 triple-term syntax in: $queryString",
+        )
     }
 
     @Test
@@ -269,8 +273,11 @@ class Sparql12ComplianceTest {
         // Check SELECT clause
         assertTrue(queryString.contains("SELECT ?person ?confidence"))
         
-        // Check WHERE clause with RDF-star
-        assertTrue(queryString.contains("<< ?person <http://xmlns.com/foaf/0.1/name> ?name >>"))
+        // Check WHERE clause with RDF 1.2 triple-term syntax
+        assertTrue(
+            queryString.contains("<<( ?person <http://xmlns.com/foaf/0.1/name> ?name )>>"),
+            "Expected RDF 1.2 triple-term syntax in: $queryString",
+        )
         assertTrue(queryString.contains("TRIPLE(?person, <http://xmlns.com/foaf/0.1/name>, ?name) AS ?tripleTerm"))
         assertTrue(queryString.contains("hasLANG(?name"))
         assertTrue(queryString.contains("isTRIPLE(?tripleTerm)"))
@@ -319,14 +326,17 @@ class Sparql12ComplianceTest {
     }
 
     @Test
-    fun `test QuotedTriplePattern rendering`() {
+    fun `test QuotedTriplePattern renders in RDF 1 dot 2 syntax`() {
         val query = select {
             where {
                 quotedTriple(`var`("s"), `var`("p"), `var`("o"))
             }
         }
         val queryString = query.sparql
-        assertTrue(queryString.contains("<< ?s ?p ?o >>"))
+        assertTrue(
+            queryString.contains("<<( ?s ?p ?o )>>"),
+            "Expected RDF 1.2 triple-term syntax in: $queryString",
+        )
     }
 
     @Test

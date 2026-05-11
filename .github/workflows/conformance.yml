@@ -1,0 +1,32 @@
+name: Conformance
+
+# W3C RDF/SPARQL conformance is heavy; run on a schedule + manual dispatch.
+# Default PR CI excludes this task; see CONTRIBUTING.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+concurrency:
+  group: conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: RDF conformance tests
+        run: ./gradlew :rdf:conformance:test --no-daemon
+        shell: bash

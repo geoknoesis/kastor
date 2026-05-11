@@ -14,6 +14,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer
+import org.eclipse.rdf4j.sail.shacl.ShaclSail
 
 /**
  * RDF4J-based implementation of [RdfRepository].
@@ -45,57 +47,73 @@ class Rdf4jRepository(
     
     companion object {
         fun MemoryRepository(): Rdf4jRepository {
-            val memoryStore = MemoryStore()
-            val repository = SailRepository(memoryStore)
+            val repository = SailRepository(MemoryStore())
             repository.init()
             return Rdf4jRepository(repository)
         }
         
         fun NativeRepository(location: String): Rdf4jRepository {
-            val nativeStore = NativeStore(java.io.File(location))
-            val repository = SailRepository(nativeStore)
+            val repository = SailRepository(NativeStore(java.io.File(location)))
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * In-memory store with RDF-star explicitly enabled.
+         *
+         * RDF4J's `MemoryStore` supports RDF-star by default; this factory exists so
+         * that the variant identifier is honored and the capability is advertised.
+         */
         fun MemoryStarRepository(): Rdf4jRepository {
-            val memoryStore = MemoryStore()
-            val repository = SailRepository(memoryStore)
+            val repository = SailRepository(MemoryStore())
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * Native (persistent) store with RDF-star explicitly enabled.
+         */
         fun NativeStarRepository(location: String): Rdf4jRepository {
-            val nativeStore = NativeStore(java.io.File(location))
-            val repository = SailRepository(nativeStore)
+            val repository = SailRepository(NativeStore(java.io.File(location)))
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * In-memory store wrapped with [SchemaCachingRDFSInferencer] so that RDFS
+         * entailment is materialized at query time.
+         */
         fun MemoryRdfsRepository(): Rdf4jRepository {
-            val memoryStore = MemoryStore()
-            val repository = SailRepository(memoryStore)
+            val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * Native (persistent) store wrapped with [SchemaCachingRDFSInferencer].
+         */
         fun NativeRdfsRepository(location: String): Rdf4jRepository {
-            val nativeStore = NativeStore(java.io.File(location))
-            val repository = SailRepository(nativeStore)
+            val repository = SailRepository(SchemaCachingRDFSInferencer(NativeStore(java.io.File(location))))
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * In-memory [ShaclSail] that validates writes against shapes loaded into the
+         * `RDF4J.SHACL_SHAPE_GRAPH` named graph. SHACL violations surface as
+         * `ShaclSailValidationException` (wrapped in a `RepositoryException`) at commit time.
+         */
         fun MemoryShaclRepository(): Rdf4jRepository {
-            val memoryStore = MemoryStore()
-            val repository = SailRepository(memoryStore)
+            val repository = SailRepository(ShaclSail(MemoryStore()))
             repository.init()
             return Rdf4jRepository(repository)
         }
         
+        /**
+         * Native (persistent) [ShaclSail] backed by [NativeStore].
+         */
         fun NativeShaclRepository(location: String): Rdf4jRepository {
-            val nativeStore = NativeStore(java.io.File(location))
-            val repository = SailRepository(nativeStore)
+            val repository = SailRepository(ShaclSail(NativeStore(java.io.File(location))))
             repository.init()
             return Rdf4jRepository(repository)
         }
@@ -116,8 +134,27 @@ class Rdf4jRepository(
     }
     
     override fun listGraphs(): List<Iri> {
-        val contexts = connection.contextIDs
-        return contexts.map { Iri(it.stringValue()) }
+        // RDF4J's `contextIDs` includes blank-node contexts (graph names that
+        // were generated for an unnamed `GRAPH _:b { ... }` block in TriG).
+        // Those are reported as `BNode` values whose string form (`genid-...-g`)
+        // is not a valid absolute IRI - constructing an `Iri` from them
+        // throws. RDF 1.1/1.2 only allows IRI-named graphs to be referenced
+        // via `GRAPH <iri> { ... }`, so we filter out blank-node contexts
+        // here. Callers that want them should drop down to the underlying
+        // RDF4J connection (via [getRdf4jConnection]).
+        val iter = connection.contextIDs
+        try {
+            val out = mutableListOf<Iri>()
+            while (iter.hasNext()) {
+                val ctx = iter.next()
+                if (ctx is org.eclipse.rdf4j.model.IRI) {
+                    out.add(Iri(ctx.stringValue()))
+                }
+            }
+            return out
+        } finally {
+            iter.close()
+        }
     }
     
     override fun createGraph(name: Iri): RdfGraph {
@@ -132,16 +169,26 @@ class Rdf4jRepository(
         return !wasEmpty
     }
 
-    override fun editDefaultGraph(): GraphEditor {
+    override fun editDefaultGraph(): MutableRdfGraph {
         return defaultGraph as MutableRdfGraph
     }
 
-    override fun editGraph(name: Iri): GraphEditor {
+    override fun editGraph(name: Iri): MutableRdfGraph {
         return getGraph(name) as MutableRdfGraph
     }
     
     override fun select(query: SparqlSelect): SparqlQueryResult {
-        val prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
+        val startTime = System.currentTimeMillis()
+        val prepared = try {
+            connection.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
+        } catch (e: Exception) {
+            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to prepare: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to prepare SPARQL query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
         val result = prepared.evaluate()
         try {
             val rows = mutableListOf<BindingSet>()
@@ -156,16 +203,28 @@ class Rdf4jRepository(
                 }
                 rows.add(MapBindingSet(values))
             }
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("SELECT", query.sparql, null, executionTime, rows.size)
             return Rdf4jResultSet(rows)
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
         } finally {
             result.close()
         }
     }
     
     override fun ask(query: SparqlAsk): Boolean {
+        val startTime = System.currentTimeMillis()
         val prepared = try {
             connection.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
         } catch (e: Exception) {
+            RdfDebug.logQueryError("ASK", query.sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
                 message = "Failed to prepare SPARQL ASK query: ${e.message}",
                 query = query.sparql,
@@ -173,8 +232,13 @@ class Rdf4jRepository(
             )
         }
         return try {
-            prepared.evaluate()
+            val result = prepared.evaluate()
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("ASK", query.sparql, null, executionTime, if (result) 1 else 0)
+            result
         } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("ASK", query.sparql, "Failed to execute: ${e.message}")
             throw RdfQueryException(
                 message = "Failed to execute SPARQL ASK query: ${e.message}",
                 query = query.sparql,
@@ -184,36 +248,75 @@ class Rdf4jRepository(
     }
     
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
-        val prepared = connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        val startTime = System.currentTimeMillis()
+        val prepared = try {
+            connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        } catch (e: Exception) {
+            RdfDebug.logQueryError("CONSTRUCT", query.sparql, "Failed to prepare: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to prepare SPARQL CONSTRUCT query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
         val result = prepared.evaluate()
         return result.use { graphResult ->
-            graphResult.iterator().asSequence().map { statement ->
+            val triples = graphResult.iterator().asSequence().map { statement ->
                 RdfTriple(
                     Rdf4jTerms.fromRdf4jResource(statement.subject),
                     Rdf4jTerms.fromRdf4jIri(statement.predicate),
                     Rdf4jTerms.fromRdf4jValue(statement.`object`)
                 )
-            }
+            }.toList()
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("CONSTRUCT", query.sparql, null, executionTime, triples.size)
+            triples.asSequence()
         }
     }
     
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
-        val prepared = connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        val startTime = System.currentTimeMillis()
+        val prepared = try {
+            connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+        } catch (e: Exception) {
+            RdfDebug.logQueryError("DESCRIBE", query.sparql, "Failed to prepare: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to prepare SPARQL DESCRIBE query: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
         val result = prepared.evaluate()
         return result.use { graphResult ->
-            graphResult.iterator().asSequence().map { statement ->
+            val triples = graphResult.iterator().asSequence().map { statement ->
                 RdfTriple(
                     Rdf4jTerms.fromRdf4jResource(statement.subject),
                     Rdf4jTerms.fromRdf4jIri(statement.predicate),
                     Rdf4jTerms.fromRdf4jValue(statement.`object`)
                 )
-            }
+            }.toList()
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("DESCRIBE", query.sparql, null, executionTime, triples.size)
+            triples.asSequence()
         }
     }
     
     override fun update(query: UpdateQuery) {
-        val update = connection.prepareUpdate(QueryLanguage.SPARQL, query.sparql)
-        update.execute()
+        val startTime = System.currentTimeMillis()
+        try {
+            val update = connection.prepareUpdate(QueryLanguage.SPARQL, query.sparql)
+            update.execute()
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
+        } catch (e: Exception) {
+            val executionTime = System.currentTimeMillis() - startTime
+            RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(
+                message = "Failed to execute SPARQL UPDATE: ${e.message}",
+                query = query.sparql,
+                cause = e
+            )
+        }
     }
     
     override fun transaction(operations: RdfRepository.() -> Unit) {

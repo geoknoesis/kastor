@@ -4,6 +4,7 @@ Complete API reference for Kastor Gen components and interfaces.
 
 ## Table of Contents
 
+- [Gradle Plugin](gradle-plugin.md) - Gradle plugin for build-time code generation
 - [Runtime API](runtime.md) - Core runtime interfaces and classes
 - [Annotations](annotations.md) - RDF mapping annotations
 - [Validation API](validation.md) - Validation interfaces and adapters
@@ -42,28 +43,28 @@ interface PropertyBag {
 
 ### Annotations
 
-```kotlin
-@Target(AnnotationTarget.CLASS)
-@Retention(AnnotationRetention.SOURCE)
-annotation class RdfClass(val iri: String = "")
-
-@Target(AnnotationTarget.PROPERTY_GETTER)
-@Retention(AnnotationRetention.SOURCE)
-annotation class RdfProperty(val iri: String)
-```
+See [annotations.md](annotations.md) for the full `@Rdf` / `@file:Rdf` / `Prefix` model. In short, **`@Rdf(iri = …)`** is used on both domain interfaces and their properties (QName-friendly when combined with `prefixes`).
 
 ### Materialization
 
 ```kotlin
 object OntoMapper {
     val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
-    fun <T: Any> materialize(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
-    fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext? = null): T
+    fun <T : Any> materialize(ref: RdfRef, type: Class<T>): T
+    fun <T : Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T
 }
 
-inline fun <reified T: Any> RdfRef.asType(validation: ValidationContext? = null): T
-inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext? = null): T
-inline fun <reified T: Any> T.asRdf(): RdfHandle
+fun RdfGraph.ref(node: RdfTerm): RdfRef
+inline fun <reified T : Any> RdfGraph.materialize(node: RdfTerm): T
+inline fun <reified T : Any> RdfGraph.materializeValidated(node: RdfTerm, validation: ValidationContext): T
+inline fun <reified T : Any> RdfTerm.materializeIn(graph: RdfGraph): T
+inline fun <reified T : Any> Iterable<RdfTerm>.materializeIn(graph: RdfGraph): List<T>
+inline fun <reified T : Any> RdfRepository.materialize(node: RdfTerm, graph: RdfGraph = defaultGraph): T
+
+inline fun <reified T : Any> RdfRef.asType(): T
+inline fun <reified T : Any> RdfRef.asValidatedType(validation: ValidationContext): T
+inline fun <reified T : Any> T.asRdf(): RdfHandle
+fun <T : RdfBacked> T.writeToGraph(targetGraph: MutableRdfGraph, subject: Iri? = null)
 ```
 
 ### Validation

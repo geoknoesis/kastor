@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.processor.internal.model.ClassModel
 import com.geoknoesis.kastor.gen.processor.internal.model.PropertyModel
 import com.geoknoesis.kastor.gen.processor.internal.model.PropertyType
@@ -8,280 +9,259 @@ import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
-import java.io.OutputStream
 
 /**
- * KSP processor for generating RDF-backed domain object wrappers.
- * Analyzes domain interfaces and generates wrapper implementations.
+ * KSP processor for generating RDF-backed domain object wrappers from `@Rdf` interfaces.
  */
 class OntoMapperProcessor(
-    private val codeGenerator: CodeGenerator,
-    private val logger: KSPLogger,
-    private val options: Map<String, String>
+  private val codeGenerator: CodeGenerator,
+  private val logger: KSPLogger,
+  private val options: Map<String, String>,
 ) : SymbolProcessor {
 
-    private val wrapperGenerator = WrapperGenerator(logger)
-    private val processedClasses = mutableSetOf<String>()
+  private val wrapperGenerator = WrapperGenerator(logger)
+  private val processedClasses = mutableSetOf<String>()
 
-    override fun process(resolver: Resolver): List<KSAnnotated> {
-        logger.info("OntoMapper processor starting...")
-        val symbols = resolver.getSymbolsWithAnnotation("com.geoknoesis.kastor.gen.annotations.RdfClass")
-        
-        logger.info("Found ${symbols.iterator().asSequence().count()} symbols with RdfClass annotation")
-        
-        if (!symbols.iterator().hasNext()) {
-            logger.info("No symbols found, returning empty list")
-            return emptyList()
-        }
+  override fun process(resolver: Resolver): List<KSAnnotated> {
+    logger.info("OntoMapper processor starting…")
+    val symbols = resolver.getSymbolsWithAnnotation(RDF_ANNOTATION_FQN)
 
-        // Collect prefix mappings from all symbols
-        val prefixMappings = collectPrefixMappings(resolver)
-        logger.info("Collected ${prefixMappings.size} prefix mappings")
+    logger.info("Found ${symbols.iterator().asSequence().count()} symbols with @Rdf")
 
-        val classModels = mutableListOf<ClassModel>()
-        
-        symbols.forEach { symbol ->
-            if (symbol !is KSClassDeclaration) {
-                logger.error("RdfClass annotation can only be applied to classes", symbol)
-                return@forEach
-            }
-            
-            val classModel = analyzeClass(symbol, prefixMappings)
-            if (classModel != null) {
-                classModels.add(classModel)
-            }
-        }
-        
-        // Generate wrapper classes
-        classModels.forEach { classModel ->
-            generateWrapper(classModel)
-        }
-        
-        return symbols.filterNot { it.validate() }.toList()
-    }
-    
-    private fun collectPrefixMappings(resolver: Resolver): Map<String, String> {
-        val prefixMappings = mutableMapOf<String, String>()
-        
-        // Look for PrefixMapping annotations
-        val prefixMappingSymbols = resolver.getSymbolsWithAnnotation("com.geoknoesis.kastor.gen.annotations.PrefixMapping")
-        
-        prefixMappingSymbols.forEach { symbol ->
-            val prefixMappingAnnotations = symbol.annotations.filter {
-                it.shortName.asString() == "PrefixMapping"
-            }
-
-            prefixMappingAnnotations.forEach { prefixMappingAnnotation ->
-                val prefixesArgument = prefixMappingAnnotation.arguments.find {
-                    it.name?.asString() == "prefixes"
-                }
-
-                val prefixesArray = prefixesArgument?.value as? List<*> ?: emptyList<Any>()
-                prefixesArray.forEach { prefixElement ->
-                    when (prefixElement) {
-                        is KSAnnotation -> {
-                            val name = prefixElement.arguments.find { it.name?.asString() == "name" }?.value as? String
-                            val namespace = prefixElement.arguments.find { it.name?.asString() == "namespace" }?.value as? String
-                            if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
-                                prefixMappings[name] = namespace
-                                logger.info("Registered prefix: $name -> $namespace")
-                            }
-                        }
-                        is KSType -> {
-                            val annotation = prefixElement.declaration.annotations.firstOrNull()
-                            val name = annotation?.arguments?.find { it.name?.asString() == "name" }?.value as? String
-                            val namespace = annotation?.arguments?.find { it.name?.asString() == "namespace" }?.value as? String
-                            if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
-                                prefixMappings[name] = namespace
-                                logger.info("Registered prefix: $name -> $namespace")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        return prefixMappings
+    if (!symbols.iterator().hasNext()) {
+      logger.info("No symbols found, returning empty list")
+      return emptyList()
     }
 
-    private fun analyzeClass(classDecl: KSClassDeclaration, prefixMappings: Map<String, String>): ClassModel? {
-        val qualifiedName = classDecl.qualifiedName?.asString()
-            ?: return null
-            
-        if (qualifiedName in processedClasses) {
-            return null
-        }
-        processedClasses.add(qualifiedName)
-        
-        val properties = mutableListOf<PropertyModel>()
-        
-        // Analyze properties (getters)
-        classDecl.getAllProperties().forEach { property ->
-            val propertyModel = analyzeProperty(property, prefixMappings)
-            if (propertyModel != null) {
-                properties.add(propertyModel)
-            }
-        }
-        
-        // Extract and resolve RdfClass IRI
-        val rdfClassAnnotation = classDecl.annotations.find { 
-            it.shortName.asString() == "RdfClass" 
-        }
-        
-        val classIri = if (rdfClassAnnotation != null) {
-            val iriRaw = rdfClassAnnotation.arguments
-                .find { it.name?.asString() == "iri" }
-                ?.value as? String
-                ?: ""
-                
-            if (iriRaw.isNotEmpty() && QNameResolver.isQName(iriRaw)) {
-                try {
-                    QNameResolver.resolveQName(iriRaw, prefixMappings)
-                } catch (e: IllegalArgumentException) {
-                    logger.error("Failed to resolve QName '$iriRaw': ${e.message}", classDecl)
-                    iriRaw
-                }
-            } else {
-                iriRaw
-            }
-        } else {
-            ""
-        }
+    val classModels = mutableListOf<ClassModel>()
 
-        return ClassModel(
-            qualifiedName = qualifiedName,
-            simpleName = classDecl.simpleName.asString(),
-            packageName = classDecl.packageName.asString(),
-            classIri = classIri,
-            properties = properties
-        )
-    }
-    
-    private fun analyzeProperty(property: KSPropertyDeclaration, prefixMappings: Map<String, String>): PropertyModel? {
-        logger.info("Analyzing property: ${property.simpleName.asString()}")
-        logger.info("Property annotations: ${property.annotations.map { it.shortName.asString() }}")
-        logger.info("Getter annotations: ${property.getter?.annotations?.map { it.shortName.asString() }}")
-        
-        // Look for RdfProperty annotation on the property itself or its getter
-        val rdfPropertyAnnotation = property.annotations
-            .find { it.shortName.asString() == "RdfProperty" }
-            ?: property.getter?.annotations
-                ?.find { it.shortName.asString() == "RdfProperty" }
-            ?: return null
-            
-        val predicateIriRaw = rdfPropertyAnnotation.arguments
-            .find { it.name?.asString() == "iri" }
-            ?.value as? String
-            ?: return null
-            
-        // Resolve QName to full IRI if needed
-        val predicateIri = if (QNameResolver.isQName(predicateIriRaw)) {
-            try {
-                QNameResolver.resolveQName(predicateIriRaw, prefixMappings)
-            } catch (e: IllegalArgumentException) {
-                logger.error("Failed to resolve QName '$predicateIriRaw': ${e.message}", property)
-                return null
-            }
-        } else {
-            predicateIriRaw
-        }
-            
-        val returnType = property.type.resolve()
-        val kotlinType = when {
-            returnType.declaration.qualifiedName?.asString() == "kotlin.String" -> "String"
-            returnType.declaration.qualifiedName?.asString() == "kotlin.Int" -> "Int"
-            returnType.declaration.qualifiedName?.asString() == "kotlin.Boolean" -> "Boolean"
-            returnType.declaration.qualifiedName?.asString() == "kotlin.Double" -> "Double"
-            returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List" -> {
-                val typeArg = returnType.arguments.firstOrNull()?.type?.resolve()
-                val elementType = typeArg?.declaration?.qualifiedName?.asString()
-                "List<${normalizeKotlinType(elementType)}>"
-            }
-            else -> returnType.declaration.qualifiedName?.asString() ?: "Any"
-        }
-        
-        val propertyType = when {
-            kotlinType == "List<String>" || kotlinType == "List<Int>" || kotlinType == "List<Double>" || kotlinType == "List<Boolean>" -> {
-                logger.info("Property ${property.simpleName.asString()} classified as LITERAL with type $kotlinType")
-                PropertyType.LITERAL
-            }
-            kotlinType.startsWith("List<") -> {
-                logger.info("Property ${property.simpleName.asString()} classified as OBJECT_LIST with type $kotlinType")
-                PropertyType.OBJECT_LIST
-            }
-            kotlinType == "String" -> {
-                logger.info("Property ${property.simpleName.asString()} classified as LITERAL with type $kotlinType")
-                PropertyType.LITERAL
-            }
-            kotlinType == "Int" || kotlinType == "Double" || kotlinType == "Boolean" -> {
-                logger.info("Property ${property.simpleName.asString()} classified as LITERAL with type $kotlinType")
-                PropertyType.LITERAL
-            }
-            else -> {
-                logger.info("Property ${property.simpleName.asString()} classified as OBJECT with type $kotlinType")
-                PropertyType.OBJECT
-            }
-        }
-        
-        return PropertyModel(
-            name = property.simpleName.asString(),
-            kotlinType = kotlinType,
-            predicateIri = predicateIri,
-            type = propertyType
-        )
-    }
-    
-    private fun generateWrapper(classModel: ClassModel) {
-        val fileSpec = wrapperGenerator.generateWrapper(classModel)
-        val fileName = "${fileSpec.name}.kt"
-        val file = codeGenerator.createNewFile(
-            dependencies = Dependencies(false),
-            packageName = classModel.packageName,
-            fileName = fileName
-        )
-        
-        val writer = file.bufferedWriter(Charsets.UTF_8)
-        fileSpec.writeTo(writer)
-        writer.close()
-        file.close()
+    symbols.forEach { symbol ->
+      if (symbol !is KSClassDeclaration) {
+        return@forEach
+      }
+      val rdfAnn = symbol.annotations.find { it.shortName.asString() == "Rdf" } ?: return@forEach
+      val iriRaw = rdfAnn.arguments.find { it.name?.asString() == "iri" }?.value as? String ?: ""
+      val shaclRaw = rdfAnn.arguments.find { it.name?.asString() == "shacl" }?.value as? String ?: ""
+      if (iriRaw.isBlank() || shaclRaw.isNotBlank()) {
+        return@forEach
+      }
+
+      val prefixMappings = prefixMappingsFor(symbol)
+      logger.info("Resolved ${prefixMappings.size} prefix mappings for ${symbol.qualifiedName?.asString()}")
+
+      val classModel = analyzeClass(symbol, prefixMappings, rdfAnn)
+      if (classModel != null) {
+        classModels.add(classModel)
+      }
     }
 
-    private fun normalizeKotlinType(typeName: String?): String {
-        return when (typeName) {
-            "kotlin.String" -> "String"
-            "kotlin.Int" -> "Int"
-            "kotlin.Boolean" -> "Boolean"
-            "kotlin.Double" -> "Double"
-            null -> "Any"
-            else -> typeName
-        }
+    classModels.forEach { generateWrapper(it) }
+
+    return symbols.filterNot { it.validate() }.toList()
+  }
+
+  /**
+   * Prefixes visible when resolving QNames for `@Rdf(iri = …)` on [classDecl] and its properties:
+   * 1) `@file:Rdf(prefixes = …)` on the same source file (if any)
+   * 2) `prefixes = …` on the class/interface `@Rdf` (later entries override earlier on name clash)
+   */
+  private fun prefixMappingsFor(classDecl: KSClassDeclaration): Map<String, String> {
+    val into = LinkedHashMap<String, String>()
+    classDecl.findContainingKsFile()?.annotations
+      ?.filter { it.shortName.asString() == "Rdf" }
+      ?.forEach { mergePrefixesFromRdfAnnotation(it, into) }
+    classDecl.annotations.filter { it.shortName.asString() == "Rdf" }.forEach { ann ->
+      mergePrefixesFromRdfAnnotation(ann, into)
     }
+    return into
+  }
+
+  private fun KSDeclaration.findContainingKsFile(): KSFile? {
+    var node: KSNode? = this
+    while (node != null) {
+      if (node is KSFile) return node
+      node = node.parent
+    }
+    return null
+  }
+
+  private fun mergePrefixesFromRdfAnnotation(annotation: KSAnnotation, into: MutableMap<String, String>) {
+    val prefixesArgument = annotation.arguments.find { it.name?.asString() == "prefixes" }
+    val prefixesArray = prefixesArgument?.value as? List<*> ?: emptyList<Any>()
+    prefixesArray.forEach { prefixElement ->
+      when (prefixElement) {
+        is KSAnnotation -> {
+          val name = prefixElement.arguments.find { it.name?.asString() == "name" }?.value as? String
+          val namespace = prefixElement.arguments.find { it.name?.asString() == "namespace" }?.value as? String
+          if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
+            into[name] = namespace
+            logger.info("Registered prefix: $name -> $namespace")
+          }
+        }
+        is KSType -> {
+          val declAnn = prefixElement.declaration.annotations.firstOrNull()
+          val name = declAnn?.arguments?.find { it.name?.asString() == "name" }?.value as? String
+          val namespace = declAnn?.arguments?.find { it.name?.asString() == "namespace" }?.value as? String
+          if (!name.isNullOrBlank() && !namespace.isNullOrBlank()) {
+            into[name] = namespace
+            logger.info("Registered prefix: $name -> $namespace")
+          }
+        }
+      }
+    }
+  }
+
+  private fun analyzeClass(
+    classDecl: KSClassDeclaration,
+    prefixMappings: Map<String, String>,
+    rdfClassAnnotation: KSAnnotation,
+  ): ClassModel? {
+    val qualifiedName = classDecl.qualifiedName?.asString() ?: return null
+
+    if (qualifiedName in processedClasses) {
+      return null
+    }
+    processedClasses.add(qualifiedName)
+
+    val properties = mutableListOf<PropertyModel>()
+    classDecl.getAllProperties().forEach { property ->
+      val propertyModel = analyzeProperty(property, prefixMappings)
+      if (propertyModel != null) {
+        properties.add(propertyModel)
+      }
+    }
+
+    val classIriRaw = rdfClassAnnotation.arguments
+      .find { it.name?.asString() == "iri" }
+      ?.value as? String
+      ?: ""
+
+    val classIri = if (classIriRaw.isNotEmpty() && QNameResolver.isQName(classIriRaw)) {
+      try {
+        QNameResolver.resolveQName(classIriRaw, prefixMappings)
+      } catch (e: IllegalArgumentException) {
+        logger.error("Failed to resolve QName '$classIriRaw': ${e.message}", classDecl)
+        classIriRaw
+      }
+    } else {
+      classIriRaw
+    }
+
+    return ClassModel(
+      qualifiedName = qualifiedName,
+      simpleName = classDecl.simpleName.asString(),
+      packageName = classDecl.packageName.asString(),
+      classIri = classIri,
+      properties = properties,
+    )
+  }
+
+  private fun analyzeProperty(property: KSPropertyDeclaration, prefixMappings: Map<String, String>): PropertyModel? {
+    val rdfPropertyAnnotation = property.annotations.find { it.shortName.asString() == "Rdf" }
+      ?: property.getter?.annotations?.find { it.shortName.asString() == "Rdf" }
+      ?: property.setter?.annotations?.find { it.shortName.asString() == "Rdf" }
+      ?: return null
+
+    val predicateIriRaw = rdfPropertyAnnotation.arguments
+      .find { it.name?.asString() == "iri" }
+      ?.value as? String
+      ?: return null
+
+    val predicateIri = if (QNameResolver.isQName(predicateIriRaw)) {
+      try {
+        QNameResolver.resolveQName(predicateIriRaw, prefixMappings)
+      } catch (e: IllegalArgumentException) {
+        logger.error("Failed to resolve QName '$predicateIriRaw': ${e.message}", property)
+        return null
+      }
+    } else {
+      predicateIriRaw
+    }
+
+    val returnType = property.type.resolve()
+    val kotlinType = when {
+      returnType.declaration.qualifiedName?.asString() == "kotlin.String" -> "String"
+      returnType.declaration.qualifiedName?.asString() == "kotlin.Int" -> "Int"
+      returnType.declaration.qualifiedName?.asString() == "kotlin.Boolean" -> "Boolean"
+      returnType.declaration.qualifiedName?.asString() == "kotlin.Double" -> "Double"
+      returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List" -> {
+        val typeArg = returnType.arguments.firstOrNull()?.type?.resolve()
+        val elementType = typeArg?.declaration?.qualifiedName?.asString()
+        "List<${normalizeKotlinType(elementType)}>"
+      }
+      else -> returnType.declaration.qualifiedName?.asString() ?: "Any"
+    }
+
+    val propertyType = when {
+      kotlinType == "List<String>" || kotlinType == "List<Int>" || kotlinType == "List<Double>" || kotlinType == "List<Boolean>" ->
+        PropertyType.LITERAL
+      kotlinType.startsWith("List<") -> PropertyType.OBJECT_LIST
+      kotlinType == "String" || kotlinType == "Int" || kotlinType == "Double" || kotlinType == "Boolean" ->
+        PropertyType.LITERAL
+      else -> PropertyType.OBJECT
+    }
+
+    val wantsMutable = property.isMutable
+    val effectiveMutable =
+      wantsMutable &&
+        when (propertyType) {
+          PropertyType.LITERAL ->
+            kotlinType == "String" ||
+              kotlinType == "Int" ||
+              kotlinType == "Double" ||
+              kotlinType == "Boolean"
+          PropertyType.OBJECT -> true
+          PropertyType.OBJECT_LIST -> false
+        }
+    if (wantsMutable && !effectiveMutable) {
+      logger.warn(
+        "var property '${property.simpleName.asString()}' is not supported for generated mutation " +
+          "(lists and literal collections are read-only in wrappers); generating a read-only accessor.",
+        property,
+      )
+    }
+
+    return PropertyModel(
+      name = property.simpleName.asString(),
+      kotlinType = kotlinType,
+      predicateIri = predicateIri,
+      type = propertyType,
+      mutable = effectiveMutable,
+    )
+  }
+
+  private fun generateWrapper(classModel: ClassModel) {
+    val fileSpec = wrapperGenerator.generateWrapper(classModel)
+    val fileName = "${fileSpec.name}.kt"
+    val file = codeGenerator.createNewFile(
+      dependencies = Dependencies(false),
+      packageName = classModel.packageName,
+      fileName = fileName,
+    )
+
+    val writer = file.bufferedWriter(Charsets.UTF_8)
+    fileSpec.writeTo(writer)
+    writer.close()
+    file.close()
+  }
+
+  private fun normalizeKotlinType(typeName: String?): String {
+    return when (typeName) {
+      "kotlin.String" -> "String"
+      "kotlin.Int" -> "Int"
+      "kotlin.Boolean" -> "Boolean"
+      "kotlin.Double" -> "Double"
+      null -> "Any"
+      else -> typeName
+    }
+  }
 }
 
-/**
- * Processor provider for KSP.
- */
 class OntoMapperProcessorProvider : SymbolProcessorProvider {
-    override fun create(
-        environment: SymbolProcessorEnvironment
-    ): SymbolProcessor {
-        return OntoMapperProcessor(
-            codeGenerator = environment.codeGenerator,
-            logger = environment.logger,
-            options = environment.options
-        )
-    }
+  override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
+    OntoMapperProcessor(
+      codeGenerator = environment.codeGenerator,
+      logger = environment.logger,
+      options = environment.options,
+    )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

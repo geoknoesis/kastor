@@ -5,6 +5,8 @@ dependencies {
   implementation(libs.rdf4j.repository.sail)
   implementation(libs.rdf4j.sail.memory)
   implementation(libs.rdf4j.sail.nativerdf)
+  implementation(libs.rdf4j.sail.inferencer)
+  implementation(libs.rdf4j.shacl)
   implementation(libs.rdf4j.queryrender)
   implementation(libs.rdf4j.runtime)
   implementation(libs.rdf4j.rio.jsonld)

@@ -1,0 +1,32 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf:     <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix rdft:   <http://www.w3.org/ns/rdftest#> .
+@prefix ex:     <http://example.org/> .
+
+<>  a mf:Manifest ;
+    rdfs:label "Smoke-fixture for the Kastor RDF 1.2 conformance harness." ;
+    mf:entries (
+        ex:positive-turtle
+        ex:negative-turtle
+        ex:eval-turtle
+    ) .
+
+ex:positive-turtle
+    a rdft:TestTurtlePositiveSyntax ;
+    mf:name "smoke: positive Turtle" ;
+    rdft:approval rdft:Approved ;
+    mf:action <positive.ttl> .
+
+ex:negative-turtle
+    a rdft:TestTurtleNegativeSyntax ;
+    mf:name "smoke: negative Turtle" ;
+    rdft:approval rdft:Approved ;
+    mf:action <negative.ttl> .
+
+ex:eval-turtle
+    a rdft:TestTurtleEval ;
+    mf:name "smoke: eval Turtle" ;
+    rdft:approval rdft:Approved ;
+    mf:action <eval.ttl> ;
+    mf:result <eval.nt> .

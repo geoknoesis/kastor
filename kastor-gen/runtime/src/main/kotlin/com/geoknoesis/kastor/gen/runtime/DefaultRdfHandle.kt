@@ -15,8 +15,10 @@ class DefaultRdfHandle(
   override val node: RdfTerm,
   override val graph: RdfGraph,
   private val known: Set<Iri>,
-  private val validationContext: ValidationContext? = null
+  internal val validationContext: ValidationContext? = null,
 ) : RdfHandle {
+
+  override val isValidationConfigured: Boolean get() = validationContext != null
 
   // PUBLICATION is sufficient: values are idempotent and immutable
   override val extras: PropertyBag by lazy(LazyThreadSafetyMode.PUBLICATION) {
@@ -39,14 +41,16 @@ class DefaultRdfHandle(
   }
 }
 
-
-
-
-
-
-
-
-
-
-
+/**
+ * Narrows the "known predicates" set used to populate [RdfHandle.extras].
+ *
+ * If this handle is not a [DefaultRdfHandle], the result is a new [DefaultRdfHandle]
+ * **without** a validation context; call sites that need validated handles should build a
+ * [DefaultRdfHandle] directly with a non-null [ValidationContext].
+ */
+fun RdfHandle.withKnownPredicates(known: Set<Iri>): RdfHandle =
+  when (this) {
+    is DefaultRdfHandle -> DefaultRdfHandle(node, graph, known, validationContext)
+    else -> DefaultRdfHandle(node, graph, known, validationContext = null)
+  }
 

@@ -16,7 +16,7 @@ import com.squareup.kotlinpoet.KModifier.*
  * Generator for Kotlin domain interfaces from SHACL shapes using KotlinPoet.
  * Creates pure domain interfaces with no RDF dependencies.
  */
-internal class InterfaceGenerator(
+class InterfaceGenerator(
     private val logger: KSPLogger,
     private val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA
 ) {
@@ -31,13 +31,16 @@ internal class InterfaceGenerator(
     fun generateInterfaces(ontologyModel: OntologyModel, packageName: String): Map<String, FileSpec> {
         val interfaces = mutableMapOf<String, FileSpec>()
         
-        ontologyModel.shapes.forEach { shape ->
-            val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
-            val fileSpec = generateInterface(shape, ontologyModel.context, packageName)
-            interfaces[interfaceName] = fileSpec
-            
-            logger.info("Generated interface: $interfaceName")
-        }
+        // Sort shapes by targetClass IRI to ensure deterministic output
+        ontologyModel.shapes
+            .sortedBy { it.targetClass }
+            .forEach { shape ->
+                val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+                val fileSpec = generateInterface(shape, ontologyModel.context, packageName)
+                interfaces[interfaceName] = fileSpec
+                
+                logger.info("Generated interface: $interfaceName")
+            }
         
         return interfaces
     }
@@ -54,7 +57,7 @@ internal class InterfaceGenerator(
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
         
         // Add imports
-        fileBuilder.addImport("com.geoknoesis.kastor.gen.annotations", "RdfClass", "RdfProperty")
+        fileBuilder.addImport("com.geoknoesis.kastor.gen.annotations", "Rdf")
         if (validationAnnotations != ValidationAnnotations.NONE) {
             fileBuilder.addImport("${validationPackage()}.constraints", "NotNull", "NotEmpty", "Size", "Min", "Max", "Pattern", "NotBlank")
         }
@@ -66,15 +69,17 @@ internal class InterfaceGenerator(
                 shape.targetClass, shape.shapeIri
             )
             .addAnnotation(
-                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "RdfClass"))
+                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "Rdf"))
                     .addMember("iri = %S", shape.targetClass)
                     .build()
             )
         
-        // Generate properties
-        shape.properties.forEach { property ->
-            interfaceBuilder.addProperty(generateProperty(property, context))
-        }
+        // Generate properties - sort by path IRI to ensure deterministic output
+        shape.properties
+            .sortedBy { it.path }
+            .forEach { property ->
+                interfaceBuilder.addProperty(generateProperty(property, context))
+            }
         
         fileBuilder.addType(interfaceBuilder.build())
         return fileBuilder.build()
@@ -101,8 +106,7 @@ internal class InterfaceGenerator(
         val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
             .addKdoc(kdoc)
             .addAnnotation(
-                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "RdfProperty"))
-                    .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
+                AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "Rdf"))
                     .addMember("iri = %S", property.path)
                     .build()
             )

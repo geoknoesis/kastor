@@ -65,9 +65,9 @@ fun RdfRepository.addToGraph(name: Iri, configure: TripleDsl.() -> Unit) {
 fun RdfRepository.getTriples(): List<RdfTriple> = defaultGraph.getTriples()
 
 /**
- * DSL entrypoint for adding triples via a graph editor.
+ * DSL entrypoint for adding triples via a mutable graph.
  */
-fun GraphEditor.add(configure: TripleDsl.() -> Unit) {
+fun MutableRdfGraph.add(configure: TripleDsl.() -> Unit) {
     val dsl = TripleDsl().apply(configure)
     addTriples(dsl.triples)
 }

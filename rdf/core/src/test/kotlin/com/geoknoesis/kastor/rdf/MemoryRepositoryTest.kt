@@ -7,11 +7,21 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+/**
+ * Tests for the bundled [com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider].
+ *
+ * These tests target the in-core memory provider directly (not via `Rdf.memory()`,
+ * which routes to a real SPARQL-capable provider) because they assert the
+ * specific semantics of the lightweight in-memory implementation.
+ */
 class MemoryRepositoryTest {
+
+    private fun memory(): RdfRepository =
+        RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
 
     @Test
     fun `createGraph rejects duplicates and listGraphs updates`() {
-        val repo = Rdf.memory()
+        val repo = memory()
         val graphName = Iri("http://example.org/graph")
 
         assertFalse(repo.hasGraph(graphName))
@@ -34,7 +44,7 @@ class MemoryRepositoryTest {
 
     @Test
     fun `namedGraphs reflects create and remove`() {
-        val repo = Rdf.memory()
+        val repo = memory()
         val graphName = Iri("http://example.org/graph")
 
         assertTrue(repo.namedGraphs.isEmpty())
@@ -47,7 +57,7 @@ class MemoryRepositoryTest {
 
     @Test
     fun `clear removes default and named graphs`() {
-        val repo = Rdf.memory()
+        val repo = memory()
         val graphName = Iri("http://example.org/graph")
         val subject = Iri("http://example.org/s")
         val predicate = Iri("http://example.org/p")
@@ -68,7 +78,7 @@ class MemoryRepositoryTest {
 
     @Test
     fun `transaction and readTransaction execute blocks`() {
-        val repo = Rdf.memory()
+        val repo = memory()
         val subject = Iri("http://example.org/s")
         val predicate = Iri("http://example.org/p")
 
@@ -88,7 +98,7 @@ class MemoryRepositoryTest {
 
     @Test
     fun `close marks repository closed and clears graphs`() {
-        val repo = Rdf.memory()
+        val repo = memory()
         val graphName = Iri("http://example.org/graph")
         repo.editDefaultGraph().addTriple(
             RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), string("o"))

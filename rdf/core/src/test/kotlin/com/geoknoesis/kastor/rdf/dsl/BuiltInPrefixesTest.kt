@@ -46,10 +46,20 @@ class BuiltInPrefixesTest {
         
         val triples = repo.defaultGraph.getTriples()
         
-        // Verify RDF triples
-        val typeTriple = triples.find { it.predicate == RDF.type && it.obj is Iri }
-        assertNotNull(typeTriple, "Should have rdf:type triple")
-        assertEquals("http://www.w3.org/2000/01/rdf-schema#Class", (typeTriple!!.obj as Iri).value)
+        // Verify RDF triples (insertion order is not guaranteed across providers,
+        // so check both expected rdf:type values are present).
+        val typeObjects = triples
+            .filter { it.predicate == RDF.type && it.obj is Iri }
+            .map { (it.obj as Iri).value }
+            .toSet()
+        assertTrue(
+            "http://www.w3.org/2000/01/rdf-schema#Class" in typeObjects,
+            "Should have rdf:type rdfs:Class triple"
+        )
+        assertTrue(
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement" in typeObjects,
+            "Should have rdf:type rdf:Statement triple"
+        )
         
         // Verify RDFS triples
         val labelTriple = triples.find { it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#label" }

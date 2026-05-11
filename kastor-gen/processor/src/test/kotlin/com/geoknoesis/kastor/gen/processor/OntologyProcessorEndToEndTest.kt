@@ -92,14 +92,13 @@ class OntologyProcessorEndToEndTest {
             val interfaceCodeStr = java.io.StringWriter().also { interfaceCode.writeTo(it) }.toString()
             // Check interface structure
             assertTrue(interfaceCodeStr.contains("package com.example.dcatus.generated"))
-            assertTrue(interfaceCodeStr.contains("import com.geoknoesis.kastor.gen.annotations.RdfClass"))
-            assertTrue(interfaceCodeStr.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
-            assertTrue(interfaceCodeStr.contains("@RdfClass(iri ="))
+            assertTrue(interfaceCodeStr.contains("import com.geoknoesis.kastor.gen.annotations.Rdf"))
+            assertTrue(interfaceCodeStr.contains("@Rdf(iri ="))
             assertTrue(interfaceCodeStr.contains("interface $interfaceName {"))
 
             // Check that interface has properties
-            val propertyCount = interfaceCodeStr.split("@get:RdfProperty").size - 1
-            assertTrue(propertyCount > 0, "$interfaceName should have at least one property")
+            val rdfBlocks = interfaceCodeStr.split("@Rdf(iri =").size - 1
+            assertTrue(rdfBlocks >= 2, "$interfaceName should have class @Rdf plus at least one property @Rdf")
         }
 
         for ((wrapperName, wrapperCode) in wrappers) {
@@ -234,17 +233,16 @@ class OntologyProcessorEndToEndTest {
 
         // Verify that generated code follows Kotlin syntax rules
         assertTrue(simpleCatalogInterface.contains("package com.example.test"))
-        assertTrue(simpleCatalogInterface.contains("import com.geoknoesis.kastor.gen.annotations.RdfClass"))
-        assertTrue(simpleCatalogInterface.contains("import com.geoknoesis.kastor.gen.annotations.RdfProperty"))
+        assertTrue(simpleCatalogInterface.contains("import com.geoknoesis.kastor.gen.annotations.Rdf"))
 
         assertTrue(simpleCatalogWrapper.contains("package com.example.test"))
         assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.gen.runtime"))
         assertTrue(simpleCatalogWrapper.contains("import com.geoknoesis.kastor.rdf"))
 
         // Verify that generated code has proper annotations
-        assertTrue(simpleCatalogInterface.contains("@RdfClass(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
-        assertTrue(simpleCatalogInterface.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/title\")"))
-        assertTrue(simpleCatalogInterface.contains("@get:RdfProperty(iri = \"http://purl.org/dc/terms/description\")"))
+        assertTrue(simpleCatalogInterface.contains("@Rdf(iri = \"http://www.w3.org/ns/dcat#Catalog\")"))
+        assertTrue(simpleCatalogInterface.contains("@Rdf(iri = \"http://purl.org/dc/terms/title\")"))
+        assertTrue(simpleCatalogInterface.contains("@Rdf(iri = \"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper has proper registry entry
         assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[Catalog::class.java]"))

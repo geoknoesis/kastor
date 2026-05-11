@@ -1,6 +1,6 @@
 package com.geoknoesis.kastor.gen.runtime
 
-import com.geoknoesis.kastor.rdf.GraphEditor
+import com.geoknoesis.kastor.rdf.MutableRdfGraph
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
@@ -15,7 +15,7 @@ import kotlin.reflect.KClass
  */
 interface GraphAccess {
   val graph: RdfGraph
-  val editor: GraphEditor
+  val editor: MutableRdfGraph
   val repository: RdfRepository
 
   fun <T> read(block: RdfRepository.() -> T): T = repository.block()
@@ -24,7 +24,7 @@ interface GraphAccess {
 data class DefaultGraphAccess(
   override val repository: RdfRepository,
   override val graph: RdfGraph = repository.defaultGraph,
-  override val editor: GraphEditor = repository.editDefaultGraph()
+  override val editor: MutableRdfGraph = repository.editDefaultGraph()
 ) : GraphAccess
 
 data class ResourceContext(
@@ -61,7 +61,7 @@ interface Resource {
 
   val graph: RdfGraph
     get() = access.graph
-  val editor: GraphEditor
+  val editor: MutableRdfGraph
     get() = access.editor
   val repository: RdfRepository
     get() = access.repository
@@ -72,6 +72,7 @@ interface Resource {
   fun <T : Any> asValidated(iface: KClass<T>, validation: ValidationContext): T =
     ResourceViews.createValidatedView(iface, ResourceContext(uri, access), validation)
 
+  /** All predicates for this subject; scans the graph (consider caching for large graphs). */
   fun predicates(): Set<Iri> =
     graph.getTriples()
       .asSequence()
@@ -143,7 +144,7 @@ fun resource(uri: RdfResource, access: GraphAccess): Resource = ResourceRef(uri,
 fun RdfRepository.resource(
   uri: RdfResource,
   graph: RdfGraph = defaultGraph,
-  editor: GraphEditor = editDefaultGraph()
+  editor: MutableRdfGraph = editDefaultGraph()
 ): Resource =
   ResourceRef(uri, DefaultGraphAccess(this, graph, editor))
 

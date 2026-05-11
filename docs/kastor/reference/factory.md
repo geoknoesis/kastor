@@ -43,7 +43,16 @@ providers.forEach { provider ->
 ```
 
 ### Discovery
-`RdfProviderRegistry` finds providers via Java `ServiceLoader`. You can also register a provider programmatically.
+`RdfProviderRegistry` finds providers via Java `ServiceLoader` on JVM. You can also register a provider programmatically.
+
+**⚠️ Android/KMP**: ServiceLoader may not work on Android or KMP native targets. Use explicit registration instead:
+
+```kotlin
+// Register providers explicitly (recommended for Android/KMP)
+RdfProviderRegistry.register(JenaProvider())
+```
+
+See [Android/KMP Guide](../guides/android-kmp.md) for platform-specific setup.
 
 
 
