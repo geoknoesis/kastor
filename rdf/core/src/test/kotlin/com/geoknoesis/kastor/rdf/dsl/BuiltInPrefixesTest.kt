@@ -6,8 +6,12 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.vocab.BFO
+import com.geoknoesis.kastor.rdf.vocab.DCAT
+import com.geoknoesis.kastor.rdf.vocab.GEO
 import com.geoknoesis.kastor.rdf.vocab.PROV
 import com.geoknoesis.kastor.rdf.vocab.SKOS
+import com.geoknoesis.kastor.rdf.vocab.TIME
+import com.geoknoesis.kastor.rdf.vocab.VOID
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
@@ -199,6 +203,11 @@ class BuiltInPrefixesTest {
             resource - RDF.type - qname("obo:BFO_0000002")        // OBO / BFO namespace
             resource - RDF.type - qname("skos:Concept")          // SKOS namespace
             resource - RDF.type - qname("prov:Activity")         // PROV namespace
+            resource - RDF.type - qname("dcat:Dataset")
+            resource - RDF.type - qname("void:DatasetDescription")
+            resource - RDF.type - qname("geo:Feature")
+            resource - RDF.type - qname("time:Instant")
+            resource - qname("dcterms:title") - "T"
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -212,6 +221,10 @@ class BuiltInPrefixesTest {
             "http://www.w3.org/2001/XMLSchema#",
             "http://www.w3.org/2004/02/skos/core#",
             "http://www.w3.org/ns/prov#",
+            "http://www.w3.org/ns/dcat#",
+            "http://rdfs.org/ns/void#",
+            "http://www.opengis.net/ont/geosparql#",
+            "http://www.w3.org/2006/time#",
         )
         
         val actualNamespaces = triples.flatMap { listOf(it.predicate.value, (it.obj as? Iri)?.value) }
@@ -239,8 +252,28 @@ class BuiltInPrefixesTest {
             triples.any { it.predicate == RDF.type && it.obj == PROV.Activity },
             "prov:Activity should resolve to PROV Activity IRI",
         )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == DCAT.Dataset },
+            "dcat:Dataset should resolve to DCAT Dataset IRI",
+        )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == VOID.DatasetDescription },
+            "void:DatasetDescription should resolve to VoID DatasetDescription IRI",
+        )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == GEO.Feature },
+            "geo:Feature should resolve to GEO Feature IRI",
+        )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == TIME.Instant },
+            "time:Instant should resolve to TIME Instant IRI",
+        )
+        assertTrue(
+            triples.any { it.predicate.value.startsWith("http://purl.org/dc/terms/") },
+            "dcterms:title should resolve to Dublin Core Terms IRI",
+        )
         println("✅ All built-in prefixes verified")
-        println("   Built-in prefixes: rdf, rdfs, owl, sh, xsd, obo, skos, prov")
+        println("   Built-in prefixes: rdf, rdfs, owl, sh, xsd, obo, skos, prov, dcat, dcterms, void, geo, time")
         println("   Total triples: ${triples.size}")
     }
 }

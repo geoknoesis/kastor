@@ -13,7 +13,7 @@ object Vocabularies {
      * Get all available vocabularies.
      */
     val all: List<Vocabulary> = listOf(
-        RDF, XSD, RDFS, OWL, SHACL, SKOS, DCTERMS, FOAF, DCAT, OBO, PROV, SPARQL_SD, SPARQL12,
+        RDF, XSD, RDFS, OWL, SHACL, SKOS, DCTERMS, FOAF, DCAT, VOID, GEO, TIME, OBO, PROV, SPARQL_SD, SPARQL12,
     )
     
     /**

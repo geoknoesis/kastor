@@ -151,6 +151,24 @@ class VocabularyTest {
     }
 
     @Test
+    fun `VOID vocabulary has correct namespace and prefix`() {
+        assertEquals("http://rdfs.org/ns/void#", VOID.namespace)
+        assertEquals("void", VOID.prefix)
+    }
+
+    @Test
+    fun `GEO vocabulary has correct namespace and prefix`() {
+        assertEquals("http://www.opengis.net/ont/geosparql#", GEO.namespace)
+        assertEquals("geo", GEO.prefix)
+    }
+
+    @Test
+    fun `TIME vocabulary has correct namespace and prefix`() {
+        assertEquals("http://www.w3.org/2006/time#", TIME.namespace)
+        assertEquals("time", TIME.prefix)
+    }
+
+    @Test
     fun `SKOS vocabulary terms are created correctly`() {
         // Test core terms
         assertEquals("http://www.w3.org/2004/02/skos/core#Concept", SKOS.Concept.value, "SKOS Concept should have correct IRI")
@@ -224,6 +242,9 @@ class VocabularyTest {
         assertTrue(SKOS.Concept.value.endsWith("Concept"), "SKOS Concept should end with 'Concept'")
         assertTrue(PROV.Entity.value.endsWith("Entity"), "PROV Entity should end with 'Entity'")
         assertTrue(PROV.wasGeneratedBy.value.endsWith("wasGeneratedBy"), "PROV wasGeneratedBy should have correct local name")
+        assertTrue(VOID.triples.value.endsWith("triples"), "VOID triples should have correct local name")
+        assertTrue(GEO.hasGeometry.value.endsWith("hasGeometry"), "GEO hasGeometry should have correct local name")
+        assertTrue(TIME.before.value.endsWith("before"), "TIME before should have correct local name")
         assertTrue(SHACL.NodeShape.value.endsWith("NodeShape"), "SHACL NodeShape should end with 'NodeShape'")
     }
     
@@ -239,6 +260,10 @@ class VocabularyTest {
             XSD.namespace,
             SKOS.namespace,
             PROV.namespace,
+            DCAT.namespace,
+            VOID.namespace,
+            GEO.namespace,
+            TIME.namespace,
             SHACL.namespace
         )
         
@@ -260,6 +285,10 @@ class VocabularyTest {
             XSD.prefix,
             SKOS.prefix,
             PROV.prefix,
+            DCAT.prefix,
+            VOID.prefix,
+            GEO.prefix,
+            TIME.prefix,
             SHACL.prefix
         )
         

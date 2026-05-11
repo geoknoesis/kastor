@@ -17,7 +17,7 @@ This package provides commonly used RDF vocabularies as Kotlin objects, making i
 - **PROV** - W3C [PROV-O](https://www.w3.org/TR/prov-o/) (`prov:`) for provenance entities, activities, and relations
 - **BFO** / **RO** - Curated [Basic Formal Ontology](http://purl.obolibrary.org/obo/bfo.owl) classes and common [Relation Ontology](http://purl.obolibrary.org/obo/ro.owl) properties (same namespace as **OBO**)
 
-Use the **`skos { }`** block (`SkosDsl`) for readable SKOS broader–narrower, scheme, and label-style triples, the **`prov { }`** block (`ProvDsl`) for PROV-O generation / use / attribution, and the **`bfo { }`** block (`BfoDsl`) for readable `partOf` / `locatedIn` / `participatesIn` style triples.
+Use the **`skos { }`** block (`SkosDsl`) for readable SKOS broader–narrower, scheme, and label-style triples, the **`prov { }`** block (`ProvDsl`) for PROV-O generation / use / attribution, the **`dcat { }`**, **`dcterms { }`**, **`voidMeta { }`**, **`geo { }`**, and **`time { }`** blocks for catalog / VoID / GeoSPARQL / OWL-Time triples (see Kastor **Metadata & geometry DSLs** API doc), and the **`bfo { }`** block (`BfoDsl`) for readable `partOf` / `locatedIn` / `participatesIn` style triples.
 
 ### Lazy Initialization
 All vocabulary terms use Kotlin's `by lazy` delegate for efficient memory usage:

@@ -68,6 +68,10 @@ object CommonPrefixes {
     const val WIKIDATA = "http://www.wikidata.org/entity/"
     const val SKOS = "http://www.w3.org/2004/02/skos/core#"
     const val PROV = "http://www.w3.org/ns/prov#"
+    const val DCAT = "http://www.w3.org/ns/dcat#"
+    const val VOID = "http://rdfs.org/ns/void#"
+    const val GEO = "http://www.opengis.net/ont/geosparql#"
+    const val TIME = "http://www.w3.org/2006/time#"
 }
 
 // ============================================================================
@@ -113,6 +117,10 @@ fun com.geoknoesis.kastor.rdf.sparql.SelectBuilder.addCommonPrefixes(vararg pref
             "wikidata" -> this.prefix("wikidata", CommonPrefixes.WIKIDATA)
             "skos" -> this.prefix("skos", CommonPrefixes.SKOS)
             "prov" -> this.prefix("prov", CommonPrefixes.PROV)
+            "dcat" -> this.prefix("dcat", CommonPrefixes.DCAT)
+            "void" -> this.prefix("void", CommonPrefixes.VOID)
+            "geo" -> this.prefix("geo", CommonPrefixes.GEO)
+            "time" -> this.prefix("time", CommonPrefixes.TIME)
             else -> throw IllegalArgumentException("Unknown common prefix: $prefix")
         }
     }

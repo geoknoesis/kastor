@@ -77,6 +77,8 @@ main:
         url: /kastor/api/skos-dsl-guide.html
       - title: PROV-O DSL Guide
         url: /kastor/api/prov-o-dsl-guide.html
+      - title: Metadata & geometry DSLs
+        url: /kastor/api/metadata-vocabulary-dsls.html
       - title: BFO DSL Guide
         url: /kastor/api/bfo-dsl-guide.html
       - title: OWL DSL Guide

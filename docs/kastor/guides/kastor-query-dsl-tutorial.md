@@ -163,6 +163,10 @@ val query = select("name", "type") {
 - `wikidata`: Wikidata
 - `skos`: SKOS vocabulary
 - `prov`: W3C PROV-O (`http://www.w3.org/ns/prov#`)
+- `dcat`: DCAT (`http://www.w3.org/ns/dcat#`)
+- `void`: VoID (`http://rdfs.org/ns/void#`)
+- `geo`: GeoSPARQL (`http://www.opengis.net/ont/geosparql#`)
+- `time`: OWL-Time (`http://www.w3.org/2006/time#`)
 
 ## Your First Query
 

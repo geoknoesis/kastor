@@ -8,6 +8,7 @@ The Kastor RDF API provides a **vocabulary-agnostic** core API with multiple syn
 > - [RDFS DSL Guide](rdfs-dsl-guide.md) - For RDF Schema vocabulary creation
 > - [SKOS DSL Guide](skos-dsl-guide.md) - For SKOS concept schemes, broader–narrower, labels
 > - [PROV-O DSL Guide](prov-o-dsl-guide.md) - For PROV-O provenance assertions (generation, use, attribution)
+> - [Metadata & geometry DSLs](metadata-vocabulary-dsls.md) - For DCAT, DCTerms, VoID, GeoSPARQL, OWL-Time
 > - [BFO DSL Guide](bfo-dsl-guide.md) - For BFO / OBO-style instance assertions (parthood, RO relations)
 > - [OWL DSL Guide](owl-dsl-guide.md) - For OWL 2 ontology creation
 > - [SHACL DSL Guide](shacl-dsl-guide.md) - For SHACL shapes and validation constraints

@@ -1,13 +1,17 @@
 package com.geoknoesis.kastor.rdf.dsl
 
 import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.DCAT
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.GEO
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.PROV
 import com.geoknoesis.kastor.rdf.vocab.SKOS
+import com.geoknoesis.kastor.rdf.vocab.TIME
+import com.geoknoesis.kastor.rdf.vocab.VOID
 
 /**
  * Container for multiple individual values using curly braces syntax.
@@ -222,6 +226,11 @@ class TripleDsl {
         put("obo", "http://purl.obolibrary.org/obo/")
         put("skos", SKOS.namespace)
         put("prov", PROV.namespace)
+        put("dcat", DCAT.namespace)
+        put("dcterms", DCTERMS.namespace)
+        put("void", VOID.namespace)
+        put("geo", GEO.namespace)
+        put("time", TIME.namespace)
     }
     
     // Bnode factory with counter for consistent naming

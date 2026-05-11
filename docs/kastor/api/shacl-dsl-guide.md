@@ -907,7 +907,7 @@ val shapesGraph = shacl {
 }
 ```
 
-Built-in prefixes (rdf, rdfs, owl, sh, xsd, obo, skos, prov) are available automatically.
+Built-in prefixes (rdf, rdfs, owl, sh, xsd, obo, skos, prov, dcat, dcterms, void, geo, time) are available automatically.
 
 ## Standalone Property Shapes
 

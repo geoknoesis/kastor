@@ -23,6 +23,10 @@ The vocabularies package centralizes RDF vocabulary definitions, providing:
 | **SHACL** | `sh` | `http://www.w3.org/ns/shacl#` | Shapes Constraint Language |
 | **SKOS** | `skos` | `http://www.w3.org/2004/02/skos/core#` | Knowledge Organization |
 | **PROV** | `prov` | `http://www.w3.org/ns/prov#` | PROV-O provenance |
+| **DCAT** | `dcat` | `http://www.w3.org/ns/dcat#` | Data Catalog |
+| **VOID** | `void` | `http://rdfs.org/ns/void#` | VoID dataset descriptions |
+| **GEO** | `geo` | `http://www.opengis.net/ont/geosparql#` | GeoSPARQL |
+| **TIME** | `time` | `http://www.w3.org/2006/time#` | OWL-Time |
 | **DCTERMS** | `dcterms` | `http://purl.org/dc/terms/` | Dublin Core Terms |
 | **FOAF** | `foaf` | `http://xmlns.com/foaf/0.1/` | Friend of a Friend |
 

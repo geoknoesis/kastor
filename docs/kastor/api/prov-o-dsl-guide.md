@@ -101,6 +101,7 @@ val g = Rdf.graph {
 
 ## See also
 
+- [Metadata & geometry DSLs](metadata-vocabulary-dsls.md) — DCAT, DCTerms, VoID, GeoSPARQL, OWL-Time
 - [Compact DSL Guide](compact-dsl-guide.md) — General triple and graph DSL
 - [SKOS DSL Guide](skos-dsl-guide.md) — Concept schemes
 - [BFO DSL Guide](bfo-dsl-guide.md) — BFO / RO assertions
