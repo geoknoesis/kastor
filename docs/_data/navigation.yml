@@ -44,6 +44,8 @@ main:
         url: /kastor/guides/how-to-serialize-rdf.html
       - title: Testing RDF graphs
         url: /kastor/guides/how-to-test-rdf-graphs.html
+      - title: SPARQL bindings & Flow
+        url: /kastor/guides/how-to-sparql-bindings-and-flows.html
       - title: Create SHACL Shapes
         url: /kastor/guides/how-to-create-shacl-shapes.html
       - title: Validate with SHACL

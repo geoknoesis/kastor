@@ -25,6 +25,7 @@ This section provides comprehensive documentation for the Kastor RDF API, includ
 - [Transactions](transactions.md) - Transaction management and isolation
 - [Repository Manager](repository-manager.md) - Repository lifecycle and configuration
 - [Testing RDF graphs](../guides/how-to-test-rdf-graphs.md) - `rdf-testkit` assertions and `kastor-rdf` CLI
+- [Typed SPARQL bindings & Flow](../guides/how-to-sparql-bindings-and-flows.md) - `getAs` / `Flow` over `SELECT` and streaming parse
 
 ## 🎯 Quick Navigation
 

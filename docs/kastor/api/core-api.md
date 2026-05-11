@@ -8,8 +8,9 @@
 - **`RdfTriple`**: `subject: RdfTerm`, `predicate: Iri`, `object`: `RdfTerm`.
 
 ### Query results
-- **`SparqlQueryResult`**: iterable of `BindingSet` rows with `first()`, `toList()`, and `asSequence()`.
-- **`BindingSet`**: lookup by variable name via `get("name")`, plus typed accessors like `getString`, `getInt`, `getDouble`.
+- **`SparqlQueryResult`**: iterable of `BindingSet` rows with `first()`, `toList()`, and `asSequence()`; use **`asFlow("s", "p", "o")`** (from `com.geoknoesis.kastor.rdf.sparql`) to stream rows as a Kotlin **`Flow`** and optionally require that each solution binds the listed variables.
+- **`BindingSet`**: lookup by variable name via `get("name")`, plus typed accessors like `getString`, `getInt`, `getDouble`. Prefer **`getAs<Iri>("s")`** / **`getAsOrThrow<String>("label")`** and **`requireVariables("s", "p", "o")`** (`com.geoknoesis.kastor.rdf.sparql`) for compile-time typed reads and shape checks — see [How to use typed SPARQL bindings and Flow APIs](../guides/how-to-sparql-bindings-and-flows.md).
+- **Streaming RDF**: `Rdf.parseStreaming` is still a **`Sequence<RdfTriple>`**; wrap with **`Rdf.parseStreamingFlow(...)`** or **`getTriples().asRdfTriplesFlow()`** (`com.geoknoesis.kastor.rdf`) for **`Flow`**-based pipelines with cooperative cancellation.
 
 ### Graph abstraction
 ```kotlin
