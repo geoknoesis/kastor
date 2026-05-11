@@ -43,7 +43,7 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
   - SHACL 1.2 SPARQL Extensions (SPARQL-based constraints)
 - **Transactions**: ACID compliance for data integrity
 - **Repository Management**: Multi-repository setup and federation
-- **Kastor Gen Integration**: Code generation from ontologies
+- **[Kastor Gen](../kastor-gen/README.md)**: Code generation from ontologies (SHACL / JSON-LD, KSP, Gradle plugin)
 
 ## 🚀 Quick Start
 

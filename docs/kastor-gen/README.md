@@ -2,7 +2,7 @@
 
 Welcome to the Kastor Gen documentation. Kastor Gen is the Kotlin code-generation layer for Kastor: it turns SHACL shapes and JSON-LD context into **pure domain interfaces** plus **RDF-backed wrappers**, wired together at runtime by **`OntoMapper`**.
 
-> **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; the [`examples/dcat-us`](../../examples/dcat-us) Gradle module shows DCAT-oriented usage in the build.
+> **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; [Examples](examples/README.md) summarizes sample docs; for a **runnable** DCAT-style build, use the **`examples/dcat-us`** module in this repository (see also [Kastor examples](../kastor/examples/README.md)).
 
 ## Why Kastor Gen?
 

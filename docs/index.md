@@ -77,6 +77,7 @@ Each pillar serves a distinct developer intent. Start with the one that matches 
 - **Concepts** — RDF mental model, terms, graphs, and vocabularies: [Concepts](kastor/concepts/README.md)
 - **How‑To Guides** — task-driven workflows: [Guides](kastor/guides/README.md)
 - **Reference** — authoritative API and DSL details: [Reference](kastor/reference/README.md)
+- **Kastor Gen** — SHACL / JSON-LD → Kotlin interfaces, KSP, Gradle plugin, runtime: [Overview](kastor-gen/README.md)
 
 ## Hello RDF in 5 minutes
 
@@ -115,6 +116,7 @@ Next steps:
 - [Getting Started](kastor/getting-started/getting-started.md)
 - [Hello World Tutorial](kastor/tutorials/hello-world.md)
 - [API Reference](kastor/api/api-reference.md)
+- [Kastor Gen](kastor-gen/README.md) — codegen from ontologies
 
 ## Contact and Feedback
 

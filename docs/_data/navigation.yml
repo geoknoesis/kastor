@@ -88,3 +88,43 @@ main:
       - title: RDF Terms
         url: /kastor/resources/rdfterms.html
 
+  - title: Kastor Gen
+    url: /kastor-gen/
+    children:
+      - title: Overview
+        url: /kastor-gen/
+      - title: "Tutorial: Getting started"
+        url: /kastor-gen/tutorials/getting-started.html
+      - title: "Tutorial: Core concepts"
+        url: /kastor-gen/tutorials/core-concepts.html
+      - title: "Tutorial: Ontology generation"
+        url: /kastor-gen/tutorials/ontology-generation.html
+      - title: "Tutorial: Gradle configuration"
+        url: /kastor-gen/tutorials/gradle-configuration.html
+      - title: Benefits
+        url: /kastor-gen/getting-started/benefits.html
+      - title: Comparisons
+        url: /kastor-gen/getting-started/comparisons.html
+      - title: Reference overview
+        url: /kastor-gen/reference/
+      - title: Gradle plugin
+        url: /kastor-gen/reference/gradle-plugin.html
+      - title: Annotations (@Rdf)
+        url: /kastor-gen/reference/annotations.html
+      - title: Runtime & materialization
+        url: /kastor-gen/reference/runtime.html
+      - title: Processor (KSP)
+        url: /kastor-gen/reference/processor.html
+      - title: Validation integration
+        url: /kastor-gen/reference/validation.html
+      - title: Serializing domain instances
+        url: /kastor-gen/guides/serializing-domain-instances.html
+      - title: Incremental builds (KSP)
+        url: /kastor-gen/guides/incremental-builds.html
+      - title: Best practices
+        url: /kastor-gen/best-practices.html
+      - title: FAQ
+        url: /kastor-gen/faq.html
+      - title: "Design: Lean architecture"
+        url: /kastor-gen/design/lean-architecture.html
+

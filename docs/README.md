@@ -23,14 +23,20 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 - **[Vocabularies Guide](kastor/concepts/vocabularies.md)** - Working with RDF vocabularies
 - **[Design Philosophy](kastor/philosophy.md)** - Core principles
 
+### Ontology-driven codegen (Kastor Gen)?
+- **[Kastor Gen overview](kastor-gen/README.md)** — SHACL / JSON-LD to Kotlin
+- **[Getting started tutorial](kastor-gen/tutorials/getting-started.md)** — first generated interfaces
+- **[Gradle plugin](kastor-gen/reference/gradle-plugin.md)** — build integration
+
 ## 🧭 Documentation Pillars
 
-The documentation is structured into four pillars, each with a distinct intent:
+The documentation is structured into five pillars, each with a distinct intent:
 
 - **Getting Started** — install, create a graph, run a first query: [Overview](kastor/getting-started/README.md)
 - **Concepts** — RDF mental model, terminology, and standards context: [Concepts](kastor/concepts/README.md)
 - **How‑To Guides** — task‑oriented workflows with reproducible steps: [Guides](kastor/guides/README.md)
 - **Reference** — definitive API and DSL behavior: [Reference](kastor/reference/README.md)
+- **Kastor Gen** — ontology-driven Kotlin (KSP, Gradle plugin, runtime): [Overview](kastor-gen/README.md)
 
 ## 🏗️ Architecture Overview
 
