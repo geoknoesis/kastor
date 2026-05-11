@@ -2,6 +2,12 @@
 
 Practical examples and use cases demonstrating Kastor Gen capabilities.
 
+**Runnable Gradle modules** (clone the [Kastor repo](https://github.com/geoknoesis/kastor); these paths are not separate pages on this documentation site):
+
+- [**`examples/dcat-us`**](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us) — DCAT-style SHACL + JSON-LD, KSP, `:examples:dcat-us`
+- [**`examples/hello-codegen`**](https://github.com/geoknoesis/kastor/tree/main/examples/hello-codegen) — minimal codegen pipeline
+- [**`examples/hello-world`**](https://github.com/geoknoesis/kastor/tree/main/examples/hello-world) — RDF-only starter
+
 ## Table of Contents
 
 - [Basic Examples](basic.md) - Simple usage patterns

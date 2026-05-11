@@ -2,7 +2,7 @@
 
 Welcome to the Kastor Gen documentation. Kastor Gen is the Kotlin code-generation layer for Kastor: it turns SHACL shapes and JSON-LD context into **pure domain interfaces** plus **RDF-backed wrappers**, wired together at runtime by **`OntoMapper`**.
 
-> **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; [Examples](examples/README.md) summarizes sample docs; for a **runnable** DCAT-style build, use the **`examples/dcat-us`** module in this repository (see also [Kastor examples](../kastor/examples/README.md)).
+> **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; [Examples](examples/README.md) summarizes sample docs; for a **runnable** DCAT-style build, use the [**`examples/dcat-us` Gradle module on GitHub**](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us) (see also [Kastor examples](../kastor/examples/README.md)).
 
 ## Why Kastor Gen?
 
@@ -302,13 +302,14 @@ rdfHandle.validateOrThrow()
 - Stack Overflow with `kastor-gen` tag
 
 ### 🛠️ **Examples**
-- [DCAT-US Sample](examples/dcat-us/) - Government data catalog
-- [FOAF Sample](examples/foaf/) - Friend of a Friend vocabulary
-- [Custom Ontology](examples/custom/) - Building your own ontology
+- [Examples documentation](examples/README.md) — walkthroughs and patterns in this site
+- **[DCAT-US (Gradle module on GitHub)](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us)** — runnable `:examples:dcat-us` with SHACL + JSON-LD
+- **[Hello Codegen](https://github.com/geoknoesis/kastor/tree/main/examples/hello-codegen)** — minimal KSP + ontology inputs
+- **[Hello World](https://github.com/geoknoesis/kastor/tree/main/examples/hello-world)** — RDF-only starter
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guide](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md) for details.
 
 ### Development Setup
 
