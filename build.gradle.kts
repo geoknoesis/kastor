@@ -46,7 +46,7 @@ subprojects {
       add("testImplementation", "org.jetbrains.kotlin:kotlin-test:2.1.0")
       add("testImplementation", "org.junit.jupiter:junit-jupiter:5.10.3")
       add("testRuntimeOnly", "org.junit.platform:junit-platform-launcher:1.10.3")
-      add("implementation", "org.slf4j:slf4j-api:2.0.13")
+      add("implementation", "org.slf4j:slf4j-api:2.0.17")
 
       // Add KSP dependencies for projects that use it (but not the processor itself or runtime).
       // Exclude simple hello-world and hello-codegen examples (they can enable KSP manually if needed).
