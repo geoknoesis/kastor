@@ -108,6 +108,9 @@ The documentation is organized into four distinct pillars:
 ### **Core Features**
 - **[DSL Guide](api/compact-dsl-guide.md)** - Natural language syntax
 - **[RDFS DSL Guide](api/rdfs-dsl-guide.md)** - Type-safe RDF Schema vocabulary creation
+- **[SKOS DSL Guide](api/skos-dsl-guide.md)** - SKOS schemes, hierarchy, and labels in the triple DSL
+- **[PROV-O DSL Guide](api/prov-o-dsl-guide.md)** - PROV-O provenance (generation, use, attribution, time)
+- **[BFO DSL Guide](api/bfo-dsl-guide.md)** - Readable BFO / RO instance triples (parthood, participation, location)
 - **[OWL DSL Guide](api/owl-dsl-guide.md)** - Type-safe OWL 2 ontology creation
 - **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation (SHACL 1.2 Core & SPARQL Extensions)
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities

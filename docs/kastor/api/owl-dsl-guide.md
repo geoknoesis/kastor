@@ -907,6 +907,9 @@ objectProperty("ex:knows") {
 ## See Also
 
 - [RDFS DSL Guide](rdfs-dsl-guide.md) - For simpler schema definitions
+- [SKOS DSL Guide](skos-dsl-guide.md) - For SKOS concept assertions in the graph DSL
+- [PROV-O DSL Guide](prov-o-dsl-guide.md) - For PROV-O provenance in the graph DSL
+- [BFO DSL Guide](bfo-dsl-guide.md) - For BFO / RO assertion triples in the graph DSL
 - [SHACL DSL Guide](shacl-dsl-guide.md) - For data validation
 - [RDF Fundamentals](../concepts/rdf-fundamentals.md) - Understanding RDF basics
 - [Reasoning Guide](../features/reasoning.md) - Using OWL with reasoners

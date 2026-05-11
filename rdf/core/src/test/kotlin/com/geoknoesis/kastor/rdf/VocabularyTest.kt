@@ -137,6 +137,20 @@ class VocabularyTest {
     }
     
     @Test
+    fun `PROV vocabulary has correct namespace and prefix`() {
+        assertEquals("http://www.w3.org/ns/prov#", PROV.namespace, "PROV should have correct namespace")
+        assertEquals("prov", PROV.prefix, "PROV should have correct prefix")
+    }
+
+    @Test
+    fun `PROV vocabulary terms are created correctly`() {
+        assertEquals("http://www.w3.org/ns/prov#Entity", PROV.Entity.value, "PROV Entity should have correct IRI")
+        assertEquals("http://www.w3.org/ns/prov#Activity", PROV.Activity.value, "PROV Activity should have correct IRI")
+        assertEquals("http://www.w3.org/ns/prov#wasGeneratedBy", PROV.wasGeneratedBy.value, "PROV wasGeneratedBy should have correct IRI")
+        assertEquals("http://www.w3.org/ns/prov#used", PROV.used.value, "PROV used should have correct IRI")
+    }
+
+    @Test
     fun `SKOS vocabulary terms are created correctly`() {
         // Test core terms
         assertEquals("http://www.w3.org/2004/02/skos/core#Concept", SKOS.Concept.value, "SKOS Concept should have correct IRI")
@@ -208,6 +222,8 @@ class VocabularyTest {
         assertTrue(OWL.Class.value.endsWith("Class"), "OWL Class should end with 'Class'")
         assertTrue(XSD.string.value.endsWith("string"), "XSD string should end with 'string'")
         assertTrue(SKOS.Concept.value.endsWith("Concept"), "SKOS Concept should end with 'Concept'")
+        assertTrue(PROV.Entity.value.endsWith("Entity"), "PROV Entity should end with 'Entity'")
+        assertTrue(PROV.wasGeneratedBy.value.endsWith("wasGeneratedBy"), "PROV wasGeneratedBy should have correct local name")
         assertTrue(SHACL.NodeShape.value.endsWith("NodeShape"), "SHACL NodeShape should end with 'NodeShape'")
     }
     
@@ -222,6 +238,7 @@ class VocabularyTest {
             OWL.namespace,
             XSD.namespace,
             SKOS.namespace,
+            PROV.namespace,
             SHACL.namespace
         )
         
@@ -242,6 +259,7 @@ class VocabularyTest {
             OWL.prefix,
             XSD.prefix,
             SKOS.prefix,
+            PROV.prefix,
             SHACL.prefix
         )
         

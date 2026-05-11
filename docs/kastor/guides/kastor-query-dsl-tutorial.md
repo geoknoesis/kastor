@@ -162,6 +162,7 @@ val query = select("name", "type") {
 - `dbpedia`: DBpedia ontology
 - `wikidata`: Wikidata
 - `skos`: SKOS vocabulary
+- `prov`: W3C PROV-O (`http://www.w3.org/ns/prov#`)
 
 ## Your First Query
 

@@ -22,6 +22,7 @@ The vocabularies package centralizes RDF vocabulary definitions, providing:
 | **OWL** | `owl` | `http://www.w3.org/2002/07/owl#` | Web Ontology Language |
 | **SHACL** | `sh` | `http://www.w3.org/ns/shacl#` | Shapes Constraint Language |
 | **SKOS** | `skos` | `http://www.w3.org/2004/02/skos/core#` | Knowledge Organization |
+| **PROV** | `prov` | `http://www.w3.org/ns/prov#` | PROV-O provenance |
 | **DCTERMS** | `dcterms` | `http://purl.org/dc/terms/` | Dublin Core Terms |
 | **FOAF** | `foaf` | `http://xmlns.com/foaf/0.1/` | Friend of a Friend |
 

@@ -7,6 +7,8 @@ import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.OWL
+import com.geoknoesis.kastor.rdf.vocab.PROV
+import com.geoknoesis.kastor.rdf.vocab.SKOS
 
 /**
  * DSL for creating standalone RDF graphs.
@@ -30,6 +32,9 @@ class GraphDsl {
         put("owl", "http://www.w3.org/2002/07/owl#")
         put("sh", "http://www.w3.org/ns/shacl#")
         put("xsd", "http://www.w3.org/2001/XMLSchema#")
+        put("obo", "http://purl.obolibrary.org/obo/")
+        put("skos", SKOS.namespace)
+        put("prov", PROV.namespace)
     }
     
     // Bnode factory with counter for consistent naming

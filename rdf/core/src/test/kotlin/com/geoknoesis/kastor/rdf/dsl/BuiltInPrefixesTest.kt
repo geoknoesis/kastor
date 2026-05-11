@@ -5,6 +5,9 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.SHACL
+import com.geoknoesis.kastor.rdf.vocab.BFO
+import com.geoknoesis.kastor.rdf.vocab.PROV
+import com.geoknoesis.kastor.rdf.vocab.SKOS
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
@@ -193,6 +196,9 @@ class BuiltInPrefixesTest {
             resource - qname("owl:sameAs") - Iri("http://example.org/other")  // OWL namespace
             resource - qname("sh:targetClass") - qname("rdfs:Class")     // SHACL namespace
             resource - qname("xsd:string") - "test"               // XSD namespace (as predicate)
+            resource - RDF.type - qname("obo:BFO_0000002")        // OBO / BFO namespace
+            resource - RDF.type - qname("skos:Concept")          // SKOS namespace
+            resource - RDF.type - qname("prov:Activity")         // PROV namespace
         }
         
         val triples = repo.defaultGraph.getTriples()
@@ -203,7 +209,9 @@ class BuiltInPrefixesTest {
             "http://www.w3.org/2000/01/rdf-schema#",
             "http://www.w3.org/2002/07/owl#",
             "http://www.w3.org/ns/shacl#",
-            "http://www.w3.org/2001/XMLSchema#"
+            "http://www.w3.org/2001/XMLSchema#",
+            "http://www.w3.org/2004/02/skos/core#",
+            "http://www.w3.org/ns/prov#",
         )
         
         val actualNamespaces = triples.flatMap { listOf(it.predicate.value, (it.obj as? Iri)?.value) }
@@ -215,8 +223,24 @@ class BuiltInPrefixesTest {
             assertTrue(actualNamespaces.contains(expectedNs), "Should include namespace: $expectedNs")
         }
         
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == BFO.continuant },
+            "obo:BFO_0000002 should resolve to BFO continuant IRI",
+        )
+        assertTrue(
+            triples.any { (it.obj as? Iri)?.value?.startsWith("http://purl.obolibrary.org/obo/") == true },
+            "OBO PURL base should appear on resolved BFO IRIs",
+        )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == SKOS.Concept },
+            "skos:Concept should resolve to SKOS Concept IRI",
+        )
+        assertTrue(
+            triples.any { it.predicate == RDF.type && it.obj == PROV.Activity },
+            "prov:Activity should resolve to PROV Activity IRI",
+        )
         println("✅ All built-in prefixes verified")
-        println("   Built-in prefixes: rdf, rdfs, owl, sh, xsd")
+        println("   Built-in prefixes: rdf, rdfs, owl, sh, xsd, obo, skos, prov")
         println("   Total triples: ${triples.size}")
     }
 }

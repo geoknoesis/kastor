@@ -73,6 +73,12 @@ main:
         url: /kastor/api/compact-dsl-guide.html
       - title: RDFS DSL Guide
         url: /kastor/api/rdfs-dsl-guide.html
+      - title: SKOS DSL Guide
+        url: /kastor/api/skos-dsl-guide.html
+      - title: PROV-O DSL Guide
+        url: /kastor/api/prov-o-dsl-guide.html
+      - title: BFO DSL Guide
+        url: /kastor/api/bfo-dsl-guide.html
       - title: OWL DSL Guide
         url: /kastor/api/owl-dsl-guide.html
       - title: SHACL DSL Guide

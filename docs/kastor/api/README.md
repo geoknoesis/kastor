@@ -14,6 +14,9 @@ This section provides comprehensive documentation for the Kastor RDF API, includ
 ### **DSL Guides**
 - [Compact DSL Guide](compact-dsl-guide.md) - Concise DSL syntax and patterns
 - [RDFS DSL Guide](rdfs-dsl-guide.md) - Working with RDFS vocabularies
+- [SKOS DSL Guide](skos-dsl-guide.md) - SKOS concept schemes, hierarchy, labels
+- [PROV-O DSL Guide](prov-o-dsl-guide.md) - PROV-O generation, use, attribution, time
+- [BFO DSL Guide](bfo-dsl-guide.md) - BFO / RO instance assertions (parthood, participation, location)
 - [OWL DSL Guide](owl-dsl-guide.md) - Working with OWL ontologies
 - [SHACL DSL Guide](shacl-dsl-guide.md) - Creating and using SHACL shapes
 
@@ -30,7 +33,7 @@ This section provides comprehensive documentation for the Kastor RDF API, includ
 
 ### **By Use Case**
 - **Querying Data**: [Core API](core-api.md) → [Compact DSL Guide](compact-dsl-guide.md)
-- **Working with Vocabularies**: [RDFS DSL Guide](rdfs-dsl-guide.md) → [OWL DSL Guide](owl-dsl-guide.md)
+- **Working with Vocabularies**: [RDFS DSL Guide](rdfs-dsl-guide.md) → [SKOS DSL Guide](skos-dsl-guide.md) / [PROV-O DSL Guide](prov-o-dsl-guide.md) / [BFO DSL Guide](bfo-dsl-guide.md) / [OWL DSL Guide](owl-dsl-guide.md)
 - **Validation**: [SHACL DSL Guide](shacl-dsl-guide.md)
 - **Data Integrity**: [Transactions](transactions.md)
 

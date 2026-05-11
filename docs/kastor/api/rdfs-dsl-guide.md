@@ -437,6 +437,9 @@ property("ex:name") {
 
 ## See Also
 
+- [PROV-O DSL Guide](prov-o-dsl-guide.md) - For W3C provenance assertions in instance graphs
+- [SKOS DSL Guide](skos-dsl-guide.md) - For SKOS concept schemes and labels in instance graphs
+- [BFO DSL Guide](bfo-dsl-guide.md) - For BFO / RO instance triples alongside your schema
 - [OWL DSL Guide](owl-dsl-guide.md) - For more expressive ontologies
 - [SHACL DSL Guide](shacl-dsl-guide.md) - For data validation
 - [RDF Fundamentals](../concepts/rdf-fundamentals.md) - Understanding RDF basics

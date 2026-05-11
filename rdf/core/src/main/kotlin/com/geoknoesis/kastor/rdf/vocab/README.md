@@ -12,8 +12,12 @@ This package provides commonly used RDF vocabularies as Kotlin objects, making i
 - **SKOS** - Simple Knowledge Organization System (`skos:`)
 - **DCTERMS** - Dublin Core Terms (`dcterms:`)
 - **FOAF** - Friend of a Friend (`foaf:`)
+- **DCAT** - Data Catalog Vocabulary (`dcat:`)
+- **OBO** - OBO Foundry PURL namespace (`obo:`) for `BFO_…`, `RO_…`, and other ontology IDs
+- **PROV** - W3C [PROV-O](https://www.w3.org/TR/prov-o/) (`prov:`) for provenance entities, activities, and relations
+- **BFO** / **RO** - Curated [Basic Formal Ontology](http://purl.obolibrary.org/obo/bfo.owl) classes and common [Relation Ontology](http://purl.obolibrary.org/obo/ro.owl) properties (same namespace as **OBO**)
 
-## Performance Features
+Use the **`skos { }`** block (`SkosDsl`) for readable SKOS broader–narrower, scheme, and label-style triples, the **`prov { }`** block (`ProvDsl`) for PROV-O generation / use / attribution, and the **`bfo { }`** block (`BfoDsl`) for readable `partOf` / `locatedIn` / `participatesIn` style triples.
 
 ### Lazy Initialization
 All vocabulary terms use Kotlin's `by lazy` delegate for efficient memory usage:
