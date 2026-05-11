@@ -15,6 +15,7 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 
 ### **How‑To Guides**
 - [How to Create a Custom Vocabulary](how-to-create-vocabulary.md) - Define typed vocabulary constants
+- [How to test RDF graphs](how-to-test-rdf-graphs.md) - Golden Turtle, isomorphism assertions, and the `kastor-rdf` CLI
 - [How to Parse RDF](how-to-parse-rdf.md) - Load RDF data into graphs
 - [How to Serialize RDF](how-to-serialize-rdf.md) - Export graphs to standard formats
 - [JSON-LD Compaction and Framing](json-ld-compaction-framing.md) - Understanding JSON-LD transformations and data preservation

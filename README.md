@@ -116,7 +116,7 @@ Kastor provides a **dual-layer architecture** that serves both RDF experts and a
 ### 🎯 **For RDF Experts**
 - **Native RDF Operations**: Full control over triples, graphs, and SPARQL queries
 - **Multiple Backends**: Jena, RDF4J, Memory, and SPARQL endpoint support
-- **Advanced Features**: Reasoning, SHACL validation, transactions, and graph isomorphism
+- **Advanced Features**: Reasoning, SHACL validation, transactions, and RDF graph testing (`rdf-testkit`, `rdf-cli`; see [Testing RDF graphs](docs/kastor/guides/how-to-test-rdf-graphs.md))
 - **RDF-star Support**: Metadata about statements and nested triple expressions
 
 ### 🚀 **For Application Developers**  
@@ -183,7 +183,7 @@ for how to enable and read the report.
 - **🔍 SPARQL Integration**: Full SPARQL 1.1 support with type-safe query builders
 - **💾 Serialization**: Complete RDF format support (Turtle, RDF/XML, JSON-LD, N-Triples, N-Quads)
 - **🔒 ACID Transactions**: Production-grade transaction support with rollback capabilities
-- **🧮 Graph Isomorphism**: Sophisticated blank node comparison and graph matching algorithms
+- **🧮 Graph testing**: Module **`rdf-testkit`** — RDF-isomorphic assertions and golden Turtle checks; **`rdf-cli`** — `parse`, `to-turtle`, and `diff` from the command line ([guide](docs/kastor/guides/how-to-test-rdf-graphs.md))
 - **🎨 Natural Language DSL**: Intuitive syntax (`person is "foaf:Person"`, `person has name with "Alice"`)
 
 ### 🧠 **Advanced Semantic Features**

@@ -42,6 +42,8 @@ main:
         url: /kastor/guides/how-to-parse-rdf.html
       - title: Serialize RDF
         url: /kastor/guides/how-to-serialize-rdf.html
+      - title: Testing RDF graphs
+        url: /kastor/guides/how-to-test-rdf-graphs.html
       - title: Create SHACL Shapes
         url: /kastor/guides/how-to-create-shacl-shapes.html
       - title: Validate with SHACL

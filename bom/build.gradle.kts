@@ -18,6 +18,8 @@ dependencies {
         api(project(":rdf:sparql"))
         api(project(":rdf:reasoning"))
         api(project(":rdf:shacl-validation"))
+        api(project(":rdf:testkit"))
+        api(project(":rdf:cli"))
 
         api(project(":kastor-gen:runtime"))
         api(project(":kastor-gen:processor"))

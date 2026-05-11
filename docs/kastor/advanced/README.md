@@ -14,6 +14,10 @@ This section covers performance, serialization formats, and other topics for exp
 
 - [Formats](formats.md) — Turtle, TriG, JSON-LD, and related serialization notes
 
+### Developer tooling
+
+- [Testing RDF graphs](../guides/how-to-test-rdf-graphs.md) — `rdf-testkit` (golden Turtle / isomorphism) and the `kastor-rdf` CLI
+
 ## When to use this section
 
 Use it when you:
