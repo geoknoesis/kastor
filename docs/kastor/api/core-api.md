@@ -115,7 +115,7 @@ val triple = person has name with "John"
 val ageTriple = person has age with 30
 ```
 
-See [RDF Terms](rdfterms.md#triple-dsl-natural-language-for-rdf-statements-) for complete documentation.
+See [RDF Terms](../resources/rdfterms.html#triple-dsl-natural-language-for-rdf-statements-) for complete documentation.
 
 
 

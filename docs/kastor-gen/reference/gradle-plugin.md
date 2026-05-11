@@ -37,7 +37,7 @@ pluginManagement {
 
 // build.gradle.kts
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.1.0"
+    id("org.jetbrains.kotlin.jvm") version "2.3.21"
     id("com.geoknoesis.kastor.gen") version "0.1.0"
 }
 ```

@@ -13,7 +13,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 | Platform | Minimum Version | Recommended Version | Status |
 |----------|----------------|---------------------|--------|
 | Java     | 17             | 17+                 | ✅ Supported |
-| Kotlin/JVM | 1.9+        | 2.1.0+              | ✅ Supported |
+| Kotlin/JVM | 1.9+        | 2.0+                | ✅ Supported |
 
 ### Android
 
@@ -38,7 +38,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Kotlin     | 2.1.0   | Language runtime |
+| Kotlin     | 2.3.21  | Language runtime (repo build; align with your toolchain) |
 | SLF4J      | 2.0.13  | Logging framework |
 | JUnit 5   | 5.10.3  | Testing framework |
 
@@ -132,8 +132,8 @@ Kastor uses the following Kotlin features:
 
 | Kastor Version | Minimum Kotlin | Recommended Kotlin | Breaking Changes |
 |----------------|----------------|-------------------|-----------------|
-| 0.1.x          | 1.9+           | 2.1.0             | None |
-| 1.0.x (planned) | 2.0+          | 2.1.0+            | TBD |
+| 0.1.x          | 1.9+           | 2.3.x             | None |
+| 1.0.x (planned) | 2.0+          | 2.3.x+            | TBD |
 
 ## Java Version Compatibility
 
@@ -213,7 +213,7 @@ Kastor uses the following Java features:
 | Framework | Version | Status |
 |-----------|---------|--------|
 | JUnit 5   | 5.10.3  | ✅ Supported |
-| Kotlin Test | 2.1.0 | ✅ Supported |
+| Kotlin Test | 2.3.21 | ✅ Supported |
 | Mockito   | N/A     | Not used |
 
 ### Test Runners

@@ -66,3 +66,15 @@ body {
   }
 }
 
+/* Mermaid replaces fenced ```mermaid blocks with .mermaid */
+.page-content .mermaid {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.page-content .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+

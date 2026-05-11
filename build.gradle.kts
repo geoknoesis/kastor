@@ -1,7 +1,7 @@
 plugins {
-  id("org.jetbrains.kotlin.jvm") version "2.1.0" apply false
-  id("com.google.devtools.ksp") version "2.1.0-1.0.29" apply false
-  id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0" apply false
+  alias(libs.plugins.kotlin.jvm) apply false
+  alias(libs.plugins.ksp) apply false
+  alias(libs.plugins.kotlin.serialization) apply false
 }
 
 allprojects {
@@ -43,10 +43,10 @@ subprojects {
 
   if (!isBom) {
     dependencies {
-      add("testImplementation", "org.jetbrains.kotlin:kotlin-test:2.1.0")
-      add("testImplementation", "org.junit.jupiter:junit-jupiter:5.10.3")
-      add("testRuntimeOnly", "org.junit.platform:junit-platform-launcher:1.10.3")
-      add("implementation", "org.slf4j:slf4j-api:2.0.13")
+      add("testImplementation", rootProject.libs.kotlin.test)
+      add("testImplementation", rootProject.libs.junit.jupiter)
+      add("testRuntimeOnly", rootProject.libs.junit.platform.launcher)
+      add("implementation", rootProject.libs.slf4j.api)
 
       // Add KSP dependencies for projects that use it (but not the processor itself or runtime).
       // Exclude simple hello-world and hello-codegen examples (they can enable KSP manually if needed).

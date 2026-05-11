@@ -624,7 +624,7 @@ fun main() {
 Now that you understand RDF fundamentals, explore:
 
 - **[SPARQL Fundamentals](sparql-fundamentals.md)** - Learn more about querying RDF data
-- **[RDF Terms](rdfterms.md)** - Detailed explanation of RDF terms
+- **[RDF Terms](../resources/rdfterms.html)** - Detailed explanation of RDF terms
 - **[Vocabularies](vocabularies.md)** - Working with RDF vocabularies
 - **[Super Sleek API Guide](super-sleek-api-guide.md)** - Advanced Kastor RDF features
 

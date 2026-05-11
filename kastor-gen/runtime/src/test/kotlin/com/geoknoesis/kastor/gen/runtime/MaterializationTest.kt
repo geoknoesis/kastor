@@ -47,7 +47,7 @@ class MaterializationTest {
         assertEquals(listOf(30), person.age)
         
         // Test RDF side-channel
-        val rdfHandle = person.asRdf()
+        val rdfHandle = person.asRdf<TestPerson>()
         assertEquals(subject, rdfHandle.node)
         assertEquals(repo.defaultGraph, rdfHandle.graph)
         

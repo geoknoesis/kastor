@@ -97,8 +97,8 @@ fun createMemoryRepository(): RdfRepository {
 
 | Kastor Version | Minimum Kotlin | Recommended Kotlin | Notes |
 |----------------|----------------|-------------------|-------|
-| 0.1.x          | 1.9+           | 2.1.0             | Initial release |
-| 1.0.x          | 2.0+           | 2.1.0+            | Stable release (planned) |
+| 0.1.x          | 1.9+           | 2.3.x             | Initial release |
+| 1.0.x          | 2.0+           | 2.3.x+            | Stable release (planned) |
 
 ### Java Version Compatibility
 

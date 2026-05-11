@@ -13,6 +13,7 @@ exact signatures, semantics, edge cases, and error behavior.
 - [Repository Reference](repository.md)
 - [Dataset Reference](dataset.md)
 - [Types Reference](types.md)
+- [RDF Terms](../resources/rdfterms.html) — `RdfTerm` hierarchy, literals, and triple DSL
 
 ### Versioning & Compatibility
 - [Versioning Policy](versioning-policy.md) - Semver strategy, backward compatibility, deprecation

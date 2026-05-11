@@ -85,4 +85,6 @@ main:
         url: /kastor/reference/dataset.html
       - title: Types Reference
         url: /kastor/reference/types.html
+      - title: RDF Terms
+        url: /kastor/resources/rdfterms.html
 

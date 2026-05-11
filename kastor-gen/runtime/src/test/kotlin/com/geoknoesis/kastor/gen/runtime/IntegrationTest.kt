@@ -94,7 +94,7 @@ class IntegrationTest {
         assertEquals(listOf("Bob"), alice.friends.first().name)
 
         // Test RDF side-channel access
-        val aliceRdf = alice.asRdf()
+        val aliceRdf = alice.asRdf<Person>()
         val altLabels = aliceRdf.extras.strings(SKOS.altLabel)
         assertEquals(listOf("Ali"), altLabels)
     }
@@ -170,7 +170,7 @@ class IntegrationTest {
         val personRef = RdfRef(person, repo.defaultGraph)
         val personObj: Person = personRef.asType()
 
-        val rdfHandle = personObj.asRdf()
+        val rdfHandle = personObj.asRdf<Person>()
         val extras = rdfHandle.extras
 
         // Test property bag functionality
@@ -212,7 +212,7 @@ class IntegrationTest {
         assertEquals(repo.defaultGraph, rdfBacked.rdf.graph)
 
         // Test that asRdf() extension works
-        val handle = personObj.asRdf()
+        val handle = personObj.asRdf<Person>()
         assertEquals(person, handle.node)
         assertEquals(repo.defaultGraph, handle.graph)
     }

@@ -1,8 +1,43 @@
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
-  mermaid.initialize({
-    startOnLoad: true,
-    theme: "default"
-  });
-</script>
+  /**
+   * Kramdown + Rouge wrap fenced ```mermaid in code.language-mermaid (inside
+   * div.highlighter-rouge > pre or similar). Mermaid only renders .mermaid
+   * divs, so we replace those blocks before calling mermaid.run().
+   */
+  function initMermaid() {
+    if (typeof mermaid === "undefined" || !mermaid.initialize) return;
 
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "default",
+      securityLevel: "loose",
+      flowchart: { htmlLabels: true },
+    });
+
+    document.querySelectorAll("code.language-mermaid").forEach(function (code) {
+      var graph = code.textContent.trim();
+      if (!graph) return;
+      var div = document.createElement("div");
+      div.className = "mermaid";
+      div.textContent = graph;
+      var rouge = code.closest("div.highlighter-rouge");
+      if (rouge) {
+        rouge.replaceWith(div);
+        return;
+      }
+      var pre = code.parentElement;
+      if (pre && pre.tagName === "PRE") {
+        pre.replaceWith(div);
+      }
+    });
+
+    mermaid.run({ suppressErrors: true }).catch(function () {});
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initMermaid);
+  } else {
+    initMermaid();
+  }
+</script>

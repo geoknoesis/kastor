@@ -3,6 +3,15 @@ description: Modern Kotlin SDK for RDF and knowledge graphs
 theme: jekyll-theme-minimal
 markdown: kramdown
 
+# All Markdown pages use our layout (sidebar, Mermaid, styles). Pages can set
+# layout: null to opt out.
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default
+
 # Internal maintainer notes (not for public doc site)
 exclude:
   - internal
