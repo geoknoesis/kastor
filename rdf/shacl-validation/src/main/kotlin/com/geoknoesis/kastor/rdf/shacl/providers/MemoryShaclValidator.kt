@@ -9,7 +9,9 @@ import java.time.Duration
  * Provides basic SHACL Core constraint validation.
  */
 class MemoryShaclValidatorProvider : ShaclValidatorProvider {
-    
+
+    override fun priority(): Int = 100
+
     override fun getType(): String = "memory"
     
     override val name: String = "Memory SHACL Validator"
@@ -31,6 +33,8 @@ class MemoryShaclValidatorProvider : ShaclValidatorProvider {
             supportsParallelValidation = true,
             supportsStreamingValidation = false,
             supportsIncrementalValidation = false,
+            supportsRdf12TripleTermsInData = false,
+            supportsRdf12TripleTermsInShapeParameters = false,
             maxGraphSize = 100_000L,
             performanceProfile = PerformanceProfile.FAST
         )
@@ -352,7 +356,10 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         
         return violations
     }
-    
+
+    private fun pathAsRdfTerms(path: String?): List<RdfTerm>? =
+        path?.let { runCatching { Iri(it) }.getOrNull() }?.let { listOf(it) }
+
     /**
      * Validate a specific constraint.
      */
@@ -372,8 +379,10 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
                         violations.add(ValidationViolation(
                             severity = ViolationSeverity.VIOLATION,
                             constraint = constraint,
-                            resource = resource,
+                            focusNode = resource,
                             message = "Property '$path' has ${propertyTriples.size} values, but minimum is $minCount",
+                            path = pathAsRdfTerms(path),
+                            value = propertyTriples.firstOrNull()?.obj,
                             shapeUri = shapeUri,
                             violationCode = "MinCountViolation"
                         ))
@@ -393,8 +402,10 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
                         violations.add(ValidationViolation(
                             severity = ViolationSeverity.VIOLATION,
                             constraint = constraint,
-                            resource = resource,
+                            focusNode = resource,
                             message = "Property '$path' has ${propertyTriples.size} values, but maximum is $maxCount",
+                            path = pathAsRdfTerms(path),
+                            value = propertyTriples.getOrNull(maxCount)?.obj,
                             shapeUri = shapeUri,
                             violationCode = "MaxCountViolation"
                         ))
@@ -412,15 +423,30 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
                         }
                         
                         for (triple in propertyTriples) {
-                            if (triple.obj is TypedLiteral) {
-                                val typedLiteral = triple.obj as TypedLiteral
-                                val actualDatatype = typedLiteral.datatype.value
-                                if (actualDatatype != expectedDatatype) {
+                            when (val obj = triple.obj) {
+                                is TypedLiteral -> {
+                                    val actualDatatype = obj.datatype.value
+                                    if (actualDatatype != expectedDatatype) {
+                                        violations.add(ValidationViolation(
+                                            severity = ViolationSeverity.VIOLATION,
+                                            constraint = constraint,
+                                            focusNode = resource,
+                                            message = "Property '$path' has datatype '$actualDatatype', but expected '$expectedDatatype'",
+                                            path = pathAsRdfTerms(path),
+                                            value = obj,
+                                            shapeUri = shapeUri,
+                                            violationCode = "DatatypeViolation"
+                                        ))
+                                    }
+                                }
+                                else -> {
                                     violations.add(ValidationViolation(
                                         severity = ViolationSeverity.VIOLATION,
                                         constraint = constraint,
-                                        resource = resource,
-                                        message = "Property '$path' has datatype '$actualDatatype', but expected '$expectedDatatype'",
+                                        focusNode = resource,
+                                        message = "Property '$path' value is not a typed literal compatible with datatype check",
+                                        path = pathAsRdfTerms(path),
+                                        value = obj,
                                         shapeUri = shapeUri,
                                         violationCode = "DatatypeViolation"
                                     ))
@@ -437,7 +463,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
                     violations.add(ValidationViolation(
                         severity = ViolationSeverity.WARNING,
                         constraint = constraint,
-                        resource = resource,
+                        focusNode = resource,
                         message = "Unsupported constraint type: ${constraint.constraintType}",
                         shapeUri = shapeUri,
                         violationCode = "UnsupportedConstraint"
@@ -470,7 +496,7 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         
         return ValidationStatistics(
             totalResources = triples.map { it.subject }.distinct().size,
-            validatedResources = violations.map { it.resource }.distinct().size,
+            validatedResources = violations.map { it.focusNode }.distinct().size,
             totalConstraints = shapeTriples.filter { 
                 it.predicate.value.startsWith("http://www.w3.org/ns/shacl#") 
             }.size,
@@ -488,9 +514,10 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
 }
 
 /**
- * Validation exception.
+ * Legacy validation exception (memory provider).
  */
-class ValidationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+class ValidationException(message: String, cause: Throwable? = null) :
+    ShaclValidationException(message, cause)
 
 
 

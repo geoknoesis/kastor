@@ -21,6 +21,8 @@ The **W3C RDF / SPARQL conformance** module (`:rdf:conformance`) is large and ma
 ./gradlew :rdf:conformance:test
 ```
 
+**SHACL:** `:rdf:shacl-validation:test` always runs a small bundled W3C subset. To run against upstream manifests locally, clone the **`gh-pages`** branch of [w3c/data-shapes](https://github.com/w3c/data-shapes) into `rdf/shacl-validation/test-data/` as documented in [`rdf/shacl-validation/test-data/README.md`](rdf/shacl-validation/test-data/README.md) (classic **`data-shapes-test-suite`** per [the W3C test-suite page](https://w3c.github.io/data-shapes/data-shapes-test-suite/), plus **`w3c-shacl12`** for SHACL 1.2), then re-run `./gradlew :rdf:shacl-validation:test`.
+
 On Windows, use `gradlew.bat` in place of `./gradlew`.
 
 ### CI vs local
@@ -28,7 +30,7 @@ On Windows, use `gradlew.bat` in place of `./gradlew`.
 | Workflow | When it runs | Command / role |
 |----------|----------------|-----------------|
 | [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master` | `./gradlew test -x :rdf:conformance:test` |
-| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | `:rdf:conformance:test` |
+| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | `:rdf:conformance:test` + `:rdf:shacl-validation:test` (full W3C SHACL tree; clones `data-shapes` / `shacl12-test-suite`) |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | Flags new vulnerable dependencies (requires [Dependency graph](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-the-dependency-graph) enabled on the repo) |
 | [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#publishing-with-a-custom-github-actions-workflow) |

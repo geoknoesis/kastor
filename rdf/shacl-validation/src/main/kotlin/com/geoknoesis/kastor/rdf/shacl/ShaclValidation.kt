@@ -2,7 +2,14 @@ package com.geoknoesis.kastor.rdf.shacl
 
 /**
  * Factory object for accessing SHACL validation capabilities.
- * This is the main entry point for SHACL validation in Kastor.
+ *
+ * **Portable reporting:** use [ValidationReport.toShaclValidationReportRdf] to materialize an
+ * `sh:ValidationReport` / `sh:ValidationResult` RDF graph. For deterministic comparison across engines,
+ * use [ValidationViolation.paritySortKey] and [ValidationReport.sortedParityViolationKeys].
+ *
+ * **Datasets:** [ShaclValidator.validateDataset] validates the dataset’s default graph as data; configure
+ * [ValidationConfig.dataset] (`validationDataset`, `auxiliaryGraphs`, `shapesGraphNamedGraph`, `discoverShapesGraphFromData`)
+ * so `sh:shapesGraph` and optional named-graph shapes resolve consistently with native validation.
  */
 object ShaclValidation {
     

@@ -232,11 +232,10 @@ class OntoMapperProcessor(
 
   private fun generateWrapper(classModel: ClassModel) {
     val fileSpec = wrapperGenerator.generateWrapper(classModel)
-    val fileName = "${fileSpec.name}.kt"
     val file = codeGenerator.createNewFile(
       dependencies = Dependencies(false),
       packageName = classModel.packageName,
-      fileName = fileName,
+      fileName = fileSpec.name.removeSuffix(".kt"),
     )
 
     val writer = file.bufferedWriter(Charsets.UTF_8)

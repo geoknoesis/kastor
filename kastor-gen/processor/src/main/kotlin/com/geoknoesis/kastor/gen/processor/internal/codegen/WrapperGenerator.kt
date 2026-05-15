@@ -40,6 +40,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     val knownIrisCode = knownIris.joinToString(", ") { it.toString() }
     val setType = KotlinPoetUtils.setOf(ClassName("com.geoknoesis.kastor.rdf", "Iri"))
 
+    val domainInterface = ClassName(classModel.packageName, classModel.simpleName)
     val classBuilder = TypeSpec.classBuilder(wrapperName)
       .addModifiers(INTERNAL)
       .primaryConstructor(
@@ -48,7 +49,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
           .addModifiers(PRIVATE)
           .build(),
       )
-      .addSuperinterface(ClassName("", classModel.simpleName))
+      .addSuperinterface(domainInterface)
       .addSuperinterface(ClassName("com.geoknoesis.kastor.gen.runtime", "RdfBacked"))
       .addProperty(
         PropertySpec.builder("rdf", ClassName("com.geoknoesis.kastor.gen.runtime", "RdfHandle"))
@@ -60,7 +61,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     classModel.properties
       .sortedBy { it.predicateIri }
       .forEach { property ->
-        classBuilder.addProperty(generatePropertyImplementation(property))
+        classBuilder.addProperty(generatePropertyImplementation(classModel.packageName, property))
       }
 
     val companion = TypeSpec.companionObjectBuilder()
@@ -73,8 +74,8 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .addInitializerBlock(
         CodeBlock.of(
           "OntoMapper.registry[%T::class.java] = { handle -> %T(handle) }",
-          ClassName("", classModel.simpleName),
-          ClassName("", wrapperName),
+          domainInterface,
+          ClassName(classModel.packageName, wrapperName),
         ),
       )
     classBuilder.addType(companion.build())
@@ -109,17 +110,17 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     }
   }
 
-  private fun generatePropertyImplementation(property: PropertyModel): PropertySpec {
+  private fun generatePropertyImplementation(domainPackageName: String, property: PropertyModel): PropertySpec {
     val pred = CodeBlock.of("Iri(%S)", property.predicateIri)
     return when (property.type) {
-      PropertyType.LITERAL -> literalProperty(property, pred)
-      PropertyType.OBJECT -> objectProperty(property, pred)
-      PropertyType.OBJECT_LIST -> objectListProperty(property, pred)
+      PropertyType.LITERAL -> literalProperty(domainPackageName, property, pred)
+      PropertyType.OBJECT -> objectProperty(domainPackageName, property, pred)
+      PropertyType.OBJECT_LIST -> objectListProperty(domainPackageName, property, pred)
     }
   }
 
-  private fun literalProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {
-    val typeName = determineTypeName(property.kotlinType)
+  private fun literalProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
+    val typeName = determineTypeName(property.kotlinType, domainPackageName)
     if (!property.mutable) {
       val delegateExpr = when (property.kotlinType) {
         "String" -> CodeBlock.of("rdfString(%L)", pred)
@@ -175,9 +176,9 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .add(", %T(value))\n", RDF_LITERAL)
       .build()
 
-  private fun objectProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {
+  private fun objectProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
     val elementType = property.kotlinType
-    val elementTypeName = ClassName("", elementType)
+    val elementTypeName = domainClassName(domainPackageName, elementType)
     if (!property.mutable) {
       val delegateExpr = CodeBlock.of("rdfObject<%T>(%L)", elementTypeName, pred)
       return PropertySpec.builder(property.name, elementTypeName)
@@ -213,9 +214,9 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .build()
   }
 
-  private fun objectListProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {
+  private fun objectListProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
     val elementType = property.kotlinType.removePrefix("List<").removeSuffix(">")
-    val elementTypeName = ClassName("", elementType)
+    val elementTypeName = domainClassName(domainPackageName, elementType)
     val listType = KotlinPoetUtils.listOf(elementTypeName)
     val delegateExpr = CodeBlock.of("rdfObjects<%T>(%L)", elementTypeName, pred)
     return PropertySpec.builder(property.name, listType)
@@ -224,7 +225,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .build()
   }
 
-  private fun determineTypeName(kotlinType: String): TypeName {
+  private fun determineTypeName(kotlinType: String, domainPackageName: String): TypeName {
     return when {
       kotlinType == "String" -> String::class.asTypeName()
       kotlinType == "Int" -> Int::class.asTypeName()
@@ -237,11 +238,19 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
           "Int" -> Int::class.asTypeName()
           "Double" -> Double::class.asTypeName()
           "Boolean" -> Boolean::class.asTypeName()
-          else -> ClassName("", elementType)
+          else -> domainClassName(domainPackageName, elementType)
         }
         KotlinPoetUtils.listOf(elementTypeName)
       }
-      else -> ClassName("", kotlinType)
+      else -> domainClassName(domainPackageName, kotlinType)
+    }
+  }
+
+  private fun domainClassName(domainPackageName: String, simpleOrQualified: String): ClassName {
+    return if (simpleOrQualified.contains('.')) {
+      ClassName.bestGuess(simpleOrQualified)
+    } else {
+      ClassName(domainPackageName, simpleOrQualified)
     }
   }
 }

@@ -18,6 +18,7 @@ slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 
 jena-libs = { module = "org.apache.jena:apache-jena-libs", version.ref = "jena" }
 jena-arq = { module = "org.apache.jena:jena-arq", version.ref = "jena" }
+jena-shacl = { module = "org.apache.jena:jena-shacl", version.ref = "jena" }
 jena-tdb2 = { module = "org.apache.jena:jena-tdb2", version.ref = "jena" }
 
 httpclient5 = { module = "org.apache.httpcomponents.client5:httpclient5", version.ref = "httpclient5" }

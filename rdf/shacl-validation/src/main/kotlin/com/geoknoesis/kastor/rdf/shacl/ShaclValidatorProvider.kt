@@ -1,13 +1,22 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.Dataset
+import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /**
  * Interface for SHACL validator providers.
  * Provides a unified way to access different SHACL validation engines.
  */
 interface ShaclValidatorProvider {
+
+    /**
+     * Lower values are preferred when [EnginePreference] does not decide outright.
+     */
+    fun priority(): Int = 100
     
     /**
      * Get the validator type identifier.
@@ -54,7 +63,23 @@ interface ShaclValidator {
      * Validate a data graph against a shapes graph.
      */
     fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport
-    
+
+    /**
+     * Validate using a SPARQL dataset’s default graph as data. Named graphs are still visible for
+     * `sh:shapesGraph` resolution when [ValidationConfig.dataset.validationDataset] is aligned by the implementation.
+     */
+    fun validateDataset(dataset: Dataset, shapes: RdfGraph?): ValidationReport {
+        val shapesGraph = shapes ?: Rdf.graph { }
+        return validate(dataset.defaultGraph, shapesGraph)
+    }
+
+    /**
+     * Stream violations after running full validation (batch semantics).
+     */
+    fun validateViolationsFlow(graph: RdfGraph, shapes: RdfGraph): Flow<ValidationViolation> = flow {
+        validate(graph, shapes).violations.forEach { emit(it) }
+    }
+
     /**
      * Validate a data graph against a list of shapes.
      */
@@ -94,6 +119,8 @@ data class ValidatorCapabilities(
     val supportsParallelValidation: Boolean,
     val supportsStreamingValidation: Boolean,
     val supportsIncrementalValidation: Boolean,
+    val supportsRdf12TripleTermsInData: Boolean = false,
+    val supportsRdf12TripleTermsInShapeParameters: Boolean = false,
     val maxGraphSize: Long = Long.MAX_VALUE,
     val performanceProfile: PerformanceProfile = PerformanceProfile.MEDIUM
 )

@@ -161,24 +161,33 @@ internal object JenaTerms {
                         val datatype = Iri(node.datatypeURI)
                         when (datatype) {
                             XSD.string -> Literal(node.lexicalForm, XSD.string)
-                            XSD.integer -> node.lexicalForm.toIntOrNull()?.toLiteral() ?: Literal(node.lexicalForm, XSD.string)
-                            XSD.decimal -> node.lexicalForm.toBigDecimalOrNull()?.toLiteral() ?: Literal(node.lexicalForm, XSD.string)
-                            XSD.double -> node.lexicalForm.toDoubleOrNull()?.toLiteral() ?: Literal(node.lexicalForm, XSD.string)
-                            XSD.boolean -> when (node.lexicalForm.lowercase()) {
-                                "true" -> true.toLiteral()
-                                "false" -> false.toLiteral()
-                                else -> Literal(node.lexicalForm, XSD.string)
-                            }
-                            XSD.date -> try {
-                                java.time.LocalDate.parse(node.lexicalForm).toLiteral()
-                            } catch (e: Exception) {
-                                Literal(node.lexicalForm, XSD.string)
-                            }
-                            XSD.dateTime -> try {
-                                java.time.LocalDateTime.parse(node.lexicalForm).toLiteral()
-                            } catch (e: Exception) {
-                                Literal(node.lexicalForm, XSD.string)
-                            }
+                            XSD.integer ->
+                                node.lexicalForm.toIntOrNull()?.toLiteral()
+                                    ?: TypedLiteral(node.lexicalForm, XSD.integer)
+                            XSD.decimal ->
+                                node.lexicalForm.toBigDecimalOrNull()?.toLiteral()
+                                    ?: TypedLiteral(node.lexicalForm, XSD.decimal)
+                            XSD.double ->
+                                node.lexicalForm.toDoubleOrNull()?.toLiteral()
+                                    ?: TypedLiteral(node.lexicalForm, XSD.double)
+                            XSD.boolean ->
+                                when (node.lexicalForm.lowercase()) {
+                                    "true" -> TrueLiteral
+                                    "false" -> FalseLiteral
+                                    else -> TypedLiteral(node.lexicalForm, XSD.boolean)
+                                }
+                            XSD.date ->
+                                try {
+                                    java.time.LocalDate.parse(node.lexicalForm).toLiteral()
+                                } catch (_: Exception) {
+                                    TypedLiteral(node.lexicalForm, XSD.date)
+                                }
+                            XSD.dateTime ->
+                                try {
+                                    java.time.LocalDateTime.parse(node.lexicalForm).toLiteral()
+                                } catch (_: Exception) {
+                                    TypedLiteral(node.lexicalForm, XSD.dateTime)
+                                }
                             else -> Literal(node.lexicalForm, datatype)
                         }
                     }

@@ -16,6 +16,7 @@ include(
   ":rdf:conformance",
   ":kastor-gen:runtime", ":kastor-gen:processor", ":kastor-gen:gradle-plugin", ":kastor-gen:validation-jena", ":kastor-gen:validation-rdf4j",
   ":examples:dcat-us",
+  ":examples:dcat-catalog-workshop",
   ":examples:hello-world",
   ":examples:hello-codegen"
 )

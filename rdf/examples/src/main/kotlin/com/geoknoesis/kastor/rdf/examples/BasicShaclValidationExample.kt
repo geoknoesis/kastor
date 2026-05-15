@@ -27,7 +27,9 @@ class BasicShaclValidationExample {
         
         // Display validation results
         displayValidationResults(report)
-        
+
+        demonstrateShaclRdfReport(report)
+
         // Demonstrate different validation scenarios
         demonstrateValidationScenarios()
         
@@ -109,7 +111,7 @@ class BasicShaclValidationExample {
             println("\n=== Violations ===")
             report.violations.forEach { violation ->
                 println("${violation.severity}: ${violation.message}")
-                println("  Resource: ${violation.resource}")
+                println("  Focus: ${violation.focusNode}")
                 println("  Constraint: ${violation.constraint.constraintType}")
                 violation.explanation?.let { println("  Explanation: $it") }
                 violation.suggestedFix?.let { println("  Suggested fix: $it") }
@@ -121,7 +123,19 @@ class BasicShaclValidationExample {
         println("=== Summary ===")
         println(summary.getDescription())
     }
-    
+
+    /** Shows emitting an RDF-serializable `sh:ValidationReport` and deterministic parity keys. */
+    private fun demonstrateShaclRdfReport(report: ValidationReport) {
+        println("\n=== SHACL RDF report (materialized) ===")
+        val rdfReport = report.toShaclValidationReportRdf()
+        println("ValidationReport RDF triples: ${rdfReport.getTriples().size}")
+        val parityKeys = report.sortedParityViolationKeys()
+        when {
+            parityKeys.isEmpty() -> println("Sorted parity keys: (none — conforms or no violations)")
+            parityKeys.size <= 3 -> println("Sorted parity keys: $parityKeys")
+            else -> println("Sorted parity keys (${parityKeys.size}), first 3: ${parityKeys.take(3)}")
+        }
+    }
     private fun demonstrateValidationScenarios() {
         println("\n=== Validation Scenarios ===")
         

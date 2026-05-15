@@ -29,7 +29,7 @@ data class ValidationReport(
      * Get violations for a specific resource.
      */
     fun getViolationsForResource(resource: RdfResource): List<ValidationViolation> {
-        return violations.filter { it.resource == resource }
+        return violations.filter { it.focusNode == resource }
     }
     
     /**
@@ -69,14 +69,19 @@ data class ValidationReport(
 data class ValidationViolation(
     val severity: ViolationSeverity,
     val constraint: ShaclConstraint,
-    val resource: RdfResource,
+    /** Focus node or literal targeted by this violation (`sh:focusNode`). */
+    val focusNode: RdfTerm,
     val message: String,
     val path: List<RdfTerm>? = null,
+    /** Offending RDF term when known; emitted as `sh:value` on `sh:ValidationResult`. */
+    val value: RdfTerm? = null,
     val explanation: String? = null,
     val suggestedFix: String? = null,
     val shapeUri: String? = null,
     val violationCode: String? = null,
-    val context: Map<String, Any> = emptyMap()
+    val context: Map<String, Any> = emptyMap(),
+    /** Non-standard `sh:resultSeverity` IRI (SHACL allows user-defined severities). */
+    val resultSeverityIri: String? = null,
 ) {
     
     /**

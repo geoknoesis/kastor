@@ -16,6 +16,7 @@ object SHACL : Vocabulary {
     val NodeShape: Iri by lazy { term("NodeShape") }
     val PropertyShape: Iri by lazy { term("PropertyShape") }
     val Shape: Iri by lazy { term("Shape") }
+    val ShapeClass: Iri by lazy { term("ShapeClass") }
     val ValidationReport: Iri by lazy { term("ValidationReport") }
     val ValidationResult: Iri by lazy { term("ValidationResult") }
     val ConstraintComponent: Iri by lazy { term("ConstraintComponent") }
@@ -34,12 +35,18 @@ object SHACL : Vocabulary {
     val targetNode: Iri by lazy { term("targetNode") }
     val targetObjectsOf: Iri by lazy { term("targetObjectsOf") }
     val targetSubjectsOf: Iri by lazy { term("targetSubjectsOf") }
+    /** Declares which named graph contains shapes for the subject resource (SHACL 1.2 / dataset validation). */
+    val shapesGraph: Iri by lazy { term("shapesGraph") }
     val deactivated: Iri by lazy { term("deactivated") }
     val closed: Iri by lazy { term("closed") }
+    /** Used with `sh:closed` for class-closure semantics (SHACL 1.2). */
+    val ByTypes: Iri by lazy { term("ByTypes") }
     val ignoredProperties: Iri by lazy { term("ignoredProperties") }
     val property: Iri by lazy { term("property") }
     val path: Iri by lazy { term("path") }
     val node: Iri by lazy { term("node") }
+    /** SHACL 1.2: node constraint via node expression (often references another shape IRI). */
+    val nodeByExpression: Iri by lazy { term("nodeByExpression") }
     val not: Iri by lazy { term("not") }
     val and: Iri by lazy { term("and") }
     val or: Iri by lazy { term("or") }
@@ -70,6 +77,8 @@ object SHACL : Vocabulary {
     val resultFocusNode: Iri by lazy { term("resultFocusNode") }
     val resultValue: Iri by lazy { term("resultValue") }
     val conforms: Iri by lazy { term("conforms") }
+    /** Links a `sh:ValidationReport` to individual `sh:ValidationResult` rows. */
+    val result: Iri by lazy { term("result") }
     val detail: Iri by lazy { term("detail") }
     val focusNode: Iri by lazy { term("focusNode") }
     val sourceConstraint: Iri by lazy { term("sourceConstraint") }
@@ -108,11 +117,15 @@ object SHACL : Vocabulary {
     val BlankNodeOrIRI: Iri by lazy { term("BlankNodeOrIRI") }
     val BlankNodeOrLiteral: Iri by lazy { term("BlankNodeOrLiteral") }
     val IRIOrLiteral: Iri by lazy { term("IRIOrLiteral") }
+    /** RDF 1.2 / SHACL 1.2 quoted triple term node kind. */
+    val TripleTerm: Iri by lazy { term("TripleTerm") }
     
     // Severity values
     val Violation: Iri by lazy { term("Violation") }
     val Warning: Iri by lazy { term("Warning") }
     val Info: Iri by lazy { term("Info") }
+    val Debug: Iri by lazy { term("Debug") }
+    val Trace: Iri by lazy { term("Trace") }
     
     // SHACL 1.2 features
     val targetWhere: Iri by lazy { term("targetWhere") }
@@ -122,6 +135,14 @@ object SHACL : Vocabulary {
     val reifierShape: Iri by lazy { term("reifierShape") }
     val reificationRequired: Iri by lazy { term("reificationRequired") }
     val conformanceDisallows: Iri by lazy { term("conformanceDisallows") }
+    val minListLength: Iri by lazy { term("minListLength") }
+    val maxListLength: Iri by lazy { term("maxListLength") }
+    val memberShape: Iri by lazy { term("memberShape") }
+    val uniqueMembers: Iri by lazy { term("uniqueMembers") }
+    val subsetOf: Iri by lazy { term("subsetOf") }
+    val someValue: Iri by lazy { term("someValue") }
+    val rootClass: Iri by lazy { term("rootClass") }
+    val uniqueValuesFor: Iri by lazy { term("uniqueValuesFor") }
     
     // SHACL 1.2 SPARQL Extensions
     val sparql: Iri by lazy { term("sparql") }

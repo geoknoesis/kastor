@@ -80,18 +80,18 @@ class GenerationCoordinator(
     }
     
     private fun writeFile(fileSpec: FileSpec, packageName: String) {
-        val fileName = "${fileSpec.name}.kt"
+        val kspFileName = fileSpec.name.removeSuffix(".kt")
         try {
             codeGenerator.createNewFile(
                 dependencies = Dependencies(false),
                 packageName = packageName,
-                fileName = fileName
+                fileName = kspFileName
             ).use { file ->
                 file.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
                     fileSpec.writeTo(writer)
                 }
             }
-            logger.info("Generated file: $fileName in package $packageName")
+            logger.info("Generated file: $kspFileName.kt in package $packageName")
         } catch (e: Exception) {
             throw FileGenerationException(
                 fileSpec = fileSpec,

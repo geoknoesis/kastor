@@ -30,3 +30,13 @@ jobs:
       - name: RDF conformance tests
         run: ./gradlew :rdf:conformance:test --no-daemon
         shell: bash
+
+      - name: SHACL 1.2 W3C tests (native)
+        run: |
+          set -euo pipefail
+          mkdir -p rdf/shacl-validation/test-data
+          rm -rf rdf/shacl-validation/test-data/w3c-shacl12
+          git clone --depth 1 --branch gh-pages https://github.com/w3c/data-shapes.git /tmp/data-shapes-shacl
+          mv /tmp/data-shapes-shacl/shacl12-test-suite rdf/shacl-validation/test-data/w3c-shacl12
+          ./gradlew :rdf:shacl-validation:test --no-daemon
+        shell: bash

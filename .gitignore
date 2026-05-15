@@ -511,6 +511,10 @@ pnpm-lock.yaml
 !**/test-data/
 **/test-output/
 
+# Local W3C SHACL test suites (see rdf/shacl-validation/test-data/README.md)
+rdf/shacl-validation/test-data/w3c-shacl12/
+rdf/shacl-validation/test-data/data-shapes-test-suite/
+
 # Ignore performance profiling files
 *.prof
 *.hprof

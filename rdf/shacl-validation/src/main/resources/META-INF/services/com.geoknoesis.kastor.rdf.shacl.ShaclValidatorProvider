@@ -1,1 +1,2 @@
 com.geoknoesis.kastor.rdf.shacl.providers.MemoryShaclValidatorProvider
+com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidatorProvider

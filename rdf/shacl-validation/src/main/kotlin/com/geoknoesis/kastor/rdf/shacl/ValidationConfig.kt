@@ -18,7 +18,26 @@ data class ValidationConfig(
     val enableSuggestions: Boolean = true,
     val validateClosedShapes: Boolean = true,
     val validateInactiveShapes: Boolean = false,
-    val customParameters: Map<String, Any> = emptyMap()
+    val customParameters: Map<String, Any> = emptyMap(),
+    /**
+     * Forces a specific provider; must match [ShaclValidatorProvider.getType] (e.g. `kastor`, `memory`).
+     */
+    val providerId: String? = null,
+    /**
+     * Provider ordering when several engines satisfy [profile].
+     */
+    val enginePreference: EnginePreference = EnginePreference.AUTO,
+    /**
+     * Maximum `sh:node` / logical nesting depth per validation root (native engine).
+     * Default follows architecture §9.1.
+     */
+    val maxRecursionDepth: Int = 64,
+    val cache: CacheConfig = CacheConfig(),
+    val imports: ImportConfig = ImportConfig(),
+    val streaming: StreamingConfigExtension = StreamingConfigExtension(),
+    val dataset: DatasetValidationConfig = DatasetValidationConfig(),
+    /** When false (default P1a), triple terms inside `sh:in` / `sh:hasValue` cause compile failure. */
+    val allowTripleTermsInShapeParameters: Boolean = false,
 ) {
     
     companion object {
@@ -128,6 +147,8 @@ data class ShaclConstraint(
 enum class ConstraintType {
     // Property constraints
     PROPERTY_SHAPE,
+    /** Native use: `sh:closed` violations (maps to `ClosedConstraintComponent`). */
+    CLOSED,
     MIN_COUNT,
     MAX_COUNT,
     UNIQUE_LANG,
@@ -141,6 +162,7 @@ enum class ConstraintType {
     OR,
     XONE,
     NODE,
+    NODE_BY_EXPRESSION,
     
     // Value constraints
     DATATYPE,
@@ -161,6 +183,26 @@ enum class ConstraintType {
     SPARQL_CONSTRAINT,
     SPARQL_CONSTRAINT_COMPONENT,
     
+    // Qualified value shapes (native)
+    QUALIFIED_VALUE_SHAPE,
+    QUALIFIED_MIN_COUNT,
+    QUALIFIED_MAX_COUNT,
+
+    /** SHACL 1.2 list constraints */
+    MIN_LIST_LENGTH,
+    MAX_LIST_LENGTH,
+    MEMBER_SHAPE,
+    UNIQUE_MEMBERS,
+    SUBSET_OF,
+    SINGLE_LINE,
+    SOME_VALUE,
+    ROOT_CLASS,
+    UNIQUE_VALUES_FOR,
+    /** Like `sh:node`; maps to `sh:ShapeConstraintComponent`. */
+    SHAPE,
+    REIFIER_SHAPE,
+    REIFICATION_REQUIRED,
+
     // JavaScript constraints
     JS_CONSTRAINT,
     
@@ -175,10 +217,13 @@ enum class ConstraintType {
  * Violation severity levels.
  */
 enum class ViolationSeverity {
-    INFO,        // Informational message
-    WARNING,     // Warning that should be addressed
-    VIOLATION,   // Constraint violation
-    ERROR        // Critical error
+    INFO, // Informational message
+    WARNING, // Warning that should be addressed
+    VIOLATION, // Constraint violation
+    ERROR, // Critical error
+    /** SHACL 1.2 diagnostic severity (lighter than Info). */
+    DEBUG,
+    TRACE,
 }
 
 

@@ -5,6 +5,8 @@ Kastor supports SHACL validation with full **SHACL 1.2** support, including Core
 - **Kastor Gen ValidationContext** for domain materialization and `RdfHandle` validation.
 - **Repository-level SHACL validation** via the `rdf/shacl-validation` module.
 
+For the **provider model** (native Kastor engine vs optional adapters to Jena, RDF4J, and others), module layout, and implementation roadmap, see [SHACL validation architecture](../design/shacl-validation-architecture.md).
+
 ## Kastor Gen ValidationContext
 
 Validation is explicit and optional. You decide when validation is enforced by passing a `ValidationContext` during materialization.

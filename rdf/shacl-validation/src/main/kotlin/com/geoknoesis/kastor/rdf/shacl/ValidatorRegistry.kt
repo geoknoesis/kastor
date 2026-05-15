@@ -1,34 +1,56 @@
 package com.geoknoesis.kastor.rdf.shacl
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Logger
 
 /**
  * Central registry for discovering and managing SHACL validator providers.
  */
 object ValidatorRegistry {
-    
+
+    private val log = Logger.getLogger(ValidatorRegistry::class.java.name)
+
     private val providers = ConcurrentHashMap<String, ShaclValidatorProvider>()
-    
+
     init {
         discoverProviders()
     }
-    
+
     /**
      * Register a validator provider.
      */
     fun register(provider: ShaclValidatorProvider) {
         providers[provider.getType()] = provider
     }
-    
+
     /**
      * Create a validator with the given configuration.
      */
     fun createValidator(config: ValidationConfig): ShaclValidator {
-        val provider = findProviderForProfile(config.profile)
-            ?: throw IllegalArgumentException("No validator provider found for profile: ${config.profile}")
-        return provider.createValidator(config)
+        val matching = providers.values.filter { providerMatchesProfile(it, config.profile) }
+        if (matching.isEmpty()) {
+            throw UnsupportedProfileException(
+                "No SHACL validator provider supports profile ${config.profile}. Registered provider ids: ${providers.keys.sorted()}"
+            )
+        }
+
+        config.providerId?.let { id ->
+            val p = providers[id] ?: throw ProviderNotFoundException(id)
+            if (!providerMatchesProfile(p, config.profile)) {
+                throw UnsupportedProfileException(
+                    "Provider '$id' does not support profile ${config.profile}"
+                )
+            }
+            logResolved(p, config)
+            return p.createValidator(config)
+        }
+
+        val sorted = sortProviders(matching, config.enginePreference)
+        val p = sorted.first()
+        logResolved(p, config)
+        return p.createValidator(config)
     }
-    
+
     /**
      * Create a validator for a specific profile.
      */
@@ -42,90 +64,66 @@ object ValidatorRegistry {
         }
         return createValidator(config)
     }
-    
+
     /**
      * Discover all available validator providers.
      */
     fun discoverProviders(): List<ShaclValidatorProvider> {
         val discoveredProviders = mutableListOf<ShaclValidatorProvider>()
-        
         try {
             val serviceLoader = java.util.ServiceLoader.load(ShaclValidatorProvider::class.java)
             serviceLoader.forEach { provider ->
                 providers[provider.getType()] = provider
                 discoveredProviders.add(provider)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Service loader might not find providers during development
-            // This is expected and not a fatal error
         }
-        
         return discoveredProviders.toList()
     }
-    
+
     /**
      * Get all registered providers.
      */
-    fun getProviders(): List<ShaclValidatorProvider> {
-        return providers.values.toList()
-    }
-    
+    fun getProviders(): List<ShaclValidatorProvider> = providers.values.toList()
+
     /**
      * Get supported validation profiles.
      */
-    fun getSupportedProfiles(): List<ValidationProfile> {
-        return providers.values
+    fun getSupportedProfiles(): List<ValidationProfile> =
+        providers.values
             .flatMap { it.getSupportedProfiles() }
             .distinct()
             .sorted()
-    }
-    
+
     /**
      * Check if a validation profile is supported.
      */
-    fun isSupported(profile: ValidationProfile): Boolean {
-        return providers.values.any { it.isSupported(profile) }
-    }
-    
+    fun isSupported(profile: ValidationProfile): Boolean =
+        providers.values.any { providerMatchesProfile(it, profile) }
+
     /**
      * Get providers that support a specific profile.
      */
-    fun getProvidersForProfile(profile: ValidationProfile): List<ShaclValidatorProvider> {
-        return providers.values.filter { it.isSupported(profile) }
-    }
-    
+    fun getProvidersForProfile(profile: ValidationProfile): List<ShaclValidatorProvider> =
+        providers.values.filter { providerMatchesProfile(it, profile) }
+
     /**
-     * Get the best provider for a profile based on capabilities.
+     * Get the best provider for a profile based on capabilities and stable ordering.
      */
     fun getBestProviderForProfile(profile: ValidationProfile): ShaclValidatorProvider? {
         val supportingProviders = getProvidersForProfile(profile)
         if (supportingProviders.isEmpty()) return null
-        
-        // Prefer providers with higher performance profiles for now
-        return supportingProviders.maxByOrNull { provider ->
-            val capabilities = provider.getCapabilities()
-            when (capabilities.performanceProfile) {
-                PerformanceProfile.FAST -> 3
-                PerformanceProfile.MEDIUM -> 2
-                PerformanceProfile.THOROUGH -> 1
-            }
-        }
+        return sortProviders(supportingProviders, EnginePreference.AUTO).first()
     }
-    
-    /**
-     * Find a provider that supports the given profile.
-     */
-    private fun findProviderForProfile(profile: ValidationProfile): ShaclValidatorProvider? {
-        return getBestProviderForProfile(profile)
-    }
-    
+
     /**
      * Clear all registered providers (mainly for testing).
      */
     fun clear() {
         providers.clear()
     }
-    
+
     /**
      * Get registry statistics.
      */
@@ -133,7 +131,6 @@ object ValidatorRegistry {
         val allProfiles = ValidationProfile.values().toList()
         val supportedProfiles = getSupportedProfiles()
         val unsupportedProfiles = allProfiles - supportedProfiles.toSet()
-        
         return RegistryStatistics(
             totalProviders = providers.size,
             supportedProfiles = supportedProfiles,
@@ -143,23 +140,52 @@ object ValidatorRegistry {
             }
         )
     }
+
+    private fun providerMatchesProfile(provider: ShaclValidatorProvider, profile: ValidationProfile): Boolean {
+        if (!provider.isSupported(profile)) return false
+        val cap = provider.getCapabilities()
+        return when (profile) {
+            ValidationProfile.SHACL_SPARQL -> cap.supportsShaclSparql
+            ValidationProfile.SHACL_JS -> cap.supportsShaclJs
+            ValidationProfile.SHACL_PY -> cap.supportsShaclPy
+            ValidationProfile.SHACL_DASH -> cap.supportsShaclDash
+            ValidationProfile.CUSTOM -> cap.supportsCustomConstraints
+            ValidationProfile.COMPREHENSIVE ->
+                cap.supportsShaclCore && cap.supportsShaclSparql && cap.supportsShaclJs && cap.supportsShaclPy
+            else -> cap.supportsShaclCore
+        }
+    }
+
+    private fun isKastorNative(p: ShaclValidatorProvider): Boolean = p.getType() == "kastor"
+
+    private fun sortProviders(
+        matching: Collection<ShaclValidatorProvider>,
+        preference: EnginePreference,
+    ): List<ShaclValidatorProvider> {
+        val nativeFirst = preference == EnginePreference.NATIVE_FIRST || preference == EnginePreference.AUTO
+        return matching.sortedWith(
+            compareBy<ShaclValidatorProvider> {
+                when {
+                    nativeFirst && isKastorNative(it) -> 0
+                    nativeFirst -> 1
+                    !nativeFirst && isKastorNative(it) -> 1
+                    else -> 0
+                }
+            }.thenBy { it.priority() }
+                .thenBy { it.getType() },
+        )
+    }
+
+    private fun logResolved(p: ShaclValidatorProvider, config: ValidationConfig) {
+        log.info(
+            "SHACL validator resolved: type=${p.getType()}, enginePreference=${config.enginePreference}, profile=${config.profile}",
+        )
+    }
 }
 
-/**
- * Registry statistics.
- */
 data class RegistryStatistics(
     val totalProviders: Int,
     val supportedProfiles: List<ValidationProfile>,
     val unsupportedProfiles: List<ValidationProfile>,
-    val providersByProfile: Map<ValidationProfile, List<String>>
+    val providersByProfile: Map<ValidationProfile, List<String>>,
 )
-
-
-
-
-
-
-
-
-

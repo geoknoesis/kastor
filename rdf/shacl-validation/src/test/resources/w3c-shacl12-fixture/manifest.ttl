@@ -1,0 +1,9 @@
+@prefix mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+
+<>
+	a mf:Manifest ;
+	mf:include <property/maxCount-001.ttl> ;
+	mf:include <property/datatype-001.ttl> ;
+	mf:include <property/minCount-001.ttl> ;
+	mf:include <targets/targetClass-001.ttl> ;
+	.
