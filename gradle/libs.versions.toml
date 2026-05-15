@@ -6,7 +6,7 @@ junit = "5.13.4"
 junitPlatform = "1.13.4"
 slf4j = "2.0.17"
 jena = "5.6.0"
-httpclient5 = "5.5"
+httpclient5 = "5.6.1"
 rdf4j = "5.3.1"
 
 [libraries]
