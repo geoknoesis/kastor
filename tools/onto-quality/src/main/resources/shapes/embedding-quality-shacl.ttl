@@ -1,0 +1,107 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix oqsh:   <http://example.org/owl-quality-shacl#> .
+
+<http://example.org/owl-quality-shacl-embedding>
+    a            owl:Ontology ;
+    rdfs:label   "OWL Ontology Quality SHACL Library — Semantic Tier" ;
+    rdfs:comment "Embedding-based shapes for ontology quality. Requires a prior enrichment pass that materializes oqsh:semanticallyCloseTo triples." ;
+    sh:declare   [ sh:prefix "rdf"  ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                 [ sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                 [ sh:prefix "owl"  ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                 [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                 [ sh:prefix "oqsh" ; sh:namespace "http://example.org/owl-quality-shacl#"^^xsd:anyURI ] .
+
+# oqsh:Semantics (SKOS concept + category) is declared in owl-quality-shacl.ttl with the other oqsh:category terms.
+
+oqsh:tier_Semantic  a rdfs:Resource ; rdfs:label "semantic tier" .
+
+################################################################
+# P02: synonymous class candidates
+################################################################
+
+oqsh:SynonymousClassCandidatesShape
+    a                sh:NodeShape ;
+    oqsh:category    oqsh:Semantics ;
+    oqsh:pitfall     "P02" ;
+    oqsh:tier        oqsh:tier_Semantic ;
+    rdfs:label       "Class pairs with near-identical labels may be unrecognized synonyms" ;
+    rdfs:comment     "OOPS! P02. Detects pairs of owl:Class entities whose labels embed to cosine similarity above whichever threshold was used during enrichment (oqsh:semanticallyCloseTo), with no equivalentClass or subClassOf path between them." ;
+    sh:targetClass   owl:Class ;
+    sh:sparql        [ a sh:SPARQLConstraint ;
+                       sh:message "Class {$this} has near-identical label to {?other} but no equivalentClass or subClassOf link — possible synonym." ;
+                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX oqsh: <http://example.org/owl-quality-shacl#> SELECT ?other WHERE { $this oqsh:semanticallyCloseTo ?other . FILTER ( isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentClass ?other } FILTER NOT EXISTS { ?other owl:equivalentClass $this } FILTER NOT EXISTS { $this rdfs:subClassOf+ ?other } FILTER NOT EXISTS { ?other rdfs:subClassOf+ $this } ?other a owl:Class . }""" ] ;
+    sh:severity      sh:Info .
+
+################################################################
+# P12 variant: synonymous property candidates
+################################################################
+
+oqsh:SynonymousPropertyCandidatesShape
+    a                sh:NodeShape ;
+    oqsh:category    oqsh:Semantics ;
+    oqsh:pitfall     "P12" ;
+    oqsh:tier        oqsh:tier_Semantic ;
+    rdfs:label       "Property pairs with near-identical labels may be unrecognized synonyms" ;
+    sh:targetClass   owl:ObjectProperty , owl:DatatypeProperty ;
+    sh:sparql        [ a sh:SPARQLConstraint ;
+                       sh:message "Property {$this} has near-identical label to {?other} but no equivalentProperty or subPropertyOf link." ;
+                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX oqsh: <http://example.org/owl-quality-shacl#> SELECT ?other WHERE { $this oqsh:semanticallyCloseTo ?other . FILTER ( isIRI(?other) && str($this) < str(?other) ) FILTER NOT EXISTS { $this owl:equivalentProperty ?other } FILTER NOT EXISTS { ?other owl:equivalentProperty $this } FILTER NOT EXISTS { $this rdfs:subPropertyOf+ ?other } FILTER NOT EXISTS { ?other rdfs:subPropertyOf+ $this } { ?other a owl:ObjectProperty } UNION { ?other a owl:DatatypeProperty } }""" ] ;
+    sh:severity      sh:Info .
+
+################################################################
+# P21: junk-drawer / miscellaneous class
+################################################################
+
+oqsh:JunkDrawerClassShape
+    a                sh:NodeShape ;
+    oqsh:category    oqsh:Semantics ;
+    oqsh:pitfall     "P21" ;
+    oqsh:tier        oqsh:tier_Semantic ;
+    rdfs:label       "Class label suggests it is a 'miscellaneous' catch-all" ;
+    rdfs:comment     "OOPS! P21. Flags classes whose label or local name matches evasive patterns: Misc, Miscellaneous, Other, OtherStuff, Various, Things, Unspecified, Unknown." ;
+    sh:targetClass   owl:Class ;
+    sh:sparql        [ a sh:SPARQLConstraint ;
+                       sh:message "Class {$this} has a label or local name suggesting a miscellaneous catch-all category." ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this a owl:Class . FILTER ( isIRI($this) ) { $this rdfs:label ?label . FILTER ( regex(str(?label), \"^(Misc|Miscellaneous|Other|OtherStuff|Various|Things|Unspecified|Unknown)\", \"i\") ) } UNION { BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( regex(?local, \"^(Misc|Miscellaneous|Other|OtherStuff|Various|Things|Unspecified|Unknown)\", \"i\") ) } BIND(1 AS ?v) }""" ] ;
+    sh:severity      sh:Info .
+
+################################################################
+# P32: same label, different class
+################################################################
+
+oqsh:SameLabelDifferentClassShape
+    a                sh:NodeShape ;
+    oqsh:category    oqsh:Semantics ;
+    oqsh:pitfall     "P32" ;
+    oqsh:tier        oqsh:tier_Semantic ;
+    rdfs:label       "Distinct classes share an identical label" ;
+    rdfs:comment     "OOPS! P32. Two classes with the same rdfs:label confuse users and tooling." ;
+    sh:targetClass   owl:Class ;
+    sh:sparql        [ a sh:SPARQLConstraint ;
+                       sh:message "Class {$this} shares its label '{?label}' with another distinct class {?other}." ;
+                       sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?label ?other WHERE { $this a owl:Class ; rdfs:label ?label . ?other a owl:Class ; rdfs:label ?label . FILTER ( isIRI($this) && isIRI(?other) && str($this) < str(?other) ) }""" ] ;
+    sh:severity      sh:Warning .
+
+################################################################
+# Convention: label / definition drift
+# Scores are (1 - cosine(label, definition)); violation when > 0.5 per sh:maxInclusive.
+################################################################
+
+oqsh:LabelDefinitionDriftShape
+    a                sh:NodeShape ;
+    oqsh:category    oqsh:Semantics ;
+    oqsh:pitfall     "convention" ;
+    oqsh:tier        oqsh:tier_Semantic ;
+    rdfs:label       "A class's label and its textual definition are semantically far apart" ;
+    rdfs:comment     "Convention. When enrichment emits oqsh:labelDefinitionDriftScore as (1 - cosine(label, definition)), values above 0.5 indicate the label and definition diverge." ;
+    sh:targetClass   owl:Class ;
+    sh:property      [ sh:path oqsh:labelDefinitionDriftScore ;
+                       sh:datatype xsd:decimal ;
+                       sh:maxInclusive "0.5"^^xsd:decimal ;
+                       sh:message "Label and definition embed to cosine similarity below 0.5 — the label may no longer reflect the definition." ] ;
+    sh:severity      sh:Info .

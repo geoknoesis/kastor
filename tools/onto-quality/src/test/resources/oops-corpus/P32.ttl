@@ -1,0 +1,21 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc:   <http://purl.org/dc/elements/1.1/> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix :     <http://oops.linkeddata.es/data/testP32#> .
+
+<http://oops.linkeddata.es/data/testP32> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    rdfs:comment "Test for P32"@en ;
+    dct:license <http://creativecommons.org/licenses/by/4.0/> .
+
+:ClassA a owl:Class ;
+    rdfs:label "Class A"@en ;
+    rdfs:comment "Element involved in M1-P32."@en .
+
+:ClassB a owl:Class ;
+    rdfs:label "Class A"@en ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:comment "Element involved in M1-P32."@en .

@@ -82,6 +82,10 @@ interface ShaclValidator {
 
     /**
      * Validate a data graph against a list of shapes.
+     *
+     * **Support is implementation-defined:** many engines (including Kastor native and RDF4J `ShaclSail`)
+     * only accept shapes as RDF; they throw [UnsupportedOperationException] when this list is non-empty.
+     * Prefer [validate] with a shapes [RdfGraph].
      */
     fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport
     
@@ -92,6 +96,9 @@ interface ShaclValidator {
     
     /**
      * Validate a graph against specific constraints.
+     *
+     * **Support is implementation-defined:** Kastor native and RDF4J throw [UnsupportedOperationException]
+     * when [constraints] is non-empty; use shapes as a graph instead.
      */
     fun validateConstraints(graph: RdfGraph, constraints: List<ShaclConstraint>): ValidationReport
     

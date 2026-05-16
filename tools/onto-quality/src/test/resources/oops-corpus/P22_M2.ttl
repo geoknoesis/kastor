@@ -1,0 +1,17 @@
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP22#ClassA> a owl:Class ;
+    rdfs:label "ClassA"@en .
+
+<http://oops.linkeddata.es/data/testP22#classB> a owl:Class ;
+    rdfs:label "classB"@en .
+
+<http://oops.linkeddata.es/data/testP22M2> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P22 method 2"@en .
+

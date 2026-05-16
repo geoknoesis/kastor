@@ -665,52 +665,23 @@ test-*
 !*.rst
 !*.adoc
 
-# Ignore local development environment
-dev/
-local/
-temp/
-tmp/
+# =============================================================================
+# Local scratch, dumps, and IDE output (keep at end: wins over `!bin/` rules above)
+# =============================================================================
+# Ad-hoc model / tokenizer downloads and other local ML artifacts
+.tmp-model/
 
-# Keep important project structure
-!src/
-!lib/
-!libs/
-!bin/
-!scripts/
+# Local W3C / conformance trees and one-off capture files (see rdf/shacl-validation/test-data/README.md)
+/w3c-shacl12-fixture/
+shacl-conformance-out.txt
+*-conformance-out.txt
 
-# Ignore local development files
-dev-*
-local-*
-temp-*
-test-*
+# Generic dumps and JVM crash diagnostics
+*.dump
+*.dmp
+hs_err_pid*.log
+replay_pid*.txt
 
-# Keep important project files
-!README*
-!CONTRIBUTING*
-!LICENSE*
-!COPYING*
-
-# Ignore local development environment
-.local/
-.cache/
-.temp/
-.tmp/
-
-# Keep important project structure
-!docs/
-!examples/
-!samples/
-!tests/
-!test/
-
-# Ignore local development files
-*.local
-*.dev
-*.test
-*.prod
-
-# Keep important project files
-!*.md
-!*.txt
-!*.rst
-!*.adoc
+# Eclipse / IDE Kotlin layout: compiled mirrors under module bin/{main,test}
+**/bin/main/
+**/bin/test/

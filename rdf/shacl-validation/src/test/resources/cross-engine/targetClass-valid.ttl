@@ -1,0 +1,16 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://kastor-cross-engine.example/targetclass/> .
+
+ex:MyClass a rdfs:Class .
+
+ex:MyShape a sh:NodeShape ;
+  sh:targetClass ex:MyClass ;
+  sh:property ex:MyShape-myProp .
+
+ex:MyShape-myProp
+  sh:path ex:myProperty ;
+  sh:maxCount 1 .
+
+ex:ok a ex:MyClass ;
+  ex:myProperty "A" .

@@ -1,0 +1,21 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix ex:     <http://example.org/rdf12-test#> .
+
+ex:onto a owl:Ontology .
+
+# N28: legacy reification
+ex:stmt1
+    a            rdf:Statement ;
+    rdf:subject  ex:Alice ;
+    rdf:predicate ex:knows ;
+    rdf:object   ex:Bob .
+
+# N29: Arabic label without direction (note: assumes engine parses lang tags)
+ex:Person
+    a            owl:Class ;
+    rdfs:label   "Person"@en , "شخص"@ar .
+
+# N30 is impossible to construct in Turtle source — engines reject it
+# at parse time. Document this in the test.

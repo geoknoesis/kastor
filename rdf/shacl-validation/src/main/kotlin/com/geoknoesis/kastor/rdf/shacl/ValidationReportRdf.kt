@@ -19,6 +19,9 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  *
  * This is a best-effort mapping: some fields (e.g. complex `sh:resultPath`) may be omitted when the
  * portable model does not carry enough structure.
+ *
+ * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
+ * in this serialization.
  */
 fun ValidationReport.toShaclValidationReportRdf(
     reportNode: RdfResource = bnode("ValidationReport"),

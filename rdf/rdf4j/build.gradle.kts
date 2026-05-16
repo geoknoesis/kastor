@@ -1,6 +1,7 @@
 dependencies {
   api(project(":rdf:core"))
   implementation(project(":rdf:reasoning"))
+  implementation(project(":rdf:shacl-validation"))
   implementation(libs.rdf4j.repository.api)
   implementation(libs.rdf4j.repository.sail)
   implementation(libs.rdf4j.sail.memory)

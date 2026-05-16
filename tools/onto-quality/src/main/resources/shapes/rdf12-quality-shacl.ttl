@@ -1,0 +1,95 @@
+# ============================================================================
+#  RDF 1.2 Conformance — SHACL 1.2 Shapes Library
+#
+#  Pitfalls specific to RDF 1.2 (W3C Recommendation): correct use of
+#  triple terms, directional language strings, and the rdf:reifies
+#  pattern. These pitfalls did not exist in OOPS! because OOPS! predates
+#  RDF 1.2.
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix oqsh:   <http://example.org/owl-quality-shacl#> .
+
+<http://example.org/owl-quality-shacl-rdf12>
+    a               owl:Ontology ;
+    rdfs:label      "RDF 1.2 Conformance SHACL Library" ;
+    rdfs:comment    "Pitfalls specific to RDF 1.2 adoption: deprecated reification idiom, missing direction on RTL language tags, and triple terms in subject position." ;
+    sh:declare      [ sh:prefix "rdf"  ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "owl"  ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd"  ; sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "oqsh" ; sh:namespace "http://example.org/owl-quality-shacl#"^^xsd:anyURI ] .
+
+oqsh:Rdf12Conformance  a rdfs:Class ; rdfs:label "RDF 1.2 conformance" .
+
+# ---- N28: deprecated reification idiom -------------------------------------
+
+oqsh:NoLegacyReificationShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Rdf12Conformance ;
+    oqsh:pitfall    "N28" ;
+    rdfs:label      "Avoid legacy rdf:Statement reification in RDF 1.2 ontologies" ;
+    rdfs:comment    "RDF 1.2 deprecates the legacy rdf:Statement / rdf:subject / rdf:predicate / rdf:object reification idiom in favour of rdf:reifies with triple terms. Existing legacy reifications continue to parse but should be migrated." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Resource {?stmt} uses the legacy rdf:Statement reification idiom; consider rdf:reifies with a triple term." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-rdf12> ;
+                      sh:select """
+                        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?stmt WHERE {
+                          ?stmt a rdf:Statement .
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# ---- N29: language tags without direction in known-RTL languages ----------
+
+oqsh:DirectionalLanguageStringShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Rdf12Conformance ;
+    oqsh:pitfall    "N29" ;
+    rdfs:label      "RTL-language labels should use rdf:dirLangString with explicit direction" ;
+    rdfs:comment    "RDF 1.2 introduced rdf:dirLangString and the Direction enum (LTR/RTL) to handle bidirectional text correctly. Labels tagged @ar, @he, @fa, @ur etc. without direction may render incorrectly in mixed-direction contexts. This shape flags labels in known RTL languages that use only @lang and not @lang--rtl." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Label '{?label}' on {?subj} uses an RTL language tag ({?l}) but no direction. Consider migrating to rdf:dirLangString with explicit --rtl direction." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-rdf12> ;
+                      sh:select """
+                        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?subj ?label ?l WHERE {
+                          ?subj rdfs:label ?label .
+                          BIND ( lang(?label) AS ?l )
+                          FILTER ( ?l IN ( 'ar', 'he', 'fa', 'ur', 'ps', 'yi', 'syr', 'dv' ) )
+                          FILTER ( datatype(?label) != <http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString> )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# ---- N30: triple terms in subject position ---------------------------------
+# RDF 1.2 forbids this. Detection requires the data model to support
+# triple terms; if the underlying engine erases them on parse, this
+# shape will never fire. The shape is included for completeness.
+
+oqsh:NoTripleTermInSubjectShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Rdf12Conformance ;
+    oqsh:pitfall    "N30" ;
+    rdfs:label      "Triple terms must not appear in subject position (RDF 1.2)" ;
+    rdfs:comment    "RDF 1.2 explicitly restricts triple terms to the object position. A graph with a triple term as a subject is non-conformant. NOTE: this shape's ability to fire depends on the underlying engine actually preserving triple-term subjects rather than rejecting them at parse time." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Triple term found in subject position — RDF 1.2 forbids this." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-rdf12> ;
+                      sh:select """
+                        SELECT ?viol WHERE {
+                          ?s ?p ?o .
+                          FILTER ( isTRIPLE(?s) )
+                          BIND ( 1 AS ?viol )
+                        }
+                      """ ] ;
+    sh:severity     sh:Violation .

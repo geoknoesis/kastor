@@ -28,3 +28,8 @@ jobs:
         # Conformance (:rdf:conformance) is run separately for releases; see CONTRIBUTING.md
         run: ./gradlew test --no-daemon -x :rdf:conformance:test
         shell: bash
+
+      - name: Compile SHACL benchmark modules
+        # JMH + ERA CLI are not pulled in by `test`; compile explicitly so they do not rot.
+        run: ./gradlew :benchmarks:shacl:jmhCompileGeneratedClasses :benchmarks:shacl-era-cli:classes --no-daemon
+        shell: bash

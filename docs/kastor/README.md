@@ -41,6 +41,7 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 - **SHACL Validation**: Data validation and constraint checking with SHACL 1.2 support
   - SHACL 1.2 Core features (targetWhere, shape targets, singleLine, reifierShape)
   - SHACL 1.2 SPARQL Extensions (SPARQL-based constraints)
+- **Ontology Quality (`onto-quality`)**: Bundled OWL/SKOS/data-quality SHACL catalogues, optional embedding-based semantic tier, and OOPS!-aligned pitfall metadata — see [Ontology Quality](features/ontology-quality.md)
 - **Transactions**: ACID compliance for data integrity
 - **Repository Management**: Multi-repository setup and federation
 - **[Kastor Gen](../kastor-gen/README.md)**: Code generation from ontologies (SHACL / JSON-LD, KSP, Gradle plugin)
@@ -116,6 +117,7 @@ The documentation is organized into four distinct pillars:
 - **[SHACL DSL Guide](api/shacl-dsl-guide.md)** - Type-safe SHACL shapes creation (SHACL 1.2 Core & SPARQL Extensions)
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
 - **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints (SHACL 1.2 support)
+- **[Ontology Quality](features/ontology-quality.md)** - Ontology pitfall checks with bundled SHACL catalogues and semantic (embedding) tier (`:tools:onto-quality`)
 - **[RDF-star Support](api/compact-dsl-guide.md#rdf-star-support)** - Metadata about statements
 
 ### **Guides**

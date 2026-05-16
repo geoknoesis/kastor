@@ -45,6 +45,7 @@
 - [Registry Management](kastor/features/registry-management.md)
 - [Reasoning](kastor/features/reasoning.md)
 - [SHACL Validation](kastor/features/shacl-validation.md)
+- [Ontology Quality](kastor/features/ontology-quality.md)
 
 ### **Advanced Topics**
 - [Performance](kastor/advanced/performance.md)
@@ -57,6 +58,7 @@
 - [How to Parse RDF](kastor/guides/how-to-parse-rdf.md)
 - [How to Serialize RDF](kastor/guides/how-to-serialize-rdf.md)
 - [How to Validate with SHACL](kastor/guides/how-to-validate-shacl.md)
+- [How to Check Ontology Quality](kastor/guides/how-to-ontology-quality.md)
 - [How to Perform Reasoning](kastor/guides/how-to-reasoning.md)
 - [How to Work with Named Graphs](kastor/guides/how-to-named-graphs.md)
 - [How to Use Transactions](kastor/guides/how-to-transactions.md)

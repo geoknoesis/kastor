@@ -1,0 +1,63 @@
+@prefix : <http://oops.linkeddata.es/data/testP20#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP20> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P20"@en .
+
+:ClassEmptyComment a owl:Class ;
+    rdfs:label "Element involved in M1-P20 pattern C."@en ;
+    rdfs:comment ""@en ;
+    rdfs:subClassOf owl:Thing .
+
+:ClassEmptyLabel a owl:Class ;
+    rdfs:label ""@en ;
+    rdfs:comment "Element involved in M1-P20 pattern B."@en ;
+    rdfs:subClassOf owl:Thing .
+
+:ClassExchangedContent a owl:Class ;
+    rdfs:label "Element involved in M1-P20 pattern A."@en ;
+    rdfs:comment "Class exchanged content"@en .
+
+:ClassSameContent a owl:Class ;
+    rdfs:label "Element involved in M1-P20 pattern D."@en ;
+    rdfs:comment "Element involved in M1-P20 pattern D."@en ;
+    rdfs:subClassOf owl:Thing .
+
+:attributeEmptyComment a owl:DatatypeProperty ;
+    rdfs:label "Element involved in M3-P20 pattern C."@en ;
+    rdfs:comment ""@en .
+
+:attributeEmptyLabel a owl:DatatypeProperty ;
+    rdfs:label ""@en ;
+    rdfs:comment "Element involved in M3-P20 pattern B."@en .
+
+:attributeExchangedContent a owl:DatatypeProperty ;
+    rdfs:label "Element involved in M3-P20 pattern A."@en ;
+    rdfs:comment "attribute exchanged content"@en .
+
+:attributeSameContent a owl:DatatypeProperty ;
+    rdfs:label "Element involved in M3-P20 pattern D."@en ;
+    rdfs:comment "Element involved in M3-P20 pattern D."@en .
+
+:relationshipEmptyComment a owl:ObjectProperty ;
+    rdfs:label "Element involved in M2-P20 pattern C."@en ;
+    rdfs:comment ""@en .
+
+:relationshipEmptyLabel a owl:ObjectProperty ;
+    rdfs:label ""@en ;
+    rdfs:comment "Element involved in M2-P20 pattern B."@en .
+
+:relationshipExchangedContent a owl:ObjectProperty ;
+    rdfs:label "Element involved in M2-P20 pattern A."@en ;
+    rdfs:comment "relationship exchanged content"@en .
+
+:relationshipSameContent a owl:ObjectProperty ;
+    rdfs:label "Element involved in M2-P20 pattern D."@en ;
+    rdfs:comment "Element involved in M2-P20 pattern D."@en .
+

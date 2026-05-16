@@ -38,6 +38,12 @@ data class ValidationConfig(
     val dataset: DatasetValidationConfig = DatasetValidationConfig(),
     /** When false (default P1a), triple terms inside `sh:in` / `sh:hasValue` cause compile failure. */
     val allowTripleTermsInShapeParameters: Boolean = false,
+    /**
+     * Hard cap on **data graph + shapes graph** triple count (estimated via [RdfGraph.size]) before
+     * validation runs. Default [Long.MAX_VALUE] (no limit). Lower this for untrusted input (e.g. `500_000`)
+     * to bound memory; enforced by the RDF4J bridge, native engine, and memory provider.
+     */
+    val maxCombinedGraphTriples: Long = Long.MAX_VALUE,
 ) {
     
     companion object {
@@ -88,6 +94,19 @@ data class ValidationConfig(
             enableSuggestions = false,
             timeout = Duration.ofMinutes(1)
         )
+
+        /**
+         * Tighter caps for validating **untrusted** RDF: limits combined triples and violation collection.
+         * Applies to RDF4J, native (`kastor`), and memory providers.
+         */
+        fun rdf4jUntrustedInputLimits(
+            maxCombinedGraphTriples: Long = 500_000L,
+            maxViolations: Int = 1_000,
+        ): ValidationConfig =
+            ValidationConfig(
+                maxCombinedGraphTriples = maxCombinedGraphTriples,
+                maxViolations = maxViolations,
+            )
         
         /**
          * Create a configuration for memory-constrained environments.

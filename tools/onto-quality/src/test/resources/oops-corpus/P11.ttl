@@ -1,0 +1,35 @@
+@prefix : <http://oops.linkeddata.es/data/testP11#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP11> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P11"@en .
+
+:attributeLacksDomain a owl:DatatypeProperty ;
+    rdfs:label "attributeU"@en ;
+    rdfs:comment "Element involved in pattern A."@en ;
+    rdfs:range rdfs:Literal .
+
+:attributeLacksRange a owl:DatatypeProperty ;
+    rdfs:label "attributeLacksRange"@en ;
+    rdfs:comment "Element involved in pattern B."@en ;
+    rdfs:domain :ClassA .
+
+:relationshipLacksDomain a owl:ObjectProperty ;
+    rdfs:label "Lacks domain"@en ;
+    rdfs:comment "Element involved in pattern A."@en ;
+    rdfs:range :ClassA .
+
+:relationshipLacksRange a owl:ObjectProperty ;
+    rdfs:label "Lacks range"@en ;
+    rdfs:comment "Element involved in pattern B." ;
+    rdfs:domain :ClassA .
+
+:ClassA a owl:Class ;
+    rdfs:label "ClassA"@en .
+

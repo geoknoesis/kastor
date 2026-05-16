@@ -23,6 +23,7 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 - [Debug Mode](debug-mode.md) - Enable prefix expansion and query tracing for troubleshooting
 - [Performance Guide](performance.md) - Performance best practices and benchmarks
 - [How to Validate with SHACL](how-to-validate-shacl.md) - Validate data with shapes
+- [How to Check Ontology Quality](how-to-ontology-quality.md) - OWL/SKOS quality catalogues, CLI, and semantic (embedding) tier
 - [How to Perform Reasoning](how-to-reasoning.md) - Run RDFS inference
 - [How to Use Datasets](how-to-use-datasets.md) - Query across named graphs
 - [How to Work with Named Graphs](how-to-named-graphs.md) - Manage datasets

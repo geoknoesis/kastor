@@ -1,0 +1,12 @@
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<http://example.org/kastor/oops-corpus/P02#> a owl:Ontology ;
+    rdfs:comment "Synthetic P02-style fixture: synonymous class labels without linking axioms (see ATTRIBUTION.md)." .
+
+<http://example.org/kastor/oops-corpus/P02#Car> a owl:Class ;
+    rdfs:label "Car"@en .
+
+<http://example.org/kastor/oops-corpus/P02#Automobile> a owl:Class ;
+    rdfs:label "Automobile"@en ;
+    rdfs:subClassOf owl:Thing .

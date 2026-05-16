@@ -1,0 +1,602 @@
+# ============================================================================
+#  The Data Quality Constraints Library — SHACL 1.2 encoding (v5, simplified)
+#
+#  Source: http://semwebquality.org/ontologies/dq-constraints (Fürber, Hepp,
+#          Wischnewski, 2011), originally expressed as SPIN templates.
+#
+#  Conformant with SHACL 1.2 SPARQL Extensions
+#  (https://www.w3.org/TR/shacl12-sparql/, 30 January 2026 WD).
+#
+#  SCOPE OF THIS LIBRARY
+#
+#  The original DQ library has 27 SPIN templates. Twelve of them describe
+#  constraints that SHACL-Core can already express natively — pattern checks,
+#  numeric ranges, mandatory/empty properties, ordered value pairs. Those
+#  twelve are dropped from this library; their slots in the file are kept
+#  as comments pointing at the corresponding SHACL-Core idiom.
+#
+#  The fifteen remaining components express constraints that SHACL-Core
+#  cannot capture: EAN-13 checksums, uniqueness across a class or graph,
+#  dynamic legal/illegal-value lookups against another class, and three
+#  flavours of functional-dependency check (exclusive, against-trusted-
+#  reference, with intermediate blank node).
+#
+#  Each SPIN template becomes a sh:ConstraintComponent whose parameters
+#  mirror sp:arg1 ... sp:argN.  Because the SPIN templates are written from
+#  the focus-node's perspective (?this rdf:type ?arg1, etc.), we expose them
+#  via sh:nodeValidator + sh:SPARQLSelectValidator.  SELECT queries return
+#  one row per non-conforming node, matching the original CONSTRUCT-violations
+#  polarity, so no logical inversion was needed.
+#
+#  PARAMETER NAMING
+#
+#  Parameter IRIs follow the pattern  dqcsh:<componentTag>_<roleName>  where
+#  <componentTag> is a short identifier for the component and <roleName>
+#  describes the role the value plays.  The component tag is necessary
+#  because in SHACL each parameter IRI uniquely identifies the component
+#  it belongs to (mirroring the way sh:pattern belongs only to
+#  sh:PatternConstraintComponent, etc.).  Examples:
+#
+#     dqcsh:ean13All_property
+#     dqcsh:uniqueValueClass_class
+#     dqcsh:uniqueValueClass_property
+#     dqcsh:fdTrustedClass_referenceProperty1
+#
+#  The human-readable sh:name on each parameter is just the role part
+#  (e.g. "property", "referenceClass") since the component is already
+#  implied by context when a user fills in a shape.
+#
+#  Standard role names used throughout the library:
+#
+#    Targeting          class               class scoping the focus nodes
+#                       property            the property to test
+#
+#    Reference lookup   referenceClass      class whose instances carry legal values
+#                       referenceProperty   property on the reference class
+#                       referenceProperty1  first ref. property for FD checks
+#                       referenceProperty2  second ref. property for FD checks
+#
+#    Functional deps    sourceProperty      the antecedent property
+#                       sourceValue         the antecedent value to match
+#                       targetProperty      the consequent property
+#                       targetValue         the required consequent value
+#                       emptyProperty       property required to be empty
+#                       property1           first of two compared properties
+#                       property2           second of two compared properties
+#
+#    Blank-node hops    viaProperty         link to an intermediate node
+#                       nestedProperty      property reached via the intermediate
+#
+#  Namespace conventions:
+#    dqc:    original SemWebQuality namespace (kept for category labels)
+#    dqcsh:  SHACL re-encoding (components, parameter IRIs)
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix dc:     <http://purl.org/dc/elements/1.1/> .
+
+@prefix dqc:    <http://semwebquality.org/ontologies/dq-constraints#> .
+@prefix dqcsh:  <http://semwebquality.org/ontologies/dq-constraints-shacl#> .
+
+# ----------------------------------------------------------------------------
+#  Ontology header + prefix declarations (for SHACL-SPARQL queries)
+# ----------------------------------------------------------------------------
+
+<http://semwebquality.org/ontologies/dq-constraints-shacl>
+    a               owl:Ontology ;
+    rdfs:label      "The Data Quality Constraints Library (SHACL 1.2 encoding)" ;
+    rdfs:comment    "SHACL 1.2 re-encoding of the SPIN-based Data Quality Constraints Library by Fürber, Hepp and Wischnewski (2011)." ;
+    dct:license     <http://www.gnu.org/licenses/lgpl.html> ;
+    dc:subject      "Semantic Data Quality Management" ;
+    owl:imports     <http://www.w3.org/ns/shacl> ;
+    sh:declare      [ sh:prefix "rdf" ;   sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs" ;  sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd" ;   sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "sh" ;    sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "dqc" ;   sh:namespace "http://semwebquality.org/ontologies/dq-constraints#"^^xsd:anyURI ] ,
+                    [ sh:prefix "dqcsh" ; sh:namespace "http://semwebquality.org/ontologies/dq-constraints-shacl#"^^xsd:anyURI ] .
+
+# ----------------------------------------------------------------------------
+#  Category vocabulary (for browsing only — NOT used by the validator).
+#  Replaces the SPIN library's rdfs:subClassOf hierarchy, which was meaningful
+#  for spin:Template (a class) but not for sh:ConstraintComponent (whose
+#  instances are typically not themselves classes).
+# ----------------------------------------------------------------------------
+
+dqcsh:category
+    a               rdf:Property ;
+    rdfs:label      "category" ;
+    rdfs:domain     sh:ConstraintComponent ;
+    rdfs:range      rdfs:Class .
+
+dqc:ConstraintTemplates             a rdfs:Class ; rdfs:label "data quality constraint templates" .
+dqc:FunctionalDependencyConstraints a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "functional dependency constraints" .
+dqc:LegalValueConstraints           a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "legal value constraints" .
+dqc:MissingElementConstraints       a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "missing element constraints" .
+dqc:SyntaxConstraints               a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "syntax constraints" .
+dqc:UniquenessConstraints           a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "uniqueness constraints" .
+dqc:ValueRangeConstraints           a rdfs:Class ; rdfs:subClassOf dqc:ConstraintTemplates ; rdfs:label "value range constraints" .
+
+# =============================================================================
+#                              SYNTAX CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:NumbersAll ---------------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:pattern "^([0-9])*$" ]
+
+# ---------- dqc:LettersAll ---------------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:pattern "^([A-Za-z])*$" ]
+
+# ---------- dqc:LettersAndDotsAll --------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:pattern "^([A-Za-z\\. ])*$" ]
+
+# ---------- dqc:FiveDigitNumericAll ------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:pattern "^[0-9]{5}$" ]
+
+# ---------- dqc:EAN-13All ----------------------------------------------------
+# Cannot be expressed in SHACL-core: checksum requires arithmetic.
+
+dqcsh:EAN13AllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:SyntaxConstraints ;
+    rdfs:label         "EAN-13 checksum check (all instances)" ;
+    rdfs:comment       "Flags values that are not valid EAN-13 codes: must be 13 digits and the modulo-10 check digit must match. Algorithm: ((d2+d4+d6+d8+d10+d12)*3 + (d1+d3+d5+d7+d9+d11) + d13) ≡ 0 (mod 10). Implemented as sum − 10·floor(sum/10) since SPARQL 1.1 has no `mod` operator." ;
+    sh:labelTemplate   "Incorrect EAN-13 in {$ean13All_property}" ;
+    sh:parameter       [ sh:path dqcsh:ean13All_property ;
+                         sh:name "property" ;
+                         sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Incorrect EAN-13 in {$ean13All_property}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($ean13All_property AS ?path) ?value WHERE {
+                             $this $ean13All_property ?value .
+                             BIND ( str(?value) AS ?s )
+                             BIND (
+                               ( xsd:integer(substr(?s,2,1)) + xsd:integer(substr(?s,4,1)) +
+                                 xsd:integer(substr(?s,6,1)) + xsd:integer(substr(?s,8,1)) +
+                                 xsd:integer(substr(?s,10,1)) + xsd:integer(substr(?s,12,1)) ) * 3 +
+                               ( xsd:integer(substr(?s,1,1)) + xsd:integer(substr(?s,3,1)) +
+                                 xsd:integer(substr(?s,5,1)) + xsd:integer(substr(?s,7,1)) +
+                                 xsd:integer(substr(?s,9,1)) + xsd:integer(substr(?s,11,1)) ) +
+                               xsd:integer(substr(?s,13,1))
+                               AS ?sum
+                             )
+                             FILTER (
+                               !regex(?s, "^[0-9]{13}$") ||
+                               ( ?sum - 10 * floor(?sum / 10) != 0 )
+                             )
+                           }
+                         """ ] .
+
+# ---------- dqc:EAN-13Class --------------------------------------------------
+
+dqcsh:EAN13ClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:SyntaxConstraints ;
+    rdfs:label         "EAN-13 checksum check (class instances)" ;
+    rdfs:comment       "EAN-13 check restricted to instances of a class. Idiomatic SHACL would do class scoping via sh:targetClass on the NodeShape and reuse EAN13AllConstraintComponent." ;
+    sh:labelTemplate   "Incorrect EAN-13 in {$ean13Class_property} of {$ean13Class_class} instances" ;
+    sh:parameter       [ sh:path dqcsh:ean13Class_class ; sh:name "class"           ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:ean13Class_property ; sh:name "property" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Incorrect EAN-13 in {$ean13Class_property} of {$ean13Class_class} instances" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($ean13Class_property AS ?path) ?value WHERE {
+                             $this rdf:type $ean13Class_class .
+                             $this $ean13Class_property ?value .
+                             BIND ( str(?value) AS ?s )
+                             BIND (
+                               ( xsd:integer(substr(?s,2,1)) + xsd:integer(substr(?s,4,1)) +
+                                 xsd:integer(substr(?s,6,1)) + xsd:integer(substr(?s,8,1)) +
+                                 xsd:integer(substr(?s,10,1)) + xsd:integer(substr(?s,12,1)) ) * 3 +
+                               ( xsd:integer(substr(?s,1,1)) + xsd:integer(substr(?s,3,1)) +
+                                 xsd:integer(substr(?s,5,1)) + xsd:integer(substr(?s,7,1)) +
+                                 xsd:integer(substr(?s,9,1)) + xsd:integer(substr(?s,11,1)) ) +
+                               xsd:integer(substr(?s,13,1))
+                               AS ?sum
+                             )
+                             FILTER (
+                               !regex(?s, "^[0-9]{13}$") ||
+                               ( ?sum - 10 * floor(?sum / 10) != 0 )
+                             )
+                           }
+                         """ ] .
+
+# =============================================================================
+#                          VALUE RANGE CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:LowerLimitAll ------------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:minInclusive N ]   (use sh:minExclusive for strict)
+
+# ---------- dqc:LowerLimitClass ----------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:NodeShape + sh:targetClass + sh:property [ sh:path :p ; sh:minInclusive N ]
+
+# ---------- dqc:UpperLimitAll ------------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:maxInclusive N ]   (use sh:maxExclusive for strict)
+
+# ---------- dqc:UpperLimitClass ----------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:NodeShape + sh:targetClass + sh:property [ sh:path :p ; sh:maxInclusive N ]
+
+# ---------- dqc:InconsistentValueRangeAll ------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :lower ; sh:lessThan :upper ]
+
+# =============================================================================
+#                       MISSING ELEMENT CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:MissingProperties --------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:minCount 1 ]
+
+# ---------- dqc:MissingLiterals ----------------------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:minLength 1 ]   (does not catch missing properties)
+
+# ---------- dqc:MissingLiteralsAndProperties ---------------------------------
+#  Dropped: SHACL-Core expresses this directly.
+#    sh:property [ sh:path :p ; sh:minCount 1 ; sh:minLength 1 ]
+
+# =============================================================================
+#                          UNIQUENESS CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:UniqueValueAll -----------------------------------------------
+
+dqcsh:UniqueValueAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:UniquenessConstraints ;
+    rdfs:label         "Uniqueness check (all instances)" ;
+    rdfs:comment       "Flags subjects whose value for the chosen property is shared by some other subject anywhere in the graph. Comparison is on the lexical form." ;
+    sh:labelTemplate   "Values in {$uniqueValueAll_property} must be unique" ;
+    sh:parameter       [ sh:path dqcsh:uniqueValueAll_property ;
+                         sh:name "property" ;
+                         sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Values in {$uniqueValueAll_property} must be unique" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($uniqueValueAll_property AS ?path) ?value WHERE {
+                             $this $uniqueValueAll_property ?value .
+                             ?other $uniqueValueAll_property ?v2 .
+                             FILTER ( str(?value) = str(?v2) && $this != ?other )
+                           }
+                         """ ] .
+
+# ---------- dqc:UniqueValueClass ---------------------------------------------
+
+dqcsh:UniqueValueClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:UniquenessConstraints ;
+    rdfs:label         "Uniqueness check (class instances)" ;
+    sh:labelTemplate   "{$uniqueValueClass_property} must be unique among instances of {$uniqueValueClass_class}" ;
+    sh:parameter       [ sh:path dqcsh:uniqueValueClass_class ; sh:name "class"    ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:uniqueValueClass_property ; sh:name "property" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "{$uniqueValueClass_property} must be unique among instances of {$uniqueValueClass_class}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($uniqueValueClass_property AS ?path) ?value WHERE {
+                             $this rdf:type $uniqueValueClass_class .
+                             $this $uniqueValueClass_property ?value .
+                             ?other rdf:type $uniqueValueClass_class .
+                             ?other $uniqueValueClass_property ?v2 .
+                             FILTER ( str(?value) = str(?v2) && $this != ?other )
+                           }
+                         """ ] .
+
+# =============================================================================
+#                         LEGAL VALUE CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:ListedLegalValueAll ------------------------------------------
+
+dqcsh:ListedLegalValueAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:LegalValueConstraints ;
+    rdfs:label         "Legal value check against trusted reference (all instances)" ;
+    rdfs:comment       "Flags values of the chosen property that do not appear (by lexical form) as values of a reference property in instances of a reference class. For static small sets, prefer sh:in." ;
+    sh:labelTemplate   "Property {$legalAll_property} may only carry values present in {$legalAll_referenceProperty} of instances of {$legalAll_referenceClass}" ;
+    sh:parameter       [ sh:path dqcsh:legalAll_property ; sh:name "property"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalAll_referenceClass ; sh:name "referenceClass"    ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalAll_referenceProperty ; sh:name "referenceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Property {$legalAll_property} may only carry values present in {$legalAll_referenceProperty} of instances of {$legalAll_referenceClass}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($legalAll_property AS ?path) ?value WHERE {
+                             $this $legalAll_property ?value .
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $legalAll_referenceClass .
+                               ?ref $legalAll_referenceProperty ?legal .
+                               FILTER ( str(?legal) = str(?value) )
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:ListedLegalValueClass ----------------------------------------
+
+dqcsh:ListedLegalValueClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:LegalValueConstraints ;
+    rdfs:label         "Legal value check against trusted reference (class instances)" ;
+    sh:labelTemplate   "Instances of {$legalClass_class}.{$legalClass_property} may only carry values present in {$legalClass_referenceClass}.{$legalClass_referenceProperty}" ;
+    sh:parameter       [ sh:path dqcsh:legalClass_class ; sh:name "class"     ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClass_property ; sh:name "property"  ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClass_referenceClass ; sh:name "referenceClass"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClass_referenceProperty ; sh:name "referenceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Instances of {$legalClass_class}.{$legalClass_property} may only carry values present in {$legalClass_referenceClass}.{$legalClass_referenceProperty}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($legalClass_property AS ?path) ?value WHERE {
+                             $this rdf:type $legalClass_class .
+                             $this $legalClass_property ?value .
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $legalClass_referenceClass .
+                               ?ref $legalClass_referenceProperty ?legal .
+                               FILTER ( str(?legal) = str(?value) )
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:ListedLegalValueClassOverBlankNode ---------------------------
+
+dqcsh:ListedLegalValueClassOverBlankNodeConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:LegalValueConstraints ;
+    rdfs:label         "Legal value check via intermediate node (class instances)" ;
+    rdfs:comment       "Variant of ListedLegalValueClass where the tested value sits on an intermediate property-and-node element rather than directly on the instance." ;
+    sh:labelTemplate   "Values reached via {$legalClassBN_viaProperty}/{$legalClassBN_property} on instances of {$legalClassBN_class} must appear in {$legalClassBN_referenceClass}.{$legalClassBN_referenceProperty}" ;
+    sh:parameter       [ sh:path dqcsh:legalClassBN_class ; sh:name "class"      ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClassBN_viaProperty ; sh:name "viaProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClassBN_property ; sh:name "property"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClassBN_referenceClass ; sh:name "referenceClass"    ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:legalClassBN_referenceProperty ; sh:name "referenceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Values reached via {$legalClassBN_viaProperty}/{$legalClassBN_property} on instances of {$legalClassBN_class} must appear in {$legalClassBN_referenceClass}.{$legalClassBN_referenceProperty}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($legalClassBN_property AS ?path) ?value WHERE {
+                             $this rdf:type $legalClassBN_class .
+                             $this $legalClassBN_viaProperty ?node .
+                             ?node $legalClassBN_property ?value .
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $legalClassBN_referenceClass .
+                               ?ref $legalClassBN_referenceProperty ?legal .
+                               FILTER ( str(?legal) = str(?value) )
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:ListedIllegalValueAll ----------------------------------------
+
+dqcsh:ListedIllegalValueAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:LegalValueConstraints ;
+    rdfs:label         "Illegal value check against forbidden reference (all instances)" ;
+    rdfs:comment       "Flags values of the chosen property that DO appear (by lexical form) as values of a reference property in instances of a reference class." ;
+    sh:labelTemplate   "Property {$illegalAll_property} cannot carry the same values as property {$illegalAll_referenceProperty} in class {$illegalAll_referenceClass}" ;
+    sh:parameter       [ sh:path dqcsh:illegalAll_property ; sh:name "property"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:illegalAll_referenceClass ; sh:name "referenceClass"    ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:illegalAll_referenceProperty ; sh:name "referenceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Property {$illegalAll_property} cannot carry the same values as property {$illegalAll_referenceProperty} in class {$illegalAll_referenceClass}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($illegalAll_property AS ?path) ?value WHERE {
+                             $this $illegalAll_property ?value .
+                             FILTER EXISTS {
+                               ?ref rdf:type $illegalAll_referenceClass .
+                               ?ref $illegalAll_referenceProperty ?bad .
+                               FILTER ( str(?bad) = str(?value) )
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:ListedIllegalValueClass --------------------------------------
+
+dqcsh:ListedIllegalValueClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:LegalValueConstraints ;
+    rdfs:label         "Illegal value check against forbidden reference (class instances)" ;
+    sh:labelTemplate   "Instances of {$illegalClass_class} cannot share {$illegalClass_property} values with {$illegalClass_referenceClass}.{$illegalClass_referenceProperty}" ;
+    sh:parameter       [ sh:path dqcsh:illegalClass_class ; sh:name "class"     ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:illegalClass_property ; sh:name "property"  ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:illegalClass_referenceClass ; sh:name "referenceClass"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:illegalClass_referenceProperty ; sh:name "referenceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Instances of {$illegalClass_class} cannot share {$illegalClass_property} values with {$illegalClass_referenceClass}.{$illegalClass_referenceProperty}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($illegalClass_property AS ?path) ?value WHERE {
+                             $this rdf:type $illegalClass_class .
+                             $this $illegalClass_property ?value .
+                             FILTER EXISTS {
+                               ?ref rdf:type $illegalClass_referenceClass .
+                               ?ref $illegalClass_referenceProperty ?bad .
+                               FILTER ( str(?bad) = str(?value) )
+                             }
+                           }
+                         """ ] .
+
+# =============================================================================
+#                  FUNCTIONAL DEPENDENCY CONSTRAINTS
+# =============================================================================
+
+# ---------- dqc:ExclusiveFunctionalDependencyAll -----------------------------
+
+dqcsh:ExclusiveFunctionalDependencyAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Exclusive functional dependency (all instances)" ;
+    rdfs:comment       "Whenever the subject has the chosen sourceValue for sourceProperty, it must also have the chosen targetValue for targetProperty. 1:1 only, no homonyms." ;
+    sh:labelTemplate   "Value '{$exclFDAll_sourceValue}' of {$exclFDAll_sourceProperty} must coincide with value '{$exclFDAll_targetValue}' in {$exclFDAll_targetProperty}" ;
+    sh:parameter       [ sh:path dqcsh:exclFDAll_sourceProperty ; sh:name "sourceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDAll_sourceValue ; sh:name "sourceValue"    ; sh:datatype xsd:string ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDAll_targetProperty ; sh:name "targetProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDAll_targetValue ; sh:name "targetValue"    ; sh:datatype xsd:string ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Value '{$exclFDAll_sourceValue}' of {$exclFDAll_sourceProperty} must coincide with value '{$exclFDAll_targetValue}' in {$exclFDAll_targetProperty}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($exclFDAll_targetProperty AS ?path) WHERE {
+                             $this $exclFDAll_sourceProperty $exclFDAll_sourceValue .
+                             FILTER NOT EXISTS { $this $exclFDAll_targetProperty $exclFDAll_targetValue . }
+                           }
+                         """ ] .
+
+# ---------- dqc:ExclusiveFunctionalDependencyClass ---------------------------
+
+dqcsh:ExclusiveFunctionalDependencyClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Exclusive functional dependency (class instances)" ;
+    sh:labelTemplate   "Within {$exclFDClass_class}: '{$exclFDClass_sourceValue}' in {$exclFDClass_sourceProperty} must imply '{$exclFDClass_targetValue}' in {$exclFDClass_targetProperty}" ;
+    sh:parameter       [ sh:path dqcsh:exclFDClass_class ; sh:name "class"      ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDClass_sourceProperty ; sh:name "sourceProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDClass_sourceValue ; sh:name "sourceValue"    ; sh:datatype xsd:string ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDClass_targetProperty ; sh:name "targetProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:exclFDClass_targetValue ; sh:name "targetValue"    ; sh:datatype xsd:string ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Within {$exclFDClass_class}: '{$exclFDClass_sourceValue}' in {$exclFDClass_sourceProperty} must imply '{$exclFDClass_targetValue}' in {$exclFDClass_targetProperty}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($exclFDClass_targetProperty AS ?path) WHERE {
+                             $this rdf:type $exclFDClass_class .
+                             $this $exclFDClass_sourceProperty $exclFDClass_sourceValue .
+                             FILTER NOT EXISTS { $this $exclFDClass_targetProperty $exclFDClass_targetValue . }
+                           }
+                         """ ] .
+
+# ---------- dqc:FunctionalDependentEmptyValueAll -----------------------------
+
+dqcsh:FunctionalDependentEmptyValueAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Functionally dependent empty-value check (all instances)" ;
+    rdfs:comment       "Whenever the subject has the chosen sourceValue for sourceProperty, emptyProperty must be the empty literal." ;
+    sh:labelTemplate   "When {$fdEmpty_sourceProperty} = '{$fdEmpty_sourceValue}', {$fdEmpty_emptyProperty} must be empty" ;
+    sh:parameter       [ sh:path dqcsh:fdEmpty_sourceProperty ; sh:name "sourceProperty"         ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdEmpty_sourceValue ; sh:name "sourceValue"            ; sh:datatype xsd:string ] ;
+    sh:parameter       [ sh:path dqcsh:fdEmpty_emptyProperty ; sh:name "emptyProperty" ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "When {$fdEmpty_sourceProperty} = '{$fdEmpty_sourceValue}', {$fdEmpty_emptyProperty} must be empty" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this ($fdEmpty_emptyProperty AS ?path) WHERE {
+                             $this $fdEmpty_sourceProperty $fdEmpty_sourceValue .
+                             FILTER NOT EXISTS { $this $fdEmpty_emptyProperty ""^^xsd:string . }
+                           }
+                         """ ] .
+
+# ---------- dqc:FunctionalDependencyTrustedReferenceAll ----------------------
+
+dqcsh:FunctionalDependencyTrustedReferenceAllConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Functional dependency vs trusted reference (all instances)" ;
+    rdfs:comment       "For every subject, the pair (property1-value, property2-value) must occur as (referenceProperty1-value, referenceProperty2-value) on some instance of the trusted referenceClass." ;
+    sh:labelTemplate   "Pair ({$fdTrustedAll_property1}, {$fdTrustedAll_property2}) must occur as ({$fdTrustedAll_referenceProperty1}, {$fdTrustedAll_referenceProperty2}) in {$fdTrustedAll_referenceClass}" ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedAll_property1 ; sh:name "property1"             ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedAll_property2 ; sh:name "property2"             ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedAll_referenceClass ; sh:name "referenceClass" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedAll_referenceProperty1 ; sh:name "referenceProperty1"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedAll_referenceProperty2 ; sh:name "referenceProperty2"   ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Pair ({$fdTrustedAll_property1}, {$fdTrustedAll_property2}) must occur as ({$fdTrustedAll_referenceProperty1}, {$fdTrustedAll_referenceProperty2}) in {$fdTrustedAll_referenceClass}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this WHERE {
+                             OPTIONAL { $this $fdTrustedAll_property1 ?value1 . }
+                             OPTIONAL { $this $fdTrustedAll_property2 ?value2 . }
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $fdTrustedAll_referenceClass .
+                               ?ref $fdTrustedAll_referenceProperty1 ?value1 .
+                               ?ref $fdTrustedAll_referenceProperty2 ?value2 .
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:FunctionalDependencyTrustedReferenceClass --------------------
+
+dqcsh:FunctionalDependencyTrustedReferenceClassConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Functional dependency vs trusted reference (class instances)" ;
+    sh:labelTemplate   "Within {$fdTrustedClass_class}: pair ({$fdTrustedClass_property1}, {$fdTrustedClass_property2}) must occur as ({$fdTrustedClass_referenceProperty1}, {$fdTrustedClass_referenceProperty2}) in {$fdTrustedClass_referenceClass}" ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_class ; sh:name "class"          ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_property1 ; sh:name "property1"             ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_property2 ; sh:name "property2"             ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_referenceClass ; sh:name "referenceClass" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_referenceProperty1 ; sh:name "referenceProperty1"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedClass_referenceProperty2 ; sh:name "referenceProperty2"   ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Within {$fdTrustedClass_class}: pair ({$fdTrustedClass_property1}, {$fdTrustedClass_property2}) must occur as ({$fdTrustedClass_referenceProperty1}, {$fdTrustedClass_referenceProperty2}) in {$fdTrustedClass_referenceClass}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this WHERE {
+                             $this rdf:type $fdTrustedClass_class .
+                             OPTIONAL { $this $fdTrustedClass_property1 ?value1 . }
+                             OPTIONAL { $this $fdTrustedClass_property2 ?value2 . }
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $fdTrustedClass_referenceClass .
+                               ?ref $fdTrustedClass_referenceProperty1 ?value1 .
+                               ?ref $fdTrustedClass_referenceProperty2 ?value2 .
+                             }
+                           }
+                         """ ] .
+
+# ---------- dqc:FunctionalDependencyTrustedReference_ClassOverBlankNode ------
+
+dqcsh:FunctionalDependencyTrustedReferenceClassOverBlankNodeConstraintComponent
+    a                  sh:ConstraintComponent ;
+    dqcsh:category     dqc:FunctionalDependencyConstraints ;
+    rdfs:label         "Functional dependency vs trusted reference, via blank node (class instances)" ;
+    rdfs:comment       "Variant where the first tested property (nestedProperty) is reached through an intermediate node hung off viaProperty; the second tested property (property2) stays on the subject." ;
+    sh:labelTemplate   "Pair ({$fdTrustedBN_nestedProperty} via {$fdTrustedBN_viaProperty}, {$fdTrustedBN_property2}) must occur as ({$fdTrustedBN_referenceProperty1}, {$fdTrustedBN_referenceProperty2}) in {$fdTrustedBN_referenceClass}" ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_class ; sh:name "class"          ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_viaProperty ; sh:name "viaProperty"    ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_nestedProperty ; sh:name "nestedProperty"     ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_property2 ; sh:name "property2"  ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_referenceClass ; sh:name "referenceClass" ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_referenceProperty1 ; sh:name "referenceProperty1"   ; sh:nodeKind sh:IRI ] ;
+    sh:parameter       [ sh:path dqcsh:fdTrustedBN_referenceProperty2 ; sh:name "referenceProperty2"   ; sh:nodeKind sh:IRI ] ;
+    sh:nodeValidator   [ a sh:SPARQLSelectValidator ;
+                         sh:message "Pair ({$fdTrustedBN_nestedProperty} via {$fdTrustedBN_viaProperty}, {$fdTrustedBN_property2}) must occur as ({$fdTrustedBN_referenceProperty1}, {$fdTrustedBN_referenceProperty2}) in {$fdTrustedBN_referenceClass}" ;
+                         sh:prefixes <http://semwebquality.org/ontologies/dq-constraints-shacl> ;
+                         sh:select """
+                           SELECT $this WHERE {
+                             $this rdf:type $fdTrustedBN_class .
+                             OPTIONAL {
+                               $this $fdTrustedBN_viaProperty ?node .
+                               OPTIONAL { ?node $fdTrustedBN_nestedProperty ?value1 . }
+                             }
+                             OPTIONAL { $this $fdTrustedBN_property2 ?value2 . }
+                             FILTER NOT EXISTS {
+                               ?ref rdf:type $fdTrustedBN_referenceClass .
+                               ?ref $fdTrustedBN_referenceProperty1 ?value1 .
+                               ?ref $fdTrustedBN_referenceProperty2 ?value2 .
+                             }
+                           }
+                         """ ] .
+
+# ============================================================================
+#                            END OF LIBRARY
+# ============================================================================

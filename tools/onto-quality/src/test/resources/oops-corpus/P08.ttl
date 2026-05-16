@@ -1,0 +1,31 @@
+@prefix : <http://oops.linkeddata.es/data/testP08#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP08> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P08"@en .
+
+:ClassNoComment a owl:Class ;
+    rdfs:label "Class lacks comment."@en .
+
+:ClassNoLabel a owl:Class ;
+    rdfs:comment "Class lacks label"@en ;
+    rdfs:subClassOf owl:Thing .
+
+:attributeNoComment a owl:DatatypeProperty ;
+    rdfs:label "Attribute lacks comment"@en .
+
+:attributeNoLabel a owl:DatatypeProperty ;
+    rdfs:comment "Attribute lacks label"@en .
+
+:relationshipNoComment a owl:ObjectProperty ;
+    rdfs:label "Relationship lacks comment"@en .
+
+:relationshipNoLabel a owl:ObjectProperty ;
+    rdfs:comment "Relationship lacks label"@en .
+

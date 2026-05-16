@@ -1,0 +1,45 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc:   <http://purl.org/dc/elements/1.1/> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix :     <http://oops.linkeddata.es/data/testP12#> .
+@prefix ns2:  <http://oops.linkeddata.es/data/testP12namespace2#> .
+
+<http://oops.linkeddata.es/data/testP12> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    rdfs:comment "Test for P12"@en ;
+    dct:license <http://creativecommons.org/licenses/by/4.0/> .
+
+:relationshipS a owl:ObjectProperty ;
+    rdfs:label "relationship S"@en ;
+    rdfs:comment "Element involved in M1-P12 pattern A."@en .
+
+:relationshipT a owl:ObjectProperty ;
+    rdfs:label "relationship T"@en ;
+    rdfs:comment "Element involved in M1-P12 pattern B."@en .
+
+:relationship_T a owl:ObjectProperty ;
+    rdfs:label "relationship T"@en ;
+    rdfs:comment "Element involved in M1-P12 pattern B."@en .
+
+ns2:relationshipS a owl:ObjectProperty ;
+    rdfs:label "relationship S"@en ;
+    rdfs:comment "Element involved in M1-P12 pattern A."@en .
+
+:attributeU a owl:DatatypeProperty ;
+    rdfs:label "attribute U"@en ;
+    rdfs:comment "Element involved in M2-P12 pattern A."@en .
+
+:attributeV a owl:DatatypeProperty ;
+    rdfs:label "attribute V"@en ;
+    rdfs:comment "Element involved in M2-P12 pattern B."@en .
+
+:attribute_V a owl:DatatypeProperty ;
+    rdfs:label "attribute V"@en ;
+    rdfs:comment "Element involved in M2-P12 pattern B."@en .
+
+ns2:attributeU a owl:DatatypeProperty ;
+    rdfs:label "attribute U"@en ;
+    rdfs:comment "Element involved in M2-P12 pattern A."@en .

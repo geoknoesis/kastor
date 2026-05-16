@@ -1,0 +1,55 @@
+@prefix : <http://oops.linkeddata.es/data/testP27#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP27> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P27"@en .
+
+:attributeW a owl:DatatypeProperty ;
+    rdfs:label "attributeW"@en ;
+    rdfs:domain :ClassA ;
+    owl:equivalentProperty :attributeX .
+
+:attributeY a owl:DatatypeProperty ;
+    rdfs:label "attributeY"@en ;
+    rdfs:range rdfs:Literal ;
+    owl:equivalentProperty :attributeZ .
+
+:relationshipS a owl:ObjectProperty ;
+    rdfs:label "relationshipS"@en ;
+    rdfs:domain :ClassA ;
+    owl:equivalentProperty :relationshipT .
+
+:relationshipU a owl:ObjectProperty ;
+    rdfs:label "relationshipU"@en ;
+    rdfs:range :ClassA ;
+    owl:equivalentProperty :relationshipV .
+
+:attributeX a owl:DatatypeProperty ;
+    rdfs:label "attributeX"@en ;
+    rdfs:domain :ClassB .
+
+:attributeZ a owl:DatatypeProperty ;
+    rdfs:label "attributeZ"@en ;
+    rdfs:range xsd:float .
+
+:relationshipT a owl:ObjectProperty ;
+    rdfs:label "relationshipT"@en ;
+    rdfs:domain :ClassB .
+
+:relationshipV a owl:ObjectProperty ;
+    rdfs:label "relationshipV"@en ;
+    rdfs:range :ClassB .
+
+:ClassA a owl:Class ;
+    rdfs:label "ClassA"@en .
+
+:ClassB a owl:Class ;
+    rdfs:label "ClassB"@en ;
+    rdfs:subClassOf owl:Thing .
+

@@ -177,5 +177,6 @@ if (!report.isValid) {
 - [SHACL DSL Guide](../api/shacl-dsl-guide.md) - Complete DSL reference
 - [How to Validate with SHACL](how-to-validate-shacl.md) - Validation workflow
 - [SHACL Validation Features](../features/shacl-validation.md) - Validation capabilities
+- [How to Check Ontology Quality](how-to-ontology-quality.md) - Bundled ontology pitfall catalogues and semantic tier
 
 

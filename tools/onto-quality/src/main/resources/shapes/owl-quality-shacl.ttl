@@ -1,0 +1,800 @@
+# ============================================================================
+#  OWL Ontology Quality — SHACL 1.2 Shapes Library
+#
+#  Source for pitfall numbering: Poveda-Villalón, Gómez-Pérez & Suárez-Figueroa,
+#  "OOPS! (OntOlogy Pitfall Scanner!)", IJSWIS 10(2), 2014, with additions
+#  from later versions of the OOPS catalogue (https://oops.linkeddata.es/).
+#
+#  Conformant with SHACL 1.2 Core for the majority of shapes; SHACL-SPARQL
+#  is used only for the checks that need transitive-closure reasoning or
+#  cross-resource lookups (cycle detection, untyped-entity discovery,
+#  unused-class detection).
+#
+#  Embedded SPARQL uses explicit PREFIX lines and SELECT variables (not $this
+#  in the SELECT clause) so it runs on Kastor’s SHACL engine (Jena ARQ).
+#
+#  Namespace:
+#    oqsh:  http://example.org/owl-quality-shacl#
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix oqsh:   <http://example.org/owl-quality-shacl#> .
+
+# ----------------------------------------------------------------------------
+#  Ontology header
+# ----------------------------------------------------------------------------
+
+<http://example.org/owl-quality-shacl>
+    a               owl:Ontology ;
+    rdfs:label      "OWL Ontology Quality SHACL Library" ;
+    rdfs:comment    "SHACL 1.2 shapes for checking the quality of OWL TBox files: annotation coverage, declaration hygiene, hierarchy cleanliness, naming conventions, and deprecation discipline. Numbered checks (P04, P08, etc.) follow the OOPS! ontology-pitfall catalogue." ;
+    owl:imports     <http://www.w3.org/ns/shacl> ;
+    sh:declare      [ sh:prefix "rdf"  ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "owl"  ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd"  ; sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "sh"   ; sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                    [ sh:prefix "dct"  ; sh:namespace "http://purl.org/dc/terms/"^^xsd:anyURI ] ,
+                    [ sh:prefix "oqsh" ; sh:namespace "http://example.org/owl-quality-shacl#"^^xsd:anyURI ] .
+
+# ----------------------------------------------------------------------------
+#  Tagging vocabulary
+# ----------------------------------------------------------------------------
+
+oqsh:pitfall
+    a               rdf:Property ;
+    rdfs:label      "OOPS! pitfall reference" ;
+    rdfs:comment    "Links a shape to the OOPS! pitfall it enforces (P04, P08, ...), or the string 'convention' if it is not in the OOPS catalogue." ;
+    rdfs:domain     sh:Shape .
+
+oqsh:category
+    a               rdf:Property ;
+    rdfs:label      "category" ;
+    rdfs:comment    "Object is an oqsh category resource (rdfs:Class and skos:Concept) grouping related SHACL checks." ;
+    rdfs:domain     sh:Shape ;
+    rdfs:range      rdfs:Class .
+
+#  SKOS taxonomy for oqsh:category tags (flat scheme; sibling top concepts).
+
+oqsh:QualityShapeCategoryScheme a skos:ConceptScheme ;
+    rdfs:label      "Ontology quality — shape categories"@en ;
+    skos:prefLabel  "Ontology quality — shape categories"@en ;
+    skos:definition "Controlled vocabulary of category IRIs used as objects of oqsh:category on shapes in onto-quality catalogues tied to namespace http://example.org/owl-quality-shacl#."@en ;
+    skos:scopeNote  "Categories are pairwise disjoint groupings at the catalogue level (no skos:narrower / skos:broader). The embedding-assisted tier reuses concepts in this scheme."@en ;
+    skos:hasTopConcept
+        oqsh:Annotations , oqsh:Deprecation , oqsh:Hierarchy ,
+        oqsh:Inverses , oqsh:Metadata , oqsh:Naming ,
+        oqsh:PropertyDeclarations , oqsh:Semantics , oqsh:VocabularyIntegrity .
+
+oqsh:Annotations a rdfs:Class, skos:Concept ;
+    rdfs:label      "entity annotations"@en ;
+    skos:prefLabel  "Entity annotations"@en ;
+    skos:definition "Checks on human-facing documentation triples attached to ontology entities: rdfs:label, rdfs:comment, skos:definition coverage, lexical hygiene, uniqueness of labels per language, and analogous misuse patterns."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Deprecation a rdfs:Class, skos:Concept ;
+    rdfs:label      "deprecation hygiene"@en ;
+    skos:prefLabel  "Deprecation hygiene"@en ;
+    skos:definition "Checks that deprecated classes and properties are not still used in ways that defeat the deprecation signal (e.g. active references outside allowed annotation paths)."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Hierarchy a rdfs:Class, skos:Concept ;
+    rdfs:label      "hierarchy hygiene"@en ;
+    skos:prefLabel  "Hierarchy hygiene"@en ;
+    skos:definition "Checks on rdfs:subClassOf and rdfs:subPropertyOf structure, well-foundedness of class and property trees, and related structural class expressions (e.g. unions, recursive definitions, property chains) when expressed as explicit RDF."@en ;
+    skos:scopeNote  "Semantic entailments over the hierarchy (beyond explicit triple patterns) belong to reasoning-backed tiers, not to these shapes alone."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Inverses a rdfs:Class, skos:Concept ;
+    rdfs:label      "inverse and symmetry"@en ;
+    skos:prefLabel  "Inverses and symmetry"@en ;
+    skos:definition "Checks on owl:inverseOf, owl:SymmetricProperty, owl:AsymmetricProperty, owl:FunctionalProperty, and heuristic suggestions where an inverse declaration is customary."@en ;
+    skos:scopeNote  "Detecting wrongly stated inverses with respect to a full model typically requires OWL reasoning; catalogue shapes here stick to conservative structural patterns."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Metadata a rdfs:Class, skos:Concept ;
+    rdfs:label      "ontology metadata"@en ;
+    skos:prefLabel  "Ontology metadata"@en ;
+    skos:definition "Checks on owl:Ontology-level documentation and policy fields: identifiers, versioning, attribution, licence, and structural hygiene of ontology IRIs versus document content."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Naming a rdfs:Class, skos:Concept ;
+    rdfs:label      "naming conventions"@en ;
+    skos:prefLabel  "Naming conventions"@en ;
+    skos:definition "Checks on lexical conventions for local names of classes and properties (prefix style, casing) and flagged meta-predicate naming smells."@en ;
+    skos:scopeNote  "Convention-focused; high-severity ontology errors are flagged separately."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:PropertyDeclarations a rdfs:Class, skos:Concept ;
+    rdfs:label      "property declarations"@en ;
+    skos:prefLabel  "Property declarations"@en ;
+    skos:definition "Checks on explicit OWL or RDFS property typing: domain and range presence, cardinality of domain/range declarations, alignment of object vs datatype properties, and compatibility of equivalent property pairs where expressed structurally."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:Semantics a rdfs:Class, skos:Concept ;
+    rdfs:label      "semantic similarity"@en ;
+    skos:prefLabel  "Semantic similarity"@en ;
+    skos:definition "Quality checks guided by lexical or vector similarity materialized as RDF (typically after an enrichment pipeline), detecting near-duplicates and related pitfalls that pure graph patterns cannot approximate."@en ;
+    skos:scopeNote  "Consumed from the embedding-quality SHACL catalogue; validators should supply scores or pairwise links emitted by SemanticEnricher (or compatible tooling) before evaluating these shapes."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+oqsh:VocabularyIntegrity a rdfs:Class, skos:Concept ;
+    rdfs:label      "vocabulary integrity"@en ;
+    skos:prefLabel  "Vocabulary integrity"@en ;
+    skos:definition "Checks ensuring declared vocabularies are internally consistent with respect to typed usage: untyped entities, orphaned classes, predicates used without property declarations, hijacked or mismatched namespace hosts, etc."@en ;
+    skos:inScheme   oqsh:QualityShapeCategoryScheme ;
+    skos:topConceptOf oqsh:QualityShapeCategoryScheme .
+
+# =============================================================================
+#                          A. ONTOLOGY METADATA  (P09)
+# =============================================================================
+
+oqsh:OntologyMetadataShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "P09" ;
+    rdfs:label      "An owl:Ontology should carry rdfs:label, rdfs:comment and dct:creator" ;
+    rdfs:comment    "OOPS! P09: 'Missing basic information' — an ontology that does not state who made it, what it is, and what version it is fails the most elementary metadata test." ;
+    sh:targetClass  owl:Ontology ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:minCount 1 ;
+                      sh:message "Ontology has no rdfs:label." ] ;
+    sh:property     [ sh:path rdfs:comment ;
+                      sh:minCount 1 ;
+                      sh:message "Ontology has no rdfs:comment describing its purpose." ] ;
+    sh:property     [ sh:path dct:creator ;
+                      sh:minCount 1 ;
+                      sh:severity sh:Info ;
+                      sh:message "Ontology has no dct:creator (or equivalent attribution)." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:OntologyVersionShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "An owl:Ontology should declare an owl:versionIRI or owl:versionInfo" ;
+    rdfs:comment    "Versioned ontologies are easier to depend on. Not in the OOPS catalogue but universally recommended (FOOPS, FAIR ontology guidelines)." ;
+    sh:targetClass  owl:Ontology ;
+    sh:or           ( [ sh:path owl:versionIRI ;  sh:minCount 1 ]
+                      [ sh:path owl:versionInfo ; sh:minCount 1 ] ) ;
+    sh:message      "Ontology declares neither owl:versionIRI nor owl:versionInfo." ;
+    sh:severity     sh:Info .
+
+oqsh:OntologyLicenseShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "P41" ;
+    rdfs:label      "An owl:Ontology should declare a license" ;
+    rdfs:comment    "Aligns with OOPS! P41 (no licence declared): require dct:license on the ontology head." ;
+    sh:targetClass  owl:Ontology ;
+    sh:property     [ sh:path dct:license ;
+                      sh:minCount 1 ;
+                      sh:message "Ontology has no dct:license; downstream users cannot legally redistribute." ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                       B. ENTITY ANNOTATIONS  (P08)
+# =============================================================================
+
+oqsh:ClassHasLabelShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "P08" ;
+    rdfs:label      "Every owl:Class should have rdfs:label" ;
+    rdfs:comment    "OOPS! P08. Defined classes without labels are unusable in browsers and editors." ;
+    sh:targetClass  owl:Class ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:minCount 1 ;
+                      sh:message "Class has no rdfs:label." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:ObjectPropertyHasLabelShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "P08" ;
+    rdfs:label      "Every owl:ObjectProperty should have rdfs:label" ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:minCount 1 ;
+                      sh:message "Object property has no rdfs:label." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:DatatypePropertyHasLabelShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "P08" ;
+    rdfs:label      "Every owl:DatatypeProperty should have rdfs:label" ;
+    sh:targetClass  owl:DatatypeProperty ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:minCount 1 ;
+                      sh:message "Datatype property has no rdfs:label." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:ClassHasDefinitionShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "P08" ;
+    rdfs:label      "Every owl:Class should carry rdfs:comment or skos:definition" ;
+    rdfs:comment    "Strengthens P08 for the case of classes specifically. A class without a textual definition is hard to reuse correctly." ;
+    sh:targetClass  owl:Class ;
+    sh:or           ( [ sh:path rdfs:comment    ; sh:minCount 1 ]
+                      [ sh:path skos:definition ; sh:minCount 1 ] ) ;
+    sh:message      "Class has neither rdfs:comment nor skos:definition." ;
+    sh:severity     sh:Warning .
+
+oqsh:ClassLabelUniqueLangShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "A class has at most one rdfs:label per language tag" ;
+    rdfs:comment    "Mirrors SKOS S14 for owl:Class. Two same-language labels on one entity are almost always an authoring mistake." ;
+    sh:targetClass  owl:Class ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:uniqueLang true ;
+                      sh:message "Class has more than one rdfs:label with the same language tag." ] .
+
+# =============================================================================
+#                  C. PROPERTY DECLARATIONS  (P11, P19, P27)
+# =============================================================================
+
+oqsh:ObjectPropertyHasDomainShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P11" ;
+    rdfs:label      "Every owl:ObjectProperty should declare rdfs:domain" ;
+    rdfs:comment    "OOPS! P11. Without a domain, the property is effectively typed as rdfs:Resource — useful in some open-vocabulary cases but a smell in domain ontologies." ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:property     [ sh:path rdfs:domain ;
+                      sh:minCount 1 ;
+                      sh:message "Object property has no rdfs:domain." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:ObjectPropertyHasRangeShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P11" ;
+    rdfs:label      "Every owl:ObjectProperty should declare rdfs:range" ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:property     [ sh:path rdfs:range ;
+                      sh:minCount 1 ;
+                      sh:message "Object property has no rdfs:range." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:DatatypePropertyHasDomainShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P11" ;
+    rdfs:label      "Every owl:DatatypeProperty should declare rdfs:domain" ;
+    sh:targetClass  owl:DatatypeProperty ;
+    sh:property     [ sh:path rdfs:domain ;
+                      sh:minCount 1 ;
+                      sh:message "Datatype property has no rdfs:domain." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:DatatypePropertyHasRangeShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P11" ;
+    rdfs:label      "Every owl:DatatypeProperty should declare rdfs:range" ;
+    sh:targetClass  owl:DatatypeProperty ;
+    sh:property     [ sh:path rdfs:range ;
+                      sh:minCount 1 ;
+                      sh:message "Datatype property has no rdfs:range." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:SingleDomainShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P19" ;
+    rdfs:label      "Properties should not declare more than one rdfs:domain" ;
+    rdfs:comment    "Multiple rdfs:domain values combine by INTERSECTION, not union — usually a mis-modelling. If you mean union, use owl:unionOf in a single rdfs:domain." ;
+    sh:targetSubjectsOf rdfs:domain ;
+    sh:property     [ sh:path rdfs:domain ;
+                      sh:maxCount 1 ;
+                      sh:message "Property has multiple rdfs:domain values — these combine by INTERSECTION; use owl:unionOf for union." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:SingleRangeShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P19" ;
+    rdfs:label      "Properties should not declare more than one rdfs:range" ;
+    sh:targetSubjectsOf rdfs:range ;
+    sh:property     [ sh:path rdfs:range ;
+                      sh:maxCount 1 ;
+                      sh:message "Property has multiple rdfs:range values — these combine by INTERSECTION; use owl:unionOf for union." ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P27: owl:equivalentProperty but incompatible rdfs:domain / rdfs:range (OOPS) --
+oqsh:WrongEquivalentPropertiesShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P27" ;
+    rdfs:label      "Equivalent properties should agree on rdfs:domain and rdfs:range" ;
+    rdfs:comment    "OOPS! P27 'Defining wrong equivalent properties': if two properties are owl:equivalentProperty, asserting different rdfs:domain or rdfs:range values breaks the intended semantics." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "owl:equivalentProperty pair has mismatched rdfs:domain and/or rdfs:range." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE { ?p owl:equivalentProperty ?q . FILTER ( isIRI(?p) && isIRI(?q) ) { ?p rdfs:domain ?d1 . ?q rdfs:domain ?d2 . FILTER ( ?d1 != ?d2 ) } UNION { ?p rdfs:range ?r1 . ?q rdfs:range ?r2 . FILTER ( ?r1 != ?r2 ) } BIND(1 AS ?v) }""" ] ;
+    sh:severity     sh:Warning .
+
+oqsh:DomainIsClassShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "rdfs:domain values should be declared classes" ;
+    sh:targetSubjectsOf rdfs:domain ;
+    sh:property     [ sh:path rdfs:domain ;
+                      sh:or ( [ sh:class owl:Class ]
+                              [ sh:class rdfs:Class ] ) ;
+                      sh:message "rdfs:domain value is not declared as an owl:Class or rdfs:Class." ] ;
+    sh:severity     sh:Warning .
+
+oqsh:ObjectPropertyRangeIsClassShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "rdfs:range of an owl:ObjectProperty should be a class" ;
+    rdfs:comment    "A datatype in the range of an object property is a sign that the property was meant to be a datatype property instead." ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:property     [ sh:path rdfs:range ;
+                      sh:or ( [ sh:class owl:Class ]
+                              [ sh:class rdfs:Class ] ) ;
+                      sh:message "owl:ObjectProperty has an rdfs:range that is not a class — should this be an owl:DatatypeProperty?" ] ;
+    sh:severity     sh:Warning .
+
+oqsh:NonTrivialDomainShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "rdfs:domain should not be owl:Thing or rdfs:Resource" ;
+    rdfs:comment    "An owl:Thing/rdfs:Resource domain is logically equivalent to having no domain at all — but worse, because it suggests intent. Use no domain, or pick a meaningful class." ;
+    sh:targetSubjectsOf rdfs:domain ;
+    sh:property     [ sh:path rdfs:domain ;
+                      sh:not [ sh:in ( owl:Thing rdfs:Resource ) ] ;
+                      sh:message "rdfs:domain is owl:Thing/rdfs:Resource — equivalent to no domain at all, but more misleading." ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                          D. HIERARCHY HYGIENE  (P06)
+# =============================================================================
+
+oqsh:NoSubClassCycleShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Hierarchy ;
+    oqsh:pitfall    "P06" ;
+    rdfs:label      "No cycles in the rdfs:subClassOf hierarchy" ;
+    rdfs:comment    "OOPS! P06. Strictly, A subClassOf A is permitted (reflexive) and a cycle just makes every class in the cycle equivalent — but that's almost never the intent. Flag and let the author decide." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class appears in an rdfs:subClassOf cycle." ;
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdfs:subClassOf+ $this . FILTER ( $this != owl:Thing ) BIND(1 AS ?v) }" ] .
+
+oqsh:NoSubPropertyCycleShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Hierarchy ;
+    oqsh:pitfall    "P06" ;
+    rdfs:label      "No cycles in the rdfs:subPropertyOf hierarchy" ;
+    sh:targetSubjectsOf rdfs:subPropertyOf ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property appears in an rdfs:subPropertyOf cycle." ;
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE { $this rdfs:subPropertyOf+ $this . BIND(1 AS ?v) }" ] .
+
+oqsh:EquivalenceVsSubclassShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Hierarchy ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "Avoid combining owl:equivalentClass with rdfs:subClassOf for the same pair" ;
+    rdfs:comment    "If A owl:equivalentClass B then both A rdfs:subClassOf B AND B rdfs:subClassOf A are entailed — asserting subclass as well is redundant. (OOPS P27 names a different issue: wrong equivalent properties.)" ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class is both owl:equivalentClass and rdfs:subClassOf the other — the subclass triple is redundant." ;
+                      sh:select "PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?other WHERE { $this owl:equivalentClass ?other . $this rdfs:subClassOf ?other . FILTER ( $this != ?other ) }" ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                  E. VOCABULARY INTEGRITY  (P04, P34, P35)
+# =============================================================================
+
+oqsh:UntypedClassShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:VocabularyIntegrity ;
+    oqsh:pitfall    "P34" ;
+    rdfs:label      "Classes referenced as classes are declared as owl:Class" ;
+    rdfs:comment    "OOPS! P34. Implicit class declarations work in OWL Full but break OWL DL tooling." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "IRI is used as a class but is not declared as owl:Class or rdfs:Class." ;
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?class WHERE { { ?x rdfs:subClassOf ?class } UNION { ?class rdfs:subClassOf ?x } UNION { ?x rdf:type ?class } UNION { ?x owl:equivalentClass ?class } UNION { ?class owl:equivalentClass ?x } UNION { ?x owl:disjointWith ?class } UNION { ?class owl:disjointWith ?x } UNION { ?p rdfs:domain ?class } UNION { ?p rdfs:range ?class } FILTER ( isIRI(?class) ) FILTER NOT EXISTS { ?class rdf:type owl:Class } FILTER NOT EXISTS { ?class rdf:type rdfs:Class } FILTER NOT EXISTS { ?class rdf:type owl:DeprecatedClass } FILTER ( !strstarts(str(?class), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2001/XMLSchema#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/ns/shacl#") ) }""" ] .
+
+oqsh:UntypedPropertyShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:VocabularyIntegrity ;
+    oqsh:pitfall    "P35" ;
+    rdfs:label      "Properties used as predicates are declared as properties" ;
+    rdfs:comment    "OOPS! P35. Same logic as P34 but for predicates." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "IRI is used as a predicate but is not declared as a property." ;
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?prop WHERE { ?s ?prop ?o . FILTER NOT EXISTS { ?prop rdf:type owl:ObjectProperty } FILTER NOT EXISTS { ?prop rdf:type owl:DatatypeProperty } FILTER NOT EXISTS { ?prop rdf:type owl:AnnotationProperty } FILTER NOT EXISTS { ?prop rdf:type rdf:Property } FILTER NOT EXISTS { ?prop rdf:type owl:DeprecatedProperty } FILTER ( !strstarts(str(?prop), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?prop), "http://purl.org/dc/terms/") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/ns/shacl#") ) }""" ] .
+
+oqsh:OrphanClassShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:VocabularyIntegrity ;
+    oqsh:pitfall    "P04" ;
+    rdfs:label      "Classes should connect to the rest of the ontology" ;
+    rdfs:comment    "OOPS! P04. A class with no structural links may be dead code." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class is unconnected: no subclass/superclass/equivalence/disjointness links, no instances, not used as domain or range." ;
+                      sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdf:type owl:Class . FILTER ( isIRI($this) ) FILTER ( $this != owl:Thing && $this != owl:Nothing ) FILTER NOT EXISTS { $this rdfs:subClassOf ?x . FILTER ( ?x != owl:Thing ) } FILTER NOT EXISTS { ?x rdfs:subClassOf $this } FILTER NOT EXISTS { $this owl:equivalentClass ?x } FILTER NOT EXISTS { ?x owl:equivalentClass $this } FILTER NOT EXISTS { $this owl:disjointWith ?x } FILTER NOT EXISTS { ?x owl:disjointWith $this } FILTER NOT EXISTS { ?p rdfs:domain $this } FILTER NOT EXISTS { ?p rdfs:range $this } FILTER NOT EXISTS { ?i rdf:type $this } BIND(1 AS ?v) }" ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                  F. INVERSE / SYMMETRY  (P25, P26)
+# =============================================================================
+
+oqsh:NoSelfInverseShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Inverses ;
+    oqsh:pitfall    "P25" ;
+    rdfs:label      "A property should not be its own owl:inverseOf" ;
+    rdfs:comment    "OOPS! P25. Saying P inverseOf P really means P is symmetric — use owl:SymmetricProperty instead." ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property is declared owl:inverseOf itself — use owl:SymmetricProperty instead." ;
+                      sh:select "PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this owl:inverseOf $this . BIND(1 AS ?v) }" ] ;
+    sh:severity     sh:Warning .
+
+oqsh:NoInverseForSymmetricShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Inverses ;
+    oqsh:pitfall    "P26" ;
+    rdfs:label      "An owl:SymmetricProperty must not declare owl:inverseOf to another property" ;
+    rdfs:comment    "OOPS! P26. A symmetric property is its own inverse — declaring owl:inverseOf to some other property contradicts the symmetry." ;
+    sh:targetClass  owl:SymmetricProperty ;
+    sh:property     [ sh:path owl:inverseOf ;
+                      sh:maxCount 0 ;
+                      sh:message "owl:SymmetricProperty must not declare owl:inverseOf — symmetry already makes it its own inverse." ] ;
+    sh:severity     sh:Violation .
+
+# =============================================================================
+#                       G. DEPRECATION HYGIENE
+# =============================================================================
+
+oqsh:DeprecatedNotInUseShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Deprecation ;
+    oqsh:pitfall    "convention" ;
+    rdfs:label      "Deprecated classes/properties should not be referenced elsewhere in the ontology" ;
+    rdfs:comment    "An entity marked owl:deprecated true is signalling that it should not be used." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Deprecated entity is still referenced." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> SELECT ?dep ?ref ?p WHERE { ?dep owl:deprecated true . ?ref ?p ?dep . FILTER ( ?p NOT IN ( owl:deprecated, rdfs:label, rdfs:comment, skos:definition, dct:description, owl:versionInfo, rdfs:isDefinedBy ) ) FILTER ( ?ref != ?dep ) }""" ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                          H. NAMING CONVENTIONS  (P22)
+# =============================================================================
+
+oqsh:ClassNameUpperCamelShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Naming ;
+    oqsh:pitfall    "P22" ;
+    rdfs:label      "Classes should use UpperCamelCase local names" ;
+    rdfs:comment    "OOPS! P22. The widely-used convention is UpperCamelCase for class local names." ;
+    sh:targetClass  owl:Class ;
+    sh:nodeKind     sh:IRI ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class local name does not follow UpperCamelCase convention." ;
+                      sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdf:type owl:Class . FILTER ( isIRI($this) ) BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( strlen(?local) > 0 ) FILTER ( !regex(?local, \"^[A-Z][A-Za-z0-9]*$\") ) FILTER ( !regex(?local, \"^_\") ) BIND(1 AS ?v) }" ] ;
+    sh:severity     sh:Info .
+
+oqsh:PropertyNameLowerCamelShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Naming ;
+    oqsh:pitfall    "P22" ;
+    rdfs:label      "Properties should use lowerCamelCase local names" ;
+    sh:targetClass  owl:ObjectProperty , owl:DatatypeProperty , owl:AnnotationProperty , rdf:Property ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property local name does not follow lowerCamelCase convention." ;
+                      sh:select "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { { $this rdf:type owl:ObjectProperty } UNION { $this rdf:type owl:DatatypeProperty } UNION { $this rdf:type owl:AnnotationProperty } UNION { $this rdf:type rdf:Property } FILTER ( isIRI($this) ) BIND ( REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local ) FILTER ( strlen(?local) > 0 ) FILTER ( !regex(?local, \"^[a-z][A-Za-z0-9]*$\") ) FILTER ( !regex(?local, \"^_\") ) BIND(1 AS ?v) }" ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#  I. EXTENDED STRUCTURAL COVERAGE (v0.1.x — OOPS fixtures beyond original 12)
+# =============================================================================
+
+# ---------- P03: meta-relationship predicates (local name is/is-a/has…) ----------
+oqsh:NoMetaPredicateNameShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Naming ;
+    oqsh:pitfall    "P03" ;
+    rdfs:label      "Object/datatype properties should not mimic built-in instantiation (is/has reified as sole local name)" ;
+    rdfs:comment    "OOPS! P03. The upstream fixture models object properties whose local names are placeholders for rdf:type / rdfs:subClassOf (is, is-a, isa, …). These are authoring smells and should receive human-readable relation names instead." ;
+    sh:targetClass  owl:ObjectProperty , owl:DatatypeProperty ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property {$this} uses a prohibited meta-relationship-style local token (see OOPS P03)." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?v WHERE {
+                          BIND (REPLACE(str($this), \"^.*[#/]\", \"\") AS ?local )
+                          BIND (LCASE(?local) AS ?l )
+                          FILTER ( isIRI($this) )
+                          FILTER (
+                            (?l IN (\"is\",\"has\",\"isa\",\"hasa\"))
+                            || REGEX(?l, \"^(is[_-]?a|has[_-]?a)$\")
+                          )
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P13: missing inverse declarations (semi-automated heuristic) -----
+oqsh:CandidateMissingInverseShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Inverses ;
+    oqsh:pitfall    "P13" ;
+    rdfs:label      "Object properties with domain/range but no owl:inverseOf (suggestion)" ;
+    rdfs:comment    "OOPS! P13 (M1 heuristic). Highlights object properties used with domain/range that neither declare owl:inverseOf nor are guarded by symmetry/asymmetry. Many legitimate properties have no inverse; severity is informational." ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property {$this} has rdfs:domain and rdfs:range but no owl:inverseOf — declare an inverse where it adds modelling value." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          $this rdf:type owl:ObjectProperty .
+                          FILTER EXISTS { $this rdfs:domain ?da . }
+                          FILTER EXISTS { $this rdfs:range ?ra . }
+                          FILTER NOT EXISTS { $this owl:inverseOf ?x . }
+                          FILTER NOT EXISTS { ?y owl:inverseOf $this . }
+                          FILTER NOT EXISTS { $this a owl:SymmetricProperty . }
+                          FILTER NOT EXISTS { $this a owl:AsymmetricProperty . }
+                          FILTER NOT EXISTS { $this a owl:FunctionalProperty . }
+                          FILTER ( isIRI($this) )
+                          FILTER ( !STRSTARTS(str($this), str(rdf:)) )
+                          FILTER ( !STRSTARTS(str($this), str(rdfs:)) )
+                          FILTER ( !STRSTARTS(str($this), str(owl:)) )
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Info .
+
+# ---------- P20: misused textual annotations -------------------------------
+oqsh:MisusedDocumentationAnnotationsShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Annotations ;
+    oqsh:pitfall    "P20" ;
+    rdfs:label      "rdfs:label / rdfs:comment misuse (empty literals or duplication)" ;
+    rdfs:comment    "OOPS! P20 reference suite models empty labels/comments and redundant/equal literals. Embedding-based synonym analysis is postponed to v0.2; structural checks mirror the RDF-level mistakes OOPS asserts." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Entity has malformed documentation annotations (see OOPS P20)." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?x WHERE {
+                          {
+                            ?x rdfs:label ?l .
+                            FILTER (strlen(str(?l)) = 0)
+                            ?x rdf:type owl:Class .
+                          } UNION {
+                            ?x rdfs:comment ?c .
+                            FILTER (strlen(str(?c)) = 0)
+                            ?x rdf:type owl:Class .
+                          } UNION {
+                            ?x rdfs:label ?l .
+                            FILTER (strlen(str(?l)) = 0)
+                            { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
+                          } UNION {
+                            ?x rdfs:comment ?c .
+                            FILTER (strlen(str(?c)) = 0)
+                            { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
+                          } UNION {
+                            ?x rdfs:label ?lb .
+                            ?x rdfs:comment ?cm .
+                            FILTER (strlen(str(?lb)) > 3)
+                            FILTER (str(?lb) = str(?cm))
+                            { ?x rdf:type owl:Class } UNION { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
+                          }
+                        }""" ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P24: recursive class / domain definitions -----------------------
+oqsh:RecursiveClassExpressionShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Hierarchy ;
+    oqsh:pitfall    "P24" ;
+    rdfs:label      "Class participates recursively in owl:equivalentClass / rdfs:subClassOf class expressions" ;
+    rdfs:comment    "OOPS! P24. Mirrors the RDF pattern where a class URI reappears as a member (or operand) of its own owl:equivalentClass / owl:unionOf / owl:intersectionOf / owl:complementOf or rdfs:subClassOf analogue." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class {$this} participates recursively in an equivalent/subclass structural expression." ;
+                      sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          {
+                            ?cls owl:equivalentClass ?expr .
+                            FILTER (?cls = $this)
+                            { ?expr owl:unionOf ?lst } UNION { ?expr owl:intersectionOf ?lst }
+                            ?lst rdf:rest* ?step .
+                            ?step rdf:first ?elem .
+                            FILTER (?elem = ?cls)
+                          } UNION {
+                            ?cls rdfs:subClassOf ?expr .
+                            FILTER (?cls = $this)
+                            { ?expr owl:unionOf ?lst } UNION { ?expr owl:intersectionOf ?lst }
+                            ?lst rdf:rest* ?step .
+                            ?step rdf:first ?elem .
+                            FILTER (?elem = ?cls)
+                          } UNION {
+                            ?cls owl:equivalentClass ?expr .
+                            FILTER (?cls = $this)
+                            FILTER EXISTS { ?expr owl:complementOf ?cls }
+                          } UNION {
+                            ?cls rdfs:subClassOf ?expr .
+                            FILTER (?cls = $this)
+                            FILTER EXISTS { ?expr owl:complementOf ?cls }
+                          }
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Violation .
+
+oqsh:RecursivePropertyDomainRestrictionShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:PropertyDeclarations ;
+    oqsh:pitfall    "P24" ;
+    rdfs:label      "Property domain restricts to expressions that recurse on the property itself" ;
+    rdfs:comment    "OOPS! P24 sub-pattern: owl:Restrictions that appear under rdfs:domain and owl:onProperty that points back at the anchored property denote a cyclic modelling mistake." ;
+    sh:targetClass  owl:ObjectProperty , owl:DatatypeProperty ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Property {$this} contains a cyclic rdfs:domain owl:Restriction pattern (owl:onProperty points to itself)." ;
+                      sh:select """PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          $this rdfs:domain ?domain .
+                          ?domain owl:onProperty $this .
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Violation .
+
+# ---------- P33: singleton owl:propertyChainAxiom ---------------------------
+oqsh:SingletonPropertyChainShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Hierarchy ;
+    oqsh:pitfall    "P33" ;
+    rdfs:label      "owl:propertyChainAxiom lists should declare at least two properties" ;
+    rdfs:comment    "OOPS! P33. A property-chain axiom comprised of a single rdf:list member defeats the modelling purpose (there is effectively no chaining). Mirrors the RDF structure of OOPS!'s reference input." ;
+    sh:targetClass  owl:ObjectProperty ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "owl:propertyChainAxiom declares only one chaining step — add further properties or drop the chain." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          $this owl:propertyChainAxiom ?lst .
+                          FILTER NOT EXISTS { ?lst rdf:rest/rdf:first ?follows . }
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P36 — ontology URI embeds serialization filename extension -----
+oqsh:OntologyIriEndsWithSerializationSuffixShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "P36" ;
+    rdfs:label      "owl:Ontology IRI embeds file-serialisation suffixes such as '.owl'" ;
+    rdfs:comment    "OOPS! P36 exposes an ontology declaration whose ontology IRI still ends with a concrete serialisation artifact (.owl/.ttl ...) — stable canonical IRIs should not carry format-specific suffixes." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology IRI {$this} looks like a resource path that includes an RDF serialisation suffix (e.g., .owl) — canonical IRIs omit file extensions." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          $this rdf:type owl:Ontology .
+                          FILTER isIRI($this)
+                          FILTER REGEX(STR($this), \"\\\\.(owl|rdf|ttl|xml)(#|\\\\?|$)\", \"i\")
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Info .
+
+# ---------- P38 — missing owl:Ontology declarations ------------------------
+oqsh:OntologyDeclarationShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "P38" ;
+    rdfs:label      "Document graph should declare an owl:Ontology whenever it asserts OWL axioms" ;
+    rdfs:comment    "OOPS! P38. When classes or properties appear without any owl:Ontology head, versioning, imports, licensing, etc. lose a canonical anchoring triple." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Graph contains owl:Class assertions but declares no owl:Ontology resource." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          FILTER NOT EXISTS {
+                            ?userOnt rdf:type owl:Ontology .
+                            FILTER ( ?userOnt NOT IN ( <http://example.org/owl-quality-shacl> ) )
+                          }
+                          FILTER EXISTS {
+                            {
+                              ?c rdf:type owl:Class .
+                              FILTER isIRI(?c)
+                              FILTER (?c NOT IN (owl:Thing, owl:Nothing))
+                            }
+                            UNION
+                            {
+                              ?p rdf:type owl:ObjectProperty .
+                              FILTER isIRI(?p)
+                            }
+                            UNION
+                            {
+                              ?dp rdf:type owl:DatatypeProperty .
+                              FILTER isIRI(?dp)
+                            }
+                          }
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P39 — anonymous ontology head ---------------------------------
+oqsh:AnonymousOntologyHeadShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Metadata ;
+    oqsh:pitfall    "P39" ;
+    rdfs:label      "owl:Ontology head should carry a canonical IRI" ;
+    rdfs:comment    "OOPS! P39 exposes an ontology description attached to an anonymous RDF resource instead of a named owl:Ontology URI. Tooling relying on ontology IRIs dereferencing will fail parity checks." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Anonymous owl:Ontology detected — ontology headers should normally be declared with a canonical IRI (OOPS P39)." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?v WHERE {
+                          ?anon rdf:type owl:Ontology .
+                          FILTER (!( isIRI(?anon) ))
+                          FILTER EXISTS {
+                            { ?cls rdf:type owl:Class }
+                            UNION
+                            { ?op rdf:type owl:ObjectProperty }
+                          }
+                          BIND (1 AS ?v)
+                        }""" ] ;
+    sh:severity     sh:Warning .
+
+# ---------- P40 — external namespace terminology minted --------------------
+oqsh:NamespaceMismatchShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:VocabularyIntegrity ;
+    oqsh:pitfall    "P40" ;
+    rdfs:label      "Classes/properties should not be coined under a vocabulary namespace differing from their declaring ontology hosts" ;
+    rdfs:comment    "OOPS! P40 / namespace hijacking: the bundled fixture asserts FOAF-aligned IRIs inside a document whose canonical ontology announces a distant host." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "A named ontology declares classes/properties whose HTTP host differs — possible vocabulary hijacking (OOPS P40)." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?ont WHERE {
+                          ?ont rdf:type owl:Ontology .
+                          FILTER isIRI(?ont)
+                          FILTER REGEX(STR(?ont), \"^https?://\", \"i\")
+                          ?entity rdf:type ?ptype .
+                          VALUES ?ptype { owl:Class owl:ObjectProperty owl:DatatypeProperty }
+                          FILTER isIRI(?entity)
+                          FILTER REGEX(STR(?entity), \"^https?://\", \"i\")
+                          FILTER (?entity NOT IN (owl:Thing, owl:Nothing, rdfs:Resource))
+                          BIND (REPLACE(REPLACE(STR(?ont), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?ontHostNorm)
+                          BIND (REPLACE(REPLACE(STR(?entity), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?clsHostNorm)
+                          FILTER (?ontHostNorm != ?clsHostNorm)
+                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2002/07/owl#\")))
+                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/1999/02/22-rdf-syntax-ns#\")))
+                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2000/01/rdf-schema#\")))
+                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2001/XMLSchema#\")))
+                          FILTER NOT EXISTS {
+                            ?ont owl:imports ?imp .
+                            FILTER isIRI(?imp)
+                            FILTER STRSTARTS(STR(?entity), STR(?imp))
+                          }
+                        }""" ] ;
+    sh:severity     sh:Warning .
+

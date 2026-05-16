@@ -1,0 +1,2 @@
+# Pinned for reproducibility; bump intentionally. See scripts/pyshacl/README.md
+pyshacl>=0.26.0,<0.32

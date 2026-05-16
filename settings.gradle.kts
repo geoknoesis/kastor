@@ -18,7 +18,12 @@ include(
   ":examples:dcat-us",
   ":examples:dcat-catalog-workshop",
   ":examples:hello-world",
-  ":examples:hello-codegen"
+  ":examples:hello-codegen",
+  ":tools:onto-quality",
+  ":tools:onto-quality-embed",
+  ":tools:onto-quality-cli",
+  ":benchmarks:shacl",
+  ":benchmarks:shacl-era-cli",
 )
 
 

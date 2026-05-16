@@ -1,0 +1,14 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://kastor-cross-engine.example/mincount/> .
+
+ex:PersonShape a sh:NodeShape ;
+  sh:targetClass ex:Person ;
+  sh:property [
+    sh:path ex:name ;
+    sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+    sh:minCount 1
+  ] .
+
+ex:invalid a ex:Person ;
+  rdfs:label "missing name" .

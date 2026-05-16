@@ -1,0 +1,17 @@
+# Sample Docker image for ERA-SHACL-Benchmark `engines/kastor`
+#
+# Copy this directory's built installDist into the image, or build the JAR inside multi-stage.
+# Tag must be: kastor-validation-experiment:latest
+#
+# Example (from repo root after `./gradlew :benchmarks:shacl-era-cli:installDist`):
+#   docker build -f benchmarks/shacl-era-cli/Dockerfile.sample -t kastor-validation-experiment:latest build/modules/benchmarks/shacl-era-cli/install
+
+FROM eclipse-temurin:17-jre-jammy
+
+WORKDIR /opt/kastor-shacl-era
+
+COPY shacl-era-cli /opt/kastor-shacl-era/
+
+ENV PATH="/opt/kastor-shacl-era/shacl-era-cli/bin:${PATH}"
+
+ENTRYPOINT ["shacl-era-cli"]

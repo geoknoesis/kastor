@@ -8,6 +8,10 @@ slf4j = "2.0.17"
 jena = "5.6.0"
 httpclient5 = "5.5"
 rdf4j = "5.3.1"
+onnxruntime = "1.18.0"
+djlTokenizers = "0.28.0"
+jmhGradle = "0.7.2"
+jmh = "1.37"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -38,8 +42,12 @@ rdf4j-rio-nquads = { module = "org.eclipse.rdf4j:rdf4j-rio-nquads", version.ref 
 rdf4j-sail-inferencer = { module = "org.eclipse.rdf4j:rdf4j-sail-inferencer", version.ref = "rdf4j" }
 rdf4j-shacl = { module = "org.eclipse.rdf4j:rdf4j-shacl", version.ref = "rdf4j" }
 
+onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
+djl-huggingface-tokenizers = { module = "ai.djl.huggingface:tokenizers", version.ref = "djlTokenizers" }
+
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+jmh = { id = "me.champeau.jmh", version.ref = "jmhGradle" }
 

@@ -1,0 +1,26 @@
+{
+  "$schema": "See capability/README.md; informal schema v1",
+  "version": 1,
+  "engines": ["kastor", "jena", "rdf4j", "pyshacl", "topbraid"],
+  "statusValues": ["run", "skip_unsupported", "skip_known_bug", "not_automated"],
+  "tests": [
+    {
+      "id": "w3c-shacl12-fixture:minCount-001",
+      "kastor": "run",
+      "jena": "not_automated",
+      "rdf4j": "not_automated",
+      "pyshacl": "not_automated",
+      "topbraid": "not_automated",
+      "notes": "SHACL 1.2 fixture; extend columns when bridge harnesses exist."
+    },
+    {
+      "id": "w3c-shacl12-fixture:targetClass-001",
+      "kastor": "run",
+      "jena": "not_automated",
+      "rdf4j": "not_automated",
+      "pyshacl": "not_automated",
+      "topbraid": "not_automated",
+      "notes": ""
+    }
+  ]
+}

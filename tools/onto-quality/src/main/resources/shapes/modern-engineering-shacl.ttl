@@ -1,0 +1,474 @@
+# ============================================================================
+#  Modern Ontology Engineering — SHACL 1.2 Shapes Library
+#
+#  Embedded SPARQL: variables only in the SELECT clause (not projected IRIs after
+#  $this rewriting), explicit PREFIX lines per query, and SPARQL strings in
+#  single quotes where possible so Turtle """...""" blocks are not truncated.
+#
+#  Pitfalls in this file address modern ontology engineering concerns that
+#  emerged after the OOPS! catalogue was finalized: FAIR principles,
+#  Linked Data hygiene, LLM and RAG consumability, and current OWL
+#  anti-patterns. None of these are duplicated in OOPS!.
+#
+#  Pitfall codes use the N (for "new") prefix to distinguish from OOPS!'s
+#  P-numbered catalogue.
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix dcat:   <http://www.w3.org/ns/dcat#> .
+@prefix prov:   <http://www.w3.org/ns/prov#> .
+@prefix foaf:   <http://xmlns.com/foaf/0.1/> .
+@prefix vann:   <http://purl.org/vocab/vann/> .
+@prefix cc:     <http://creativecommons.org/ns#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix oqsh:   <http://example.org/owl-quality-shacl#> .
+
+<http://example.org/owl-quality-shacl-modern>
+    a               owl:Ontology ;
+    rdfs:label      "Modern Ontology Engineering SHACL Library" ;
+    rdfs:comment    "Pitfalls beyond OOPS!: FAIR compliance, URI hygiene, LLM consumability, OWL anti-patterns. All shapes are tier STRUCTURAL — no embeddings or reasoning required." ;
+    sh:declare      [ sh:prefix "rdf"  ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "owl"  ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd"  ; sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "dct"  ; sh:namespace "http://purl.org/dc/terms/"^^xsd:anyURI ] ,
+                    [ sh:prefix "dcat" ; sh:namespace "http://www.w3.org/ns/dcat#"^^xsd:anyURI ] ,
+                    [ sh:prefix "prov" ; sh:namespace "http://www.w3.org/ns/prov#"^^xsd:anyURI ] ,
+                    [ sh:prefix "foaf" ; sh:namespace "http://xmlns.com/foaf/0.1/"^^xsd:anyURI ] ,
+                    [ sh:prefix "vann" ; sh:namespace "http://purl.org/vocab/vann/"^^xsd:anyURI ] ,
+                    [ sh:prefix "cc"   ; sh:namespace "http://creativecommons.org/ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                    [ sh:prefix "oqsh" ; sh:namespace "http://example.org/owl-quality-shacl#"^^xsd:anyURI ] .
+
+oqsh:FairCompliance    a rdfs:Class ; rdfs:label "FAIR compliance" .
+oqsh:UriHygiene        a rdfs:Class ; rdfs:label "URI hygiene" .
+oqsh:LlmConsumability  a rdfs:Class ; rdfs:label "LLM and RAG consumability" .
+oqsh:OwlAntiPatterns   a rdfs:Class ; rdfs:label "OWL anti-patterns" .
+oqsh:Multilingual      a rdfs:Class ; rdfs:label "multilingual quality" .
+oqsh:Reuse             a rdfs:Class ; rdfs:label "vocabulary reuse" .
+oqsh:Maintainability   a rdfs:Class ; rdfs:label "maintainability" .
+
+# =============================================================================
+#                           FAIR COMPLIANCE
+# =============================================================================
+
+# ---- N03: persistent identifier --------------------------------------------
+
+oqsh:PersistentIdentifierShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:FairCompliance ;
+    oqsh:pitfall    "N03" ;
+    rdfs:label      "Ontology IRIs should use a persistent identifier service" ;
+    rdfs:comment    "FAIR Findability. An ontology hosted at a host-specific IRI (example.com, university.edu) is fragile — domain ownership changes and broken links result. Prefer persistent identifier services (purl.org, w3id.org, doi.org, n2t.net, purl.archive.org). Implemented as an allow-list of safe host prefixes (covers http/https and common w3id spelling variants)." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology IRI {$this} does not use a persistent identifier service (purl.org, w3id.org, doi.org, n2t.net)." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?v WHERE {
+                          $this a owl:Ontology .
+                          FILTER ( isIRI($this) )
+                          FILTER (
+                            !( strstarts(str($this), 'http://purl.org/')
+                            || strstarts(str($this), 'https://purl.org/')
+                            || strstarts(str($this), 'http://purl.archive.org/')
+                            || strstarts(str($this), 'https://purl.archive.org/')
+                            || strstarts(str($this), 'http://w3id.org/')
+                            || strstarts(str($this), 'https://w3id.org/')
+                            || strstarts(str($this), 'http://www.w3id.org/')
+                            || strstarts(str($this), 'https://www.w3id.org/')
+                            || strstarts(str($this), 'http://doi.org/')
+                            || strstarts(str($this), 'https://doi.org/')
+                            || strstarts(str($this), 'http://n2t.net/')
+                            || strstarts(str($this), 'https://n2t.net/')
+                            )
+                          )
+                          BIND ( 1 AS ?v )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# ---- N04: machine-readable license -----------------------------------------
+
+oqsh:MachineReadableLicenseShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:FairCompliance ;
+    oqsh:pitfall    "N04" ;
+    rdfs:label      "License should be declared with a resolvable URI, not just prose" ;
+    rdfs:comment    "FAIR Reusability. A license mentioned only in rdfs:comment cannot be processed automatically by data portals, search engines, or compliance tools. dct:license or cc:license with an IRI to the license text is required for machine-readable licensing." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology {$this} has no dct:license or cc:license with an IRI; the license is not machine-readable." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX dct: <http://purl.org/dc/terms/>
+                        PREFIX cc: <http://creativecommons.org/ns#>
+                        SELECT ?v WHERE {
+                          $this a owl:Ontology .
+                          FILTER NOT EXISTS {
+                            $this dct:license ?lic .
+                            FILTER ( isIRI(?lic) )
+                          }
+                          FILTER NOT EXISTS {
+                            $this cc:license ?lic .
+                            FILTER ( isIRI(?lic) )
+                          }
+                          BIND ( 1 AS ?v )
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# ---- N06: contact point ----------------------------------------------------
+
+oqsh:ContactPointShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:FairCompliance ;
+    oqsh:pitfall    "N06" ;
+    rdfs:label      "Ontology should declare a contact point for maintainers" ;
+    rdfs:comment    "FAIR Findability and Reusability. Consumers who find a quality issue should be able to reach the maintainer. dcat:contactPoint, foaf:mbox on the creator, or vann:preferredNamespacePrefix with documentation links are all acceptable. The shape fires only when NONE of these is present." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology {$this} has no contact point (dcat:contactPoint, foaf:mbox on creator, etc.)." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX dcat: <http://www.w3.org/ns/dcat#>
+                        PREFIX dct: <http://purl.org/dc/terms/>
+                        PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+                        SELECT ?v WHERE {
+                          $this a owl:Ontology .
+                          FILTER NOT EXISTS { $this dcat:contactPoint ?c }
+                          FILTER NOT EXISTS { $this dct:creator/foaf:mbox ?m }
+                          FILTER NOT EXISTS { $this dct:contributor/foaf:mbox ?m }
+                          FILTER NOT EXISTS { $this dct:publisher ?p }
+                          BIND ( 1 AS ?v )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# ---- N07: unversioned imports ----------------------------------------------
+
+oqsh:VersionedImportShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:FairCompliance ;
+    oqsh:pitfall    "N07" ;
+    rdfs:label      "owl:imports should target a versioned IRI when possible" ;
+    rdfs:comment    "Reproducibility. An owl:imports pointing at an unversioned IRI (e.g. http://example.org/foo) means the imported ontology can change underneath consumers. A versioned IRI (http://example.org/foo/2.1, http://example.org/foo/2024-01-15) pins the dependency." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology imports {?imp} without a version segment in the IRI." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        SELECT ?imp WHERE {
+                          $this a owl:Ontology .
+                          $this owl:imports ?imp .
+                          FILTER ( isIRI(?imp) )
+                          FILTER ( !regex(str(?imp), '/(v?[0-9]+([.][0-9]+)*|[0-9]{4}-[0-9]{2}-[0-9]{2})(/|$|#)') )
+                          FILTER ( !strstarts(str(?imp), 'http://www.w3.org/') )
+                          FILTER ( !strstarts(str(?imp), 'https://www.w3.org/') )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                             URI HYGIENE
+# =============================================================================
+
+# ---- N09: inconsistent hash/slash namespaces -------------------------------
+
+oqsh:ConsistentNamespaceStyleShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:UriHygiene ;
+    oqsh:pitfall    "N09" ;
+    rdfs:label      "Ontology should use a consistent hash-namespace OR slash-namespace style" ;
+    rdfs:comment    "URI hygiene. An ontology mixing 'http://example.org/foo#Bar' for some terms and 'http://example.org/foo/Baz' for others confuses consumers and breaks naive namespace tooling. Pick one convention per ontology." ;
+    sh:targetNode   owl:Thing ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology mixes hash-style ({?hashExample}) and slash-style ({?slashExample}) namespaces — pick one convention." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        SELECT ?hashExample ?slashExample WHERE {
+                          {
+                            SELECT (SAMPLE(?h) AS ?hashExample) (SAMPLE(?s) AS ?slashExample) WHERE {
+                              {
+                                ?h a ?t .
+                                FILTER ( ?t IN ( owl:Class, owl:ObjectProperty, owl:DatatypeProperty ) )
+                                FILTER ( isIRI(?h) )
+                                FILTER ( contains(str(?h), '#') )
+                              }
+                              UNION
+                              {
+                                ?s a ?t2 .
+                                FILTER ( ?t2 IN ( owl:Class, owl:ObjectProperty, owl:DatatypeProperty ) )
+                                FILTER ( isIRI(?s) )
+                                FILTER ( !contains(str(?s), '#') )
+                                FILTER ( regex(str(?s), '^https?://[^/]+/[^/]+/[^/]+') )
+                                FILTER ( !strstarts(str(?s), 'http://www.w3.org/') )
+                                FILTER ( !strstarts(str(?s), 'https://www.w3.org/') )
+                                FILTER ( !strstarts(str(?s), 'http://purl.org/') )
+                                FILTER ( !strstarts(str(?s), 'https://purl.org/') )
+                              }
+                            }
+                          }
+                          FILTER ( bound(?hashExample) && bound(?slashExample) )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                       LLM AND RAG CONSUMABILITY
+# =============================================================================
+
+# ---- N16: cryptic IRIs not matching labels ---------------------------------
+
+oqsh:ReadableLocalNameShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:LlmConsumability ;
+    oqsh:pitfall    "N16" ;
+    rdfs:label      "Class local names should be readable, not opaque identifiers" ;
+    rdfs:comment    "LLM consumability. A class named ex:Cls_001 or ex:C_42 with rdfs:label 'Mitochondrion' is unreadable to humans inspecting URIs and to LLMs consuming the ontology as context. The local name should derive from at least one of the labels (case-insensitive, ignoring spaces and underscores)." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class {$this} has an opaque local name unrelated to any of its labels." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?v WHERE {
+                          $this a owl:Class .
+                          FILTER ( isIRI($this) )
+                          BIND (
+                            lcase(
+                              REPLACE(
+                                REPLACE(
+                                  REPLACE(
+                                    REPLACE(str($this), '^.*[#/]', ''),
+                                    '_', ''),
+                                  '-', ''),
+                                ' ', '')
+                            )
+                            AS ?local )
+                          FILTER ( strlen(?local) > 0 )
+                          FILTER NOT EXISTS {
+                            $this rdfs:label ?lab .
+                            BIND (
+                              lcase(
+                                REPLACE(
+                                  REPLACE(
+                                    REPLACE(str(?lab), '_', ''),
+                                    '-', ''),
+                                  ' ', '')
+                              )
+                              AS ?lablower )
+                            FILTER ( contains(?lablower, ?local) || contains(?local, ?lablower) )
+                          }
+                          $this rdfs:label ?someLabel .
+                          FILTER ( strlen(?local) > 2 )
+                          FILTER ( regex(?local, '[a-z0-9]') )
+                          BIND ( REPLACE(str($this), '^.*[#/]', '') AS ?origLocal )
+                          FILTER ( regex(?origLocal, '^[A-Z]_?[0-9]+$') || regex(?origLocal, '^[A-Za-z]{1,3}[0-9]{2,}$') || regex(?origLocal, '^(Cls|Class|Prop|Property|Ent|Entity)[_]?[0-9]+', 'i') )
+                          BIND ( 1 AS ?v )
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# ---- N17: labels as sentences ---------------------------------------------
+
+oqsh:LabelNotSentenceShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:LlmConsumability ;
+    oqsh:pitfall    "N17" ;
+    rdfs:label      "Labels should be noun phrases, not full sentences" ;
+    rdfs:comment    "LLM consumability. A label like 'A type of mammal that lives in water' is a definition pretending to be a label. Labels are nouns or short noun phrases used for display, lookup, and LLM tokenization. Definitions go in rdfs:comment or skos:definition. Heuristic: flag labels longer than 50 characters OR containing sentence-terminating punctuation OR starting with an article ('A ', 'An ', 'The ')." ;
+    sh:targetClass  owl:Class ;
+    sh:property     [ sh:path rdfs:label ;
+                      sh:maxLength 80 ;
+                      sh:message "rdfs:label is suspiciously long (>80 chars) — possibly a definition mistakenly used as a label." ] ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class {$this} has a sentence-shaped label '{?label}' — labels should be noun phrases, not sentences." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?label WHERE {
+                          $this a owl:Class .
+                          $this rdfs:label ?label .
+                          FILTER (
+                            regex(str(?label), '^(A|An|The) ', 'i')
+                            || contains(str(?label), '. ')
+                            || regex(str(?label), '[.!?]$')
+                          )
+                          FILTER ( strlen(str(?label)) > 15 )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# ---- N20: classes without examples -----------------------------------------
+
+oqsh:HasExampleShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:LlmConsumability ;
+    oqsh:pitfall    "N20" ;
+    rdfs:label      "Classes should provide at least one example" ;
+    rdfs:comment    "LLM consumability and human onboarding. Examples (skos:example, vann:example, or instance assertions) ground abstract classes for both LLMs and human readers. Convention, not a hard requirement." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class {$this} has no examples (skos:example, vann:example) and no asserted instances. Consider providing one for LLM and human onboarding." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+                        PREFIX vann: <http://purl.org/vocab/vann/>
+                        SELECT ?v WHERE {
+                          $this a owl:Class .
+                          FILTER ( isIRI($this) )
+                          FILTER ( $this != owl:Thing && $this != owl:Nothing )
+                          FILTER NOT EXISTS { $this skos:example ?e }
+                          FILTER NOT EXISTS { $this vann:example ?e }
+                          FILTER NOT EXISTS { ?instance a $this }
+                          FILTER NOT EXISTS { $this owl:equivalentClass ?eq }
+                          FILTER NOT EXISTS { ?sub rdfs:subClassOf $this . FILTER ( ?sub != $this ) }
+                          BIND ( 1 AS ?v )
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                          OWL ANTI-PATTERNS
+# =============================================================================
+
+# ---- N23: class-as-instance confusion (metamodelling) ----------------------
+
+oqsh:NoClassAsInstanceShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:OwlAntiPatterns ;
+    oqsh:pitfall    "N23" ;
+    rdfs:label      "A resource should not be both a class and an instance of a user-defined class" ;
+    rdfs:comment    "OWL anti-pattern. A resource declared both 'a owl:Class' and 'a ex:UserClass' is a punning case — legal in OWL 2 DL with restrictions, problematic in OWL 1 DL and confusing for most consumers. The classic example is ex:Lion both being a class (subclasses are Lion species) and an instance of ex:Species." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Resource {$this} is declared both owl:Class and an instance of user-defined class {?otherType} — metamodelling smell." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        SELECT ?otherType WHERE {
+                          $this a owl:Class .
+                          $this a ?otherType .
+                          FILTER ( ?otherType != owl:Class )
+                          FILTER ( ?otherType != rdfs:Class )
+                          FILTER ( ?otherType != owl:NamedIndividual )
+                          FILTER ( ?otherType != owl:Thing )
+                          FILTER ( ?otherType != owl:DeprecatedClass )
+                          FILTER ( !strstarts(str(?otherType), 'http://www.w3.org/1999/02/22-rdf-syntax-ns#') )
+                          FILTER ( !strstarts(str(?otherType), 'http://www.w3.org/2000/01/rdf-schema#') )
+                          FILTER ( !strstarts(str(?otherType), 'http://www.w3.org/2002/07/owl#') )
+                          FILTER ( isIRI($this) )
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                          VOCABULARY REUSE
+# =============================================================================
+
+# ---- N26: imports without use ----------------------------------------------
+
+oqsh:UnusedImportShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Reuse ;
+    oqsh:pitfall    "N26" ;
+    rdfs:label      "owl:imports should not declare unused dependencies" ;
+    rdfs:comment    "An ontology that imports another vocabulary but never references any term from it adds bloat with no benefit. Detected by checking whether any IRI from the imported namespace appears as subject, predicate, or object anywhere else in the graph. Heuristic — the imported namespace IRI must be a prefix of at least one term URI in use." ;
+    sh:targetClass  owl:Ontology ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Ontology imports {?imp} but no term from that namespace is used in the graph." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        SELECT ?imp WHERE {
+                          $this a owl:Ontology .
+                          $this owl:imports ?imp .
+                          FILTER ( isIRI(?imp) )
+                          BIND ( str(?imp) AS ?impStr )
+                          FILTER NOT EXISTS {
+                            ?s ?p ?o .
+                            FILTER (
+                              ( isIRI(?s) && strstarts(str(?s), ?impStr) ) ||
+                              ( isIRI(?p) && strstarts(str(?p), ?impStr) ) ||
+                              ( isIRI(?o) && strstarts(str(?o), ?impStr) )
+                            )
+                            FILTER ( ?p != owl:imports )
+                          }
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .
+
+# =============================================================================
+#                          MULTILINGUAL QUALITY
+# =============================================================================
+
+# ---- N32: untagged labels alongside tagged ones ----------------------------
+
+oqsh:LanguageTagConsistencyShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Multilingual ;
+    oqsh:pitfall    "N32" ;
+    rdfs:label      "Untagged literals should not coexist with language-tagged literals on the same property of the same entity" ;
+    rdfs:comment    "Multilingual hygiene. If a class has both 'Person' (no lang tag) and 'Personne'@fr, the untagged form will not be retrieved by FILTER(LANG(?l)='en') queries. Either tag the original as @en or drop the duplicate." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Class {$this} mixes untagged label '{?untagged}' with language-tagged label '{?tagged}' on rdfs:label." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?untagged ?tagged WHERE {
+                          $this a owl:Class .
+                          $this rdfs:label ?untagged .
+                          $this rdfs:label ?tagged .
+                          FILTER ( lang(?untagged) = '' )
+                          FILTER ( lang(?tagged) != '' )
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                          MAINTAINABILITY
+# =============================================================================
+
+# ---- N34: named entities encoded as blank nodes ----------------------------
+
+oqsh:NamedEntityNotBnodeShape
+    a               sh:NodeShape ;
+    oqsh:category   oqsh:Maintainability ;
+    oqsh:pitfall    "N34" ;
+    rdfs:label      "Entities with labels should have IRIs, not be blank nodes" ;
+    rdfs:comment    "Maintainability. Blank nodes are appropriate for anonymous structures (owl:Restriction, owl:intersectionOf members). A blank node that has rdfs:label, skos:prefLabel, or similar 'identity' metadata is a named entity that should have a stable IRI for citation, debugging, and external reference." ;
+    sh:targetClass  owl:Class ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Blank-node class with label '{?label}' should have a stable IRI for citation and debugging." ;
+                      sh:prefixes <http://example.org/owl-quality-shacl-modern> ;
+                      sh:select """
+                        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                        SELECT ?label WHERE {
+                          $this a owl:Class .
+                          FILTER ( isBLANK($this) ) .
+                          $this rdfs:label ?label .
+                        }
+                      """ ] ;
+    sh:severity     sh:Info .

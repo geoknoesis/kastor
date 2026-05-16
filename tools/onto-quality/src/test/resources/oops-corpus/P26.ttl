@@ -1,0 +1,30 @@
+@prefix : <http://oops.linkeddata.es/data/testP26#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP26> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P26"@en .
+
+:relationshipS a owl:ObjectProperty,
+        owl:SymmetricProperty ;
+    rdfs:label "relationshipS"@en ;
+    rdfs:comment "Element involved in M1-P26 pattern A."@en ;
+    owl:inverseOf :relationshipT .
+
+:relationshipV a owl:ObjectProperty ;
+    rdfs:label "relationshipV"@en ;
+    owl:inverseOf :relationshipU .
+
+:relationshipT a owl:ObjectProperty ;
+    rdfs:label "relationshipT"@en .
+
+:relationshipU a owl:ObjectProperty,
+        owl:SymmetricProperty ;
+    rdfs:label "relationshipU"@en ;
+    rdfs:comment "Element involved in M1-P26 pattern B."@en .
+

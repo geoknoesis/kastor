@@ -1,0 +1,25 @@
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP40> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P40"@en,
+        "This test only works when using the URI mode."@en .
+
+foaf:Persona a owl:Class ;
+    rdfs:label "Persona"@en ;
+    rdfs:comment "This element is involved in P40. The correct URI is  http://xmlns.com/foaf/0.1/Person"@en .
+
+foaf:conoce a owl:ObjectProperty ;
+    rdfs:label "http://xmlns.com/foaf/0.1/conoce"@en ;
+    rdfs:comment "This element is involved in P40. The correct URI is  http://xmlns.com/foaf/0.1/knows"@en .
+
+foaf:edad a owl:DatatypeProperty ;
+    rdfs:label "edad"@en ;
+    rdfs:comment "This element is involved in P40. The correct URI is  http://xmlns.com/foaf/0.1/age"@en .
+

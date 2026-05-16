@@ -1,0 +1,100 @@
+@prefix : <http://oops.linkeddata.es/data/testP35#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP35> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P35"@en .
+
+:relationshipA rdfs:label "relationship A"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern A."@en ;
+    rdfs:domain :ClassAuxA .
+
+:relationshipAuxD a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxD"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern D."@en ;
+    rdfs:subPropertyOf :relationshipD .
+
+:relationshipAuxF a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxF"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern F."@en ;
+    owl:propertyDisjointWith :relationshipF .
+
+:relationshipAuxH a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxH"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern H."@en ;
+    owl:equivalentProperty :relationshipH .
+
+:relationshipAuxJ a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxJ"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern J."@en ;
+    owl:inverseOf :relationshipJ .
+
+:relationshipB rdfs:label "relationshipB"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern B."@en ;
+    rdfs:range :ClassAuxB .
+
+:relationshipC rdfs:label "relationshipC"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern C."@en ;
+    rdfs:subPropertyOf :relationshipAuxC .
+
+:relationshipE rdfs:label "relationshipE"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern E."@en ;
+    owl:propertyDisjointWith :relationshipAuxE .
+
+:relationshipG rdfs:label "relationshipG"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern G."@en ;
+    owl:equivalentProperty :relationshipAuxG .
+
+:relationshipI rdfs:label "relationshipI"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern I."@en ;
+    owl:inverseOf :relationshipAuxI .
+
+:relationshipK rdfs:label "relationshipK"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern K."@en .
+
+:ClassAuxA a owl:Class ;
+    rdfs:label "ClassAuxA"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern A."@en .
+
+:ClassAuxB a owl:Class ;
+    rdfs:label "ClassAuxB"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern B."@en .
+
+:individualAuxK a owl:NamedIndividual ;
+    rdfs:label "individualAuxK"@en ;
+    :relationshipK :individualAuxK ;
+    rdfs:comment "Element involved in M1-P35 pattern K." .
+
+:relationshipAuxC a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxC"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern C."@en .
+
+:relationshipAuxE a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxE"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern E."@en .
+
+:relationshipAuxG a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxG"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern G."@en .
+
+:relationshipAuxI a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxI"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern I."@en .
+
+:relationshipD rdfs:label "relationshipD"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern D."@en .
+
+:relationshipF rdfs:label "relationshipF"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern F."@en .
+
+:relationshipH rdfs:label "relationshipH"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern H."@en .
+
+:relationshipJ rdfs:label "relationshipJ"@en ;
+    rdfs:comment "Element involved in M1-P35 pattern J."@en .
+

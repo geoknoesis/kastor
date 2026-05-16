@@ -1,0 +1,93 @@
+@prefix : <http://oops.linkeddata.es/data/testP34#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP34> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P34"@en .
+
+:ClassAuxE a owl:Class ;
+    rdfs:label "ClassAuxE"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern E."@en ;
+    rdfs:subClassOf :ClassE .
+
+:ClassAuxG a owl:Class ;
+    rdfs:label "ClassAuxG"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern G."@en ;
+    owl:disjointWith :ClassG .
+
+:ClassAuxI a owl:Class ;
+    rdfs:label "ClassAuxI"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern I."@en ;
+    owl:equivalentClass :ClassI .
+
+:ClassD rdfs:label "ClassD"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern D."@en ;
+    rdfs:subClassOf :ClassAuxD .
+
+:ClassF rdfs:label "ClassF"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern F."@en ;
+    owl:disjointWith :ClassAuxF .
+
+:ClassH rdfs:label "ClassH"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern H."@en ;
+    owl:equivalentClass :ClassAuxH .
+
+:attributeAuxC a owl:DatatypeProperty ;
+    rdfs:label "attributeAuxC"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern C."@en ;
+    rdfs:domain :ClassC .
+
+:individualAuxJ a :ClassJ,
+        owl:NamedIndividual ;
+    rdfs:label "individualAuxJ"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern J."@en .
+
+:relationshipAuxA a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxA"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern A." ;
+    rdfs:domain :ClassA .
+
+:relationshipAuxB a owl:ObjectProperty ;
+    rdfs:label "relationshipAuxB"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern B."@en ;
+    rdfs:range :ClassB ;
+    rdfs:subPropertyOf owl:topObjectProperty .
+
+:ClassA rdfs:label "ClassA"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern A."@en .
+
+:ClassAuxD a owl:Class ;
+    rdfs:label "ClassAux"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern D."@en .
+
+:ClassAuxF a owl:Class ;
+    rdfs:label "ClassAuxF"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern F."@en .
+
+:ClassAuxH a owl:Class ;
+    rdfs:label "ClassAuxH"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern H."@en .
+
+:ClassB rdfs:label "ClassB"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern B."@en .
+
+:ClassC rdfs:label "ClassC"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern C."@en .
+
+:ClassE rdfs:label "ClassE"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern E."@en .
+
+:ClassG rdfs:label "ClassG"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern G."@en .
+
+:ClassI rdfs:label "ClassI"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern I."@en .
+
+:ClassJ rdfs:label "ClassJ"@en ;
+    rdfs:comment "Element involved in M1-P34 pattern J."@en .
+

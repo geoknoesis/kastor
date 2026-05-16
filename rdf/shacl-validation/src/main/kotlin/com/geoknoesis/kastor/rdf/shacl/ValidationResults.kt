@@ -15,7 +15,11 @@ data class ValidationReport(
     val validatedResources: Int,
     val validatedConstraints: Int,
     val shapeViolations: Map<String, List<ValidationViolation>> = emptyMap(),
-    val constraintViolations: Map<String, List<ValidationViolation>> = emptyMap()
+    val constraintViolations: Map<String, List<ValidationViolation>> = emptyMap(),
+    /**
+     * True when the engine produced more violation rows than returned (see [ValidationConfig.maxViolations]).
+     */
+    val violationsTruncated: Boolean = false,
 ) {
     
     /**

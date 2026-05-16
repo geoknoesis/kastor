@@ -1,0 +1,62 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix ex:     <http://example.com/test-onto#> .
+
+# N03 violation: hosted at example.com, not a persistent identifier
+# N04 violation: no machine-readable license
+# N06 violation: no contact point
+# N07 violation: unversioned import
+<http://example.com/test-onto>
+    a            owl:Ontology ;
+    rdfs:label   "Test ontology — exercises modern-engineering shapes" ;
+    owl:imports  <http://example.org/imported-onto> .   # unversioned, also unused
+
+# N09 mix: this file uses hash-namespace, but one term below uses slash-namespace
+# (added below)
+
+# N23 violation: ex:Lion is both an owl:Class and an instance of ex:Species
+ex:Species
+    a            owl:Class ;
+    rdfs:label   "Species" .
+
+ex:Lion
+    a            owl:Class , ex:Species ;
+    rdfs:label   "Lion" .
+
+# N16 violation: cryptic local name
+ex:Cls_042
+    a            owl:Class ;
+    rdfs:label   "Mitochondrion" .
+
+# N17 violation: label is a sentence
+ex:Mammal
+    a            owl:Class ;
+    rdfs:label   "A type of vertebrate animal that nurses its young." .
+
+# N20 violation: no examples, no instances — flagged because it's a leaf
+ex:Eagle
+    a            owl:Class ;
+    rdfs:label   "Eagle" ;
+    rdfs:subClassOf ex:Bird .
+
+ex:Bird
+    a            owl:Class ;
+    rdfs:label   "Bird" .
+
+# N32 violation: untagged label coexists with tagged
+ex:Tree
+    a            owl:Class ;
+    rdfs:label   "Tree" , "Arbre"@fr .
+
+# N34 violation: blank node with a label
+_:b1
+    a            owl:Class ;
+    rdfs:label   "Anonymous-but-named class" .
+
+# N09 violation: slash-namespace term in an otherwise hash-namespace ontology
+<http://example.com/test-onto/SlashTerm>
+    a            owl:Class ;
+    rdfs:label   "Slash term" .

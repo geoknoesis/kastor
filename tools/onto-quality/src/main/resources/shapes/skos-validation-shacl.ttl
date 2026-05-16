@@ -1,0 +1,532 @@
+# ============================================================================
+#  SKOS Taxonomy Validation — SHACL 1.2 Shapes Library
+#
+#  Source: SKOS Simple Knowledge Organization System Reference, W3C
+#          Recommendation 18 August 2009, https://www.w3.org/TR/skos-reference/
+#
+#  Conformant with SHACL 1.2 Core (https://www.w3.org/TR/shacl12-core/) for
+#  the great majority of shapes; SPARQL Extensions are required only for the
+#  six checks that need property-chain reasoning, cycle detection, or
+#  cross-resource uniqueness.
+#
+#  WHAT THIS LIBRARY CHECKS
+#
+#  Two classes of constraint are bundled together:
+#
+#    (a) Formal SKOS integrity conditions (S-numbered in the spec).
+#        Violating these makes a graph OWL-Full-inconsistent with the SKOS
+#        data model — they are non-negotiable.
+#
+#    (b) Widely-adopted quality conventions (no S-number). Violating these
+#        is consistent with the spec but produces a taxonomy most tools
+#        will treat as broken: cycles in broader, concepts with no scheme,
+#        non-unique notations within a scheme, etc.  Following the lead of
+#        Skosify (Suominen & Hyvönen 2012), qSKOS, and similar tools.
+#
+#  Each shape is tagged dqcsh-style with a category and an S-number
+#  (or "convention") via skvsh:rule.
+#
+#  DESIGN
+#
+#  Unlike the parameterised DQ-Constraints library, SKOS has a fixed
+#  vocabulary — every shape targets a known class or property, so almost
+#  all of this is plain SHACL-Core sh:NodeShape and sh:PropertyShape with
+#  no parameters needed. Six SPARQL-based shapes cover the cases SHACL-Core
+#  cannot express.
+#
+#  Namespace:
+#    skvsh:  this validation library (skos validation shacl)
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix skvsh:  <http://example.org/skos-validation-shacl#> .
+
+# ----------------------------------------------------------------------------
+#  Ontology header
+# ----------------------------------------------------------------------------
+
+<http://example.org/skos-validation-shacl>
+    a               owl:Ontology ;
+    rdfs:label      "SKOS Taxonomy Validation SHACL Library" ;
+    rdfs:comment    "SHACL 1.2 shapes for checking SKOS taxonomies against the SKOS Reference integrity conditions (S9, S13, S14, S27, S37, S46) and widely-adopted quality conventions (broader cycles, orphan concepts, empty labels, notation uniqueness, etc)." ;
+    owl:imports     <http://www.w3.org/ns/shacl> ;
+    sh:declare      [ sh:prefix "rdf" ;   sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs" ;  sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd" ;   sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "sh" ;    sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "skos" ;  sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                    [ sh:prefix "skvsh" ; sh:namespace "http://example.org/skos-validation-shacl#"^^xsd:anyURI ] .
+
+# ----------------------------------------------------------------------------
+#  Tagging vocabulary
+# ----------------------------------------------------------------------------
+
+skvsh:rule
+    a               rdf:Property ;
+    rdfs:label      "rule reference" ;
+    rdfs:comment    "Links a shape to the SKOS Reference integrity condition (S9, S13, ...) or quality convention it enforces." ;
+    rdfs:domain     sh:Shape .
+
+skvsh:category
+    a               rdf:Property ;
+    rdfs:label      "category" ;
+    rdfs:domain     sh:Shape ;
+    rdfs:range      rdfs:Class .
+
+skvsh:ClassStructure       a rdfs:Class ; rdfs:label "class structure" .
+skvsh:Labels               a rdfs:Class ; rdfs:label "labels" .
+skvsh:SemanticRelations    a rdfs:Class ; rdfs:label "semantic relations" .
+skvsh:ConceptSchemes       a rdfs:Class ; rdfs:label "concept schemes" .
+skvsh:Mapping              a rdfs:Class ; rdfs:label "mapping properties" .
+skvsh:Collections          a rdfs:Class ; rdfs:label "collections" .
+skvsh:Notations            a rdfs:Class ; rdfs:label "notations" .
+
+# =============================================================================
+#                              CLASS STRUCTURE
+# =============================================================================
+
+# ---------- S9: Concept and ConceptScheme are disjoint ----------------------
+
+skvsh:ConceptNotSchemeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ClassStructure ;
+    skvsh:rule      "S9" ;
+    rdfs:label      "A skos:Concept must not also be a skos:ConceptScheme" ;
+    sh:targetClass  skos:Concept ;
+    sh:not          [ sh:class skos:ConceptScheme ] ;
+    sh:message      "Resource is declared both skos:Concept and skos:ConceptScheme (S9 violation: the two classes are disjoint)." ;
+    sh:severity     sh:Violation .
+
+skvsh:SchemeNotConceptShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ClassStructure ;
+    skvsh:rule      "S9" ;
+    rdfs:label      "A skos:ConceptScheme must not also be a skos:Concept" ;
+    sh:targetClass  skos:ConceptScheme ;
+    sh:not          [ sh:class skos:Concept ] ;
+    sh:message      "Resource is declared both skos:ConceptScheme and skos:Concept (S9 violation)." ;
+    sh:severity     sh:Violation .
+
+# ---------- Concept ∩ Collection (convention; S spec does not require it) ----
+
+skvsh:ConceptNotCollectionShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ClassStructure ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "A skos:Concept should not also be a skos:Collection" ;
+    rdfs:comment    "Not a formal SKOS integrity condition, but treating a single resource as both an idea-unit (Concept) and a labelled grouping (Collection) is a modelling smell flagged by every common SKOS QA tool." ;
+    sh:targetClass  skos:Concept ;
+    sh:not          [ sh:class skos:Collection ] ;
+    sh:message      "Resource is declared both skos:Concept and skos:Collection (modelling smell)." ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                                  LABELS
+# =============================================================================
+
+# ---------- S13: prefLabel, altLabel, hiddenLabel are pairwise disjoint -----
+# SHACL-Core: sh:disjoint on a property shape says no value of this property
+# may also be a value of the named property on the same focus node.
+
+skvsh:LabelDisjointness_PrefAlt_Shape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "S13" ;
+    rdfs:label      "skos:prefLabel and skos:altLabel are pairwise disjoint" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:disjoint skos:altLabel ;
+                      sh:message "Same literal appears as both skos:prefLabel and skos:altLabel (S13 violation)." ] .
+
+skvsh:LabelDisjointness_PrefHidden_Shape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "S13" ;
+    rdfs:label      "skos:prefLabel and skos:hiddenLabel are pairwise disjoint" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:disjoint skos:hiddenLabel ;
+                      sh:message "Same literal appears as both skos:prefLabel and skos:hiddenLabel (S13 violation)." ] .
+
+skvsh:LabelDisjointness_AltHidden_Shape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "S13" ;
+    rdfs:label      "skos:altLabel and skos:hiddenLabel are pairwise disjoint" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:altLabel ;
+                      sh:disjoint skos:hiddenLabel ;
+                      sh:message "Same literal appears as both skos:altLabel and skos:hiddenLabel (S13 violation)." ] .
+
+# ---------- S14: at most one skos:prefLabel per language tag ----------------
+# sh:uniqueLang is the SHACL-Core idiom that captures this exactly.
+
+skvsh:UniquePrefLabelPerLangShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "S14" ;
+    rdfs:label      "A concept has at most one skos:prefLabel per language tag" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:uniqueLang true ;
+                      sh:message "Concept has more than one skos:prefLabel with the same language tag (S14 violation)." ] .
+
+# ---------- Convention: a Concept should have at least one prefLabel --------
+
+skvsh:HasPrefLabelShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "A concept should carry at least one skos:prefLabel" ;
+    rdfs:comment    "Not in the SKOS spec — a concept may legitimately have only altLabels (see SKOS Reference §5.6.4) — but consumers almost always need a preferred label for display. Issued as a Warning rather than Violation." ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:minCount 1 ;
+                      sh:message "Concept has no skos:prefLabel; consumers will not be able to display it." ] ;
+    sh:severity     sh:Warning .
+
+# ---------- Convention: labels must not be empty strings --------------------
+
+skvsh:NonEmptyLabelShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "SKOS labels must not be empty strings" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:minLength 1 ;
+                      sh:message "skos:prefLabel is the empty string." ] ;
+    sh:property     [ sh:path skos:altLabel ;
+                      sh:minLength 1 ;
+                      sh:message "skos:altLabel is the empty string." ] ;
+    sh:property     [ sh:path skos:hiddenLabel ;
+                      sh:minLength 1 ;
+                      sh:message "skos:hiddenLabel is the empty string." ] .
+
+# ---------- Convention: no leading or trailing whitespace in labels ---------
+
+skvsh:NoWhitespaceLabelShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Labels ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Labels must not start or end with whitespace" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:prefLabel ;
+                      sh:pattern "^\\S(.*\\S)?$" ;
+                      sh:flags "s" ;
+                      sh:message "skos:prefLabel has leading or trailing whitespace." ] ;
+    sh:property     [ sh:path skos:altLabel ;
+                      sh:pattern "^\\S(.*\\S)?$" ;
+                      sh:flags "s" ;
+                      sh:message "skos:altLabel has leading or trailing whitespace." ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                          SEMANTIC RELATIONS
+# =============================================================================
+
+# ---------- S27: skos:related disjoint from skos:broaderTransitive ----------
+# 
+# This requires reasoning over the transitive closure of skos:broader. SHACL-
+# Core cannot express transitive disjointness, so we use SPARQL. Note that
+# skos:broader is a sub-property of skos:broaderTransitive (S22), so we
+# include direct skos:broader/skos:narrower edges in the closure.
+
+skvsh:RelatedBroaderTransitiveDisjointShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:SemanticRelations ;
+    skvsh:rule      "S27" ;
+    rdfs:label      "skos:related disjoint with skos:broaderTransitive" ;
+    rdfs:comment    "Two concepts cannot be both associatively related and (transitively) hierarchically linked." ;
+    sh:targetClass  skos:Concept ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Concepts {$this} and {?value} are linked both by skos:related and (transitively) by skos:broader, violating S27." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this ?value WHERE {
+                          $this skos:related ?value .
+                          {
+                            $this (skos:broader|skos:broaderTransitive)+ ?value .
+                          } UNION {
+                            ?value (skos:broader|skos:broaderTransitive)+ $this .
+                          }
+                        }
+                      """ ] .
+
+# ---------- skos:related is symmetric — flag asymmetric assertions ----------
+# 
+# The SKOS spec declares skos:related symmetric (S23), so an OWL reasoner
+# infers the reverse triple. But many serialisations only assert one
+# direction; flagging the asymmetry helps authors keep their graph readable.
+
+skvsh:RelatedSymmetryShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:SemanticRelations ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "skos:related should be asserted in both directions" ;
+    rdfs:comment    "skos:related is owl:SymmetricProperty (S23), so the inverse is entailed. This shape flags one-sided assertions as a serialisation hygiene issue, not a logical error." ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path [ sh:inversePath skos:related ] ;
+                      sh:equals skos:related ;
+                      sh:message "skos:related triple lacks its symmetric counterpart." ] ;
+    sh:severity     sh:Info .
+
+# ---------- Convention: no self-referential broader/narrower/related --------
+
+skvsh:NoSelfReferentialSemanticRelationShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:SemanticRelations ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "A concept must not point its own broader/narrower/related at itself" ;
+    sh:targetClass  skos:Concept ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Concept {$this} has itself as the object of {?p}." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this ?p WHERE {
+                          $this ?p $this .
+                          FILTER ( ?p IN ( skos:broader, skos:narrower, skos:related,
+                                           skos:broaderTransitive, skos:narrowerTransitive ) )
+                        }
+                      """ ] .
+
+# ---------- Convention: no cycles in the skos:broader hierarchy ------------
+
+skvsh:NoBroaderCycleShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:SemanticRelations ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "No cycles in the skos:broader hierarchy" ;
+    rdfs:comment    "The SKOS Reference (§8.6.8) explicitly notes that broader cycles are consistent with the spec but problematic for most applications. Flags any concept that is its own transitive broader." ;
+    sh:targetClass  skos:Concept ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Concept {$this} appears in a skos:broader cycle." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this WHERE {
+                          $this (skos:broader|skos:broaderTransitive)+ $this .
+                        }
+                      """ ] .
+
+# ---------- Range/domain of semantic relations ------------------------------
+# Per S25, all semantic-relation properties have rdfs:domain and rdfs:range
+# skos:Concept. In an OWL-reasoned setting these are entailments not
+# constraints — under closed-world SHACL we check them explicitly.
+
+skvsh:SemanticRelationRangeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:SemanticRelations ;
+    skvsh:rule      "S25" ;
+    rdfs:label      "Values of semantic-relation properties are skos:Concept" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:broader ;
+                      sh:class skos:Concept ;
+                      sh:message "Value of skos:broader is not a skos:Concept." ] ;
+    sh:property     [ sh:path skos:narrower ;
+                      sh:class skos:Concept ;
+                      sh:message "Value of skos:narrower is not a skos:Concept." ] ;
+    sh:property     [ sh:path skos:related ;
+                      sh:class skos:Concept ;
+                      sh:message "Value of skos:related is not a skos:Concept." ] .
+
+# =============================================================================
+#                          CONCEPT SCHEMES
+# =============================================================================
+
+# ---------- S6: skos:hasTopConcept has range skos:Concept -------------------
+
+skvsh:HasTopConceptRangeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ConceptSchemes ;
+    skvsh:rule      "S6" ;
+    rdfs:label      "Values of skos:hasTopConcept are skos:Concept instances" ;
+    sh:targetClass  skos:ConceptScheme ;
+    sh:property     [ sh:path skos:hasTopConcept ;
+                      sh:class skos:Concept ;
+                      sh:message "Value of skos:hasTopConcept is not a skos:Concept (S6 violation)." ] .
+
+# ---------- S4: skos:inScheme has range skos:ConceptScheme ------------------
+
+skvsh:InSchemeRangeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ConceptSchemes ;
+    skvsh:rule      "S4" ;
+    rdfs:label      "Values of skos:inScheme are skos:ConceptScheme instances" ;
+    sh:targetSubjectsOf skos:inScheme ;
+    sh:property     [ sh:path skos:inScheme ;
+                      sh:class skos:ConceptScheme ;
+                      sh:message "Value of skos:inScheme is not a skos:ConceptScheme (S4 violation)." ] .
+
+# ---------- Top concept consistency (convention) ----------------------------
+# A concept that is hasTopConcept of a scheme should also be inScheme that
+# scheme. This is a usage convention from SKOS Reference §4.6.3.
+
+skvsh:TopConceptInSchemeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ConceptSchemes ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Top concepts should also be members of their scheme" ;
+    sh:targetClass  skos:ConceptScheme ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Concept {?value} is hasTopConcept of {$this} but is not skos:inScheme {$this}." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this ?value WHERE {
+                          $this skos:hasTopConcept ?value .
+                          FILTER NOT EXISTS {
+                            ?value skos:inScheme $this .
+                            # skos:topConceptOf is a sub-property of skos:inScheme (S7),
+                            # so a topConceptOf assertion satisfies the requirement.
+                          }
+                          FILTER NOT EXISTS { ?value skos:topConceptOf $this . }
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# ---------- Convention: every Concept should be in at least one scheme ------
+
+skvsh:ConceptInSchemeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:ConceptSchemes ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Every concept should be a member of at least one scheme" ;
+    rdfs:comment    "Orphan concepts (no skos:inScheme and no skos:topConceptOf) are flagged by Skosify and qSKOS as a quality issue, though they are valid per the spec. Note: skos:topConceptOf is a sub-property of skos:inScheme (S7), so either satisfies the check after inference." ;
+    sh:targetClass  skos:Concept ;
+    sh:or           ( [ sh:path skos:inScheme ;     sh:minCount 1 ]
+                      [ sh:path skos:topConceptOf ; sh:minCount 1 ] ) ;
+    sh:message      "Concept is not declared in any skos:ConceptScheme." ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                          MAPPING PROPERTIES
+# =============================================================================
+
+# ---------- S46: skos:exactMatch is disjoint with skos:broadMatch and ------
+#                skos:relatedMatch.
+
+skvsh:ExactMatchBroadDisjointShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Mapping ;
+    skvsh:rule      "S46" ;
+    rdfs:label      "skos:exactMatch disjoint with skos:broadMatch" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:exactMatch ;
+                      sh:disjoint skos:broadMatch ;
+                      sh:message "Same target appears as both skos:exactMatch and skos:broadMatch (S46 violation)." ] .
+
+skvsh:ExactMatchNarrowDisjointShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Mapping ;
+    skvsh:rule      "S46" ;
+    rdfs:label      "skos:exactMatch disjoint with skos:narrowMatch" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:exactMatch ;
+                      sh:disjoint skos:narrowMatch ;
+                      sh:message "Same target appears as both skos:exactMatch and skos:narrowMatch (S46 violation)." ] .
+
+skvsh:ExactMatchRelatedDisjointShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Mapping ;
+    skvsh:rule      "S46" ;
+    rdfs:label      "skos:exactMatch disjoint with skos:relatedMatch" ;
+    sh:targetClass  skos:Concept ;
+    sh:property     [ sh:path skos:exactMatch ;
+                      sh:disjoint skos:relatedMatch ;
+                      sh:message "Same target appears as both skos:exactMatch and skos:relatedMatch (S46 violation)." ] .
+
+# ---------- Convention: mapping properties link different schemes -----------
+# Mapping properties are intended for cross-scheme links. Using them
+# within a single scheme is a modelling smell (use the corresponding
+# semantic-relation property instead).
+
+skvsh:MappingAcrossSchemesShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Mapping ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Mapping properties should connect concepts in different schemes" ;
+    rdfs:comment    "Per SKOS Reference §10.6.1, mapping properties (skos:exactMatch, skos:closeMatch, skos:broadMatch, skos:narrowMatch, skos:relatedMatch) are intended for cross-scheme links. Using them within a single scheme suggests the semantic-relation property (skos:broader, etc.) was meant." ;
+    sh:targetClass  skos:Concept ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Concept {$this} has a mapping link ({?p}) to {?value} but both are in the same concept scheme." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this ?p ?value WHERE {
+                          $this ?p ?value .
+                          FILTER ( ?p IN ( skos:exactMatch, skos:closeMatch,
+                                           skos:broadMatch, skos:narrowMatch,
+                                           skos:relatedMatch ) )
+                          $this skos:inScheme ?scheme .
+                          ?value skos:inScheme ?scheme .
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                            COLLECTIONS
+# =============================================================================
+
+# ---------- S32: skos:member range is Concept ∪ Collection ------------------
+
+skvsh:MemberRangeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Collections ;
+    skvsh:rule      "S32" ;
+    rdfs:label      "Values of skos:member are skos:Concept or skos:Collection" ;
+    sh:targetClass  skos:Collection ;
+    sh:property     [ sh:path skos:member ;
+                      sh:or ( [ sh:class skos:Concept ]
+                              [ sh:class skos:Collection ] ) ;
+                      sh:message "Value of skos:member is neither a skos:Concept nor a skos:Collection (S32 violation)." ] .
+
+# ---------- Convention: an OrderedCollection should have memberList ---------
+
+skvsh:OrderedCollectionMemberListShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Collections ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Ordered collections should carry skos:memberList" ;
+    rdfs:comment    "An OrderedCollection without a memberList is missing the very thing that distinguishes it from a regular Collection." ;
+    sh:targetClass  skos:OrderedCollection ;
+    sh:property     [ sh:path skos:memberList ;
+                      sh:minCount 1 ;
+                      sh:message "OrderedCollection has no skos:memberList; the ordering it claims to express is absent." ] ;
+    sh:severity     sh:Warning .
+
+# =============================================================================
+#                              NOTATIONS
+# =============================================================================
+
+# ---------- Convention: notations are unique within a scheme ----------------
+# Section 6.5.3 of the SKOS Reference says this is a usage convention but
+# not formally required.
+
+skvsh:UniqueNotationInSchemeShape
+    a               sh:NodeShape ;
+    skvsh:category  skvsh:Notations ;
+    skvsh:rule      "convention" ;
+    rdfs:label      "Notations should be unique within a concept scheme" ;
+    rdfs:comment    "SKOS Reference §6.5.3: 'A common usage convention is that the value of a skos:notation should be unique within the scope of a given concept scheme.' Not formally required by the spec." ;
+    sh:targetClass  skos:ConceptScheme ;
+    sh:sparql       [ a sh:SPARQLConstraint ;
+                      sh:message "Notation '{?notation}' is used by two different concepts ({?c1}, {?c2}) in scheme {$this}." ;
+                      sh:prefixes <http://example.org/skos-validation-shacl> ;
+                      sh:select """
+                        SELECT $this ?notation ?c1 ?c2 WHERE {
+                          ?c1 skos:inScheme $this ;
+                              skos:notation ?notation .
+                          ?c2 skos:inScheme $this ;
+                              skos:notation ?notation .
+                          FILTER ( str(?c1) < str(?c2) )
+                        }
+                      """ ] ;
+    sh:severity     sh:Warning .
+
+# ============================================================================
+#                            END OF LIBRARY
+# ============================================================================

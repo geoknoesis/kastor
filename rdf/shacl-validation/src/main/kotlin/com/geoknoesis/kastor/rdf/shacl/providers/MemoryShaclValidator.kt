@@ -63,36 +63,62 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
         val startTime = System.currentTimeMillis()
         
         try {
+            val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
+            if (combinedEstimate > config.maxCombinedGraphTriples) {
+                throw ShaclValidationException(
+                    "Combined data + shapes triple count ($combinedEstimate) exceeds ValidationConfig.maxCombinedGraphTriples (${config.maxCombinedGraphTriples})",
+                )
+            }
+
             val violations = mutableListOf<ValidationViolation>()
             val warnings = mutableListOf<ValidationWarning>()
-            
+            var hitViolationCap = false
+
             // Extract shapes from the shapes graph
             val shaclShapes = extractShapes(shapes)
-            
+
             // Validate each shape
             for (shape in shaclShapes) {
+                if (hitViolationCap) break
                 val shapeViolations = validateShape(graph, shape)
-                violations.addAll(shapeViolations)
+                for (v in shapeViolations) {
+                    violations.add(v)
+                    if (violations.size >= config.maxViolations) {
+                        hitViolationCap = true
+                        break
+                    }
+                }
             }
-            
+
+            val cap = config.maxViolations.coerceAtLeast(1)
+            val violationsTruncated = hitViolationCap || violations.size > cap
+            val cappedViolations = violations.take(cap)
+
             val endTime = System.currentTimeMillis()
             val validationTime = Duration.ofMillis(endTime - startTime)
-            
+
             // Calculate statistics
-            val statistics = calculateStatistics(graph, shapes, violations, warnings)
-            
+            val statistics = calculateStatistics(graph, shapes, cappedViolations, warnings)
+
+            val constraintSlots = shaclShapes.sumOf { it.constraints.size }
+
             return ValidationReport(
-                isValid = violations.isEmpty(),
-                violations = violations,
+                isValid = cappedViolations.none {
+                    it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR
+                },
+                violations = cappedViolations,
                 warnings = warnings,
                 statistics = statistics,
                 validationTime = validationTime,
                 validatedResources = graph.getTriples().size,
-                validatedConstraints = shaclShapes.sumOf { it.constraints.size },
-                shapeViolations = violations.groupBy { it.shapeUri ?: "unknown" },
-                constraintViolations = violations.groupBy { it.constraint.constraintType.name }
+                validatedConstraints = constraintSlots.coerceAtLeast(cappedViolations.size),
+                shapeViolations = cappedViolations.groupBy { it.shapeUri ?: "unknown" },
+                constraintViolations = cappedViolations.groupBy { it.constraint.constraintType.name },
+                violationsTruncated = violationsTruncated,
             )
             
+        } catch (e: ShaclValidationException) {
+            throw e
         } catch (e: Exception) {
             throw ValidationException("Validation failed: ${e.message}", e)
         }

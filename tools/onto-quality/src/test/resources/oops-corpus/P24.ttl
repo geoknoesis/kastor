@@ -1,0 +1,43 @@
+@prefix : <http://oops.linkeddata.es/data/testP24#> .
+@prefix dc: <http://purl.org/dc/elements/1.1/> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://oops.linkeddata.es/data/testP24> a owl:Ontology ;
+    dc:creator "http://purl.org/net/mpoveda"^^xsd:anyURI ;
+    dcterms:license "http://creativecommons.org/licenses/by/4.0/" ;
+    rdfs:comment "Test for P24"@en .
+
+:ClassA a owl:Class ;
+    rdfs:label "ClassA"@en ;
+    rdfs:comment "Element involved in M1-P24."@en ;
+    owl:equivalentClass [ a owl:Class ;
+            owl:unionOf ( :ClassA :ClassB :ClassC ) ] .
+
+:ClassC a owl:Class ;
+    rdfs:label "ClassC"@en ;
+    rdfs:subClassOf owl:Thing .
+
+:attributeU a owl:DatatypeProperty ;
+    rdfs:label "attributeU"@en ;
+    rdfs:comment "Element involved in M1-P24."@en ;
+    rdfs:domain [ a owl:Restriction ;
+            owl:hasValue "value" ;
+            owl:onProperty :attributeU ] ;
+    rdfs:range rdfs:Literal .
+
+:relationshipS a owl:ObjectProperty ;
+    rdfs:label "relationshipS"@en ;
+    rdfs:comment "Element involved in M1-P24."@en ;
+    rdfs:domain [ a owl:Restriction ;
+            owl:onProperty :relationshipS ;
+            owl:someValuesFrom owl:Thing ] ;
+    rdfs:range :ClassB .
+
+:ClassB a owl:Class ;
+    rdfs:label "ClassB"@en ;
+    rdfs:subClassOf owl:Thing .
+

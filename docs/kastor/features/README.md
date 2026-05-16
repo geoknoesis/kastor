@@ -9,6 +9,7 @@ This section covers the advanced features and capabilities of the Kastor RDF fra
 
 ### **Data Validation**
 - [SHACL Validation](shacl-validation.md) - Constraint validation using SHACL shapes
+- [Ontology Quality](ontology-quality.md) - Curated ontology pitfall catalogues (`onto-quality`) and optional embedding tier
 
 ## 🔧 Feature Architecture
 

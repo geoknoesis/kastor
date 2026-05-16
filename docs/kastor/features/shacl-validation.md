@@ -5,7 +5,7 @@ Kastor supports SHACL validation with full **SHACL 1.2** support, including Core
 - **Kastor Gen ValidationContext** for domain materialization and `RdfHandle` validation.
 - **Repository-level SHACL validation** via the `rdf/shacl-validation` module.
 
-For the **provider model** (native Kastor engine vs optional adapters to Jena, RDF4J, and others), module layout, and implementation roadmap, see [SHACL validation architecture](../design/shacl-validation-architecture.md).
+For the **provider model** (native Kastor engine vs optional adapters to Jena, RDF4J, and others), module layout, and implementation roadmap, see [SHACL validation architecture](../design/shacl-validation-architecture.md). For **performance benchmarking** (JMH harness, ERA-SHACL-Benchmark CLI, baselines), see [SHACL native engine: cross-implementation performance benchmarks](../design/shacl-native-engine-benchmark.md).
 
 ## Kastor Gen ValidationContext
 
@@ -40,6 +40,8 @@ person.asRdf().validateOrThrow()
 
 ## Repository-Level SHACL Validation
 
+Module **`rdf/shacl-validation`**: API reference, **`providerId`** table, **`maxCombinedGraphTriples` / `rdf4jUntrustedInputLimits`**, and cross-engine smoke tests live in the [module README](../../../rdf/shacl-validation/README.md).
+
 Use the `rdf/shacl-validation` module when you want to validate graphs directly (without materialization):
 
 ```kotlin
@@ -73,8 +75,8 @@ if (!report.isValid) {
 > **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. The DSL supports all SHACL 1.2 features including:
 > - **SHACL 1.2 Core**: `targetWhere` with node expressions, `shape` targets, `singleLine` constraint, `reifierShape` and `reificationRequired` for RDF-star
 > - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT and ASK queries
-> 
-> See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples.
+>
+> See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples. For **bundled ontology-quality shapes**, the `onto-qa` CLI, and the optional embedding tier, see [How to Check Ontology Quality](../guides/how-to-ontology-quality.md).
 
 ## Notes
 

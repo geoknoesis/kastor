@@ -50,6 +50,8 @@ main:
         url: /kastor/guides/how-to-create-shacl-shapes.html
       - title: Validate with SHACL
         url: /kastor/guides/how-to-validate-shacl.html
+      - title: Check Ontology Quality
+        url: /kastor/guides/how-to-ontology-quality.html
       - title: Perform Reasoning
         url: /kastor/guides/how-to-reasoning.html
       - title: Named Graphs

@@ -1,0 +1,13 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix ex: <http://kastor-shacl-test.example/mincount/> .
+
+ex:PersonShape a sh:NodeShape ;
+  sh:targetClass ex:Person ;
+  sh:property [
+    sh:path ex:name ;
+    sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+    sh:minCount 1
+  ] .
+
+ex:alice a ex:Person ;
+  ex:name "Alice" .

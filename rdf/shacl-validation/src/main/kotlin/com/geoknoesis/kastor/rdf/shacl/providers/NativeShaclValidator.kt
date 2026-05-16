@@ -61,6 +61,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMaxInclusive
 import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMinExclusive
 import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMinInclusive
 import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermEquals
+import com.geoknoesis.kastor.rdf.shacl.native.distinctShaclTerms
 
 /**
  * Kastor native SHACL Core validator (compile → plan → execute → report).
@@ -86,6 +87,12 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
 
     private fun runValidation(graph: RdfGraph, shapes: RdfGraph, datasetForDiscovery: Dataset?): ValidationReport {
         val start = System.currentTimeMillis()
+        val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
+        if (combinedEstimate > config.maxCombinedGraphTriples) {
+            throw ShaclValidationException(
+                "Combined data + shapes triple count ($combinedEstimate) exceeds ValidationConfig.maxCombinedGraphTriples (${config.maxCombinedGraphTriples})",
+            )
+        }
         val mergedShapesTriples =
             try {
                 prepareMergedShapesTriples(graph, shapes, datasetForDiscovery)
@@ -114,38 +121,50 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
 
         val violations = mutableListOf<ValidationViolation>()
         val warnings = mutableListOf<ValidationWarning>()
+        var hitViolationCap = false
 
         for (shape in compiled.orderedNodeShapes) {
             if (shape.uniqueValuesForProps.isNotEmpty()) {
                 violations.addAll(validateUniqueValuesForShape(shape, ctx))
-                if (violations.size >= config.maxViolations) break
+                if (violations.size >= config.maxViolations) {
+                    hitViolationCap = true
+                    break
+                }
             }
             val focusNodes = computeFocusNodes(shape, ctx)
             for (focus in focusNodes) {
                 violations.addAll(
                     validateNodeShape(focus, shape, ctx, DepthState(0, emptyList())),
                 )
-                if (violations.size >= config.maxViolations) break
+                if (violations.size >= config.maxViolations) {
+                    hitViolationCap = true
+                    break
+                }
             }
-            if (violations.size >= config.maxViolations) break
+            if (hitViolationCap) break
         }
+
+        val cap = config.maxViolations.coerceAtLeast(1)
+        val violationsTruncated = hitViolationCap || violations.size > cap
+        val cappedViolations = violations.take(cap)
 
         val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
         val validatedConstraintSlots = countConstraintEvaluationSlots(compiled, ctx)
-        val statistics = buildStatistics(graph, shapesGraph, violations, warnings, compiled, validatedConstraintSlots)
+        val statistics = buildStatistics(graph, shapesGraph, cappedViolations, warnings, compiled, validatedConstraintSlots)
 
         return ValidationReport(
-            isValid = violations.none {
+            isValid = cappedViolations.none {
                 it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR
             },
-            violations = violations,
+            violations = cappedViolations,
             warnings = warnings,
             statistics = statistics,
             validationTime = elapsed,
             validatedResources = graph.getTriples().map { it.subject }.distinct().size,
-            validatedConstraints = validatedConstraintSlots.coerceAtLeast(violations.size),
-            shapeViolations = violations.groupBy { it.shapeUri ?: "unknown" },
-            constraintViolations = violations.groupBy { it.constraint.constraintType.name },
+            validatedConstraints = validatedConstraintSlots.coerceAtLeast(cappedViolations.size),
+            shapeViolations = cappedViolations.groupBy { it.shapeUri ?: "unknown" },
+            constraintViolations = cappedViolations.groupBy { it.constraint.constraintType.name },
+            violationsTruncated = violationsTruncated,
         )
     }
 
@@ -204,8 +223,13 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     }
 
     override fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport {
-        val shapesGraph = Rdf.graph { }
-        return validate(graph, shapesGraph)
+        if (shapes.isNotEmpty()) {
+            throw UnsupportedOperationException(
+                "Native SHACL validator does not support validate(graph, shapes: List<ShaclShape>). " +
+                    "Pass shapes as an RdfGraph via validate(graph, shapesGraph).",
+            )
+        }
+        return validate(graph, Rdf.graph { })
     }
 
     override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport {
@@ -219,8 +243,12 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     }
 
     override fun validateConstraints(graph: RdfGraph, constraints: List<com.geoknoesis.kastor.rdf.shacl.ShaclConstraint>): ValidationReport {
-        val shapes = Rdf.graph { }
-        return validate(graph, shapes)
+        if (constraints.isNotEmpty()) {
+            throw UnsupportedOperationException(
+                "Native SHACL validator does not support validateConstraints; pass constraints as part of a shapes RdfGraph.",
+            )
+        }
+        return validate(graph, Rdf.graph { })
     }
 
     override fun conforms(graph: RdfGraph, shapes: RdfGraph): Boolean = validate(graph, shapes).isValid
@@ -720,36 +748,45 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
 
         for (c in constraints) {
             when (c) {
-                is PropertyConstraint.MinCount ->
-                    if (values.size < c.n) {
+                is PropertyConstraint.MinCount -> {
+                    // Cardinality counts distinct RDF terms under native SHACL term equality (see distinctShaclTerms), not raw multiset size.
+                    val card = distinctShaclTerms(values).size
+                    if (card < c.n) {
                         vs.add(
                             violation(
                                 focus,
                                 violationShape,
                                 severity,
                                 severityCustomIri,
-                                constraintStub(ConstraintType.MIN_COUNT, pathPredicate, mapOf("min" to c.n, "actual" to values.size)),
-                                "Minimum cardinality $c.n required, found ${values.size}",
+                                constraintStub(ConstraintType.MIN_COUNT, pathPredicate, mapOf("min" to c.n, "actual" to card)),
+                                "Minimum cardinality $c.n required, found $card",
                                 pathTerms,
                                 value = values.firstOrNull(),
                             ),
                         )
                     }
-                is PropertyConstraint.MaxCount ->
-                    if (values.size > c.n) {
+                }
+                is PropertyConstraint.MaxCount -> {
+                    // Same distinct-value cardinality as minCount.
+                    val card = distinctShaclTerms(values).size
+                    if (card > c.n) {
+                        val witness =
+                            distinctShaclTerms(values).getOrNull(c.n)
+                                ?: values.getOrNull(c.n)
                         vs.add(
                             violation(
                                 focus,
                                 violationShape,
                                 severity,
                                 severityCustomIri,
-                                constraintStub(ConstraintType.MAX_COUNT, pathPredicate, mapOf("max" to c.n, "actual" to values.size)),
-                                "Maximum cardinality $c.n allowed, found ${values.size}",
+                                constraintStub(ConstraintType.MAX_COUNT, pathPredicate, mapOf("max" to c.n, "actual" to card)),
+                                "Maximum cardinality $c.n allowed, found $card",
                                 pathTerms,
-                                value = values.getOrNull(c.n),
+                                value = witness,
                             ),
                         )
                     }
+                }
                 is PropertyConstraint.Datatype ->
                     values.forEach { v ->
                         val useSeverity = c.severityOverride ?: severity
@@ -811,7 +848,8 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                         }
                     }
                 is PropertyConstraint.NodeKind ->
-                    values.forEach { v ->
+                    // One violation per distinct value after SHACL-term dedup (multiset duplicates ignored).
+                    distinctShaclTerms(values).forEach { v ->
                         if (!c.kinds.any { matchesNodeKind(v, it) }) {
                             vs.add(
                                 violation(

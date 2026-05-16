@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import java.util.ServiceConfigurationError
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Level
 import java.util.logging.Logger
 
 /**
@@ -72,12 +74,23 @@ object ValidatorRegistry {
         val discoveredProviders = mutableListOf<ShaclValidatorProvider>()
         try {
             val serviceLoader = java.util.ServiceLoader.load(ShaclValidatorProvider::class.java)
-            serviceLoader.forEach { provider ->
-                providers[provider.getType()] = provider
-                discoveredProviders.add(provider)
+            for (provider in serviceLoader) {
+                try {
+                    val id = provider.getType()
+                    providers[id] = provider
+                    discoveredProviders.add(provider)
+                } catch (e: Exception) {
+                    log.log(
+                        Level.WARNING,
+                        "SHACL validator provider ${provider.javaClass.name} failed to register (getType or init)",
+                        e,
+                    )
+                }
             }
-        } catch (_: Exception) {
-            // Service loader might not find providers during development
+        } catch (e: ServiceConfigurationError) {
+            log.log(Level.WARNING, "SHACL ServiceLoader configuration error (META-INF/services)", e)
+        } catch (e: Exception) {
+            log.log(Level.WARNING, "SHACL ServiceLoader discovery failed", e)
         }
         return discoveredProviders.toList()
     }
