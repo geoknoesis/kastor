@@ -40,6 +40,15 @@ fun main(args: Array<String>) {
 
 private val logger = LoggerFactory.getLogger("onto-qa")
 
+/** Catalog values for [buildChecker]; documented on `--catalog` in check/pipeline. */
+private const val CATALOG_HELP =
+    "owl-quality | skos-validation | data-quality | embedding-quality | " +
+        "modern-engineering | rdf12-quality | skos-vocabulary | skos-vocabulary-embed | all"
+
+/** Catalogs that include embedding shapes; log if the graph has no enrichment triples. */
+private val CATALOGS_USING_EMBEDDING_SHAPES =
+    setOf("all", "embedding-quality", "skos-vocabulary-embed")
+
 private class OntoQualityApp : CliktCommand(name = "onto-qa") {
     init {
         subcommands(CheckCommand(), EnrichCommand(), PipelineCommand())
@@ -119,7 +128,7 @@ private class PipelineCommand : CliktCommand(name = "pipeline") {
     private val tokenizerNoteOpt by
         option("--tokenizer-note", help = "Provenance id for tokenizer, e.g. HuggingFace model id (default: display name)")
     private val catalogOpt by
-        option("--catalog", help = "owl-quality | skos-validation | data-quality | embedding-quality | all")
+        option("--catalog", help = CATALOG_HELP)
             .default("all")
     private val formatOpt by
         option("--format", help = "text | markdown | json | turtle").default("text")
@@ -157,7 +166,7 @@ private class PipelineCommand : CliktCommand(name = "pipeline") {
 
                 val validator = ShaclValidation.validator()
                 val checker = buildChecker(catalogOpt, validator)
-                if (catalogOpt.lowercase() in setOf("all", "embedding-quality")) {
+                if (catalogOpt.lowercase() in CATALOGS_USING_EMBEDDING_SHAPES) {
                     val hasClose =
                         enriched.getTriplesSequence().any {
                             it.predicate == EnrichmentVocabulary.semanticallyCloseTo
@@ -173,7 +182,7 @@ private class PipelineCommand : CliktCommand(name = "pipeline") {
                 val report = checker.check(enriched)
                 emitReport(report, formatOpt, severityOpt, outputOpt)
                 System.err.println(
-                    "Pipeline complete (catalog=$catalogOpt). Bundled shape sets include embedding-quality when --catalog all.",
+                    "Pipeline complete (catalog=$catalogOpt). Use --catalog skos-vocabulary-embed for SKOS + embedding shapes after enrichment.",
                 )
 
                 if (shouldFail(report, severityThreshold(severityOpt))) {
@@ -193,7 +202,7 @@ private class CheckCommand : CliktCommand(name = "check") {
     private val catalogOpt by
         option(
             "--catalog",
-            help = "owl-quality | skos-validation | data-quality | embedding-quality | all",
+            help = CATALOG_HELP,
         ).default("all")
     private val formatOpt by
         option("--format", help = "text | markdown | json | turtle").default("text")
@@ -209,7 +218,7 @@ private class CheckCommand : CliktCommand(name = "check") {
 
         val graph = Rdf.parseFromFile(ontologyArg.toString(), "TURTLE")
 
-        if (catalogOpt.lowercase() in setOf("all", "embedding-quality")) {
+        if (catalogOpt.lowercase() in CATALOGS_USING_EMBEDDING_SHAPES) {
             val hasClose =
                 graph.getTriplesSequence().any { it.predicate == EnrichmentVocabulary.semanticallyCloseTo }
             if (!hasClose) {
@@ -253,22 +262,24 @@ private fun loadOnnxEmbeddingModel(
         throw UsageError(e.message ?: "Invalid embedding options")
     }
 
-private fun buildChecker(catalogOpt: String, validator: com.geoknoesis.kastor.rdf.shacl.ShaclValidator): QualityChecker =
-    when (catalogOpt.lowercase()) {
+private fun buildChecker(catalogOpt: String, validator: com.geoknoesis.kastor.rdf.shacl.ShaclValidator): QualityChecker {
+    val b = QualityChecker.builder(validator)
+    return when (catalogOpt.lowercase()) {
         "all" -> QualityChecker.default(validator)
-        "owl-quality" ->
-            QualityChecker.builder(validator).addCatalog(BundledCatalogs.OWL_QUALITY).build()
-        "skos-validation" ->
-            QualityChecker.builder(validator).addCatalog(BundledCatalogs.SKOS_VALIDATION).build()
-        "data-quality" ->
-            QualityChecker.builder(validator).addCatalog(BundledCatalogs.DATA_QUALITY).build()
-        "embedding-quality" ->
-            QualityChecker.builder(validator).addCatalog(BundledCatalogs.EMBEDDING_QUALITY).build()
+        "owl-quality" -> b.addCatalog(BundledCatalogs.OWL_QUALITY).build()
+        "skos-validation" -> b.addCatalog(BundledCatalogs.SKOS_VALIDATION).build()
+        "data-quality" -> b.addCatalog(BundledCatalogs.DATA_QUALITY).build()
+        "embedding-quality" -> b.addCatalog(BundledCatalogs.EMBEDDING_QUALITY).build()
+        "modern-engineering" -> b.addCatalog(BundledCatalogs.MODERN_ENGINEERING).build()
+        "rdf12-quality" -> b.addCatalog(BundledCatalogs.RDF12_QUALITY).build()
+        "skos-vocabulary" -> b.addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC).build()
+        "skos-vocabulary-embed" -> b.addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC_WITH_EMBEDDING).build()
         else ->
             throw UsageError(
-                "Unknown --catalog $catalogOpt (expected owl-quality|skos-validation|data-quality|embedding-quality|all)",
+                "Unknown --catalog $catalogOpt (expected $CATALOG_HELP)",
             )
     }
+}
 
 private fun emitReport(
     report: QualityReport,

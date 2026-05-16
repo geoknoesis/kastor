@@ -637,16 +637,16 @@ If you encounter issues:
 After successful installation:
 
 1. **[Quick Start Guide](quick-start.md)** - Get up and running
-2. **[RDF Fundamentals](rdf-fundamentals.md)** - Learn RDF basics
-3. **[Examples](examples.md)** - Explore code examples
-4. **[Super Sleek API Guide](super-sleek-api-guide.md)** - Advanced features
+2. **[RDF Fundamentals](../concepts/rdf-fundamentals.md)** - Learn RDF basics
+3. **[Examples](../examples/README.md)** - Explore code examples
+4. **[Compact DSL Guide](../api/compact-dsl-guide.md)** - DSL reference
 
 ## 🤝 Need Help?
 
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Examples**: [Examples](../examples/README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

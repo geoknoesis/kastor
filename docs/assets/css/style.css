@@ -1,0 +1,6 @@
+/* Shared baseline for Jekyll / GitHub Pages (theme hook + internal pages) */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

@@ -1,4 +1,9 @@
 # Local preview: cd docs && bundle install && bundle exec jekyll serve --livereload
+# For GitHub project pages, pass the repo as baseurl, e.g. --baseurl "/kastor"
+#
+# Windows: if `bundle exec jekyll` says "command not found: jekyll", run:
+#   bundle exec ruby "$(bundle exec ruby -e 'puts Gem.bin_path(%q(jekyll),%q(jekyll))')" serve --livereload --baseurl "/kastor"
+#
 # Mirrors the GitHub Pages build image closely enough for layout and links.
 source "https://rubygems.org"
 

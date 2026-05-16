@@ -56,4 +56,23 @@ object BundledCatalogs {
             MODERN_ENGINEERING,
             RDF12_QUALITY,
         )
+
+    /**
+     * Recommended stack for **published SKOS vocabularies** and lightweight RDF datasets:
+     * SKOS integrity and conventions, data-quality shapes, modern engineering / FAIR-style rules,
+     * and RDF 1.2 hygiene — **without** [OWL_QUALITY] (often noisy for pure SKOS).
+     *
+     * For semantic-similarity shapes, use [SKOS_VOCABULARY_QC_WITH_EMBEDDING] after
+     * [com.geoknoesis.kastor.ontoquality.embed.SemanticEnricher].
+     */
+    val SKOS_VOCABULARY_QC: List<ShapeCatalog> =
+        listOf(
+            SKOS_VALIDATION,
+            DATA_QUALITY,
+            MODERN_ENGINEERING,
+            RDF12_QUALITY,
+        )
+
+    val SKOS_VOCABULARY_QC_WITH_EMBEDDING: List<ShapeCatalog> =
+        SKOS_VOCABULARY_QC + EMBEDDING_QUALITY
 }

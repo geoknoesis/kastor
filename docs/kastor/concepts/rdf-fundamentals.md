@@ -624,16 +624,16 @@ fun main() {
 Now that you understand RDF fundamentals, explore:
 
 - **[SPARQL Fundamentals](sparql-fundamentals.md)** - Learn more about querying RDF data
-- **[RDF Terms](../resources/rdfterms.html)** - Detailed explanation of RDF terms
+- **[RDF Terms](../resources/rdfterms.md)** - Detailed explanation of RDF terms
 - **[Vocabularies](vocabularies.md)** - Working with RDF vocabularies
-- **[Super Sleek API Guide](super-sleek-api-guide.md)** - Advanced Kastor RDF features
+- **[Compact DSL Guide](../api/compact-dsl-guide.md)** - Graph and triple DSL reference
 
 ## 🤝 Need Help?
 
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Examples**: [Examples](../examples/README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

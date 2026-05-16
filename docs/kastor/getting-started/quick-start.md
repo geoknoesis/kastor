@@ -498,10 +498,10 @@ fun main() {
 
 ## 🤝 Need Help?
 
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Examples**: [Examples](../examples/README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

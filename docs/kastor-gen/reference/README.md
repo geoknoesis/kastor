@@ -9,7 +9,7 @@ Complete API reference for Kastor Gen components and interfaces.
 - [Annotations](annotations.md) - RDF mapping annotations
 - [Validation API](validation.md) - Validation interfaces and adapters
 - [Processor API](processor.md) - KSP processor interfaces
-- [Examples](examples.md) - Code examples and usage patterns
+- [Examples](../examples/README.md) - Code examples and usage patterns
 
 ## Quick Reference
 

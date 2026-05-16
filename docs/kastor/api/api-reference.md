@@ -736,17 +736,16 @@ repo.add {
 
 ## 🎯 Next Steps
 
-- **[Quick Start Guide](quick-start.md)** - Get started quickly
-- **[Examples Guide](examples.md)** - See real-world usage
-- **[Super Sleek API Guide](super-sleek-api-guide.md)** - Advanced features
-- **[Compact DSL Guide](compact-dsl-guide.md)** - DSL syntaxes
+- **[Quick Start Guide](../getting-started/quick-start.md)** - Get started quickly
+- **[Examples Guide](../examples/README.md)** - See real-world usage
+- **[Compact DSL Guide](compact-dsl-guide.md)** - DSL syntaxes and patterns
 
 ## 📞 Need Help?
 
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Examples**: [Examples](../examples/README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

@@ -75,9 +75,9 @@ Pain points the redesign targets:
   (`OntoMapperProcessor` + `WrapperGenerator`) and ontology-driven
   (`OntologyProcessor` + `OntologyWrapperGenerator`). They generate slightly
   different output shapes and have substantial duplication
-  ([WrapperGenerator.kt](kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/WrapperGenerator.kt)
+  ([WrapperGenerator.kt](https://github.com/geoknoesis/kastor/blob/main/kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/WrapperGenerator.kt)
   vs
-  [OntologyWrapperGenerator.kt](kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/OntologyWrapperGenerator.kt)).
+  [OntologyWrapperGenerator.kt](https://github.com/geoknoesis/kastor/blob/main/kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/OntologyWrapperGenerator.kt)).
 - **Generators emit large, format-specific code** instead of shelling onto a
   small set of runtime delegates. Every property type (literal, object, list)
   produces a custom `lazy { KastorGraphOps.getXyzValues(...) }` block; the
@@ -291,7 +291,7 @@ Each delegate caches via `lazy(PUBLICATION)` and reads from
 behaviour.
 
 This collapses the 600-line
-[PropertyMethodGenerator.kt](kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyMethodGenerator.kt)
+[PropertyMethodGenerator.kt](https://github.com/geoknoesis/kastor/blob/main/kastor-gen/processor/src/main/kotlin/com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyMethodGenerator.kt)
 into a single line per property in the generator output. The Kotlin-type ->
 RDF-decoder knowledge moves *into the runtime*, where it belongs and where it
 can be unit-tested without firing up KSP.

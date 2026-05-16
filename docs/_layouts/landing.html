@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{{ page.description | default: site.description | escape }}">
+    <title>{{ page.title | default: site.title }} — {{ site.title }}</title>
+    <link rel="icon" type="image/png" href="{{ '/assets/kastor-logo-icon.png' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/landing.css' | relative_url }}">
+  </head>
+  <body class="landing-body">
+    <header class="landing-top">
+      <div class="landing-top-inner">
+        <a class="landing-brand" href="{{ '/' | relative_url }}">
+          <img class="landing-brand-mark" src="{{ '/assets/kastor-logo-icon.png' | relative_url }}" width="44" height="44" alt="">
+          <span class="landing-brand-text">{{ site.title }}</span>
+        </a>
+        <nav class="landing-top-nav" aria-label="Primary">
+          <a href="{{ '/kastor/getting-started/' | relative_url }}">Docs</a>
+          <a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a>
+          <a href="{{ '/kastor/guides/' | relative_url }}">Guides</a>
+          <a href="https://github.com/geoknoesis/kastor" target="_blank" rel="noopener">GitHub</a>
+          <a class="landing-nav-cta" href="https://github.com/sponsors/geoknoesis" target="_blank" rel="noopener">Sponsor</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="landing-main">
+      {{ content }}
+    </main>
+
+    <footer class="landing-footer">
+      <div class="landing-footer-inner">
+        <div class="landing-footer-brand">
+          <img src="{{ '/assets/kastor-logo-icon.png' | relative_url }}" width="36" height="36" alt="">
+          <span>{{ site.title }}</span>
+        </div>
+        <p class="landing-footer-tagline">{{ site.description }}</p>
+        <div class="landing-footer-links">
+          <a href="https://github.com/geoknoesis/kastor/blob/main/LICENSE">License</a>
+          <a href="https://github.com/geoknoesis/kastor/discussions">Discussions</a>
+          <a href="https://github.com/geoknoesis/kastor/issues">Issues</a>
+        </div>
+        <p class="landing-footer-copy">© Geoknoesis — Apache 2.0</p>
+      </div>
+    </footer>
+
+    {% include mermaid-init.html %}
+  </body>
+</html>

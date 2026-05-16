@@ -9,7 +9,7 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 ## 🚀 Quick Start
 
 ### New here?
-- **[Project Landing Page](landing.md)** - Overview, value, and links
+- **[Project home (GitHub Pages)](index.html)** — landing hero, CTAs, and doc pillars
 
 ### New to Kastor?
 - **[Getting Started Guide](kastor/getting-started/README.md)** - 5-minute setup and first steps

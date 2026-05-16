@@ -794,9 +794,9 @@ After exploring the examples:
 ## 📞 Need Help?
 
 - **Examples**: Check the example code for patterns
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

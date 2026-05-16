@@ -407,7 +407,7 @@ val query = """
 - [Provider Capabilities](provider-capabilities.md)
 - [RDF-star Support](rdf-star.md)
 - [Extension Functions](extension-functions.md)
-- [Query DSL](query-dsl.md)
+- [Query DSL tutorial](../guides/kastor-query-dsl-tutorial.md)
 
 ## 📞 Support
 

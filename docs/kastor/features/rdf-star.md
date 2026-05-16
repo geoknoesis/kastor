@@ -550,7 +550,7 @@ fun rdfStarExample() {
 - [Provider Capabilities](provider-capabilities.md)
 - [Service Description](service-description.md)
 - [Enhanced Providers](enhanced-providers.md)
-- [Query DSL](query-dsl.md)
+- [Query DSL tutorial](../guides/kastor-query-dsl-tutorial.md)
 
 ## 📞 Support
 

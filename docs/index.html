@@ -1,0 +1,79 @@
+---
+layout: landing
+title: Home
+description: Kotlin-first SDK for RDF and knowledge graphs — DSL, multi-backend graphs, SHACL 1.2, and ontology codegen.
+---
+
+<section class="landing-hero" aria-label="Introduction">
+  <img class="landing-hero-wordmark" src="{{ '/assets/kastor-logo-wordmark.png' | relative_url }}" width="560" alt="Kastor">
+  <h1>Modern Kotlin for RDF &amp; knowledge graphs</h1>
+  <p class="landing-hero-lead">
+    A vocabulary-agnostic core, natural graph DSL, type-safe SPARQL ergonomics, and pluggable backends
+    (Memory, Apache Jena, Eclipse RDF4J, SPARQL). Ship data catalogs, validated graphs, and ontology-driven apps without leaving Kotlin.
+  </p>
+  <div class="landing-cta-row">
+    <a class="landing-btn landing-btn-primary" href="{{ '/kastor/getting-started/installation.html' | relative_url }}">Install &amp; quick start</a>
+    <a class="landing-btn landing-btn-secondary" href="https://github.com/geoknoesis/kastor" target="_blank" rel="noopener">Star on GitHub</a>
+    <a class="landing-btn landing-btn-secondary" href="{{ '/kastor/README.html' | relative_url }}">Documentation hub</a>
+  </div>
+</section>
+
+<section class="landing-section" aria-labelledby="why-heading">
+  <h2 id="why-heading">Why teams choose Kastor</h2>
+  <div class="landing-grid">
+    <div class="landing-card">
+      <strong>Domain-first RDF</strong>
+      <p>Pure Kotlin domain APIs when you want them; RDF stays explicit via handles and generated vocabularies.</p>
+    </div>
+    <div class="landing-card">
+      <strong>One API, many engines</strong>
+      <p>Same patterns over memory stores, Jena (TDB2, etc.), RDF4J, and remote endpoints—swap with configuration, not rewrites.</p>
+    </div>
+    <div class="landing-card">
+      <strong>Validation &amp; quality</strong>
+      <p>Native SHACL 1.2 Core engine, RDF4J bridge, and <code>onto-quality</code> catalogues for OWL, SKOS, and data-shape checks.</p>
+    </div>
+    <div class="landing-card">
+      <strong>Kastor Gen</strong>
+      <p>KSP + Gradle plugin: SHACL / JSON-LD–driven Kotlin interfaces and wrappers for maintainable ontology-bound code.</p>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section landing-section-code" aria-labelledby="code-heading">
+  <h2 id="code-heading">Hello RDF in a few lines</h2>
+  <p class="landing-section-lead">Create a graph, add triples with the DSL, run a SPARQL <code>SELECT</code>.</p>
+
+  <div class="landing-code-panel">
+    {% include landing-sample-kotlin.html %}
+  </div>
+
+  <h3 class="landing-subheading">Shape of the stack</h3>
+  <div class="landing-diagram" role="img" aria-label="Flow from repository to your app">
+    <pre class="mermaid">flowchart LR
+  A[Repository] --> B[Graph DSL]
+  B --> C[SPARQL / APIs]
+  C --> D[Your app]</pre>
+  </div>
+</section>
+
+<section class="landing-section" aria-labelledby="docs-heading">
+  <h2 id="docs-heading">Documentation pillars</h2>
+  <ul class="landing-pillars">
+    <li><a href="{{ '/kastor/getting-started/' | relative_url }}">Getting started</a> — install, first graph, configuration variants</li>
+    <li><a href="{{ '/kastor/concepts/' | relative_url }}">Concepts</a> — RDF 1.2, datasets, SPARQL, vocabularies</li>
+    <li><a href="{{ '/kastor/guides/' | relative_url }}">How-to guides</a> — SHACL, named graphs, transactions, ontology quality</li>
+    <li><a href="{{ '/kastor/api/api-reference.html' | relative_url }}">API reference</a> — core APIs and DSLs</li>
+    <li><a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a> — codegen from ontologies</li>
+  </ul>
+</section>
+
+<section class="landing-section" aria-labelledby="community-heading">
+  <h2 id="community-heading">Community &amp; sustainability</h2>
+  <p class="landing-prose">
+    <a href="https://github.com/geoknoesis/kastor/discussions" target="_blank" rel="noopener">Discussions</a>,
+    <a href="https://github.com/geoknoesis/kastor/issues" target="_blank" rel="noopener">issues</a>,
+    and <a href="mailto:stephanef@geoknoesis.com">email</a>.
+    If Kastor helps your work, consider <a href="https://github.com/sponsors/geoknoesis" target="_blank" rel="noopener">sponsoring</a> maintenance and roadmap.
+  </p>
+</section>

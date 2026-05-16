@@ -20,6 +20,10 @@ Published Maven coordinates follow `com.geoknoesis.kastor:onto-quality` and `ont
 2. **SKOS Taxonomy Validation** — SKOS constraint shapes
 3. **Data Quality Constraints** — DQ-SHACL-style constraints
 4. **Embedding-based Ontology Quality** — consumes **`oqsh:semanticallyCloseTo`** (and optional drift scores) from **`SemanticEnricher`**
+5. **Modern Ontology Engineering** — FAIR-style URI, licence, label and multilingual checks (`N…` pitfalls)
+6. **RDF 1.2 Conformance** — RDF 1.2–specific hygiene
+
+**Preset for published SKOS vocabularies:** `BundledCatalogs.SKOS_VOCABULARY_QC` bundles SKOS + data-quality + modern-engineering + RDF12 (skips OWL-quality). CLI: `--catalog skos-vocabulary` (or `skos-vocabulary-embed` after `pipeline` / enrich for embedding shapes).
 
 Shape sources live in the repository as Turtle:
 

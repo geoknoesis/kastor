@@ -868,8 +868,8 @@ For new projects or when managing multiple ontologies, the Gradle configuration 
 For more information, see:
 - [Ontology Generation](ontology-generation.md) - Annotation-based approach
 - [Domain Modeling](domain-modeling.md) - Creating domain interfaces
-- [Best Practices](best-practices.md) - Guidelines for effective usage
-- [FAQ](faq.md) - Frequently asked questions
+- [Best Practices](../best-practices.md) - Guidelines for effective usage
+- [FAQ](../faq.md) - Frequently asked questions
 
 
 

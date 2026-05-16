@@ -45,6 +45,37 @@ class QualityCheckerTest {
             "Expected OOPS! P34 finding",
         )
 
-        println(report.describeMarkdown())
+    }
+
+    @Test
+    fun `SKOS vocabulary QC stack runs on empty graph`() {
+        val validator = ShaclValidation.validator()
+        val checker =
+            QualityChecker.builder(validator)
+                .addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC)
+                .build()
+        val empty = Rdf.graph { }
+        checker.check(empty)
+    }
+
+    @Test
+    fun `addCatalogs merges SKOS stack with same order as manual adds`() {
+        val validator = ShaclValidation.validator()
+        val viaList =
+            QualityChecker.builder(validator)
+                .addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC)
+                .build()
+        val manual =
+            QualityChecker.builder(validator)
+                .addCatalog(BundledCatalogs.SKOS_VALIDATION)
+                .addCatalog(BundledCatalogs.DATA_QUALITY)
+                .addCatalog(BundledCatalogs.MODERN_ENGINEERING)
+                .addCatalog(BundledCatalogs.RDF12_QUALITY)
+                .build()
+        val empty = Rdf.graph { }
+        assertTrue(
+            viaList.check(empty).findings.size == manual.check(empty).findings.size,
+            "Merged catalogs should match manual stack",
+        )
     }
 }

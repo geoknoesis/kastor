@@ -971,17 +971,17 @@ class BackupManager(private val repo: RdfRepository) {
 
 ## 🎯 Next Steps
 
-- **[Quick Start Guide](quick-start.md)** - Get started quickly
-- **[Examples Guide](examples.md)** - See real-world patterns
-- **[API Reference](api-reference.md)** - Complete API documentation
-- **[Super Sleek API Guide](super-sleek-api-guide.md)** - Advanced features
+- **[Quick Start Guide](../getting-started/quick-start.md)** - Get started quickly
+- **[Examples Guide](../examples/README.md)** - See real-world patterns
+- **[API Reference](../api/api-reference.md)** - Complete API documentation
+- **[Compact DSL Guide](../api/compact-dsl-guide.md)** - DSL reference
 
 ## 📞 Need Help?
 
-- **Documentation**: [docs/](docs/)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor-rdf/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor-rdf/discussions)
+- **Documentation**: [Documentation hub](../../README.md)
+- **Examples**: [Examples](../examples/README.md)
+- **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
 
 ---
 

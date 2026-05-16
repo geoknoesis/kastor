@@ -15,6 +15,10 @@ Ontology **quality checks** for Kastor: curated **SHACL 1.2** shape catalogues r
 5. **Modern Ontology Engineering** — `BundledCatalogs.MODERN_ENGINEERING` — `/shapes/modern-engineering-shacl.ttl` (pitfall codes `N` — beyond OOPS!)
 6. **RDF 1.2 Conformance** — `BundledCatalogs.RDF12_QUALITY` — `/shapes/rdf12-quality-shacl.ttl`
 
+**Published SKOS vocabulary preset (no OWL-quality):** `BundledCatalogs.SKOS_VOCABULARY_QC` lists
+`SKOS_VALIDATION`, `DATA_QUALITY`, `MODERN_ENGINEERING`, `RDF12_QUALITY`.
+With embeddings (after `SemanticEnricher`): `BundledCatalogs.SKOS_VOCABULARY_QC_WITH_EMBEDDING`.
+
 The Turtle files under `src/main/resources/shapes/` are the **spec** of what is checked.
 
 Sample graphs for manual runs live under `src/test/resources/test-ontologies/`

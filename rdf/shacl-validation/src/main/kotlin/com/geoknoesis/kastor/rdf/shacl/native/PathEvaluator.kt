@@ -14,8 +14,8 @@ import com.geoknoesis.kastor.rdf.RdfTerm
  * matching tests such as W3C `path-sequence-duplicate-001`.
  *
  * **Transitive closures.** `sh:zeroOrMorePath` / `sh:oneOrMorePath` accumulate reachable endpoints
- * uniquely under the same fingerprint (rather than plain Kotlin `Set` hash/`equals` alone): literals
- * that differ only by canonical encoding (`vs`) collapse consistently with cardinality dedup.
+ * uniquely under the same fingerprint (rather than plain Kotlin `Set` hash/`equals` alone), so literals
+ * that differ only by canonical encoding still collapse consistently with cardinality dedup.
  */
 internal object PathEvaluator {
 

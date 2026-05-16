@@ -43,6 +43,13 @@ class QualityChecker private constructor(
             return this
         }
 
+        fun addCatalogs(iter: Iterable<ShapeCatalog>): Builder {
+            for (c in iter) {
+                catalogs.add(c)
+            }
+            return this
+        }
+
         fun withAllBundledCatalogs(): Builder {
             catalogs.clear()
             catalogs.addAll(BundledCatalogs.all)

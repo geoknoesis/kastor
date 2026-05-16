@@ -1129,7 +1129,7 @@ val shapesGraph = shacl {
 
 ## See Also
 
-- [SHACL Validation Guide](guides/how-to-validate-shacl.md) - How to use SHACL validation
-- [SHACL Validation Features](features/shacl-validation.md) - SHACL validation capabilities
+- [SHACL Validation Guide](../guides/how-to-validate-shacl.md) - How to use SHACL validation
+- [SHACL Validation Features](../features/shacl-validation.md) - SHACL validation capabilities
 - [Compact DSL Guide](compact-dsl-guide.md) - General RDF DSL documentation
 

@@ -313,6 +313,6 @@ val repo = RdfProviderRegistry.create(
 
 ---
 
-**Need help choosing a provider?** Check the [FAQ](../faq.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
+**Need help choosing a provider?** Check the [FAQ](../guides/faq.md) or [ask the community](https://github.com/geoknoesis/kastor/discussions)!
 
 

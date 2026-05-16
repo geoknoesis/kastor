@@ -10,12 +10,12 @@ Practical examples and use cases demonstrating Kastor Gen capabilities.
 
 ## Table of Contents
 
-- [Basic Examples](basic.md) - Simple usage patterns
-- [Domain Modeling](domain-modeling.md) - Complex domain models
-- [RDF Integration](rdf-integration.md) - Advanced RDF operations
-- [Validation Examples](validation.md) - SHACL validation patterns
-- [Performance Examples](performance.md) - Optimization techniques
-- [Integration Patterns](integration.md) - Real-world integration scenarios
+- [Basic Examples](../tutorials/getting-started.md) - Simple usage patterns
+- [Domain Modeling](../tutorials/domain-modeling.md) - Complex domain models
+- [RDF Integration](../tutorials/rdf-integration.md) - Advanced RDF operations
+- [Validation Examples](../tutorials/validation.md) - SHACL validation patterns
+- [Performance](../../kastor/guides/performance.md) - Optimization techniques (core Kastor guide)
+- [Advanced usage](../tutorials/advanced-usage.md) - Real-world integration scenarios
 
 ## Quick Start Examples
 
@@ -157,7 +157,7 @@ We welcome contributions of new examples! Please:
 
 ## Need Help?
 
-- Check the [Tutorials](../tutorials/README.md) for step-by-step guides
+- Start with [Getting started](../tutorials/getting-started.md); see the [Kastor Gen overview](../README.md) for all tutorials.
 - Review the [API Reference](../reference/README.md) for detailed documentation
 - Look at the [FAQ](../faq.md) for common questions
 - See [Best Practices](../best-practices.md) for guidelines

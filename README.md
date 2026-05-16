@@ -1,5 +1,11 @@
 # Kastor
 
+<p align="center">
+  <img src="docs/assets/kastor-logo.png" alt="Kastor — beaver mascot with linked-data graph" width="128" height="128">
+  <br>
+  <sub>More marks: <a href="docs/assets/LOGO.md">logo variants</a> (dark background, icon, wordmark).</sub>
+</p>
+
 [![CI](https://github.com/geoknoesis/kastor/actions/workflows/ci.yml/badge.svg)](https://github.com/geoknoesis/kastor/actions/workflows/ci.yml)
 
 **[Documentation website](https://geoknoesis.github.io/kastor/)** — Jekyll site in [`docs/`](docs/), deployed with [GitHub Actions](.github/workflows/pages.yml). On a fork, enable **Settings → Pages → Build and deployment: GitHub Actions**.

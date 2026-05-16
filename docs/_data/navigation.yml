@@ -1,4 +1,6 @@
 main:
+  - title: Home
+    url: /
   - title: Getting Started
     url: /kastor/getting-started/
     children:

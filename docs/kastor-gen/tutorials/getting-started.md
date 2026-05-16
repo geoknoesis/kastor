@@ -276,7 +276,7 @@ Congratulations! You've successfully created your first Kastor Gen application. 
 - **Learn about [Core Concepts](core-concepts.md)** - Understand the side-channel architecture
 - **Explore [Domain Modeling](domain-modeling.md)** - Learn best practices for domain interfaces
 - **Check out [RDF Integration](rdf-integration.md)** - Advanced RDF side-channel usage
-- **See [Practical Examples](examples/README.md)** - Real-world use cases
+- **See [Practical Examples](../examples/README.md)** - Real-world use cases
 
 ## Troubleshooting
 

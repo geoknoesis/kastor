@@ -58,7 +58,20 @@ val checker = QualityChecker.builder(validator)
 val report = checker.check(ontology)
 ```
 
-Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, `data-quality`, `embedding-quality`, `all`.
+### Published SKOS vocabulary stack (no OWL-quality catalogue)
+
+```kotlin
+import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
+
+val checker = QualityChecker.builder(validator)
+    .addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC)
+    .build()
+val report = checker.check(ontology)
+```
+
+Use `BundledCatalogs.SKOS_VOCABULARY_QC_WITH_EMBEDDING` after **`SemanticEnricher`** so **embedding-quality** shapes apply.
+
+Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, `data-quality`, `embedding-quality`, `modern-engineering`, `rdf12-quality`, `skos-vocabulary` (SKOS + data + modern + RDF12, no OWL), `skos-vocabulary-embed` (same plus embedding shapes; use after enrich or `pipeline`), `all`.
 
 ## Step 3 (optional): Semantic tier — enrich then validate
 
@@ -123,8 +136,9 @@ Run via Gradle from the repository root:
 
 ```bash
 ./gradlew :tools:onto-quality-cli:run --args="check path/to/ontology.ttl --catalog all"
+./gradlew :tools:onto-quality-cli:run --args="check path/to/skos.ttl --catalog skos-vocabulary"
 ./gradlew :tools:onto-quality-cli:run --args="enrich path/to/ontology.ttl --output path/to/enriched.ttl"
-./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog embedding-quality --severity info"
+./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog skos-vocabulary-embed --severity info"
 ```
 
 See the [module README](../../../tools/onto-quality/README.md) for threshold tuning, exit codes, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).

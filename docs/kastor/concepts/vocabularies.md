@@ -560,10 +560,10 @@ val person = FOAF.Person
 
 ## Related Documentation
 
-- [RDF Terms](../resources/rdfterms.html) - Core RDF term model
-- [Core API](core-api.md) - Main RDF API interfaces
-- [Getting Started](getting-started.md) - Quick start guide
-- [Examples](examples.md) - Usage examples and tutorials
+- [RDF Terms](../resources/rdfterms.md) - Core RDF term model
+- [Core API](../api/core-api.md) - Main RDF API interfaces
+- [Getting Started](../getting-started/getting-started.md) - Quick start guide
+- [Examples](../examples/README.md) - Usage examples and tutorials
 
 ## Vocabulary Specifications
 

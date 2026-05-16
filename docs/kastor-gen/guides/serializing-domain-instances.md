@@ -366,7 +366,7 @@ val jsonld = person.rdf.graph.serialize(RdfFormat.JSON_LD) {
 }
 ```
 
-See [Serialization Options Guide](../kastor/guides/how-to-serialize-rdf.md#serialization-options) for complete details.
+See [Serialization Options Guide](../../kastor/guides/how-to-serialize-rdf.md#serialization-options) for complete details.
 
 ## Important Notes
 

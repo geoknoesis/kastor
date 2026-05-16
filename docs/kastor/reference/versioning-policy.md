@@ -283,6 +283,6 @@ If you have questions about versioning:
 
 - [Installation Guide](../getting-started/installation.md) - How to install and configure Kastor
 - [Compatibility Matrix](compatibility.md) - Detailed compatibility information
-- [Migration Guides](../guides/migration.md) - Version-specific migration guides
-- [API Reference](api-reference.md) - Complete API documentation
+- [Migration guides](../guides/migrating-to-rdf-1.2.md) - RDF 1.2 migration notes
+- [API Reference](../api/api-reference.md) - Complete API documentation
 

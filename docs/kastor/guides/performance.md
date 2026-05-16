@@ -329,7 +329,7 @@ To run performance benchmarks:
 
 ## Related Documentation
 
-- [Streaming API](../api/core-api.md#streaming-parsing) - Streaming parsing for large files
-- [Repository Guide](how-to-use-repositories.md) - Repository configuration and optimization
+- [Core API](../api/core-api.md) — streaming (`Rdf.parseStreaming`, SPARQL `Flow`) and repository APIs
+- [Repository reference](../reference/repository.md) — repository configuration and lifecycle
 - [Provider Guide](../providers/README.md) - Provider-specific performance characteristics
 

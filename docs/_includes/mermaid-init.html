@@ -1,43 +1,56 @@
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
   /**
-   * Kramdown + Rouge wrap fenced ```mermaid in code.language-mermaid (inside
-   * div.highlighter-rouge > pre or similar). Mermaid only renders .mermaid
-   * divs, so we replace those blocks before calling mermaid.run().
+   * Call initialize synchronously right after the bundle loads. If this runs
+   * only on DOMContentLoaded, Mermaid may already have registered auto-run
+   * with the default startOnLoad: true and diagrams never render reliably.
    */
-  function initMermaid() {
-    if (typeof mermaid === "undefined" || !mermaid.initialize) return;
-
+  if (typeof mermaid !== "undefined" && mermaid.initialize) {
     mermaid.initialize({
       startOnLoad: false,
       theme: "default",
       securityLevel: "loose",
       flowchart: { htmlLabels: true },
     });
+  }
 
+  /**
+   * Kramdown + Rouge: ```mermaid → code.language-mermaid inside
+   * div.highlighter-rouge. Turn those into div.mermaid; keep
+   * pre.mermaid as emitted by the site (supported by Mermaid).
+   */
+  function promoteRougeMermaidBlocks() {
     document.querySelectorAll("code.language-mermaid").forEach(function (code) {
       var graph = code.textContent.trim();
       if (!graph) return;
-      var div = document.createElement("div");
-      div.className = "mermaid";
-      div.textContent = graph;
+      var host = document.createElement("div");
+      host.className = "mermaid";
+      host.textContent = graph;
       var rouge = code.closest("div.highlighter-rouge");
       if (rouge) {
-        rouge.replaceWith(div);
+        rouge.replaceWith(host);
         return;
       }
       var pre = code.parentElement;
       if (pre && pre.tagName === "PRE") {
-        pre.replaceWith(div);
+        pre.replaceWith(host);
       }
     });
+  }
 
-    mermaid.run({ suppressErrors: true }).catch(function () {});
+  async function runMermaid() {
+    if (typeof mermaid === "undefined" || typeof mermaid.run !== "function") return;
+    promoteRougeMermaidBlocks();
+    try {
+      await mermaid.run({ querySelector: ".mermaid" });
+    } catch (e) {
+      console.error("Mermaid:", e);
+    }
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initMermaid);
+    document.addEventListener("DOMContentLoaded", runMermaid);
   } else {
-    initMermaid();
+    runMermaid();
   }
 </script>

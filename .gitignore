@@ -1,7 +1,12 @@
-# Jekyll (documentation site local preview under docs/)
+# Jekyll / Bundler (GitHub Pages local preview: cd docs && bundle install && bundle exec jekyll serve …)
 docs/_site/
 docs/.jekyll-cache/
+docs/.sass-cache/
+docs/.jekyll-metadata
 docs/vendor/
+docs/.bundle/
+# Plugin caches (e.g. jekyll-assets) if enabled
+docs/.jekyll-assets-cache/
 
 # Gradle
 .gradle/
