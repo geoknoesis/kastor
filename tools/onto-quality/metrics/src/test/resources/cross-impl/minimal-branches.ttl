@@ -1,0 +1,11 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix : <http://example.org/cross/> .
+
+:A a owl:Class .
+:B a owl:Class .
+:B rdfs:subClassOf :A .
+
+:P a owl:ObjectProperty ;
+    rdfs:domain :B ;
+    rdfs:range :A .

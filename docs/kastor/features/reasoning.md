@@ -1,5 +1,7 @@
 # Kastor Reasoning Framework
 
+Design note (architecture, registry, onto-quality v0.4 integration): **[Reasoning in Kastor](../design/reasoning-in-kastor.md)**.
+
 The Kastor RDF framework now includes a comprehensive reasoning system that provides pluggable reasoning capabilities through a provider mechanism, similar to the existing RDF provider architecture.
 
 ## 🏗️ **Architecture Overview**
@@ -34,10 +36,10 @@ rdf/
 │   ├── RdfReasoning.kt      # Factory object
 │   └── providers/
 │       └── MemoryReasonerProvider.kt
-├── jena/                    # Jena reasoning implementation
+├── jena-reasoning/          # Jena RdfReasonerProvider (+ SPI)
 │   └── reasoning/
 │       └── JenaReasonerProvider.kt
-├── rdf4j/                   # RDF4J reasoning implementation
+├── rdf4j-reasoning/         # RDF4J RdfReasonerProvider (+ SPI)
 │   └── reasoning/
 │       └── Rdf4jReasonerProvider.kt
 └── examples/                # Reasoning examples
@@ -221,8 +223,10 @@ data class ReasonerCapabilities(
 The framework uses Java ServiceLoader for automatic discovery of reasoner providers:
 
 - **Core Module**: `MemoryReasonerProvider` (always available)
-- **Jena Module**: `JenaReasonerProvider` (when Jena is on classpath)
-- **RDF4J Module**: `Rdf4jReasonerProvider` (when RDF4J is on classpath)
+- **`jena-reasoning` artifact**: `JenaReasonerProvider` (SPI + direct import)
+- **`rdf4j-reasoning` artifact**: `Rdf4jReasonerProvider` (SPI + direct import)
+
+Add **`com.geoknoesis.kastor:jena-reasoning`** / **`com.geoknoesis.kastor:rdf4j-reasoning`** alongside **`com.geoknoesis.kastor:rdf-jena`** / **`rdf-rdf4j`** when you need those providers; they are **not** transitive from the store adapters.
 
 ## 📊 **Performance Considerations**
 
@@ -279,11 +283,15 @@ To add reasoning to existing Kastor applications:
 
 1. **Add Dependencies**:
    ```kotlin
-   implementation(project(":rdf:core"))           // Always needed
-   implementation(project(":rdf:reasoning"))      // Core reasoning interfaces
-   implementation(project(":rdf:jena"))           // For Jena reasoning
-   implementation(project(":rdf:rdf4j"))          // For RDF4J reasoning
+   implementation(project(":rdf:core"))
+   implementation(project(":rdf:reasoning"))
+   implementation(project(":rdf:jena"))
+   implementation(project(":rdf:jena-reasoning"))   // Jena-backed RdfReasonerProvider
+   implementation(project(":rdf:rdf4j"))
+   implementation(project(":rdf:rdf4j-reasoning")) // RDF4J-backed RdfReasonerProvider
    ```
+
+   For Maven coordinates, use the [**kastor-bom**](https://github.com/geoknoesis/kastor/blob/main/bom/build.gradle.kts); optional reasoners are published as **`jena-reasoning`** and **`rdf4j-reasoning`**.
 
 2. **Use Reasoning**:
    ```kotlin

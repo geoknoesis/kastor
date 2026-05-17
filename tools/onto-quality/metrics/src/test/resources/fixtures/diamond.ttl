@@ -1,0 +1,13 @@
+@prefix : <http://example.org/diamond#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:A a owl:Class .
+:B a owl:Class .
+:C a owl:Class .
+:D a owl:Class .
+
+:B rdfs:subClassOf :A .
+:C rdfs:subClassOf :A .
+:D rdfs:subClassOf :B .
+:D rdfs:subClassOf :C .

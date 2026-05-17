@@ -3,7 +3,10 @@ plugins {
   alias(libs.plugins.ksp) apply false
   alias(libs.plugins.kotlin.serialization) apply false
   alias(libs.plugins.jmh) apply false
+  alias(libs.plugins.dependency.analysis) apply false
 }
+
+apply(plugin = "com.autonomousapps.dependency-analysis")
 
 allprojects {
   group = "com.geoknoesis.kastor"
@@ -14,9 +17,17 @@ subprojects {
   // The `:bom` module is a Gradle platform; it must not apply Kotlin/java-library.
   val isBom = project.path == ":bom"
 
+  val skipDependencyAnalysis =
+    isBom ||
+      project.path.startsWith(":benchmarks:") ||
+      project.path.startsWith(":examples:")
+
   if (!isBom) {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "java-library")
+    if (!skipDependencyAnalysis) {
+      apply(plugin = "com.autonomousapps.dependency-analysis")
+    }
   }
 
   // Apply KSP plugin to projects that need it (but not the processor itself or runtime).
@@ -112,6 +123,13 @@ tasks.register("helloCodegen") {
   group = "examples"
   description = "Run the hello-codegen example"
   dependsOn(":examples:hello-codegen:run")
+}
+
+tasks.register("conformanceSmokeTest") {
+  group = "verification"
+  description =
+    "Runs :rdf:conformance RDF 1.2 harness smoke tests (bundled fixture; no W3C submodule)."
+  dependsOn(":rdf:conformance:conformanceSmokeTest")
 }
 
 

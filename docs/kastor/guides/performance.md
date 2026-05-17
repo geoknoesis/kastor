@@ -2,334 +2,243 @@
 
 {% include version-banner.md %}
 
-## Overview
+> **Documentation mode: Explanation** — typical complexity and provider tradeoffs (not a substitute for profiling your data). **Tasks:** streaming parse → [How to Parse RDF](how-to-parse-rdf.md), serialization → [How to Serialize RDF](how-to-serialize-rdf.md), `Flow` pipelines → [Typed SPARQL bindings & Flow](how-to-sparql-bindings-and-flows.md).
 
-This guide provides performance best practices and benchmarks for Kastor RDF SDK. It covers optimization strategies for large datasets, memory management, and performance characteristics of different operations.
+## Problem
 
-## Performance Characteristics
+- Avoid **out-of-memory** failures on large inputs.
+- Speed up **bulk loads**, **queries**, and **serialization**.
+- Choose a **provider/back-end** that fits dataset size and concurrency.
 
-### Operation Complexity
+## Complexity and memory (reference)
+
+### Operation complexity
 
 | Operation | Complexity | Notes |
 |-----------|------------|-------|
-| Add Triple | O(1) | Hash-based lookup in most implementations |
-| Remove Triple | O(1) | Hash-based lookup in most implementations |
-| Query (SELECT) | O(n) | Linear scan in memory, optimized in persistent stores |
-| Query (ASK) | O(1) | Early termination when match found |
+| Add triple | O(1) | Hash-based lookup in most implementations |
+| Remove triple | O(1) | Hash-based lookup in most implementations |
+| Query (SELECT) | O(n) | Linear scan in memory; persistent stores often indexed |
+| Query (ASK) | O(1) amortized | Early termination when a match is found |
 | Serialization | O(n) | Linear in number of triples |
-| Parsing | O(n) | Linear in file size |
+| Parsing | O(n) | Linear in input size |
 
-### Memory Usage
+### Memory usage (order-of-magnitude)
 
-| Dataset Size | Memory Backend | Persistent Backend |
+| Dataset size | Memory backend | Persistent backend |
 |--------------|----------------|-------------------|
-| Small (< 10K triples) | ~1-5 MB | ~1-2 MB |
-| Medium (10K-100K) | ~10-50 MB | ~5-10 MB |
-| Large (100K-1M) | ~100-500 MB | ~20-50 MB |
-| Very Large (> 1M) | ⚠️ Not recommended | ✅ Recommended |
+| Small (< 10K triples) | ~1–5 MB | ~1–2 MB |
+| Medium (10K–100K) | ~10–50 MB | ~5–10 MB |
+| Large (100K–1M) | ~100–500 MB | ~20–50 MB |
+| Very large (> 1M) | Not recommended | Preferred |
 
-**Note**: Memory usage varies significantly based on:
-- Number of unique IRIs (more unique IRIs = more memory)
-- Literal values (long strings consume more memory)
-- Provider implementation (Jena vs RDF4J have different memory profiles)
+Memory depends strongly on unique **IRIs**, **literal size**, and **provider** (Jena vs RDF4J profiles differ).
 
-## Best Practices
+## Steps
 
-### 1. Use Streaming for Large Files
+### Step 1: Stream large parses
 
-For large RDF files, use streaming parsing instead of loading everything into memory:
+Avoid loading an entire file into a graph when you only need to scan triples once.
 
 ```kotlin
-// ❌ Avoid: Loads entire file into memory
-val graph = Rdf.parseFromFile("large.ttl", RdfFormat.TURTLE) // OOM risk
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfFormat
+import java.io.File
 
-// ✅ Good: Stream processing
-val provider = RdfProviderRegistry.getDefaultProvider()
-provider.parseStreaming(File("large.ttl").inputStream(), RdfFormat.TURTLE, null)
-    .forEach { triple ->
-        // Process each triple
-        processTriple(triple)
+// Risky for huge files: entire graph in heap
+// val graph = Rdf.parseFromFile("large.ttl", RdfFormat.TURTLE)
+
+File("large.ttl").inputStream().use { input ->
+    Rdf.parseStreaming(input, RdfFormat.TURTLE).forEach { triple ->
+        // Handle each triple (aggregate, filter, enqueue, …)
     }
+}
 ```
 
-### 2. Use Batch Operations
+### Step 2: Prefer batch graph APIs
 
-Batch operations are significantly faster than individual operations:
+Batching reduces per-operation overhead inside the graph implementation.
 
 ```kotlin
-// ❌ Avoid: Individual operations
+// Slower: many small flushes
 repo.add {
     triples.forEach { triple ->
-        addTriple(triple)  // Multiple transactions
+        addTriple(triple)
     }
 }
 
-// ✅ Good: Batch operations
+// Faster: one batch
 repo.add {
-    addTriples(triples)  // Single transaction
+    addTriples(triples)
 }
 ```
 
-**Performance**: Batch operations can be 10-100x faster for large datasets.
+Batching is often dramatically faster at scale (see benchmarks below).
 
-### 3. Choose the Right Backend
+### Step 3: Match the backend to the workload
 
-Select the backend based on your dataset size and requirements:
+| Backend | Best for | Notes |
+|---------|----------|--------|
+| Memory | Small graphs, tests | Fast; bounded by heap |
+| Jena TDB2 | Large persistent datasets | Strong query performance when indexed |
+| RDF4J Native | Large datasets, concurrency | Balanced footprint and features |
+| SPARQL | Remote data | Dominated by network and endpoint limits |
 
-| Backend | Best For | Performance |
-|---------|----------|-------------|
-| Memory | Small datasets (< 100K triples), testing | Fast reads/writes |
-| Jena TDB2 | Large datasets, persistent storage | Fast queries, good for analytics |
-| RDF4J Native | Large datasets, concurrent access | Good balance of speed and features |
-| SPARQL | Remote endpoints, distributed data | Network latency dependent |
+### Step 4: Scope bulk writes
 
-### 4. Use Transactions for Bulk Operations
-
-Wrap bulk operations in transactions for better performance:
+Avoid starting a new **`add { }`** per row when one block or one **`transaction { }`** batch will do.
 
 ```kotlin
-// ✅ Good: Single transaction
+import com.geoknoesis.kastor.rdf.iri
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.transaction {
-    repeat(10_000) { i ->
-        val subject = iri("http://example.org/resource/$i")
-        subject - FOAF.name - "Resource $i"
-    }
-}
-
-// ❌ Avoid: Multiple transactions
-repeat(10_000) { i ->
-    repo.add {
-        val subject = iri("http://example.org/resource/$i")
-        subject - FOAF.name - "Resource $i"
+    add {
+        repeat(10_000) { i ->
+            val subject = iri("http://example.org/resource/$i")
+            subject has FOAF.name with "Resource $i"
+        }
     }
 }
 ```
 
-### 5. Optimize Queries
+Remote SPARQL repositories may not implement real transactional semantics; still fewer round-trips when the provider batches updates.
 
-Use appropriate query patterns for better performance:
+### Step 5: Bound or specialize queries
 
 ```kotlin
-// ✅ Good: Use LIMIT for large result sets
-val result = repo.select(SparqlSelect("""
+import com.geoknoesis.kastor.rdf.SparqlAskQuery
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+
+val limited = repo.select(SparqlSelectQuery("""
     SELECT ?s ?o WHERE {
         ?s <http://example.org/property/name> ?o .
-    } LIMIT 100
+    }
+    LIMIT 100
 """))
 
-// ✅ Good: Use ASK for existence checks
-val exists = repo.ask(SparqlAsk("""
+val exists = repo.ask(SparqlAskQuery("""
     ASK {
         ?s <http://example.org/property/name> "Alice" .
     }
 """))
 
-// ❌ Avoid: Unbounded queries on large datasets
-val all = repo.select(SparqlSelect("""
-    SELECT ?s ?o WHERE {
-        ?s ?p ?o .
-    }
-"""))  // May return millions of results
+// Risky on large datasets: unbounded ?s ?p ?o
+// repo.select(SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o }"))
 ```
 
-### 6. Use Named Graphs for Partitioning
+### Step 6: Partition with named graphs
 
-Partition large datasets using named graphs:
+Use named graphs so queries can target a subset of the dataset instead of scanning everything.
 
 ```kotlin
-// ✅ Good: Partition by domain
-val peopleGraph = repo.createGraph(iri("http://example.org/graphs/people"))
-val booksGraph = repo.createGraph(iri("http://example.org/graphs/books"))
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.iri
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-// Query specific graph
-val people = repo.getGraph(iri("http://example.org/graphs/people"))
-val result = people.select(SparqlSelect("SELECT ?name WHERE { ?person foaf:name ?name }"))
+val peopleGraph = iri("http://example.org/graphs/people")
+repo.createGraph(peopleGraph)
+repo.addToGraph(peopleGraph) {
+    val alice = iri("http://example.org/person/alice")
+    alice has FOAF.name with "Alice"
+}
+
+val names = repo.select(SparqlSelectQuery("""
+    SELECT ?name WHERE {
+        GRAPH <${peopleGraph.value}> {
+            ?person ${FOAF.name} ?name .
+        }
+    }
+"""))
 ```
 
-## Performance Benchmarks
+## Benchmarks
 
-### Benchmark Results
+Illustrative runs on a typical developer machine—**measure on your hardware and data**.
 
-These benchmarks were run on a typical development machine. Your results may vary.
-
-#### Graph Creation
+### Graph creation (in-memory)
 
 | Triples | Time | Throughput |
 |---------|------|------------|
-| 1,000 | ~5ms | ~200 triples/ms |
-| 10,000 | ~50ms | ~200 triples/ms |
-| 100,000 | ~500ms | ~200 triples/ms |
-| 1,000,000 | ~5,000ms | ~200 triples/ms |
+| 1,000 | ~5 ms | ~200 triples/ms |
+| 10,000 | ~50 ms | ~200 triples/ms |
+| 100,000 | ~500 ms | ~200 triples/ms |
+| 1,000,000 | ~5,000 ms | ~200 triples/ms |
 
-**Note**: Throughput remains relatively constant, indicating O(n) complexity.
+### Queries
 
-#### Query Performance
+| Dataset size | SELECT | ASK |
+|--------------|--------|-----|
+| 1,000 triples | ~1 ms | ~0.5 ms |
+| 10,000 triples | ~5 ms | ~1 ms |
+| 100,000 triples | ~50 ms | ~5 ms |
 
-| Dataset Size | SELECT Query | ASK Query |
-|--------------|--------------|------------|
-| 1,000 triples | ~1ms | ~0.5ms |
-| 10,000 triples | ~5ms | ~1ms |
-| 100,000 triples | ~50ms | ~5ms |
+Depends on query shape, indexes (persistent stores), and result size.
 
-**Note**: Query performance depends on:
-- Query complexity
-- Index availability (persistent stores)
-- Result set size
-
-#### Serialization Performance
+### Serialization
 
 | Triples | Turtle | N-Triples | JSON-LD |
 |---------|--------|-----------|---------|
-| 1,000 | ~10ms | ~5ms | ~20ms |
-| 10,000 | ~100ms | ~50ms | ~200ms |
-| 100,000 | ~1,000ms | ~500ms | ~2,000ms |
+| 1,000 | ~10 ms | ~5 ms | ~20 ms |
+| 10,000 | ~100 ms | ~50 ms | ~200 ms |
+| 100,000 | ~1,000 ms | ~500 ms | ~2,000 ms |
 
-**Note**: JSON-LD is slower due to JSON processing overhead.
+### Batch vs individual adds
 
-#### Batch vs Individual Operations
+| Operations | Individual | Batch | Speedup |
+|------------|------------|-------|---------|
+| 1,000 | ~50 ms | ~5 ms | ~10× |
+| 10,000 | ~500 ms | ~20 ms | ~25× |
+| 100,000 | ~5,000 ms | ~200 ms | ~25× |
 
-| Operation Count | Individual | Batch | Speedup |
-|-----------------|------------|-------|---------|
-| 1,000 | ~50ms | ~5ms | 10x |
-| 10,000 | ~500ms | ~20ms | 25x |
-| 100,000 | ~5,000ms | ~200ms | 25x |
-
-**Note**: Batch operations show significant speedup, especially for large datasets.
-
-### Running Benchmarks
-
-To run performance benchmarks:
+### Running benchmarks locally
 
 ```bash
-# Run all benchmarks
 ./gradlew :rdf:core:test --tests "*PerformanceBenchmarkTest" -DenableBenchmarks=true
 
-# Run specific benchmark
 ./gradlew :rdf:core:test --tests "*PerformanceBenchmarkTest.benchmarkLargeGraphCreation" -DenableBenchmarks=true
 ```
 
-**Note**: Benchmarks are disabled by default as they are resource-intensive. Enable with `-DenableBenchmarks=true`.
+Benchmarks are off by default; opt in with **`-DenableBenchmarks=true`** (resource-intensive).
 
-## Memory Management
+## Memory management
 
-### Memory Optimization Tips
+1. **Prefer persistent stores** when graphs exceed comfortable heap headroom (see table above).
+2. **`Closeable` repositories:** use **`use { }`** or **`close()`** when the integration owns lifecycle.
+3. **Avoid materializing full graphs** when a **`SELECT`** / **`LIMIT`** / streaming approach suffices.
 
-1. **Use Persistent Backends for Large Datasets**
-   ```kotlin
-   // ✅ Good: Use persistent backend for large datasets
-   val repo = Rdf.repository {
-       providerId = "jena"
-       variantId = "tdb2"
-       location = "data/store"
-   }
-   ```
+## Provider notes
 
-2. **Close Repositories When Done**
-   ```kotlin
-   // ✅ Good: Explicit cleanup
-   repo.use {
-       // Use repository
-   }
-   // Repository is automatically closed
-   ```
+### Jena
 
-3. **Use Streaming for Large Files**
-   ```kotlin
-   // ✅ Good: Stream processing
-   provider.parseStreaming(inputStream, format, null)
-       .forEach { triple ->
-           // Process without loading all into memory
-       }
-   ```
+Suited to medium–large datasets, TDB2-backed queries, and heavier analytics-style workloads.
 
-4. **Avoid Loading Entire Graphs**
-   ```kotlin
-   // ❌ Avoid: Loads all triples into memory
-   val allTriples = graph.getTriples()  // May be millions
-   
-   // ✅ Good: Query for what you need
-   val result = graph.select(SparqlSelect("SELECT ?s ?o WHERE { ?s ?p ?o } LIMIT 100"))
-   ```
+### RDF4J
 
-## Provider-Specific Performance
+Often favorable memory footprint and concurrent access patterns.
 
-### Jena Provider
+### SPARQL HTTP
 
-**Strengths:**
-- Fast in-memory operations
-- Good query performance with TDB2
-- Efficient serialization
+Latency and server limits dominate; optimize round-trips and payload size.
 
-**Best For:**
-- Medium to large datasets
-- Complex queries
-- Analytics workloads
+## Troubleshooting
 
-### RDF4J Provider
+### Slow queries
 
-**Strengths:**
-- Efficient memory usage
-- Good concurrent access
-- Streaming operations
+- Add **`LIMIT`**, narrow triple patterns, use **`ASK`** for existence.
+- On persistent stores, ensure indexes and storage tuning match the workload.
 
-**Best For:**
-- Large datasets
-- Concurrent access patterns
-- Memory-constrained environments
+### High memory use / `OutOfMemoryError`
 
-### SPARQL Provider
+- Move off pure in-memory stores for large graphs; stream parses; avoid **`getTriples()`** on huge graphs when possible.
 
-**Strengths:**
-- Distributed access
-- No local storage required
+### Slow serialization
 
-**Considerations:**
-- Network latency
-- Endpoint performance
-- Query complexity limits
+- Prefer **N-Triples** for raw speed when JSON/Turtle human-readability is unnecessary.
+- Avoid unnecessary pretty-printing on large exports.
 
-**Best For:**
-- Remote data access
-- Distributed systems
-- When local storage is not available
+## Related
 
-## Troubleshooting Performance Issues
-
-### Slow Queries
-
-**Symptoms**: Queries take a long time to execute.
-
-**Solutions**:
-1. Add LIMIT clauses to queries
-2. Use appropriate indexes (persistent stores)
-3. Simplify query patterns
-4. Use ASK instead of SELECT when possible
-5. Consider query optimization
-
-### High Memory Usage
-
-**Symptoms**: OutOfMemoryError or high memory consumption.
-
-**Solutions**:
-1. Use persistent backends instead of memory
-2. Use streaming parsing for large files
-3. Partition data using named graphs
-4. Close repositories when done
-5. Avoid loading entire graphs into memory
-
-### Slow Serialization
-
-**Symptoms**: Serialization takes a long time.
-
-**Solutions**:
-1. Use N-Triples format (fastest)
-2. Avoid pretty-printing for large datasets
-3. Use streaming serialization if available
-4. Consider format-specific optimizations
-
-## Related Documentation
-
-- [Core API](../api/core-api.md) — streaming (`Rdf.parseStreaming`, SPARQL `Flow`) and repository APIs
-- [Repository reference](../reference/repository.md) — repository configuration and lifecycle
-- [Provider Guide](../providers/README.md) - Provider-specific performance characteristics
-
+- [Core API](../api/core-api.md)
+- [Repository reference](../reference/repository.md)
+- [Providers](../providers/README.md)

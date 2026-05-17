@@ -38,7 +38,7 @@ pluginManagement {
 // build.gradle.kts
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("com.geoknoesis.kastor.gen") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.2.0"
 }
 ```
 
@@ -52,7 +52,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.geoknoesis.kastor:kastor-gen-gradle-plugin:0.1.0")
+        classpath("com.geoknoesis.kastor:kastor-gen-gradle-plugin:0.2.0")
     }
 }
 
@@ -320,12 +320,12 @@ See [Incremental Builds Guide](../guides/incremental-builds.md) for detailed inf
 // build.gradle.kts
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.2.0"
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
 }
 
 kastorGen {

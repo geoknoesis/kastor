@@ -199,7 +199,7 @@ Compatibility tests reuse **existing SPARQL conformance harness** expectations w
 
 - **Vacuum/compaction daemon** merging small fragments; metrics for **average fragment size**, read amplification warnings.
 - **Offline integrity checks:** verify dictionary closure, orphaned triple references, RDF-star canonicalization symmetry.
-- **Export/import:** RDF serializations map through shared term codec to avoid divergence with Jena RDF4J import paths (`rdf/jena`, `rdf/rdf4j`).
+- **Export/import:** RDF serializations map through shared term codec to avoid divergence with Jena RDF4J import paths (`rdf/providers/jena`, `rdf/providers/rdf4j`).
 
 ---
 

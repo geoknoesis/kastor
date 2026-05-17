@@ -2,6 +2,7 @@ plugins {
   id("org.jetbrains.kotlin.jvm")
   id("java-library")
   id("org.jetbrains.kotlin.plugin.serialization")
+  id("maven-publish")
 }
 
 // Limit explicit-api enforcement to *main* sources only; tests don't need to
@@ -32,6 +33,20 @@ dependencies {
   testImplementation(libs.kotlin.test)
   testImplementation(libs.junit.jupiter)
   testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+publishing {
+  publications {
+    create<MavenPublication>("maven") {
+      from(components["java"])
+      artifact(tasks.named("sourcesJar"))
+      artifact(tasks.named("javadocJar"))
+
+      groupId = project.group.toString()
+      artifactId = "kastor-gen-processor"
+      version = project.version.toString()
+    }
+  }
 }
 
 // KSP configuration will be applied by root build.gradle.kts

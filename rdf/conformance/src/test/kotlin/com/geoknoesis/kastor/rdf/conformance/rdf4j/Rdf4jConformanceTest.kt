@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.conformance.TestData
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository
 import org.junit.jupiter.api.DynamicNode
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.TestFactory
 
 /**
@@ -18,7 +19,10 @@ import org.junit.jupiter.api.TestFactory
  * eventually bump RDF4J).
  *
  * @see com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest
+ *
+ * Tagged **`w3c-rdf12-full`** — excluded from the **`conformanceSmokeTest`** task; requires W3C submodule.
  */
+@Tag("w3c-rdf12-full")
 class Rdf4jConformanceTest {
 
     private val provider = Rdf4jProvider()

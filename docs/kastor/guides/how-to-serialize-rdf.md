@@ -2,15 +2,19 @@
 
 {% include version-banner.md %}
 
-## What you'll learn
-- Serialize a `RdfGraph` to Turtle, JSON-LD, or other formats
-- Use format-based API that works with any provider
-- Use type-safe `RdfFormat` for serialization
+> **Documentation mode: How-to guide.** **Explanation:** [RDF Fundamentals](../concepts/rdf-fundamentals.md). **Reference:** `serialize`, `RdfFormat`, `SerializationOptions` → [Core API](../api/core-api.md).
+
+## Problem
+
+Turn an in-memory **`RdfGraph`** into Turtle, JSON-LD, RDF/XML, or N-Triples **strings** for logging, HTTP responses, or files.
 
 ## Prerequisites
-- A provider that supports serialization (automatically discovered)
 
-## Step 1: Build a graph
+- **`rdf-core`** plus a **provider** that supports serialization for the target format (Jena/RDF4J modules typically do).
+
+## Steps
+
+### Step 1: Build a graph
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -23,7 +27,7 @@ val graph = Rdf.graph {
 }
 ```
 
-## Step 2: Serialize to Turtle
+### Step 2: Serialize to Turtle
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.RdfFormat
@@ -32,21 +36,21 @@ val turtle = graph.serialize(RdfFormat.TURTLE)
 println(turtle)
 ```
 
-## Step 3: Serialize to JSON-LD
+### Step 3: Serialize to JSON-LD
 
 ```kotlin
 val jsonld = graph.serialize(RdfFormat.JSON_LD)
 println(jsonld)
 ```
 
-## Step 4: Serialize to other formats
+### Step 4: Serialize to other formats
 
 ```kotlin
 val rdfXml = graph.serialize(RdfFormat.RDF_XML)
 val nTriples = graph.serialize(RdfFormat.N_TRIPLES)
 ```
 
-## Step 5: Serialize with options
+### Step 5: Serialize with options
 
 You can customize serialization behavior using `SerializationOptions`:
 
@@ -76,22 +80,19 @@ val compact = graph.serialize(RdfFormat.TURTLE, SerializationOptions.COMPACT)
 val pretty = graph.serialize(RdfFormat.TURTLE, SerializationOptions.PRETTY)
 ```
 
-## Serialization Options
+## Reference: SerializationOptions (quick lookup)
 
-The `SerializationOptions` class provides control over serialization:
+Use **`SerializationOptions`** for pretty-printing, base URI, prefixes, and JSON-LD compaction. Authoritative defaults and signatures: **Reference** [Core API](../api/core-api.md) / `SerializationOptions` in source.
 
-- **prettyPrint**: Enable/disable pretty-printed output with indentation (default: `true`)
-- **baseUri**: Base URI for resolving relative IRIs (default: `null`)
-- **prefixMappings**: Custom prefix mappings (e.g., `"ex" -> "http://example.org/"`)
-- **useAbbreviatedSyntax**: Use abbreviated syntax when possible (default: `true`)
-- **lineWidth**: Maximum line width for pretty printing, 0 = no limit (default: `80`)
-- **jsonLdContext**: JSON-LD context for compaction (JSON-LD format only)
-- **jsonLdCompact**: Enable JSON-LD compaction (JSON-LD format only, default: `false`)
-- **jsonLdFrame**: JSON-LD frame for framing (JSON-LD format only)
+- **prettyPrint**, **lineWidth** — layout
+- **baseUri**, **prefixMappings** — IRIs and QName prefixes
+- **jsonLdContext**, **jsonLdCompact**, **jsonLdFrame** — JSON-LD only
 
-**⚠️ Important**: JSON-LD compaction and framing may not preserve all RDF data. See [JSON-LD Compaction and Framing Guide](json-ld-compaction-framing.md) for details.
+**⚠️ Important**: JSON-LD compaction and framing may not preserve all RDF data. See [JSON-LD Compaction and Framing Guide](json-ld-compaction-framing.md).
 
-## Expected output
+## Validation
+
+Example Turtle output:
 
 ```
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
@@ -99,19 +100,20 @@ The `SerializationOptions` class provides control over serialization:
 <http://example.org/alice> foaf:name "Alice Johnson" .
 ```
 
-## Supported formats
+## Troubleshooting
 
-The following formats are supported:
+- **`RdfFormatException`** — no serializer for that format on the classpath; add `rdf-jena` / `rdf-rdf4j` or register a provider.
+- **Unexpected JSON-LD** — check compaction/framing flags and read the JSON-LD guide above.
+
+## Supported formats (quick lookup)
 
 - **Turtle**: `RdfFormat.TURTLE`
 - **JSON-LD**: `RdfFormat.JSON_LD`
 - **RDF/XML**: `RdfFormat.RDF_XML`
 - **N-Triples**: `RdfFormat.N_TRIPLES`
 
-## Notes
-- The API is **provider-agnostic** - it automatically discovers and uses available providers
-- Use `RdfFormat` enum for **type-safe** format specification
-- If no provider supports the requested format, a `RdfFormatException` is thrown
-- The serialization automatically uses the first available provider that supports the format
-- Options are optional - default options are used if not specified
+## Related tasks
 
+- [Parse RDF](how-to-parse-rdf.md)
+- [Test RDF graphs](how-to-test-rdf-graphs.md)
+- [Named graphs](how-to-named-graphs.md)

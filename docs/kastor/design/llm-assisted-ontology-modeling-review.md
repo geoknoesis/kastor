@@ -244,7 +244,7 @@ Values are **explicit triples only** unless a future phase adds optional reasoni
 
 ## 9. Evaluation
 
-- **Gold set:** small corpus of intentionally flawed vs clean modules (similar spirit to OOPS! calibration in [CALIBRATION.md](../../../tools/onto-quality/CALIBRATION.md)).
+- **Gold set:** small corpus of intentionally flawed vs clean modules (similar spirit to OOPS! calibration in [CALIBRATION.md](../../../tools/onto-quality/library/CALIBRATION.md)).
 - **Metrics:** precision@k on flagged IRIs, methodology citation accuracy, regression tests on prompt/schema versions.
 - **Human loop:** required for **Violation**-severity elevation if ever introduced.
 
@@ -275,4 +275,4 @@ LLM-assisted modeling review **fills a different niche** than SHACL or embedding
 - [Koog](https://github.com/JetBrains/koog) — LLM agents and providers (**integration layer for this design**)
 - [Ontology Quality](../features/ontology-quality.md)
 - [Pitfalls of the SHACL model for quality control](shacl-quality-control-pitfalls.md)
-- [Semantic tier](../../../tools/onto-quality/README.md) (`SemanticEnricher`, embedding shapes)
+- [Semantic tier](../../../tools/onto-quality/library/README.md) (`SemanticEnricher`, embedding shapes)

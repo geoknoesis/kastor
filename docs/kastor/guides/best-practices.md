@@ -1,21 +1,27 @@
-# 🎯 Best Practices Guide
+# Best Practices Guide
 
-This guide provides comprehensive best practices for using Kastor RDF effectively in your applications.
+{% include version-banner.md %}
 
-## 📋 Table of Contents
+> **Documentation mode: Explanation** — opinionated patterns for production-quality Kastor usage. **Supporting guides:** [Performance](performance.md), [Error handling](error-handling.md), [Debug mode](debug-mode.md).
 
-- [Coding Standards](#-coding-standards)
-- [Performance Optimization](#-performance-optimization)
-- [Error Handling](#-error-handling)
-- [Resource Management](#-resource-management)
-- [Data Modeling](#-data-modeling)
-- [Query Optimization](#-query-optimization)
-- [Architecture Patterns](#-architecture-patterns)
-- [Testing](#-testing)
-- [Security](#-security)
-- [Deployment](#-deployment)
+## Audience
 
-## 💻 Coding Standards
+Teams standardizing naming, repository choice, SPARQL habits, testing, and deployment around Kastor.
+
+## Table of Contents
+
+- [Coding Standards](#coding-standards)
+- [Performance Optimization](#performance-optimization)
+- [Error Handling](#error-handling)
+- [Resource Management](#resource-management)
+- [Data Modeling](#data-modeling)
+- [Query Optimization](#query-optimization)
+- [Architecture Patterns](#architecture-patterns)
+- [Testing](#testing)
+- [Security](#security)
+- [Deployment](#deployment)
+
+## Coding Standards
 
 ### Naming Conventions
 
@@ -136,7 +142,7 @@ val mbox = FOAF.mbox
 val homepage = FOAF.homepage
 ```
 
-## ⚡ Performance Optimization
+## Performance Optimization
 
 ### Repository Selection
 
@@ -261,7 +267,7 @@ println("Query duration: ${queryDurationMs}ms")
 
 ```
 
-## 🚨 Error Handling
+## Error Handling
 
 ### Exception Handling
 
@@ -338,7 +344,7 @@ fun getPersonWithOptionalData(id: String): PersonData? {
 }
 ```
 
-## 🔧 Resource Management
+## Resource Management
 
 ### Repository Lifecycle
 
@@ -423,7 +429,7 @@ repo.readTransaction {
 }
 ```
 
-## 🏗️ Data Modeling
+## Data Modeling
 
 ### URI Design
 
@@ -506,7 +512,7 @@ repo.add {
 }
 ```
 
-## 🔍 Query Optimization
+## Query Optimization
 
 ### Query Patterns
 
@@ -586,7 +592,7 @@ class CachedPersonRepository(private val repo: RdfRepository) {
 }
 ```
 
-## 🏛️ Architecture Patterns
+## Architecture Patterns
 
 ### Repository Pattern
 
@@ -697,7 +703,7 @@ val companyService = CompanyService(companyRepo)
 val app = Application(personService, companyService)
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Unit Testing
 
@@ -789,7 +795,7 @@ class PersonServiceIntegrationTest {
 }
 ```
 
-## 🔒 Security
+## Security
 
 ### Input Validation
 
@@ -843,7 +849,7 @@ class SecurePersonRepository(
 }
 ```
 
-## 🚀 Deployment
+## Deployment
 
 ### Configuration Management
 
@@ -939,7 +945,7 @@ class BackupManager(private val repo: RdfRepository) {
 }
 ```
 
-## 📚 Summary
+## Summary
 
 ### Key Principles
 
@@ -969,23 +975,16 @@ class BackupManager(private val repo: RdfRepository) {
 - [ ] Write comprehensive tests
 - [ ] Plan deployment strategy
 
-## 🎯 Next Steps
+## Next Steps
 
 - **[Quick Start Guide](../getting-started/quick-start.md)** - Get started quickly
 - **[Examples Guide](../examples/README.md)** - See real-world patterns
 - **[API Reference](../api/api-reference.md)** - Complete API documentation
 - **[Compact DSL Guide](../api/compact-dsl-guide.md)** - DSL reference
 
-## 📞 Need Help?
+## Need Help?
 
 - **Documentation**: [Documentation hub](../../README.md)
 - **Examples**: [Examples](../examples/README.md)
 - **Issues**: [GitHub Issues](https://github.com/geoknoesis/kastor/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/geoknoesis/kastor/discussions)
-
----
-
-**🎉 Follow these best practices to build robust, performant, and maintainable RDF applications with Kastor!**
-
-
-

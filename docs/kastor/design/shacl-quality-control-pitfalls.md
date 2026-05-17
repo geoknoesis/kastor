@@ -15,9 +15,9 @@ The twelve pitfalls are encoded **the same way as the OWL and SKOS shape librari
 
 **Important:** each shape has **`sh:deactivated true`**. They **document** methodological traps; they are **not** constraints on domain ontologies. Load them for registries, portals, or custom tooling — never activate them in a production QC bundle.
 
-**Turtle (canonical, on the module classpath):** [../../../tools/onto-quality/src/main/resources/shapes/shacl-qc-design-shacl.ttl](../../../tools/onto-quality/src/main/resources/shapes/shacl-qc-design-shacl.ttl) — namespace `http://example.org/shacl-qc-design-shacl#` (`qcdsh:`).
+**Turtle (canonical, on the module classpath):** [../../../tools/onto-quality/library/src/main/resources/shapes/shacl-qc-design-shacl.ttl](../../../tools/onto-quality/library/src/main/resources/shapes/shacl-qc-design-shacl.ttl) — namespace `http://example.org/shacl-qc-design-shacl#` (`qcdsh:`).
 
-**API:** [`BundledCatalogs.SHACL_QC_DESIGN`](../../../tools/onto-quality/src/main/kotlin/com/geoknoesis/kastor/ontoquality/catalog/BundledCatalogs.kt) references the same resource path (`/shapes/shacl-qc-design-shacl.ttl`). It is **not** part of [`BundledCatalogs.all`](../../../tools/onto-quality/src/main/kotlin/com/geoknoesis/kastor/ontoquality/catalog/BundledCatalogs.kt).
+**API:** [`BundledCatalogs.SHACL_QC_DESIGN`](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/catalog/BundledCatalogs.kt) references the same resource path (`/shapes/shacl-qc-design-shacl.ttl`). It is **not** part of [`BundledCatalogs.all`](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/catalog/BundledCatalogs.kt).
 
 The earlier standalone SKOS-individual registry under `qcsh:` in `docs/` has been **retired** in favour of this catalogue-style encoding.
 
@@ -123,7 +123,7 @@ Reference corpora (for example OOPS! fixtures) are **incomplete or uneven**; som
 
 **Pitfall:** Over-claiming “we detect pitfall X” when the **only** evidence is a narrow fixture, or **skipping** pitfalls that matter because no reference graph exists.
 
-**Mitigation:** Publish a **triage matrix**: detected, intentionally out of scope, blocked on corpus; refresh when new reference data appears (see `tools/onto-quality` calibration notes).
+**Mitigation:** Publish a **triage matrix**: detected, intentionally out of scope, blocked on corpus; refresh when new reference data appears (see `tools/onto-quality/library` calibration notes).
 
 ---
 

@@ -1,233 +1,162 @@
-﻿# Android & Kotlin Multiplatform (KMP) Support
+﻿# Android and Kotlin Multiplatform (KMP)
 
-Kastor is designed to work on Android and Kotlin Multiplatform (KMP) targets, but there are important considerations regarding provider discovery.
+{% include version-banner.md %}
 
-## âš ï¸ ServiceLoader Limitations
+> **Documentation mode: How-to guide.** **Explanation:** providers and `ServiceLoader` → [Provider architecture](../features/enhanced-providers.md), [**Glossary**](../concepts/glossary.md). **Reference:** [Extending Kastor](extending.md), [Factory DSL](../reference/factory.md).
 
-Java's `ServiceLoader` mechanism, which is used by default for automatic provider discovery, has limitations on Android and some KMP targets:
+## Problem
 
-- **Android**: ServiceLoader requires reflection configuration and may not work reliably without ProGuard/R8 rules
-- **KMP Native**: ServiceLoader is not available on native targets (iOS, macOS, Linux, Windows)
-- **KMP JS**: ServiceLoader behavior may vary across JavaScript runtimes
+- Run Kastor on **Android** or **KMP** targets where **`ServiceLoader`** discovery is missing, flaky (R8/ProGuard), or undesirable.
+- Register **`RdfProvider`** (and optionally **reasoner** / **SHACL** providers) **explicitly** before creating repositories.
 
-## âœ… Solution: Explicit Provider Registration
+## Prerequisites
 
-For Android and KMP projects, **explicitly register providers** instead of relying on ServiceLoader auto-discovery.
+- Dependencies on **`rdf-core`** plus the provider artifacts you actually use (for example **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**), aligned at **`0.2.0`** or via the BOM ([Installation](../getting-started/installation.md)).
+- If you use the Kotlin **`select { }`** SPARQL DSL or anything under **`com.geoknoesis.kastor.rdf.sparql`**, add **`sparql-lang`** (`com.geoknoesis.kastor:sparql-lang`). For **`shacl {}`** / **`Rdf.shacl`**, add **`rdf-shacl-dsl`** — see [Repository architecture — Dependency profiles](../concepts/architecture.md#dependency-profiles-gradle).
 
-### Basic Setup
+## Steps
+
+### Step 1: Register RDF providers early
+
+On JVM desktop, `META-INF/services` discovery often works. On **Android** and many **KMP** targets, call **`RdfProviderRegistry.register(...)`** during startup **before** any **`Rdf.repository { }`** / **`Rdf.memory()`** that relies on those providers.
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.jena.*  // or rdf-rdf4j, rdf-sparql, etc.
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 
-// Initialize providers explicitly (do this early in your app lifecycle)
 fun initializeKastor() {
-    // Register Jena provider
     RdfProviderRegistry.register(JenaProvider())
-    
-    // Or register multiple providers at once
-    RdfProviderRegistry.registerAll(
-        JenaProvider(),
-        // Rdf4jProvider(),
-        // SparqlEndpointProvider()
-    )
+    // RdfProviderRegistry.register(Rdf4jProvider())
 }
 ```
 
-### Android Application Example
+Several providers:
+
+```kotlin
+RdfProviderRegistry.registerAll(
+    JenaProvider(),
+    // Rdf4jProvider(),
+)
+```
+### Step 2: Android `Application` initialization
 
 ```kotlin
 import android.app.Application
-import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.jena.*
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        
-        // Initialize Kastor providers
-        initializeKastor()
-    }
-    
-    private fun initializeKastor() {
-        // Register providers explicitly for Android
         RdfProviderRegistry.register(JenaProvider())
-        
-        // Optionally check if registration succeeded
-        if (RdfProviderRegistry.supports("jena")) {
-            println("Jena provider registered successfully")
-        }
+        check(RdfProviderRegistry.supports("jena")) { "Jena provider failed to register" }
     }
 }
 ```
 
-### KMP Shared Code Example
+Register the **`Application`** class in **`AndroidManifest.xml`** (`android:name`).
+
+### Step 3: KMP `expect` / `actual` wiring
 
 ```kotlin
-// commonMain/kotlin/AppInitializer.kt
-import com.geoknoesis.kastor.rdf.*
-
+// commonMain — declare platform entrypoint
 expect fun initializeKastorProviders()
 
-// androidMain/kotlin/AppInitializer.android.kt
-import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.jena.*
+// androidMain
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 
 actual fun initializeKastorProviders() {
-    // Android: Use JVM providers
     RdfProviderRegistry.register(JenaProvider())
 }
 
-// iosMain/kotlin/AppInitializer.ios.kt
-import com.geoknoesis.kastor.rdf.*
+// iosMain (example: memory-only until a native store exists)
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
 
 actual fun initializeKastorProviders() {
-    // iOS: Use memory provider (native providers may be limited)
     RdfProviderRegistry.register(MemoryRepositoryProvider())
 }
 ```
 
-### Custom Registry (Advanced)
+Invoke **`initializeKastorProviders()`** from your composable / activity / entry controller **before** RDF calls.
 
-For complete control, create a custom registry with auto-discovery disabled:
+### Step 4 (optional): Custom registry without ServiceLoader
+
+For tests or fully controlled deployments, build a **`DefaultProviderRegistry`** with **`autoDiscover = false`** and pass it into **`Rdf.repository(registry) { … }`**.
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.DefaultProviderRegistry
+import com.geoknoesis.kastor.rdf.jena.JenaProvider
+import com.geoknoesis.kastor.rdf.Rdf
 
-// Create registry without ServiceLoader discovery
 val customRegistry = DefaultProviderRegistry(
-    autoDiscover = false,  // Disable ServiceLoader
-    registerDefaultMemoryProvider = true  // Still register memory provider
-)
+    autoDiscover = false,
+    registerDefaultMemoryProvider = true,
+).also { it.register(JenaProvider()) }
 
-// Register providers explicitly
-customRegistry.register(JenaProvider())
-customRegistry.register(MyCustomProvider())
-
-// Use the custom registry
 val repo = Rdf.repository(customRegistry) {
     providerId = "jena"
     variantId = "memory"
 }
 ```
 
-## ðŸ“± Android-Specific Considerations
+### Step 5 (optional): Reasoner and SHACL validator registries
 
-### ProGuard/R8 Rules
+They also discover via **`ServiceLoader`** on JVM. On constrained runtimes, register packaged providers explicitly:
 
-If you use ProGuard or R8, you may need to add rules to keep provider classes:
+```kotlin
+import com.geoknoesis.kastor.rdf.jena.reasoning.JenaReasonerProvider
+import com.geoknoesis.kastor.rdf.reasoning.ReasonerRegistry
+import com.geoknoesis.kastor.rdf.shacl.ValidatorRegistry
+import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidatorProvider
+
+ReasonerRegistry.register(JenaReasonerProvider())
+ValidatorRegistry.register(NativeShaclValidatorProvider())
+```
+
+Only depend on **`reasoning`**, **`shacl-validation`**, **`jena-reasoning`** (for `JenaReasonerProvider`), and bridge modules that ship these classes when you need them.
+
+### Step 6: ProGuard / R8 (Android)
+
+Explicit registration avoids most reflection rules. If you still rely on **`ServiceLoader`**, keep provider classes:
 
 ```proguard
-# Keep RDF provider classes
 -keep class com.geoknoesis.kastor.rdf.** { *; }
 -keep class com.geoknoesis.kastor.rdf.jena.** { *; }
 -keep class com.geoknoesis.kastor.rdf.rdf4j.** { *; }
-
-# If using ServiceLoader (not recommended for Android)
 -keep class * implements com.geoknoesis.kastor.rdf.RdfProvider
--keep class * implements com.geoknoesis.kastor.rdf.reasoning.RdfReasonerProvider
--keep class * implements com.geoknoesis.kastor.rdf.shacl.ShaclValidatorProvider
 ```
 
-**Note**: Explicit registration avoids the need for most of these rules.
-
-### Checking Provider Availability
+### Step 7: Fallback when a provider is missing
 
 ```kotlin
-// Check if a provider is available
-if (RdfProviderRegistry.supports("jena")) {
-    val repo = Rdf.repository {
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
+
+val repo = if (RdfProviderRegistry.supports("jena")) {
+    Rdf.repository {
         providerId = "jena"
         variantId = "memory"
     }
 } else {
-    // Fallback to memory provider
-    val repo = Rdf.memory()
+    Rdf.memory()
 }
 ```
 
-## ðŸŽ¯ KMP Native Targets
+## Validation
 
-For KMP native targets (iOS, macOS, etc.), provider options are more limited:
+- After startup, **`RdfProviderRegistry.supports("jena")`** (or your provider id) is **`true`**.
+- Creating **`Rdf.repository { providerId = "…" }`** succeeds without **`No provider found`**.
 
-```kotlin
-// commonMain/kotlin/RepositoryFactory.kt
-expect fun createRepository(): RdfRepository
+## Troubleshooting
 
-// nativeMain/kotlin/RepositoryFactory.native.kt
-import com.geoknoesis.kastor.rdf.*
-import com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider
+- **`IllegalArgumentException: No provider found`:** Register that **`RdfProvider`** before first use; confirm the artifact is on the classpath for the target source set.
+- **ServiceLoader class-not-found / R8:** Prefer **`autoDiscover = false`** plus explicit **`register`**, or widen keep rules.
+- **Native targets:** Expect **memory** or explicitly linked providers only—full Jena/RDF4J may be unavailable.
 
-actual fun createRepository(): RdfRepository {
-    // Register memory provider (most compatible for native)
-    RdfProviderRegistry.register(MemoryRepositoryProvider())
-    
-    return Rdf.memory()
-}
-```
+## Related
 
-## ðŸ” Other Registries
-
-Kastor also uses ServiceLoader for other registries. Register them explicitly if needed:
-
-### Reasoner Registry
-
-```kotlin
-import com.geoknoesis.kastor.rdf.reasoning.*
-
-// Register reasoner providers explicitly
-ReasonerRegistry.register(MyReasonerProvider())
-```
-
-### SHACL Validator Registry
-
-```kotlin
-import com.geoknoesis.kastor.rdf.shacl.*
-
-// Register validator providers explicitly
-ValidatorRegistry.register(MyValidatorProvider())
-```
-
-## ðŸ“ Best Practices
-
-1. **Always register providers explicitly** on Android and KMP native targets
-2. **Initialize early** in your application lifecycle (e.g., `Application.onCreate()`)
-3. **Check provider availability** before using provider-specific features
-4. **Use memory provider as fallback** for maximum compatibility
-5. **Test on target platforms** to ensure providers work correctly
-
-## ðŸ› Troubleshooting
-
-### Providers Not Found
-
-If you get "No provider found" errors:
-
-1. **Check registration**: Ensure providers are registered before use
-2. **Check dependencies**: Ensure provider modules are included in your build
-3. **Check initialization order**: Register providers before creating repositories
-
-```kotlin
-// âŒ Wrong: Using provider before registration
-val repo = Rdf.repository { providerId = "jena" }  // May fail
-
-// âœ… Correct: Register first
-RdfProviderRegistry.register(JenaProvider())
-val repo = Rdf.repository { providerId = "jena" }  // Works
-```
-
-### ServiceLoader Errors on Android
-
-If you see ServiceLoader-related errors:
-
-1. **Disable auto-discovery**: Use `DefaultProviderRegistry(autoDiscover = false)`
-2. **Register explicitly**: Use `RdfProviderRegistry.register()` for all providers
-3. **Add ProGuard rules**: If you must use ServiceLoader, add the rules above
-
-## ðŸ“š Related Documentation
-
-- [Extending Kastor](./extending.md) - How to create custom providers
-- [Factory DSL](../reference/factory.md) - Repository creation patterns
-- [Provider Architecture](../features/enhanced-providers.md) - Provider capabilities
-
-
+- [Extending Kastor](extending.md)
+- [Factory DSL](../reference/factory.md)
+- [Provider architecture](../features/enhanced-providers.md)

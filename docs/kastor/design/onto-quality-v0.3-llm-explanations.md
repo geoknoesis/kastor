@@ -1,6 +1,6 @@
 # Design: onto-quality v0.3 — LLM-generated explanations
 
-This note defines **v0.3 only**: adding **optional, heuristic natural-language explanations** for findings that already exist in a [`QualityReport`](../../../tools/onto-quality/src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityReport.kt) after SHACL (and optionally embedding) validation.
+This note defines **v0.3 only**: adding **optional, heuristic natural-language explanations** for findings that already exist in a [`QualityReport`](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityReport.kt) after SHACL (and optionally embedding) validation.
 
 It does **not** define methodology-driven modeling review, hot-spot metrics, RAG packs, or reasoning-backed checks. Those remain separate tracks ([LLM-assisted ontology modeling review](llm-assisted-ontology-modeling-review.md), v0.4 reasoning).
 
@@ -21,7 +21,7 @@ It does **not** define methodology-driven modeling review, hot-spot metrics, RAG
 |--------|-------------------|
 | New validation rules or shapes | v0.1 catalogue updates |
 | Embedding enrichment | v0.2 (`SemanticEnricher`) |
-| OWL / SKOS reasoning | v0.4 |
+| OWL / SKOS reasoning (materialization before SHACL) | [Reasoning in Kastor](reasoning-in-kastor.md) — **v0.4** |
 | Modeling-review taxonomy, capsules, metrics-first prioritization, RAG corpus | [llm-assisted-ontology-modeling-review.md](llm-assisted-ontology-modeling-review.md) |
 | Synthetic SHACL violations from the LLM | Explicit non-goal |
 

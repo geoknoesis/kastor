@@ -2,40 +2,22 @@
 
 {% include version-banner.md %}
 
-## Overview
+> **Documentation mode: Reference-oriented guide.** **Explanation:** resilience patterns → [Best Practices](best-practices.md#error-handling). **Reference:** full code list → [Error Codes](../reference/error-codes.md), exception types → [Core API](../api/core-api.md#exceptions).
 
-Kastor provides comprehensive error handling with:
-- **Specific exception types** for different error categories
-- **Error codes** for programmatic error handling
-- **Rich context** for debugging
-- **Type-safe error handling** with sealed classes
+## Problem
 
-## Error Codes
+- Inspect failures from **SPARQL**, **parsing/serialization**, **transactions**, and **providers** using stable **`errorCode`** values, **`RdfFormatException`** variants, and **`context`** maps for logs.
 
-All RDF exceptions include an `errorCode` property that provides a stable, machine-readable identifier for the error condition. This enables:
+## Prerequisites
 
-- **Internationalization**: Error messages can be translated while codes remain stable
-- **Automated handling**: Code can check for specific error conditions
-- **Error categorization**: Errors can be grouped by code patterns
-- **API stability**: Codes don't change even if messages do
+- **`rdf-core`** (exceptions and **`RdfErrorCode`** ship with the RDF API).
 
-### Error Code Categories
+## Steps
 
-Error codes follow a hierarchical pattern:
-
-- `QUERY_*` - SPARQL query-related errors
-- `FORMAT_*` - Format parsing/serialization errors
-- `TRANSACTION_*` - Transaction-related errors
-- `PROVIDER_*` - Provider-related errors
-- `REPOSITORY_*` - Repository operation errors
-- `GRAPH_*` - Graph operation errors
-- `VALIDATION_*` - Validation errors
-- `CONFIGURATION_*` - Configuration errors
-
-### Using Error Codes
+### Step 1: Branch on query failures with `errorCode`
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.RdfQueryException
 import com.geoknoesis.kastor.rdf.RdfErrorCode
 
 try {
@@ -43,54 +25,39 @@ try {
 } catch (e: RdfQueryException) {
     when (e.errorCode) {
         RdfErrorCode.QUERY_SYNTAX_ERROR -> {
-            // Handle syntax errors - show user-friendly message
             println("Invalid query syntax: ${e.message}")
         }
         RdfErrorCode.QUERY_TIMEOUT -> {
-            // Handle timeout - retry or show timeout message
             println("Query timed out. Please try again.")
         }
         RdfErrorCode.QUERY_EXECUTION_ERROR -> {
-            // Handle execution errors - log details
             println("Query execution failed: ${e.message}")
             e.query?.let { println("Query: $it") }
         }
         else -> {
-            // Handle other query errors
             println("Query error: ${e.message}")
         }
     }
 }
 ```
 
-## Exception Types
+Typical **`RdfQueryException`** codes:
 
-### RdfQueryException
+| Code | Meaning |
+|------|---------|
+| `QUERY_SYNTAX_ERROR` | SPARQL parse failure |
+| `QUERY_EXECUTION_ERROR` | Runtime execution failure |
+| `QUERY_TIMEOUT` | Server or client timeout |
+| `QUERY_UNSUPPORTED_FEATURE` | Feature not implemented on provider |
+| `QUERY_INVALID_BINDINGS` | Bindings inconsistent with query |
 
-Thrown when SPARQL query operations fail.
-
-```kotlin
-try {
-    val results = repo.select(query)
-} catch (e: RdfQueryException) {
-    println("Error code: ${e.errorCode.code}")
-    println("Query: ${e.query}")
-    println("Bindings: ${e.bindings}")
-}
-```
-
-**Error Codes:**
-- `QUERY_SYNTAX_ERROR` - Query syntax is invalid
-- `QUERY_EXECUTION_ERROR` - Query execution failed
-- `QUERY_TIMEOUT` - Query execution timed out
-- `QUERY_UNSUPPORTED_FEATURE` - Query uses unsupported SPARQL feature
-- `QUERY_INVALID_BINDINGS` - Invalid variable bindings
-
-### RdfFormatException
-
-Thrown when format operations fail. This is a sealed class with specific variants:
+### Step 2: Handle format errors as a sealed class
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.RdfFormatException
+
 try {
     val graph = Rdf.parse(data, RdfFormat.TURTLE)
 } catch (e: RdfFormatException) {
@@ -111,61 +78,52 @@ try {
 }
 ```
 
-**Error Codes:**
-- `FORMAT_PARSE_ERROR` - Failed to parse RDF data
-- `FORMAT_UNSUPPORTED` - Format not supported
-- `FORMAT_SERIALIZATION_ERROR` - Failed to serialize RDF data
-- `FORMAT_ENCODING_ERROR` - Character encoding error
+Representative **`RdfFormatException`** codes:
 
-### RdfTransactionException
+| Code | Meaning |
+|------|---------|
+| `FORMAT_PARSE_ERROR` | RDF parse failure |
+| `FORMAT_UNSUPPORTED` | Serializer/parser not available |
+| `FORMAT_SERIALIZATION_ERROR` | Write path failed |
+| `FORMAT_ENCODING_ERROR` | Character encoding problem |
 
-Thrown when transaction operations fail.
+### Step 3: React to transaction failures
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.RdfErrorCode
+import com.geoknoesis.kastor.rdf.RdfTransactionException
+
 try {
     repo.transaction {
-        // Operations
+        // operations
     }
 } catch (e: RdfTransactionException) {
     when (e.errorCode) {
-        RdfErrorCode.TRANSACTION_NOT_STARTED -> {
-            // Transaction was not started
-        }
-        RdfErrorCode.TRANSACTION_COMMIT_FAILED -> {
-            // Commit failed - data may be inconsistent
-        }
-        RdfErrorCode.TRANSACTION_CONFLICT -> {
-            // Transaction conflict - retry may be needed
-        }
-        else -> {
-            // Other transaction errors
-        }
+        RdfErrorCode.TRANSACTION_NOT_STARTED -> { /* … */ }
+        RdfErrorCode.TRANSACTION_COMMIT_FAILED -> { /* … */ }
+        RdfErrorCode.TRANSACTION_CONFLICT -> { /* … */ }
+        else -> { /* … */ }
     }
 }
 ```
 
-**Error Codes:**
-- `TRANSACTION_NOT_STARTED` - Transaction not started
-- `TRANSACTION_ALREADY_STARTED` - Transaction already started
-- `TRANSACTION_COMMIT_FAILED` - Commit failed
-- `TRANSACTION_ROLLBACK_FAILED` - Rollback failed
-- `TRANSACTION_CONFLICT` - Transaction conflict detected
+Other **`RdfException`** subtypes you may see:
 
-### Other Exception Types
+- **`RdfProviderException`** — provider wiring or capability failures
+- **`RdfRepositoryException`** — dataset lifecycle issues
+- **`RdfGraphException`** — graph mutation problems
+- **`RdfValidationException`** — validation pipelines (SHACL, etc.)
+- **`RdfConfigurationException`** — builder/registry misconfiguration
+- **`RdfFederationException`** — federated query failures
+- **`RdfInferenceException`** — reasoning failures
 
-- **RdfProviderException** - Provider operations failed
-- **RdfRepositoryException** - Repository operations failed
-- **RdfGraphException** - Graph operations failed
-- **RdfValidationException** - Validation operations failed
-- **RdfConfigurationException** - Configuration errors
-- **RdfFederationException** - Federation operations failed
-- **RdfInferenceException** - Inference operations failed
+### Step 4: Log structured context
 
-## Error Context
-
-All exceptions provide a `context` property with additional debugging information:
+All RDF exceptions expose **`context`** for diagnostics:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.RdfException
+
 try {
     val result = repo.select(query)
 } catch (e: RdfException) {
@@ -177,11 +135,21 @@ try {
 }
 ```
 
-## Best Practices
-
-### 1. Use Error Codes for Programmatic Handling
+For **`RdfQueryException`**, prefer **`query`** and **`bindings`** when present:
 
 ```kotlin
+catch (e: RdfQueryException) {
+    val queryText = e.query ?: "Unknown"
+    val bindings = e.bindings ?: emptyMap()
+    logger.error("Query failed: $queryText with bindings: $bindings", e)
+}
+```
+
+### Step 5: Centralize user-facing messages
+
+```kotlin
+import com.geoknoesis.kastor.rdf.RdfException
+
 fun handleError(exception: RdfException): String {
     return when (exception.errorCode) {
         RdfErrorCode.QUERY_SYNTAX_ERROR -> "Please check your query syntax"
@@ -192,46 +160,43 @@ fun handleError(exception: RdfException): String {
 }
 ```
 
-### 2. Check Error Categories
+Optional helpers:
 
 ```kotlin
-fun isQueryError(exception: RdfException): Boolean {
-    return exception.errorCode.category == "QUERY"
-}
+fun isQueryError(exception: RdfException): Boolean =
+    exception.errorCode.category == "QUERY"
 
-fun isFormatError(exception: RdfException): Boolean {
-    return exception.errorCode.category == "FORMAT"
-}
+fun isFormatError(exception: RdfException): Boolean =
+    exception.errorCode.category == "FORMAT"
 ```
 
-### 3. Use Sealed Classes for Type Safety
+Prefer exhaustive **`when`** branches on sealed **`RdfFormatException`** and concrete **`RdfQueryException`** / **`RdfTransactionException`** handlers where the compiler can enforce coverage.
 
-```kotlin
-when (val e = catchException()) {
-    is RdfQueryException -> handleQueryError(e)
-    is RdfFormatException -> handleFormatError(e)
-    is RdfTransactionException -> handleTransactionError(e)
-    // Compiler ensures all cases are handled
-}
-```
+## Error code categories
 
-### 4. Access Rich Context
+Prefixes group related failures:
 
-```kotlin
-catch (e: RdfQueryException) {
-    val query = e.query ?: "Unknown"
-    val bindings = e.bindings ?: emptyMap()
-    logger.error("Query failed: $query with bindings: $bindings", e)
-}
-```
+- **`QUERY_*`** — SPARQL
+- **`FORMAT_*`** — parsing and serialization
+- **`TRANSACTION_*`** — transactional semantics
+- **`PROVIDER_*`** / **`REPOSITORY_*`** / **`GRAPH_*`** — storage layers
+- **`VALIDATION_*`** — validation pipelines
+- **`CONFIGURATION_*`** — registry and builder errors
 
-## Error Code Reference
+Canonical definitions → **[Error Codes](../reference/error-codes.md)**.
 
-See [RdfErrorCode](../reference/error-codes.md) for a complete list of all error codes.
+## Validation
 
-## Related Documentation
+- Reproduce the failing query or parse in a minimal Kotlin snippet.
+- Assert **`errorCode`** (and **`when`** exhaustiveness on **`RdfFormatException`**) in unit tests for stability across message tweaks.
 
-- [Exception API Reference](../api/core-api.md#exceptions)
+## Troubleshooting
+
+- **Opaque `else` branches:** log **`exception.errorCode.code`** and **`context`** before collapsing to a generic message.
+- **Changing messages:** depend on **`errorCode`**, not substring matches on **`message`**.
+
+## Related
+
 - [Error Codes Reference](../reference/error-codes.md)
-- [Best Practices](best-practices.md#error-handling)
-
+- [Exception API Reference](../api/core-api.md#exceptions)
+- [Best Practices — Error handling](best-practices.md#error-handling)

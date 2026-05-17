@@ -1,0 +1,309 @@
+@prefix rdf:             <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:            <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:             <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:             <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:            <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:             <http://purl.org/dc/terms/> .
+@prefix prov:            <http://www.w3.org/ns/prov#> .
+@prefix void:            <http://rdfs.org/ns/void#> .
+@prefix kastor-m:        <https://w3id.org/kastor/metrics#> .
+@prefix kastor-m-oquare: <https://w3id.org/kastor/metrics/oquare#> .
+
+# =============================================================================
+#                       ONTOLOGY HEADER
+# =============================================================================
+
+<https://w3id.org/kastor/metrics>
+    a            owl:Ontology ;
+    rdfs:label   "Kastor Metrics Vocabulary" ;
+    rdfs:comment "Stable IRIs for ontology and vocabulary metrics computed by the Kastor onto-quality-metrics module. Where a metric corresponds to a concept in an established framework (OQuaRE, OntoQA), the relationship is recorded via skos:closeMatch. Kastor is the canonical source for these IRIs; the framework references are documentary." ;
+    dct:creator  "Geoknoesis" ;
+    owl:versionInfo "0.1.0" ;
+    dct:license  <https://www.apache.org/licenses/LICENSE-2.0> .
+
+# =============================================================================
+#                       CORE TYPES
+# =============================================================================
+
+kastor-m:MetricsReport
+    a            owl:Class ;
+    rdfs:label   "metrics report" ;
+    rdfs:comment "A computed metrics report over an RDF graph. Typically a subclass of void:Dataset describing the metrics computed over a dataset." ;
+    rdfs:subClassOf void:Dataset .
+
+kastor-m:Metric
+    a            owl:Class ;
+    rdfs:label   "metric definition" ;
+    rdfs:comment "A definition of a measurable property of an RDF graph or ontology. Instances of this class are the specific metrics defined below." .
+
+kastor-m:Score
+    a            owl:Class ;
+    rdfs:label   "score" ;
+    rdfs:comment "A score assigned to a metric value under a particular scoring scheme." .
+
+kastor-m:ScoringScheme
+    a            owl:Class ;
+    rdfs:label   "scoring scheme" ;
+    rdfs:comment "A mapping from raw metric values to ordinal scores (e.g. 1–5)." .
+
+# =============================================================================
+#                       CORE PROPERTIES
+# =============================================================================
+
+kastor-m:hasScore
+    a            owl:ObjectProperty ;
+    rdfs:label   "has score" ;
+    rdfs:domain  kastor-m:MetricsReport ;
+    rdfs:range   kastor-m:Score .
+
+kastor-m:onMetric
+    a            owl:ObjectProperty ;
+    rdfs:label   "on metric" ;
+    rdfs:domain  kastor-m:Score ;
+    rdfs:range   kastor-m:Metric .
+
+kastor-m:scoreValue
+    a            owl:DatatypeProperty ;
+    rdfs:label   "score value" ;
+    rdfs:domain  kastor-m:Score ;
+    rdfs:range   xsd:integer ;
+    rdfs:comment "Integer score from a scoring scheme. For OQuaRE-aligned scores, the range is 1–5." .
+
+kastor-m:scoringScheme
+    a            owl:ObjectProperty ;
+    rdfs:label   "scoring scheme" ;
+    rdfs:domain  kastor-m:Score ;
+    rdfs:range   kastor-m:ScoringScheme .
+
+kastor-m:computedAt
+    a            owl:DatatypeProperty ;
+    rdfs:label   "computed at" ;
+    rdfs:domain  kastor-m:MetricsReport ;
+    rdfs:range   xsd:dateTime .
+
+kastor-m:moduleVersion
+    a            owl:DatatypeProperty ;
+    rdfs:label   "module version" ;
+    rdfs:domain  kastor-m:MetricsReport ;
+    rdfs:range   xsd:string .
+
+# =============================================================================
+#                  OQuaRE-ALIGNED OWL METRICS
+# =============================================================================
+#
+# Each metric:
+#   - Is declared as both a kastor-m:Metric (so it can be referenced) AND
+#     an owl:DatatypeProperty (so it can be directly emitted)
+#   - skos:closeMatch points to the OQuaRE concept for provenance
+#   - rdfs:comment cites the formula in plain English
+
+kastor-m:depthOfInheritanceTree
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "depth of inheritance tree" ;
+    rdfs:comment   "Length of the longest acyclic path from a root class to a leaf class, over named-IRI rdfs:subClassOf edges. Cycle participants are excluded from the path." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:integer ;
+    skos:closeMatch kastor-m-oquare:DITOnto .
+
+kastor-m:numberOfAncestorClasses
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "number of ancestor classes" ;
+    rdfs:comment   "Mean number of direct superclasses per leaf class. Formula: sum(|direct-superclasses(leaf)|) / |leaves|." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:NACOnto .
+
+kastor-m:numberOfChildren
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "number of children" ;
+    rdfs:comment   "Mean number of direct subclasses per class, excluding subclasses of owl:Thing. Formula: sum(|direct-subclasses(C)|) / (|classes| - 1)." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:NOCOnto .
+
+kastor-m:couplingBetweenObjects
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "coupling between objects" ;
+    rdfs:comment   "Mean number of direct parents per class, excluding parents that are owl:Thing." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:CBOOnto .
+
+kastor-m:weightedMethodCount
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "weighted method count" ;
+    rdfs:comment   "Mean number of properties and subclasses per class. Formula: sum(|properties_with_domain(C)| + |direct-subclasses(C)|) / |classes|." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:WMCOnto .
+
+kastor-m:responseForClass
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "response for class" ;
+    rdfs:comment   "Mean number of properties (datatype + object) accessible from a class. Formula: sum(|domain-of-properties(C)|) / |classes|." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:RFCOnto .
+
+kastor-m:numberOfProperties
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "number of properties" ;
+    rdfs:comment   "Mean number of datatype and object properties per class. Close to but distinct from responseForClass." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:NOMOnto .
+
+kastor-m:lackOfCohesionInMethods
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "lack of cohesion in methods" ;
+    rdfs:comment   "Length of paths from leaves to owl:Thing divided by total paths. Definition per Duque-Ramos 2014." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:LCOMOnto .
+
+kastor-m:relationshipRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "relationship richness" ;
+    rdfs:comment   "Ratio of non-subClassOf relations to all relations. Indicates whether the ontology models domain relations beyond pure taxonomy." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:RROnto .
+
+kastor-m:inheritanceRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "inheritance richness" ;
+    rdfs:comment   "Ratio of subClassOf relations to all relations." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:INROnto .
+
+kastor-m:attributeRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "attribute richness" ;
+    rdfs:comment   "Mean datatype properties per class. Formula: |datatype property domain assertions| / |classes|." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:AROnto .
+
+kastor-m:classRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "class richness" ;
+    rdfs:comment   "Ratio of classes that have instances. Formula: |classes with at least one rdf:type assertion| / |classes|. On TBox-only graphs this is 0; this is not a quality signal." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:CROnto .
+
+kastor-m:annotationRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "annotation richness" ;
+    rdfs:comment   "Mean number of annotations (label, comment, definition) per class." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:ANOnto .
+
+kastor-m:propertiesRichness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "properties richness" ;
+    rdfs:comment   "Number of properties divided by (number of subClassOf edges + number of properties). Distinct from numberOfProperties." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:PROnto .
+
+kastor-m:tangledness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "tangledness" ;
+    rdfs:comment   "Mean number of paths from owl:Thing to a leaf class divided by number of leaves. Measures multiple-inheritance density." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:closeMatch kastor-m-oquare:TMOnto .
+
+# =============================================================================
+#                  OQuaRE PROVENANCE CONCEPTS
+# =============================================================================
+#
+# These are SKOS Concepts pointing at the OQuaRE catalogue entries.
+# They are NOT the canonical source for OQuaRE — they are stable IRIs
+# we publish so that our metrics can reference OQuaRE in RDF.
+
+<https://w3id.org/kastor/metrics/oquare>
+    a            skos:ConceptScheme ;
+    rdfs:label   "OQuaRE provenance vocabulary" ;
+    rdfs:comment "SKOS Concepts naming OQuaRE metrics. The canonical source for OQuaRE metric definitions is Duque-Ramos et al. (2014), PLoS ONE 9(8). This vocabulary publishes stable IRIs so that Kastor metrics can reference OQuaRE concepts in RDF." ;
+    dct:source   <https://doi.org/10.1371/journal.pone.0104463> .
+
+# All 15 OQuaRE metric concepts. Pattern: kastor-m-oquare:<OQuaRE-name>
+
+kastor-m-oquare:DITOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "DITOnto" ; rdfs:comment "Depth of Inheritance Tree (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:NACOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "NACOnto" ; rdfs:comment "Number of Ancestor Classes (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:NOCOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "NOCOnto" ; rdfs:comment "Number of Children (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:CBOOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "CBOOnto" ; rdfs:comment "Coupling Between Objects (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:WMCOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "WMCOnto" ; rdfs:comment "Weighted Method Count (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:RFCOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "RFCOnto" ; rdfs:comment "Response For a Class (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:NOMOnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "NOMOnto" ; rdfs:comment "Number of Methods/Properties (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:LCOMOnto     a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "LCOMOnto" ; rdfs:comment "Lack of Cohesion in Methods (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:RROnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "RROnto" ; rdfs:comment "Relationship Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:INROnto      a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "INROnto" ; rdfs:comment "Inheritance Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:AROnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "AROnto" ; rdfs:comment "Attribute Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:CROnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "CROnto" ; rdfs:comment "Class Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:ANOnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "ANOnto" ; rdfs:comment "Annotation Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:PROnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "PROnto" ; rdfs:comment "Properties Richness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+kastor-m-oquare:TMOnto       a skos:Concept ; skos:inScheme <https://w3id.org/kastor/metrics/oquare> ; skos:prefLabel "TMOnto" ; rdfs:comment "Tangledness (OQuaRE)" ; dct:source <https://doi.org/10.1371/journal.pone.0104463> .
+
+# =============================================================================
+#                  KASTOR-NATIVE SKOS METRICS
+# =============================================================================
+#
+# SKOS is not in OQuaRE's scope, so these metrics are Kastor's own,
+# with no OQuaRE skos:closeMatch.
+
+kastor-m:conceptCount
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "concept count" ;
+    rdfs:comment   "Number of skos:Concept instances." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:integer .
+
+kastor-m:prefLabelCoverage
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "prefLabel coverage" ;
+    rdfs:comment   "Ratio of concepts with at least one skos:prefLabel to total concepts." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal .
+
+kastor-m:definitionCoverage
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "definition coverage" ;
+    rdfs:comment   "Ratio of concepts with skos:definition or rdfs:comment to total concepts." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal .
+
+kastor-m:orphanConceptCount
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "orphan concept count" ;
+    rdfs:comment   "Number of skos:Concept instances with no skos:inScheme and no skos:topConceptOf." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:integer .
+
+kastor-m:siblingCohortCount
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "sibling cohort count" ;
+    rdfs:comment   "Number of parent concepts with at least 2 direct narrowers." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:integer .
+
+kastor-m:maxSiblingCohortSize
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "max sibling cohort size" ;
+    rdfs:comment   "Largest number of direct narrowers under any single parent." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:integer .
+
+# =============================================================================
+#                  OQuaRE SCORING SCHEME (Duque-Ramos 2014)
+# =============================================================================
+
+kastor-m-oquare:DuqueRamos2014Scoring
+    a            kastor-m:ScoringScheme ;
+    rdfs:label   "OQuaRE 1–5 scoring (Duque-Ramos 2014)" ;
+    rdfs:comment "Maps OQuaRE metric values to 1–5 scores per Duque-Ramos et al. 2014, Table 3. 1 = not acceptable, 3 = minimally acceptable, 5 = exceeds requirements. Calibrated for biomedical ontologies; may misfire on very small or foundational ontologies." ;
+    dct:source   <https://doi.org/10.1371/journal.pone.0104463> .

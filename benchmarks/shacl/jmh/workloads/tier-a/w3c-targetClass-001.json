@@ -1,0 +1,11 @@
+{
+  "id": "w3c-shacl12-fixture:targetClass-001",
+  "tier": "A",
+  "validationProfile": "SHACL_CORE",
+  "comparisonMode": "CORE_STRICT_SINGLE_THREAD_FULL_REPORT",
+  "pathsRelativeTo": "repository-root",
+  "dataTurtle": "rdf/shacl/validation/src/test/resources/w3c-shacl12-fixture/targets/targetClass-001.ttl",
+  "shapesTurtle": "rdf/shacl/validation/src/test/resources/w3c-shacl12-fixture/targets/targetClass-001.ttl",
+  "expectedConforms": false,
+  "notes": "Bundled fixture; single Turtle file for both graphs."
+}

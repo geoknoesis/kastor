@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Status** | Design proposal (contributor-normative once adopted). Implementation may trail this document; treat gaps as backlog. |
-| **Audience** | Kastor contributors maintaining `rdf/shacl-validation`, bridge modules, and CI |
+| **Audience** | Kastor contributors maintaining `rdf/shacl/validation`, bridge modules, and CI |
 | **Depends on** | [SHACL validation architecture](shacl-validation-architecture.md) — especially native performance engineering and the benchmark thresholds described there |
-| **Modules** | `rdf/shacl-validation`, future `shacl-validation-jena` / `shacl-validation-rdf4j` (or equivalent bridge artifacts), optional `benchmarks/shacl` aggregate; optional Python env + scripts for [PySHACL](https://github.com/RDFLib/pySHACL); optional TopBraid-capable runner (see [Section 2.2](#22-non-jvm-and-vendor-baselines-pyshacl-topbraid)) |
+| **Modules** | `rdf/shacl/validation`, future `shacl-validation-jena` / `shacl-validation-rdf4j` (or equivalent bridge artifacts), optional `benchmarks/shacl` aggregate; optional Python env + scripts for [PySHACL](https://github.com/RDFLib/pySHACL); optional TopBraid-capable runner (see [Section 2.2](#22-non-jvm-and-vendor-baselines-pyshacl-topbraid)) |
 
 This document specifies **how** to compare the **native** Kastor SHACL engine against **other** serious SHACL implementations, including:
 
@@ -155,14 +155,14 @@ Reporting should include at least **Validate** and **E2E**; **Convert** must app
 
 | Piece | Recommended location | Rationale |
 |-------|---------------------|-----------|
-| **JMH / Gradle JVM harness** | **`benchmarks/shacl`** — included as `:benchmarks:shacl` in `settings.gradle.kts`; run `./gradlew :benchmarks:shacl:jmh` | Keeps **long-running perf tests** and **JMH** out of **`rdf/shacl-validation`**.
-| **Baselines & capability matrix** | **`benchmarks/shacl/baselines/`**, **`benchmarks/shacl/capability/`** (or similar next to the JMH module) | Version-controlled thresholds and per-test engine support; easy for CI to diff. |
-| **Workload RDF (W3C subsets, synthetic seeds)** | **`benchmarks/shacl/src/jmh/resources/`** or **`benchmarks/shacl/workloads/`** | Large binary corpora: **do not** commit without license review; use download scripts or Git LFS as for `rdf/shacl-validation/test-data`. |
+| **JMH / Gradle JVM harness** | **`benchmarks/shacl/jmh/`** (Gradle **`:benchmarks:shacl`** in `settings.gradle.kts`); run `./gradlew :benchmarks:shacl:jmh` | Keeps **long-running perf tests** and **JMH** out of **`rdf/shacl/validation`**.
+| **Baselines & capability matrix** | **`benchmarks/shacl/jmh/baselines/`**, **`benchmarks/shacl/jmh/capability/`** (or similar next to the JMH module) | Version-controlled thresholds and per-test engine support; easy for CI to diff. |
+| **Workload RDF (W3C subsets, synthetic seeds)** | **`benchmarks/shacl/jmh/src/jmh/resources/`** or **`benchmarks/shacl/jmh/workloads/`** | Large binary corpora: **do not** commit without license review; use download scripts or Git LFS as for `rdf/shacl/validation/test-data`. |
 | **ERA-SHACL Docker + shell glue** | **`engines/kastor/`** inside an **[ERA-SHACL-Benchmark](https://github.com/oeg-upm/ERA-SHACL-Benchmark) fork or PR** (Section 12.4) | Upstream expects each engine as a **sibling** of `engines/jena`; the Kastor monorepo only needs to **publish the CLI JAR** (next row). |
-| **ERA CLI fat JAR / installDist** | **`benchmarks/shacl-era-cli`** (`:benchmarks:shacl-era-cli`) — `ShaclEraCli`, `./gradlew :benchmarks:shacl-era-cli:installDist`, optional [Dockerfile.sample](../../../benchmarks/shacl-era-cli/Dockerfile.sample) | Single artifact for **`engines/kastor`** in ERA; avoids bloating `:rdf:shacl-validation`.
-| **optional PySHACL scripts** | **`benchmarks/shacl/scripts/pyshacl/`** + pinned `requirements.txt` | Keeps Python beside the JVM harness that spawns it. |
+| **ERA CLI fat JAR / installDist** | **`benchmarks/shacl/era-cli`** (Gradle `:benchmarks:shacl-era-cli`) — `ShaclEraCli`, `./gradlew :benchmarks:shacl-era-cli:installDist`, optional [Dockerfile.sample](../../../benchmarks/shacl/era-cli/Dockerfile.sample) | Single artifact for **`engines/kastor`** in ERA; avoids bloating `:rdf:shacl-validation`.
+| **optional PySHACL scripts** | **`benchmarks/shacl/jmh/scripts/pyshacl/`** + pinned `requirements.txt` | Keeps Python beside the JVM harness that spawns it. |
 
-**Avoid** putting JMH sources only under **`rdf/shacl-validation/src/jmh`** unless the team explicitly wants perf code in the same module as production tests; the default is a **top-level `benchmarks/`** tree so CI can skip or isolate it cleanly.
+**Avoid** putting JMH sources only under **`rdf/shacl/validation/src/jmh`** unless the team explicitly wants perf code in the same module as production tests; the default is a **top-level `benchmarks/`** tree so CI can skip or isolate it cleanly.
 
 ---
 
@@ -188,7 +188,7 @@ Performance tests never replace conformance tests. Additionally:
 
 ## 9. Baselines and regression policy
 
-- Store baselines under a dedicated path (architecture doc suggests `benchmarks/shacl/baselines/` or co-located with the JMH module) with a **README** describing regeneration.
+- Store baselines under a dedicated path (architecture doc suggests `benchmarks/shacl/jmh/baselines/` or co-located with the JMH module) with a **README** describing regeneration.
 - **Gating:** Follow project policy: native median regression **>10%** or p95 **>25%** vs checked-in baseline fails the build **unless waived** with a tracked issue (see architecture doc). **PySHACL** and **TopBraid** baselines are **informational** unless the project explicitly promotes them to merge gates with a maintained runner.
 - Prefer **ratio-based** gates when comparing native to a baseline engine in the **same CI job** (reduces noise from runner CPU differences).
 
@@ -209,12 +209,12 @@ Publish **machine profile**, **`java -version`**, and for Python jobs **`python 
 ## 11. Deliverables checklist
 
 - [x] JMH Gradle entrypoint — `:benchmarks:shacl` (`./gradlew :benchmarks:shacl:jmh`); JVM flags documented in module `README.md`
-- [x] Tier A/B/C workload layout — `benchmarks/shacl/workloads/` (Tier **A** JSON examples + B/C README stubs)
-- [x] Baseline directory + README — `benchmarks/shacl/baselines/`
+- [x] Tier A/B/C workload layout — `benchmarks/shacl/jmh/workloads/` (Tier **A** JSON examples + B/C README stubs)
+- [x] Baseline directory + README — `benchmarks/shacl/jmh/baselines/`
 - [x] CI compiles benchmark modules on each PR (`ci.yml`); optional full JMH workflow [`.github/workflows/shacl-jmh.yml`](../../../.github/workflows/shacl-jmh.yml) (`workflow_dispatch` / weekly artifact)
-- [x] **PySHACL** — `benchmarks/shacl/scripts/pyshacl/` (`requirements.txt`, `validate_era_style.py`, README)
+- [x] **PySHACL** — `benchmarks/shacl/jmh/scripts/pyshacl/` (`requirements.txt`, `validate_era_style.py`, README)
 - [x] **TopBraid** — self-hosted notes: `benchmarks/shacl/docs/topbraid-self-hosted.md`
-- [x] **Capability matrix** starter — `benchmarks/shacl/capability/matrix.v1.json` (extend as engines are automated)
+- [x] **Capability matrix** starter — `benchmarks/shacl/jmh/capability/matrix.v1.json` (extend as engines are automated)
 - [x] **ERA-compatible CLI** — `:benchmarks:shacl-era-cli` + `Dockerfile.sample`; upstream **`engines/kastor`** + `run_benchmark.sh` patch still optional (Section 12.4)
 - [x] Architecture / feature cross-links — [SHACL validation feature](../features/shacl-validation.md) → benchmark design
 
@@ -366,7 +366,7 @@ Open a PR against `oeg-upm/ERA-SHACL-Benchmark` adding `engines/kastor/` and a o
 - **Data provenance:** confirm redistribution terms before vendoring ERA `data/` in the Kastor monorepo.  
 - When merging ERA numbers with **in-process JMH** results from this document, declare a **comparison mode** (Section 12.1).
 
-**Corpus-only mode:** You can still use ERA-derived Turtle under `test-data/` inside Kastor’s own JMH harness without Docker; that does **not** require the Docker contract but loses direct comparability to published ERA tables unless methodology is aligned. Checked-in JSON workload descriptors: **`benchmarks/shacl/workloads/`** (paths relative to repository root).
+**Corpus-only mode:** You can still use ERA-derived Turtle under `test-data/` inside Kastor’s own JMH harness without Docker; that does **not** require the Docker contract but loses direct comparability to published ERA tables unless methodology is aligned. Checked-in JSON workload descriptors: **`benchmarks/shacl/jmh/workloads/`** (paths relative to repository root).
 
 ---
 

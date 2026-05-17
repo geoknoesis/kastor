@@ -14,13 +14,18 @@ jmhGradle = "0.7.2"
 jmh = "1.37"
 koog = "0.8.0"
 kotlinxSerializationJson = "1.8.1"
+assertj = "3.27.3"
+dependencyAnalysis = "3.12.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 
 jena-libs = { module = "org.apache.jena:apache-jena-libs", version.ref = "jena" }
 jena-arq = { module = "org.apache.jena:jena-arq", version.ref = "jena" }
@@ -55,4 +60,5 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmhGradle" }
+dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
 

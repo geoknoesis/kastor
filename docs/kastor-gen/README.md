@@ -2,6 +2,8 @@
 
 Welcome to the Kastor Gen documentation. Kastor Gen is the Kotlin code-generation layer for Kastor: it turns SHACL shapes and JSON-LD context into **pure domain interfaces** plus **RDF-backed wrappers**, wired together at runtime by **`OntoMapper`**.
 
+Shared definitions (**shape**, **literal**, **repository**, **materialization** in the codegen sense vs reasoning): [**Glossary**](../kastor/concepts/glossary.md). How tutorials differ from reference across the site: [**How documentation fits together**](../kastor/getting-started/documentation-guide.md).
+
 > **Navigate:** tutorials explain workflows; [`reference/`](reference/) is the API source of truth; [Examples](examples/README.md) summarizes sample docs; for a **runnable** DCAT-style build, use the [**`examples/dcat-us` Gradle module on GitHub**](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us) (see also [Kastor examples](../kastor/examples/README.md)).
 
 ## Why Kastor Gen?
@@ -193,8 +195,8 @@ class OntologyGenerator
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
 }
 ```
 

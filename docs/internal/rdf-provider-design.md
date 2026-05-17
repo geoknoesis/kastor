@@ -199,9 +199,9 @@ Registration rules:
 - For remote endpoints, validate failure modes and timeouts.
 
 ## Appendix: Provider Examples (Pointers)
-- Jena: `rdf/jena/src/main/kotlin/.../JenaProvider.kt`
-- RDF4J: `rdf/rdf4j/src/main/kotlin/.../Rdf4jProvider.kt`
-- SPARQL Endpoint: `rdf/sparql/src/main/kotlin/.../SparqlProvider.kt`
+- Jena: `rdf/providers/jena/src/main/kotlin/.../JenaProvider.kt`
+- RDF4J: `rdf/providers/rdf4j/src/main/kotlin/.../Rdf4jProvider.kt`
+- SPARQL Endpoint: `rdf/sparql/endpoint/src/main/kotlin/.../SparqlProvider.kt`
 
 
 

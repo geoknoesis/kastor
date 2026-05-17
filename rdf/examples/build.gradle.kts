@@ -6,14 +6,18 @@ plugins {
 dependencies {
   implementation(project(":rdf:core"))
   implementation(project(":rdf:jena"))
+  implementation(project(":rdf:jena-reasoning"))
   implementation(project(":rdf:rdf4j"))
+  implementation(project(":rdf:rdf4j-reasoning"))
   implementation(project(":rdf:sparql"))
   implementation(project(":rdf:reasoning"))
   implementation(project(":rdf:shacl-validation"))
   
   testImplementation(project(":rdf:core"))
   testImplementation(project(":rdf:jena"))
+  testImplementation(project(":rdf:jena-reasoning"))
   testImplementation(project(":rdf:rdf4j"))
+  testImplementation(project(":rdf:rdf4j-reasoning"))
   testImplementation(project(":rdf:sparql"))
   testImplementation(project(":rdf:reasoning"))
   testImplementation(project(":rdf:shacl-validation"))

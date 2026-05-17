@@ -1,16 +1,23 @@
 # RDF 1.2 conformance testing
 
-Kastor 0.2.0 ships a conformance harness that runs the official W3C RDF 1.2
-syntax test suites against the Jena and RDF4J providers. The harness lives in
-`:rdf:conformance` and is opt-in: the tests skip gracefully when the test data
-is absent, so a stock `./gradlew test` stays fast and offline.
+The `:rdf:conformance` module compares **Kastor’s Jena and RDF4J providers** against the official **W3C RDF 1.2 syntax** suites (parser-focused Phase 1: Turtle, TriG, N-Triples, N-Quads).
 
-## What's covered
+Default `./gradlew test` **does not** execute the heavy corpus (`:rdf:conformance:test` is excluded from that aggregate run—see repository [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md)). Two workflows matter in practice:
 
-The current scope is **Phase 1: RDF 1.2 syntax** - that is, parser and
-serialiser conformance. For each suite under
-`https://github.com/w3c/rdf-tests/tree/main/rdf12`, every approved test row is
-turned into a JUnit 5 dynamic test:
+| Goal | Command |
+|------|---------|
+| **Quick regression check** (no submodule, small bundled fixture, both providers) | `./gradlew conformanceSmokeTest` |
+| **Full W3C matrix** (requires submodule checkout) | `git submodule update --init --recursive` then `./gradlew :rdf:conformance:test` |
+
+The bundled fixture lives beside the harness ([`Rdf12ConformanceSmokeTest`](https://github.com/geoknoesis/kastor/blob/main/rdf/conformance/src/test/kotlin/com/geoknoesis/kastor/rdf/conformance/Rdf12ConformanceSmokeTest.kt)); it covers positive syntax, negative syntax, and one eval case.
+
+Maintenance automation also runs the full RDF corpus plus expanded SHACL checks on a schedule ([workflow](https://github.com/geoknoesis/kastor/blob/main/.github/workflows/conformance.yml)).
+
+For Gradle filtering or tooling: fixture-only tests use tag **`conformance-smoke`**; submodule-driven factories use **`w3c-rdf12-full`**.
+
+## What the W3C corpus covers
+
+Each approved row under [`w3c/rdf-tests` RDF 12](https://github.com/w3c/rdf-tests/tree/main/rdf12) becomes a JUnit 5 dynamic test:
 
 | Suite | Manifests under `test-data/rdf12/` | Test kinds |
 | ----- | ---------------------------------- | ---------- |
@@ -19,87 +26,53 @@ turned into a JUnit 5 dynamic test:
 | N-Triples 1.2 | `rdf-n-triples/manifest.ttl` | positive / negative syntax |
 | N-Quads 1.2 | `rdf-n-quads/manifest.ttl` | positive / negative syntax |
 
-For each row we run the same logical assertion against **both** providers, so
-the JUnit report shows e.g. `[Jena/TURTLE] turtle-syntax-bad-num-01` and
-`[RDF4J/TURTLE] turtle-syntax-bad-num-01` as separate entries. SPARQL 1.2 and
-RDF Dataset Canonicalisation are explicitly out of scope for Phase 1.
+Each row runs against **both** providers, so reports show labels such as `[Jena/TURTLE] …` and `[RDF4J/TURTLE] …`. **SPARQL 1.2** and RDF dataset canonicalisation are **out of scope** for this harness.
 
-## How to enable it
+## Enable the full suite locally
 
-The W3C test data is checked in as a git submodule at
-`rdf/conformance/test-data/`. To run the suite locally:
+The upstream trees live in a git submodule at `rdf/conformance/test-data/`.
 
 ```bash
 git submodule update --init --recursive
-
 ./gradlew :rdf:conformance:test
 ```
 
-Without the submodule, the suite still builds and reports a single skipped
-test per provider with a clear message:
+If the submodule is missing, the harness still compiles; full-suite factories emit a **skipped** test with instructions instead of failing the build.
 
-```
-Rdf 1 dot 2 syntax suite (Jena) > submodule not initialised
-  W3C test data not present at .../test-data/rdf12/manifest.ttl. Run
-  `git submodule update --init --recursive` to enable the RDF 1.2
-  conformance suite.
-```
+`./gradlew check` does **not** run `:rdf:conformance` tests (see `:rdf:conformance/build.gradle.kts`). Use **`conformanceSmokeTest`** or **`:rdf:conformance:test`** explicitly.
 
-`./gradlew check` does **not** trigger the conformance suite. We hold it out
-of the default chain because the submodule alone is hundreds of megabytes; CI
-runs it explicitly via `./gradlew :rdf:conformance:test`.
+## Reading failures
 
-## What a failing run looks like
-
-Each W3C row becomes one JUnit 5 dynamic test, so failures point at exactly
-the row that broke:
+Each W3C row is one dynamic test—the failure name identifies the row:
 
 ```
 JenaConformanceTest > RDF 1 dot 2 syntax suite (Jena) >
   rdf12/rdf-turtle (84 tests) > [Jena/TURTLE] turtle-syntax-bad-num-04 FAILED
-    java.lang.IllegalStateException: negative-syntax test should have
-    failed but parsed cleanly: ...turtle-syntax-bad-num-04
 ```
 
-Eval tests log graph sizes when the comparison fails, so you can quickly tell
-the difference between "we parsed nothing" and "we parsed a slightly different
-graph":
+Eval mismatches include graph sizes to separate “empty parse” from “near miss”:
 
 ```
 [Jena/TRIG] reified-triple-1 FAILED
-  java.lang.IllegalStateException: eval mismatch for ...reified-triple-1
-    expected: .../reified-triple-1.nq
-    actual size = 4, expected size = 5
+  expected: .../reified-triple-1.nq
+  actual size = 4, expected size = 5
 ```
 
 ## System properties
 
 | Property | Default | Effect |
 | -------- | ------- | ------ |
-| `conformance.includeUnapproved` | `false` | If `true`, also runs tests whose `rdft:approval` is not `rdft:Approved`. Such tests may diverge from the spec; default is to skip them. |
+| `conformance.includeUnapproved` | `false` | When `true`, runs manifest rows whose `rdft:approval` is not `rdft:Approved` (may diverge from stable spec expectations). |
 
-## Implementation notes
+## Harness layout
 
-The harness is built from three small, dependency-free Kotlin types in
-`rdf/conformance/src/test/kotlin/.../`:
+These types drive the suite (`rdf/conformance/src/test/kotlin/…`):
 
-- `Rdf12ManifestParser` reads an `mf:Manifest` Turtle file (using Jena's
-  `Model.read`, **not** Kastor's parsers, because that's what we're testing)
-  and produces a typed list of `W3cTestCase` rows.
-- `Conformer` is a thin adapter around `RdfProvider` that the harness calls
-  for parsing - one `Conformer` per provider, so the same row can run against
-  Jena and RDF4J in the same JVM.
-- `Rdf12ConformanceRunner` walks the test-data tree, generates a
-  `DynamicContainer` per manifest, and dispatches each row to a `parseGraph`,
-  `parseDataset`, or graph-isomorphism call.
+- **`Rdf12ManifestParser`** — reads `mf:Manifest` Turtle via **Jena ARQ** `Model.read` (not Kastor parsers—the adapters under test are exercised separately).
+- **`Conformer`** — thin `RdfProvider` adapter plus dataset parsing; one instance per provider so Jena and RDF4J share the same case list.
+- **`Rdf12ConformanceRunner`** — builds `DynamicContainer` trees and dispatches to graph parse, dataset parse, or isomorphism checks.
 
-If you need to extend coverage:
-
-- **Add a new provider**: instantiate a new `Conformer(label, provider, repoFactory)`
-  and create a sibling test class - see `JenaConformanceTest` for the pattern.
-- **Move beyond syntax**: build a new runner that consumes
-  `mf:QueryEvaluationTest` / `mf:CSVResultFormatTest` rows from the
-  `sparql-tests` submodule, reusing the same dynamic-test machinery.
+**Extend coverage:** add another `Conformer` + test class (copy `JenaConformanceTest`). **Beyond syntax:** reuse the same dynamic-test pattern against other manifest kinds (for example SPARQL evaluation rows) if you wire a new runner.
 
 ## See also
 

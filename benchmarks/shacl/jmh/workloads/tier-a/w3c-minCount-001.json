@@ -1,0 +1,11 @@
+{
+  "id": "w3c-shacl12-fixture:minCount-001",
+  "tier": "A",
+  "validationProfile": "SHACL_CORE",
+  "comparisonMode": "CORE_STRICT_SINGLE_THREAD_FULL_REPORT",
+  "pathsRelativeTo": "repository-root",
+  "dataTurtle": "rdf/shacl/validation/src/test/resources/w3c-shacl12-fixture/property/minCount-001.ttl",
+  "shapesTurtle": "rdf/shacl/validation/src/test/resources/w3c-shacl12-fixture/property/minCount-001.ttl",
+  "expectedConforms": false,
+  "notes": "Bundled SHACL 1.2-style fixture; single file for data and shapes (sht:dataGraph/sht:shapesGraph <>)."
+}

@@ -2,13 +2,22 @@
 
 {% include version-banner.md %}
 
-This tutorial assumes no prior RDF knowledge. You will create a graph, query it, and print results.
+> **Documentation mode: Tutorial** — no RDF background assumed. For vocabulary definitions (**triple**, **IRI**), keep the [**Glossary**](../concepts/glossary.md) open. For task-only workflows later, use [**How-to guides**](../guides/README.md).
+
+### Goal
+
+Create an in-memory graph, run one **SPARQL** `SELECT`, and print a human-readable line.
+
+### Prerequisites
+
+- JDK **17**, Gradle + Kotlin (see [Installation](../getting-started/installation.md))
+- Dependencies: `rdf-core` plus a provider such as `rdf-jena` or `rdf-rdf4j` at **`0.2.0`** (see [Getting Started](../getting-started/getting-started.md))
 
 ## What you'll build
 
 You will model one person and one organization, then query the person's name and employer.
 
-## Step 1: Create an in-memory repository
+### Step 1: Create an in-memory repository
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -16,7 +25,7 @@ import com.geoknoesis.kastor.rdf.Rdf
 val repo = Rdf.memory()
 ```
 
-## Step 2: Add a few triples (subject–predicate–object)
+### Step 2: Add a few triples (subject–predicate–object)
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.iri
@@ -34,7 +43,7 @@ repo.add {
 }
 ```
 
-## Step 3: Query the graph
+### Step 3: Query the graph
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
@@ -54,17 +63,25 @@ results.forEach { row ->
 }
 ```
 
-## Step 4: Close the repository
+### Step 4: Close the repository
 
 ```kotlin
 repo.close()
 ```
 
-## Expected output
+## Verify
+
+You should see:
 
 ```
 Alice Johnson works for Acme Corp
 ```
+
+## Next steps
+
+- **Explanation:** [RDF Fundamentals](../concepts/rdf-fundamentals.md), [SPARQL Fundamentals](../concepts/sparql-fundamentals.md)
+- **How-to:** [Parse RDF](../guides/how-to-parse-rdf.md), [Validate with SHACL](../guides/how-to-validate-shacl.md)
+- **Reference:** [Core API](../api/core-api.md)
 
 You’ve created your first RDF data and queried it successfully.
 

@@ -40,7 +40,7 @@ Add the Kastor Gen plugin to your `build.gradle.kts`:
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.1.0"
+    id("com.geoknoesis.kastor.gen") version "0.2.0"
 }
 ```
 
@@ -50,12 +50,12 @@ Include the required runtime dependencies:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     
     // Optional: Specific backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
 }
 ```
 
@@ -601,8 +601,8 @@ kastorGen {
 ```kotlin
 // Use version catalogs for dependency management
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
 }
 ```
 

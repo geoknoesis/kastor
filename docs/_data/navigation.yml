@@ -6,6 +6,8 @@ main:
     children:
       - title: Overview
         url: /kastor/getting-started/
+      - title: How docs fit together
+        url: /kastor/getting-started/documentation-guide.html
       - title: Getting Started
         url: /kastor/getting-started/getting-started.html
       - title: Installation
@@ -29,6 +31,8 @@ main:
         url: /kastor/concepts/vocabularies.html
       - title: Glossary
         url: /kastor/concepts/glossary.html
+      - title: Repository architecture
+        url: /kastor/concepts/architecture.html
       - title: Design Philosophy
         url: /kastor/philosophy.html
   - title: How-To Guides
@@ -60,6 +64,20 @@ main:
         url: /kastor/guides/how-to-named-graphs.html
       - title: Transactions
         url: /kastor/guides/how-to-transactions.html
+      - title: Migrate to 0.2 (RDF 1.2)
+        url: /kastor/guides/migrating-to-rdf-1.2.html
+      - title: Performance
+        url: /kastor/guides/performance.html
+      - title: Error Handling
+        url: /kastor/guides/error-handling.html
+      - title: JSON-LD compaction & framing
+        url: /kastor/guides/json-ld-compaction-framing.html
+      - title: Android & KMP
+        url: /kastor/guides/android-kmp.html
+      - title: Extending (SPI)
+        url: /kastor/guides/extending.html
+      - title: Debug mode
+        url: /kastor/guides/debug-mode.html
       - title: Cookbook
         url: /kastor/guides/cookbook.html
       - title: Best Practices

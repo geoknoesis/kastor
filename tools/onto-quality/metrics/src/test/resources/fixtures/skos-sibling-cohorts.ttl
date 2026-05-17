@@ -1,0 +1,19 @@
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex: <http://example.org/skos/> .
+
+ex:S a skos:ConceptScheme .
+
+ex:p1 a skos:Concept ; skos:inScheme ex:S .
+ex:c11 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p1 .
+ex:c12 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p1 .
+
+ex:p2 a skos:Concept ; skos:inScheme ex:S .
+ex:c21 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p2 .
+ex:c22 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p2 .
+
+ex:p3 a skos:Concept ; skos:inScheme ex:S .
+ex:c31 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p3 .
+ex:c32 a skos:Concept ; skos:inScheme ex:S ; skos:broader ex:p3 .
+
+ex:c11 skos:related ex:c12 .
+ex:c21 skos:related ex:c22 .

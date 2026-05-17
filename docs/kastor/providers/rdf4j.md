@@ -112,7 +112,7 @@ val api = Rdf.repository {
 > **Loading shapes:** SHACL shapes must be loaded into the reserved
 > `RDF4J.SHACL_SHAPE_GRAPH` named graph (`http://rdf4j.org/schema/rdf4j#SHACLShapeGraph`)
 > before validation kicks in. See the example in
-> [Rdf4jVariantsTest](../../../rdf/rdf4j/src/test/kotlin/com/geoknoesis/kastor/rdf/rdf4j/Rdf4jVariantsTest.kt).
+> [Rdf4jVariantsTest](../../../rdf/providers/rdf4j/src/test/kotlin/com/geoknoesis/kastor/rdf/rdf4j/Rdf4jVariantsTest.kt).
 
 ## Managing Multiple Repositories
 

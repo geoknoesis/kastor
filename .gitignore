@@ -17,6 +17,9 @@ build/
 
 # IntelliJ IDEA
 .idea/
+
+# Cursor IDE (local skills, agent state — do not commit)
+.cursor/
 *.iws
 *.iml
 *.ipr
@@ -516,9 +519,9 @@ pnpm-lock.yaml
 !**/test-data/
 **/test-output/
 
-# Local W3C SHACL test suites (see rdf/shacl-validation/test-data/README.md)
-rdf/shacl-validation/test-data/w3c-shacl12/
-rdf/shacl-validation/test-data/data-shapes-test-suite/
+# Local W3C SHACL test suites (see rdf/shacl/validation/test-data/README.md)
+rdf/shacl/validation/test-data/w3c-shacl12/
+rdf/shacl/validation/test-data/data-shapes-test-suite/
 
 # Ignore performance profiling files
 *.prof
@@ -676,7 +679,7 @@ test-*
 # Ad-hoc model / tokenizer downloads and other local ML artifacts
 .tmp-model/
 
-# Local W3C / conformance trees and one-off capture files (see rdf/shacl-validation/test-data/README.md)
+# Local W3C / conformance trees and one-off capture files (see rdf/shacl/validation/test-data/README.md)
 /w3c-shacl12-fixture/
 shacl-conformance-out.txt
 *-conformance-out.txt

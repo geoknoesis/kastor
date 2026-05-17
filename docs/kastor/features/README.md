@@ -2,6 +2,8 @@
 
 This section covers the advanced features and capabilities of the Kastor RDF framework.
 
+**Terms:** **Reasoning**, **SHACL**, **shapes**, **materialization**, **ontology quality**, and related vocabulary are defined or linked from the [**Glossary**](../concepts/glossary.md).
+
 ## 🌟 Available Features
 
 ### **Reasoning and Inference**
@@ -9,7 +11,7 @@ This section covers the advanced features and capabilities of the Kastor RDF fra
 
 ### **Data Validation**
 - [SHACL Validation](shacl-validation.md) - Constraint validation using SHACL shapes
-- [Ontology Quality](ontology-quality.md) - Curated ontology pitfall catalogues (`onto-quality`) and optional embedding tier
+- [Ontology Quality](ontology-quality.md) — Curated ontology pitfall catalogues (`onto-quality`), optional **semantic** (embedding) tier, optional **reasoning** tier (Jena / HermiT, **K07**)
 
 ## 🔧 Feature Architecture
 

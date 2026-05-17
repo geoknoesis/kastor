@@ -1,8 +1,14 @@
-# Guides
+# Guides hub
 
 {% include version-banner.md %}
 
-This page is a hub for outcome-driven guides. Each guide is designed to be runnable and scoped to a single task.
+> **Documentation mode: Explanation (index)** — where to start among task guides. **Meta:** [How documentation fits together](../getting-started/documentation-guide.md).
+
+## Problem
+
+- Find the right **how-to** or **tutorial** for a given outcome without scanning the whole docs tree.
+
+This page lists outcome-driven guides. Each linked guide is scoped to a runnable task.
 
 ## Core workflows
 
@@ -14,11 +20,9 @@ This page is a hub for outcome-driven guides. Each guide is designed to be runna
 - [How to Work with Named Graphs](how-to-named-graphs.md)
 - [How to Use Transactions](how-to-transactions.md)
 
-## Related topics
+## Related
 
 - [Kastor Query DSL Tutorial](kastor-query-dsl-tutorial.md)
+- [Guides README](README.md) (full list including platform and reference-oriented pages)
 - [Cookbook](cookbook.md)
-
-
-
 

@@ -54,12 +54,17 @@ plugins {
 }
 
 dependencies {
-    // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    // Core API (pulls rdf-sparql-contract for SparqlSelectQuery / UpdateQuery markers)
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     
     // Choose your backend (or both)
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")    // Apache Jena backend
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")   // Eclipse RDF4J backend
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")    // Apache Jena backend
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")   // Eclipse RDF4J backend
+
+    // Optional: Kotlin SPARQL query DSL — omit if you only pass string SPARQL
+    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
+    // Optional: Kotlin SHACL shapes DSL (shacl {}) — pulls sparql-lang transitively
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
 }
 
 repositories {
@@ -107,11 +112,16 @@ repositories {
 
 dependencies {
     // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     
     // Backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+
+    // SPARQL query DSL — uncomment if you use select {} / com.geoknoesis.kastor.rdf.sparql.*
+    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
+    // SHACL shapes DSL (shacl {}, Rdf.shacl) — pulls sparql-lang transitively
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
     
     // Testing
     testImplementation(kotlin("test"))
@@ -147,12 +157,15 @@ repositories {
 
 dependencies {
     // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     
     // Backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
-    
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+
+    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+
     // Additional dependencies
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.0")
@@ -213,21 +226,21 @@ java {
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-core</artifactId>
-            <version>0.1.0</version>
+            <version>0.2.0</version>
         </dependency>
         
         <!-- Jena Backend -->
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-jena</artifactId>
-            <version>0.1.0</version>
+            <version>0.2.0</version>
         </dependency>
         
         <!-- RDF4J Backend -->
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-rdf4j</artifactId>
-            <version>0.1.0</version>
+            <version>0.2.0</version>
         </dependency>
         
         <!-- Testing -->
@@ -360,7 +373,7 @@ Kastor RDF supports multiple backends. Choose based on your needs:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
 }
 ```
 
@@ -376,7 +389,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
 }
 ```
 
@@ -392,8 +405,8 @@ You can include both backends and choose at runtime:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
 }
 ```
 
@@ -561,7 +574,7 @@ repositories {
 
 // Check version compatibility
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     // Ensure all modules use same version
 }
 ```

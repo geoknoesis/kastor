@@ -2,15 +2,19 @@
 
 {% include version-banner.md %}
 
-## What you'll learn
-- Parse RDF from strings, files, or URLs into graphs
-- Use format-based API that works with any provider
-- Use type-safe `RdfFormat` for parsing
+> **Documentation mode: How-to guide** — task-focused steps. **Explanation:** [RDF Fundamentals](../concepts/rdf-fundamentals.md). **Reference:** parsing overloads and formats → [API](../api/api-reference.md), `RdfFormat`.
+
+## Problem
+
+Load RDF from **strings**, **files**, or **URLs** into a Kastor **graph** (and optionally merge into a **repository** for querying).
 
 ## Prerequisites
-- A provider that supports parsing (automatically discovered)
 
-## Step 1: Parse RDF from a string
+- A JVM dependency that includes **`rdf-core`** and at least one **provider** that supports the format (e.g. `rdf-jena` / `rdf-rdf4j`). Providers are usually discovered automatically on JVM.
+
+## Steps
+
+### Step 1: Parse RDF from a string
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -26,7 +30,7 @@ val graph = Rdf.parse(turtleData, format = RdfFormat.TURTLE)
 println("Parsed triples: ${graph.getTriples().size}")
 ```
 
-## Step 2: Parse RDF from a file
+### Step 2: Parse RDF from a file
 
 ```kotlin
 val graph = Rdf.parseFromFile("data.ttl", format = RdfFormat.TURTLE)
@@ -34,7 +38,7 @@ val graph = Rdf.parseFromFile("data.ttl", format = RdfFormat.TURTLE)
 val graph2 = Rdf.parseFromFile("data.jsonld", format = RdfFormat.JSON_LD)
 ```
 
-## Step 3: Parse RDF from a URL
+### Step 3: Parse RDF from a URL
 
 ```kotlin
 val remoteGraph = Rdf.parseFromUrl(
@@ -59,7 +63,7 @@ val future = Rdf.parseFromUrlAsync(
 val remoteGraphAsync = future.get() // or attach callbacks
 ```
 
-## Step 4: Add parsed graph to a repository
+### Step 4: Add parsed graph to a repository
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -81,14 +85,22 @@ results.forEach { binding ->
 }
 ```
 
-## Expected output
+## Validation
+
+You should see non-empty triple counts after parse; the Step 4 snippet should print bindings similar to:
 
 ```
 Parsed triples: 2
 Alice Johnson is 30 years old
 ```
 
-## Supported formats
+## Troubleshooting
+
+- **`RdfFormatException`** — no provider registered for that format; add a backend module or register a provider explicitly ([Android/KMP](../guides/android-kmp.md) often requires explicit registration).
+- **Empty graph** — wrong **syntax** vs declared `RdfFormat`, or empty input.
+- **URL timeouts** — remote fetch uses timeout protection (~30s); check network or mirror the file locally.
+
+## Supported formats (quick lookup)
 
 The following formats are supported:
 
@@ -97,12 +109,8 @@ The following formats are supported:
 - **RDF/XML**: `RdfFormat.RDF_XML`
 - **N-Triples**: `RdfFormat.N_TRIPLES`
 
-## Notes
-- The API is **provider-agnostic** - it automatically discovers and uses available providers
-- Use `RdfFormat` enum for **type-safe** format specification
-- If no provider supports the requested format, a `RdfFormatException` is thrown
-- The parsing automatically uses the first available provider that supports the format
-- File paths are relative to the current working directory
-- URL parsing includes timeout protection (30 seconds)
+## Related tasks
 
-
+- [Serialize RDF](how-to-serialize-rdf.md)
+- [Use datasets / named graphs](how-to-use-datasets.md)
+- [Test RDF graphs](how-to-test-rdf-graphs.md)

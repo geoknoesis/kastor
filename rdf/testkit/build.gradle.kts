@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
   api(project(":rdf:core"))
-  api(project(":rdf:jena"))
+  implementation(project(":rdf:jena"))
   implementation(libs.jena.arq)
 }
 

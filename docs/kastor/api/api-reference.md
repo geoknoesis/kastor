@@ -2,6 +2,8 @@
 
 Complete reference documentation for the Kastor RDF API.
 
+**Terms:** Shared vocabulary (**repository**, **graph**, **literal**, **provider**, …) lives in the [**Glossary**](../concepts/glossary.md). For how reference pages relate to tutorials and how-tos, see [**How documentation fits together**](../getting-started/documentation-guide.md).
+
 ## 📋 Table of Contents
 
 - [Core Interfaces](#-core-interfaces)

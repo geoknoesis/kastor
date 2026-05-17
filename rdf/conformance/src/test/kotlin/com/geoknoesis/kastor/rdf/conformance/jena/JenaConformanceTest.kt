@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.conformance.TestData
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import org.junit.jupiter.api.DynamicNode
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.TestFactory
 
 /**
@@ -19,7 +20,10 @@ import org.junit.jupiter.api.TestFactory
  *
  * The system property `conformance.includeUnapproved=true` opts in to running
  * tests whose `rdft:approval` is not `rdft:Approved`.
+ *
+ * Tagged **`w3c-rdf12-full`** — excluded from the **`conformanceSmokeTest`** task; requires W3C submodule.
  */
+@Tag("w3c-rdf12-full")
 class JenaConformanceTest {
 
     private val provider = JenaProvider()

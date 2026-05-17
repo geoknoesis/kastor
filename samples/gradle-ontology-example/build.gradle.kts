@@ -8,8 +8,9 @@ repositories {
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
 }
 
 // Configure Kastor Gen plugin

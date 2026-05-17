@@ -19,9 +19,21 @@ dependencies {
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// The conformance suite is large and slow; keep it out of the default `check`
-// chain so contributors who run `./gradlew check` don't pay the cost. CI calls
-// `:rdf:conformance:test` explicitly.
+// The full W3C corpus is large; it is not part of `check`. Use `conformanceSmokeTest`
+// for the bundled fixture, or `:rdf:conformance:test` after initializing the submodule.
 tasks.named("check") {
   setDependsOn(dependsOn.filterNot { it.toString().contains("test") })
+}
+
+/** Fast harness check: bundled fixture only ([Rdf12ConformanceSmokeTest]), no submodule. */
+tasks.register<Test>("conformanceSmokeTest") {
+  group = "verification"
+  description =
+    "Runs RDF 1.2 conformance harness against bundled fixtures only (fast; no W3C submodule)."
+  val mainTest = tasks.named<Test>("test").get()
+  testClassesDirs = mainTest.testClassesDirs
+  classpath = mainTest.classpath
+  useJUnitPlatform {
+    includeTags("conformance-smoke")
+  }
 }

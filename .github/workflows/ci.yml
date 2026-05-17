@@ -25,8 +25,15 @@ jobs:
           cache: gradle
 
       - name: Gradle test
-        # Conformance (:rdf:conformance) is run separately for releases; see CONTRIBUTING.md
         run: ./gradlew test --no-daemon -x :rdf:conformance:test
+        shell: bash
+
+      - name: Dependency health (advisory)
+        run: ./gradlew buildHealth --no-daemon
+        shell: bash
+
+      - name: RDF 1.2 conformance smoke
+        run: ./gradlew :rdf:conformance:conformanceSmokeTest --no-daemon
         shell: bash
 
       - name: Compile SHACL benchmark modules

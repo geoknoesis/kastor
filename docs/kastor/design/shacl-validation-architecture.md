@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Architectural intent (evolves with SHACL 1.2 W3C drafts). **Authority split:** (1) **Policies and layering** in this document are normative for behavior—if the implementation disagrees, treat the **code as wrong** until an issue/PR or an explicit doc amendment. (2) **Kotlin signatures and existing type members** in `rdf/shacl-validation` are normative for the API surface—if this document disagrees, treat the **doc as wrong** and fix the appendix/prose. Summary tables: [Appendix A](#appendix-a-contract-surfaces-and-source-of-truth). |
+| **Status** | Architectural intent (evolves with SHACL 1.2 W3C drafts). **Authority split:** (1) **Policies and layering** in this document are normative for behavior—if the implementation disagrees, treat the **code as wrong** until an issue/PR or an explicit doc amendment. (2) **Kotlin signatures and existing type members** in `rdf/shacl/validation` are normative for the API surface—if this document disagrees, treat the **doc as wrong** and fix the appendix/prose. Summary tables: [Appendix A](#appendix-a-contract-surfaces-and-source-of-truth). |
 | **Audience** | Kastor contributors, integrators choosing validation backends |
-| **Modules** | `rdf/shacl-validation`, future `shacl-validation-*` bridge artifacts, native engine submodules |
+| **Modules** | `rdf/shacl/validation`, future `shacl-validation-*` bridge artifacts, native engine submodules |
 
 This document describes how Kastor supports **SHACL validation** in two complementary ways: a **native** Kotlin implementation on Kastor’s RDF and SPARQL stack, and **pluggable** adapters to existing SHACL engines (Jena, RDF4J, and others). User-facing how-to content remains in [SHACL validation](../features/shacl-validation.md), [How to validate SHACL](../guides/how-to-validate-shacl.md), and [Ontology Quality](../features/ontology-quality.md) / [How to check ontology quality](../guides/how-to-ontology-quality.md).
 
@@ -44,7 +44,7 @@ This section makes explicit how the earlier goals map to **DDD** and **Clean Arc
 
 - **Bounded context:** **SHACL Validation** — vocabulary, constraint semantics, path algebra, severity, and reporting are modeled here using **ubiquitous language** aligned with the W3C specs (`NodeShape`, `PropertyShape`, `FocusNode`, `ValidationReport`, `Severity`, `ConstraintComponent`, and so on). Types in user-facing APIs should read like the spec, not like a particular backend’s internals.
 - **Core domain vs generic subdomain:** Constraint evaluation and path reasoning are **core** to Kastor’s RDF platform; **bridge adapters** are a **supporting subdomain** (integration), implemented as thin anti-corruption layers over Jena/RDF4J.
-- **Domain services:** Cross-cutting pure operations (path normalization, constraint dispatch, plan selection) are **stateless domain services** over immutable compiled structures (**`CompiledShapeGraph`** — planned native compile artifact, not yet a public type in `rdf/shacl-validation` — and **constraint plans**), not methods on `RdfGraph` or SPARQL engine types.
+- **Domain services:** Cross-cutting pure operations (path normalization, constraint dispatch, plan selection) are **stateless domain services** over immutable compiled structures (**`CompiledShapeGraph`** — planned native compile artifact, not yet a public type in `rdf/shacl/validation` — and **constraint plans**), not methods on `RdfGraph` or SPARQL engine types.
 - **Policies:** Provider selection (`EnginePreference`, `priority`, `providerId`) is an explicit **domain policy** expressed in configuration, not hidden inside static singletons.
 
 ### 3.2 Clean Architecture & dependency rule
@@ -77,7 +77,7 @@ Dependencies point **inward**: outer layers depend on inner abstractions; the do
 
 - **In-process JavaScript/Python SHACL extensions** as required dependencies (optional sandboxes may appear later behind capability flags).
 - **SHACL UI form rendering** inside `shacl-validation` (vocabulary consumption and label algorithms may live in higher layers or Kastor Gen).
-- **Replacing** Kastor Gen’s materialization-time `ValidationContext` adapters; repository-level SHACL and Gen validation remain related but distinct entry points. This design focuses on **`ShaclValidator` / `rdf/shacl-validation`**.
+- **Replacing** Kastor Gen’s materialization-time `ValidationContext` adapters; repository-level SHACL and Gen validation remain related but distinct entry points. This design focuses on **`ShaclValidator` / `rdf/shacl/validation`**.
 - **Kotlin Multiplatform discovery:** `java.util.ServiceLoader` ties provider discovery to the **JVM**; a future multiplatform Kastor would need an alternate registry SPI. Out of scope until such a platform target exists.
 
 ---
@@ -229,7 +229,7 @@ For workload tiers, phase separation (parse / convert / compile / validate), har
 - **Macro** comparisons (native vs Jena vs RDF4J): same runner image; **3 fixed random seeds** for stochastic graph generators; report **median** and **p95** wall time and **allocated bytes** (e.g. JFR or JMH `-prof gc`).
 - **Regression gates (starting point for CI config):** a PR **fails** if native median regresses **>10%** or p95 **>25%** vs the **checked-in baseline** file for that scenario (see below), unless explicitly waived with a tracked issue.
 - **Runner noise:** `ubuntu-latest` **CPU models vary** across GitHub-hosted runners. Gates are defined as **relative** (PR vs checked-in baseline, or native vs Jena/RDF4J **in the same job**). When a job recomputes baselines on the fly, compare **within that job**; absolute numbers drift across days—expected.
-- **Baselines:** Store committed numbers or ratio bands under **`benchmarks/shacl/baselines/`** (or the module that hosts JMH) with a short **README** describing regeneration (`./gradlew jmh` or equivalent). Reviewers compare PR output to those files—**not** ad hoc judgement.
+- **Baselines:** Store committed numbers or ratio bands under **`benchmarks/shacl/jmh/baselines/`** (or the module that hosts JMH) with a short **README** describing regeneration (`./gradlew jmh` or equivalent). Reviewers compare PR output to those files—**not** ad hoc judgement.
 
 **Compile-time vs run-time**
 
@@ -336,7 +336,7 @@ Exit criterion for P7: duplicated conversion code **removed** or thin-wrapped; d
 | **W3C SHACL test manifests** | Primary labeled-conformance gate for the **native** provider |
 | **Internal supplementary suite** | Spec-adjacent and product edge cases not covered by manifests: recursion, imports, datasets ([§9](#9-native-engine-architecture-summary)), bridge fidelity ([§10.1](#101-bridge-to-kastor-report-fidelity-normative)), production regressions |
 | **Bridge tests** | Round-trip a small fixed corpus for each bridge artifact |
-| **Native–bridge parity** | **Optional but owned:** diff **normalized** reports (see [§13.1](#131-parity-report-normalization)) for a fixed manifest subset; default = **nightly** on `main` and **required on release branches** for published bridge modules; **not** a per-PR gate unless the PR touches that bridge (then **required**). Document the job owner in `benchmarks/shacl/` or bridge `README`. |
+| **Native–bridge parity** | **Optional but owned:** diff **normalized** reports (see [§13.1](#131-parity-report-normalization)) for a fixed manifest subset; default = **nightly** on `main` and **required on release branches** for published bridge modules; **not** a per-PR gate unless the PR touches that bridge (then **required**). Document the job owner in `benchmarks/shacl/jmh/` or bridge `README`. |
 | **Performance** | JMH micro-benchmarks on hot paths; macro scenarios vs Jena/RDF4J on fixed hardware profile; allocation tracking; large `targetClass` and path-heavy shapes; optional parallel validation gates |
 
 ### 13.1 Parity report normalization
@@ -351,7 +351,7 @@ Textual diffs of `ValidationReport` or RDF **`sh:ValidationReport`** are insuffi
 
 **RDF `sh:ValidationReport` track (P1c-era):** parity on serialized RDF is **stricter** (`sh:value` term types, literal facets, blank-node identity in results). Extend step 1 with explicit **RDFC-1.0 serialization** for each `sh:ValidationResult` resource and compare **canonical Turtle or N-Quads** lines, or normalize to the same row model after **RDF→row** projection. Specify in the parity job README when bridge jobs promote to RDF-level diffs.
 
-Implement normalization **once** in test infrastructure under `rdf/shacl-validation` or `benchmarks/shacl/`; do not require each bridge to hand-roll.
+Implement normalization **once** in test infrastructure under `rdf/shacl/validation` or `benchmarks/shacl/jmh/`; do not require each bridge to hand-roll.
 
 ---
 
@@ -362,7 +362,7 @@ Phases below are **ordered**; each should add **exit criteria** in the issue tra
 | Phase | Deliverable |
 |-------|-------------|
 | **P0a** | Registry: `providerId`, `EnginePreference`, `priority`, failure semantics ([§7](#7-provider-resolution-required-hardening)); typed **`ShaclValidationException`** hierarchy ([Appendix A](#appendix-a-contract-surfaces-and-source-of-truth)); granular **`ValidatorCapabilities`** + `AUTO` satisfaction ([§7](#7-provider-resolution-required-hardening), [§11](#11-capabilities-and-profiles)); nested **`ValidationConfig`** value types (`CacheConfig`, `StreamingConfig`, `DatasetConfig`) ([Appendix A](#appendix-a-contract-surfaces-and-source-of-truth)). **Optional split:** if sealed **`ValidationProfile`** migration blocks integrators, land **`P0a.1`** immediately after for profile types only ([§11](#11-capabilities-and-profiles)). |
-| **P0b** | **Benchmark harness** (JMH + macro corpus), baselines under `benchmarks/shacl/baselines/`, CI thresholds ([§9.3](#93-performance-engineering-jvm)); does **not** block P1a on functional work |
+| **P0b** | **Benchmark harness** (JMH + macro corpus), baselines under `benchmarks/shacl/jmh/baselines/`, CI thresholds ([§9.3](#93-performance-engineering-jvm)); does **not** block P1a on functional work |
 | P1a | Native: **compile** shapes → `CompiledShapeGraph`, **full path engine**, **non-SPARQL** Core constraints + unit/W3C slice coverage |
 | P1b | Native: **full SHACL 1.2 Core** including logical operators, qualified value shapes, remaining Core components, and **triple-term shape parameters** per [§5.1](#51-rdf-12-triple-terms-native-policy) |
 | P1c | Native: RDF **`sh:ValidationReport`** emission and **parity** checks vs in-memory `ValidationReport` |
@@ -392,12 +392,12 @@ Phases below are **ordered**; each should add **exit criteria** in the issue tra
 | Kind of statement | If doc vs code disagree |
 |-------------------|-------------------------|
 | **Policy** (this document: §7 failure modes, §9.1 recursion, §9.2 dataset errors, §10.1 fidelity, digest rules, …) | **Code is wrong** until an issue/PR aligns implementation, or the doc is explicitly revised after team agreement. |
-| **Signatures** (method names, parameter lists, existing `data class` fields) | **Doc is wrong**; update this appendix and prose to match `rdf/shacl-validation`. |
+| **Signatures** (method names, parameter lists, existing `data class` fields) | **Doc is wrong**; update this appendix and prose to match `rdf/shacl/validation`. |
 | **Documented throwable behavior** of public API methods (which `ShaclValidationException` subclasses may be thrown and when) | **Policy**; implementation and **KDoc `@throws`** must match this document. Throwing `IllegalStateException` where this doc requires `ShapesGraphNotFoundException` is **wrong code**. |
 
-Authoritative **Kotlin types** today live in the **`rdf/shacl-validation`** module (`com.geoknoesis.kastor.rdf.shacl`). This appendix lists the **application boundary** and **planned** additions.
+Authoritative **Kotlin types** today live in the **`rdf/shacl/validation`** module (`com.geoknoesis.kastor.rdf.shacl`). This appendix lists the **application boundary** and **planned** additions.
 
-| Surface | Source file (relative to `rdf/shacl-validation/src/main/kotlin/.../rdf/shacl/`) | Role |
+| Surface | Source file (relative to `rdf/shacl/validation/src/main/kotlin/.../rdf/shacl/`) | Role |
 |---------|---------------------------------------------------------------------|------|
 | `ShaclValidatorProvider` | `ShaclValidatorProvider.kt` | Provider SPI: `getType()`, `createValidator`, `getCapabilities()`, profiles |
 | `ShaclValidator` | `ShaclValidatorProvider.kt` | Primary port: `validate`, `validateResource`, `conforms`, … |
@@ -442,7 +442,7 @@ Integrators should treat **`META-INF/services`** registration and **`ValidationC
 
 **After P0a ships** (and optionally **P0a.1**), cut **v2.0** of this document so prose matches shipped types. Suggested checklist—**not** an additional design round:
 
-1. **Status block:** Add **implementation-backed** wording and a **git tag or commit** (or release version) for the `rdf/shacl-validation` surface the doc describes.
+1. **Status block:** Add **implementation-backed** wording and a **git tag or commit** (or release version) for the `rdf/shacl/validation` surface the doc describes.
 2. **Appendix A:** Turn **planned** rows into **current** rows; add **file paths** (and optionally line ranges) for `ShaclValidationException` hierarchy, nested `ValidationConfig`, granular `ValidatorCapabilities`, default registry **INFO** logging.
 3. **§13.1 RDF track:** When P1c lands, specify literal/datatype normalization, **BCP 47** language-tag comparison, and **`sh:value` / blank-node** handling for `sh:ValidationReport` parity (extend beyond the in-memory track).
 4. **§11:** Revisit **capability URIs vs booleans** with real integrator data after P1c ([§11](#11-capabilities-and-profiles) v2 note).

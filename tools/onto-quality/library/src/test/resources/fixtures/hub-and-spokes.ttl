@@ -1,0 +1,39 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix ex:     <http://example.org/> .
+
+<http://example.org/onto> a owl:Ontology ; rdfs:label "Test ontology" .
+
+# Hub class with 20 subclasses — high fan-out, central
+ex:Hub a owl:Class ; rdfs:label "Hub" .
+ex:Sub01 a owl:Class ; rdfs:label "Sub01" ; rdfs:subClassOf ex:Hub .
+ex:Sub02 a owl:Class ; rdfs:label "Sub02" ; rdfs:subClassOf ex:Hub .
+ex:Sub03 a owl:Class ; rdfs:label "Sub03" ; rdfs:subClassOf ex:Hub .
+ex:Sub04 a owl:Class ; rdfs:label "Sub04" ; rdfs:subClassOf ex:Hub .
+ex:Sub05 a owl:Class ; rdfs:label "Sub05" ; rdfs:subClassOf ex:Hub .
+ex:Sub06 a owl:Class ; rdfs:label "Sub06" ; rdfs:subClassOf ex:Hub .
+ex:Sub07 a owl:Class ; rdfs:label "Sub07" ; rdfs:subClassOf ex:Hub .
+ex:Sub08 a owl:Class ; rdfs:label "Sub08" ; rdfs:subClassOf ex:Hub .
+ex:Sub09 a owl:Class ; rdfs:label "Sub09" ; rdfs:subClassOf ex:Hub .
+ex:Sub10 a owl:Class ; rdfs:label "Sub10" ; rdfs:subClassOf ex:Hub .
+ex:Sub11 a owl:Class ; rdfs:label "Sub11" ; rdfs:subClassOf ex:Hub .
+ex:Sub12 a owl:Class ; rdfs:label "Sub12" ; rdfs:subClassOf ex:Hub .
+ex:Sub13 a owl:Class ; rdfs:label "Sub13" ; rdfs:subClassOf ex:Hub .
+ex:Sub14 a owl:Class ; rdfs:label "Sub14" ; rdfs:subClassOf ex:Hub .
+ex:Sub15 a owl:Class ; rdfs:label "Sub15" ; rdfs:subClassOf ex:Hub .
+ex:Sub16 a owl:Class ; rdfs:label "Sub16" ; rdfs:subClassOf ex:Hub .
+ex:Sub17 a owl:Class ; rdfs:label "Sub17" ; rdfs:subClassOf ex:Hub .
+ex:Sub18 a owl:Class ; rdfs:label "Sub18" ; rdfs:subClassOf ex:Hub .
+ex:Sub19 a owl:Class ; rdfs:label "Sub19" ; rdfs:subClassOf ex:Hub .
+ex:Sub20 a owl:Class ; rdfs:label "Sub20" ; rdfs:subClassOf ex:Hub .
+
+# Peripheral class with no relationships — low importance
+ex:Peripheral a owl:Class ; rdfs:label "Peripheral" .
+
+# A property referencing the Hub — increases its incoming-properties signal
+ex:hubsProperty
+    a            owl:ObjectProperty ;
+    rdfs:label   "hubs property" ;
+    rdfs:domain  ex:Hub ;
+    rdfs:range   ex:Hub .

@@ -27,6 +27,10 @@ Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces 
 
 For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 
+**Contributors:** Gradle modules and dependency layers are summarized in [Repository architecture](concepts/architecture.md).
+
+**Reading the docs:** [How documentation fits together](getting-started/documentation-guide.md) · [Glossary](concepts/glossary.md).
+
 ## 🌟 Features
 
 ### **Core Capabilities**
@@ -53,8 +57,9 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 ```kotlin
 // Add to your build.gradle.kts
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0") // or rdf-rdf4j
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0") // or rdf-rdf4j
+    // Optional: Kotlin `select {}` → sparql-lang; `shacl {}` / Rdf.shacl → rdf-shacl-dsl
 }
 ```
 

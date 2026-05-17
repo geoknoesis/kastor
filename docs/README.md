@@ -33,10 +33,12 @@ Welcome to the comprehensive documentation for Kastor - a modern Kotlin RDF fram
 The documentation is structured into five pillars, each with a distinct intent:
 
 - **Getting Started** — install, create a graph, run a first query: [Overview](kastor/getting-started/README.md)
-- **Concepts** — RDF mental model, terminology, and standards context: [Concepts](kastor/concepts/README.md)
+- **Concepts** — RDF mental model, terminology, and standards context: [Concepts](kastor/concepts/README.md) · [**Glossary**](kastor/concepts/glossary.md)
 - **How‑To Guides** — task‑oriented workflows with reproducible steps: [Guides](kastor/guides/README.md)
 - **Reference** — definitive API and DSL behavior: [Reference](kastor/reference/README.md)
 - **Kastor Gen** — ontology-driven Kotlin (KSP, Gradle plugin, runtime): [Overview](kastor-gen/README.md)
+
+**How to navigate:** [How documentation fits together](kastor/getting-started/documentation-guide.md) (Diátaxis: tutorials vs how-tos vs explanations vs reference). Shared terms are defined once in the [**Glossary**](kastor/concepts/glossary.md).
 
 ## 🏗️ Architecture Overview
 
@@ -60,12 +62,12 @@ Kastor Framework
 - **[Transactions](kastor/api/transactions.md)** - ACID transaction support
 - **[How-To Guides](kastor/guides/README.md)** - Task-oriented workflows
 
-#### **Reasoning** (`rdf/reasoning`)
+#### **Reasoning** (`rdf/reasoning/facade`, HermiT: `rdf/reasoning/hermit`)
 - **[Reasoning Guide](kastor/features/reasoning.md)** - RDFS, OWL reasoning
 - **[Provider Architecture](kastor/features/reasoning.md#providers)** - Pluggable reasoners
 - **[Performance](kastor/features/reasoning.md#performance)** - Optimization strategies
 
-#### **SHACL Validation** (`rdf/shacl-validation`)
+#### **SHACL Validation** (`rdf/shacl/validation`)
 - **[Validation Guide](kastor/features/shacl-validation.md)** - Data validation
 - **[Quick Start](kastor/features/shacl-validation.md#quick-start)** - Get started in minutes
 - **[Constraint Types](kastor/features/shacl-validation.md#constraint-types)** - Available constraints

@@ -1,0 +1,8 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<http://example.org/p23-fix/> a owl:Ontology ;
+    rdfs:label "P23 mirror class"@en .
+
+<http://example.org/p23-fix/Integer> a owl:Class ;
+    rdfs:label "Integer"@en .

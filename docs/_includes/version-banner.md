@@ -1,2 +1,2 @@
-> **Version**: Kastor RDF SDK `0.1.0` · Kotlin `1.9+` · Java `17+`
+> **Version**: Kastor RDF SDK `0.2.0` · Kotlin `2.x` · Java `17+`
 

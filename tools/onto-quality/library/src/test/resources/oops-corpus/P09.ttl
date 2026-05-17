@@ -1,0 +1,6 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# OOPS P09 proxy: owl:Ontology without rdfs:label (OntologyMetadataShape).
+<http://example.org/oops-fixtures/p09> a owl:Ontology ;
+    rdfs:comment "Synthetic fixture: missing ontology rdfs:label for P09."@en .

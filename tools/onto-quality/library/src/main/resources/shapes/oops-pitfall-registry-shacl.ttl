@@ -1,0 +1,180 @@
+# OOPS! P01–P41 — deactivated documentation shapes (machine-readable catalogue).
+# Kastor K01–K07 — pipeline / reasoning extensions (documented only here unless an active shape references the same code).
+# Load with BundledCatalogs.OOPS_PITFALL_REGISTRY; shapes do not constrain data (sh:deactivated true).
+# Active checks for subsets of these pitfalls live in owl-quality-shacl.ttl, embedding-quality-shacl.ttl, etc.
+
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix oqsh: <http://example.org/owl-quality-shacl#> .
+
+<http://example.org/oops-pitfall-registry>
+    a            owl:Ontology ;
+    rdfs:label   "OOPS! pitfall registry (documentation)"@en ;
+    rdfs:comment "Deactivated SHACL NodeShapes listing the full OntOlogy Pitfall Scanner catalogue P01–P41 for tooling and portals. See https://oops.linkeddata.es/catalogue.jsp"@en ;
+    dct:creator  "Kastor onto-quality"@en ;
+    owl:imports  <http://www.w3.org/ns/shacl> ;
+    sh:declare   [ sh:prefix "rdf" ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                 [ sh:prefix "rdfs" ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                 [ sh:prefix "owl" ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                 [ sh:prefix "sh" ; sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ] ,
+                 [ sh:prefix "skos" ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                 [ sh:prefix "oqsh" ; sh:namespace "http://example.org/owl-quality-shacl#"^^xsd:anyURI ] .
+
+oqsh:OopsDoc_P01 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P01" ;
+  rdfs:label "OOPS! P01 — Creating polysemous elements"@en ;
+  skos:definition "An ontology element whose identifier represents more than one conceptual idea."@en .
+oqsh:OopsDoc_P02 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P02" ;
+  rdfs:label "OOPS! P02 — Creating synonyms as classes"@en ;
+  skos:definition "Synonymous classes declared as equivalent in the same namespace."@en .
+oqsh:OopsDoc_P03 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P03" ;
+  rdfs:label "OOPS! P03 — Relationship 'is' instead of rdfs:subClassOf / rdf:type / owl:sameAs"@en ;
+  skos:definition "Meta-predicate naming instead of OWL primitives for typing or subsumption."@en .
+oqsh:OopsDoc_P04 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P04" ;
+  rdfs:label "OOPS! P04 — Unconnected ontology elements"@en ;
+  skos:definition "Classes or properties isolated from the rest of the ontology."@en .
+oqsh:OopsDoc_P05 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P05" ;
+  rdfs:label "OOPS! P05 — Wrong inverse relationships"@en ;
+  skos:definition "Two relationships declared inverse when they are not necessarily inverse (often needs DL reasoning)."@en .
+oqsh:OopsDoc_P06 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P06" ;
+  rdfs:label "OOPS! P06 — Cycles in a class hierarchy"@en ;
+  skos:definition "Class A subclass of B and B subclass of A (directly or indirectly)."@en .
+oqsh:OopsDoc_P07 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P07" ;
+  rdfs:label "OOPS! P07 — Merging different concepts in the same class"@en ;
+  skos:definition "A class name referring to two or more different concepts."@en .
+oqsh:OopsDoc_P08 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P08" ;
+  rdfs:label "OOPS! P08 — Missing annotations"@en ;
+  skos:definition "Ontology elements lack human-readable labels or descriptions."@en .
+oqsh:OopsDoc_P09 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P09" ;
+  rdfs:label "OOPS! P09 — Missing domain information"@en ;
+  skos:definition "Requirements or domain knowledge not reflected in the ontology (catalogue sense)."@en .
+oqsh:OopsDoc_P10 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P10" ;
+  rdfs:label "OOPS! P10 — Missing disjointness"@en ;
+  skos:definition "Classes or properties that should be disjoint lack disjointness axioms (policy / open-world sensitive)."@en .
+oqsh:OopsDoc_P11 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P11" ;
+  rdfs:label "OOPS! P11 — Missing domain or range"@en ;
+  skos:definition "Object or datatype properties without domain and/or range."@en .
+oqsh:OopsDoc_P12 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P12" ;
+  rdfs:label "OOPS! P12 — Equivalent properties not explicitly declared"@en ;
+  skos:definition "Duplicated relationships without owl:equivalentProperty."@en .
+oqsh:OopsDoc_P13 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P13" ;
+  rdfs:label "OOPS! P13 — Inverse relationships not explicitly declared"@en ;
+  skos:definition "Relationships lack declared inverses where convention expects them."@en .
+oqsh:OopsDoc_P14 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P14" ;
+  rdfs:label "OOPS! P14 — Misusing owl:allValuesFrom"@en ;
+  skos:definition "Universal restriction used where an existential restriction was intended."@en .
+oqsh:OopsDoc_P15 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P15" ;
+  rdfs:label "OOPS! P15 — 'Some not' vs 'not some' confusion"@en ;
+  skos:definition "Existential and negation scoping error in restrictions."@en .
+oqsh:OopsDoc_P16 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P16" ;
+  rdfs:label "OOPS! P16 — Primitive class instead of defined class"@en ;
+  skos:definition "Necessary-only class used where equivalentClass definitions would enable desired classification."@en .
+oqsh:OopsDoc_P17 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P17" ;
+  rdfs:label "OOPS! P17 — Overspecializing a hierarchy"@en ;
+  skos:definition "Leaf classes that will never have instances (modelling judgement)."@en .
+oqsh:OopsDoc_P18 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P18" ;
+  rdfs:label "OOPS! P18 — Overspecializing domain or range"@en ;
+  skos:definition "Domain/range too narrow for actual use."@en .
+oqsh:OopsDoc_P19 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P19" ;
+  rdfs:label "OOPS! P19 — Multiple rdfs:domain / rdfs:range (OWL conjunction semantics)"@en ;
+  skos:definition "Several domain/range triples interpreted as intersection; common authoring mistake."@en .
+oqsh:OopsDoc_P20 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P20" ;
+  rdfs:label "OOPS! P20 — Misusing ontology annotations"@en ;
+  skos:definition "Annotation properties misused or empty / duplicated label-comment pairs."@en .
+oqsh:OopsDoc_P21 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P21" ;
+  rdfs:label "OOPS! P21 — Miscellaneous / catch-all class"@en ;
+  skos:definition "A class only to hold instances that do not fit siblings."@en .
+oqsh:OopsDoc_P22 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P22" ;
+  rdfs:label "OOPS! P22 — Inconsistent naming conventions"@en ;
+  skos:definition "Mixed lexical conventions for local names."@en .
+oqsh:OopsDoc_P23 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P23" ;
+  rdfs:label "OOPS! P23 — Duplicating implementation-language datatypes as classes"@en ;
+  skos:definition "Classes and individuals mirroring XSD types already in the platform."@en .
+oqsh:OopsDoc_P24 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P24" ;
+  rdfs:label "OOPS! P24 — Recursive definitions"@en ;
+  skos:definition "Entity used in its own class or property definition."@en .
+oqsh:OopsDoc_P25 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P25" ;
+  rdfs:label "OOPS! P25 — Relationship inverse of itself"@en ;
+  skos:definition "owl:inverseOf self — should often be owl:SymmetricProperty."@en .
+oqsh:OopsDoc_P26 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P26" ;
+  rdfs:label "OOPS! P26 — Inverse declared for a symmetric property"@en ;
+  skos:definition "Symmetric property also declares owl:inverseOf to another property."@en .
+oqsh:OopsDoc_P27 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P27" ;
+  rdfs:label "OOPS! P27 — Wrong equivalent properties"@en ;
+  skos:definition "owl:equivalentProperty between non-equivalent relations (often needs reasoning)."@en .
+oqsh:OopsDoc_P28 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P28" ;
+  rdfs:label "OOPS! P28 — Wrong symmetric relationships"@en ;
+  skos:definition "Property marked symmetric when not semantically symmetric."@en .
+oqsh:OopsDoc_P29 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P29" ;
+  rdfs:label "OOPS! P29 — Wrong transitive relationships"@en ;
+  skos:definition "Property marked transitive when not semantically transitive."@en .
+oqsh:OopsDoc_P30 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P30" ;
+  rdfs:label "OOPS! P30 — Equivalent classes not explicitly declared"@en ;
+  skos:definition "Duplicate concepts meant to align across reuse scenarios."@en .
+oqsh:OopsDoc_P31 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P31" ;
+  rdfs:label "OOPS! P31 — Wrong equivalent classes"@en ;
+  skos:definition "owl:equivalentClass between non-equivalent classes."@en .
+oqsh:OopsDoc_P32 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P32" ;
+  rdfs:label "OOPS! P32 — Several classes with the same label"@en ;
+  skos:definition "Ambiguous naming annotations shared across classes."@en .
+oqsh:OopsDoc_P33 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P33" ;
+  rdfs:label "OOPS! P33 — Property chain with just one property"@en ;
+  skos:definition "owl:propertyChainAxiom antecedent lists only one property."@en .
+oqsh:OopsDoc_P34 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P34" ;
+  rdfs:label "OOPS! P34 — Untyped class"@en ;
+  skos:definition "IRI used as class without owl:Class / rdfs:Class declaration."@en .
+oqsh:OopsDoc_P35 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P35" ;
+  rdfs:label "OOPS! P35 — Untyped property"@en ;
+  skos:definition "IRI used as predicate without property declaration."@en .
+oqsh:OopsDoc_P36 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P36" ;
+  rdfs:label "OOPS! P36 — URI contains file extension"@en ;
+  skos:definition "Ontology IRI embeds serialization suffix such as .owl."@en .
+oqsh:OopsDoc_P37 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P37" ;
+  rdfs:label "OOPS! P37 — Ontology not available on the Web"@en ;
+  skos:definition "Ontology or documentation missing at its IRI."@en .
+oqsh:OopsDoc_P38 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P38" ;
+  rdfs:label "OOPS! P38 — No OWL ontology declaration"@en ;
+  skos:definition "Missing owl:Ontology metadata head."@en .
+oqsh:OopsDoc_P39 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P39" ;
+  rdfs:label "OOPS! P39 — Ambiguous namespace"@en ;
+  skos:definition "Neither ontology URI nor xml:base stable / anonymous head issues."@en .
+oqsh:OopsDoc_P40 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P40" ;
+  rdfs:label "OOPS! P40 — Namespace hijacking"@en ;
+  skos:definition "Terms minted under namespaces not controlled by the publisher."@en .
+oqsh:OopsDoc_P41 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "P41" ;
+  rdfs:label "OOPS! P41 — No license declared"@en ;
+  skos:definition "Ontology metadata omits licence information."@en .
+
+# --- Kastor extensions (documented here; active shapes in owl-quality-shacl.ttl; codes K** avoid colliding with Onto-quality N**) ---
+oqsh:KastorDoc_K01 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K01" ;
+  rdfs:label "Kastor K01 — Cyclic owl:imports"@en ;
+  skos:definition "Module import graph contains a cycle (Kastor extension, not an OOPS! id)."@en .
+
+oqsh:KastorDoc_K02 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K02" ;
+  rdfs:label "Kastor K02 — SHACL / rules run on the wrong graph expansion"@en ;
+  skos:definition "Validation assumes asserted graph only (or only materialized) without documenting merge policy — see reasoning-ontology-pitfalls §2."@en .
+
+oqsh:KastorDoc_K03 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K03" ;
+  rdfs:label "Kastor K03 — Entailment regime mismatched to vocabulary"@en ;
+  skos:definition "RDFS-only CI on axioms that need OWL DL (or vice versa); no named profile per pipeline."@en .
+
+oqsh:KastorDoc_K04 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K04" ;
+  rdfs:label "Kastor K04 — Brittle tests over blank-node or restriction structure"@en ;
+  skos:definition "Assertions keyed to serialized bnode IDs or restriction blank nodes instead of stable entailed IRIs."@en .
+
+oqsh:KastorDoc_K05 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K05" ;
+  rdfs:label "Kastor K05 — SPARQL OWL entailment equated with offline materialization"@en ;
+  skos:definition "Triple-store query semantics and HermiT export are treated as interchangeable without a contract."@en .
+
+oqsh:KastorDoc_K06 a sh:NodeShape ; sh:deactivated true ; oqsh:category oqsh:Metadata ; oqsh:pitfall "K06" ;
+  rdfs:label "Kastor K06 — Non-deterministic RdfReasonerProvider selection"@en ;
+  skos:definition "Several ServiceLoader providers support the same ReasonerType; production apps should pin a concrete provider."@en .
+
+oqsh:KastorDoc_K07 a sh:NodeShape ; sh:deactivated true ;
+  oqsh:category oqsh:Semantics ; oqsh:pitfall "K07" ; oqsh:tier oqsh:tier_Reasoning ;
+  rdfs:label "Kastor K07 — OWL DL inconsistency (reasoner preflight)"@en ;
+  skos:definition "The ontology is inconsistent under the configured OWL 2 DL reasoner (e.g. HermiT); every class is trivially unsatisfiable. Fix logical axioms before relying on materialisation or SHACL on the expanded graph."@en .

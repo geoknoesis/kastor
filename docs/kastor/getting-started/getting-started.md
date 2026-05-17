@@ -2,6 +2,33 @@
 
 {% include version-banner.md %}
 
+> **Documentation mode: Tutorial** — learning-oriented. You follow steps toward a first working setup. For comparisons and philosophy without procedures, see **Explanation:** [Design Philosophy](../philosophy.md), [Benefits](benefits.md). For exact dependency coordinates and JVM rules, see **Reference:** [Installation](installation.md).
+
+### Goal
+
+Run Kastor in a Gradle project and obtain an in-memory **repository** you can add triples to.
+
+### Prerequisites
+
+- JDK **17**
+- **Gradle** with Kotlin DSL (see [Installation](installation.md) for detail)
+
+### What you will do
+
+Add dependencies → create `Rdf.memory()` → add triples (DSL or terms) → optional: inspect provider discovery.
+
+### Verify
+
+After **First repository**, running the snippet should complete without errors and give you a usable `RdfRepository`.
+
+### Next steps
+
+- [Quick Start](quick-start.md) — longer guided example  
+- [RDF Fundamentals](../concepts/rdf-fundamentals.md) — **Explanation**  
+- [Core API](../api/core-api.md) — **Reference**
+
+---
+
 ## ⚡ Quick Benefits
 
 Before diving in, here's what Kastor gives you:
@@ -75,16 +102,16 @@ val underlyingModel = graph.toJenaModel()
 - Gradle with Kotlin plugin
 
 ### Install
-Add module dependencies based on the provider you want to use. Coordinates inherit the root group and version from the build: `com.geoknoesis.kastor:rdf-*` at version `0.1.0`.
+Add module dependencies based on the provider you want to use. Published artifacts use group `com.geoknoesis.kastor` (see [Installation](installation.md) for the current version line).
 
 Gradle Kotlin DSL:
 ```kotlin
 dependencies {
-  implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+  implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
   // Choose one or more providers
-  implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-  implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
-  implementation("com.geoknoesis.kastor:rdf-sparql:0.1.0")
+  implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+  implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+  implementation("com.geoknoesis.kastor:rdf-sparql:0.2.0")
 }
 ```
 
@@ -135,6 +162,8 @@ val repo = Rdf.repository(registry) {
 ```
 
 ### Creating RDF Terms
+
+> **Stay in tutorial mode:** this section gives one compact example. Exhaustive literal and DSL variants belong in **Reference:** [API](../api/api-reference.md), [Compact DSL](../api/compact-dsl-guide.md).
 
 The library provides strongly typed functions for creating RDF terms, especially literals. Short aliases are available for common literal types:
 

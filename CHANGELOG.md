@@ -5,7 +5,37 @@ All notable changes to Kastor are documented in this file. The format follows
 to semantic versioning where every breaking change bumps at least the minor
 version while we are in 0.x.
 
-## [0.2.0] - Unreleased
+## [Unreleased]
+
+## [0.2.0] - 2026-05-17
+
+### Changed (repository layout)
+
+- Related modules now live under **domain folders** on disk (`rdf/sparql/`, `rdf/providers/`, `rdf/reasoning/`, `rdf/shacl/`, `tools/onto-quality/`, `benchmarks/shacl/`). **Gradle project paths (`:rdf:jena`, …) are unchanged**; root [`settings.gradle.kts`](settings.gradle.kts) sets `projectDir` where needed. See [**Physical repository layout** in the architecture doc](docs/kastor/concepts/architecture.md#physical-repository-layout).
+- **Docs alignment:** published **`artifactId`** for **``:rdf:shacl-validation`** is **`shacl-validation`** (README tables that said **`rdf-shacl-validation`** were corrected). SHACL benchmark runners and design docs now reference **`benchmarks/shacl/jmh/…`** on disk; a **duplicate** bench tree that mirrored **`jmh/`** next to it was removed.
+
+### Breaking changes (SPARQL modules)
+
+- **`rdf:core` no longer contains the SPARQL AST/DSL** (`com.geoknoesis.kastor.rdf.sparql`),
+  **`ShaclDsl`**, **`Rdf.shacl`**, or **`SelectBuilder.addCommonPrefixes`**.
+  Add **`sparql-lang`** (Gradle **`:rdf:sparql-lang`**) when you use **`select {}`**, **`SparqlRenderer`**, flows/helpers under **`sparql`**, or **`addCommonPrefixes`**.
+  Add **`shacl-dsl`** (Maven **`rdf-shacl-dsl`**, Gradle **`:rdf:shacl-dsl`**) when you use **`shacl {}`** or **`Rdf.shacl`** — it **`api`**-depends on **`sparql-lang`** for SPARQL-shaped constraints.
+  String-marker types (**`SparqlSelectQuery`**, **`UpdateQuery`**, …) remain available transitively via **`rdf-sparql-contract`**
+  (**Maven `artifactId`**, Gradle **`:rdf:sparql-contract`**) when you depend on **`rdf-core`**.
+
+### Breaking changes (Maven `artifactId`s)
+
+Published artifacts now use **`artifactId`** names that match the documentation (**`rdf-core`**, **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**, **`rdf-sparql-contract`**, **`rdf-shacl-dsl`**, **`kastor-gen-runtime`**, **`kastor-gen-processor`**, …) instead of bare Gradle **`project.name`** values (**`core`**, **`jena`**, **`runtime`**, …). Update Maven POMs or external Gradle builds that pinned the old IDs. **`:rdf:rdf4j`** and **`:rdf:sparql`** now declare **`maven-publish`** so they publish under **`rdf-rdf4j`** and **`rdf-sparql`** respectively.
+
+### Breaking changes (adapter classpath)
+
+- **`rdf:jena` and `rdf:rdf4j` no longer depend on `rdf:reasoning`.** Jena- and
+  RDF4J-backed **`RdfReasonerProvider`** implementations (SPI + direct types)
+  live in **`jena-reasoning`** and **`rdf4j-reasoning`**. Add those artifacts
+  when you use **`JenaReasonerProvider`**, **`Rdf4jReasonerProvider`**, or
+  **`ReasonerRegistry`** discovery for those ids—or consume **`kastor-bom`**, which
+  pins them alongside the store adapters. See
+  [Repository architecture — Dependency profiles](docs/kastor/concepts/architecture.md#dependency-profiles-gradle).
 
 ### Breaking changes (RDF 1.2 adoption)
 
@@ -55,6 +85,7 @@ based model that 0.1.x exposed.
 
 ### Changed
 
+- **`rdf-shacl-dsl`** module (**`:rdf:shacl-dsl`**, Maven **`rdf-shacl-dsl`**): **`ShaclDsl`**, **`shacl {}`**, and **`Rdf.shacl`** moved from **`sparql-lang`**; **`shacl-dsl`** **`api`**-depends on **`sparql-lang`** for SPARQL-shaped constraints. **`rdf:shacl-validation`** is unchanged and does not depend on **`shacl-dsl`**.
 - The SPARQL renderer emits `<<( s p o )>>` (RDF 1.2) and `"text"@lang--ltr` /
   `--rtl` for directional language literals.
 - Jena bridge uses `NodeFactory.createTripleTerm(...)` (Jena 5.4+ API);

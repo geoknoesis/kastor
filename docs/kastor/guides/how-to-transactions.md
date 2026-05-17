@@ -2,11 +2,19 @@
 
 {% include version-banner.md %}
 
-## What you'll learn
-- Execute atomic write operations
-- Use read-only transactions when supported
+> **Documentation mode: How-to guide.** **Explanation:** when providers offer atomic writes vs best-effort batches → [Architecture](../concepts/architecture.md). **Reference:** `transaction`, `readTransaction` → [Core API](../api/core-api.md).
 
-## Step 1: Write inside a transaction
+## Problem
+
+- Run **writes** through `transaction { }` so they succeed or fail together when the provider supports it, and use **`readTransaction`** for read-only scopes where available.
+
+## Prerequisites
+
+- **`rdf-core`** and a repository implementation that advertises transaction support if you need real atomicity (check **`getCapabilities()`**). In-memory and embedded stores typically cooperate; remote SPARQL often does not.
+
+## Steps
+
+### Step 1: Write inside a transaction
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -23,7 +31,7 @@ repo.transaction {
 }
 ```
 
-## Step 2: Read inside a read-only transaction
+### Step 2: Read inside a read-only transaction
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
@@ -41,14 +49,20 @@ repo.readTransaction {
 }
 ```
 
-## Expected output
+## Validation
+
+You should see:
 
 ```
 Alice Johnson
 ```
 
-## Notes
-- Use `transaction` for atomic writes.
-- Use `readTransaction` for read-only operations when supported by the provider.
+## Troubleshooting
 
+- **SPARQL / HTTP repositories:** Many providers implement `transaction` as a simple sequential block without rollback or isolation. Do not rely on ACID semantics unless the capability flags say otherwise.
+- **Errors mid-block:** Behavior on failure is provider-specific; consult the backing implementation or run critical workflows against a store with explicit transaction support.
 
+## Related
+
+- [How to Use Datasets](how-to-use-datasets.md)
+- [Error handling](error-handling.md)

@@ -10,6 +10,10 @@
 
 **[Documentation website](https://geoknoesis.github.io/kastor/)** — Jekyll site in [`docs/`](docs/), deployed with [GitHub Actions](.github/workflows/pages.yml). On a fork, enable **Settings → Pages → Build and deployment: GitHub Actions**.
 
+**Reading the docs:** [How documentation fits together](docs/kastor/getting-started/documentation-guide.md) · [Glossary](docs/kastor/concepts/glossary.md).
+
+Contributors: [repository architecture](docs/kastor/concepts/architecture.md) (Gradle modules, layers, and [on-disk layout](docs/kastor/concepts/architecture.md#physical-repository-layout)) and [CONTRIBUTING](CONTRIBUTING.md) (build, tests, CI).
+
 **Kastor** is a modern, comprehensive Kotlin framework for RDF (Resource Description Framework) and semantic web development. It bridges the gap between traditional object-oriented programming and semantic technologies, making RDF accessible and powerful for Kotlin developers.
 
 > 💝 **Support Kastor**: If this project helps you, consider [sponsoring](https://github.com/sponsors/geoknoesis) to ensure continued maintenance and feature development. Organizations using Kastor in production can contact us for enterprise support and custom adaptations.
@@ -115,6 +119,15 @@ val jenaRepo = Rdf.repository {
 
 **Bottom line**: Kastor is a **compatibility layer** that makes RDF programming easier in Kotlin. You keep your existing infrastructure and get a better developer experience.
 
+### Gradle dependency profiles (Jena / RDF4J)
+
+Use the [**kastor-bom**](bom/build.gradle.kts) when you want every published module pinned to one version. When trimming the classpath:
+
+- **Store only:** `implementation("com.geoknoesis.kastor:rdf-core")` plus **`rdf-jena`** or **`rdf-rdf4j`** (Maven artifact IDs).
+- **Reasoning SPI (`RdfReasoning`, `ReasonerRegistry`):** add `reasoning` and the adapter-specific **`jena-reasoning`** and/or **`rdf4j-reasoning`** artifacts (they are no longer pulled in transitively by the store adapters).
+
+See [Repository architecture — Dependency profiles](docs/kastor/concepts/architecture.md#dependency-profiles-gradle) for the full table.
+
 ## 🌟 What Makes Kastor Special?
 
 Kastor provides a **dual-layer architecture** that serves both RDF experts and application developers:
@@ -177,11 +190,8 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 > [migration guide](docs/kastor/guides/migrating-to-rdf-1.2.md) for upgrading
 > from 0.1.x.
 
-**Conformance**: Kastor ships a W3C RDF 1.2 conformance harness in
-`:rdf:conformance` that runs the official Turtle 1.2 / TriG 1.2 /
-N-Triples 1.2 / N-Quads 1.2 syntax suites against both providers. See
-[docs/kastor/concepts/rdf-1.2-conformance.md](docs/kastor/concepts/rdf-1.2-conformance.md)
-for how to enable and read the report.
+**Conformance**: Kastor includes a W3C RDF 1.2 syntax harness in `:rdf:conformance` (Turtle 1.2, TriG 1.2, N-Triples 1.2, N-Quads 1.2) for **Jena** and **RDF4J**. Use `./gradlew conformanceSmokeTest` for a fast bundled check; initialise `rdf/conformance/test-data/` and run `./gradlew :rdf:conformance:test` for the full upstream corpus. Details:
+[docs/kastor/concepts/rdf-1.2-conformance.md](docs/kastor/concepts/rdf-1.2-conformance.md).
 
 ### 📊 **RDF Core Framework**
 - **🔄 Repository Management**: Seamlessly switch between Memory, Jena, RDF4J, and SPARQL backends
@@ -395,16 +405,21 @@ repo.add {
 
 ```kotlin
 dependencies {
-    // Kastor RDF Core
-    implementation("com.geoknoesis.kastor:rdf-core:0.1.0")
+    // Kastor RDF Core (transitive: rdf-sparql-contract for query markers)
+    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
     
     // Kastor Gen
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.1.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.1.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
     
     // Optional: Specific backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.1.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.1.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+
+    // Kotlin SPARQL query DSL / sparql package / flows — optional
+    implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
+    // SHACL shapes DSL (shacl {}, Rdf.shacl) — optional; pulls sparql-lang transitively
+    implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
 }
 ```
 
@@ -416,14 +431,28 @@ dependencies {
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
         <artifactId>rdf-core</artifactId>
-        <version>0.1.0</version>
+        <version>0.2.0</version>
+    </dependency>
+
+    <!-- Kotlin SPARQL query DSL (optional) -->
+    <dependency>
+        <groupId>com.geoknoesis.kastor</groupId>
+        <artifactId>sparql-lang</artifactId>
+        <version>0.2.0</version>
+    </dependency>
+
+    <!-- Kotlin SHACL shapes DSL shacl {} / Rdf.shacl (optional; transitive sparql-lang) -->
+    <dependency>
+        <groupId>com.geoknoesis.kastor</groupId>
+        <artifactId>rdf-shacl-dsl</artifactId>
+        <version>0.2.0</version>
     </dependency>
     
     <!-- Kastor Gen -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
         <artifactId>kastor-gen-runtime</artifactId>
-        <version>0.1.0</version>
+        <version>0.2.0</version>
     </dependency>
 </dependencies>
 ```

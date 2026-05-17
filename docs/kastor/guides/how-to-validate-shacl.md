@@ -2,21 +2,27 @@
 
 {% include version-banner.md %}
 
-## What you'll learn
-- Create a data graph and a shapes graph
-- Validate data using the SHACL validator
-- Inspect validation results
+> **Documentation mode: How-to guide.** **Explanation:** what SHACL is for → [SHACL validation feature](../features/shacl-validation.md), [**Glossary**](../concepts/glossary.md) (**shape**, **focus node**). **Reference:** [SHACL DSL](../api/shacl-dsl-guide.md), validators API.
+
+## Problem
+
+You have **data** and **SHACL shapes** as RDF graphs and need a **validation report** (conforms / violations).
 
 ## Prerequisites
-- Add the SHACL validation module:
+
+Add **`com.geoknoesis.kastor:shacl-validation`** (in this monorepo: **`project(":rdf:shacl-validation")`**) aligned with your other Kastor artifacts (`0.2.0` at time of writing):
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:shacl-validation:0.1.0")
+    implementation("com.geoknoesis.kastor:shacl-validation:0.2.0")
 }
 ```
 
-## Step 1: Create a data graph
+Plus **`rdf-core`** and a standard provider (`rdf-jena` / `rdf-rdf4j`) for graphs unless you only use in-memory APIs bundled with tests. If you create shapes with the Kotlin **`shacl { }`** DSL (this guide’s recommended path), add **`rdf-shacl-dsl`** (`com.geoknoesis.kastor:rdf-shacl-dsl`) — see [SHACL DSL Guide](../api/shacl-dsl-guide.md).
+
+## Steps
+
+### Step 1: Create a data graph
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.Rdf
@@ -30,7 +36,7 @@ val dataGraph = Rdf.graph {
 }
 ```
 
-## Step 2: Create a shapes graph
+### Step 2: Create a shapes graph
 
 You can create shapes graphs using either the **SHACL DSL** (recommended) or manual RDF triples.
 
@@ -53,7 +59,7 @@ val shapesGraph = shacl {
 }
 ```
 
-The SHACL DSL is more readable and type-safe, and supports all SHACL 1.2 features including Core enhancements and SPARQL Extensions. See the [SHACL DSL Guide](../api/shacl-dsl-guide.md) for complete documentation.
+Complete DSL syntax and constraints → **Reference:** [SHACL DSL Guide](../api/shacl-dsl-guide.md).
 
 ### Using Manual RDF (Alternative)
 
@@ -78,7 +84,7 @@ val shapesGraph = Rdf.graph {
 }
 ```
 
-## Step 3: Validate the data
+### Step 3: Validate the data
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
@@ -92,14 +98,25 @@ report.violations.forEach { violation ->
 }
 ```
 
-## Expected output
+## Validation
+
+You should see a failed conformance with at least one violation message, for example:
 
 ```
 Valid: false
 Property 'http://xmlns.com/foaf/0.1/age' has 0 values, but minimum is 1
 ```
 
-## Notes
-- The memory validator supports basic SHACL Core constraints such as `sh:minCount`, `sh:maxCount`, `sh:datatype`, and `sh:class`.
-- For creating shapes graphs, prefer the [SHACL DSL](../api/shacl-dsl-guide.md) over manual RDF for better readability and type safety.
+## Troubleshooting
+
+- **Classpath / missing validator** — ensure `shacl-validation` plus `rdf-core` and a provider are dependencies.
+- **Unexpected conformance** — check **targets** (`sh:targetClass`, focus nodes) against your instance IRIs; see [SHACL feature](../features/shacl-validation.md).
+
+Prefer the [SHACL DSL](../api/shacl-dsl-guide.md) over hand-authored constraint triples for maintainability.
+
+## Related tasks
+
+- [Create SHACL shapes](how-to-create-shacl-shapes.md)
+- [Check ontology quality](how-to-ontology-quality.md)
+- [Parse RDF](how-to-parse-rdf.md)
 

@@ -1,0 +1,4 @@
+@prefix : <http://example.org/single#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+:Only a owl:Class .

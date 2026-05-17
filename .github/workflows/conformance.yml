@@ -1,7 +1,6 @@
 name: Conformance
 
-# W3C RDF/SPARQL conformance is heavy; run on a schedule + manual dispatch.
-# Default PR CI excludes this task; see CONTRIBUTING.md.
+# Full upstream RDF 1.2 + SHACL conformance matrices (scheduled / manual dispatch).
 
 on:
   workflow_dispatch:
@@ -34,9 +33,9 @@ jobs:
       - name: SHACL 1.2 W3C tests (native)
         run: |
           set -euo pipefail
-          mkdir -p rdf/shacl-validation/test-data
-          rm -rf rdf/shacl-validation/test-data/w3c-shacl12
+          mkdir -p rdf/shacl/validation/test-data
+          rm -rf rdf/shacl/validation/test-data/w3c-shacl12
           git clone --depth 1 --branch gh-pages https://github.com/w3c/data-shapes.git /tmp/data-shapes-shacl
-          mv /tmp/data-shapes-shacl/shacl12-test-suite rdf/shacl-validation/test-data/w3c-shacl12
+          mv /tmp/data-shapes-shacl/shacl12-test-suite rdf/shacl/validation/test-data/w3c-shacl12
           ./gradlew :rdf:shacl-validation:test --no-daemon
         shell: bash

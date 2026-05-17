@@ -8,6 +8,8 @@ The SHACL DSL provides a type-safe, natural language syntax for creating SHACL s
 
 The SHACL DSL allows you to define validation constraints using Kotlin code that reads like natural language. It supports **all SHACL Core constraints** and **SHACL 1.2 features**, including Core enhancements and SPARQL Extensions. The DSL generates standard RDF that works with any SHACL validator.
 
+**Gradle / Maven:** the **`shacl { }`** DSL and **`Rdf.shacl`** live in **`rdf-shacl-dsl`** (`com.geoknoesis.kastor:rdf-shacl-dsl`), which **`api`**-depends on **`sparql-lang`** for SPARQL-based constraints—not in **`rdf-core`** or **`sparql-lang`** alone. Use **`sparql-lang`** only when you need the query DSL / **`com.geoknoesis.kastor.rdf.sparql`** without authoring shapes in Kotlin.
+
 ### Benefits
 
 - **Type-safe**: Compile-time validation of constraint combinations

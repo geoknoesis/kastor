@@ -2,23 +2,20 @@
 
 {% include version-banner.md %}
 
-This guide shows you how to create SHACL shapes graphs using Kastor's SHACL DSL. The DSL provides a type-safe, readable way to define validation constraints.
+> **Documentation mode: How-to guide.** **Explanation:** what SHACL shapes express → [SHACL validation feature](../features/shacl-validation.md), [**Glossary**](../concepts/glossary.md) (**shape**, **focus node**). **Reference:** full DSL surface → [SHACL DSL Guide](../api/shacl-dsl-guide.md).
 
-## What you'll learn
-- Create SHACL shapes using the DSL
-- Define property constraints
-- Use logical constraints
-- Integrate shapes with validation
+## Problem
+
+- Author **SHACL shapes** graphs with the Kotlin **`shacl { }`** DSL instead of hand-writing RDF triples: declare **node shapes**, attach **property shapes**, then validate **data** graphs.
 
 ## Prerequisites
 
-No additional dependencies required - the SHACL DSL is part of `rdf-core`.
+- **`rdf-core`** plus **`rdf-shacl-dsl`** (`com.geoknoesis.kastor:rdf-shacl-dsl`) — the **`shacl { }`** / **`Rdf.shacl`** DSL lives there (**`api`** **`sparql-lang`** for embedded SPARQL constraints), not in **`rdf-core`** alone.
+- Add **`shacl-validation`** when you call **`ShaclValidation.validator()`** (coordinates **`com.geoknoesis.kastor:shacl-validation:0.2.0`**, aligned with your BOM).
 
-## Using the SHACL DSL
+## Steps
 
-The SHACL DSL is the recommended way to create shapes graphs. It's more readable and type-safe than manually creating RDF triples.
-
-### Basic Example
+### Step 1: Declare a node shape with property constraints
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
@@ -28,7 +25,7 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 val shapesGraph = shacl {
     nodeShape("http://example.org/PersonShape") {
         targetClass(FOAF.Person)
-        
+
         property(FOAF.name) {
             minCount = 1
             datatype = XSD.string
@@ -37,14 +34,13 @@ val shapesGraph = shacl {
 }
 ```
 
-### Complete Example
+### Step 2: Tighten constraints on properties
 
 ```kotlin
 val personShapes = shacl {
     nodeShape("http://example.org/PersonShape") {
         targetClass(FOAF.Person)
-        
-        // Required name
+
         property(FOAF.name) {
             minCount = 1
             maxCount = 1
@@ -52,15 +48,13 @@ val personShapes = shacl {
             minLength = 1
             maxLength = 100
         }
-        
-        // Optional email with validation
+
         property(FOAF.email) {
             minCount = 0
             maxCount = 1
             pattern = "^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$"
         }
-        
-        // Age with range
+
         property(FOAF.age) {
             minCount = 0
             maxCount = 1
@@ -72,24 +66,21 @@ val personShapes = shacl {
 }
 ```
 
-## Common Patterns
+### Step 3: Reuse common constraint patterns
 
-### Required vs Optional Properties
+#### Required vs optional properties
 
 ```kotlin
 shacl {
     nodeShape("http://example.org/Shape") {
-        // Required property
         property("http://example.org/required") {
             minCount = 1
         }
-        
-        // Optional property
+
         property("http://example.org/optional") {
             minCount = 0
         }
-        
-        // Multiple values allowed
+
         property("http://example.org/multiple") {
             minCount = 0
             // maxCount = null means unlimited
@@ -98,7 +89,7 @@ shacl {
 }
 ```
 
-### String Validation
+#### String validation
 
 ```kotlin
 property("http://example.org/email") {
@@ -109,7 +100,7 @@ property("http://example.org/email") {
 }
 ```
 
-### Numeric Ranges
+#### Numeric ranges
 
 ```kotlin
 property("http://example.org/price") {
@@ -125,7 +116,7 @@ property("http://example.org/score") {
 }
 ```
 
-### Value Sets
+#### Value sets
 
 ```kotlin
 property("http://example.org/status") {
@@ -137,14 +128,11 @@ property("http://example.org/priority") {
 }
 ```
 
-## Using with Validation
-
-Once you've created your shapes graph, use it with Kastor's SHACL validator:
+### Step 4: Validate data against your shapes
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
 
-// Create shapes
 val shapesGraph = shacl {
     nodeShape("http://example.org/PersonShape") {
         targetClass(FOAF.Person)
@@ -154,14 +142,12 @@ val shapesGraph = shacl {
     }
 }
 
-// Create data
 val dataGraph = Rdf.graph {
     val person = iri("http://example.org/alice")
     person `is` FOAF.Person
-    // Missing name - will fail validation
+    // Missing name — should fail validation
 }
 
-// Validate
 val validator = ShaclValidation.validator()
 val report = validator.validate(dataGraph, shapesGraph)
 
@@ -172,11 +158,18 @@ if (!report.isValid) {
 }
 ```
 
-## Next Steps
+## Validation
 
-- [SHACL DSL Guide](../api/shacl-dsl-guide.md) - Complete DSL reference
-- [How to Validate with SHACL](how-to-validate-shacl.md) - Validation workflow
-- [SHACL Validation Features](../features/shacl-validation.md) - Validation capabilities
-- [How to Check Ontology Quality](how-to-ontology-quality.md) - Bundled ontology pitfall catalogues and semantic tier
+Expect **`report.isValid == false`** when mandatory properties are missing and **`true`** once the data graph satisfies every declared constraint.
 
+## Troubleshooting
 
+- **DSL vs manual RDF:** Prefer **`shacl { }`** for readability; drop to triple builders only when the DSL lacks a niche constraint—see **Reference:** [SHACL DSL Guide](../api/shacl-dsl-guide.md).
+- **Validator dependency:** Runtime validation requires the **`shacl-validation`** artifact on the classpath ([How to Validate with SHACL](how-to-validate-shacl.md)).
+
+## Related
+
+- [SHACL DSL Guide](../api/shacl-dsl-guide.md)
+- [How to Validate with SHACL](how-to-validate-shacl.md)
+- [SHACL Validation Features](../features/shacl-validation.md)
+- [How to Check Ontology Quality](how-to-ontology-quality.md)

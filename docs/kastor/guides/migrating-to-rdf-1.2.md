@@ -1,28 +1,25 @@
 # Migrating from Kastor 0.1.x to 0.2.0 (RDF 1.2)
 
-Kastor 0.2.0 adopts the W3C RDF 1.2 data model. This guide walks through the
-breaking changes you are most likely to hit and shows the recommended fix for
-each. For a conceptual overview, see [RDF 1.2 in Kastor](../concepts/rdf-1.2.md).
+{% include version-banner.md %}
 
-## Quick checklist
+> **Documentation mode: How-to guide (upgrade).** **Explanation:** RDF 1.2 data model in Kastor → [RDF 1.2 in Kastor](../concepts/rdf-1.2.md), [RDF 1.2 conformance](../concepts/rdf-1.2-conformance.md). **Reference:** [CHANGELOG](../../../CHANGELOG.md).
 
-- [ ] You no longer have any code that puts a `TripleTerm` in subject position.
-- [ ] Code that compared `LangString` instances by structural equality still
-      works, but be aware that two language strings with different `direction`
-      values are now unequal.
-- [ ] If you serialise to Turtle and inspect the output, expect the new
-      `<<( s p o )>>` syntax instead of the legacy `<<s p o>>`.
-- [ ] Any custom code that builds `QuotedTriplePatternAst` /
-      `RdfStarTriplePatternAst` still compiles but emits a deprecation warning.
-- [ ] If you query provider capabilities, the new fields `rdfVersion` and
-      `supportsTripleTerms` are available.
+## Problem
 
-## 1. `TripleTerm` is no longer an `RdfResource`
+- Upgrade a codebase from **Kastor 0.1.x** to **0.2.0** without surprises around **triple terms**, **language strings**, **serialized SPARQL/RDF surface syntax**, and **provider capabilities**.
 
-In RDF 1.2 a triple term is *not* a resource: it can never be the subject of a
-triple. The type system enforces this in 0.2.0.
+## Prerequisites
 
-### Before (0.1.x, RDF-star)
+- Builds targeting **0.2.0** artifacts (see [Installation](../getting-started/installation.md)).
+- Awareness of any **RDF-star / quoted triple** subjects or snapshot tests that pin **`<< … >>`** spelling.
+
+## Steps
+
+### Step 1: Audit triple-term subjects
+
+In RDF 1.2 a triple term is *not* an **`RdfResource`** and cannot appear as the subject of a triple. The type system enforces this in **0.2.0**.
+
+**Before (0.1.x, RDF-star)**
 
 ```kotlin
 val annotated = RdfTriple(
@@ -32,17 +29,17 @@ val annotated = RdfTriple(
 )
 ```
 
-### After (0.2.0, RDF 1.2)
+**After (0.2.0, RDF 1.2)**
 
 ```kotlin
 val reifier = bnode("r1")
 val annotated = listOf(
-    RdfTriple(reifier, RDF.reifies, TripleTerm(claim)),    // name it
-    RdfTriple(reifier, ex("source"), string("wikipedia")), // annotate it
+    RdfTriple(reifier, RDF.reifies, TripleTerm(claim)),
+    RdfTriple(reifier, ex("source"), string("wikipedia")),
 )
 ```
 
-Or with the DSL:
+Or with the graph DSL (assuming **`graph`** is a **`MutableRdfGraph`** you are editing):
 
 ```kotlin
 graph.add {
@@ -52,34 +49,26 @@ graph.add {
 }
 ```
 
-## 2. Old reification vocabulary deprecated
+### Step 2: Replace deprecated reification vocabulary in new code
 
-`rdf:Statement`, `rdf:subject`, `rdf:predicate`, `rdf:object` still exist on
-the `RDF` vocab but are `@Deprecated`. New code should use `RDF.reifies` plus
-a triple term.
+`rdf:Statement`, `rdf:subject`, `rdf:predicate`, and `rdf:object` remain on the **`RDF`** vocab but are **`@Deprecated`**. Prefer **`RDF.reifies`** plus an explicit reifier node (see Step 1).
 
-## 3. `LangString` carries a base direction
+### Step 3: Account for `LangString` direction
 
-The two-argument constructor still works, so most existing code keeps
-compiling unchanged. But two `LangString` values with the same lexical and
-language but different directions are *not* equal.
+The two-argument constructor remains, but **`LangString`** values with different **`direction`** are unequal even when lexical form and language tag match.
 
 ```kotlin
-val a = LangString("Hello", "en")                       // 0.1.x compatible
-val b = LangString("Hello", "en", Direction.LTR)        // RDF 1.2 directional
+val a = LangString("Hello", "en")                // 0.1.x compatible
+val b = LangString("Hello", "en", Direction.LTR) // RDF 1.2 directional
 
-a == b                                                  // false (different datatype)
+a == b  // false (datatype / internal representation differs)
 ```
 
-If you have code that compares language strings ignoring direction, switch to
-explicit field-level checks (`x.lexical == y.lexical && x.lang == y.lang`) or
-ignore direction explicitly when constructing both sides.
+If you intentionally ignore direction, compare **`lexical`** / **`lang`** explicitly or normalize construction on both sides.
 
-## 4. New triple-term syntax in serialised output
+### Step 4: Refresh snapshot expectations for triple-term syntax
 
-Serialisation, `toString()`, and the SPARQL renderer all use the RDF 1.2
-syntax `<<( s p o )>>`. Snapshot tests that asserted the legacy `<<s p o>>`
-spelling need updating:
+Serialization, **`toString()`**, and the SPARQL renderer emit RDF **1.2** **`<<( s p o )>>`** groups instead of legacy **`<<s p o>>`**:
 
 ```kotlin
 // Before:
@@ -88,10 +77,11 @@ assertTrue(out.contains("<< ?s ?p ?o >>"))
 assertTrue(out.contains("<<( ?s ?p ?o )>>"))
 ```
 
-Both Jena's and RDF4J's parsers continue to accept the legacy RDF-star syntax,
-so existing data files keep loading.
+Jena and RDF4J parsers still accept much of the legacy RDF-star surface syntax; existing **data files** generally keep loading.
 
-## 5. SPARQL AST: prefer `TripleTermPatternAst` and `ReifierPatternAst`
+### Step 5: Migrate SPARQL AST usage
+
+Prefer **`TripleTermPatternAst`** and **`ReifierPatternAst`** over deprecated **`QuotedTriplePatternAst`** / **`RdfStarTriplePatternAst`** aliases.
 
 ```kotlin
 // Before
@@ -99,51 +89,55 @@ where {
     quotedTriple(`var`("s"), `var`("p"), `var`("o"))
 }
 
-// After (still compiles via the deprecated alias, but new code should use):
+// After (new names; deprecated aliases still compile in 0.2.x)
 import com.geoknoesis.kastor.rdf.sparql.TripleTermPatternAst
 import com.geoknoesis.kastor.rdf.sparql.ReifierPatternAst
 ```
 
-`QuotedTriplePatternAst` and `RdfStarTriplePatternAst` remain available
-through 0.2.x and emit RDF 1.2 syntax. They are scheduled for removal in 0.3.0.
+Deprecated AST symbols are scheduled for removal in **0.3.0**.
 
-## 6. Provider capabilities have new fields
+### Step 6: Extend capability handling
 
 ```kotlin
 data class ProviderCapabilities(
     val rdfVersion: String = "1.1",
     val supportsTripleTerms: Boolean = false,
-    // ... existing fields
+    // … existing fields …
 )
 ```
 
-Existing call-sites that don't reference these fields stay source-compatible.
-If you destructure or copy `ProviderCapabilities`, regenerate the call.
+Call sites that construct or **`copy`** **`ProviderCapabilities`** may need to supply or accept the new fields.
 
-## 7. Old TDB2 / NativeStore data
+### Step 7: Plan persistence for legacy RDF-star subject terms
 
-Repositories that hold *RDF-star* triples whose subject was a quoted triple
-(legacy `<<s p o>> p2 o2`) keep loading - both Jena and RDF4J ship parsers that
-accept the old syntax. However, when those statements are surfaced through
-Kastor's API you will see them only via the object-position pathway: a
-`TripleTerm` in subject position cannot be expressed in the new type system
-and is reported as a `BlankNode` (Jena) or filtered out (RDF4J).
+Repositories that stored **quoted triples as subjects** (`<<s p o>> p2 o2`) still parse from disk in many setups, but **Kastor 0.2.0** cannot surface impossible triple-term subjects through the typed API; backends may map them to **`BlankNode`** or drop them.
 
-If you depend on subject-position triple terms, you have two options:
+If you rely on subject-position triple terms:
 
-1. Migrate the data to the `rdf:reifies` pattern with a SPARQL `INSERT { ... }
-   WHERE { ... }` query that promotes each triple-term subject to a reifier
-   (sample query in the test fixtures under `rdf/jena/src/test/...`).
-2. Stay on Kastor 0.1.x for those datasets.
+1. Migrate data to **`rdf:reifies`** with a SPARQL **`INSERT … WHERE`** promotion (see **`rdf/providers/jena`** test fixtures for examples), or  
+2. Stay on **0.1.x** until data is migrated.
 
-## 8. RDF4J version note
+### Step 8: RDF4J bridge versions
 
-RDF4J 5.1.x predates the `createTripleTerm` rename. Kastor's RDF4J bridge
-falls back to the legacy `createTriple` method on these versions, so triple
-terms still serialise and parse but use the older RDF-star wire format. Bump
-to RDF4J 5.2.x or later (when available) to emit pure RDF 1.2.
+RDF4J **5.1.x** predates some **`createTripleTerm`** APIs. Kastor falls back to legacy **`createTriple`** where needed so triple terms continue to move across the bridge, but wire formats may remain RDF-star–skewed until you upgrade **RDF4J ≥ 5.2.x** when available.
 
-## See also
+## Validation
+
+Work through this checklist after the code compiles:
+
+- [ ] No **`TripleTerm`** (or deprecated quoted triple) remains in **subject** position.
+- [ ] **`LangString`** equality expectations match direction semantics.
+- [ ] Turtle / SPARQL snapshots accept **`<<( … )>>`** spelling.
+- [ ] AST imports avoid deprecated **`QuotedTriplePatternAst`** / **`RdfStarTriplePatternAst`** for new code.
+- [ ] **`ProviderCapabilities`** constructors and **`copy`** call sites compile with the new fields.
+- [ ] Persistent stores with RDF-star subjects either migrated or consciously pinned to **0.1.x**.
+
+## Troubleshooting
+
+- **Tests fail only on string snapshots:** diff Turtle / SPARQL text for **`<<`** spacing before asserting semantic regressions.
+- **“Lost” quoted triple subjects:** indicates unmigrated legacy layout—see Step 7.
+
+## Related
 
 - [RDF 1.2 in Kastor](../concepts/rdf-1.2.md)
 - [Changelog](../../../CHANGELOG.md)

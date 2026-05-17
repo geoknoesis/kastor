@@ -3,7 +3,7 @@
 Kastor supports SHACL validation with full **SHACL 1.2** support, including Core features and SPARQL Extensions. Validation is available in two complementary ways:
 
 - **Kastor Gen ValidationContext** for domain materialization and `RdfHandle` validation.
-- **Repository-level SHACL validation** via the `rdf/shacl-validation` module.
+- **Repository-level SHACL validation** via the `rdf/shacl/validation` module.
 
 For the **provider model** (native Kastor engine vs optional adapters to Jena, RDF4J, and others), module layout, and implementation roadmap, see [SHACL validation architecture](../design/shacl-validation-architecture.md). For **performance benchmarking** (JMH harness, ERA-SHACL-Benchmark CLI, baselines), see [SHACL native engine: cross-implementation performance benchmarks](../design/shacl-native-engine-benchmark.md).
 
@@ -40,15 +40,15 @@ person.asRdf().validateOrThrow()
 
 ## Repository-Level SHACL Validation
 
-Module **`rdf/shacl-validation`**: API reference, **`providerId`** table, **`maxCombinedGraphTriples` / `rdf4jUntrustedInputLimits`**, and cross-engine smoke tests live in the [module README](../../../rdf/shacl-validation/README.md).
+Module **`rdf/shacl/validation`**: API reference, **`providerId`** table, **`maxCombinedGraphTriples` / `rdf4jUntrustedInputLimits`**, and cross-engine smoke tests live in the [module README](../../../rdf/shacl/validation/README.md).
 
-Use the `rdf/shacl-validation` module when you want to validate graphs directly (without materialization):
+Use the `rdf/shacl/validation` module when you want to validate graphs directly (without materialization):
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
 
-// Create shapes using the SHACL DSL (recommended)
+// Create shapes using the Kotlin SHACL DSL (recommended; add dependency `com.geoknoesis.kastor:rdf-shacl-dsl`)
 val shapesGraph = shacl {
     nodeShape("http://example.org/PersonShape") {
         targetClass(FOAF.Person)

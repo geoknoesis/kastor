@@ -13,10 +13,15 @@ javaPlatform {
 dependencies {
     constraints {
         api(project(":rdf:core"))
+        api(project(":rdf:sparql-contract"))
+        api(project(":rdf:sparql-lang"))
+        api(project(":rdf:shacl-dsl"))
         api(project(":rdf:jena"))
+        api(project(":rdf:jena-reasoning"))
         api(project(":rdf:rdf4j"))
+        api(project(":rdf:rdf4j-reasoning"))
         api(project(":rdf:sparql"))
-        api(project(":rdf:reasoning"))
+        api(project(":rdf:reasoning-hermit"))
         api(project(":rdf:shacl-validation"))
         api(project(":rdf:testkit"))
         api(project(":rdf:cli"))

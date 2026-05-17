@@ -1,0 +1,5 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix ex: <http://example.org/oops-fixtures#> .
+
+# Structural proxy for OOPS P01 (class ∩ property on one IRI).
+ex:Ambiguous a owl:Class , owl:ObjectProperty .

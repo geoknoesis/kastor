@@ -1,0 +1,5 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix ex:  <http://example.org/ns#> .
+
+# Deliberately inconsistent: an individual typed as owl:Nothing
+ex:i a owl:Nothing .

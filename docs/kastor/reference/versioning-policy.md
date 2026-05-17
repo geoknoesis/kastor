@@ -163,10 +163,11 @@ When upgrading Kastor versions:
 ### Example: Upgrading from 0.1.0 to 0.2.0
 
 ```kotlin
-// build.gradle.kts
+// build.gradle.kts (prefer the BOM — see docs/kastor/getting-started/installation.md)
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf:core:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf:jena:0.2.0")
+    implementation(platform("com.geoknoesis.kastor:kastor-bom:0.2.0"))
+    implementation("com.geoknoesis.kastor:rdf-core")
+    implementation("com.geoknoesis.kastor:rdf-jena")
 }
 ```
 

@@ -2,34 +2,34 @@
 
 {% include version-banner.md %}
 
-## Overview
+> **Documentation mode: Explanation** — how compaction/framing interact with the RDF graph. **Task:** serialization options → [How to Serialize RDF](how-to-serialize-rdf.md). **Concepts:** [RDF fundamentals](../concepts/rdf-fundamentals.md) (serialization formats).
 
-JSON-LD provides two important transformations:
-- **Compaction**: Reduces verbosity by using terms from a context
-- **Framing**: Restructures JSON-LD to match a specific frame pattern
+## Problem
 
-This guide explains how Kastor handles JSON-LD compaction and framing, including important considerations about data preservation.
+- Emit **compact** or **framed** JSON-LD for APIs or UI consumption **without silently dropping triples** that matter downstream.
 
-## ⚠️ Important: Lossless Behavior
+## Important: Not always lossless
 
-**JSON-LD compaction and framing are NOT always lossless.**
+JSON-LD **compaction** and **framing** are presentation transforms:
 
-When you compact or frame JSON-LD data:
-- **Compaction** may lose some information if the context doesn't include all terms
-- **Framing** restructures data according to the frame, which may filter or reorganize information
-- **Round-trip conversion** (RDF → JSON-LD → compact → expand → RDF) may not preserve all triples
+- **Compaction** depends entirely on the **`@context`**. Predicates absent from the context remain as full IRIs but ordering and grouping still change; edge cases around lists, nesting, and `@graph` can surprise readers expecting isomorphism with the RDF graph.
+- **Framing** **filters and reshapes** nodes to match the frame—properties omitted from the frame may disappear from the output document even though they existed in the RDF graph.
+- **Round-trip** RDF → JSON-LD → RDF may therefore **lose** information unless you constrain options carefully.
 
-**Best Practice**: If you need to preserve all RDF data, use expanded JSON-LD or other RDF formats (Turtle, N-Triples) instead of compacted/framed JSON-LD.
+If you need a canonical, faithful interchange representation, prefer **expanded JSON-LD**, **Turtle**, or **N-Triples** rather than compacted/framed JSON-LD alone.
 
-## Compaction
+## Prerequisites
 
-Compaction uses a JSON-LD context to shorten IRIs and simplify the JSON structure.
+- **`rdf-core`** and a provider that implements **`SerializationOptions`** fields **`jsonLdContext`**, **`jsonLdCompact`**, and **`jsonLdFrame`** (coverage varies—see **Provider support** below).
 
-### Basic Compaction
+## Steps
+
+### Step 1: Compact with a `@context`
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
+import com.geoknoesis.kastor.rdf.iri
 
 val graph = Rdf.graph {
     val person = iri("http://example.org/person/alice")
@@ -37,7 +37,6 @@ val graph = Rdf.graph {
     person[iri("http://xmlns.com/foaf/0.1/age")] = 30
 }
 
-// Compact with a context
 val context = """
 {
   "@context": {
@@ -54,34 +53,19 @@ val compacted = graph.serialize(RdfFormat.JSON_LD) {
 }
 
 println(compacted)
-// Output: {"@context": {...}, "@id": "http://example.org/person/alice", "name": "Alice", "age": 30}
+// Example shape: {"@context": {...}, "@id": "http://example.org/person/alice", "name": "Alice", "age": 30}
 ```
 
-### What Gets Preserved
-
-Compaction preserves:
-- ✅ All RDF triples (subject, predicate, object)
-- ✅ Literal datatypes and language tags
-- ✅ Blank node identifiers
-- ✅ Graph structure
-
-### What May Be Lost
-
-Compaction may lose:
-- ⚠️ Terms not in the context (will use full IRIs)
-- ⚠️ Ordering of properties (JSON objects are unordered)
-- ⚠️ Some structural information if context mappings are incomplete
-
-### Example: Incomplete Context
+**Incomplete contexts** still serialize little-used predicates—but readers expecting only compact keys may overlook IRIs not mapped in **`@context`**:
 
 ```kotlin
-val graph = Rdf.graph {
+val thinContextGraph = Rdf.graph {
     val person = iri("http://example.org/person/alice")
     person[iri("http://xmlns.com/foaf/0.1/name")] = "Alice"
-    person[iri("http://example.org/custom/prop")] = "Value"  // Not in context
+    person[iri("http://example.org/custom/prop")] = "Value"
 }
 
-val context = """
+val thinContext = """
 {
   "@context": {
     "foaf": "http://xmlns.com/foaf/0.1/",
@@ -90,20 +74,18 @@ val context = """
 }
 """.trimIndent()
 
-val compacted = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdContext = context
+val compactedThin = thinContextGraph.serialize(RdfFormat.JSON_LD) {
+    jsonLdContext = thinContext
     jsonLdCompact = true
 }
 
-// The custom property will use full IRI since it's not in the context
-// Output includes: "http://example.org/custom/prop": "Value"
+// Custom predicate typically appears under its full IRI key:
+// "http://example.org/custom/prop": "Value"
 ```
 
-## Framing
+### Step 2: Frame for presentation APIs
 
-Framing restructures JSON-LD to match a specific frame pattern, which can filter and reorganize data.
-
-### Basic Framing
+Framing picks subtrees that match the frame pattern—anything **not described by the frame** can be omitted even though triples exist in the RDF graph.
 
 ```kotlin
 val frame = """
@@ -122,37 +104,17 @@ val frame = """
 val framed = graph.serialize(RdfFormat.JSON_LD) {
     jsonLdFrame = frame
 }
-
-// Output matches the frame structure
 ```
 
-### What Gets Preserved
-
-Framing preserves:
-- ✅ Data that matches the frame pattern
-- ✅ Properties explicitly included in the frame
-- ✅ Type information specified in the frame
-
-### What May Be Lost
-
-Framing may lose:
-- ⚠️ Properties not included in the frame
-- ⚠️ Data that doesn't match the frame pattern
-- ⚠️ Blank nodes not referenced in the frame
-- ⚠️ Triples in named graphs if frame doesn't specify them
-
-### Example: Frame Filtering
-
 ```kotlin
-val graph = Rdf.graph {
+val richGraph = Rdf.graph {
     val person = iri("http://example.org/person/alice")
     person[iri("http://xmlns.com/foaf/0.1/name")] = "Alice"
     person[iri("http://xmlns.com/foaf/0.1/age")] = 30
     person[iri("http://xmlns.com/foaf/0.1/email")] = "alice@example.com"
 }
 
-// Frame only includes name and age
-val frame = """
+val frameNameAgeOnly = """
 {
   "@context": {
     "foaf": "http://xmlns.com/foaf/0.1/",
@@ -164,149 +126,52 @@ val frame = """
 }
 """.trimIndent()
 
-val framed = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdFrame = frame
+val framedSubset = richGraph.serialize(RdfFormat.JSON_LD) {
+    jsonLdFrame = frameNameAgeOnly
 }
 
-// Email property is NOT included in the framed output
-// This is intentional - framing filters data to match the frame
+// Email triple exists in RDF but may be absent from framed JSON-LD output.
 ```
 
-## Round-Trip Considerations
-
-### Expanded JSON-LD (Lossless)
-
-Expanded JSON-LD preserves all RDF data:
+### Step 3: Prefer expanded JSON-LD (or another RDF syntax) for fidelity
 
 ```kotlin
-// Serialize to expanded JSON-LD (no compaction)
+// Expanded JSON-LD — default compaction flag off
 val expanded = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdCompact = false  // Default
+    jsonLdCompact = false  // default
 }
 
-// Parse back
-val graph2 = Rdf.parse(expanded, RdfFormat.JSON_LD)
-
-// All triples are preserved
-assertEquals(graph.getTriples().toSet(), graph2.getTriples().toSet())
+val roundTrip = Rdf.parse(expanded, RdfFormat.JSON_LD)
+// Compare graphs with your test helpers (blank nodes may still differ)
 ```
 
-### Compacted JSON-LD (Usually Lossless)
+When you must compact, enumerate **every predicate** you care about in **`@context`** (generate JSON programmatically from your vocabulary IRIs if the list is large—there is no single built-in **`buildJsonLdContext`** helper in Kastor).
 
-Compacted JSON-LD with a complete context is usually lossless:
+## Validation
+
+When fidelity matters, assert graph equality (or isomorphism-aware helpers from **`rdf-testkit`**) **before and after** JSON-LD transforms:
 
 ```kotlin
-// Create complete context with all terms
-val completeContext = """
-{
-  "@context": {
-    "foaf": "http://xmlns.com/foaf/0.1/",
-    "name": "foaf:name",
-    "age": "foaf:age",
-    "email": "foaf:email"
-  }
-}
-""".trimIndent()
-
-val compacted = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdContext = completeContext
-    jsonLdCompact = true
-}
-
-// Parse back
-val graph2 = Rdf.parse(compacted, RdfFormat.JSON_LD)
-
-// Triples are preserved IF context is complete
-// Note: Property order may differ, but data is preserved
+fun graphsEqualModuloBlankNodes(a: com.geoknoesis.kastor.rdf.RdfGraph, b: com.geoknoesis.kastor.rdf.RdfGraph): Boolean =
+    a.getTriples().toSet() == b.getTriples().toSet() // replace with testkit isomorphism if you have blank nodes
 ```
 
-### Framed JSON-LD (May Lose Data)
+Expect **`graphsEqualModuloBlankNodes(graph, Rdf.parse(compacted, RdfFormat.JSON_LD))`** only when the context truly covers every triple you need.
 
-Framed JSON-LD may lose data that doesn't match the frame:
+## Provider support
 
-```kotlin
-val framed = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdFrame = frame  // Frame may not include all properties
-}
+JSON-LD compaction and framing depend on the underlying implementation behind **`serialize`**:
 
-// Parse back
-val graph2 = Rdf.parse(framed, RdfFormat.JSON_LD)
+- **Jena** and **RDF4J** integrations evolve independently—confirm behavior against your pinned versions.
+- Treat **`jsonLdContext`**, **`jsonLdCompact`**, and **`jsonLdFrame`** as **best-effort hooks**: verify with integration tests before relying on them in production responses.
 
-// Some triples may be missing if frame filtered them out
-// graph2.getTriples().size <= graph.getTriples().size
-```
+## Troubleshooting
 
-## Best Practices
+- **Missing properties after framing:** extend the frame or stop using framing for that payload—framing is inherently selective.
+- **Round-trip shrinkage:** compare **`getTriples()`** counts before/after parse; fall back to Turtle/N-Triples for storage.
+- **Provider ignores options:** feature gaps surface as “compact JSON looks identical to expanded”—inspect **`SerializationOptions`** handling in your provider release notes.
 
-### 1. Use Expanded JSON-LD for Data Preservation
+## Related
 
-If you need to preserve all RDF data:
-
-```kotlin
-// Use expanded JSON-LD (default)
-val jsonLd = graph.serialize(RdfFormat.JSON_LD)
-// No compaction = all data preserved
-```
-
-### 2. Use Complete Contexts for Compaction
-
-If using compaction, ensure your context includes all terms:
-
-```kotlin
-// Extract all predicates from graph
-val predicates = graph.getTriples()
-    .map { it.predicate.value }
-    .distinct()
-
-// Build complete context
-val context = buildJsonLdContext(predicates)
-
-val compacted = graph.serialize(RdfFormat.JSON_LD) {
-    jsonLdContext = context
-    jsonLdCompact = true
-}
-```
-
-### 3. Use Framing for Presentation, Not Storage
-
-Framing is useful for:
-- ✅ API responses (filtering to specific fields)
-- ✅ UI display (showing only relevant properties)
-- ✅ Data transformation (restructuring for specific use cases)
-
-**Don't use framing for:**
-- ❌ Data storage (may lose information)
-- ❌ Round-trip conversion (data may not be preserved)
-- ❌ Data exchange (use expanded or compacted JSON-LD)
-
-### 4. Verify Round-Trip When Needed
-
-If you need to ensure data preservation:
-
-```kotlin
-fun verifyRoundTrip(graph: RdfGraph): Boolean {
-    val jsonLd = graph.serialize(RdfFormat.JSON_LD)
-    val graph2 = Rdf.parse(jsonLd, RdfFormat.JSON_LD)
-    
-    val originalTriples = graph.getTriples().toSet()
-    val roundTripTriples = graph2.getTriples().toSet()
-    
-    return originalTriples == roundTripTriples
-}
-```
-
-## Provider Support
-
-JSON-LD compaction and framing support depends on the underlying provider:
-
-- **Jena**: Supports JSON-LD serialization, but compaction/framing options may not be fully implemented yet
-- **RDF4J**: Supports JSON-LD serialization, but compaction/framing options may not be fully implemented yet
-
-**Current Status**: The `SerializationOptions` API includes `jsonLdContext`, `jsonLdCompact`, and `jsonLdFrame` parameters, but provider implementations may not yet fully support all options. Check provider capabilities before relying on compaction/framing.
-
-## Related Documentation
-
-- [Serialization Guide](how-to-serialize-rdf.md) - General serialization guide
-- [RDF Formats](../concepts/rdf-fundamentals.md#formats) - RDF format overview
-- [JSON-LD Specification](https://www.w3.org/TR/json-ld11/) - Official JSON-LD specification
-
+- [How to Serialize RDF](how-to-serialize-rdf.md)
+- [JSON-LD 1.1 specification](https://www.w3.org/TR/json-ld11/)

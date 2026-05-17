@@ -1,5 +1,17 @@
 # Kastor Query DSL Tutorial
 
+{% include version-banner.md %}
+
+> **Documentation mode: Tutorial** — learn the Kotlin query DSL alongside SPARQL concepts. **Reference:** [Compact DSL Guide](../api/compact-dsl-guide.md). **Terms:** [**Glossary**](../concepts/glossary.md).
+
+### Goal
+
+Write **`select { … }`** (and related DSL) queries using **`var`**, triple patterns, **`FILTER`**, **`OPTIONAL`**, and aggregations, and understand how they map to SPARQL text.
+
+## Prerequisites
+
+Add **`sparql-lang`** to Gradle or Maven (`com.geoknoesis.kastor:sparql-lang`, version aligned with **`rdf-core`** or via the [Kastor BOM](../getting-started/installation.md)). The **`select {}`** builders and **`com.geoknoesis.kastor.rdf.sparql`** package are **not** part of **`rdf-core`** alone ([architecture](../concepts/architecture.md)).
+
 ## Introduction
 
 Welcome to the Kastor Query DSL tutorial! This guide will teach you how to query RDF (Resource Description Framework) data using Kastor's intuitive Kotlin DSL, even if you've never used SPARQL before.
@@ -810,31 +822,12 @@ val query = select("name", "contactType", "contactValue") {
 }
 ```
 
-## Conclusion
+## Validation
 
-Congratulations! You've learned how to use the Kastor Query DSL to query RDF data. Here's what you can now do:
+- Reproduce each major section (`SELECT`, `FILTER`, `OPTIONAL`, aggregates) in a small **`@Test`** or **`main`** using **`Rdf.memory()`** and assert on **`SparqlQueryResult`** size or bindings.
 
-✅ **Write basic queries** to find data  
-✅ **Add filters** to narrow down results  
-✅ **Work with relationships** between entities  
-✅ **Use optional data** that might not exist  
-✅ **Create computed values** using BIND  
-✅ **Navigate complex relationships** with property paths  
-✅ **Work with metadata** using RDF-star  
-✅ **Organize results** with sorting and pagination  
-✅ **Write complex queries** combining multiple features  
-✅ **Use prefix declarations** for readable queries  
+## Related
 
-The Kastor Query DSL makes RDF querying accessible and intuitive, even for those new to SPARQL. The Kotlin syntax feels natural and the generated queries are optimized for performance.
-
-### Next Steps
-
-- Practice with your own data
-- Explore more advanced features like aggregation and subqueries
-- Learn about RDF data modeling
-- Check out the full API documentation
-
-Happy querying! 🚀
-
-
-
+- [Compact DSL Guide](../api/compact-dsl-guide.md)
+- [SPARQL fundamentals](../concepts/sparql-fundamentals.md)
+- [Guides hub](guides.md)

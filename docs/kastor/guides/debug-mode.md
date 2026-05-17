@@ -2,17 +2,19 @@
 
 {% include version-banner.md %}
 
-## Overview
+> **Documentation mode: How-to guide.** **Explanation:** SPARQL and QName behavior → [SPARQL fundamentals](../concepts/sparql-fundamentals.md), [QName resolution](../reference/dsl.md#qname-resolution). **Reference:** [Error handling](error-handling.md).
 
-Kastor provides a debug mode for troubleshooting RDF operations. Debug mode enables logging for:
-- **Prefix expansion**: See how QNames (e.g., `foaf:name`) are resolved to full IRIs
-- **Query tracing**: See SPARQL queries with execution details (timing, result counts)
+## Problem
 
-Debug output is logged using SLF4J at the `DEBUG` level, so you can control it through your logging configuration.
+- See **QName → IRI** expansions and **SPARQL execution** traces (timing, counts, failures) while diagnosing integrations.
 
-## Enabling Debug Mode
+## Prerequisites
 
-### Basic Usage
+- **SLF4J** on the classpath and logging configured to **`DEBUG`** for **`com.geoknoesis.kastor.rdf`** (Logback, Log4j2, or **`slf4j-simple`** with a system property).
+
+## Steps
+
+### Step 1: Enable `RdfDebug`
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.RdfDebug
@@ -86,6 +88,8 @@ When `showQueryTrace` is enabled, Kastor logs SPARQL query execution details.
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 // Enable query tracing
 RdfDebug.enable {
@@ -102,7 +106,7 @@ repo.add {
 }
 
 // Execute a query
-val result = repo.select(SparqlSelect("""
+val result = repo.select(SparqlSelectQuery("""
     SELECT ?name ?age WHERE {
         ?person <http://xmlns.com/foaf/0.1/name> ?name .
         ?person <http://xmlns.com/foaf/0.1/age> ?age .
@@ -251,6 +255,7 @@ For production use, consider:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.SparqlSelectQuery
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 fun main() {
@@ -272,7 +277,7 @@ fun main() {
     }
     
     // Query the data
-    val result = repo.select(SparqlSelect("""
+    val result = repo.select(SparqlSelectQuery("""
         SELECT ?name ?age WHERE {
             ?person <http://xmlns.com/foaf/0.1/name> ?name .
             ?person <http://xmlns.com/foaf/0.1/age> ?age .
@@ -288,9 +293,18 @@ fun main() {
 }
 ```
 
-## Related Documentation
+## Validation
 
-- [QName Resolution](../reference/dsl.md#qname-resolution) - How QNames are resolved
-- [SPARQL Queries](../api/core-api.md#sparql-queries) - SPARQL query API
-- [Error Handling](error-handling.md) - Error handling and debugging
+- After enabling **`RdfDebug`** and **`DEBUG`** logging, run a **`SELECT`** and confirm a **`Query trace:`** line appears for that query.
+
+## Troubleshooting
+
+- **Still silent:** Confirm the SLF4J backend is bound (no **`NOP`** logger) and the **`com.geoknoesis.kastor.rdf`** logger is not capped at **`INFO`**.
+- **Production noise:** Prefer compile-time or runtime flags so **`RdfDebug.enable`** never runs on hot paths unless explicitly opted in.
+
+## Related
+
+- [QName Resolution](../reference/dsl.md#qname-resolution) — QName → IRI rules
+- [SPARQL Queries](../api/core-api.md#sparql-queries) — query API surface
+- [Error Handling](error-handling.md) — exceptions and error codes
 

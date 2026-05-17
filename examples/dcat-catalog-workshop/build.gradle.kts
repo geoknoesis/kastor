@@ -8,10 +8,12 @@ application {
 
 dependencies {
   implementation(project(":rdf:core"))
+  implementation(project(":rdf:sparql-lang"))
   implementation(project(":rdf:jena"))
   implementation(project(":kastor-gen:runtime"))
   implementation(libs.kotlinx.coroutines.core)
   testImplementation(project(":rdf:testkit"))
+  testRuntimeOnly(libs.slf4j.simple)
 }
 
 tasks.register<JavaExec>("runHandRdf") {

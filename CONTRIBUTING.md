@@ -7,30 +7,37 @@ Thank you for your interest in improving Kastor. This document explains how to b
 - **JDK 17** (Gradle uses the JVM toolchain from the build scripts)
 - No extra global tools are required beyond a recent **Gradle** wrapper (`./gradlew` / `gradlew.bat`)
 
+**Repo layout:** see [**Repository architecture**](docs/kastor/concepts/architecture.md) (modules, layers, Gradle targets) and [**Physical repository layout**](docs/kastor/concepts/architecture.md#physical-repository-layout) (on-disk grouping vs `:module:` paths).
+
 ## Build and test
 
 From the repository root:
 
 ```bash
 ./gradlew test -x :rdf:conformance:test
+./gradlew conformanceSmokeTest
 ```
 
-The **W3C RDF / SPARQL conformance** module (`:rdf:conformance`) is large and may be environment-sensitive; it is not required for the default contributor workflow. Maintainers and release candidates should also run:
+- **`test`** — all modules except the heavy RDF 1.2 corpus (`:rdf:conformance:test` is excluded from this aggregate run).
+- **`conformanceSmokeTest`** — fast RDF harness check using a **bundled fixture** in `:rdf:conformance` (no git submodule). Equivalent to `./gradlew :rdf:conformance:conformanceSmokeTest` (the root project exposes the same task name as a convenience alias).
+
+**Full W3C RDF 1.2 syntax suites** (large submodule under `rdf/conformance/test-data/`):
 
 ```bash
+git submodule update --init --recursive
 ./gradlew :rdf:conformance:test
 ```
 
-**SHACL:** `:rdf:shacl-validation:test` always runs a small bundled W3C subset. To run against upstream manifests locally, clone the **`gh-pages`** branch of [w3c/data-shapes](https://github.com/w3c/data-shapes) into `rdf/shacl-validation/test-data/` as documented in [`rdf/shacl-validation/test-data/README.md`](rdf/shacl-validation/test-data/README.md) (classic **`data-shapes-test-suite`** per [the W3C test-suite page](https://w3c.github.io/data-shapes/data-shapes-test-suite/), plus **`w3c-shacl12`** for SHACL 1.2), then re-run `./gradlew :rdf:shacl-validation:test`.
+**SHACL:** `./gradlew :rdf:shacl-validation:test` always exercises a **small bundled** W3C subset. For the full upstream SHACL 1.2 tree locally, follow [`rdf/shacl/validation/test-data/README.md`](rdf/shacl/validation/test-data/README.md) (clone [w3c/data-shapes](https://github.com/w3c/data-shapes) `gh-pages` into that directory), then re-run the module tests.
 
 On Windows, use `gradlew.bat` in place of `./gradlew`.
 
-### CI vs local
+### Automation reference
 
-| Workflow | When it runs | Command / role |
-|----------|----------------|-----------------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master` | `./gradlew test -x :rdf:conformance:test` |
-| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | `:rdf:conformance:test` + `:rdf:shacl-validation:test` (full W3C SHACL tree; clones `data-shapes` / `shacl12-test-suite`) |
+| Workflow | When it runs | Role |
+|----------|----------------|------|
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master` | `./gradlew test -x :rdf:conformance:test`, `./gradlew :rdf:conformance:conformanceSmokeTest`, and `./gradlew buildHealth` |
+| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | `:rdf:conformance:test` and `:rdf:shacl-validation:test` against full upstream corpora (workflow clones W3C SHACL data when needed) |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | Flags new vulnerable dependencies (requires [Dependency graph](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-the-dependency-graph) enabled on the repo) |
 | [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#publishing-with-a-custom-github-actions-workflow) |
@@ -41,12 +48,13 @@ Useful variants:
 
 - **Single module:** `./gradlew :rdf:core:test` or `./gradlew :kastor-gen:runtime:test`
 - **Examples:** `./gradlew :examples:dcat-us:check` (if you touch example code)
+- **Dependency hygiene:** `./gradlew buildHealth` — Dependency Analysis aggregate advice (library modules; `:benchmarks:*` and `:examples:*` excluded for CI footprint); see [Repository architecture — Dependency hygiene](docs/kastor/concepts/architecture.md#dependency-hygiene-automated).
 
 ## Pull requests
 
 1. **Fork** the repository and create a **feature branch** from `main`.
 2. Keep changes **focused** on one concern when possible (easier review, cleaner history).
-3. **Run tests** locally before opening a PR (at minimum `./gradlew test -x :rdf:conformance:test`); fix any failures or add tests that cover new behavior.
+3. **Run tests** locally before opening a PR (at minimum `./gradlew test -x :rdf:conformance:test` and `./gradlew conformanceSmokeTest`); fix any failures or add tests that cover new behavior.
 4. In the PR description, explain **what** changed and **why** (link issues with `Fixes #123` when applicable).
 5. Match existing **Kotlin style** and patterns in the touched modules; avoid unrelated reformatting.
 

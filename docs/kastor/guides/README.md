@@ -5,7 +5,11 @@
 This section contains task‑oriented guides for accomplishing specific outcomes.
 Each guide is scoped, reproducible, and includes prerequisites and expected outputs.
 
-## 📖 Available Guides
+**Terminology:** RDF and Kastor terms (**repository**, **dataset**, **SHACL shape**, **provider**, …) are defined in the [**Glossary**](../concepts/glossary.md).
+
+**Diátaxis:** these pages are **how-to guides** (task-first). Tutorials vs explanation vs reference — [**How documentation fits together**](../getting-started/documentation-guide.md) (includes anti-patterns).
+
+## Available Guides
 
 ### **Best Practices**
 - [Best Practices](best-practices.md) - Guidelines for effective Kastor usage
@@ -23,14 +27,16 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 - [Debug Mode](debug-mode.md) - Enable prefix expansion and query tracing for troubleshooting
 - [Performance Guide](performance.md) - Performance best practices and benchmarks
 - [How to Validate with SHACL](how-to-validate-shacl.md) - Validate data with shapes
+- [How to Create SHACL Shapes](how-to-create-shacl-shapes.md) - Author shapes with the SHACL DSL
 - [How to Check Ontology Quality](how-to-ontology-quality.md) - OWL/SKOS quality catalogues, CLI, and semantic (embedding) tier
 - [How to Perform Reasoning](how-to-reasoning.md) - Run RDFS inference
 - [How to Use Datasets](how-to-use-datasets.md) - Query across named graphs
 - [How to Work with Named Graphs](how-to-named-graphs.md) - Manage datasets
 - [How to Use Transactions](how-to-transactions.md) - Atomic write operations
+- [Migrating from 0.1.x to 0.2 (RDF 1.2)](migrating-to-rdf-1.2.md) - Triple terms, LangString, AST, persistence notes
 
 ### **Tutorials and Examples**
-- [Guides](guides.md) - Comprehensive topic-based guides
+- [Guides hub](guides.md) - Index of core workflow how-tos
 - [Cookbook](cookbook.md) - Practical examples and recipes
 - [Kastor Query DSL Tutorial](kastor-query-dsl-tutorial.md) - Deep dive into the query DSL
 
@@ -38,7 +44,7 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 - [FAQ](faq.md) - Frequently asked questions
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
 
-## 🎯 Guide Categories
+## Guide Categories
 
 ### **For Beginners**
 - Start with [Getting Started](../getting-started/README.md)
@@ -55,7 +61,7 @@ Each guide is scoped, reproducible, and includes prerequisites and expected outp
 - Customize with [Extending Kastor](extending.md)
 - Troubleshoot with [Troubleshooting](troubleshooting.md)
 
-## 🔗 Related Resources
+## Related Resources
 
 - [Core API](../api/core-api.md) - Complete API reference
 - [Concepts](../concepts/README.md) - Understanding RDF fundamentals

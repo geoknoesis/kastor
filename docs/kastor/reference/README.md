@@ -3,6 +3,8 @@
 Authoritative, behavior‑level documentation for the SDK. Use this when you need
 exact signatures, semantics, edge cases, and error behavior.
 
+**Vocabulary:** Terms such as **repository**, **graph**, **dataset**, **literal**, and **provider** are defined in the [**Glossary**](../concepts/glossary.md). New readers: see [**How documentation fits together**](../getting-started/documentation-guide.md) for how Reference differs from tutorials and how-to guides.
+
 ### Core API & DSL
 - [API Reference](../api/api-reference.md)
 - [Core API](../api/core-api.md)

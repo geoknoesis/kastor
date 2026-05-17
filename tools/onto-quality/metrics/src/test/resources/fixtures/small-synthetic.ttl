@@ -1,0 +1,18 @@
+@prefix : <http://example.org/syn#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+:Animal a owl:Class ;
+    rdfs:label "Animal"@en .
+
+:Dog a owl:Class ;
+    rdfs:subClassOf :Animal ;
+    rdfs:label "Dog"@en .
+
+:hasName a owl:DatatypeProperty ;
+    rdfs:domain :Dog ;
+    rdfs:range xsd:string .
+
+:rex a owl:NamedIndividual ;
+    a :Dog .

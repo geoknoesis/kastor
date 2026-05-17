@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jProvider
 import com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository
 import org.junit.jupiter.api.DynamicNode
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.TestFactory
 import java.nio.file.Path
 
@@ -23,7 +24,11 @@ import java.nio.file.Path
  *
  * The real W3C suite is run by [JenaConformanceTest]/[Rdf4jConformanceTest]
  * once the submodule is checked out.
+ *
+ * Tagged **`conformance-smoke`** — invoked by the Gradle task **`conformanceSmokeTest`**
+ * on `:rdf:conformance` (and PR CI) without checking out the submodule.
  */
+@Tag("conformance-smoke")
 class Rdf12ConformanceSmokeTest {
 
     private val fixtureRoot: Path = run {

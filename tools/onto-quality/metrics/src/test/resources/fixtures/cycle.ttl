@@ -1,0 +1,9 @@
+@prefix : <http://example.org/cycle#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+:A a owl:Class .
+:B a owl:Class .
+
+:A rdfs:subClassOf :B .
+:B rdfs:subClassOf :A .
