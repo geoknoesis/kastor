@@ -66,8 +66,43 @@ println(report.describeMarkdown())
 
 - **v0.1:** structural validation (OWL / SKOS / DQ SHACL bundles).
 - **v0.2:** embedding-assisted semantic tier (`:tools:onto-quality-embed`, `EMBEDDING_QUALITY` catalogue).
-- **v0.3:** LLM-generated explanations.
+- **v0.3:** LLM-generated explanations (**[Koog](https://github.com/JetBrains/koog)**), optional module **`:tools:onto-quality-llm-koog`**; see [v0.3 design](../../docs/kastor/design/onto-quality-v0.3-llm-explanations.md) (broader LLM roadmap: [LLM-assisted modeling review](../../docs/kastor/design/llm-assisted-ontology-modeling-review.md)).
 - **v0.4:** reasoning integration.
+
+## LLM explanations (v0.3)
+
+Advisory natural-language explanations for existing SHACL findings ship in
+`com.geoknoesis.kastor:onto-quality-llm-koog` (same version as `onto-quality`; Koog is the LLM runtime).
+
+**Library:**
+
+```kotlin
+import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
+import com.geoknoesis.kastor.ontoquality.llm.ExplanationModelPreset
+import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
+import com.geoknoesis.kastor.ontoquality.llm.LlmProvider
+import com.geoknoesis.kastor.ontoquality.llm.qualityExplanationEnricher
+import kotlinx.coroutines.runBlocking
+
+val enricher = qualityExplanationEnricher(
+    LlmExplanationConfig(
+        provider = LlmProvider.OPENAI,
+        modelPreset = ExplanationModelPreset.AUTO,
+        // or: modelId = "gpt-4o"  // overrides modelPreset when set
+    ),
+)
+val explained = runBlocking {
+    enricher.enrich(report, ExplanationOptions())
+}
+check(explained.hasLlmExplanations) { "No explanations — check provider config and API keys" }
+println(explained.describeMarkdown())
+```
+
+Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or run **Ollama** locally for `LlmProvider.OLLAMA`.
+
+**CLI (`onto-quality-cli`):** pass `--explain` on `check` or `pipeline` when **`KASTOR_ONTO_QUALITY_LLM=true`**. Options include `--llm-provider openai|anthropic|ollama`, `--llm-model` (raw id; overrides preset), `--llm-model-preset auto|gpt4o-mini|gpt4o|sonnet-4-5|haiku-4-5|llama3.2`, `--ollama-base`, `--explain-max`, `--explain-batch`, `--explain-min-severity`, `--explain-dry-run`. JSON output is an object `{"findings":[...],"llmExplanations":[...]}`.
+
+**Integration test:** `./gradlew :tools:onto-quality-llm-koog:test` calls OpenAI when **`OPENAI_API_KEY`** is set (otherwise the test is skipped). Set **`KASTOR_SKIP_OPENAI_LLM_TESTS=1`** to force-skip on agents that have a key but must not spend quota.
 
 ## Semantic tier (v0.2)
 

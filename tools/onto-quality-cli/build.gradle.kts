@@ -10,9 +10,11 @@ application {
 dependencies {
   implementation(project(":tools:onto-quality"))
   implementation(project(":tools:onto-quality-embed"))
+  implementation(project(":tools:onto-quality-llm-koog"))
   implementation(project(":rdf:core"))
   implementation(project(":rdf:jena"))
   implementation("com.github.ajalt.clikt:clikt:5.0.1")
+  implementation(libs.kotlinx.coroutines.core)
 }
 
 publishing {

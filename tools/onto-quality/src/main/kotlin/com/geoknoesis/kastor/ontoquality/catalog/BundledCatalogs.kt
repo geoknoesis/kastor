@@ -47,6 +47,22 @@ object BundledCatalogs {
             resourcePath = "/shapes/rdf12-quality-shacl.ttl",
         )
 
+    /**
+     * **Documentation only:** methodological pitfalls when using SHACL for QC,
+     * expressed as **`sh:NodeShape`** resources in the same tagging style as [OWL_QUALITY]
+     * (`oqsh:pitfall` / `oqsh:category`) and [SKOS_VALIDATION] (`skvsh:rule` / `skvsh:category`).
+     *
+     * Every shape has **`sh:deactivated true`** so it never validates domain data.
+     * Not included in [all] or [SKOS_VOCABULARY_QC]; load explicitly for registries or tooling.
+     */
+    val SHACL_QC_DESIGN: ShapeCatalog =
+        ResourceCatalog(
+            id = "shacl-qc-design",
+            name = "SHACL QC methodology (documentation shapes)",
+            version = "0.1.0",
+            resourcePath = "/shapes/shacl-qc-design-shacl.ttl",
+        )
+
     val all: List<ShapeCatalog> =
         listOf(
             OWL_QUALITY,

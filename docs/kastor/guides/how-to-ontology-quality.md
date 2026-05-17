@@ -7,6 +7,7 @@
 - Run **bundled SHACL catalogues** (OWL, SKOS, data quality, optional semantic tier) over an ontology graph
 - Use **`QualityChecker`** and read **`QualityReport`** / **`QualityFinding`** with pitfall metadata
 - Use the **`onto-qa`** CLI (`enrich`, `check`, `pipeline`) and the **embedding** preprocessor (`onto-quality-embed`)
+- Optionally add **v0.3 LLM explanations** (Koog) for advisory text on SHACL findings
 
 ## Prerequisites
 
@@ -16,7 +17,7 @@ Add the modules you need:
 |------|-------------------|
 | Quality API + bundled Turtle shapes | `implementation("com.geoknoesis.kastor:onto-quality:0.2.0")` |
 | Embedding / `SemanticEnricher` | `implementation("com.geoknoesis.kastor:onto-quality-embed:0.2.0")` |
-| Tests (optional) | Same artifacts on `testImplementation` |
+| LLM explanations (Koog) | `implementation("com.geoknoesis.kastor:onto-quality-llm-koog:0.2.0")` |
 
 You also need an RDF provider used elsewhere in your project (for example **`rdf-jena`**) so `Rdf.parse` / file IO works the same way as in [How to Validate with SHACL](how-to-validate-shacl.md).
 
@@ -127,6 +128,26 @@ onto-qa enrich ontology.ttl --model custom \
 ```
 
 Bundled **`--model all-MiniLM-L6-v2`** must not be combined with `--onnx` / `--tokenizer` / `--embedding-dim`.
+
+## Step 4 (optional): LLM explanations (v0.3, Koog)
+
+Add **`onto-quality-llm-koog`** and configure a supported provider (for example **`OPENAI_API_KEY`**). Explanations are **advisory** only and do not change SHACL conformance.
+
+```kotlin
+import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
+import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
+import com.geoknoesis.kastor.ontoquality.llm.LlmProvider
+import com.geoknoesis.kastor.ontoquality.llm.qualityExplanationEnricher
+import kotlinx.coroutines.runBlocking
+
+val explained = runBlocking {
+    qualityExplanationEnricher(LlmExplanationConfig(provider = LlmProvider.OPENAI))
+        .enrich(report, ExplanationOptions())
+}
+println(explained.describeMarkdown())
+```
+
+**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain-dry-run` to preview counts without an API call. JSON output includes **`findings`** and **`llmExplanations`** objects.
 
 ## `onto-qa` CLI
 

@@ -12,6 +12,8 @@ onnxruntime = "1.18.0"
 djlTokenizers = "0.28.0"
 jmhGradle = "0.7.2"
 jmh = "1.37"
+koog = "0.8.0"
+kotlinxSerializationJson = "1.8.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -44,6 +46,9 @@ rdf4j-shacl = { module = "org.eclipse.rdf4j:rdf4j-shacl", version.ref = "rdf4j" 
 
 onnxruntime = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 djl-huggingface-tokenizers = { module = "ai.djl.huggingface:tokenizers", version.ref = "djlTokenizers" }
+
+koog-agents = { module = "ai.koog:koog-agents", version.ref = "koog" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -4,6 +4,14 @@ import com.geoknoesis.kastor.ontoquality.PitfallReference
 import com.geoknoesis.kastor.ontoquality.QualityChecker
 import com.geoknoesis.kastor.ontoquality.QualityReport
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
+import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
+import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
+import com.geoknoesis.kastor.ontoquality.explanation.FindingRef
+import com.geoknoesis.kastor.ontoquality.explanation.isAtLeast
+import com.geoknoesis.kastor.ontoquality.llm.ExplanationModelPreset
+import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
+import com.geoknoesis.kastor.ontoquality.llm.LlmProvider
+import com.geoknoesis.kastor.ontoquality.llm.qualityExplanationEnricher
 import com.geoknoesis.kastor.ontoquality.embed.EnrichmentVocabulary
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
 import com.geoknoesis.kastor.ontoquality.embed.SemanticEnricher
@@ -33,6 +41,7 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
+import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
     OntoQualityApp().main(args)
@@ -48,6 +57,9 @@ private const val CATALOG_HELP =
 /** Catalogs that include embedding shapes; log if the graph has no enrichment triples. */
 private val CATALOGS_USING_EMBEDDING_SHAPES =
     setOf("all", "embedding-quality", "skos-vocabulary-embed")
+
+/** When `true`, `onto-qa check --explain` / `onto-qa explain` may call an LLM (Koog). */
+private const val LLM_EXPLAIN_ENV = "KASTOR_ONTO_QUALITY_LLM"
 
 private class OntoQualityApp : CliktCommand(name = "onto-qa") {
     init {
@@ -140,6 +152,28 @@ private class PipelineCommand : CliktCommand(name = "pipeline") {
     private val keepIntermediate by
         option("--keep-intermediate", help = "Keep the temporary enriched Turtle file")
             .flag(default = false)
+    private val explainOpt by
+        option(
+            "--explain",
+            help = "Add LLM explanations via Koog (requires $LLM_EXPLAIN_ENV=true and provider credentials).",
+        ).flag(default = false)
+    private val explainDryRun by
+        option("--explain-dry-run", help = "Print how many findings would be explained; no API call.").flag(default = false)
+    private val llmProviderOpt by
+        option("--llm-provider", help = "openai | anthropic | ollama").default("openai")
+    private val llmModelOpt by option("--llm-model", help = "Model id override (provider-specific; overrides --llm-model-preset)")
+    private val llmModelPresetOpt by
+        option(
+            "--llm-model-preset",
+            help =
+                "When --llm-model is omitted: auto | gpt4o-mini | gpt4o | sonnet-4-5 | haiku-4-5 | llama3.2",
+        ).default("auto")
+    private val ollamaBaseOpt by
+        option("--ollama-base", help = "Ollama base URL (default: http://localhost:11434)")
+    private val explainMaxOpt by option("--explain-max", help = "Max findings to explain").int().default(50)
+    private val explainBatchOpt by option("--explain-batch", help = "Findings per LLM request").int().default(12)
+    private val explainMinSeverityOpt by
+        option("--explain-min-severity", help = "violation | warning | info").default("warning")
 
     override fun run() {
         loadOnnxEmbeddingModel(
@@ -180,7 +214,22 @@ private class PipelineCommand : CliktCommand(name = "pipeline") {
                 }
 
                 val report = checker.check(enriched)
-                emitReport(report, formatOpt, severityOpt, outputOpt)
+                val explained =
+                    maybeExplainReport(
+                        report,
+                        explainCliFromFlags(
+                            explainOpt,
+                            explainDryRun,
+                            llmProviderOpt,
+                            llmModelOpt,
+                            llmModelPresetOpt,
+                            ollamaBaseOpt,
+                            explainMaxOpt,
+                            explainBatchOpt,
+                            explainMinSeverityOpt,
+                        ),
+                    )
+                emitReport(report, explained, formatOpt, severityOpt, outputOpt)
                 System.err.println(
                     "Pipeline complete (catalog=$catalogOpt). Use --catalog skos-vocabulary-embed for SKOS + embedding shapes after enrichment.",
                 )
@@ -211,6 +260,28 @@ private class CheckCommand : CliktCommand(name = "check") {
     private val outputOpt by
         option("--output", help = "Write output to this file instead of stdout")
             .path()
+    private val explainOpt by
+        option(
+            "--explain",
+            help = "Add LLM explanations via Koog (requires $LLM_EXPLAIN_ENV=true and provider credentials).",
+        ).flag(default = false)
+    private val explainDryRun by
+        option("--explain-dry-run", help = "Print how many findings would be explained; no API call.").flag(default = false)
+    private val llmProviderOpt by
+        option("--llm-provider", help = "openai | anthropic | ollama").default("openai")
+    private val llmModelOpt by option("--llm-model", help = "Model id override (provider-specific; overrides --llm-model-preset)")
+    private val llmModelPresetOpt by
+        option(
+            "--llm-model-preset",
+            help =
+                "When --llm-model is omitted: auto | gpt4o-mini | gpt4o | sonnet-4-5 | haiku-4-5 | llama3.2",
+        ).default("auto")
+    private val ollamaBaseOpt by
+        option("--ollama-base", help = "Ollama base URL (default: http://localhost:11434)")
+    private val explainMaxOpt by option("--explain-max", help = "Max findings to explain").int().default(50)
+    private val explainBatchOpt by option("--explain-batch", help = "Findings per LLM request").int().default(12)
+    private val explainMinSeverityOpt by
+        option("--explain-min-severity", help = "violation | warning | info").default("warning")
 
     override fun run() {
         val validator = ShaclValidation.validator()
@@ -230,10 +301,152 @@ private class CheckCommand : CliktCommand(name = "check") {
         }
 
         val report = checker.check(graph)
-        emitReport(report, formatOpt, severityOpt, outputOpt)
+        val explained =
+            maybeExplainReport(
+                report,
+                explainCliFromFlags(
+                    explainOpt,
+                    explainDryRun,
+                    llmProviderOpt,
+                    llmModelOpt,
+                    llmModelPresetOpt,
+                    ollamaBaseOpt,
+                    explainMaxOpt,
+                    explainBatchOpt,
+                    explainMinSeverityOpt,
+                ),
+            )
+        emitReport(report, explained, formatOpt, severityOpt, outputOpt)
         if (shouldFail(report, severityThreshold(severityOpt))) {
             exitProcess(1)
         }
+    }
+}
+
+private data class LlmExplainCli(
+    val requested: Boolean,
+    val dryRun: Boolean,
+    val provider: LlmProvider,
+    val modelId: String?,
+    val modelPreset: ExplanationModelPreset,
+    val ollamaBase: String?,
+    val maxFindings: Int,
+    val batchSize: Int,
+    val minSeverity: ViolationSeverity,
+)
+
+private fun explainCliFromFlags(
+    explainOpt: Boolean,
+    explainDryRun: Boolean,
+    llmProviderOpt: String,
+    llmModelOpt: String?,
+    llmModelPresetOpt: String,
+    ollamaBaseOpt: String?,
+    explainMaxOpt: Int,
+    explainBatchOpt: Int,
+    explainMinSeverityOpt: String,
+): LlmExplainCli? =
+    if (!explainOpt) {
+        null
+    } else {
+        LlmExplainCli(
+            requested = true,
+            dryRun = explainDryRun,
+            provider = parseLlmProvider(llmProviderOpt),
+            modelId = llmModelOpt?.trim()?.takeIf { it.isNotEmpty() },
+            modelPreset = parseExplanationModelPreset(llmModelPresetOpt),
+            ollamaBase = ollamaBaseOpt?.trim()?.takeIf { it.isNotEmpty() },
+            maxFindings = explainMaxOpt,
+            batchSize = explainBatchOpt,
+            minSeverity = explainMinViolationSeverity(explainMinSeverityOpt),
+        )
+    }
+
+private fun parseLlmProvider(s: String): LlmProvider =
+    when (s.lowercase()) {
+        "openai" -> LlmProvider.OPENAI
+        "anthropic" -> LlmProvider.ANTHROPIC
+        "ollama" -> LlmProvider.OLLAMA
+        else -> throw UsageError("Unknown --llm-provider $s (expected openai|anthropic|ollama)")
+    }
+
+private fun parseExplanationModelPreset(s: String): ExplanationModelPreset =
+    when (s.lowercase()) {
+        "auto" -> ExplanationModelPreset.AUTO
+        "gpt4o-mini",
+        "gpt-4o-mini",
+        -> ExplanationModelPreset.OPENAI_GPT4O_MINI
+        "gpt4o",
+        "gpt-4o",
+        -> ExplanationModelPreset.OPENAI_GPT4O
+        "sonnet",
+        "sonnet-4-5",
+        "claude-sonnet-4-5",
+        -> ExplanationModelPreset.ANTHROPIC_SONNET_4_5
+        "haiku",
+        "haiku-4-5",
+        -> ExplanationModelPreset.ANTHROPIC_HAIKU_4_5
+        "llama3.2",
+        "llama-3.2",
+        -> ExplanationModelPreset.OLLAMA_LLAMA_3_2
+        else ->
+            throw UsageError(
+                "Unknown --llm-model-preset $s (expected auto|gpt4o-mini|gpt4o|sonnet-4-5|haiku-4-5|llama3.2)",
+            )
+    }
+
+private fun explainMinViolationSeverity(s: String): ViolationSeverity =
+    when (s.lowercase()) {
+        "violation" -> ViolationSeverity.VIOLATION
+        "warning" -> ViolationSeverity.WARNING
+        "info" -> ViolationSeverity.INFO
+        else -> throw UsageError("Unknown --explain-min-severity $s (expected violation|warning|info)")
+    }
+
+private fun maybeExplainReport(
+    report: QualityReport,
+    llm: LlmExplainCli?,
+): ExplainedQualityReport? {
+    if (llm == null || !llm.requested) return null
+    if (!System.getenv(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true)) {
+        logger.warn(
+            "{} is not set to true; skipping LLM explanations (Koog).",
+            LLM_EXPLAIN_ENV,
+        )
+        return null
+    }
+    if (llm.dryRun) {
+        val n =
+            report.findings
+                .count { it.violation.severity.isAtLeast(llm.minSeverity) }
+                .coerceAtMost(llm.maxFindings)
+        val modelDesc =
+            llm.modelId
+                ?: "${llm.modelPreset.name.lowercase()} (preset)"
+        System.err.println(
+            "LLM explain dry-run: would send up to $n findings (provider=${llm.provider}, model=$modelDesc)",
+        )
+        return null
+    }
+    return try {
+        val cfg =
+            LlmExplanationConfig(
+                provider = llm.provider,
+                modelId = llm.modelId,
+                modelPreset = llm.modelPreset,
+                baseUrl = llm.ollamaBase,
+            )
+        val enricher = qualityExplanationEnricher(cfg)
+        val opts =
+            ExplanationOptions(
+                maxFindings = llm.maxFindings,
+                batchSize = llm.batchSize,
+                minSeverity = llm.minSeverity,
+            )
+        runBlocking { enricher.enrich(report, opts) }
+    } catch (e: Exception) {
+        logger.warn("LLM explanations failed: {}", e.message)
+        null
     }
 }
 
@@ -283,6 +496,7 @@ private fun buildChecker(catalogOpt: String, validator: com.geoknoesis.kastor.rd
 
 private fun emitReport(
     report: QualityReport,
+    explained: ExplainedQualityReport?,
     formatOpt: String,
     severityOpt: String,
     outputOpt: Path?,
@@ -298,9 +512,19 @@ private fun emitReport(
 
     val text =
         when (format) {
-            OutputFormat.TEXT -> report.describeText()
-            OutputFormat.MARKDOWN -> report.describeMarkdown()
-            OutputFormat.JSON -> findingsToJson(report)
+            OutputFormat.TEXT ->
+                if (explained != null) {
+                    explained.describeText()
+                } else {
+                    report.describeText()
+                }
+            OutputFormat.MARKDOWN ->
+                if (explained != null) {
+                    explained.describeMarkdown()
+                } else {
+                    report.describeMarkdown()
+                }
+            OutputFormat.JSON -> findingsToJson(report, explained)
             OutputFormat.TURTLE ->
                 JenaBridge.toString(report.underlying.toShaclValidationReportRdf(), "TURTLE")
         }
@@ -358,9 +582,12 @@ private fun shouldFail(report: QualityReport, threshold: SeverityThreshold): Boo
             }
     }
 
-private fun findingsToJson(report: QualityReport): String {
+private fun findingsToJson(
+    report: QualityReport,
+    explained: ExplainedQualityReport?,
+): String {
     val rows =
-        report.findings.map { f ->
+        report.findings.mapIndexed { idx, f ->
             val pit =
                 when (val p = f.pitfall) {
                     null -> "null"
@@ -369,8 +596,10 @@ private fun findingsToJson(report: QualityReport): String {
                     is PitfallReference.Skos -> "\"SKOS:${escapeJson(p.number)}\""
                     is PitfallReference.OntoQuality -> "\"OntoQuality:${escapeJson(p.number)}\""
                 }
+            val ref = FindingRef.from(f, idx).hexSha256
             """
             {
+              "findingRef": "${escapeJson(ref)}",
               "severity": "${f.violation.severity.name}",
               "message": "${escapeJson(f.violation.message)}",
               "shapeUri": ${f.violation.shapeUri?.let { "\"${escapeJson(it)}\"" } ?: "null"},
@@ -381,7 +610,28 @@ private fun findingsToJson(report: QualityReport): String {
             }
             """.trimIndent()
         }
-    return "[${rows.joinToString(",\n")}]"
+    val explRows =
+        explained?.explanations?.map { e ->
+            val actions = e.suggestedActions.joinToString(",") { "\"${escapeJson(it)}\"" }
+            """
+            {
+              "findingRef": "${escapeJson(e.findingRef.hexSha256)}",
+              "summary": "${escapeJson(e.summary)}",
+              "whyItMatters": ${e.whyItMatters?.let { "\"${escapeJson(it)}\"" } ?: "null"},
+              "suggestedActions": [$actions],
+              "confidenceNote": ${e.confidenceNote?.let { "\"${escapeJson(it)}\"" } ?: "null"},
+              "modelId": "${escapeJson(e.modelId)}",
+              "providerKind": "${escapeJson(e.providerKind)}",
+              "promptRunId": "${escapeJson(e.promptRunId)}"
+            }
+            """.trimIndent()
+        }.orEmpty()
+    return """
+        {
+          "findings": [${rows.joinToString(",\n")}],
+          "llmExplanations": [${explRows.joinToString(",\n")}]
+        }
+        """.trimIndent()
 }
 
 private fun focusNodeToString(term: RdfTerm): String =

@@ -10,7 +10,8 @@ This complements generic [SHACL Validation](shacl-validation.md): here the **sha
 |--------|------|
 | **`:tools:onto-quality`** | `QualityChecker`, `BundledCatalogs`, bundled Turtle under `src/main/resources/shapes/` |
 | **`:tools:onto-quality-embed`** | `SemanticEnricher`, **configurable** BERT-style ONNX embeddings (bundled MiniLM or local ONNX + `tokenizer.json`), `oqsh:semanticallyCloseTo` materialization |
-| **`:tools:onto-quality-cli`** | **`onto-qa`** — `check`, `enrich`, `pipeline` |
+| **`:tools:onto-quality-cli`** | **`onto-qa`** — `check`, `enrich`, `pipeline` (optional **`--explain`** LLM tier when `KASTOR_ONTO_QUALITY_LLM=true`) |
+| **`:tools:onto-quality-llm-koog`** | **v0.3:** `DefaultQualityExplanationEnricher` / `qualityExplanationEnricher`, `LlmExplanationConfig` (OpenAI / Anthropic / Ollama; `modelId` / `modelPreset`) |
 
 Published Maven coordinates follow `com.geoknoesis.kastor:onto-quality` and `onto-quality-embed` (see [Installation](../getting-started/installation.md) / BOM).
 
@@ -33,6 +34,7 @@ Shape sources live in the repository as Turtle:
 
 - **Structural** — SHACL-only: class/property patterns, metadata, SKOS, DQ (no embeddings).
 - **Semantic** — Requires a prior **enrichment** step that adds similarity (and optionally label–definition drift) triples. Shapes are tuned to **not** false-positive when enrichment is absent.
+- **LLM explanations (v0.3)** — Optional **Koog** layer: advisory text for existing findings (`ExplainedQualityReport`). Does not change SHACL outcomes.
 
 Validation still runs entirely through the same **`ShaclValidator`** stack as the rest of Kastor; see [SHACL validation architecture](../design/shacl-validation-architecture.md).
 

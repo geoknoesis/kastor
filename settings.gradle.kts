@@ -21,6 +21,7 @@ include(
   ":examples:hello-codegen",
   ":tools:onto-quality",
   ":tools:onto-quality-embed",
+  ":tools:onto-quality-llm-koog",
   ":tools:onto-quality-cli",
   ":benchmarks:shacl",
   ":benchmarks:shacl-era-cli",

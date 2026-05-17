@@ -1,0 +1,289 @@
+# ============================================================================
+#  SHACL methodology — design pitfalls when using SHACL for quality control
+#
+#  Companion to docs/kastor/design/shacl-quality-control-pitfalls.md.
+#
+#  MODE: every NodeShape has sh:deactivated true. These resources document
+#  methodological traps (reasoning profile, graph scope, convention vs logic,
+#  etc.) in the same tagging style as owl-quality-shacl.ttl (oqsh:pitfall /
+#  oqsh:category) and skos-validation-shacl.ttl (skvsh:rule / skvsh:category).
+#  They MUST NOT be activated in production QC bundles — they are not checks
+#  on ontology content.
+#
+#  Codes: QC-01 … QC-12 (not OOPS! / not SKOS S-numbers).
+#
+#  Namespace:
+#    qcdsh:  http://example.org/shacl-qc-design-shacl#
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix qcdsh:  <http://example.org/shacl-qc-design-shacl#> .
+
+# ----------------------------------------------------------------------------
+#  Ontology header
+# ----------------------------------------------------------------------------
+
+<http://example.org/shacl-qc-design-shacl>
+    a               owl:Ontology ;
+    rdfs:label      "SHACL QC design — methodological pitfalls (documentation shapes)"@en ;
+    rdfs:comment    "SHACL NodeShapes documenting traps when using SHACL as a quality-control layer. All shapes are sh:deactivated; load for documentation, registries, or tooling — not for validating domain ontologies."@en ;
+    owl:imports     <http://www.w3.org/ns/shacl> ;
+    sh:declare      [ sh:prefix "rdf"   ; sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ] ,
+                    [ sh:prefix "rdfs"  ; sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "owl"   ; sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "xsd"   ; sh:namespace "http://www.w3.org/2001/XMLSchema#"^^xsd:anyURI ] ,
+                    [ sh:prefix "sh"    ; sh:namespace "http://www.w3.org/ns/shacl#"^^xsd:anyURI ] ,
+                    [ sh:prefix "skos"  ; sh:namespace "http://www.w3.org/2004/02/skos/core#"^^xsd:anyURI ] ,
+                    [ sh:prefix "qcdsh" ; sh:namespace "http://example.org/shacl-qc-design-shacl#"^^xsd:anyURI ] .
+
+# ----------------------------------------------------------------------------
+#  Tagging vocabulary (parallel to oqsh:pitfall / skvsh:rule)
+# ----------------------------------------------------------------------------
+
+qcdsh:designPitfall
+    a               rdf:Property ;
+    rdfs:label      "SHACL QC design pitfall code"@en ;
+    rdfs:comment    "Stable code QC-01…QC-12 for methodological pitfalls when using SHACL for quality control."@en ;
+    rdfs:domain     sh:Shape .
+
+qcdsh:category
+    a               rdf:Property ;
+    rdfs:label      "category"@en ;
+    rdfs:comment    "Object is a category resource grouping related documentation shapes."@en ;
+    rdfs:domain     sh:Shape ;
+    rdfs:range      rdfs:Class .
+
+#  SKOS taxonomy for qcdsh:category (same pattern as oqsh:QualityShapeCategoryScheme).
+
+qcdsh:MethodologyCategoryScheme a skos:ConceptScheme ;
+    rdfs:label      "SHACL methodology — shape categories"@en ;
+    skos:prefLabel  "SHACL methodology — shape categories"@en ;
+    skos:definition "Controlled vocabulary of category IRIs used as objects of qcdsh:category on deactivated documentation shapes in this library."@en ;
+    skos:hasTopConcept
+        qcdsh:GraphAssemblyAndReasoning , qcdsh:PolicyLabelsAndLiterals ,
+        qcdsh:SyntaxIdentityAndStability , qcdsh:ShapeLanguageFeatures ,
+        qcdsh:OperationsAndLifecycle .
+
+qcdsh:GraphAssemblyAndReasoning a rdfs:Class, skos:Concept ;
+    rdfs:label      "graph assembly and reasoning"@en ;
+    skos:prefLabel  "Graph assembly and reasoning"@en ;
+    skos:definition "Pitfalls tied to asserted vs entailed triples, imports, and named-graph / dataset assembly."@en ;
+    skos:inScheme   qcdsh:MethodologyCategoryScheme ;
+    skos:topConceptOf qcdsh:MethodologyCategoryScheme .
+
+qcdsh:PolicyLabelsAndLiterals a rdfs:Class, skos:Concept ;
+    rdfs:label      "policy, labels, and literals"@en ;
+    skos:prefLabel  "Policy, labels, and literals"@en ;
+    skos:definition "Convention-as-logic and internationalization of lexical constraints."@en ;
+    skos:inScheme   qcdsh:MethodologyCategoryScheme ;
+    skos:topConceptOf qcdsh:MethodologyCategoryScheme .
+
+qcdsh:SyntaxIdentityAndStability a rdfs:Class, skos:Concept ;
+    rdfs:label      "syntax and identity stability"@en ;
+    skos:prefLabel  "Syntax and identity stability"@en ;
+    skos:definition "Blank nodes, skolemization, and serialization-driven drift in focus nodes and diagnostics."@en ;
+    skos:inScheme   qcdsh:MethodologyCategoryScheme ;
+    skos:topConceptOf qcdsh:MethodologyCategoryScheme .
+
+qcdsh:ShapeLanguageFeatures a rdfs:Class, skos:Concept ;
+    rdfs:label      "shape language features"@en ;
+    skos:prefLabel  "Shape language features"@en ;
+    skos:definition "SPARQL constraints, path expressions, and closed-world closure."@en ;
+    skos:inScheme   qcdsh:MethodologyCategoryScheme ;
+    skos:topConceptOf qcdsh:MethodologyCategoryScheme .
+
+qcdsh:OperationsAndLifecycle a rdfs:Class, skos:Concept ;
+    rdfs:label      "operations and lifecycle"@en ;
+    skos:prefLabel  "Operations and lifecycle"@en ;
+    skos:definition "Reporting noise, calibration, preprocessing tiers, and maintaining shape catalogues as products."@en ;
+    skos:inScheme   qcdsh:MethodologyCategoryScheme ;
+    skos:topConceptOf qcdsh:MethodologyCategoryScheme .
+
+# =============================================================================
+#  DOCUMENTATION SHAPES  (sh:deactivated true — do not enable for domain QC)
+# =============================================================================
+
+qcdsh:DesignPitfallAssertedGraphVsEntailmentShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:GraphAssemblyAndReasoning ;
+    qcdsh:designPitfall "QC-01" ;
+    rdfs:label          "Asserted RDF vs OWL entailment skews validation results"@en ;
+    rdfs:comment        """SHACL Core largely validates the asserted RDF graph. Many OWL axioms only appear as useful patterns after reasoning or materialization (closure, same-as collapse, chains, restrictions).
+
+Pitfall: a shape expresses a condition that holds under OWL-DL entailment but not on raw triples, or violations appear only after reasoning while shapes run on the serialized file.
+
+Mitigation: declare and pin a validation profile; precompute closures where needed, or encode checks against the triple patterns you actually persist."""@en ;
+    sh:message          "QC-01: outcomes depend on asserted vs entailed triples — declare a validation profile."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallImportsNamedGraphsShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:GraphAssemblyAndReasoning ;
+    qcdsh:designPitfall "QC-02" ;
+    rdfs:label          "Imports and named graphs break “one file” mental models"@en ;
+    rdfs:comment        """Quality rules are often written as if a single Turtle file were the whole world. owl:imports, named graphs in SPARQL datasets, and split modules change which triples exist at validation time.
+
+Pitfall: findings disappear or appear depending on whether imports are merged, vocabulary is bundled, or shapes assume the default graph only.
+
+Mitigation: document graph assembly; validate in CI on explicit merged or dataset-specific graphs."""@en ;
+    sh:message          "QC-02: graph scope (imports / named graphs) changes validation — document assembly."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallStyleAsLogicShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:PolicyLabelsAndLiterals ;
+    qcdsh:designPitfall "QC-03" ;
+    rdfs:label          "Naming and policy shapes are not objective logic"@en ;
+    rdfs:comment        """Naming conventions, URI hygiene, and metadata “best practices” are policy, not entailment. They are natural in SHACL but culture-dependent.
+
+Pitfall: convention shapes are treated as objective defects, or releases are blocked for rules that do not match local naming or multilingual policy.
+
+Mitigation: tier and severity; opt-in convention catalogues; version shape libraries independently from ontology releases."""@en ;
+    sh:message          "QC-03: editorial rules masquerade as defects — separate tiers and opt-in conventions."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallInternationalizationLiteralsShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:PolicyLabelsAndLiterals ;
+    qcdsh:designPitfall "QC-04" ;
+    rdfs:label          "Label and language-tag constraints misfire across locales"@en ;
+    rdfs:comment        """Labels and SKOS documentation use multiple language tags or plain literals. Cardinality rules and sh:languageIn easily contradict legitimate localization or legacy data.
+
+Pitfall: shapes tuned for one language fail international vocabularies, or overly permissive rules miss missing-language defects.
+
+Mitigation: publish a language policy; use per-locale cardinality where SKOS expects multiplicity."""@en ;
+    sh:message          "QC-04: literal / language policies need explicit design — avoid implicit single-locale assumptions."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallBlankNodeStabilityShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:SyntaxIdentityAndStability ;
+    qcdsh:designPitfall "QC-05" ;
+    rdfs:label          "Blank nodes and serialization reordering destabilize focus nodes"@en ;
+    rdfs:comment        """Ontologies use blank nodes for restrictions, anonymous individuals, and reification. Skolemization and round-trip serialization change surface structure.
+
+Pitfall: diagnostics reference unstable blank node labels; the same file validates differently after trivial rewrites.
+
+Mitigation: prefer stable IRIs; report paths and surrounding triples; treat syntax-level instability as a CI limitation."""@en ;
+    sh:message          "QC-05: bnode identity is fragile — stabilize IRIs and reporting context."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallSparqlConstraintsShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:ShapeLanguageFeatures ;
+    qcdsh:designPitfall "QC-06" ;
+    rdfs:label          "SPARQL constraints trade power for operability"@en ;
+    rdfs:comment        """sh:sparql can encode almost arbitrary checks. Engine variance, performance cliffs, and opaque failures are common.
+
+Pitfall: validators disagree on extensions; expensive joins dominate runtime; authors cannot map failures to edit locations as easily as with Core property shapes.
+
+Mitigation: prefer Core shapes; keep SPARQL small and tested; pin engine and SHACL version in CI."""@en ;
+    sh:message          "QC-06: SPARQL constraints vary by engine and cost — keep them minimal and pinned."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallPathExpressionsShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:ShapeLanguageFeatures ;
+    qcdsh:designPitfall "QC-07" ;
+    rdfs:label          "sh:path is easy to mis-specify"@en ;
+    rdfs:comment        """Sequences, alternatives, and inverses in sh:path are powerful but easy to misread.
+
+Pitfall: under- or over-constrained paths produce silent false negatives or noisy false positives.
+
+Mitigation: prototype on minimal graphs; regression fixtures per shape; verify dialect path semantics."""@en ;
+    sh:message          "QC-07: path expressions need fixtures — validate intended traversal explicitly."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallClosedShapesShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:ShapeLanguageFeatures ;
+    qcdsh:designPitfall "QC-08" ;
+    rdfs:label          "sh:closed fights extensible vocabularies"@en ;
+    rdfs:comment        """sh:closed declares a closed world for a focus node. Teams sometimes use it to “ban surprises.”
+
+Pitfall: lawful extension properties trip validation; OWL’s open-world intent is duplicated in confusing ways.
+
+Mitigation: reserve closure for record-like nodes (SKOS flags, configs), not general ontology classes."""@en ;
+    sh:message          "QC-08: closed shapes over-restrict extensible models — use sparingly."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallSeverityDuplicationShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:OperationsAndLifecycle ;
+    qcdsh:designPitfall "QC-09" ;
+    rdfs:label          "Duplicate findings create alert fatigue"@en ;
+    rdfs:comment        """Multiple shapes can fire on one underlying mistake (missing label, typing, hierarchy).
+
+Pitfall: maintainers dismiss reports as noise; triage cost exceeds fix cost.
+
+Mitigation: normalize codes; group by focus node; cap counts; document primary vs secondary findings."""@en ;
+    sh:message          "QC-09: aggregate and deduplicate reporting — one mistake should not read as many unrelated errors."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallCalibrationGroundTruthShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:OperationsAndLifecycle ;
+    qcdsh:designPitfall "QC-10" ;
+    rdfs:label          "Reference corpora and ground truth are incomplete"@en ;
+    rdfs:comment        """Reference suites (e.g. OOPS! fixtures) are uneven; some pitfalls lack consensus machine-checkable examples.
+
+Pitfall: over-claiming detection from narrow fixtures, or skipping important pitfalls without a reference graph.
+
+Mitigation: publish a triage matrix; refresh when corpus or consensus improves."""@en ;
+    sh:message          "QC-10: calibration claims are only as strong as the reference corpus — document scope."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallPreprocessingSemanticTierShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:OperationsAndLifecycle ;
+    qcdsh:designPitfall "QC-11" ;
+    rdfs:label          "Preprocessing and embeddings couple validation to ML ops"@en ;
+    rdfs:comment        """Similarity and drift triples from enrichment pipelines become prerequisites for shapes.
+
+Pitfall: outcomes depend on model version, thresholds, tokenization; absent enrichment must be distinguished from “passed.”
+
+Mitigation: separate structural and semantic tiers; version models and thresholds; document preconditions per shape group."""@en ;
+    sh:message          "QC-11: semantic-tier shapes depend on enrichment — gate and version the pipeline."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
+
+qcdsh:DesignPitfallShapeMaintenanceShape
+    a                   sh:NodeShape ;
+    qcdsh:category      qcdsh:OperationsAndLifecycle ;
+    qcdsh:designPitfall "QC-12" ;
+    rdfs:label          "Unmaintained shape catalogues rot"@en ;
+    rdfs:comment        """Practice and RDF/OWL norms evolve; static shape files block useful evolution or miss new hygiene rules.
+
+Pitfall: shapes become technical debt — blocking good changes or missing real defects.
+
+Mitigation: version catalogues as products; changelogs; automated tests on representative corpora."""@en ;
+    sh:message          "QC-12: treat shape libraries as maintained products, not one-off dumps."@en ;
+    sh:severity         sh:Info ;
+    sh:targetClass      owl:Ontology ;
+    sh:deactivated      true .
