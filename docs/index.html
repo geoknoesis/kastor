@@ -1,16 +1,29 @@
 ---
 layout: landing
 title: Home
-description: Kotlin-first SDK for RDF and knowledge graphs — DSL, multi-backend graphs, SHACL 1.2, and ontology codegen.
+description: Domain-first Kotlin for RDF — W3C RDF 1.2 syntax conformance testing, full SHACL 1.2 validation, Kastor Gen (KSP), and ontology-quality tooling. Pluggable Jena, RDF4J, SPARQL, Memory.
 ---
 
 <section class="landing-hero" aria-label="Introduction">
   <img class="landing-hero-wordmark" src="{{ '/assets/kastor-logo-wordmark.png' | relative_url }}" width="560" alt="Kastor">
-  <h1>Modern Kotlin for RDF &amp; knowledge graphs</h1>
+  <p class="landing-hero-eyebrow">Not another triple-store wrapper</p>
+  <h1>RDF that fits how Kotlin apps are built</h1>
   <p class="landing-hero-lead">
-    A vocabulary-agnostic core, natural graph DSL, type-safe SPARQL ergonomics, and pluggable backends
-    (Memory, Apache Jena, Eclipse RDF4J, SPARQL). Ship data catalogs, validated graphs, and ontology-driven apps without leaving Kotlin.
+    Kastor is built around a simple idea: <strong>your domain stays Kotlin-first</strong>, and RDF is always reachable through an
+    <strong>explicit side channel</strong>—handles, generated vocabs, and a readable graph DSL—without dragging store-specific types through your business layer.
+    On top of that, Kastor invests where few Kotlin stacks do: <strong>RDF 1.2</strong> tracked against W3C syntax suites,
+    a native <strong>SHACL 1.2</strong> validator, <strong>Kastor Gen</strong> build-time codegen from shapes and vocabs, and
+    <strong>ontology-quality</strong> tooling for governed vocabularies—not just a thin DSL over someone else’s parser.
+    Swap Jena, RDF4J, in-memory graphs, or SPARQL endpoints with configuration; keep validation and reasoning <strong>visible</strong>, not magic.
   </p>
+  <ul class="landing-badge-row" aria-label="Highlights">
+    <li>RDF 1.2 — W3C suites</li>
+    <li>SHACL 1.2 engine</li>
+    <li>Kastor Gen (KSP)</li>
+    <li>Ontology quality</li>
+    <li>Domain-first APIs</li>
+    <li>Side-channel RDF</li>
+  </ul>
   <div class="landing-cta-row">
     <a class="landing-btn landing-btn-primary" href="{{ '/kastor/getting-started/installation.html' | relative_url }}">Install &amp; quick start</a>
     <a class="landing-btn landing-btn-secondary" href="https://github.com/geoknoesis/kastor" target="_blank" rel="noopener">Star on GitHub</a>
@@ -18,42 +31,139 @@ description: Kotlin-first SDK for RDF and knowledge graphs — DSL, multi-backen
   </div>
 </section>
 
+<section class="landing-section" aria-labelledby="diff-heading">
+  <h2 id="diff-heading">What makes Kastor different</h2>
+  <p class="landing-section-lead landing-section-lead-wide">
+    Most RDF stacks ask you to live inside <code>Model</code>, <code>Statement</code>, or vendor graph APIs from day one.
+    Kastor meets you where Kotlin teams already work—clean domain boundaries—then connects to semantic infrastructure when you need it.
+  </p>
+
+  <div class="landing-diff-table-wrap" role="region" aria-label="Comparison with typical RDF library usage">
+    <table class="landing-diff-table">
+      <thead>
+        <tr>
+          <th scope="col">Goal</th>
+          <th scope="col">Kastor</th>
+          <th scope="col">Typical RDF APIs alone</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row">Domain code without RDF types in the core</th>
+          <td>Designed for it—pure Kotlin interfaces; RDF via handles &amp; codegen</td>
+          <td>Often couples business logic to graph APIs</td>
+        </tr>
+        <tr>
+          <th scope="row">Predictable bridge to triples</th>
+          <td>Explicit side-channel access—no hidden mapping framework</td>
+          <td>Direct models everywhere; ORMs vary</td>
+        </tr>
+        <tr>
+          <th scope="row">Vocabulary &amp; shapes drive the API</th>
+          <td>Vocabulary-agnostic DSL + <strong>Kastor Gen</strong> (SHACL / JSON-LD → Kotlin)</td>
+          <td>Manual boilerplate or one-off mappings</td>
+        </tr>
+        <tr>
+          <th scope="row">Swap engines without rewriting the app</th>
+          <td>Same patterns over Memory, Jena, RDF4J, SPARQL</td>
+          <td>Usually locked to one stack’s surface area</td>
+        </tr>
+        <tr>
+          <th scope="row">RDF 1.2 on the standards track</th>
+          <td>
+            Providers exercised against W3C RDF 1.2 syntax suites (Turtle, TriG, N-Triples, N-Quads)—see
+            <a href="{{ '/kastor/concepts/rdf-1.2-conformance.html' | relative_url }}">RDF 1.2 conformance</a>
+          </td>
+          <td>Often “close enough” without a published corpus matrix for your stack</td>
+        </tr>
+        <tr>
+          <th scope="row">SHACL 1.2 validation in-ecosystem</th>
+          <td>
+            Native engine with full <strong>SHACL 1.2</strong> support (Core plus SPARQL extensions)—see
+            <a href="{{ '/kastor/features/shacl-validation.html' | relative_url }}">SHACL validation</a>
+          </td>
+          <td>Depends on adapters; rarely one cohesive Kotlin-first story</td>
+        </tr>
+        <tr>
+          <th scope="row">Codegen + quality as product surfaces</th>
+          <td>
+            <strong>Kastor Gen</strong> (Gradle/KSP) plus <strong>onto-quality</strong> catalogues and guides—see
+            <a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a> and
+            <a href="{{ '/kastor/features/ontology-quality.html' | relative_url }}">ontology quality</a>
+          </td>
+          <td>Usually glued together from unrelated OSS bits</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="landing-prose landing-prose-note">
+    Kastor is <strong>not</strong> a triple database or SPARQL processor—it orchestrates Kotlin ergonomics on top of providers that are.
+    See <a href="{{ '/kastor/concepts/architecture.html' | relative_url }}">architecture</a> and <a href="{{ '/kastor/README.html' | relative_url }}">the docs hub</a> for scope and tradeoffs.
+  </p>
+</section>
+
 <section class="landing-section" aria-labelledby="why-heading">
-  <h2 id="why-heading">Why teams choose Kastor</h2>
+  <h2 id="why-heading">Why teams adopt it</h2>
   <div class="landing-grid">
     <div class="landing-card">
-      <strong>Domain-first RDF</strong>
-      <p>Pure Kotlin domain APIs when you want them; RDF stays explicit via handles and generated vocabularies.</p>
+      <strong>RDF 1.2 &amp; SHACL 1.2 you can verify</strong>
+      <p>
+        RDF 1.2 syntax conformance is driven by the official W3C corpus for both Jena and RDF4J-backed paths; validation is covered by a native
+        <strong>SHACL 1.2</strong> engine (Core + SPARQL extensions), not an afterthought adapter.
+        Details: <a href="{{ '/kastor/concepts/rdf-1.2-conformance.html' | relative_url }}">RDF 1.2 conformance</a>,
+        <a href="{{ '/kastor/features/shacl-validation.html' | relative_url }}">SHACL</a>.
+      </p>
     </div>
     <div class="landing-card">
-      <strong>One API, many engines</strong>
-      <p>Same patterns over memory stores, Jena (TDB2, etc.), RDF4J, and remote endpoints—swap with configuration, not rewrites.</p>
+      <strong>Kastor Gen — ontologies at compile time</strong>
+      <p>
+        First-class <strong>KSP + Gradle</strong> codegen turns SHACL, JSON-LD, and vocabulary artifacts into Kotlin you actually maintain—interfaces,
+        wrappers, and explicit <code>ValidationContext</code> hooks—not hand-written URI constants forever.
+        Start at <a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a>.
+      </p>
     </div>
     <div class="landing-card">
-      <strong>Validation &amp; quality</strong>
-      <p>Native SHACL 1.2 Core engine, RDF4J bridge, and <code>onto-quality</code> catalogues for OWL, SKOS, and data-shape checks.</p>
+      <strong>Ontology quality, not only “valid RDF”</strong>
+      <p>
+        <strong>onto-quality</strong> and companion docs focus on OWL, SKOS, and shape hygiene for real catalogues and governed datasets—quality as a
+        workflow, not a one-off linter. See <a href="{{ '/kastor/features/ontology-quality.html' | relative_url }}">ontology quality</a>.
+      </p>
     </div>
     <div class="landing-card">
-      <strong>Kastor Gen</strong>
-      <p>KSP + Gradle plugin: SHACL / JSON-LD–driven Kotlin interfaces and wrappers for maintainable ontology-bound code.</p>
+      <strong>Compatibility layer, expressive surface</strong>
+      <p>
+        Keep TDB2, NativeStore, or SPARQL endpoints—same Kotlin graph DSL and SPARQL builders across providers; peel back to Jena or RDF4J when you must.
+        Readable graphs without marrying business logic to vendor graph types.
+      </p>
     </div>
   </div>
 </section>
 
 <section class="landing-section landing-section-code" aria-labelledby="code-heading">
   <h2 id="code-heading">Hello RDF in a few lines</h2>
-  <p class="landing-section-lead">Create a graph, add triples with the DSL, run a SPARQL <code>SELECT</code>.</p>
+  <p class="landing-section-lead">Create a graph with the DSL, add triples, run a SPARQL <code>SELECT</code>—same idea whether your backend is in-process or remote.</p>
 
   <div class="landing-code-panel">
     {% include landing-sample-kotlin.html %}
   </div>
 
-  <h3 class="landing-subheading">Shape of the stack</h3>
-  <div class="landing-diagram" role="img" aria-label="Flow from repository to your app">
-    <pre class="mermaid">flowchart LR
-  A[Repository] --> B[Graph DSL]
-  B --> C[SPARQL / APIs]
-  C --> D[Your app]</pre>
+  <h3 class="landing-subheading">How the pieces relate</h3>
+  <div class="landing-diagram" role="img" aria-label="Domain layer connected to RDF through Kastor, backed by pluggable providers">
+    <pre class="mermaid">flowchart TB
+  subgraph app["Your Kotlin app"]
+    D[Domain / codegen APIs]
+  end
+  subgraph kastor["Kastor"]
+    G[Graph DSL · SPARQL builders · vocabs]
+    H[Explicit handles &amp; side-channel RDF]
+  end
+  subgraph providers["Providers you choose"]
+    P[Jena · RDF4J · Memory · SPARQL endpoint]
+  end
+  D --- H
+  H --- G
+  G --> P</pre>
   </div>
 </section>
 

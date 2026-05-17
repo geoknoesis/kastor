@@ -1,5 +1,5 @@
 title: Kastor
-description: Modern Kotlin SDK for RDF and knowledge graphs
+description: Domain-first Kotlin for RDF — RDF 1.2 & SHACL 1.2 on the standards track, Kastor Gen codegen, ontology-quality tooling, and pluggable engines (Jena, RDF4J, SPARQL, Memory).
 theme: jekyll-theme-minimal
 markdown: kramdown
 

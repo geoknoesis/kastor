@@ -128,11 +128,48 @@
   letter-spacing: -0.025em;
 }
 
+.landing-hero-eyebrow {
+  margin: 0 0 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent-text);
+}
+
 .landing-hero-lead {
-  font-size: clamp(1rem, 2.2vw, 1.15rem);
+  font-size: clamp(1rem, 2.2vw, 1.125rem);
   color: var(--color-text-secondary);
-  max-width: 40rem;
+  max-width: 44rem;
+  margin: 0 auto 1.35rem;
+}
+
+.landing-hero-lead strong {
+  color: var(--color-text);
+  font-weight: 650;
+}
+
+.landing-badge-row {
+  list-style: none;
   margin: 0 auto 1.75rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem 0.55rem;
+  max-width: 46rem;
+}
+
+.landing-badge-row li {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-accent-text);
+  background: var(--color-accent-muted);
+  border: 1px solid rgba(13, 148, 136, 0.22);
+  border-radius: 999px;
+  line-height: 1.25;
 }
 
 .landing-cta-row {
@@ -200,6 +237,16 @@
   line-height: 1.55;
 }
 
+.landing-section-lead-wide {
+  max-width: 52rem;
+  margin-bottom: 1.25rem;
+}
+
+.landing-section-lead-wide code {
+  font-size: 0.9em;
+  padding: 0.12em 0.38em;
+}
+
 .landing-subheading {
   font-size: 0.95rem;
   font-weight: 700;
@@ -219,6 +266,96 @@
 .landing-prose a {
   color: var(--color-accent);
   font-weight: 500;
+}
+
+.landing-prose-note {
+  margin-top: 1.5rem;
+  padding: 1rem 1.15rem;
+  max-width: 52rem;
+  background: var(--color-accent-muted);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--color-accent);
+}
+
+/* —— Differentiation table —— */
+
+.landing-diff-table-wrap {
+  margin-top: 1.25rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  background: var(--color-bg-elevated);
+}
+
+.landing-diff-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.landing-diff-table thead {
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.95), rgba(248, 250, 252, 0.98));
+}
+
+.landing-diff-table th,
+.landing-diff-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.landing-diff-table th[scope="col"] {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.landing-diff-table th[scope="col"]:first-child {
+  width: 26%;
+}
+
+.landing-diff-table th[scope="row"] {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--color-text);
+  background: rgba(241, 245, 249, 0.45);
+}
+
+.landing-diff-table tbody tr:last-child th,
+.landing-diff-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.landing-diff-table td {
+  color: var(--color-text-secondary);
+}
+
+.landing-diff-table a {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.landing-diff-table a:hover {
+  color: var(--color-accent-hover);
+}
+
+.landing-diff-table tbody tr:nth-child(even) td {
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.landing-diff-table tbody tr:nth-child(even) th[scope="row"] {
+  background: rgba(236, 253, 245, 0.35);
 }
 
 .landing-grid {
@@ -248,6 +385,18 @@
   font-size: 0.9375rem;
   color: var(--color-text-secondary);
   line-height: 1.55;
+}
+
+.landing-card a {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.landing-card a:hover {
+  color: var(--color-accent-hover);
 }
 
 .landing-card code {
