@@ -14,6 +14,8 @@ Kastor is **domain-first RDF**: build pure Kotlin domain interfaces and keep RDF
 
 ### **First Steps**
 - [How documentation fits together](documentation-guide.md) — Diátaxis map (tutorial / how-to / explanation / reference)
+- [**Kastor in 5 minutes**](kastor-in-5-minutes.md) — one-page sampler (DSL, SPARQL, providers, SHACL, Gen, quality)
+- [Comparison with other RDF APIs](comparison-with-other-apis.md) — Jena, RDF4J, rdflib, and when to choose what
 - [Getting Started](getting-started.md) - Complete setup and introduction guide
 - [Quick Start](quick-start.md) - Copy-paste examples to get started immediately
 - [Installation](installation.md) - Detailed installation instructions
@@ -23,10 +25,11 @@ Kastor is **domain-first RDF**: build pure Kotlin domain interfaces and keep RDF
 
 ## 🚀 Recommended Learning Path
 
-1. **Start Here**: [Getting Started](getting-started.md) - Overview and basic concepts
-2. **Install**: [Installation](installation.md) - Set up Kastor in your project
-3. **Try It**: [Quick Start](quick-start.md) - Run your first examples
-4. **Configure**: [Configuration Variants](configuration-variants.md) - Customize your setup
+1. **Fast tour**: [Kastor in 5 minutes](kastor-in-5-minutes.md) — capabilities on one page with a single combined example
+2. **Start Here**: [Getting Started](getting-started.md) - Overview and basic concepts
+3. **Install**: [Installation](installation.md) - Set up Kastor in your project
+4. **Try It**: [Quick Start](quick-start.md) - Run your first examples
+5. **Configure**: [Configuration Variants](configuration-variants.md) - Customize your setup
 
 ## 📚 Next Steps
 

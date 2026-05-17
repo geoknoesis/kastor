@@ -1,7 +1,7 @@
 ---
 layout: landing
 title: Home
-description: Domain-first Kotlin for RDF — W3C RDF 1.2 syntax conformance testing, full SHACL 1.2 validation, Kastor Gen (KSP), and ontology-quality tooling. Pluggable Jena, RDF4J, SPARQL, Memory.
+description: Domain-first Kotlin for RDF — RDF 1.2 conformance testing, SHACL 1.2 validation, Kastor Gen (KSP), and ontology-quality tooling. Pluggable Jena, RDF4J, SPARQL, Memory.
 ---
 
 <section class="landing-hero" aria-label="Introduction">
@@ -9,20 +9,16 @@ description: Domain-first Kotlin for RDF — W3C RDF 1.2 syntax conformance test
   <p class="landing-hero-eyebrow">Not another triple-store wrapper</p>
   <h1>RDF that fits how Kotlin apps are built</h1>
   <p class="landing-hero-lead">
-    Kastor is built around a simple idea: <strong>your domain stays Kotlin-first</strong>, and RDF is always reachable through an
-    <strong>explicit side channel</strong>—handles, generated vocabs, and a readable graph DSL—without dragging store-specific types through your business layer.
-    On top of that, Kastor invests where few Kotlin stacks do: <strong>RDF 1.2</strong> tracked against W3C syntax suites,
-    a native <strong>SHACL 1.2</strong> validator, <strong>Kastor Gen</strong> build-time codegen from shapes and vocabs, and
-    <strong>ontology-quality</strong> tooling for governed vocabularies—not just a thin DSL over someone else’s parser.
-    Swap Jena, RDF4J, in-memory graphs, or SPARQL endpoints with configuration; keep validation and reasoning <strong>visible</strong>, not magic.
+    <strong>Domain-first Kotlin</strong>: keep business types clean, reach RDF through an explicit side channel—DSL, handles, and optional KSP codegen.
+    <strong>RDF 1.2</strong> and <strong>SHACL 1.2</strong> are first-class; swap <strong>Jena</strong>, <strong>RDF4J</strong>, memory, or <strong>SPARQL</strong> endpoints with configuration.
+    Kastor is an API layer—not a database; providers do storage and protocol heavy lifting.
   </p>
   <ul class="landing-badge-row" aria-label="Highlights">
     <li>RDF 1.2 — W3C suites</li>
     <li>SHACL 1.2 engine</li>
     <li>Kastor Gen (KSP)</li>
     <li>Ontology quality</li>
-    <li>Domain-first APIs</li>
-    <li>Side-channel RDF</li>
+    <li>Pluggable providers</li>
   </ul>
   <div class="landing-cta-row">
     <a class="landing-btn landing-btn-primary" href="{{ '/kastor/getting-started/installation.html' | relative_url }}">Install &amp; quick start</a>
@@ -34,8 +30,7 @@ description: Domain-first Kotlin for RDF — W3C RDF 1.2 syntax conformance test
 <section class="landing-section" aria-labelledby="diff-heading">
   <h2 id="diff-heading">What makes Kastor different</h2>
   <p class="landing-section-lead landing-section-lead-wide">
-    Most RDF stacks ask you to live inside <code>Model</code>, <code>Statement</code>, or vendor graph APIs from day one.
-    Kastor meets you where Kotlin teams already work—clean domain boundaries—then connects to semantic infrastructure when you need it.
+    Kotlin-first boundaries and explicit RDF access—instead of spreading <code>Model</code> / vendor graph types through your core.
   </p>
 
   <div class="landing-diff-table-wrap" role="region" aria-label="Comparison with typical RDF library usage">
@@ -49,141 +44,64 @@ description: Domain-first Kotlin for RDF — W3C RDF 1.2 syntax conformance test
       </thead>
       <tbody>
         <tr>
-          <th scope="row">Domain code without RDF types in the core</th>
-          <td>Designed for it—pure Kotlin interfaces; RDF via handles &amp; codegen</td>
-          <td>Often couples business logic to graph APIs</td>
+          <th scope="row">Domain code without RDF in the core</th>
+          <td>Pure Kotlin interfaces; RDF via handles &amp; codegen</td>
+          <td>Often couples logic to graph APIs</td>
         </tr>
         <tr>
-          <th scope="row">Predictable bridge to triples</th>
-          <td>Explicit side-channel access—no hidden mapping framework</td>
-          <td>Direct models everywhere; ORMs vary</td>
-        </tr>
-        <tr>
-          <th scope="row">Vocabulary &amp; shapes drive the API</th>
-          <td>Vocabulary-agnostic DSL + <strong>Kastor Gen</strong> (SHACL / JSON-LD → Kotlin)</td>
-          <td>Manual boilerplate or one-off mappings</td>
+          <th scope="row">Shapes &amp; vocabs drive APIs</th>
+          <td>DSL + <strong>Kastor Gen</strong> (SHACL / JSON-LD → Kotlin)</td>
+          <td>Manual boilerplate or ad hoc mapping</td>
         </tr>
         <tr>
           <th scope="row">Swap engines without rewriting the app</th>
           <td>Same patterns over Memory, Jena, RDF4J, SPARQL</td>
-          <td>Usually locked to one stack’s surface area</td>
+          <td>Usually one stack’s surface area</td>
         </tr>
         <tr>
-          <th scope="row">RDF 1.2 on the standards track</th>
+          <th scope="row">Standards depth (1.2 track)</th>
           <td>
-            Providers exercised against W3C RDF 1.2 syntax suites (Turtle, TriG, N-Triples, N-Quads)—see
-            <a href="{{ '/kastor/concepts/rdf-1.2-conformance.html' | relative_url }}">RDF 1.2 conformance</a>
+            RDF 1.2 suites, native <strong>SHACL 1.2</strong>—
+            <a href="{{ '/kastor/concepts/rdf-1.2-conformance.html' | relative_url }}">conformance</a>,
+            <a href="{{ '/kastor/features/shacl-validation.html' | relative_url }}">SHACL</a>
           </td>
-          <td>Often “close enough” without a published corpus matrix for your stack</td>
-        </tr>
-        <tr>
-          <th scope="row">SHACL 1.2 validation in-ecosystem</th>
-          <td>
-            Native engine with full <strong>SHACL 1.2</strong> support (Core plus SPARQL extensions)—see
-            <a href="{{ '/kastor/features/shacl-validation.html' | relative_url }}">SHACL validation</a>
-          </td>
-          <td>Depends on adapters; rarely one cohesive Kotlin-first story</td>
-        </tr>
-        <tr>
-          <th scope="row">Codegen + quality as product surfaces</th>
-          <td>
-            <strong>Kastor Gen</strong> (Gradle/KSP) plus <strong>onto-quality</strong> catalogues and guides—see
-            <a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a> and
-            <a href="{{ '/kastor/features/ontology-quality.html' | relative_url }}">ontology quality</a>
-          </td>
-          <td>Usually glued together from unrelated OSS bits</td>
+          <td>Often uneven 1.2 / SHACL coverage in one Kotlin story</td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <p class="landing-prose landing-prose-note">
-    Kastor is <strong>not</strong> a triple database or SPARQL processor—it orchestrates Kotlin ergonomics on top of providers that are.
-    See <a href="{{ '/kastor/concepts/architecture.html' | relative_url }}">architecture</a> and <a href="{{ '/kastor/README.html' | relative_url }}">the docs hub</a> for scope and tradeoffs.
+    Scope and tradeoffs: <a href="{{ '/kastor/concepts/architecture.html' | relative_url }}">architecture</a>,
+    <a href="{{ '/kastor/README.html' | relative_url }}">documentation hub</a>.
   </p>
-</section>
-
-<section class="landing-section" aria-labelledby="why-heading">
-  <h2 id="why-heading">Why teams adopt it</h2>
-  <div class="landing-grid">
-    <div class="landing-card">
-      <strong>RDF 1.2 &amp; SHACL 1.2 you can verify</strong>
-      <p>
-        RDF 1.2 syntax conformance is driven by the official W3C corpus for both Jena and RDF4J-backed paths; validation is covered by a native
-        <strong>SHACL 1.2</strong> engine (Core + SPARQL extensions), not an afterthought adapter.
-        Details: <a href="{{ '/kastor/concepts/rdf-1.2-conformance.html' | relative_url }}">RDF 1.2 conformance</a>,
-        <a href="{{ '/kastor/features/shacl-validation.html' | relative_url }}">SHACL</a>.
-      </p>
-    </div>
-    <div class="landing-card">
-      <strong>Kastor Gen — ontologies at compile time</strong>
-      <p>
-        First-class <strong>KSP + Gradle</strong> codegen turns SHACL, JSON-LD, and vocabulary artifacts into Kotlin you actually maintain—interfaces,
-        wrappers, and explicit <code>ValidationContext</code> hooks—not hand-written URI constants forever.
-        Start at <a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a>.
-      </p>
-    </div>
-    <div class="landing-card">
-      <strong>Ontology quality, not only “valid RDF”</strong>
-      <p>
-        <strong>onto-quality</strong> and companion docs focus on OWL, SKOS, and shape hygiene for real catalogues and governed datasets—quality as a
-        workflow, not a one-off linter. See <a href="{{ '/kastor/features/ontology-quality.html' | relative_url }}">ontology quality</a>.
-      </p>
-    </div>
-    <div class="landing-card">
-      <strong>Compatibility layer, expressive surface</strong>
-      <p>
-        Keep TDB2, NativeStore, or SPARQL endpoints—same Kotlin graph DSL and SPARQL builders across providers; peel back to Jena or RDF4J when you must.
-        Readable graphs without marrying business logic to vendor graph types.
-      </p>
-    </div>
-  </div>
 </section>
 
 <section class="landing-section landing-section-code" aria-labelledby="code-heading">
   <h2 id="code-heading">Hello RDF in a few lines</h2>
-  <p class="landing-section-lead">Create a graph with the DSL, add triples, run a SPARQL <code>SELECT</code>—same idea whether your backend is in-process or remote.</p>
+  <p class="landing-section-lead">DSL in, <code>SELECT</code> out—same pattern across in-memory or remote backends.</p>
 
   <div class="landing-code-panel">
     {% include landing-sample-kotlin.html %}
   </div>
-
-  <h3 class="landing-subheading">How the pieces relate</h3>
-  <div class="landing-diagram" role="img" aria-label="Domain layer connected to RDF through Kastor, backed by pluggable providers">
-    <pre class="mermaid">flowchart TB
-  subgraph app["Your Kotlin app"]
-    D[Domain / codegen APIs]
-  end
-  subgraph kastor["Kastor"]
-    G[Graph DSL · SPARQL builders · vocabs]
-    H[Explicit handles &amp; side-channel RDF]
-  end
-  subgraph providers["Providers you choose"]
-    P[Jena · RDF4J · Memory · SPARQL endpoint]
-  end
-  D --- H
-  H --- G
-  G --> P</pre>
-  </div>
 </section>
 
 <section class="landing-section" aria-labelledby="docs-heading">
-  <h2 id="docs-heading">Documentation pillars</h2>
+  <h2 id="docs-heading">Documentation</h2>
   <ul class="landing-pillars">
-    <li><a href="{{ '/kastor/getting-started/' | relative_url }}">Getting started</a> — install, first graph, configuration variants</li>
-    <li><a href="{{ '/kastor/concepts/' | relative_url }}">Concepts</a> — RDF 1.2, datasets, SPARQL, vocabularies</li>
-    <li><a href="{{ '/kastor/guides/' | relative_url }}">How-to guides</a> — SHACL, named graphs, transactions, ontology quality</li>
-    <li><a href="{{ '/kastor/api/api-reference.html' | relative_url }}">API reference</a> — core APIs and DSLs</li>
-    <li><a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a> — codegen from ontologies</li>
+    <li><a href="{{ '/kastor/getting-started/kastor-in-5-minutes.html' | relative_url }}">Kastor in 5 minutes</a> — tour DSL, SPARQL, providers, SHACL, Gen</li>
+    <li><a href="{{ '/kastor/getting-started/' | relative_url }}">Getting started</a> — install, first graph, configuration</li>
+    <li><a href="{{ '/kastor-gen/' | relative_url }}">Kastor Gen</a> — ontology codegen (Gradle/KSP)</li>
+    <li><a href="{{ '/kastor/README.html' | relative_url }}">Full map</a> — concepts, guides, API reference</li>
   </ul>
 </section>
 
 <section class="landing-section" aria-labelledby="community-heading">
-  <h2 id="community-heading">Community &amp; sustainability</h2>
+  <h2 id="community-heading">Community</h2>
   <p class="landing-prose">
-    <a href="https://github.com/geoknoesis/kastor/discussions" target="_blank" rel="noopener">Discussions</a>,
-    <a href="https://github.com/geoknoesis/kastor/issues" target="_blank" rel="noopener">issues</a>,
-    and <a href="mailto:stephanef@geoknoesis.com">email</a>.
-    If Kastor helps your work, consider <a href="https://github.com/sponsors/geoknoesis" target="_blank" rel="noopener">sponsoring</a> maintenance and roadmap.
+    <a href="https://github.com/geoknoesis/kastor/discussions" target="_blank" rel="noopener">Discussions</a> ·
+    <a href="https://github.com/geoknoesis/kastor/issues" target="_blank" rel="noopener">Issues</a> ·
+    <a href="mailto:stephanef@geoknoesis.com">Email</a>
+    · <a href="https://github.com/sponsors/geoknoesis" target="_blank" rel="noopener">Sponsor</a>
   </p>
 </section>

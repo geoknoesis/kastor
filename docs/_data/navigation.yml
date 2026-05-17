@@ -14,6 +14,10 @@ main:
         url: /kastor/getting-started/installation.html
       - title: Quick Start
         url: /kastor/getting-started/quick-start.html
+      - title: Kastor in 5 minutes
+        url: /kastor/getting-started/kastor-in-5-minutes.html
+      - title: Comparison with other RDF APIs
+        url: /kastor/getting-started/comparison-with-other-apis.html
       - title: Configuration Variants
         url: /kastor/getting-started/configuration-variants.html
   - title: Concepts

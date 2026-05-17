@@ -1,6 +1,6 @@
 # Kastor vs Alternatives: Code Comparisons
 
-This page shows side-by-side code comparisons between Kastor and traditional RDF libraries (Jena, RDF4J) to demonstrate the productivity and readability improvements.
+This page shows side-by-side code comparisons between Kastor and traditional RDF libraries (Jena, RDF4J) to demonstrate the productivity and readability improvements. For a **broader ecosystem comparison** (including Python **rdflib**, hosted SPARQL products, and when to choose which stack), see [Kastor vs other RDF APIs](comparison-with-other-apis.md).
 
 ## Creating Triples
 

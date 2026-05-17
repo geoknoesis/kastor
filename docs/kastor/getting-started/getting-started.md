@@ -23,6 +23,7 @@ After **First repository**, running the snippet should complete without errors a
 
 ### Next steps
 
+- [**Kastor in 5 minutes**](kastor-in-5-minutes.md) — one-page sampler of DSL, SPARQL, providers, SHACL, Gen, and quality tooling  
 - [Quick Start](quick-start.md) — longer guided example  
 - [RDF Fundamentals](../concepts/rdf-fundamentals.md) — **Explanation**  
 - [Core API](../api/core-api.md) — **Reference**
@@ -41,7 +42,7 @@ Before diving in, here's what Kastor gives you:
 | **80% fewer bugs** | Type safety prevents common errors |
 | **Zero migration** | Works with existing Jena/RDF4J code |
 
-[See detailed benefits →](benefits.md) | [View code comparisons →](comparisons.md)
+[See detailed benefits →](benefits.md) | [Compare with Jena, RDF4J, rdflib, … →](comparison-with-other-apis.md) | [View code comparisons →](comparisons.md)
 
 ## Why Kastor (quick comparison)
 Kastor is for **domain-first RDF** in Kotlin: work with pure domain interfaces and reach RDF through a side-channel, with a vocabulary-agnostic DSL that keeps semantics explicit.

@@ -33,6 +33,8 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 
 ## 🌟 Features
 
+**New:** [**Kastor in 5 minutes**](getting-started/kastor-in-5-minutes.md) — one page of examples covering the core API, providers, SPARQL, SHACL 1.2, Kastor Gen, and quality tooling.
+
 ### **Core Capabilities**
 - **Natural Language DSL**: `person has name with "Alice"` instead of verbose RDF APIs
 - **Type Safety**: Compile-time validation and type-safe query results
