@@ -39,6 +39,17 @@ main:
         url: /kastor/concepts/architecture.html
       - title: Design Philosophy
         url: /kastor/philosophy.html
+  - title: Project
+    url: /kastor/project/
+    children:
+      - title: Overview
+        url: /kastor/project/
+      - title: Roadmap & plans
+        url: /kastor/project/roadmap.html
+      - title: Implementation status
+        url: /kastor/project/status.html
+      - title: Code quality
+        url: /kastor/project/code-quality.html
   - title: How-To Guides
     url: /kastor/guides/
     children:

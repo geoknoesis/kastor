@@ -12,9 +12,8 @@ defaults:
     values:
       layout: default
 
-# Internal maintainer notes (not for public doc site)
+# Files not published as Jekyll pages (SUMMARY is for GitBook tooling only)
 exclude:
-  - internal
   - Gemfile
   - Gemfile.lock
   - SUMMARY.md

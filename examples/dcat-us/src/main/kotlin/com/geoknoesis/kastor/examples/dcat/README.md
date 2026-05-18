@@ -303,8 +303,8 @@ kastorGen {
 - [DCAT-US 3.0 Specification](https://resources.data.gov/standards/dcat-us/)
 - [DCAT-US SHACL Shapes](https://github.com/DOI-DO/dcat-us/blob/main/shacl/dcat-us_3.0_shacl_shapes.ttl)
 - [W3C DCAT Vocabulary](https://www.w3.org/TR/vocab-dcat-3/)
-- [Kastor Gen Documentation](../../../../../../docs/kastor-gen/README.md)
-- [Kastor RDF API](../kastor/README.md)
+- [Kastor Gen Documentation](../../../../../../../../../../docs/kastor-gen/README.md)
+- [Kastor RDF API](../../../../../../../../../../docs/kastor/README.md)
 
 ## 🤝 Contributing
 

@@ -1,6 +1,6 @@
 # SHACL performance benchmarks (JMH)
 
-See [SHACL native engine benchmark design](../../docs/kastor/design/shacl-native-engine-benchmark.md).
+See [SHACL native engine benchmark design](../../../docs/kastor/design/shacl-native-engine-benchmark.md).
 
 ## Run
 

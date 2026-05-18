@@ -2,7 +2,7 @@
 
 This document records cross-implementation comparison intent for the OQuaRE-aligned
 metrics in `onto-quality-metrics`, mirroring the calibration pattern used by
-[`../onto-quality/CALIBRATION.md`](../onto-quality/CALIBRATION.md).
+[`../library/CALIBRATION.md`](../library/CALIBRATION.md).
 
 Calibration date: **2026-05-17** (initial module landing).
 

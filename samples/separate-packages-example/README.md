@@ -503,7 +503,7 @@ kastorGen {
 - Use the generated components in your applications
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
-- [Multiple Ontology Example](../samples/multi-ontology-example/README.md)
-- [Vocabulary Generation Example](../samples/vocabulary-example/README.md)
-- [Best Practices](../docs/kastor-gen/best-practices.md)
+- [Gradle Configuration Tutorial](../../docs/kastor-gen/tutorials/gradle-configuration.md)
+- [Multiple Ontology Example](../multi-ontology-example/README.md)
+- [Vocabulary Generation Example](../vocabulary-example/README.md)
+- [Best Practices](../../docs/kastor-gen/best-practices.md)

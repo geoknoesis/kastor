@@ -383,7 +383,7 @@ kastorGen {
 - Integrate with existing Kastor vocabulary infrastructure
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
-- [Kastor Vocabularies](../docs/kastor/vocabularies.md)
-- [Vocabulary Interface](../docs/kastor/vocabularies-index.md)
-- [Best Practices](../docs/kastor-gen/best-practices.md)
+- [Gradle Configuration Tutorial](../../docs/kastor-gen/tutorials/gradle-configuration.md)
+- [Kastor vocabularies](../../docs/kastor/concepts/vocabularies.md)
+- [Vocabulary quick reference](../../docs/kastor/resources/vocabularies-index.md)
+- [Best Practices](../../docs/kastor-gen/best-practices.md)

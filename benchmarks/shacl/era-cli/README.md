@@ -26,4 +26,4 @@ docker build -f benchmarks/shacl/era-cli/Dockerfile.sample -t kastor-validation-
 
 Use the same three positional arguments as locally. See [Dockerfile.sample](Dockerfile.sample).
 
-Full integration steps: [SHACL native engine benchmark design](../../docs/kastor/design/shacl-native-engine-benchmark.md), Section 12.4.
+Full integration steps: [SHACL native engine benchmark design](../../../docs/kastor/design/shacl-native-engine-benchmark.md), Section 12.4.

@@ -1,14 +1,14 @@
 # onto-quality
 
 <p align="center">
-  <img src="../../docs/assets/kastor-logo.png" alt="Kastor — beaver mascot with linked-data graph" width="128" height="128">
+  <img src="../../../docs/assets/kastor-logo.png" alt="Kastor — beaver mascot with linked-data graph" width="128" height="128">
 </p>
 
 Ontology **quality checks** for Kastor: curated **SHACL 1.2** shape catalogues run through the
 `:rdf:shacl-validation` engine. Results are surfaced as `QualityReport` / `QualityFinding` values with
 **category** and **pitfall** metadata (where the catalogue defines it).
 
-**Docs site:** [How to Check Ontology Quality](../../docs/kastor/guides/how-to-ontology-quality.md) · [Feature overview](../../docs/kastor/features/ontology-quality.md)
+**Docs site:** [How to Check Ontology Quality](../../../docs/kastor/guides/how-to-ontology-quality.md) · [Feature overview](../../../docs/kastor/features/ontology-quality.md)
 
 ## Bundled catalogues
 
@@ -122,8 +122,8 @@ Combined validation passes produce a single report whose **`violationsByType`** 
 
 - **Structural validation** — OWL / SKOS / data-quality SHACL bundles.
 - **Semantic tier** — embeddings (`:tools:onto-quality-embed`, **`EMBEDDING_QUALITY`** catalogue).
-- **LLM explanations** — optional **`onto-quality-llm-koog`** ([Koog](https://github.com/JetBrains/koog)); [design](../../docs/kastor/design/onto-quality-v0.3-llm-explanations.md), [broader LLM notes](../../docs/kastor/design/llm-assisted-ontology-modeling-review.md).
-- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_MICRO** or **HermiT** ([reasoning overview](../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-micro|hermit`**.
+- **LLM explanations** — optional **`onto-quality-llm-koog`** ([Koog](https://github.com/JetBrains/koog)); [design](../../../docs/kastor/design/onto-quality-v0.3-llm-explanations.md), [broader LLM notes](../../../docs/kastor/design/llm-assisted-ontology-modeling-review.md).
+- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_MICRO** or **HermiT** ([reasoning overview](../../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-micro|hermit`**.
 
 ## LLM explanations
 
@@ -162,7 +162,7 @@ Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or run **Ollama** locally for
 
 ## RDF reasoning before validation
 
-Optional **materialization** merges asserted triples with **Jena** RDFS or OWL-micro inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated, and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../docs/kastor/design/reasoning-ontology-pitfalls.md).
+Optional **materialization** merges asserted triples with **Jena** RDFS or OWL-micro inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated, and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
 
 **Library:**
 

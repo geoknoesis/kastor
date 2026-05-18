@@ -12,7 +12,7 @@ PowerShell:
 .\gradlew.bat :tools:onto-quality:test
 ```
 
-Gradle HTML summary (machine-local): [`build/modules/tools/onto-quality/reports/tests/test/index.html`](../../build/modules/tools/onto-quality/reports/tests/test/index.html) (path relative to repo root).
+Gradle HTML summary (machine-local): [`build/modules/tools/onto-quality/reports/tests/test/index.html`](../../../build/modules/tools/onto-quality/reports/tests/test/index.html) (path relative to repo root).
 
 ## Last verified run
 

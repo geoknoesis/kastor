@@ -8,7 +8,7 @@ variables:
   # Project metadata
   project_name: Kastor
   project_description: A comprehensive Kotlin library for working with RDF data and domain object mapping
-  version: 0.1.0
+  version: 0.2.0
   author: GeoKnoesis LLC
   main_developer: Stephane Fellah
   contact_email: stephanef@geoknoesis.com
@@ -24,9 +24,8 @@ variables:
   github_sponsors: https://github.com/sponsors/geoknoesis
   ko_fi: https://ko-fi.com/geoknoesis
   
-  # Documentation links
-  kastor_docs: ./docs/kastor/README.md
-  ontomapper_docs: ./docs/ontomapper/README.md
+  # Documentation links (paths relative to GitBook `root`)
+  kastor_docs: ./kastor/README.md
   
   # Quick start examples
   quick_start_kastor: |
@@ -50,26 +49,6 @@ variables:
             "?person" - FOAF.age - "?age"
         }
     }
-    ```
-    
-  quick_start_ontomapper: |
-    ```kotlin
-    // Define domain interface
-    @RdfClass(iri = "http://xmlns.com/foaf/0.1/Person")
-    interface Person {
-        @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/name")
-        val name: String
-        
-        @get:RdfProperty(iri = "http://xmlns.com/foaf/0.1/age")
-        val age: Int
-    }
-    
-    // Materialize from RDF
-    val personRef = RdfRef(iri("http://example.org/person"), repo.defaultGraph)
-    val person: Person = personRef.asType()
-    
-    // Use domain object
-    println("Name: ${person.name}, Age: ${person.age}")
     ```
 
 plugins:

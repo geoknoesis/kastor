@@ -4,4 +4,4 @@
 
 Regenerate or extend rows as JVM bridges, PySHACL, or TopBraid runners are wired.
 
-See [SHACL native engine benchmark design](../../../docs/kastor/design/shacl-native-engine-benchmark.md), Section 12.3.
+See [SHACL native engine benchmark design](../../../../docs/kastor/design/shacl-native-engine-benchmark.md), Section 12.3.

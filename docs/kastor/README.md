@@ -27,7 +27,7 @@ Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces 
 
 For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 
-**Contributors:** Gradle modules and dependency layers are summarized in [Repository architecture](concepts/architecture.md).
+**Contributors:** Gradle modules and dependency layers are summarized in [Repository architecture](concepts/architecture.md). **Roadmap, status, and quality:** [Project](project/index.md).
 
 **Reading the docs:** [How documentation fits together](getting-started/documentation-guide.md) · [Glossary](concepts/glossary.md).
 

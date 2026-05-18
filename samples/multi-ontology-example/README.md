@@ -351,7 +351,7 @@ kastorGen {
 - Use cross-ontology queries for complex data analysis
 
 For more information, see:
-- [Gradle Configuration Tutorial](../docs/kastor-gen/tutorials/gradle-configuration.md)
-- [Ontology Generation](ontology-generation.md) - Annotation-based approach
-- [Domain Modeling](domain-modeling.md) - Creating domain interfaces
-- [Best Practices](best-practices.md) - Guidelines for effective usage
+- [Gradle Configuration Tutorial](../../docs/kastor-gen/tutorials/gradle-configuration.md)
+- [Ontology Generation](../../docs/kastor-gen/tutorials/ontology-generation.md) — annotation-based approach
+- [Domain Modeling](../../docs/kastor-gen/tutorials/domain-modeling.md) — creating domain interfaces
+- [Best Practices](../../docs/kastor-gen/best-practices.md) — guidelines for effective usage
