@@ -7,6 +7,26 @@ version while we are in 0.x.
 
 ## [Unreleased]
 
+### Added
+
+- **`kastor-gen`: Immutable data-class generation from SHACL shapes.** `@Rdf` accepts
+  `generateDataClass = true` alongside the existing `generateInterfaces`/`generateWrappers`
+  flags. When enabled, the processor emits an eagerly-loaded Kotlin `data class` (read-model
+  snapshot) and a companion factory `object` that registers itself in `OntoMapper`.
+  New annotation fields: `dataClassSuffix` (name suffix, e.g. `"Record"` → `PersonRecord`),
+  `dataClassImplementsInterface` (structural alignment with the generated interface),
+  `nestedMode` (`INTERFACE` | `DATA_CLASS` | `IRI_ONLY`, controls typing of `sh:class`
+  object properties inside the data class). The `RdfProjection` marker interface
+  distinguishes snapshot instances from live `RdfBacked` wrappers at the type level.
+  `OntoMapper` now auto-discovers `*Factory` classes alongside `*Wrapper` classes on first use.
+
+### Changed (build)
+
+- Gradle wrapper upgraded from 8.13 to 9.5.1.
+- Apache Jena upgraded from 5.6.0 to 6.1.0.
+- `rdf/providers/jena`: `jena-libs`, `jena-arq`, `jena-tdb2` promoted from `implementation`
+  to `api` so downstream consumers can resolve Jena types without an extra explicit dependency.
+
 ## [0.2.0] - 2026-05-17
 
 ### Changed (repository layout)

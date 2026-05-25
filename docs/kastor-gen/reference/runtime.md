@@ -4,6 +4,27 @@ Complete reference for Kastor Gen runtime interfaces and classes.
 
 ## Core Interfaces
 
+### RdfProjection
+
+Marker interface for immutable data-class snapshots produced by a generated factory.
+
+```kotlin
+interface RdfProjection
+```
+
+Every data class generated with `generateDataClass = true` implements `RdfProjection`. This lets code distinguish eagerly-loaded snapshots from live `RdfBacked` wrappers at the type level:
+
+```kotlin
+when (instance) {
+  is RdfProjection -> { /* immutable snapshot — structural equality, copy() */ }
+  is RdfBacked     -> { /* live wrapper — lazy delegates, side-channel access */ }
+}
+```
+
+`RdfProjection` instances carry **no `RdfHandle`** and have no RDF dependencies in their class body. All data was loaded eagerly at factory time.
+
+---
+
 ### RdfBacked
 
 Marker interface for domain instances backed by an RDF node.
@@ -121,12 +142,18 @@ object OntoMapper {
 ```
 
 **Properties:**
-- `registry` — maps each domain interface class to a wrapper factory installed by generated `companion object` blocks
+- `registry` — maps each domain interface (or data class) to a factory, installed by generated `companion object` blocks (wrappers) or `init` blocks (data-class factories)
 
 **Methods:**
-- `materialize` — invokes the registered factory with a provisional handle; generated wrappers typically replace `rdf` so `extras` and validation behave correctly
+- `materialize` — invokes the registered factory with a provisional handle; generated wrappers typically replace `rdf` so `extras` and validation behave correctly. If the class is not yet in the registry, `OntoMapper` attempts to class-load `${type.name}Wrapper` and then `${type.name}Factory` before erroring.
 - `materializeValidated` — same, with a non-null `ValidationContext` on the provisional handle, then validates after materialization
-- `initialize(Class…​)` — optional eager class-loading of wrapper types to avoid first-hit registration races
+- `initialize(Class…​)` — optional eager class-loading of wrapper or factory types to avoid first-hit registration races
+
+**Auto-discovery order** (on first `materialize` call for a type not yet registered):
+
+1. Try to load `${type.name}Wrapper` — registers a live `RdfBacked` wrapper.
+2. If still unregistered, try to load `${type.name}Factory` — registers an eagerly-loading data-class factory.
+3. If still unregistered, throw `IllegalStateException`.
 
 **Usage (prefer extensions at call sites):**
 ```kotlin

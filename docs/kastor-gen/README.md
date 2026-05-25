@@ -55,9 +55,11 @@ Kastor Gen generates type-safe interfaces automatically:
 flowchart LR
   Ontology["SHACL + JSON-LD"] --> KSP["KSP processor"]
   KSP --> Dom["Domain interfaces"]
-  KSP --> Wrap["Wrappers + OntoMapper.registry"]
+  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.registry"]
+  KSP --> DC["Data classes (eager)\n+ Factory objects"]
   Graph["RdfGraph / RdfRepository"] --> Mat["materialize / asType"]
   Wrap --> Mat
+  DC --> Mat
   Mat --> Dom
 ```
 
@@ -139,11 +141,18 @@ rdfHandle.validateOrThrow()
 
 ### Ontology-driven code generation
 
-Annotate a small **generator** class (or use `@file:Rdf` on the package file) with **`@Rdf(shacl = …, context = …)`**. Paths are under `src/main/resources`. KSP emits interfaces and wrappers into the target package.
+Annotate a small **generator** class (or use `@file:Rdf` on the package file) with **`@Rdf(shacl = …, context = …)`**. Paths are under `src/main/resources`. KSP emits the selected artifacts into the target package.
+
+Kastor Gen supports **two generation modes** that can be used independently or together:
+
+| Mode | Generated artifacts | Loading | Equality |
+|---|---|---|---|
+| Interface + Wrapper | Domain interface + `*Wrapper` class | Lazy (property delegates) | Identity |
+| Data class | `*Record` data class + `*RecordFactory` object | Eager (at factory time) | Structural (`data class`) |
+
+**Interface + Wrapper mode** (default — live, lazy-loaded view):
 
 ```kotlin
-import com.geoknoesis.kastor.gen.annotations.Rdf
-
 @Rdf(
     shacl = "ontologies/dcat.shacl.ttl",
     context = "ontologies/dcat.context.jsonld",
@@ -153,6 +162,22 @@ import com.geoknoesis.kastor.gen.annotations.Rdf
 )
 class OntologyGenerator
 ```
+
+**Data class mode** (immutable snapshot — no RDF types in the class body):
+
+```kotlin
+@Rdf(
+    shacl = "ontologies/dcat.shacl.ttl",
+    context = "ontologies/dcat.context.jsonld",
+    packageName = "com.example.generated",
+    generateDataClass = true,
+    dataClassSuffix = "Record",       // CatalogRecord, DatasetRecord, …
+    nestedMode = NestedMode.DATA_CLASS, // recursive snapshots, or INTERFACE / IRI_ONLY
+)
+class OntologyGenerator
+```
+
+Both modes register in `OntoMapper` so **`graph.materialize<CatalogRecord>(node)`** works the same as for wrappers.
 
 ## Key Features
 

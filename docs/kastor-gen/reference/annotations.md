@@ -30,8 +30,77 @@ annotation class Rdf(
   val validationMode: ValidationMode = ValidationMode.EMBEDDED,
   val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
   val externalValidatorClass: String = "",
+  // ── Data-class generation ────────────────────────────────────────────────
+  val generateDataClass: Boolean = false,
+  val dataClassSuffix: String = "",
+  val dataClassImplementsInterface: Boolean = false,
+  val nestedMode: NestedMode = NestedMode.INTERFACE,
 )
 ```
+
+#### Data-class generation fields
+
+| Field | Default | Description |
+|---|---|---|
+| `generateDataClass` | `false` | Emit an immutable Kotlin `data class` (and its factory) alongside or instead of the interface+wrapper pair. |
+| `dataClassSuffix` | `""` | Suffix appended to the shape name for the generated data class. E.g. `"Record"` → `PersonRecord`. |
+| `dataClassImplementsInterface` | `false` | When `true`, the generated data class also implements the generated interface, providing structural alignment. |
+| `nestedMode` | `INTERFACE` | How `sh:class` object properties are typed inside the data class — see [`NestedMode`](#nestedmode) below. |
+
+**Example — generate both modes:**
+
+```kotlin
+@Rdf(
+  shacl = "ontologies/person.shacl.ttl",
+  context = "ontologies/person.context.jsonld",
+  packageName = "com.example.generated",
+  generateInterfaces = true,
+  generateWrappers = true,
+  generateDataClass = true,
+  dataClassSuffix = "Record",
+  dataClassImplementsInterface = true,
+  nestedMode = NestedMode.DATA_CLASS,
+)
+class OntologyGenerator
+```
+
+The processor emits (for each SHACL shape):
+- `Person` — generated domain interface
+- `PersonWrapper` — live RDF-backed wrapper (lazy delegates)
+- `PersonRecord` — immutable data class snapshot
+- `PersonRecordFactory` — object that loads `PersonRecord` eagerly and registers in `OntoMapper`
+
+**Example — data class only (no live wrappers):**
+
+```kotlin
+@Rdf(
+  shacl = "ontologies/person.shacl.ttl",
+  packageName = "com.example.generated",
+  generateInterfaces = false,
+  generateWrappers = false,
+  generateDataClass = true,
+  dataClassSuffix = "Record",
+)
+class OntologyGenerator
+```
+
+### `NestedMode`
+
+Controls how `sh:class` object properties are typed inside a generated data class. Has no effect on interface or wrapper generation.
+
+```kotlin
+enum class NestedMode {
+  INTERFACE,   // property type is the generated interface (default)
+  DATA_CLASS,  // property type is the generated data class (fully recursive snapshot)
+  IRI_ONLY,    // property type is String (IRI value; no sub-object materialisation)
+}
+```
+
+| Value | Resulting property type | When to use |
+|---|---|---|
+| `INTERFACE` | `Dataset` (the generated interface) | Default; the data class holds references typed by the same interface the wrapper uses. |
+| `DATA_CLASS` | `DatasetRecord` (the generated data class) | When you want a fully recursive, self-contained snapshot with no live wrappers anywhere in the object graph. |
+| `IRI_ONLY` | `String` (IRI value) | When you only need the IRI of the related resource, not a materialised sub-object. Avoids recursive loading. |
 
 ### `Prefix`
 
