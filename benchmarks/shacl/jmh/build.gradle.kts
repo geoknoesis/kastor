@@ -1,6 +1,4 @@
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.nio.charset.StandardCharsets
 
 plugins {
   kotlin("jvm")
@@ -68,15 +66,11 @@ tasks.register("shaclCompareKastorPyTierA") {
         shaclEraCliProject.layout.buildDirectory.dir("install/shacl-era-cli/bin").get().asFile
     val eraCli = File(binDir, if (isWin) "shacl-era-cli.bat" else "shacl-era-cli")
 
-    fun capture(cmd: List<String>): String {
-      val buf = ByteArrayOutputStream()
-      exec {
-        commandLine(cmd)
-        workingDir = rootDir
-        standardOutput = buf
-      }
-      return buf.toString(StandardCharsets.UTF_8)
-    }
+    fun capture(cmd: List<String>): String =
+        project.providers.exec {
+          commandLine(cmd)
+          workingDir(rootDir)
+        }.standardOutput.asText.get()
 
     val kastorOut =
         capture(

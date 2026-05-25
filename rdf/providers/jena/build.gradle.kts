@@ -6,9 +6,9 @@ plugins {
 
 dependencies {
   api(project(":rdf:core"))
-  implementation(libs.jena.libs) { isTransitive = true }
-  implementation(libs.jena.arq)
-  implementation(libs.jena.tdb2)
+  api(libs.jena.libs) { isTransitive = true }
+  api(libs.jena.arq)
+  api(libs.jena.tdb2)
 }
 
 publishing {
