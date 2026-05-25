@@ -151,14 +151,23 @@ object OntoMapper {
     types.forEach { loadWrapperClass(it) }
   }
 
-  private const val WRAPPER_SUFFIX = "Wrapper"
-  
+  private const val WRAPPER_SUFFIX  = "Wrapper"
+  private const val FACTORY_SUFFIX  = "Factory"
+
   private fun loadWrapperClass(type: Class<*>) {
-    val wrapperName = "${type.name}$WRAPPER_SUFFIX"
+    // Try the live-wrapper class first (interface + delegate pattern).
+    tryLoad("${type.name}$WRAPPER_SUFFIX", type.classLoader)
+    // If still unregistered, try the data-class factory (eager-projection pattern).
+    if (!registry.containsKey(type)) {
+      tryLoad("${type.name}$FACTORY_SUFFIX", type.classLoader)
+    }
+  }
+
+  private fun tryLoad(className: String, loader: ClassLoader) {
     try {
-      Class.forName(wrapperName, true, type.classLoader)
+      Class.forName(className, true, loader)
     } catch (_: ClassNotFoundException) {
-      // Wrapper not present; caller will get a clear error if still unregistered.
+      // Not present; caller decides whether to error.
     }
   }
 }

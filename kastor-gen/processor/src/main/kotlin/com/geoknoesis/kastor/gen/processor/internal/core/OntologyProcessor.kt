@@ -77,6 +77,10 @@ class OntologyProcessor(
               validationMode = request.validationMode,
               validationAnnotations = request.validationAnnotations,
               externalValidatorClass = request.externalValidatorClass,
+              generateDataClass = request.generateDataClass,
+              dataClassSuffix = request.dataClassSuffix,
+              dataClassImplementsInterface = request.dataClassImplementsInterface,
+              nestedMode = request.nestedMode,
             )
             processed.add(symbol)
           } catch (e: Exception) {

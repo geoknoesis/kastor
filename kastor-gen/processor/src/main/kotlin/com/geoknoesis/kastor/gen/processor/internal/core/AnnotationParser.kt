@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.annotations.ValidationMode
@@ -20,6 +21,10 @@ class AnnotationParser(private val logger: KSPLogger) {
     val validationMode: ValidationMode,
     val validationAnnotations: ValidationAnnotations,
     val externalValidatorClass: String?,
+    val generateDataClass: Boolean = false,
+    val dataClassSuffix: String = "",
+    val dataClassImplementsInterface: Boolean = false,
+    val nestedMode: NestedMode = NestedMode.INTERFACE,
   )
 
   data class InstanceDslGenerationRequest(
@@ -48,13 +53,17 @@ class AnnotationParser(private val logger: KSPLogger) {
 
     val generateInterfaces = getAnnotationValue(annotation, "generateInterfaces") as? Boolean ?: true
     val generateWrappers = getAnnotationValue(annotation, "generateWrappers") as? Boolean ?: true
-    if (!generateInterfaces && !generateWrappers) return null
+    val generateDataClass = getAnnotationValue(annotation, "generateDataClass") as? Boolean ?: false
+    if (!generateInterfaces && !generateWrappers && !generateDataClass) return null
 
     val contextRaw = getAnnotationValue(annotation, "context") as? String ?: ""
     val targetPackage = nonBlank(getAnnotationValue(annotation, "packageName") as? String) ?: defaultPackage
     val validationMode = parseValidationMode(getAnnotationValue(annotation, "validationMode"))
     val validationAnnotations = parseValidationAnnotations(getAnnotationValue(annotation, "validationAnnotations"))
     val externalValidatorClass = getAnnotationValue(annotation, "externalValidatorClass") as? String
+    val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: ""
+    val dataClassImplementsInterface = getAnnotationValue(annotation, "dataClassImplementsInterface") as? Boolean ?: false
+    val nestedMode = parseNestedMode(getAnnotationValue(annotation, "nestedMode"))
 
     return OntologyGenerationRequest(
       shaclPath = shaclPath,
@@ -65,6 +74,10 @@ class AnnotationParser(private val logger: KSPLogger) {
       validationMode = validationMode,
       validationAnnotations = validationAnnotations,
       externalValidatorClass = externalValidatorClass,
+      generateDataClass = generateDataClass,
+      dataClassSuffix = dataClassSuffix,
+      dataClassImplementsInterface = dataClassImplementsInterface,
+      nestedMode = nestedMode,
     )
   }
 
@@ -120,6 +133,16 @@ class AnnotationParser(private val logger: KSPLogger) {
       is KSName -> ValidationAnnotations.valueOf(value.asString())
       is String -> ValidationAnnotations.valueOf(value)
       else -> ValidationAnnotations.JAKARTA
+    }
+  }
+
+  private fun parseNestedMode(value: Any?): NestedMode {
+    return when (value) {
+      is NestedMode -> value
+      is KSType -> NestedMode.valueOf(value.declaration.simpleName.asString())
+      is KSName -> NestedMode.valueOf(value.asString())
+      is String -> NestedMode.valueOf(value)
+      else -> NestedMode.INTERFACE
     }
   }
 }

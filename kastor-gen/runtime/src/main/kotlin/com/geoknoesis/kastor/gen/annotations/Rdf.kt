@@ -47,6 +47,14 @@ annotation class Rdf(
   val validationMode: ValidationMode = ValidationMode.EMBEDDED,
   val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA,
   val externalValidatorClass: String = "",
+  /** Generate an immutable data-class snapshot alongside (or instead of) interfaces + wrappers. */
+  val generateDataClass: Boolean = false,
+  /** Suffix appended to the shape name for the generated data class (e.g. "Record" → PersonRecord). */
+  val dataClassSuffix: String = "",
+  /** When true the data class implements the corresponding generated interface. */
+  val dataClassImplementsInterface: Boolean = false,
+  /** Controls how sh:class object properties are typed in the generated data class. */
+  val nestedMode: NestedMode = NestedMode.INTERFACE,
 )
 
 @Target(AnnotationTarget.VALUE_PARAMETER)
@@ -76,6 +84,19 @@ enum class ValidationAnnotations {
   JAKARTA,
   JAVAX,
   NONE,
+}
+
+/**
+ * Controls how `sh:class` object properties are typed inside a generated data class.
+ * Has no effect on interface or wrapper generation.
+ */
+enum class NestedMode {
+  /** Property type is the generated *interface* for the referenced shape (default). */
+  INTERFACE,
+  /** Property type is the generated *data class* for the referenced shape (fully recursive snapshot). */
+  DATA_CLASS,
+  /** Property type is `String` containing the object's IRI value. No sub-object materialisation. */
+  IRI_ONLY,
 }
 
 /** Stable qualified name for KSP lookup. */

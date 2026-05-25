@@ -1,7 +1,10 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.annotations.ValidationMode
+import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassFactoryGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
@@ -34,25 +37,42 @@ class GenerationCoordinator(
         generateWrappers: Boolean,
         validationMode: ValidationMode,
         validationAnnotations: ValidationAnnotations,
-        externalValidatorClass: String?
+        externalValidatorClass: String?,
+        generateDataClass: Boolean = false,
+        dataClassSuffix: String = "",
+        dataClassImplementsInterface: Boolean = false,
+        nestedMode: NestedMode = NestedMode.INTERFACE,
     ) {
         val interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
         val wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
-        
+
         if (generateInterfaces) {
-            val interfaces = interfaceGenerator.generateInterfaces(model, packageName)
-            // Sort by name for deterministic output
-            interfaces.toSortedMap().forEach { (name, fileSpec) ->
-                writeFile(fileSpec, packageName)
-            }
+            interfaceGenerator.generateInterfaces(model, packageName)
+                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
         }
-        
+
         if (generateWrappers) {
-            val wrappers = wrapperGenerator.generateWrappers(model, packageName)
-            // Sort by name for deterministic output
-            wrappers.toSortedMap().forEach { (name, fileSpec) ->
-                writeFile(fileSpec, packageName)
-            }
+            wrapperGenerator.generateWrappers(model, packageName)
+                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+        }
+
+        if (generateDataClass) {
+            val dcGenerator = DataClassGenerator(
+                logger = logger,
+                suffix = dataClassSuffix,
+                nestedMode = nestedMode,
+                implementsInterface = dataClassImplementsInterface,
+                validationAnnotations = validationAnnotations,
+            )
+            val factoryGenerator = DataClassFactoryGenerator(
+                logger = logger,
+                suffix = dataClassSuffix,
+                nestedMode = nestedMode,
+            )
+            dcGenerator.generateDataClasses(model, packageName)
+                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+            factoryGenerator.generateFactories(model, packageName)
+                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
         }
     }
     

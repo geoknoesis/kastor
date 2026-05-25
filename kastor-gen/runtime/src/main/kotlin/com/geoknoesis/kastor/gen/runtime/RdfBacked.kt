@@ -7,6 +7,12 @@ interface RdfBacked {
   val rdf: RdfHandle
 }
 
+/**
+ * Marker: immutable data-class snapshots produced by a generated factory from an RDF graph.
+ * Distinguishes eagerly-loaded projections from live [RdfBacked] wrappers at the type level.
+ */
+interface RdfProjection
+
 /** Side-channel handle for RDF power without polluting domain API. */
 interface RdfHandle {
   val node: RdfTerm          // Iri or BlankNode
