@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.annotations.ValidationMode
 import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassFactoryGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassWriterGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
@@ -42,6 +43,7 @@ class GenerationCoordinator(
         dataClassSuffix: String = "",
         dataClassImplementsInterface: Boolean = false,
         nestedMode: NestedMode = NestedMode.INTERFACE,
+        generateWriteSupport: Boolean = false,
     ) {
         val interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
         val wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
@@ -64,10 +66,18 @@ class GenerationCoordinator(
                 implementsInterface = dataClassImplementsInterface,
                 validationAnnotations = validationAnnotations,
             )
+            val writerGen = if (generateWriteSupport) {
+                DataClassWriterGenerator(
+                    logger = logger,
+                    suffix = dataClassSuffix,
+                    nestedMode = nestedMode,
+                )
+            } else null
             val factoryGenerator = DataClassFactoryGenerator(
                 logger = logger,
                 suffix = dataClassSuffix,
                 nestedMode = nestedMode,
+                writerGenerator = writerGen,
             )
             dcGenerator.generateDataClasses(model, packageName)
                 .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }

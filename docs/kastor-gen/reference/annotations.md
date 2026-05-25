@@ -35,6 +35,7 @@ annotation class Rdf(
   val dataClassSuffix: String = "",
   val dataClassImplementsInterface: Boolean = false,
   val nestedMode: NestedMode = NestedMode.INTERFACE,
+  val generateWriteSupport: Boolean = false,
 )
 ```
 
@@ -46,6 +47,7 @@ annotation class Rdf(
 | `dataClassSuffix` | `""` | Suffix appended to the shape name for the generated data class. E.g. `"Record"` → `PersonRecord`. |
 | `dataClassImplementsInterface` | `false` | When `true`, the generated data class also implements the generated interface, providing structural alignment. |
 | `nestedMode` | `INTERFACE` | How `sh:class` object properties are typed inside the data class — see [`NestedMode`](#nestedmode) below. |
+| `generateWriteSupport` | `false` | Adds a `toTriples(record, subject): List<RdfTriple>` function to the factory object, serializing the data class back to RDF triples. Requires `generateDataClass = true`. |
 
 **Example — generate both modes:**
 
@@ -69,6 +71,49 @@ The processor emits (for each SHACL shape):
 - `PersonWrapper` — live RDF-backed wrapper (lazy delegates)
 - `PersonRecord` — immutable data class snapshot
 - `PersonRecordFactory` — object that loads `PersonRecord` eagerly and registers in `OntoMapper`
+
+**Example — data class with write support:**
+
+```kotlin
+@Rdf(
+  shacl = "ontologies/person.shacl.ttl",
+  packageName = "com.example.generated",
+  generateInterfaces = false,
+  generateWrappers = false,
+  generateDataClass = true,
+  dataClassSuffix = "Record",
+  nestedMode = NestedMode.IRI_ONLY,
+  generateWriteSupport = true,
+)
+class OntologyGenerator
+```
+
+With `generateWriteSupport = true` the factory gains a `toTriples` function alongside `from`:
+
+```kotlin
+// Generated (simplified):
+object PersonRecordFactory {
+    init { OntoMapper.registry[PersonRecord::class.java] = { h -> from(h) } }
+
+    fun from(handle: RdfHandle): PersonRecord { ... }
+
+    fun toTriples(record: PersonRecord, subject: Iri): List<RdfTriple> {
+        val triples = mutableListOf<RdfTriple>()
+        triples += RdfTriple(subject, RDF.type, Iri("http://example.org/Person"))
+        triples += RdfTriple(subject, Iri("http://example.org/name"), Literal(record.name))
+        // … one statement per property …
+        return triples
+    }
+}
+```
+
+Callers integrate it with the `replaceValues` / `replaceResource` runtime helpers:
+
+```kotlin
+val updated = record.copy(name = "New Name")
+val newTriples = PersonRecordFactory.toTriples(updated, subject)
+graph.replaceResource(subject, newTriples)   // atomic swap of all subject triples
+```
 
 **Example — data class only (no live wrappers):**
 

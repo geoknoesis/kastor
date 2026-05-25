@@ -55,6 +55,12 @@ annotation class Rdf(
   val dataClassImplementsInterface: Boolean = false,
   /** Controls how sh:class object properties are typed in the generated data class. */
   val nestedMode: NestedMode = NestedMode.INTERFACE,
+  /**
+   * When true (and [generateDataClass] is also true), the generated factory object also emits a
+   * `toTriples(record, subject)` function that serializes a data-class snapshot back to RDF triples.
+   * Callers control whether to append or replace existing triples.
+   */
+  val generateWriteSupport: Boolean = false,
 )
 
 @Target(AnnotationTarget.VALUE_PARAMETER)

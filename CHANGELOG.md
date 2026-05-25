@@ -9,6 +9,17 @@ version while we are in 0.x.
 
 ### Added
 
+- **`kastor-gen`: Write-path support (`generateWriteSupport`).** `@Rdf` now accepts
+  `generateWriteSupport = true` alongside `generateDataClass = true`. When enabled, the
+  generated factory `object` gains a `toTriples(record, subject): List<RdfTriple>` function
+  that serializes a data-class snapshot back to RDF triples — the exact mirror of the `from()`
+  read path. Behavior by `nestedMode`: `INTERFACE` extracts the backing node via `RdfBacked`;
+  `IRI_ONLY` emits `Iri(string)` directly; `DATA_CLASS` skips nested object properties (no
+  subject IRI available) with a comment and a KSP warning. `rdf:type` is always emitted.
+  Runtime utilities `MutableRdfGraph.replaceValues(subject, predicate, triples)` and
+  `MutableRdfGraph.replaceResource(subject, triples)` provide fine-grained and full-resource
+  update helpers for callers integrating `toTriples` output into a live graph.
+
 - **`kastor-gen`: Immutable data-class generation from SHACL shapes.** `@Rdf` accepts
   `generateDataClass = true` alongside the existing `generateInterfaces`/`generateWrappers`
   flags. When enabled, the processor emits an eagerly-loaded Kotlin `data class` (read-model

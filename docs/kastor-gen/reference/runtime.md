@@ -302,7 +302,44 @@ inline fun <reified T: Any> T.asRdf(): RdfHandle
 val rdfHandle = person.asRdf()
 ```
 
-### Serialization Extensions
+### Write-Support Extensions
+
+Graph mutation helpers for integrating `toTriples` output into a live `MutableRdfGraph`. Declared in `WriteSupport.kt` in the `kastor-gen:runtime` module.
+
+```kotlin
+fun MutableRdfGraph.replaceValues(
+    subject: RdfResource,
+    predicate: Iri,
+    newTriples: Collection<RdfTriple>,
+)
+
+fun MutableRdfGraph.replaceResource(
+    subject: RdfResource,
+    triples: Collection<RdfTriple>,
+)
+```
+
+**`replaceValues`** — targeted predicate-level update. Removes all existing triples for the `(subject, predicate)` pair, then adds `newTriples`. Use this when you have updated a single property and want to replace only those triples without touching others.
+
+**`replaceResource`** — full-resource swap. Removes **all** triples for `subject`, then adds `triples`. Use this after `toTriples()` returns the complete new description for a resource.
+
+**Usage:**
+
+```kotlin
+// Targeted: replace only the name values
+val nameTriples = listOf(RdfTriple(subject, NAME_IRI, Literal("New Name")))
+graph.replaceValues(subject, NAME_IRI, nameTriples)
+
+// Full swap: replace everything about a resource
+val allTriples = PersonRecordFactory.toTriples(updatedRecord, subject)
+graph.replaceResource(subject, allTriples)
+```
+
+Both helpers are no-ops for the removal step when there are no matching existing triples, and no-ops for the add step when `newTriples` / `triples` is empty.
+
+---
+
+### Serialization Extensions (live wrappers)
 
 ```kotlin
 fun <T : RdfBacked> T.writeToGraph(

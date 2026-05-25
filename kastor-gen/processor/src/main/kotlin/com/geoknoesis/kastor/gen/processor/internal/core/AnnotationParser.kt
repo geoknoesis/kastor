@@ -25,6 +25,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     val dataClassSuffix: String = "",
     val dataClassImplementsInterface: Boolean = false,
     val nestedMode: NestedMode = NestedMode.INTERFACE,
+    val generateWriteSupport: Boolean = false,
   )
 
   data class InstanceDslGenerationRequest(
@@ -64,6 +65,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: ""
     val dataClassImplementsInterface = getAnnotationValue(annotation, "dataClassImplementsInterface") as? Boolean ?: false
     val nestedMode = parseNestedMode(getAnnotationValue(annotation, "nestedMode"))
+    val generateWriteSupport = getAnnotationValue(annotation, "generateWriteSupport") as? Boolean ?: false
 
     return OntologyGenerationRequest(
       shaclPath = shaclPath,
@@ -78,6 +80,7 @@ class AnnotationParser(private val logger: KSPLogger) {
       dataClassSuffix = dataClassSuffix,
       dataClassImplementsInterface = dataClassImplementsInterface,
       nestedMode = nestedMode,
+      generateWriteSupport = generateWriteSupport,
     )
   }
 

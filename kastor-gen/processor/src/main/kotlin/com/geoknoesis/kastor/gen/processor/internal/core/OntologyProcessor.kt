@@ -81,6 +81,7 @@ class OntologyProcessor(
               dataClassSuffix = request.dataClassSuffix,
               dataClassImplementsInterface = request.dataClassImplementsInterface,
               nestedMode = request.nestedMode,
+              generateWriteSupport = request.generateWriteSupport,
             )
             processed.add(symbol)
           } catch (e: Exception) {

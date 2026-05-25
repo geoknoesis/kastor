@@ -30,6 +30,7 @@ class DataClassFactoryGenerator(
     private val logger: KSPLogger,
     private val suffix: String,
     private val nestedMode: NestedMode,
+    private val writerGenerator: DataClassWriterGenerator? = null,
 ) {
 
     fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> =
@@ -62,6 +63,15 @@ class DataClassFactoryGenerator(
             .addImport(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle", "OntoMapper", "KastorGraphOps", "RdfRef")
             .addImport(CodegenConstants.RDF_PACKAGE, "Iri")
 
+        // Additional imports required by toTriples()
+        if (writerGenerator != null) {
+            file.addImport(CodegenConstants.RDF_PACKAGE, "RdfTriple", "Literal")
+                .addImport(CodegenConstants.VOCAB_PACKAGE, "RDF")
+            if (nestedMode == NestedMode.INTERFACE) {
+                file.addImport(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked")
+            }
+        }
+
         val objectBuilder = TypeSpec.objectBuilder(fName)
             .addKdoc(
                 "Factory that loads [%L] eagerly from an RDF graph and registers itself in [OntoMapper].\n" +
@@ -80,6 +90,10 @@ class DataClassFactoryGenerator(
 
         // from(handle: RdfHandle): DataClass
         objectBuilder.addFunction(buildFromFunction(shape, context, packageName, dcClassName))
+
+        // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
+        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName)
+            ?.let { objectBuilder.addFunction(it) }
 
         file.addType(objectBuilder.build())
         logger.info("Generated factory: $fName")
