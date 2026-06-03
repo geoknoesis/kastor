@@ -32,6 +32,16 @@ internal object SparqlConstraintEvaluator {
     internal fun bindThis(query: String, focus: RdfTerm?): String {
         val iri = focus as? Iri ?: return query
         val term = "<${iri.value}>"
-        return shaclThisMarker.replace(query, term)
+        // Pre-bind $this only within the query body (from the first '{' onward), never in the
+        // SELECT projection. Substituting it in the projection would produce illegal SPARQL such as
+        // `SELECT <iri> WHERE ...`, which is exactly what broke the standard SHACL idiom
+        // `SELECT $this WHERE { ... }`. Replacing $this with the focus term inside the body is the
+        // SHACL-AF pre-binding semantics; the (now unused) projection variable is left in place and
+        // simply projects unbound, which is legal and sufficient for the rows/no-rows check.
+        val bodyStart = query.indexOf('{')
+        if (bodyStart < 0) return shaclThisMarker.replace(query, term)
+        val head = query.substring(0, bodyStart)
+        val body = query.substring(bodyStart)
+        return head + shaclThisMarker.replace(body, term)
     }
 }

@@ -1,0 +1,657 @@
+@prefix prism:     <https://spec.prism.dev/1.0#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix vann:    <http://purl.org/vocab/vann/> .
+
+###############################################################################
+# Prism Vocabulary v1.0
+# Namespace: https://spec.prism.dev/1.0#
+###############################################################################
+
+<https://spec.prism.dev/1.0>
+    a owl:Ontology ;
+    rdfs:label "Prism Vocabulary"@en ;
+    rdfs:comment "Annotation vocabulary for Prism 1.0 — the open standard for ontology-driven code, API, and persistence generation."@en ;
+    dcterms:title "Prism Vocabulary"@en ;
+    dcterms:description "Defines the annotation properties, meta-classes, and named individuals used to annotate OWL 2 DL ontologies for automated code generation, API exposure, persistence mapping, SHACL validation, and AI agent integration."@en ;
+    dcterms:creator "Prism Working Group" ;
+    dcterms:created "2026-05-25"^^xsd:date ;
+    dcterms:license <https://creativecommons.org/licenses/by/4.0/> ;
+    owl:versionIRI <https://spec.prism.dev/1.0> ;
+    owl:versionInfo "1.0.0" ;
+    vann:preferredNamespacePrefix "prism" ;
+    vann:preferredNamespaceUri "https://spec.prism.dev/1.0#" .
+
+###############################################################################
+# 1. Meta-Classes
+# Used as values of prism:entityKind to distinguish entity roles.
+###############################################################################
+
+prism:EntityKind
+    a owl:Class ;
+    rdfs:label "Entity Kind"@en ;
+    rdfs:comment "The semantic role of an OWL class within an OOF ontology."@en .
+
+prism:Entity
+    a prism:EntityKind, owl:NamedIndividual ;
+    rdfs:label "Entity"@en ;
+    rdfs:comment "A primary domain entity with its own identity, repository, and lifecycle. Analogous to a JPA @Entity or a Foundry Object Type."@en .
+
+prism:ValueObject
+    a prism:EntityKind, owl:NamedIndividual ;
+    rdfs:label "Value Object"@en ;
+    rdfs:comment "An embedded value with no independent identity. Persisted as a component of its owning entity."@en .
+
+prism:Enumeration
+    a prism:EntityKind, owl:NamedIndividual ;
+    rdfs:label "Enumeration"@en ;
+    rdfs:comment "A closed set of named values. Instances are named individuals."@en .
+
+###############################################################################
+# 2. Entity-Level Annotations
+###############################################################################
+
+prism:entityKind
+    a owl:AnnotationProperty ;
+    rdfs:label "entity kind"@en ;
+    rdfs:comment "The semantic role of this OWL class. Defaults to prism:Entity if absent."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:EntityKind .
+
+prism:generateCode
+    a owl:AnnotationProperty ;
+    rdfs:label "generate code"@en ;
+    rdfs:comment "If true, generate language-specific entity/value class for this type. Default: true."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:boolean .
+
+prism:generateRepository
+    a owl:AnnotationProperty ;
+    rdfs:label "generate repository"@en ;
+    rdfs:comment "If true, generate a repository/DAO interface for this entity. Applicable only to prism:Entity kinds. Default: true."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:boolean .
+
+prism:generateRestEndpoint
+    a owl:AnnotationProperty ;
+    rdfs:label "generate REST endpoint"@en ;
+    rdfs:comment "If true, generate a REST CRUD controller for this entity. Default: true for prism:Entity, false for prism:ValueObject."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:boolean .
+
+prism:generateGraphQL
+    a owl:AnnotationProperty ;
+    rdfs:label "generate GraphQL type"@en ;
+    rdfs:comment "If true, generate a GraphQL type and resolver for this entity. Default: false."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:boolean .
+
+prism:pluralLabel
+    a owl:AnnotationProperty ;
+    rdfs:label "plural label"@en ;
+    rdfs:comment "Plural form of the entity name. Used as the REST collection path segment and OpenAPI tag. Defaults to rdfs:label + 's'."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:string .
+
+prism:persistence
+    a owl:AnnotationProperty ;
+    rdfs:label "persistence configuration"@en ;
+    rdfs:comment "Links an entity class to its prism:PersistenceConfig. One config per entity."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:PersistenceConfig .
+
+prism:apiConfig
+    a owl:AnnotationProperty ;
+    rdfs:label "API configuration"@en ;
+    rdfs:comment "Links an entity class to its prism:ApiConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:ApiConfig .
+
+prism:sinceVersion
+    a owl:AnnotationProperty ;
+    rdfs:label "since version"@en ;
+    rdfs:comment "The ontology version in which this class or property was introduced."@en ;
+    rdfs:range xsd:string .
+
+prism:deprecatedSince
+    a owl:AnnotationProperty ;
+    rdfs:label "deprecated since"@en ;
+    rdfs:comment "The ontology version in which this class or property was deprecated. Use alongside owl:deprecated true."@en ;
+    rdfs:range xsd:string .
+
+prism:replacedBy
+    a owl:AnnotationProperty ;
+    rdfs:label "replaced by"@en ;
+    rdfs:comment "Points to the class or property that supersedes a deprecated term."@en .
+
+###############################################################################
+# 3. Property-Level Annotations (apply to owl:DatatypeProperty and owl:ObjectProperty)
+###############################################################################
+
+prism:required
+    a owl:AnnotationProperty ;
+    rdfs:label "required"@en ;
+    rdfs:comment "If true, this property must be present on every instance. Equivalent to sh:minCount 1 in the generated SHACL shape."@en ;
+    rdfs:range xsd:boolean .
+
+prism:unique
+    a owl:AnnotationProperty ;
+    rdfs:label "unique"@en ;
+    rdfs:comment "If true, the value must be unique across all instances of the owning class. Generates a unique index in relational backends."@en ;
+    rdfs:range xsd:boolean .
+
+prism:indexed
+    a owl:AnnotationProperty ;
+    rdfs:label "indexed"@en ;
+    rdfs:comment "If true, create a database index for faster lookup on this property. Default: false."@en ;
+    rdfs:range xsd:boolean .
+
+prism:searchable
+    a owl:AnnotationProperty ;
+    rdfs:label "searchable"@en ;
+    rdfs:comment "If true, include this property in full-text search indexes."@en ;
+    rdfs:range xsd:boolean .
+
+prism:sortable
+    a owl:AnnotationProperty ;
+    rdfs:label "sortable"@en ;
+    rdfs:comment "If true, expose this property as a sort key in generated list/query APIs."@en ;
+    rdfs:range xsd:boolean .
+
+prism:filterable
+    a owl:AnnotationProperty ;
+    rdfs:label "filterable"@en ;
+    rdfs:comment "If true, expose this property as a filter parameter in generated list/query APIs."@en ;
+    rdfs:range xsd:boolean .
+
+prism:columnName
+    a owl:AnnotationProperty ;
+    rdfs:label "column name"@en ;
+    rdfs:comment "Override the relational column name for this property. Defaults to snake_case of the property local name."@en ;
+    rdfs:range xsd:string .
+
+prism:defaultValue
+    a owl:AnnotationProperty ;
+    rdfs:label "default value"@en ;
+    rdfs:comment "The default value for this property when not supplied by the caller."@en .
+
+prism:sensitive
+    a owl:AnnotationProperty ;
+    rdfs:label "sensitive"@en ;
+    rdfs:comment "If true, this property contains sensitive/PII data. Generators must omit it from logs, default serializations, and search indexes."@en ;
+    rdfs:range xsd:boolean .
+
+prism:immutable
+    a owl:AnnotationProperty ;
+    rdfs:label "immutable"@en ;
+    rdfs:comment "If true, this property is set at creation time and must not be updated. Generators enforce this in API and service layers."@en ;
+    rdfs:range xsd:boolean .
+
+prism:example
+    a owl:AnnotationProperty ;
+    rdfs:label "example"@en ;
+    rdfs:comment "An example value for this property. Appears in generated OpenAPI documentation and test fixtures."@en .
+
+prism:pattern
+    a owl:AnnotationProperty ;
+    rdfs:label "pattern"@en ;
+    rdfs:comment "A regular expression that the string value of this property must match."@en ;
+    rdfs:range xsd:string .
+
+prism:minValue
+    a owl:AnnotationProperty ;
+    rdfs:label "min value"@en ;
+    rdfs:comment "Minimum numeric or date value (inclusive). Generates sh:minInclusive in SHACL."@en .
+
+prism:maxValue
+    a owl:AnnotationProperty ;
+    rdfs:label "max value"@en ;
+    rdfs:comment "Maximum numeric or date value (inclusive). Generates sh:maxInclusive in SHACL."@en .
+
+prism:minLength
+    a owl:AnnotationProperty ;
+    rdfs:label "min length"@en ;
+    rdfs:comment "Minimum string length. Generates sh:minLength in SHACL."@en ;
+    rdfs:range xsd:integer .
+
+prism:maxLength
+    a owl:AnnotationProperty ;
+    rdfs:label "max length"@en ;
+    rdfs:comment "Maximum string length. Generates sh:maxLength in SHACL."@en ;
+    rdfs:range xsd:integer .
+
+###############################################################################
+# 4. Relationship Annotations (apply to owl:ObjectProperty)
+###############################################################################
+
+prism:Cardinality
+    a owl:Class ;
+    rdfs:label "Cardinality"@en .
+
+prism:OneToOne
+    a prism:Cardinality, owl:NamedIndividual ;
+    rdfs:label "One-to-One"@en .
+
+prism:OneToMany
+    a prism:Cardinality, owl:NamedIndividual ;
+    rdfs:label "One-to-Many"@en .
+
+prism:ManyToOne
+    a prism:Cardinality, owl:NamedIndividual ;
+    rdfs:label "Many-to-One"@en .
+
+prism:ManyToMany
+    a prism:Cardinality, owl:NamedIndividual ;
+    rdfs:label "Many-to-Many"@en .
+
+prism:CascadeType
+    a owl:Class ;
+    rdfs:label "Cascade Type"@en .
+
+prism:CascadeAll
+    a prism:CascadeType, owl:NamedIndividual ;
+    rdfs:label "Cascade All"@en .
+
+prism:CascadePersist
+    a prism:CascadeType, owl:NamedIndividual ;
+    rdfs:label "Cascade Persist"@en .
+
+prism:CascadeMerge
+    a prism:CascadeType, owl:NamedIndividual ;
+    rdfs:label "Cascade Merge"@en .
+
+prism:CascadeRemove
+    a prism:CascadeType, owl:NamedIndividual ;
+    rdfs:label "Cascade Remove"@en .
+
+prism:CascadeNone
+    a prism:CascadeType, owl:NamedIndividual ;
+    rdfs:label "Cascade None"@en .
+
+prism:FetchStrategy
+    a owl:Class ;
+    rdfs:label "Fetch Strategy"@en .
+
+prism:Eager
+    a prism:FetchStrategy, owl:NamedIndividual ;
+    rdfs:label "Eager"@en .
+
+prism:Lazy
+    a prism:FetchStrategy, owl:NamedIndividual ;
+    rdfs:label "Lazy"@en .
+
+prism:cardinality
+    a owl:AnnotationProperty ;
+    rdfs:label "cardinality"@en ;
+    rdfs:comment "The cardinality of this object property relationship."@en ;
+    rdfs:range prism:Cardinality .
+
+prism:cascade
+    a owl:AnnotationProperty ;
+    rdfs:label "cascade"@en ;
+    rdfs:comment "Cascade behaviour for persistence operations on this relationship."@en ;
+    rdfs:range prism:CascadeType .
+
+prism:fetchStrategy
+    a owl:AnnotationProperty ;
+    rdfs:label "fetch strategy"@en ;
+    rdfs:comment "Whether to eagerly or lazily load this relationship. Default: prism:Lazy."@en ;
+    rdfs:range prism:FetchStrategy .
+
+prism:joinColumn
+    a owl:AnnotationProperty ;
+    rdfs:label "join column"@en ;
+    rdfs:comment "The foreign key column name in relational backends for this relationship."@en ;
+    rdfs:range xsd:string .
+
+prism:joinTable
+    a owl:AnnotationProperty ;
+    rdfs:label "join table"@en ;
+    rdfs:comment "The join table name for ManyToMany relationships in relational backends."@en ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 5. Persistence Configuration
+###############################################################################
+
+prism:PersistenceConfig
+    a owl:Class ;
+    rdfs:label "Persistence Configuration"@en ;
+    rdfs:comment "Configuration for how an entity is persisted to a backend store."@en .
+
+prism:PersistenceBackend
+    a owl:Class ;
+    rdfs:label "Persistence Backend"@en .
+
+prism:JpaBackend
+    a prism:PersistenceBackend, owl:NamedIndividual ;
+    rdfs:label "JPA / Relational"@en ;
+    rdfs:comment "Relational database via JPA/Hibernate (PostgreSQL, MySQL, H2, etc.)."@en .
+
+prism:MongoBackend
+    a prism:PersistenceBackend, owl:NamedIndividual ;
+    rdfs:label "MongoDB"@en .
+
+prism:Neo4jBackend
+    a prism:PersistenceBackend, owl:NamedIndividual ;
+    rdfs:label "Neo4j"@en .
+
+prism:Rdf4jBackend
+    a prism:PersistenceBackend, owl:NamedIndividual ;
+    rdfs:label "RDF4J / Triplestore"@en .
+
+prism:DynamoBackend
+    a prism:PersistenceBackend, owl:NamedIndividual ;
+    rdfs:label "Amazon DynamoDB"@en .
+
+prism:backend
+    a owl:ObjectProperty ;
+    rdfs:label "backend"@en ;
+    rdfs:domain prism:PersistenceConfig ;
+    rdfs:range prism:PersistenceBackend .
+
+prism:tableName
+    a owl:DatatypeProperty ;
+    rdfs:label "table name"@en ;
+    rdfs:comment "Override the relational table or graph collection name. Defaults to snake_case plural of entity label."@en ;
+    rdfs:domain prism:PersistenceConfig ;
+    rdfs:range xsd:string .
+
+prism:enableCache
+    a owl:DatatypeProperty ;
+    rdfs:label "enable cache"@en ;
+    rdfs:domain prism:PersistenceConfig ;
+    rdfs:range xsd:boolean .
+
+prism:cacheTtlSeconds
+    a owl:DatatypeProperty ;
+    rdfs:label "cache TTL (seconds)"@en ;
+    rdfs:domain prism:PersistenceConfig ;
+    rdfs:range xsd:integer .
+
+###############################################################################
+# 6. API Configuration
+###############################################################################
+
+prism:ApiConfig
+    a owl:Class ;
+    rdfs:label "API Configuration"@en ;
+    rdfs:comment "Configuration for the generated REST (and optionally GraphQL) API for an entity."@en .
+
+prism:HttpMethod
+    a owl:Class ;
+    rdfs:label "HTTP Method"@en .
+
+prism:GET    a prism:HttpMethod, owl:NamedIndividual ; rdfs:label "GET"@en .
+prism:POST   a prism:HttpMethod, owl:NamedIndividual ; rdfs:label "POST"@en .
+prism:PUT    a prism:HttpMethod, owl:NamedIndividual ; rdfs:label "PUT"@en .
+prism:PATCH  a prism:HttpMethod, owl:NamedIndividual ; rdfs:label "PATCH"@en .
+prism:DELETE a prism:HttpMethod, owl:NamedIndividual ; rdfs:label "DELETE"@en .
+
+prism:basePath
+    a owl:DatatypeProperty ;
+    rdfs:label "base path"@en ;
+    rdfs:comment "The root URL path for this entity's REST endpoints. Defaults to /api/{pluralLabel}."@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range xsd:string .
+
+prism:allowedMethod
+    a owl:ObjectProperty ;
+    rdfs:label "allowed method"@en ;
+    rdfs:comment "HTTP methods to expose. If absent, all five standard methods are generated."@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range prism:HttpMethod .
+
+prism:requiresAuthentication
+    a owl:DatatypeProperty ;
+    rdfs:label "requires authentication"@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range xsd:boolean .
+
+prism:paginationDefault
+    a owl:DatatypeProperty ;
+    rdfs:label "pagination default page size"@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range xsd:integer .
+
+prism:paginationMax
+    a owl:DatatypeProperty ;
+    rdfs:label "pagination maximum page size"@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range xsd:integer .
+
+prism:apiTag
+    a owl:DatatypeProperty ;
+    rdfs:label "API tag"@en ;
+    rdfs:comment "OpenAPI/Swagger tag to group this entity's endpoints."@en ;
+    rdfs:domain prism:ApiConfig ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 7. AI Agent Annotations
+###############################################################################
+
+prism:AgentPermission
+    a owl:Class ;
+    rdfs:label "Agent Permission"@en .
+
+prism:ReadOnly
+    a prism:AgentPermission, owl:NamedIndividual ;
+    rdfs:label "Read Only"@en ;
+    rdfs:comment "AI agents may query but not mutate this entity."@en .
+
+prism:ReadWrite
+    a prism:AgentPermission, owl:NamedIndividual ;
+    rdfs:label "Read Write"@en ;
+    rdfs:comment "AI agents may query and mutate this entity via approved Action types."@en .
+
+prism:Restricted
+    a prism:AgentPermission, owl:NamedIndividual ;
+    rdfs:label "Restricted"@en ;
+    rdfs:comment "This entity is hidden from AI agents entirely."@en .
+
+prism:agentAccessible
+    a owl:AnnotationProperty ;
+    rdfs:label "agent accessible"@en ;
+    rdfs:comment "If true, expose this entity or property to AI agent tools. Default: true for prism:Entity."@en ;
+    rdfs:range xsd:boolean .
+
+prism:semanticDescription
+    a owl:AnnotationProperty ;
+    rdfs:label "semantic description"@en ;
+    rdfs:comment "A rich natural language description of this entity or property, specifically crafted for LLM system prompt context. More detailed than rdfs:comment."@en ;
+    rdfs:range xsd:string .
+
+prism:agentPermission
+    a owl:AnnotationProperty ;
+    rdfs:label "agent permission"@en ;
+    rdfs:comment "The level of access AI agents have to this entity. Default: prism:ReadOnly."@en ;
+    rdfs:range prism:AgentPermission .
+
+prism:toolName
+    a owl:AnnotationProperty ;
+    rdfs:label "tool name"@en ;
+    rdfs:comment "The name of the generated agent tool for querying or mutating this entity. Defaults to camelCase of entity label."@en ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 8. Action Types
+###############################################################################
+
+prism:Action
+    a owl:Class ;
+    rdfs:label "Action"@en ;
+    rdfs:comment "A named, typed operation that can be invoked against the domain. Generates an API endpoint, a service method, and an agent tool."@en .
+
+prism:ActionKind
+    a owl:Class ;
+    rdfs:label "Action Kind"@en .
+
+prism:CreateAction  a prism:ActionKind, owl:NamedIndividual ; rdfs:label "Create"@en .
+prism:UpdateAction  a prism:ActionKind, owl:NamedIndividual ; rdfs:label "Update"@en .
+prism:DeleteAction  a prism:ActionKind, owl:NamedIndividual ; rdfs:label "Delete"@en .
+prism:CustomAction  a prism:ActionKind, owl:NamedIndividual ; rdfs:label "Custom"@en .
+
+prism:actionKind
+    a owl:ObjectProperty ;
+    rdfs:label "action kind"@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range prism:ActionKind .
+
+prism:targetClass
+    a owl:ObjectProperty ;
+    rdfs:label "target class"@en ;
+    rdfs:comment "The entity class this action operates on."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range owl:Class .
+
+prism:inputShape
+    a owl:ObjectProperty ;
+    rdfs:label "input shape"@en ;
+    rdfs:comment "A SHACL NodeShape that validates the action's input parameters."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range sh:NodeShape .
+
+prism:outputClass
+    a owl:ObjectProperty ;
+    rdfs:label "output class"@en ;
+    rdfs:comment "The entity class returned by this action, if any."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range owl:Class .
+
+prism:requiredRole
+    a owl:DatatypeProperty ;
+    rdfs:label "required role"@en ;
+    rdfs:comment "The authorization role required to invoke this action. Multiple values are OR-combined."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range xsd:string .
+
+prism:sideEffect
+    a owl:DatatypeProperty ;
+    rdfs:label "side effect"@en ;
+    rdfs:comment "Human-readable description of observable side effects of this action."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 9. Query Types
+###############################################################################
+
+prism:Query
+    a owl:Class ;
+    rdfs:label "Query"@en ;
+    rdfs:comment "A named SPARQL SELECT query that can be exposed as an API endpoint or agent tool."@en .
+
+prism:sparqlQuery
+    a owl:DatatypeProperty ;
+    rdfs:label "SPARQL query"@en ;
+    rdfs:domain prism:Query ;
+    rdfs:range xsd:string .
+
+prism:queryParam
+    a owl:ObjectProperty ;
+    rdfs:label "query parameter"@en ;
+    rdfs:domain prism:Query ;
+    rdfs:range prism:QueryParameter .
+
+prism:QueryParameter
+    a owl:Class ;
+    rdfs:label "Query Parameter"@en .
+
+prism:paramName
+    a owl:DatatypeProperty ;
+    rdfs:label "parameter name"@en ;
+    rdfs:domain prism:QueryParameter ;
+    rdfs:range xsd:string .
+
+prism:paramType
+    a owl:DatatypeProperty ;
+    rdfs:label "parameter type"@en ;
+    rdfs:comment "XSD datatype IRI or entity class IRI for this parameter."@en ;
+    rdfs:domain prism:QueryParameter ;
+    rdfs:range xsd:string .
+
+prism:paramRequired
+    a owl:DatatypeProperty ;
+    rdfs:label "parameter required"@en ;
+    rdfs:domain prism:QueryParameter ;
+    rdfs:range xsd:boolean .
+
+###############################################################################
+# 10. Interoperability Mappings
+###############################################################################
+
+prism:MappingType
+    a owl:Class ;
+    rdfs:label "Mapping Type"@en .
+
+prism:ExactMatch
+    a prism:MappingType, owl:NamedIndividual ;
+    rdfs:label "Exact Match"@en ;
+    rdfs:comment "This term has the same meaning as the mapped external term."@en .
+
+prism:NearMatch
+    a prism:MappingType, owl:NamedIndividual ;
+    rdfs:label "Near Match"@en ;
+    rdfs:comment "This term is closely related to the mapped external term but not identical."@en .
+
+prism:BroaderTerm
+    a prism:MappingType, owl:NamedIndividual ;
+    rdfs:label "Broader Term"@en ;
+    rdfs:comment "The mapped external term is broader in scope than this term."@en .
+
+prism:NarrowerTerm
+    a prism:MappingType, owl:NamedIndividual ;
+    rdfs:label "Narrower Term"@en ;
+    rdfs:comment "The mapped external term is narrower in scope than this term."@en .
+
+prism:mapsTo
+    a owl:AnnotationProperty ;
+    rdfs:label "maps to"@en ;
+    rdfs:comment "Links a class or property to an equivalent term in an external ontology."@en .
+
+prism:mappingType
+    a owl:AnnotationProperty ;
+    rdfs:label "mapping type"@en ;
+    rdfs:comment "Qualifies an prism:mapsTo link with the type of semantic alignment."@en ;
+    rdfs:range prism:MappingType .
+
+###############################################################################
+# 11. Schema Migration
+###############################################################################
+
+prism:Migration
+    a owl:Class ;
+    rdfs:label "Schema Migration"@en ;
+    rdfs:comment "A versioned, executable schema change between two ontology versions."@en .
+
+prism:fromVersion
+    a owl:DatatypeProperty ;
+    rdfs:label "from version"@en ;
+    rdfs:domain prism:Migration ;
+    rdfs:range xsd:string .
+
+prism:toVersion
+    a owl:DatatypeProperty ;
+    rdfs:label "to version"@en ;
+    rdfs:domain prism:Migration ;
+    rdfs:range xsd:string .
+
+prism:migrationScript
+    a owl:DatatypeProperty ;
+    rdfs:label "migration script"@en ;
+    rdfs:comment "A SPARQL UPDATE statement that transforms data from fromVersion to toVersion."@en ;
+    rdfs:domain prism:Migration ;
+    rdfs:range xsd:string .
+
+prism:isBreaking
+    a owl:DatatypeProperty ;
+    rdfs:label "is breaking"@en ;
+    rdfs:comment "If true, this migration removes or renames terms that may be referenced by existing code."@en ;
+    rdfs:domain prism:Migration ;
+    rdfs:range xsd:boolean .
