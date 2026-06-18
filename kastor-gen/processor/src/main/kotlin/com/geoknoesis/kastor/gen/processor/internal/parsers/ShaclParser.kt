@@ -133,20 +133,33 @@ class ShaclParser(private val logger: KSPLogger) {
             val qualifiedMinCount = propertyShape.getProperty(qualifiedMinCountProp)?.int
             val qualifiedMaxCount = propertyShape.getProperty(qualifiedMaxCountProp)?.int
             
-            // Extract sh:in values (RDF list)
-            val inValues = propertyShape.getProperty(inProp)?.resource?.let { listResource ->
-                val listValues = mutableListOf<String>()
+            // Extract sh:in values (RDF list), preserving member kind (IRI vs literal)
+            val inValuesTyped = propertyShape.getProperty(inProp)?.resource?.let { listResource ->
+                val typed = mutableListOf<com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue>()
                 var current: org.apache.jena.rdf.model.Resource? = listResource
                 while (current != null && !current.hasProperty(model.createProperty("${RDF_NS}nil"))) {
                     val first = current.getProperty(model.createProperty("${RDF_NS}first"))
-                    first?.let {
-                        val value = it.string ?: it.resource?.uri
-                        if (value != null) listValues.add(value)
+                    first?.let { stmt ->
+                        val node = stmt.`object`
+                        when {
+                            node.isURIResource -> typed.add(
+                                com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue(
+                                    value = node.asResource().uri, isIri = true,
+                                )
+                            )
+                            node.isLiteral -> typed.add(
+                                com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue(
+                                    value = node.asLiteral().lexicalForm, isIri = false,
+                                    datatype = node.asLiteral().datatypeURI,
+                                )
+                            )
+                        }
                     }
                     current = current.getProperty(model.createProperty("${RDF_NS}rest"))?.resource
                 }
-                listValues.takeIf { it.isNotEmpty() }
+                typed.takeIf { it.isNotEmpty() }
             }
+            val inValues = inValuesTyped?.map { it.value }
             
             // Extract property name from path if name is not provided
             val propertyName = name ?: path?.substringAfterLast('#')?.substringAfterLast('/')
@@ -169,6 +182,7 @@ class ShaclParser(private val logger: KSPLogger) {
                     minExclusive = minExclusive,
                     maxExclusive = maxExclusive,
                     inValues = inValues,
+                    inValuesTyped = inValuesTyped,
                     hasValue = hasValue,
                     nodeKind = nodeKind,
                     qualifiedValueShape = qualifiedValueShape,
