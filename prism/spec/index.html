@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Prism 1.0 Specification (Superseded — see Prism 1.1)</title>
+  <script src="https://www.w3.org/Tools/respec/respec-w3c" class="remove" defer></script>
+  <script class="remove">
+    var respecConfig = {
+      specStatus: "unofficial",
+      shortName: "prism",
+      latestVersion: "https://spec.prism.dev/ns",
+      edDraftURI: "https://spec.prism.dev/ns",
+      editors: [{
+        name: "Geoknoesis",
+        company: "Geoknoesis",
+        companyURL: "https://geoknoesis.com",
+      }],
+      github: "https://github.com/geoknoesis/kastor",
+      license: "cc-by",
+      logos: [],
+      xref: ["OWL2", "rdf11-concepts", "shacl", "json-ld11", "sparql11-query"],
+      localBiblio: {
+        "PRISM-VOCAB": {
+          title: "Prism Vocabulary",
+          href: "https://spec.prism.dev/ns/vocab/prism.ttl",
+          publisher: "Geoknoesis",
+          date: "2026-05-25",
+        },
+        "GS1-VOC": {
+          title: "GS1 Web Vocabulary",
+          href: "https://www.gs1.org/voc/",
+          publisher: "GS1",
+        },
+        "VANN": {
+          title: "VANN: A vocabulary for annotating vocabulary descriptions",
+          href: "http://purl.org/vocab/vann/",
+          publisher: "Ian Davis",
+        },
+      },
+    };
+  </script>
+  <style>
+    .annotation-table { width: 100%; border-collapse: collapse; }
+    .annotation-table th, .annotation-table td { padding: 0.4em 0.6em; border: 1px solid #ccc; }
+    .annotation-table th { background: #f5f5f5; }
+    code.prism { color: #c7254e; }
+    .conformance-level { border-left: 4px solid #005a9c; padding-left: 1em; margin: 1em 0; }
+    table.backends td:first-child { font-family: monospace; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ ABSTRACT ══ -->
+<section id="abstract">
+  <p>
+    <dfn>Prism</dfn> is an annotation vocabulary layered on top of
+    <a data-cite="OWL2#owl2-overview">OWL 2 DL</a> that enables ontology
+    authors to declare how domain classes, properties, and relationships
+    should be materialised as code, APIs, persistence schemas, validation
+    rules, and AI agent tools — from a single source-of-truth domain model
+    written in standard <a data-cite="rdf11-concepts">RDF</a>/Turtle.
+  </p>
+  <p>
+    Prism does not replace OWL 2, <a data-cite="shacl">SHACL</a>, or
+    <a data-cite="sparql11-query">SPARQL</a>. It extends them with
+    generation metadata so that a conforming <a>Prism processor</a> can
+    derive all downstream artefacts from the ontology alone, keeping every
+    layer semantically consistent by construction.
+  </p>
+  <p>
+    The Prism vocabulary is available at
+    <a href="https://spec.prism.dev/ns/vocab/prism.ttl">https://spec.prism.dev/ns/vocab/prism.ttl</a>
+    and is licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════ SOTD ══ -->
+<section id="sotd">
+  <p style="border:2px solid #c0392b; background:#fdecea; padding:0.8em 1em; color:#7a1c12;">
+    <strong>⚠ This HTML rendering is out of date (Prism 1.0).</strong>
+    The current, normative specification is <strong>Prism 1.1</strong>, maintained in Markdown at
+    <a href="https://github.com/geoknoesis/kastor/blob/main/docs/prism/specification.md"><code>docs/prism/specification.md</code></a>.
+    This page predates the 1.1 changes: it documents only four conformance levels (1.1 has eight),
+    still defines the removed Prism constraint annotations (<code>prism:pattern</code>,
+    <code>prism:minLength</code>/<code>maxLength</code>, <code>prism:minValue</code>/<code>maxValue</code>) that
+    1.1 delegates entirely to SHACL, uses the obsolete <code>prism:Restricted</code> (renamed
+    <code>prism:AgentRestricted</code>), and omits the <code>prism:validatedBy</code> SHACL co-input model
+    that is the headline change of 1.1. It is retained for historical reference only and must be
+    regenerated from the 1.1 source before being treated as authoritative.
+  </p>
+  <p>
+    This is a Working Draft of the Prism 1.0 Specification published by
+    Geoknoesis. It is subject to change without notice.
+  </p>
+  <p>
+    Feedback and issues should be filed at the
+    <a href="https://github.com/geoknoesis/kastor/issues">Kastor GitHub repository</a>.
+  </p>
+  <p>
+    The <a href="https://spec.prism.dev/ns/vocab/prism.ttl">Prism OWL vocabulary</a>
+    is the normative definition of all annotation properties referenced in
+    this specification.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ 1. INTRODUCTION ══ -->
+<section id="introduction">
+  <h2>Introduction</h2>
+
+  <section id="the-problem">
+    <h3>The Problem</h3>
+    <p>
+      Every significant software system maintains the same domain knowledge
+      in multiple places: entity classes in code, table definitions in
+      migrations, DTO schemas in API specs, constraint logic in validators,
+      and system prompts for AI agents. These representations drift apart. A
+      field added to the database is missing from the API schema; a constraint
+      enforced in the API is absent from the database; an AI agent
+      hallucinates field names that were renamed three months ago.
+    </p>
+    <p>
+      The root cause is the same in every case: <strong>no single source of
+      truth for the domain model</strong>.
+    </p>
+  </section>
+
+  <section id="how-prism-solves-it">
+    <h3>How Prism Solves It</h3>
+    <p>
+      Prism makes the domain ontology the canonical source of truth. You
+      define your domain once in OWL 2 DL with Prism annotations, and a
+      conforming <a>Prism processor</a> derives:
+    </p>
+    <table class="annotation-table">
+      <thead><tr><th>Artefact</th><th>Derived from</th></tr></thead>
+      <tbody>
+        <tr><td>Language entity classes (Kotlin, TypeScript, Python, Java)</td><td><code>owl:Class</code> + entity-level annotations</td></tr>
+        <tr><td>Repository/DAO interfaces</td><td><code class="prism">prism:generateRepository true</code></td></tr>
+        <tr><td>REST controller + OpenAPI spec</td><td><code class="prism">prism:ApiConfig</code></td></tr>
+        <tr><td>GraphQL schema + resolvers</td><td><code class="prism">prism:generateGraphQL true</code></td></tr>
+        <tr><td>JPA entities / SQL DDL</td><td><code class="prism">prism:PersistenceConfig</code> with <code class="prism">prism:JpaBackend</code></td></tr>
+        <tr><td>SHACL validation shapes</td><td>Property annotations (<code class="prism">prism:required</code>, <code class="prism">prism:pattern</code>, etc.)</td></tr>
+        <tr><td>AI agent tool definitions</td><td><code class="prism">prism:agentAccessible</code>, <code class="prism">prism:semanticDescription</code></td></tr>
+        <tr><td>Agent-grounded system prompts</td><td>Full ontology serialisation as JSON-LD context</td></tr>
+        <tr><td>Test fixtures</td><td><code class="prism">prism:example</code> values on properties</td></tr>
+        <tr><td>Schema migration scripts</td><td><code class="prism">prism:Migration</code> instances</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Every derived artefact is semantically consistent with every other
+      because they all come from the same graph.
+    </p>
+  </section>
+
+  <section id="relationship-to-standards" class="informative">
+    <h3>Relationship to W3C Standards</h3>
+    <p>
+      Prism is built entirely on W3C standards. It introduces no new data
+      model — only new annotation properties layered on top of OWL 2 DL
+      and SHACL.
+    </p>
+    <table class="annotation-table">
+      <thead><tr><th>Standard</th><th>Role in Prism</th></tr></thead>
+      <tbody>
+        <tr><td><strong>OWL 2 DL</strong></td><td>Domain model language (classes, properties, restrictions)</td></tr>
+        <tr><td><strong>RDF 1.1</strong></td><td>Graph data model; Turtle as the primary serialisation</td></tr>
+        <tr><td><strong>SPARQL 1.1</strong></td><td>Query language for Prism processors and named Query types</td></tr>
+        <tr><td><strong>SHACL</strong></td><td>Constraint language; Prism property annotations generate SHACL shapes</td></tr>
+        <tr><td><strong>JSON-LD 1.1</strong></td><td>Alternative serialisation; official Prism JSON-LD context provided</td></tr>
+        <tr><td><strong>Dublin Core Terms</strong></td><td>Ontology metadata (<code>dcterms:created</code>, <code>dcterms:creator</code>, etc.)</td></tr>
+        <tr><td><strong>SKOS</strong></td><td>Definitional clarity (<code>skos:definition</code>, <code>skos:example</code>)</td></tr>
+        <tr><td><strong>VANN</strong></td><td>Namespace declarations (<code>vann:preferredNamespacePrefix</code>)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="what-prism-is-not" class="informative">
+    <h3>What Prism Is Not</h3>
+    <ul>
+      <li><strong>Not a code generator.</strong> Prism is the specification of what should be generated and how. Conforming Prism processors implement the generation logic.</li>
+      <li><strong>Not a runtime framework.</strong> Generated code has no dependency on Prism at runtime.</li>
+      <li><strong>Not a replacement for OWL or SHACL.</strong> Prism extends them; it does not replace them.</li>
+      <li><strong>Not proprietary.</strong> Prism is a CC BY 4.0 open standard with a W3C-compatible vocabulary.</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ═══════════════════════════════════════════════ 2. DESIGN PRINCIPLES ══ -->
+<section id="design-principles">
+  <h2>Design Principles</h2>
+
+  <dl>
+    <dt>P1: Standard-First</dt>
+    <dd>Every Prism construct maps to a W3C standard. Prism annotations are
+    <code>owl:AnnotationProperty</code> instances — standard OWL. A document
+    conforming to Prism 1.0 is also a valid OWL 2 DL ontology.</dd>
+
+    <dt>P2: Additive</dt>
+    <dd>Prism annotations are purely additive. An OWL ontology without any
+    Prism annotations is a valid OWL ontology. Adding Prism annotations does
+    not alter its OWL semantics.</dd>
+
+    <dt>P3: Convention Over Configuration</dt>
+    <dd>Every Prism annotation has a sensible default. For a class with no
+    Prism annotations at all, a processor applying Prism conventions generates
+    a primary entity with a repository, REST endpoint, and SHACL shape.
+    Annotations are needed only to override defaults.</dd>
+
+    <dt>P4: Single Source of Truth</dt>
+    <dd>The ontology is the domain model. All generated artefacts are derived,
+    never edited directly. If you want to change the API, change the
+    ontology.</dd>
+
+    <dt>P5: Portability</dt>
+    <dd>A Prism-annotated ontology is portable. No vendor-specific format, no
+    SDK dependency. Any conforming processor can consume it.</dd>
+
+    <dt>P6: Graph-Native</dt>
+    <dd>Prism treats the domain model as a knowledge graph, not a relational
+    schema. Graph-native backends (RDF4J, Neo4j) are first-class persistence
+    targets. Relational mapping is a projection, not the canonical form.</dd>
+
+    <dt>P7: AI-Ready</dt>
+    <dd>Every Prism entity and property carries machine-readable semantic
+    descriptions (<code class="prism">prism:semanticDescription</code>)
+    designed for direct inclusion in LLM system prompts.</dd>
+  </dl>
+</section>
+
+<!-- ══════════════════════════════════════════════════════ 3. CONFORMANCE ══ -->
+<section id="conformance">
+  <h2>Conformance</h2>
+  <p>
+    As well as sections marked as non-normative, all authoring guidelines,
+    diagrams, examples, and notes in this specification are non-normative.
+    Everything else in this specification is normative.
+  </p>
+  <p>
+    The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD
+    NOT, RECOMMENDED, MAY, and OPTIONAL in this document are to be interpreted
+    as described in [[RFC2119]].
+  </p>
+
+  <p>A document is a <dfn>conformant Prism ontology</dfn> if:</p>
+  <ol>
+    <li>It is a valid RDF 1.1 document in Turtle, JSON-LD, N-Triples, or RDF/XML serialisation.</li>
+    <li>It imports or references the Prism vocabulary (<code>https://spec.prism.dev/ns</code>).</li>
+    <li>All Prism annotation properties are used with values of the correct type as specified in this document.</li>
+    <li>It satisfies the conformance level it declares (see <a href="#conformance-levels"></a>).</li>
+  </ol>
+
+  <p>A software system is a <dfn>conformant Prism processor</dfn> if it:</p>
+  <ol>
+    <li>Accepts a <a>conformant Prism ontology</a> as input.</li>
+    <li>Correctly derives all artefacts mandated by the ontology's declared conformance level.</li>
+    <li>Applies all defaults specified in this document where annotations are absent.</li>
+    <li>Reports an error for any annotation value that violates its type constraint.</li>
+  </ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ 4. TERMINOLOGY ══ -->
+<section id="terminology">
+  <h2>Terminology</h2>
+  <dl>
+    <dt><dfn>Domain Model</dfn></dt>
+    <dd>The complete set of classes, properties, and relationships that describe a business domain.</dd>
+
+    <dt><dfn>Entity</dfn></dt>
+    <dd>An OWL class annotated with <code class="prism">prism:entityKind prism:Entity</code>. Has its own identity, lifecycle, and repository.</dd>
+
+    <dt><dfn>Value Object</dfn></dt>
+    <dd>An OWL class annotated with <code class="prism">prism:entityKind prism:ValueObject</code>. Has no independent identity; persisted as a component of its owning entity.</dd>
+
+    <dt><dfn>Enumeration</dfn></dt>
+    <dd>An OWL class annotated with <code class="prism">prism:entityKind prism:Enumeration</code>. Instances are OWL named individuals. Generates a language-level enum.</dd>
+
+    <dt><dfn>Action</dfn></dt>
+    <dd>An instance of <code class="prism">prism:Action</code>. A named, typed operation. Generates an API endpoint, a service method, and an AI agent tool.</dd>
+
+    <dt><dfn>Query</dfn></dt>
+    <dd>An instance of <code class="prism">prism:Query</code>. A named SPARQL SELECT. Generates a read-only API endpoint and an agent tool.</dd>
+
+    <dt><dfn>Prism Processor</dfn></dt>
+    <dd>A software system that reads a <a>conformant Prism ontology</a> and derives one or more artefacts from it.</dd>
+
+    <dt><dfn>Persistence Backend</dfn></dt>
+    <dd>The target data store for generated persistence code. One of: JPA/relational, MongoDB, Neo4j, RDF4J triplestore, DynamoDB.</dd>
+  </dl>
+</section>
+
+<!-- ═══════════════════════════════════════════════ 5. CORE OWL PROFILE ══ -->
+<section id="core-owl-profile">
+  <h2>Core OWL Profile</h2>
+  <p>
+    Prism ontologies MUST use the OWL 2 DL profile. OWL Full constructs are
+    not supported by <a>Prism processor</a>s.
+  </p>
+
+  <section id="ontology-header">
+    <h3>Required Ontology Header</h3>
+    <p>Every Prism ontology file MUST declare:</p>
+    <pre class="example highlight" title="Required ontology header">
+@prefix prism:   &lt;https://spec.prism.dev/ns#&gt; .
+@prefix owl:     &lt;http://www.w3.org/2002/07/owl#&gt; .
+@prefix rdfs:    &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+@prefix xsd:     &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+@prefix dcterms: &lt;http://purl.org/dc/terms/&gt; .
+
+&lt;https://example.com/ontologies/my-domain&gt;
+    a owl:Ontology ;
+    rdfs:label "My Domain Ontology"@en ;
+    dcterms:created "2026-05-25"^^xsd:date ;
+    owl:versionIRI &lt;https://example.com/ontologies/my-domain/1.0.0&gt; ;
+    owl:versionInfo "1.0.0" ;
+    prism:conformanceLevel prism:Level2Persistence .</pre>
+  </section>
+
+  <section id="entity-class-declaration">
+    <h3>Entity Class Declaration</h3>
+    <pre class="example highlight" title="Entity class">
+ex:Shipment
+    a owl:Class ;
+    rdfs:label "Shipment"@en ;
+    rdfs:comment "A consignment of goods transported under a trade transaction."@en ;
+    prism:entityKind prism:Entity ;
+    prism:pluralLabel "Shipments"@en ;
+    prism:generateCode true ;
+    prism:generateRepository true ;
+    prism:generateRestEndpoint true .</pre>
+    <p>
+      If <code class="prism">prism:entityKind</code> is absent, processors
+      MUST treat the class as <code class="prism">prism:Entity</code>.
+    </p>
+  </section>
+
+  <section id="value-object-declaration">
+    <h3>Value Object Declaration</h3>
+    <pre class="example highlight" title="Value object">
+ex:MonetaryAmount
+    a owl:Class ;
+    rdfs:label "Monetary Amount"@en ;
+    prism:entityKind prism:ValueObject ;
+    prism:generateCode true ;
+    prism:generateRepository false ;
+    prism:generateRestEndpoint false .</pre>
+  </section>
+
+  <section id="enumeration-declaration">
+    <h3>Enumeration Declaration</h3>
+    <pre class="example highlight" title="Enumeration">
+ex:IncotermsCode
+    a owl:Class ;
+    rdfs:label "Incoterms Code"@en ;
+    prism:entityKind prism:Enumeration .
+
+ex:EXW a ex:IncotermsCode, owl:NamedIndividual ; rdfs:label "EXW"@en .
+ex:FOB a ex:IncotermsCode, owl:NamedIndividual ; rdfs:label "FOB"@en .
+ex:CIF a ex:IncotermsCode, owl:NamedIndividual ; rdfs:label "CIF"@en .
+ex:DDP a ex:IncotermsCode, owl:NamedIndividual ; rdfs:label "DDP"@en .</pre>
+  </section>
+</section>
+
+<!-- ═════════════════════════════════════════════ 6. ENTITY ANNOTATIONS ══ -->
+<section id="entity-annotations">
+  <h2>Entity Annotations</h2>
+
+  <section id="generation-control">
+    <h3>Generation Control</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:entityKind</code></td><td><code>prism:EntityKind</code></td><td><code>prism:Entity</code></td><td>Semantic role of this class</td></tr>
+        <tr><td><code class="prism">prism:generateCode</code></td><td><code>xsd:boolean</code></td><td><code>true</code></td><td>Generate language entity class</td></tr>
+        <tr><td><code class="prism">prism:generateRepository</code></td><td><code>xsd:boolean</code></td><td><code>true</code> (Entity), <code>false</code> (ValueObject)</td><td>Generate repository interface</td></tr>
+        <tr><td><code class="prism">prism:generateRestEndpoint</code></td><td><code>xsd:boolean</code></td><td><code>true</code> (Entity), <code>false</code> (ValueObject)</td><td>Generate REST controller</td></tr>
+        <tr><td><code class="prism">prism:generateGraphQL</code></td><td><code>xsd:boolean</code></td><td><code>false</code></td><td>Generate GraphQL type + resolver</td></tr>
+        <tr><td><code class="prism">prism:pluralLabel</code></td><td><code>xsd:string</code></td><td><code>rdfs:label + "s"</code></td><td>Plural name for URL paths and collections</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="versioning-annotations">
+    <h3>Versioning Annotations</h3>
+    <pre class="example highlight" title="Versioning annotations">
+ex:Container
+    a owl:Class ;
+    prism:sinceVersion "1.0.0" .
+
+ex:LegacyWaybill
+    a owl:Class ;
+    owl:deprecated true ;
+    prism:deprecatedSince "1.2.0" ;
+    prism:replacedBy ex:BillOfLading .</pre>
+  </section>
+
+  <section id="persistence-link">
+    <h3>Persistence Configuration</h3>
+    <pre class="example highlight" title="Persistence config">
+ex:Shipment
+    a owl:Class ;
+    prism:persistence [
+        a prism:PersistenceConfig ;
+        prism:backend prism:JpaBackend ;
+        prism:tableName "shipments" ;
+        prism:enableCache true ;
+        prism:cacheTtlSeconds 300
+    ] .</pre>
+  </section>
+
+  <section id="api-config-link">
+    <h3>API Configuration</h3>
+    <pre class="example highlight" title="API config">
+ex:Shipment
+    a owl:Class ;
+    prism:apiConfig [
+        a prism:ApiConfig ;
+        prism:basePath "/api/v1/shipments" ;
+        prism:allowedMethod prism:GET, prism:POST, prism:PATCH ;
+        prism:requiresAuthentication true ;
+        prism:paginationDefault 25 ;
+        prism:paginationMax 200 ;
+        prism:apiTag "Shipments"
+    ] .</pre>
+  </section>
+</section>
+
+<!-- ═══════════════════════════════════════════ 7. PROPERTY ANNOTATIONS ══ -->
+<section id="property-annotations">
+  <h2>Property Annotations</h2>
+  <p>
+    Prism property annotations apply to both <code>owl:DatatypeProperty</code>
+    and <code>owl:ObjectProperty</code> instances.
+  </p>
+
+  <section id="constraint-annotations">
+    <h3>Constraint Annotations</h3>
+    <p>
+      These annotations generate corresponding SHACL property shapes on the
+      owning entity's <code>sh:NodeShape</code> (see
+      <a href="#shacl-integration"></a>).
+    </p>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>SHACL Equivalent</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:required</code></td><td><code>xsd:boolean</code></td><td><code>sh:minCount 1</code></td><td>Property must be present</td></tr>
+        <tr><td><code class="prism">prism:unique</code></td><td><code>xsd:boolean</code></td><td><code>sh:uniqueLang</code> or DB unique index</td><td>Value must be unique across instances</td></tr>
+        <tr><td><code class="prism">prism:pattern</code></td><td><code>xsd:string</code></td><td><code>sh:pattern</code></td><td>Regex the value must match</td></tr>
+        <tr><td><code class="prism">prism:minValue</code></td><td><code>rdfs:Literal</code></td><td><code>sh:minInclusive</code></td><td>Minimum numeric/date value</td></tr>
+        <tr><td><code class="prism">prism:maxValue</code></td><td><code>rdfs:Literal</code></td><td><code>sh:maxInclusive</code></td><td>Maximum numeric/date value</td></tr>
+        <tr><td><code class="prism">prism:minLength</code></td><td><code>xsd:integer</code></td><td><code>sh:minLength</code></td><td>Minimum string length</td></tr>
+        <tr><td><code class="prism">prism:maxLength</code></td><td><code>xsd:integer</code></td><td><code>sh:maxLength</code></td><td>Maximum string length</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="index-search-annotations">
+    <h3>Index and Search Annotations</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:indexed</code></td><td><code>xsd:boolean</code></td><td><code>false</code></td><td>Create a database index</td></tr>
+        <tr><td><code class="prism">prism:searchable</code></td><td><code>xsd:boolean</code></td><td><code>false</code></td><td>Include in full-text search</td></tr>
+        <tr><td><code class="prism">prism:sortable</code></td><td><code>xsd:boolean</code></td><td><code>false</code></td><td>Expose as API sort key</td></tr>
+        <tr><td><code class="prism">prism:filterable</code></td><td><code>xsd:boolean</code></td><td><code>false</code></td><td>Expose as API filter parameter</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="persistence-property-annotations">
+    <h3>Persistence Annotations</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:columnName</code></td><td><code>xsd:string</code></td><td>Override column name (default: snake_case of local name)</td></tr>
+        <tr><td><code class="prism">prism:defaultValue</code></td><td><code>rdfs:Literal</code></td><td>Default value when not supplied</td></tr>
+        <tr><td><code class="prism">prism:immutable</code></td><td><code>xsd:boolean</code></td><td>Set at creation, never updated</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="safety-documentation-annotations">
+    <h3>Safety and Documentation Annotations</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:sensitive</code></td><td><code>xsd:boolean</code></td><td>PII — omit from logs, search, default serialisation</td></tr>
+        <tr><td><code class="prism">prism:example</code></td><td><code>rdfs:Literal</code></td><td>Example value for OpenAPI docs and test fixtures</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="property-example">
+    <h3>Full Property Example</h3>
+    <pre class="example highlight" title="Fully annotated property">
+ex:shipmentId
+    a owl:DatatypeProperty ;
+    rdfs:domain ex:Shipment ;
+    rdfs:range xsd:string ;
+    rdfs:label "Shipment ID"@en ;
+    prism:required true ;
+    prism:unique true ;
+    prism:immutable true ;
+    prism:indexed true ;
+    prism:filterable true ;
+    prism:sortable true ;
+    prism:pattern "[A-Z]{2}[0-9]{8}" ;
+    prism:maxLength 12 ;
+    prism:example "SH20260001" ;
+    prism:columnName "shipment_id" .</pre>
+  </section>
+</section>
+
+<!-- ══════════════════════════════════════════ 8. RELATIONSHIP ANNOTATIONS ══ -->
+<section id="relationship-annotations">
+  <h2>Relationship Annotations</h2>
+  <p>Relationship annotations apply to <code>owl:ObjectProperty</code> declarations.</p>
+
+  <section id="cardinality">
+    <h3>Cardinality</h3>
+    <pre class="example highlight" title="Relationship annotations">
+ex:hasContainer
+    a owl:ObjectProperty ;
+    rdfs:domain ex:Shipment ;
+    rdfs:range ex:Container ;
+    prism:cardinality prism:OneToMany ;
+    prism:cascade prism:CascadeAll ;
+    prism:fetchStrategy prism:Lazy .</pre>
+
+    <table class="annotation-table">
+      <thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:OneToOne</code></td><td>One instance of domain has exactly one range instance</td></tr>
+        <tr><td><code class="prism">prism:OneToMany</code></td><td>One instance of domain has many range instances</td></tr>
+        <tr><td><code class="prism">prism:ManyToOne</code></td><td>Many domain instances share one range instance</td></tr>
+        <tr><td><code class="prism">prism:ManyToMany</code></td><td>Many-to-many; requires <code class="prism">prism:joinTable</code> for relational backends</td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<!-- ═══════════════════════════════════════ 9. PERSISTENCE CONFIGURATION ══ -->
+<section id="persistence-configuration">
+  <h2>Persistence Configuration</h2>
+
+  <section id="persistence-backends">
+    <h3>Supported Backends</h3>
+    <table class="annotation-table backends">
+      <thead><tr><th>Named Individual</th><th>Backend</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:JpaBackend</code></td><td>Relational via JPA (PostgreSQL, MySQL, H2)</td></tr>
+        <tr><td><code class="prism">prism:MongoBackend</code></td><td>MongoDB document store</td></tr>
+        <tr><td><code class="prism">prism:Neo4jBackend</code></td><td>Neo4j property graph</td></tr>
+        <tr><td><code class="prism">prism:Rdf4jBackend</code></td><td>RDF triplestore (RDF4J, Jena)</td></tr>
+        <tr><td><code class="prism">prism:DynamoBackend</code></td><td>Amazon DynamoDB</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="multi-backend">
+    <h3>Multi-Backend Declaration</h3>
+    <p>
+      An entity MAY declare multiple persistence configs with different
+      backends. Processors MUST generate code for each declared backend and
+      SHOULD generate an interface abstraction over them.
+    </p>
+    <pre class="example highlight" title="Multi-backend persistence">
+ex:AuditEvent
+    prism:persistence [
+        a prism:PersistenceConfig ;
+        prism:backend prism:Rdf4jBackend
+    ] , [
+        a prism:PersistenceConfig ;
+        prism:backend prism:MongoBackend ;
+        prism:tableName "audit_events"
+    ] .</pre>
+  </section>
+</section>
+
+<!-- ═══════════════════════════════════════════════ 10. API CONFIGURATION ══ -->
+<section id="api-configuration">
+  <h2>API Configuration</h2>
+
+  <section id="rest-defaults">
+    <h3>REST Generation Defaults</h3>
+    <p>
+      When <code class="prism">prism:generateRestEndpoint true</code> and no
+      <code class="prism">prism:ApiConfig</code> is present, processors MUST
+      apply these defaults:
+    </p>
+    <table class="annotation-table">
+      <thead><tr><th>Setting</th><th>Default Value</th></tr></thead>
+      <tbody>
+        <tr><td>Base path</td><td><code>/api/{prism:pluralLabel lowercase}</code></td></tr>
+        <tr><td>Allowed methods</td><td>GET (list + get), POST (create), PUT (full update), PATCH (partial), DELETE</td></tr>
+        <tr><td>Authentication</td><td>Not required</td></tr>
+        <tr><td>Pagination default</td><td>20</td></tr>
+        <tr><td>Pagination max</td><td>100</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="generated-endpoints">
+    <h3>Generated Endpoints</h3>
+    <p>
+      For a <code class="prism">prism:ApiConfig</code> with
+      <code class="prism">prism:basePath "/api/v1/shipments"</code>, processors
+      MUST generate:
+    </p>
+    <table class="annotation-table">
+      <thead><tr><th>Method</th><th>Path</th><th>Operation</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/v1/shipments</code></td><td>List with pagination, filter, sort</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/shipments</code></td><td>Create</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/shipments/{id}</code></td><td>Get by ID</td></tr>
+        <tr><td>PUT</td><td><code>/api/v1/shipments/{id}</code></td><td>Full update</td></tr>
+        <tr><td>PATCH</td><td><code>/api/v1/shipments/{id}</code></td><td>Partial update</td></tr>
+        <tr><td>DELETE</td><td><code>/api/v1/shipments/{id}</code></td><td>Delete</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Methods NOT listed in <code class="prism">prism:allowedMethod</code>
+      MUST NOT be generated.
+    </p>
+  </section>
+</section>
+
+<!-- ═══════════════════════════════════════════════ 11. SHACL INTEGRATION ══ -->
+<section id="shacl-integration">
+  <h2>Validation: SHACL Integration</h2>
+
+  <section id="automatic-shape-generation">
+    <h3>Automatic Shape Generation</h3>
+    <p>
+      A conforming Level 2+ processor MUST generate a <code>sh:NodeShape</code>
+      for every <a>Entity</a> class. Property annotations are the source of
+      SHACL constraint generation.
+    </p>
+    <pre class="example highlight" title="OOF source → generated SHACL">
+# Prism source
+ex:shipmentId
+    a owl:DatatypeProperty ;
+    rdfs:domain ex:Shipment ;
+    rdfs:range xsd:string ;
+    prism:required true ;
+    prism:pattern "[A-Z]{2}[0-9]{8}" ;
+    prism:maxLength 12 .
+
+# Generated SHACL (processor output — not authored manually)
+ex:ShipmentShape
+    a sh:NodeShape ;
+    sh:targetClass ex:Shipment ;
+    sh:property [
+        sh:path ex:shipmentId ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:pattern "[A-Z]{2}[0-9]{8}" ;
+        sh:maxLength 12
+    ] .</pre>
+  </section>
+</section>
+
+<!-- ════════════════════════════════════════════ 12. AI AGENT ANNOTATIONS ══ -->
+<section id="ai-agent-annotations">
+  <h2>AI Agent Annotations</h2>
+
+  <section id="agent-accessibility">
+    <h3>Agent Accessibility</h3>
+    <pre class="example highlight" title="AI agent annotations">
+ex:Shipment
+    prism:agentAccessible true ;
+    prism:agentPermission prism:ReadOnly ;
+    prism:semanticDescription """A Shipment represents a consignment of goods
+moving from an exporter to an importer. It is the central node of the trade
+graph. When reasoning about a trade operation, always anchor your analysis
+to the Shipment entity first.""" ;
+    prism:toolName "getShipment" .</pre>
+
+    <table class="annotation-table">
+      <thead><tr><th>Value</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:ReadOnly</code></td><td>Agent may query and read; mutations are blocked</td></tr>
+        <tr><td><code class="prism">prism:ReadWrite</code></td><td>Agent may query and invoke approved <code class="prism">prism:Action</code> types</td></tr>
+        <tr><td><code class="prism">prism:Restricted</code></td><td>Entity is hidden from agents entirely</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="semantic-description-guidelines">
+    <h3>Semantic Description Guidelines</h3>
+    <p>
+      <code class="prism">prism:semanticDescription</code> SHOULD explain the
+      entity's role in the domain, reference related entities by name, describe
+      when and why an agent would query this entity, and note any non-obvious
+      constraints or business rules the agent must respect.
+    </p>
+    <p>
+      <code class="prism">prism:semanticDescription</code> MUST NOT duplicate
+      <code>rdfs:comment</code>. They serve different audiences:
+      <code>rdfs:comment</code> is for developers;
+      <code class="prism">prism:semanticDescription</code> is for LLMs.
+    </p>
+  </section>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 13. ACTION TYPES ══ -->
+<section id="action-types">
+  <h2>Action Types</h2>
+  <p>
+    <a>Action</a>s are named operations that transcend simple CRUD. Each action
+    generates an API endpoint, a service method, and (if the entity is
+    <code class="prism">prism:agentAccessible</code>) an agent tool.
+  </p>
+
+  <pre class="example highlight" title="Action declaration">
+ex:BookShipmentAction
+    a prism:Action ;
+    rdfs:label "Book Shipment"@en ;
+    prism:actionKind prism:CreateAction ;
+    prism:targetClass ex:Shipment ;
+    prism:inputShape ex:BookShipmentInputShape ;
+    prism:outputClass ex:Shipment ;
+    prism:requiredRole "ROLE_FREIGHT_FORWARDER" ;
+    prism:sideEffect "Triggers a booking confirmation email." .</pre>
+
+  <table class="annotation-table">
+    <thead><tr><th>Value</th><th>Generated HTTP method</th><th>Typical use</th></tr></thead>
+    <tbody>
+      <tr><td><code class="prism">prism:CreateAction</code></td><td>POST</td><td>Create a new entity with domain logic</td></tr>
+      <tr><td><code class="prism">prism:UpdateAction</code></td><td>PATCH</td><td>State transition, business-rule update</td></tr>
+      <tr><td><code class="prism">prism:DeleteAction</code></td><td>DELETE</td><td>Soft-delete, archive, cancel</td></tr>
+      <tr><td><code class="prism">prism:CustomAction</code></td><td>POST</td><td>Domain operation (approve, submit, release)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 14. QUERY TYPES ══ -->
+<section id="query-types">
+  <h2>Query Types</h2>
+  <p>
+    <a>Query</a> instances are named SPARQL SELECT statements exposed as
+    read-only API endpoints and agent tools.
+  </p>
+  <pre class="example highlight" title="Query declaration">
+ex:BlockedShipmentsQuery
+    a prism:Query ;
+    rdfs:label "Blocked Shipments"@en ;
+    prism:outputClass ex:Shipment ;
+    prism:sparqlQuery """
+        SELECT ?shipment ?shipmentId WHERE {
+            ?shipment a ex:Shipment ;
+                      ex:shipmentId ?shipmentId .
+            ?finding  ex:affectsShipment ?shipment ;
+                      ex:severity ex:BLOCKED .
+        }
+        ORDER BY ?shipmentId
+    """ .</pre>
+</section>
+
+<!-- ═══════════════════════════════════════ 15. INTEROPERABILITY MAPPINGS ══ -->
+<section id="interoperability-mappings">
+  <h2>Interoperability Mappings</h2>
+  <p>
+    Prism ontologies SHOULD declare alignment with external ontologies to
+    enable semantic interoperability across systems.
+  </p>
+  <pre class="example highlight" title="Class and property mappings">
+ex:Shipment
+    prism:mapsTo &lt;https://www.gs1.org/voc/Shipment&gt; ;
+    prism:mappingType prism:ExactMatch .
+
+ex:Party
+    prism:mapsTo &lt;http://schema.org/Organization&gt; ;
+    prism:mappingType prism:NearMatch .</pre>
+
+  <p>
+    Use <code>owl:equivalentClass</code> only when the mapping is logically
+    exact and you are prepared for OWL reasoners to treat the classes as
+    identical. Use <code class="prism">prism:mapsTo</code> with
+    <code class="prism">prism:ExactMatch</code> for all other cases.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════ 16. ONTOLOGY METADATA ══ -->
+<section id="ontology-metadata">
+  <h2>Ontology Metadata and Versioning</h2>
+
+  <section id="required-metadata">
+    <h3>Required Metadata</h3>
+    <p>Every Prism ontology MUST declare:</p>
+    <pre class="example highlight" title="Required metadata">
+&lt;https://example.com/ontologies/trade&gt;
+    a owl:Ontology ;
+    rdfs:label "Trade Domain Ontology"@en ;
+    dcterms:created "2026-05-25"^^xsd:date ;
+    dcterms:modified "2026-05-25"^^xsd:date ;
+    owl:versionIRI &lt;https://example.com/ontologies/trade/1.0.0&gt; ;
+    owl:versionInfo "1.0.0" ;
+    prism:conformanceLevel prism:Level3Api .</pre>
+  </section>
+
+  <section id="semantic-versioning">
+    <h3>Semantic Versioning</h3>
+    <p>Prism ontologies MUST use <a href="https://semver.org/">Semantic Versioning 2.0</a>:</p>
+    <ul>
+      <li><strong>MAJOR</strong> — breaking changes: class removal, property removal, type change, cardinality restriction tightening</li>
+      <li><strong>MINOR</strong> — backwards-compatible additions: new classes, new optional properties, new relationships</li>
+      <li><strong>PATCH</strong> — non-semantic changes: label corrections, comment updates, example additions</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ══════════════════════════════════════════════ 17. SCHEMA MIGRATIONS ══ -->
+<section id="schema-migrations">
+  <h2>Schema Migrations</h2>
+  <pre class="example highlight" title="Migration declaration">
+ex:Migration_1_0_to_1_1
+    a prism:Migration ;
+    rdfs:label "Rename consigneeId to importerId"@en ;
+    prism:fromVersion "1.0.0" ;
+    prism:toVersion "1.1.0" ;
+    prism:isBreaking true ;
+    prism:migrationScript """
+        DELETE { ?s ex:consigneeId ?o }
+        INSERT { ?s ex:importerId ?o }
+        WHERE  { ?s ex:consigneeId ?o }
+    """ .</pre>
+  <p>
+    Processors MUST execute migrations in ascending version order. Migrations
+    MUST be idempotent. When <code class="prism">prism:isBreaking true</code>,
+    processors MUST warn the operator, create a snapshot, and validate the
+    migrated data against the new SHACL shapes before reporting success.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════ 18. SERIALIZATION FORMATS ══ -->
+<section id="serialization-formats">
+  <h2>Serialization Formats</h2>
+  <p>
+    <strong>Turtle</strong> (<code>.ttl</code>) is the primary and recommended
+    serialisation format for Prism ontologies. The following formats are also
+    supported:
+  </p>
+  <table class="annotation-table">
+    <thead><tr><th>Format</th><th>Media Type</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Turtle</td><td><code>text/turtle</code></td><td><strong>Primary</strong> (recommended)</td></tr>
+      <tr><td>JSON-LD 1.1</td><td><code>application/ld+json</code></td><td>Supported; Prism JSON-LD context provided</td></tr>
+      <tr><td>N-Triples</td><td><code>application/n-triples</code></td><td>Supported (tooling interop)</td></tr>
+      <tr><td>RDF/XML</td><td><code>application/rdf+xml</code></td><td>Supported (legacy interop)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════════════════════════════════════════ 19. CONFORMANCE LEVELS ══ -->
+<section id="conformance-levels">
+  <h2>Conformance Levels</h2>
+  <p>
+    Prism defines four cumulative conformance levels. Each level extends the
+    previous.
+  </p>
+
+  <section id="level1" class="conformance-level">
+    <h3>Level 1: Core — <code class="prism">prism:Level1Core</code></h3>
+    <p>Processor MUST generate:</p>
+    <ul>
+      <li>Language-specific entity classes for all <a>Entity</a> and <a>Value Object</a> classes</li>
+      <li>Enumeration types for all <a>Enumeration</a> classes</li>
+      <li>Type-safe property accessors reflecting OWL datatype ranges</li>
+      <li>Null-safety reflecting <code class="prism">prism:required</code></li>
+    </ul>
+  </section>
+
+  <section id="level2" class="conformance-level">
+    <h3>Level 2: Persistence — <code class="prism">prism:Level2Persistence</code></h3>
+    <p>All Level 1 requirements, plus:</p>
+    <ul>
+      <li>Repository/DAO interfaces for all <a>Entity</a> with <code class="prism">prism:generateRepository true</code></li>
+      <li>Persistence mapping files per <code class="prism">prism:PersistenceConfig</code></li>
+      <li>SHACL shapes derived from property constraint annotations</li>
+      <li>Database migration scripts for <code class="prism">prism:Migration</code> instances</li>
+    </ul>
+  </section>
+
+  <section id="level3" class="conformance-level">
+    <h3>Level 3: API — <code class="prism">prism:Level3Api</code></h3>
+    <p>All Level 2 requirements, plus:</p>
+    <ul>
+      <li>REST controllers with all endpoints specified by <code class="prism">prism:ApiConfig</code></li>
+      <li>OpenAPI 3.1 specification</li>
+      <li>GraphQL schema and resolvers for <code class="prism">prism:generateGraphQL true</code> entities</li>
+      <li>Request/response DTO classes</li>
+      <li>API endpoint stubs for all <a>Action</a> and <a>Query</a> instances</li>
+    </ul>
+  </section>
+
+  <section id="level4" class="conformance-level">
+    <h3>Level 4: AI-Native — <code class="prism">prism:Level4AiNative</code></h3>
+    <p>All Level 3 requirements, plus:</p>
+    <ul>
+      <li>Agent tool definitions for all <code class="prism">prism:agentAccessible true</code> entities</li>
+      <li>LLM system prompt preamble from <code class="prism">prism:semanticDescription</code> values</li>
+      <li>JSON-LD context file for structured agent output</li>
+      <li>Agent action tools from <a>Action</a> instances where target entity is <code class="prism">prism:ReadWrite</code></li>
+    </ul>
+  </section>
+</section>
+
+<!-- ══════════════════════════════════════════════════════ 20. EXAMPLE ══ -->
+<section id="complete-example" class="informative">
+  <h2>Complete Example: Trade Domain</h2>
+  <p>
+    The following is a self-contained Prism-conformant ontology for a trade
+    domain demonstrating Level 4 features.
+  </p>
+  <pre class="example highlight" title="Complete trade domain ontology">
+@prefix ex:      &lt;https://example.com/ontologies/trade#&gt; .
+@prefix prism:   &lt;https://spec.prism.dev/ns#&gt; .
+@prefix owl:     &lt;http://www.w3.org/2002/07/owl#&gt; .
+@prefix rdf:     &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt; .
+@prefix rdfs:    &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
+@prefix xsd:     &lt;http://www.w3.org/2001/XMLSchema#&gt; .
+@prefix dcterms: &lt;http://purl.org/dc/terms/&gt; .
+
+&lt;https://example.com/ontologies/trade&gt;
+    a owl:Ontology ;
+    rdfs:label "Trade Domain Ontology"@en ;
+    dcterms:created "2026-05-25"^^xsd:date ;
+    owl:versionInfo "1.0.0" ;
+    prism:conformanceLevel prism:Level4AiNative .
+
+ex:Shipment
+    a owl:Class ;
+    rdfs:label "Shipment"@en ;
+    prism:entityKind prism:Entity ;
+    prism:generateRestEndpoint true ;
+    prism:generateGraphQL true ;
+    prism:agentAccessible true ;
+    prism:agentPermission prism:ReadWrite ;
+    prism:semanticDescription """The central node of the trade graph.
+Every document, event, and party connects to a Shipment.""" ;
+    prism:apiConfig [
+        a prism:ApiConfig ;
+        prism:basePath "/api/v1/shipments" ;
+        prism:allowedMethod prism:GET, prism:POST, prism:PATCH ;
+        prism:requiresAuthentication true
+    ] .
+
+ex:shipmentId
+    a owl:DatatypeProperty ;
+    rdfs:domain ex:Shipment ;
+    rdfs:range xsd:string ;
+    prism:required true ;
+    prism:unique true ;
+    prism:immutable true ;
+    prism:pattern "SH[0-9]{8}" ;
+    prism:example "SH20260001" .</pre>
+</section>
+
+<!-- ══════════════════════════════════════════════════ 21. JSON-LD CONTEXT ══ -->
+<section id="jsonld-context">
+  <h2>JSON-LD Context</h2>
+  <p>
+    Prism provides an official JSON-LD 1.1 context at
+    <a href="https://spec.prism.dev/context/prism.jsonld">https://spec.prism.dev/context/prism.jsonld</a>.
+  </p>
+  <pre class="example" title="JSON-LD context excerpt">
+{
+  "@context": {
+    "prism":     "https://spec.prism.dev/ns#",
+    "owl":        "http://www.w3.org/2002/07/owl#",
+    "rdfs":       "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd":        "http://www.w3.org/2001/XMLSchema#",
+
+    "entityKind":           { "@id": "prism:entityKind",           "@type": "@id" },
+    "generateCode":         { "@id": "prism:generateCode",         "@type": "xsd:boolean" },
+    "generateRepository":   { "@id": "prism:generateRepository",   "@type": "xsd:boolean" },
+    "generateRestEndpoint": { "@id": "prism:generateRestEndpoint", "@type": "xsd:boolean" },
+    "required":             { "@id": "prism:required",             "@type": "xsd:boolean" },
+    "unique":               { "@id": "prism:unique",               "@type": "xsd:boolean" },
+    "indexed":              { "@id": "prism:indexed",              "@type": "xsd:boolean" },
+    "searchable":           { "@id": "prism:searchable",           "@type": "xsd:boolean" },
+    "filterable":           { "@id": "prism:filterable",           "@type": "xsd:boolean" },
+    "sensitive":            { "@id": "prism:sensitive",            "@type": "xsd:boolean" },
+    "agentAccessible":      { "@id": "prism:agentAccessible",      "@type": "xsd:boolean" },
+    "semanticDescription":  { "@id": "prism:semanticDescription",  "@type": "xsd:string" },
+    "conformanceLevel":     { "@id": "prism:conformanceLevel",     "@type": "@id" },
+
+    "Entity":              "prism:Entity",
+    "ValueObject":         "prism:ValueObject",
+    "Enumeration":         "prism:Enumeration",
+    "ReadOnly":            "prism:ReadOnly",
+    "ReadWrite":           "prism:ReadWrite",
+    "JpaBackend":          "prism:JpaBackend",
+    "Neo4jBackend":        "prism:Neo4jBackend",
+    "Rdf4jBackend":        "prism:Rdf4jBackend"
+  }
+}</pre>
+</section>
+
+<!-- ══════════════════════════════════════════ APPENDIX A: QUICK REFERENCE ══ -->
+<section id="annotation-quick-reference" class="appendix">
+  <h2>Annotation Quick Reference</h2>
+
+  <section id="entity-level-ref">
+    <h3>Entity-Level</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Default</th><th>Section</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:entityKind</code></td><td><code>prism:EntityKind</code></td><td><code>prism:Entity</code></td><td><a href="#generation-control"></a></td></tr>
+        <tr><td><code class="prism">prism:generateCode</code></td><td>boolean</td><td><code>true</code></td><td><a href="#generation-control"></a></td></tr>
+        <tr><td><code class="prism">prism:generateRepository</code></td><td>boolean</td><td><code>true</code> (Entity)</td><td><a href="#generation-control"></a></td></tr>
+        <tr><td><code class="prism">prism:generateRestEndpoint</code></td><td>boolean</td><td><code>true</code> (Entity)</td><td><a href="#generation-control"></a></td></tr>
+        <tr><td><code class="prism">prism:generateGraphQL</code></td><td>boolean</td><td><code>false</code></td><td><a href="#generation-control"></a></td></tr>
+        <tr><td><code class="prism">prism:agentAccessible</code></td><td>boolean</td><td><code>true</code> (Entity)</td><td><a href="#ai-agent-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:agentPermission</code></td><td><code>prism:AgentPermission</code></td><td><code>prism:ReadOnly</code></td><td><a href="#ai-agent-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:semanticDescription</code></td><td>string</td><td>—</td><td><a href="#semantic-description-guidelines"></a></td></tr>
+        <tr><td><code class="prism">prism:mapsTo</code></td><td>IRI</td><td>—</td><td><a href="#interoperability-mappings"></a></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="property-level-ref">
+    <h3>Property-Level</h3>
+    <table class="annotation-table">
+      <thead><tr><th>Annotation</th><th>Type</th><th>Default</th><th>Section</th></tr></thead>
+      <tbody>
+        <tr><td><code class="prism">prism:required</code></td><td>boolean</td><td><code>false</code></td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:unique</code></td><td>boolean</td><td><code>false</code></td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:pattern</code></td><td>string</td><td>—</td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:minValue</code></td><td>Literal</td><td>—</td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:maxValue</code></td><td>Literal</td><td>—</td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:minLength</code></td><td>integer</td><td>—</td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:maxLength</code></td><td>integer</td><td>—</td><td><a href="#constraint-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:indexed</code></td><td>boolean</td><td><code>false</code></td><td><a href="#index-search-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:searchable</code></td><td>boolean</td><td><code>false</code></td><td><a href="#index-search-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:sortable</code></td><td>boolean</td><td><code>false</code></td><td><a href="#index-search-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:filterable</code></td><td>boolean</td><td><code>false</code></td><td><a href="#index-search-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:sensitive</code></td><td>boolean</td><td><code>false</code></td><td><a href="#safety-documentation-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:example</code></td><td>Literal</td><td>—</td><td><a href="#safety-documentation-annotations"></a></td></tr>
+        <tr><td><code class="prism">prism:immutable</code></td><td>boolean</td><td><code>false</code></td><td><a href="#persistence-property-annotations"></a></td></tr>
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<!-- ══════════════════════════════════ APPENDIX B: BACKEND REFERENCE ══ -->
+<section id="persistence-backend-reference" class="appendix">
+  <h2>Persistence Backend Reference</h2>
+  <table class="annotation-table backends">
+    <thead>
+      <tr>
+        <th>Backend</th><th><code>prism:backend</code> value</th>
+        <th>Entity maps to</th><th>Property maps to</th><th>Relationship maps to</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>JPA / PostgreSQL</td><td><code class="prism">prism:JpaBackend</code></td><td><code>@Entity</code> class + SQL table</td><td><code>@Column</code></td><td><code>@OneToMany</code>, <code>@ManyToOne</code></td></tr>
+      <tr><td>MongoDB</td><td><code class="prism">prism:MongoBackend</code></td><td><code>@Document</code> class</td><td>BSON field</td><td>embedded document or <code>@DBRef</code></td></tr>
+      <tr><td>Neo4j</td><td><code class="prism">prism:Neo4jBackend</code></td><td><code>@Node</code> class</td><td>node property</td><td><code>@Relationship</code></td></tr>
+      <tr><td>RDF4J</td><td><code class="prism">prism:Rdf4jBackend</code></td><td><code>owl:Class</code> in named graph</td><td><code>owl:DatatypeProperty</code> triple</td><td><code>owl:ObjectProperty</code> triple</td></tr>
+      <tr><td>DynamoDB</td><td><code class="prism">prism:DynamoBackend</code></td><td>DynamoDB table with PK/SK</td><td>item attribute</td><td>denormalised or GSI</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ══════════════════════════════════ APPENDIX C: COMPARISON ══ -->
+<section id="comparison-with-alternatives" class="appendix informative">
+  <h2>Comparison with Alternatives</h2>
+  <table class="annotation-table">
+    <thead>
+      <tr>
+        <th>Feature</th><th>Prism 1.0</th><th>Palantir Foundry Ontology</th>
+        <th>JHipster JDL</th><th>OpenAPI 3.1</th><th>Prisma Schema</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Standard</strong></td><td>W3C (OWL/RDF/SHACL)</td><td>Proprietary</td><td>Proprietary</td><td>OpenAPI consortium</td><td>Proprietary</td></tr>
+      <tr><td><strong>Portable</strong></td><td>Yes — Turtle is vendor-neutral</td><td>No — Foundry only</td><td>No</td><td>Partial</td><td>No</td></tr>
+      <tr><td><strong>Graph-native</strong></td><td>Yes — RDF is a graph model</td><td>Partial</td><td>No</td><td>No</td><td>No</td></tr>
+      <tr><td><strong>AI agent generation</strong></td><td>Yes (Level 4)</td><td>Yes (AIP)</td><td>No</td><td>No</td><td>No</td></tr>
+      <tr><td><strong>SHACL validation</strong></td><td>Yes — generated from annotations</td><td>No</td><td>No</td><td>Partial (JSON Schema)</td><td>No</td></tr>
+      <tr><td><strong>External ontology mapping</strong></td><td>Yes — <code class="prism">prism:mapsTo</code></td><td>No</td><td>No</td><td>No</td><td>No</td></tr>
+      <tr><td><strong>Multi-backend persistence</strong></td><td>Yes</td><td>Foundry-internal</td><td>JPA only</td><td>No</td><td>Prisma-supported DBs</td></tr>
+      <tr><td><strong>Schema migrations</strong></td><td>Yes — SPARQL UPDATE</td><td>Proprietary</td><td>Liquibase</td><td>No</td><td>Prisma Migrate</td></tr>
+      <tr><td><strong>Open source</strong></td><td>Yes (CC BY 4.0)</td><td>No</td><td>Yes (Apache 2.0)</td><td>Yes</td><td>Yes (Apache 2.0)</td></tr>
+      <tr><td><strong>Price</strong></td><td>Free</td><td>$1M+ enterprise</td><td>Free</td><td>Free</td><td>Free</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>

@@ -1,4 +1,4 @@
-@prefix prism:     <https://spec.prism.dev/1.0#> .
+@prefix prism:   <https://spec.prism.dev/ns#> .
 @prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl:     <http://www.w3.org/2002/07/owl#> .
@@ -9,33 +9,214 @@
 @prefix vann:    <http://purl.org/vocab/vann/> .
 
 ###############################################################################
-# Prism Vocabulary v1.0
-# Namespace: https://spec.prism.dev/1.0#
+# Prism Vocabulary v1.1
+# Namespace: https://spec.prism.dev/ns#
 ###############################################################################
 
-<https://spec.prism.dev/1.0>
+<https://spec.prism.dev/ns>
     a owl:Ontology ;
     rdfs:label "Prism Vocabulary"@en ;
-    rdfs:comment "Annotation vocabulary for Prism 1.0 — the open standard for ontology-driven code, API, and persistence generation."@en ;
+    rdfs:comment "Annotation vocabulary for Prism 1.1 — the open standard for ontology-driven code, API, persistence, governance, event, and AI-native generation."@en ;
     dcterms:title "Prism Vocabulary"@en ;
-    dcterms:description "Defines the annotation properties, meta-classes, and named individuals used to annotate OWL 2 DL ontologies for automated code generation, API exposure, persistence mapping, SHACL validation, and AI agent integration."@en ;
+    dcterms:description "Defines the annotation properties, meta-classes, and named individuals used to annotate OWL 2 DL ontologies for automated code generation, API exposure, persistence mapping, SHACL validation, AI agent integration, data governance, event schema generation, digital twins, temporal versioning, and vector-native semantic search."@en ;
     dcterms:creator "Prism Working Group" ;
     dcterms:created "2026-05-25"^^xsd:date ;
+    dcterms:modified "2026-05-25"^^xsd:date ;
     dcterms:license <https://creativecommons.org/licenses/by/4.0/> ;
-    owl:versionIRI <https://spec.prism.dev/1.0> ;
-    owl:versionInfo "1.0.0" ;
+    owl:versionIRI <https://spec.prism.dev/ns/1.1.0> ;
+    owl:versionInfo "1.1.0" ;
     vann:preferredNamespacePrefix "prism" ;
-    vann:preferredNamespaceUri "https://spec.prism.dev/1.0#" .
+    vann:preferredNamespaceUri "https://spec.prism.dev/ns#" .
 
 ###############################################################################
-# 1. Meta-Classes
-# Used as values of prism:entityKind to distinguish entity roles.
+# 1. Conformance Levels
+###############################################################################
+
+prism:ConformanceLevel
+    a owl:Class ;
+    rdfs:label "Conformance Level"@en ;
+    rdfs:comment "A cumulative level of Prism processor conformance. Each level extends the previous."@en .
+
+prism:Level1Core
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 1 — Core"@en ;
+    rdfs:comment "Generate language entity classes, value objects, and enumerations."@en .
+
+prism:Level2Persistence
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 2 — Persistence"@en ;
+    rdfs:comment "Generate repositories, persistence mappings, SHACL shapes, and schema migrations."@en .
+
+prism:Level3Api
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 3 — API"@en ;
+    rdfs:comment "Generate REST controllers, OpenAPI specs, GraphQL schemas, and DTO classes."@en .
+
+prism:Level4AiNative
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 4 — AI-Native"@en ;
+    rdfs:comment "Generate agent tool definitions, system prompts, and JSON-LD contexts."@en .
+
+prism:Level5DataFabric
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 5 — Data Fabric"@en ;
+    rdfs:comment "Generate live source connectors, computed property resolvers, and federation adapters."@en .
+
+prism:Level6Governance
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 6 — Governance"@en ;
+    rdfs:comment "Generate governance workflows, data quality dashboards, lineage reports, and classification enforcement."@en .
+
+prism:Level7EventDriven
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 7 — Event-Driven"@en ;
+    rdfs:comment "Generate event schemas (Avro, Protobuf, CloudEvents), digital twin state machines, and bitemporal history tables."@en .
+
+prism:Level8VectorNative
+    a prism:ConformanceLevel, owl:NamedIndividual ;
+    rdfs:label "Level 8 — Vector-Native"@en ;
+    rdfs:comment "Generate embedding pipelines, vector store schemas, and semantic search API endpoints."@en .
+
+prism:conformanceLevel
+    a owl:AnnotationProperty ;
+    rdfs:label "conformance level"@en ;
+    rdfs:comment "Declares the conformance profile targeted by this ontology. A conformance level is a named bundle of capabilities (see prism:Capability / prism:bundlesCapability). Equivalent to declaring prism:requiresCapability for each capability the level bundles."@en ;
+    rdfs:domain owl:Ontology ;
+    rdfs:range prism:ConformanceLevel .
+
+###############################################################################
+# 1b. Capabilities (orthogonal generation concerns)
+#
+# A capability is an independently-supportable generation concern. The eight
+# prism:ConformanceLevel individuals above are named *profiles* — convenient
+# cumulative bundles of capabilities (see prism:bundlesCapability). Authors MAY
+# declare a profile via prism:conformanceLevel, or compose capabilities à la
+# carte via prism:requiresCapability. Capabilities may depend on one another
+# (prism:dependsOn); a processor that provides a capability MUST also provide
+# its transitive dependencies.
+###############################################################################
+
+prism:Capability
+    a owl:Class ;
+    rdfs:label "Capability"@en ;
+    rdfs:comment "An independently-supportable Prism generation concern (e.g. persistence, REST API, vector search). Capabilities are composable; conformance levels are named bundles of them."@en .
+
+prism:dependsOn
+    a owl:AnnotationProperty ;
+    rdfs:label "depends on"@en ;
+    rdfs:comment "Declares that the subject capability requires the object capability. A processor providing the subject MUST also provide the (transitive) object capabilities."@en ;
+    rdfs:domain prism:Capability ;
+    rdfs:range prism:Capability .
+
+prism:bundlesCapability
+    a owl:AnnotationProperty ;
+    rdfs:label "bundles capability"@en ;
+    rdfs:comment "Declares that a conformance-level profile includes the given capability."@en ;
+    rdfs:domain prism:ConformanceLevel ;
+    rdfs:range prism:Capability .
+
+prism:requiresCapability
+    a owl:AnnotationProperty ;
+    rdfs:label "requires capability"@en ;
+    rdfs:comment "Declares an individual capability this ontology requires its processor to support. An alternative (or supplement) to prism:conformanceLevel for à-la-carte capability selection."@en ;
+    rdfs:domain owl:Ontology ;
+    rdfs:range prism:Capability .
+
+prism:providesCapability
+    a owl:AnnotationProperty ;
+    rdfs:label "provides capability"@en ;
+    rdfs:comment "Declares a capability that a Prism processor implements. Used in processor self-description / conformance claims."@en ;
+    rdfs:range prism:Capability .
+
+prism:CoreModel
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Core Model"@en ;
+    rdfs:comment "Entity classes, value objects, enumerations, type-safe accessors, and application of co-input SHACL shapes."@en .
+
+prism:Persistence
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Persistence"@en ;
+    rdfs:comment "Repositories/DAOs, persistence mapping, generated+merged SHACL shapes, migrations, and indexes. Requires at least one persistence backend."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:RestApi
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "REST API"@en ;
+    rdfs:comment "REST controllers and OpenAPI 3.1 specifications."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:GraphQL
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "GraphQL"@en ;
+    rdfs:comment "GraphQL schema and resolvers."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:Grpc
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "gRPC"@en ;
+    rdfs:comment "gRPC service definitions and stubs."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:AiTools
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "AI Tools"@en ;
+    rdfs:comment "Agent tool definitions, semantic descriptions, system-prompt preambles, and JSON-LD context for structured agent output."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:DataFabric
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Data Fabric"@en ;
+    rdfs:comment "Live source connectors and sync pipelines, computed-property resolvers, and federation adapters."@en ;
+    prism:dependsOn prism:Persistence .
+
+prism:Governance
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Governance"@en ;
+    rdfs:comment "Governance workflows, data-classification enforcement, lineage, retention, geographic restriction, and quality certification."@en ;
+    prism:dependsOn prism:Persistence .
+
+prism:Events
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Events"@en ;
+    rdfs:comment "Event schema generation (Avro, Protobuf, JSON Schema, CloudEvents) and publisher/consumer stubs."@en ;
+    prism:dependsOn prism:CoreModel .
+
+prism:DigitalTwin
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Digital Twin"@en ;
+    rdfs:comment "Streaming state receivers, shadow-graph writers, and snapshot scheduling for digital twins."@en ;
+    prism:dependsOn prism:Events .
+
+prism:Temporal
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Temporal"@en ;
+    rdfs:comment "Bitemporal history tables and AS-OF query APIs."@en ;
+    prism:dependsOn prism:Persistence .
+
+prism:Vector
+    a prism:Capability, owl:NamedIndividual ;
+    rdfs:label "Vector"@en ;
+    rdfs:comment "Embedding pipelines, vector-store schemas, and semantic search endpoints. Requires at least one vector backend."@en ;
+    prism:dependsOn prism:CoreModel .
+
+# Profile → capability bundling (cumulative).
+prism:Level1Core        prism:bundlesCapability prism:CoreModel .
+prism:Level2Persistence prism:bundlesCapability prism:CoreModel, prism:Persistence .
+prism:Level3Api         prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc .
+prism:Level4AiNative    prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc, prism:AiTools .
+prism:Level5DataFabric  prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc, prism:AiTools, prism:DataFabric .
+prism:Level6Governance  prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc, prism:AiTools, prism:DataFabric, prism:Governance .
+prism:Level7EventDriven prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc, prism:AiTools, prism:DataFabric, prism:Governance, prism:Events, prism:DigitalTwin, prism:Temporal .
+prism:Level8VectorNative prism:bundlesCapability prism:CoreModel, prism:Persistence, prism:RestApi, prism:GraphQL, prism:Grpc, prism:AiTools, prism:DataFabric, prism:Governance, prism:Events, prism:DigitalTwin, prism:Temporal, prism:Vector .
+
+###############################################################################
+# 2. Entity Kind Meta-Classes
 ###############################################################################
 
 prism:EntityKind
     a owl:Class ;
     rdfs:label "Entity Kind"@en ;
-    rdfs:comment "The semantic role of an OWL class within an OOF ontology."@en .
+    rdfs:comment "The semantic role of an OWL class within a Prism ontology."@en .
 
 prism:Entity
     a prism:EntityKind, owl:NamedIndividual ;
@@ -50,10 +231,10 @@ prism:ValueObject
 prism:Enumeration
     a prism:EntityKind, owl:NamedIndividual ;
     rdfs:label "Enumeration"@en ;
-    rdfs:comment "A closed set of named values. Instances are named individuals."@en .
+    rdfs:comment "A closed set of named values. Instances are owl:NamedIndividual members of the class. Generates a language-level enum and a sh:in constraint on referencing properties."@en .
 
 ###############################################################################
-# 2. Entity-Level Annotations
+# 3. Entity-Level Annotations
 ###############################################################################
 
 prism:entityKind
@@ -66,7 +247,7 @@ prism:entityKind
 prism:generateCode
     a owl:AnnotationProperty ;
     rdfs:label "generate code"@en ;
-    rdfs:comment "If true, generate language-specific entity/value class for this type. Default: true."@en ;
+    rdfs:comment "If true, generate a language-specific entity/value class for this type. Default: true."@en ;
     rdfs:domain owl:Class ;
     rdfs:range xsd:boolean .
 
@@ -91,6 +272,13 @@ prism:generateGraphQL
     rdfs:domain owl:Class ;
     rdfs:range xsd:boolean .
 
+prism:generateGrpc
+    a owl:AnnotationProperty ;
+    rdfs:label "generate gRPC service"@en ;
+    rdfs:comment "If true, generate a gRPC service definition and stub for this entity. Default: false."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range xsd:boolean .
+
 prism:pluralLabel
     a owl:AnnotationProperty ;
     rdfs:label "plural label"@en ;
@@ -98,10 +286,17 @@ prism:pluralLabel
     rdfs:domain owl:Class ;
     rdfs:range xsd:string .
 
+prism:validatedBy
+    a owl:AnnotationProperty ;
+    rdfs:label "validated by"@en ;
+    rdfs:comment "Links an OWL class to the sh:NodeShape that defines its instance constraints. Enables processors to locate shapes without a full SHACL graph scan."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range sh:NodeShape .
+
 prism:persistence
     a owl:AnnotationProperty ;
     rdfs:label "persistence configuration"@en ;
-    rdfs:comment "Links an entity class to its prism:PersistenceConfig. One config per entity."@en ;
+    rdfs:comment "Links an entity class to one or more prism:PersistenceConfig instances. Multiple configs declare multi-backend persistence."@en ;
     rdfs:domain owl:Class ;
     rdfs:range prism:PersistenceConfig .
 
@@ -130,19 +325,25 @@ prism:replacedBy
     rdfs:comment "Points to the class or property that supersedes a deprecated term."@en .
 
 ###############################################################################
-# 3. Property-Level Annotations (apply to owl:DatatypeProperty and owl:ObjectProperty)
+# 4. Property-Level Annotations
+#
+# NOTE: Constraint annotations (pattern, minLength, maxLength, minValue,
+# maxValue) are intentionally absent. Use sh:pattern, sh:minLength,
+# sh:maxLength, sh:minInclusive, sh:maxInclusive in a SHACL NodeShape linked
+# via prism:validatedBy. This avoids duplicating the constraint vocabulary and
+# grants full SHACL expressiveness (sh:message, sh:severity, sh:or, etc.).
 ###############################################################################
 
 prism:required
     a owl:AnnotationProperty ;
     rdfs:label "required"@en ;
-    rdfs:comment "If true, this property must be present on every instance. Equivalent to sh:minCount 1 in the generated SHACL shape."@en ;
+    rdfs:comment "If true, this property must be present on every instance. Generates sh:minCount 1 in the SHACL shape AND a NOT NULL / required constraint in persistence and API layers."@en ;
     rdfs:range xsd:boolean .
 
 prism:unique
     a owl:AnnotationProperty ;
     rdfs:label "unique"@en ;
-    rdfs:comment "If true, the value must be unique across all instances of the owning class. Generates a unique index in relational backends."@en ;
+    rdfs:comment "If true, the value must be unique across all instances of the owning class. Generates a UNIQUE index in relational backends. No SHACL equivalent exists for cross-instance uniqueness."@en ;
     rdfs:range xsd:boolean .
 
 prism:indexed
@@ -183,7 +384,7 @@ prism:defaultValue
 prism:sensitive
     a owl:AnnotationProperty ;
     rdfs:label "sensitive"@en ;
-    rdfs:comment "If true, this property contains sensitive/PII data. Generators must omit it from logs, default serializations, and search indexes."@en ;
+    rdfs:comment "If true, this property contains sensitive/PII data. Generators must omit it from logs, default serialisations, and search indexes."@en ;
     rdfs:range xsd:boolean .
 
 prism:immutable
@@ -197,36 +398,30 @@ prism:example
     rdfs:label "example"@en ;
     rdfs:comment "An example value for this property. Appears in generated OpenAPI documentation and test fixtures."@en .
 
-prism:pattern
+prism:vectorIndexed
     a owl:AnnotationProperty ;
-    rdfs:label "pattern"@en ;
-    rdfs:comment "A regular expression that the string value of this property must match."@en ;
-    rdfs:range xsd:string .
+    rdfs:label "vector indexed"@en ;
+    rdfs:comment "If true, this property's value is included as filterable metadata in the entity's vector store index."@en ;
+    rdfs:range xsd:boolean .
 
-prism:minValue
+prism:derivedFrom
     a owl:AnnotationProperty ;
-    rdfs:label "min value"@en ;
-    rdfs:comment "Minimum numeric or date value (inclusive). Generates sh:minInclusive in SHACL."@en .
+    rdfs:label "derived from"@en ;
+    rdfs:comment "Links a property or class to the upstream property or class it is derived from. Used for data lineage tracking."@en .
 
-prism:maxValue
+prism:derivedUsing
     a owl:AnnotationProperty ;
-    rdfs:label "max value"@en ;
-    rdfs:comment "Maximum numeric or date value (inclusive). Generates sh:maxInclusive in SHACL."@en .
+    rdfs:label "derived using"@en ;
+    rdfs:comment "Links a derived property to the prism:ComputedPropertyDef or prism:Query that produces its value."@en .
 
-prism:minLength
+prism:dataClass
     a owl:AnnotationProperty ;
-    rdfs:label "min length"@en ;
-    rdfs:comment "Minimum string length. Generates sh:minLength in SHACL."@en ;
-    rdfs:range xsd:integer .
-
-prism:maxLength
-    a owl:AnnotationProperty ;
-    rdfs:label "max length"@en ;
-    rdfs:comment "Maximum string length. Generates sh:maxLength in SHACL."@en ;
-    rdfs:range xsd:integer .
+    rdfs:label "data class"@en ;
+    rdfs:comment "The data sensitivity/governance classification of this property or entity."@en ;
+    rdfs:range prism:DataClass .
 
 ###############################################################################
-# 4. Relationship Annotations (apply to owl:ObjectProperty)
+# 5. Relationship Annotations (apply to owl:ObjectProperty)
 ###############################################################################
 
 prism:Cardinality
@@ -315,14 +510,33 @@ prism:joinTable
     rdfs:comment "The join table name for ManyToMany relationships in relational backends."@en ;
     rdfs:range xsd:string .
 
+prism:EdgeProperties
+    a owl:Class ;
+    rdfs:label "Edge Properties"@en ;
+    rdfs:comment "Declares named datatype properties that exist on the edge (relationship) itself, not on either endpoint. Maps to a join-entity in JPA, a relationship type in Neo4j, or a reified triple in RDF."@en .
+
+prism:edgeProperties
+    a owl:AnnotationProperty ;
+    rdfs:label "edge properties"@en ;
+    rdfs:comment "Links an owl:ObjectProperty to a prism:EdgeProperties declaration."@en ;
+    rdfs:domain owl:ObjectProperty ;
+    rdfs:range prism:EdgeProperties .
+
+prism:edgeProperty
+    a owl:ObjectProperty ;
+    rdfs:label "edge property"@en ;
+    rdfs:comment "A datatype property that belongs to the edge rather than either endpoint."@en ;
+    rdfs:domain prism:EdgeProperties ;
+    rdfs:range owl:DatatypeProperty .
+
 ###############################################################################
-# 5. Persistence Configuration
+# 6. Persistence Configuration
 ###############################################################################
 
 prism:PersistenceConfig
     a owl:Class ;
     rdfs:label "Persistence Configuration"@en ;
-    rdfs:comment "Configuration for how an entity is persisted to a backend store."@en .
+    rdfs:comment "Configuration for how an entity is persisted to a backend store. May be a blank node or a named individual for reuse across entities."@en .
 
 prism:PersistenceBackend
     a owl:Class ;
@@ -375,13 +589,13 @@ prism:cacheTtlSeconds
     rdfs:range xsd:integer .
 
 ###############################################################################
-# 6. API Configuration
+# 7. API Configuration
 ###############################################################################
 
 prism:ApiConfig
     a owl:Class ;
     rdfs:label "API Configuration"@en ;
-    rdfs:comment "Configuration for the generated REST (and optionally GraphQL) API for an entity."@en .
+    rdfs:comment "Configuration for the generated REST (and optionally GraphQL/gRPC) API for an entity. May be a blank node or a named individual for reuse."@en .
 
 prism:HttpMethod
     a owl:Class ;
@@ -433,7 +647,7 @@ prism:apiTag
     rdfs:range xsd:string .
 
 ###############################################################################
-# 7. AI Agent Annotations
+# 8. AI Agent Annotations
 ###############################################################################
 
 prism:AgentPermission
@@ -450,7 +664,7 @@ prism:ReadWrite
     rdfs:label "Read Write"@en ;
     rdfs:comment "AI agents may query and mutate this entity via approved Action types."@en .
 
-prism:Restricted
+prism:AgentRestricted
     a prism:AgentPermission, owl:NamedIndividual ;
     rdfs:label "Restricted"@en ;
     rdfs:comment "This entity is hidden from AI agents entirely."@en .
@@ -464,7 +678,7 @@ prism:agentAccessible
 prism:semanticDescription
     a owl:AnnotationProperty ;
     rdfs:label "semantic description"@en ;
-    rdfs:comment "A rich natural language description of this entity or property, specifically crafted for LLM system prompt context. More detailed than rdfs:comment."@en ;
+    rdfs:comment "A rich natural language description of this entity or property, specifically crafted for LLM system prompt context. More detailed than rdfs:comment. MUST NOT duplicate rdfs:comment — rdfs:comment is for developers; prism:semanticDescription is for LLMs."@en ;
     rdfs:range xsd:string .
 
 prism:agentPermission
@@ -480,7 +694,7 @@ prism:toolName
     rdfs:range xsd:string .
 
 ###############################################################################
-# 8. Action Types
+# 9. Action Types
 ###############################################################################
 
 prism:Action
@@ -517,6 +731,13 @@ prism:inputShape
     rdfs:domain prism:Action ;
     rdfs:range sh:NodeShape .
 
+prism:outputShape
+    a owl:ObjectProperty ;
+    rdfs:label "output shape"@en ;
+    rdfs:comment "A SHACL NodeShape that describes the action's response structure."@en ;
+    rdfs:domain prism:Action ;
+    rdfs:range sh:NodeShape .
+
 prism:outputClass
     a owl:ObjectProperty ;
     rdfs:label "output class"@en ;
@@ -539,7 +760,7 @@ prism:sideEffect
     rdfs:range xsd:string .
 
 ###############################################################################
-# 9. Query Types
+# 10. Query Types
 ###############################################################################
 
 prism:Query
@@ -583,7 +804,7 @@ prism:paramRequired
     rdfs:range xsd:boolean .
 
 ###############################################################################
-# 10. Interoperability Mappings
+# 11. Interoperability Mappings
 ###############################################################################
 
 prism:MappingType
@@ -618,11 +839,11 @@ prism:mapsTo
 prism:mappingType
     a owl:AnnotationProperty ;
     rdfs:label "mapping type"@en ;
-    rdfs:comment "Qualifies an prism:mapsTo link with the type of semantic alignment."@en ;
+    rdfs:comment "Qualifies a prism:mapsTo link with the type of semantic alignment."@en ;
     rdfs:range prism:MappingType .
 
 ###############################################################################
-# 11. Schema Migration
+# 12. Schema Migration
 ###############################################################################
 
 prism:Migration
@@ -655,3 +876,812 @@ prism:isBreaking
     rdfs:comment "If true, this migration removes or renames terms that may be referenced by existing code."@en ;
     rdfs:domain prism:Migration ;
     rdfs:range xsd:boolean .
+
+###############################################################################
+# 13. Computed Properties (Level 5 — Data Fabric)
+###############################################################################
+
+prism:computed
+    a owl:AnnotationProperty ;
+    rdfs:label "computed"@en ;
+    rdfs:comment "If true, this property's value is derived at read time from a SPARQL expression or function reference rather than stored directly."@en ;
+    rdfs:range xsd:boolean .
+
+prism:computedBy
+    a owl:AnnotationProperty ;
+    rdfs:label "computed by"@en ;
+    rdfs:comment "Links a computed property to its prism:ComputedPropertyDef."@en ;
+    rdfs:range prism:ComputedPropertyDef .
+
+prism:ComputedPropertyDef
+    a owl:Class ;
+    rdfs:label "Computed Property Definition"@en ;
+    rdfs:comment "Defines how a computed property value is derived. Either sparqlExpression (SPARQL SELECT with $this binding) or functionRef (external function identifier)."@en .
+
+prism:sparqlExpression
+    a owl:DatatypeProperty ;
+    rdfs:label "SPARQL expression"@en ;
+    rdfs:comment "A SPARQL SELECT that computes the property value. Use $this to refer to the subject node. Must project a single variable whose name matches the property local name."@en ;
+    rdfs:domain prism:ComputedPropertyDef ;
+    rdfs:range xsd:string .
+
+prism:functionRef
+    a owl:DatatypeProperty ;
+    rdfs:label "function reference"@en ;
+    rdfs:comment "A fully qualified function identifier (e.g. com.example.fns.ComputeTotalValue) that the processor calls to derive the property value."@en ;
+    rdfs:domain prism:ComputedPropertyDef ;
+    rdfs:range xsd:string .
+
+prism:cacheComputed
+    a owl:DatatypeProperty ;
+    rdfs:label "cache computed"@en ;
+    rdfs:comment "If true, the processor caches the computed value. Default: false."@en ;
+    rdfs:domain prism:ComputedPropertyDef ;
+    rdfs:range xsd:boolean .
+
+prism:cacheTtl
+    a owl:DatatypeProperty ;
+    rdfs:label "cache TTL (seconds)"@en ;
+    rdfs:domain prism:ComputedPropertyDef ;
+    rdfs:range xsd:integer .
+
+###############################################################################
+# 14. Data Source Binding (Level 5 — Data Fabric)
+###############################################################################
+
+prism:DatasourceConfig
+    a owl:Class ;
+    rdfs:label "Datasource Configuration"@en ;
+    rdfs:comment "Binds an OWL class to a live external data source. The processor generates a source connector and sync pipeline."@en .
+
+prism:datasource
+    a owl:AnnotationProperty ;
+    rdfs:label "datasource"@en ;
+    rdfs:comment "Links an entity class to a prism:DatasourceConfig for live data ingestion."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:DatasourceConfig .
+
+prism:DatasourceType
+    a owl:Class ;
+    rdfs:label "Datasource Type"@en .
+
+prism:JdbcSource
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "JDBC"@en ;
+    rdfs:comment "Relational database accessible via JDBC."@en .
+
+prism:RestApiSource
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "REST API"@en .
+
+prism:KafkaSource
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "Kafka Topic"@en .
+
+prism:S3Source
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "S3 / Object Storage"@en .
+
+prism:GraphQLSource
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "GraphQL"@en .
+
+prism:SparqlSource
+    a prism:DatasourceType, owl:NamedIndividual ;
+    rdfs:label "SPARQL Endpoint"@en .
+
+prism:SyncStrategy
+    a owl:Class ;
+    rdfs:label "Sync Strategy"@en .
+
+prism:FullSync
+    a prism:SyncStrategy, owl:NamedIndividual ;
+    rdfs:label "Full Sync"@en ;
+    rdfs:comment "Re-fetch all records on every sync cycle."@en .
+
+prism:IncrementalSync
+    a prism:SyncStrategy, owl:NamedIndividual ;
+    rdfs:label "Incremental Sync"@en ;
+    rdfs:comment "Fetch only records changed since the last sync cursor position."@en .
+
+prism:StreamingSync
+    a prism:SyncStrategy, owl:NamedIndividual ;
+    rdfs:label "Streaming Sync"@en ;
+    rdfs:comment "Maintain a continuous streaming connection (e.g. Kafka consumer)."@en .
+
+prism:sourceType
+    a owl:ObjectProperty ;
+    rdfs:label "source type"@en ;
+    rdfs:domain prism:DatasourceConfig ;
+    rdfs:range prism:DatasourceType .
+
+prism:syncStrategy
+    a owl:ObjectProperty ;
+    rdfs:label "sync strategy"@en ;
+    rdfs:domain prism:DatasourceConfig ;
+    rdfs:range prism:SyncStrategy .
+
+prism:syncCursorProperty
+    a owl:ObjectProperty ;
+    rdfs:label "sync cursor property"@en ;
+    rdfs:comment "The property used as the incremental sync cursor (e.g. updatedAt)."@en ;
+    rdfs:domain prism:DatasourceConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:connectionRef
+    a owl:DatatypeProperty ;
+    rdfs:label "connection reference"@en ;
+    rdfs:comment "Named connection identifier resolved from the processor's connection registry."@en ;
+    rdfs:domain prism:DatasourceConfig ;
+    rdfs:range xsd:string .
+
+prism:sourceQuery
+    a owl:DatatypeProperty ;
+    rdfs:label "source query"@en ;
+    rdfs:comment "Override query for fetching source records (SQL, SPARQL, or GraphQL depending on sourceType)."@en ;
+    rdfs:domain prism:DatasourceConfig ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 15. Federation Configuration (Level 5 — Data Fabric)
+###############################################################################
+
+prism:FederationConfig
+    a owl:Class ;
+    rdfs:label "Federation Configuration"@en ;
+    rdfs:comment "Declares that some properties of this entity are resolved on-demand from an external system via a federation protocol."@en .
+
+prism:federated
+    a owl:AnnotationProperty ;
+    rdfs:label "federated"@en ;
+    rdfs:comment "Links an entity class to a prism:FederationConfig for federated property resolution."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:FederationConfig .
+
+prism:FederationProtocol
+    a owl:Class ;
+    rdfs:label "Federation Protocol"@en .
+
+prism:GraphQLFederation
+    a prism:FederationProtocol, owl:NamedIndividual ;
+    rdfs:label "GraphQL Federation"@en .
+
+prism:GrpcFederation
+    a prism:FederationProtocol, owl:NamedIndividual ;
+    rdfs:label "gRPC"@en .
+
+prism:SparqlFederation
+    a prism:FederationProtocol, owl:NamedIndividual ;
+    rdfs:label "SPARQL SERVICE"@en .
+
+prism:RestFederation
+    a prism:FederationProtocol, owl:NamedIndividual ;
+    rdfs:label "REST"@en .
+
+prism:federationProtocol
+    a owl:ObjectProperty ;
+    rdfs:label "federation protocol"@en ;
+    rdfs:domain prism:FederationConfig ;
+    rdfs:range prism:FederationProtocol .
+
+prism:federationEndpoint
+    a owl:DatatypeProperty ;
+    rdfs:label "federation endpoint"@en ;
+    rdfs:domain prism:FederationConfig ;
+    rdfs:range xsd:anyURI .
+
+prism:federationKeyProperty
+    a owl:ObjectProperty ;
+    rdfs:label "federation key property"@en ;
+    rdfs:comment "The local property used as the join key to the external system."@en ;
+    rdfs:domain prism:FederationConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:federatedProperty
+    a owl:ObjectProperty ;
+    rdfs:label "federated property"@en ;
+    rdfs:comment "A property whose value is resolved remotely rather than stored locally."@en ;
+    rdfs:domain prism:FederationConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+###############################################################################
+# 16. Governance Configuration (Level 6)
+###############################################################################
+
+prism:GovernanceConfig
+    a owl:Class ;
+    rdfs:label "Governance Configuration"@en ;
+    rdfs:comment "Governance metadata for an entity: stewardship, approval workflows, data classification, quality certification, and retention policy."@en .
+
+prism:governance
+    a owl:AnnotationProperty ;
+    rdfs:label "governance"@en ;
+    rdfs:comment "Links an entity class to its prism:GovernanceConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:GovernanceConfig .
+
+prism:ApprovalWorkflow
+    a owl:Class ;
+    rdfs:label "Approval Workflow"@en .
+
+prism:NoApproval
+    a prism:ApprovalWorkflow, owl:NamedIndividual ;
+    rdfs:label "No Approval Required"@en .
+
+prism:SingleReview
+    a prism:ApprovalWorkflow, owl:NamedIndividual ;
+    rdfs:label "Single Review"@en ;
+    rdfs:comment "One reviewer must approve before changes are published."@en .
+
+prism:TwoPersonReview
+    a prism:ApprovalWorkflow, owl:NamedIndividual ;
+    rdfs:label "Two-Person Review"@en ;
+    rdfs:comment "Two independent reviewers must approve before changes are published."@en .
+
+prism:ConsensusReview
+    a prism:ApprovalWorkflow, owl:NamedIndividual ;
+    rdfs:label "Consensus Review"@en ;
+    rdfs:comment "All designated stewards must approve before changes are published."@en .
+
+prism:stewardRole
+    a owl:DatatypeProperty ;
+    rdfs:label "steward role"@en ;
+    rdfs:comment "The authorization role of the data steward(s) responsible for this entity."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:string .
+
+prism:approvalRequired
+    a owl:DatatypeProperty ;
+    rdfs:label "approval required"@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:boolean .
+
+prism:approvalWorkflow
+    a owl:ObjectProperty ;
+    rdfs:label "approval workflow"@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range prism:ApprovalWorkflow .
+
+prism:changeNotification
+    a owl:DatatypeProperty ;
+    rdfs:label "change notification"@en ;
+    rdfs:comment "If true, notify stewards when instances of this entity are created, updated, or deleted."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:boolean .
+
+# Data Classification
+
+prism:DataClass
+    a owl:Class ;
+    rdfs:label "Data Class"@en ;
+    rdfs:comment "The sensitivity and governance classification of a property or entity."@en .
+
+prism:Public
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "Public"@en .
+
+prism:Internal
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "Internal"@en .
+
+prism:Confidential
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "Confidential"@en .
+
+prism:StrictlyConfidential
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "Strictly Confidential"@en .
+
+prism:PII
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "PII"@en ;
+    rdfs:comment "Personally Identifiable Information."@en .
+
+prism:PHI
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "PHI"@en ;
+    rdfs:comment "Protected Health Information (HIPAA)."@en .
+
+prism:PCI
+    a prism:DataClass, owl:NamedIndividual ;
+    rdfs:label "PCI"@en ;
+    rdfs:comment "Payment Card Industry data subject to PCI DSS."@en .
+
+prism:retentionDays
+    a owl:DatatypeProperty ;
+    rdfs:label "retention days"@en ;
+    rdfs:comment "Number of days data of this type must be retained. Processors generate retention policy enforcement code."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:integer .
+
+prism:retentionPolicy
+    a owl:DatatypeProperty ;
+    rdfs:label "retention policy"@en ;
+    rdfs:comment "The legal or regulatory basis for the retention period (e.g. GDPR Art. 17, SOX 7yr)."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:string .
+
+prism:geographicRestriction
+    a owl:DatatypeProperty ;
+    rdfs:label "geographic restriction"@en ;
+    rdfs:comment "ISO 3166-1 alpha-2 codes of countries where this data may be stored or processed. Comma-separated."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:string .
+
+# Quality Certification
+
+prism:QualityCertification
+    a owl:Class ;
+    rdfs:label "Quality Certification"@en ;
+    rdfs:comment "A named data quality tier assigned to an entity based on completeness, freshness, and validation success rate."@en .
+
+prism:Bronze
+    a prism:QualityCertification, owl:NamedIndividual ;
+    rdfs:label "Bronze"@en .
+
+prism:Silver
+    a prism:QualityCertification, owl:NamedIndividual ;
+    rdfs:label "Silver"@en .
+
+prism:Gold
+    a prism:QualityCertification, owl:NamedIndividual ;
+    rdfs:label "Gold"@en .
+
+prism:Platinum
+    a prism:QualityCertification, owl:NamedIndividual ;
+    rdfs:label "Platinum"@en .
+
+prism:qualityCertification
+    a owl:AnnotationProperty ;
+    rdfs:label "quality certification"@en ;
+    rdfs:comment "The target data quality certification tier for this entity."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:QualityCertification .
+
+prism:completenessThreshold
+    a owl:DatatypeProperty ;
+    rdfs:label "completeness threshold"@en ;
+    rdfs:comment "Minimum fraction of instances that must have all required properties populated for the certification tier to be maintained. Range: 0.0–1.0."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:decimal .
+
+prism:freshnessMaxAge
+    a owl:DatatypeProperty ;
+    rdfs:label "freshness max age"@en ;
+    rdfs:comment "Maximum duration that data may be stale before the certification tier degrades. Use xsd:duration values (e.g. 'P1D'^^xsd:duration, 'PT12H'^^xsd:duration)."@en ;
+    rdfs:domain prism:GovernanceConfig ;
+    rdfs:range xsd:duration .
+
+###############################################################################
+# 17. Event Configuration (Level 7 — Event-Driven)
+###############################################################################
+
+prism:EventConfig
+    a owl:Class ;
+    rdfs:label "Event Configuration"@en ;
+    rdfs:comment "Declares that lifecycle events for this entity are published to a message bus. The processor generates event schema files and publisher/consumer stubs."@en .
+
+prism:events
+    a owl:AnnotationProperty ;
+    rdfs:label "events"@en ;
+    rdfs:comment "Links an entity class to its prism:EventConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:EventConfig .
+
+prism:EventFormat
+    a owl:Class ;
+    rdfs:label "Event Format"@en .
+
+prism:CloudEventsFormat
+    a prism:EventFormat, owl:NamedIndividual ;
+    rdfs:label "CloudEvents 1.0"@en .
+
+prism:AvroFormat
+    a prism:EventFormat, owl:NamedIndividual ;
+    rdfs:label "Apache Avro"@en .
+
+prism:ProtobufFormat
+    a prism:EventFormat, owl:NamedIndividual ;
+    rdfs:label "Protocol Buffers"@en .
+
+prism:JsonSchemaFormat
+    a prism:EventFormat, owl:NamedIndividual ;
+    rdfs:label "JSON Schema"@en .
+
+prism:EventKind
+    a owl:Class ;
+    rdfs:label "Event Kind"@en .
+
+prism:CreatedEvent
+    a prism:EventKind, owl:NamedIndividual ;
+    rdfs:label "Created"@en .
+
+prism:UpdatedEvent
+    a prism:EventKind, owl:NamedIndividual ;
+    rdfs:label "Updated"@en .
+
+prism:DeletedEvent
+    a prism:EventKind, owl:NamedIndividual ;
+    rdfs:label "Deleted"@en .
+
+prism:StateTransitionEvent
+    a prism:EventKind, owl:NamedIndividual ;
+    rdfs:label "State Transition"@en ;
+    rdfs:comment "Published when a status/state property changes value."@en .
+
+prism:CustomEvent
+    a prism:EventKind, owl:NamedIndividual ;
+    rdfs:label "Custom"@en ;
+    rdfs:comment "A domain-specific event not covered by standard CRUD lifecycle kinds."@en .
+
+prism:eventFormat
+    a owl:ObjectProperty ;
+    rdfs:label "event format"@en ;
+    rdfs:domain prism:EventConfig ;
+    rdfs:range prism:EventFormat .
+
+prism:eventTopic
+    a owl:DatatypeProperty ;
+    rdfs:label "event topic"@en ;
+    rdfs:comment "The message bus topic or subject name for this entity's events."@en ;
+    rdfs:domain prism:EventConfig ;
+    rdfs:range xsd:string .
+
+prism:eventSource
+    a owl:DatatypeProperty ;
+    rdfs:label "event source"@en ;
+    rdfs:comment "The CloudEvents source URI identifying the origin system."@en ;
+    rdfs:domain prism:EventConfig ;
+    rdfs:range xsd:anyURI .
+
+prism:publishEvent
+    a owl:ObjectProperty ;
+    rdfs:label "publish event"@en ;
+    rdfs:comment "Declares which event kinds are published. If absent, all CRUD event kinds are published."@en ;
+    rdfs:domain prism:EventConfig ;
+    rdfs:range prism:EventKind .
+
+###############################################################################
+# 18. Digital Twin Configuration (Level 7 — Event-Driven)
+###############################################################################
+
+prism:TwinConfig
+    a owl:Class ;
+    rdfs:label "Digital Twin Configuration"@en ;
+    rdfs:comment "Declares that this entity has a digital twin — a real-time RDF shadow graph that mirrors the physical entity's state via streaming events."@en .
+
+prism:digitalTwin
+    a owl:AnnotationProperty ;
+    rdfs:label "digital twin"@en ;
+    rdfs:comment "Links an entity class to its prism:TwinConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:TwinConfig .
+
+prism:physicalIdProperty
+    a owl:ObjectProperty ;
+    rdfs:label "physical ID property"@en ;
+    rdfs:comment "The property whose value is the physical-world identifier of this entity (e.g. container RFID, device serial number)."@en ;
+    rdfs:domain prism:TwinConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:stateEventTopic
+    a owl:DatatypeProperty ;
+    rdfs:label "state event topic"@en ;
+    rdfs:comment "The Kafka/MQTT/AMQP topic from which the twin receives state update events."@en ;
+    rdfs:domain prism:TwinConfig ;
+    rdfs:range xsd:string .
+
+prism:snapshotInterval
+    a owl:DatatypeProperty ;
+    rdfs:label "snapshot interval"@en ;
+    rdfs:comment "Duration between full twin state snapshots. Use xsd:duration values (e.g. 'PT1H'^^xsd:duration, 'P1D'^^xsd:duration)."@en ;
+    rdfs:domain prism:TwinConfig ;
+    rdfs:range xsd:duration .
+
+prism:twinShadowGraph
+    a owl:DatatypeProperty ;
+    rdfs:label "twin shadow graph IRI"@en ;
+    rdfs:comment "The named graph IRI pattern for this twin's shadow graph. Use {id} as a placeholder for the entity identifier."@en ;
+    rdfs:domain prism:TwinConfig ;
+    rdfs:range xsd:string .
+
+prism:twinStateShape
+    a owl:ObjectProperty ;
+    rdfs:label "twin state shape"@en ;
+    rdfs:comment "A SHACL NodeShape that the twin's state must satisfy at every snapshot."@en ;
+    rdfs:domain prism:TwinConfig ;
+    rdfs:range sh:NodeShape .
+
+###############################################################################
+# 19. Temporal Configuration (Level 7 — Event-Driven)
+###############################################################################
+
+prism:TemporalConfig
+    a owl:Class ;
+    rdfs:label "Temporal Configuration"@en ;
+    rdfs:comment "Enables valid-time, transaction-time, or bitemporal versioning for an entity. The processor generates history tables, AS-OF query APIs, and SPARQL named-graph versioning."@en .
+
+prism:temporal
+    a owl:AnnotationProperty ;
+    rdfs:label "temporal"@en ;
+    rdfs:comment "Links an entity class to its prism:TemporalConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:TemporalConfig .
+
+prism:TemporalStrategy
+    a owl:Class ;
+    rdfs:label "Temporal Strategy"@en .
+
+prism:ValidTime
+    a prism:TemporalStrategy, owl:NamedIndividual ;
+    rdfs:label "Valid Time"@en ;
+    rdfs:comment "Application time: when the fact was true in the real world."@en .
+
+prism:TransactionTime
+    a prism:TemporalStrategy, owl:NamedIndividual ;
+    rdfs:label "Transaction Time"@en ;
+    rdfs:comment "System time: when the fact was recorded in the database."@en .
+
+prism:Bitemporal
+    a prism:TemporalStrategy, owl:NamedIndividual ;
+    rdfs:label "Bitemporal"@en ;
+    rdfs:comment "Both valid time and transaction time are tracked independently."@en .
+
+prism:temporalStrategy
+    a owl:ObjectProperty ;
+    rdfs:label "temporal strategy"@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range prism:TemporalStrategy .
+
+prism:validFromProperty
+    a owl:ObjectProperty ;
+    rdfs:label "valid from property"@en ;
+    rdfs:comment "The property holding the start of the valid-time interval. Required for prism:ValidTime and prism:Bitemporal strategies."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:validToProperty
+    a owl:ObjectProperty ;
+    rdfs:label "valid to property"@en ;
+    rdfs:comment "The property holding the end of the valid-time interval. Null means currently valid. Required for prism:ValidTime and prism:Bitemporal strategies."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:txFromProperty
+    a owl:ObjectProperty ;
+    rdfs:label "transaction-from property"@en ;
+    rdfs:comment "The property holding the start of the transaction-time interval (when this record version was stored). Required for prism:TransactionTime and prism:Bitemporal strategies."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:txToProperty
+    a owl:ObjectProperty ;
+    rdfs:label "transaction-to property"@en ;
+    rdfs:comment "The property holding the end of the transaction-time interval (when this record version was superseded). Null means current version. Required for prism:TransactionTime and prism:Bitemporal strategies."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:historyGraphSuffix
+    a owl:DatatypeProperty ;
+    rdfs:label "history graph suffix"@en ;
+    rdfs:comment "Suffix appended to the entity's named graph IRI to produce the history graph IRI (e.g. /history). Used by RDF/triplestore backends."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range xsd:string .
+
+prism:historyTableSuffix
+    a owl:DatatypeProperty ;
+    rdfs:label "history table suffix"@en ;
+    rdfs:comment "Suffix appended to the relational table name to produce the history table name (e.g. _history). Used by relational/JPA backends. Default: '_history'."@en ;
+    rdfs:domain prism:TemporalConfig ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 20. Vector Configuration (Level 8 — Vector-Native)
+###############################################################################
+
+prism:VectorConfig
+    a owl:Class ;
+    rdfs:label "Vector Configuration"@en ;
+    rdfs:comment "Declares that this entity should have a vector embedding index. The processor generates an embedding pipeline, vector store schema, and semantic search API endpoint."@en .
+
+prism:vector
+    a owl:AnnotationProperty ;
+    rdfs:label "vector"@en ;
+    rdfs:comment "Links an entity class to its prism:VectorConfig."@en ;
+    rdfs:domain owl:Class ;
+    rdfs:range prism:VectorConfig .
+
+prism:VectorBackend
+    a owl:Class ;
+    rdfs:label "Vector Backend"@en .
+
+prism:PgVectorBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "pgvector (PostgreSQL)"@en .
+
+prism:WeaviateBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "Weaviate"@en .
+
+prism:QdrantBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "Qdrant"@en .
+
+prism:ChromaBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "Chroma"@en .
+
+prism:PineconeBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "Pinecone"@en .
+
+prism:MilvusBackend
+    a prism:VectorBackend, owl:NamedIndividual ;
+    rdfs:label "Milvus"@en .
+
+prism:vectorBackend
+    a owl:ObjectProperty ;
+    rdfs:label "vector backend"@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range prism:VectorBackend .
+
+prism:vectorFields
+    a owl:ObjectProperty ;
+    rdfs:label "vector fields"@en ;
+    rdfs:comment "The datatype properties whose concatenated text values are embedded. Order determines text template construction."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:vectorModel
+    a owl:DatatypeProperty ;
+    rdfs:label "vector model"@en ;
+    rdfs:comment "The embedding model identifier (e.g. text-embedding-3-small, e5-large-v2)."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range xsd:string .
+
+prism:vectorDimensions
+    a owl:DatatypeProperty ;
+    rdfs:label "vector dimensions"@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range xsd:integer .
+
+prism:vectorChunkSize
+    a owl:DatatypeProperty ;
+    rdfs:label "chunk size (tokens)"@en ;
+    rdfs:comment "Maximum token count per text chunk before splitting. Default: 512."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range xsd:integer .
+
+prism:vectorOverlapTokens
+    a owl:DatatypeProperty ;
+    rdfs:label "overlap tokens"@en ;
+    rdfs:comment "Number of tokens to overlap between consecutive chunks. Default: 64."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range xsd:integer .
+
+prism:vectorMetadata
+    a owl:ObjectProperty ;
+    rdfs:label "vector metadata"@en ;
+    rdfs:comment "Datatype properties stored as filterable metadata in the vector index alongside each embedding. Annotate individual properties with prism:vectorIndexed true as an alternative."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range owl:DatatypeProperty .
+
+prism:vectorTextTemplate
+    a owl:DatatypeProperty ;
+    rdfs:label "vector text template"@en ;
+    rdfs:comment "An optional string template for constructing the text to embed. Use {propertyLocalName} as placeholders. If absent, the processor concatenates vectorFields values with spaces."@en ;
+    rdfs:domain prism:VectorConfig ;
+    rdfs:range xsd:string .
+
+###############################################################################
+# 21. Quantity and Unit-of-Measure Annotations
+#
+# These annotations bridge Prism with QUDT (http://qudt.org/).
+#
+# No rdfs:domain is declared on any of these annotation properties.
+# rdfs:domain on an owl:AnnotationProperty is a global axiom — any OWL
+# reasoner that encounters "?x prism:unit ?u" will infer "?x a <domain>"
+# regardless of context, polluting the class hierarchy and restricting
+# reuse.  The domain intent is instead expressed as SHACL NodeShapes
+# (section 21-shapes below) which are scoped, closed-world, and carry
+# no inference side-effects.
+#
+# Ontologies using these annotations SHOULD import QUDT:
+#   owl:imports <http://qudt.org/2.1/schema/qudt>
+#   owl:imports <http://qudt.org/2.1/vocab/unit>
+#   owl:imports <http://qudt.org/2.1/vocab/quantitykind>
+###############################################################################
+
+prism:unit
+    a owl:AnnotationProperty ;
+    rdfs:label "unit"@en ;
+    rdfs:comment "The unit of measure in which this numeric property's value is expressed. The value SHOULD be a QUDT unit named individual IRI (e.g. <http://qudt.org/vocab/unit/KiloGM>, <http://qudt.org/vocab/unit/M>). Use when the unit is invariant across all instances of this property. For properties whose unit varies per instance, model a qudt:QuantityValue subclass as a prism:ValueObject instead."@en ;
+    rdfs:isDefinedBy <https://spec.prism.dev/ns> .
+
+prism:quantityKind
+    a owl:AnnotationProperty ;
+    rdfs:label "quantity kind"@en ;
+    rdfs:comment "The physical nature of this quantity, expressed as a QUDT QuantityKind IRI (e.g. <http://qudt.org/vocab/quantitykind/Mass>, <http://qudt.org/vocab/quantitykind/Length>). Applicable to numeric owl:DatatypeProperty declarations and to owl:Class declarations whose instances represent measurements. Enables processor-assisted SHACL unit-set validation from qudt:applicableUnit and richer agent semantic grounding."@en ;
+    rdfs:isDefinedBy <https://spec.prism.dev/ns> .
+
+prism:unitProperty
+    a owl:AnnotationProperty ;
+    rdfs:label "unit property"@en ;
+    rdfs:comment "A sibling property that carries the unit for this numeric property's value. The value is the IRI of a co-declared owl:ObjectProperty whose range is qudt:Unit, or an owl:DatatypeProperty carrying a unit code string. Prefer the qudt:QuantityValue value object pattern over this annotation where the domain model permits it, as that pattern is more semantically precise and generates cleaner persistence mappings."@en ;
+    rdfs:isDefinedBy <https://spec.prism.dev/ns> .
+
+###############################################################################
+# 21-shapes. SHACL meta-shapes for UoM annotation usage
+#
+# These shapes constrain how the three UoM annotations above may be used
+# within a conformant Prism ontology.  They replace rdfs:domain declarations
+# and are the authoritative domain constraint source for section 21 terms.
+#
+# Processors MAY validate user ontologies against these shapes.
+# sh:Warning severity is used for applicability constraints (which subject
+# types the annotation is designed for) so that unusual but valid usages
+# are flagged without hard failure.  sh:Violation is used for value-type
+# constraints that cannot be meaningfully relaxed.
+###############################################################################
+
+prism:UnitSubjectShape
+    a sh:NodeShape ;
+    rdfs:label "prism:unit subject constraint"@en ;
+    rdfs:comment "prism:unit is designed for owl:DatatypeProperty subjects with a numeric rdfs:range."@en ;
+    sh:targetSubjectsOf prism:unit ;
+    sh:class owl:DatatypeProperty ;
+    sh:message "prism:unit SHOULD be applied to an owl:DatatypeProperty with a numeric (xsd:decimal, xsd:double, xsd:float, xsd:integer) range."@en ;
+    sh:severity sh:Warning .
+
+prism:UnitValueShape
+    a sh:NodeShape ;
+    rdfs:label "prism:unit value constraint"@en ;
+    sh:targetSubjectsOf prism:unit ;
+    sh:property [
+        sh:path prism:unit ;
+        sh:nodeKind sh:IRI ;
+        sh:message "The value of prism:unit MUST be an IRI (a QUDT unit named individual such as <http://qudt.org/vocab/unit/KiloGM>)."@en ;
+        sh:severity sh:Violation
+    ] .
+
+prism:QuantityKindSubjectShape
+    a sh:NodeShape ;
+    rdfs:label "prism:quantityKind subject constraint"@en ;
+    rdfs:comment "prism:quantityKind is designed for owl:DatatypeProperty and owl:Class subjects."@en ;
+    sh:targetSubjectsOf prism:quantityKind ;
+    sh:or (
+        [ sh:class owl:DatatypeProperty ]
+        [ sh:class owl:Class ]
+    ) ;
+    sh:message "prism:quantityKind SHOULD be applied to an owl:DatatypeProperty or owl:Class subject."@en ;
+    sh:severity sh:Warning .
+
+prism:QuantityKindValueShape
+    a sh:NodeShape ;
+    rdfs:label "prism:quantityKind value constraint"@en ;
+    sh:targetSubjectsOf prism:quantityKind ;
+    sh:property [
+        sh:path prism:quantityKind ;
+        sh:nodeKind sh:IRI ;
+        sh:message "The value of prism:quantityKind MUST be an IRI (a QUDT QuantityKind named individual such as <http://qudt.org/vocab/quantitykind/Mass>)."@en ;
+        sh:severity sh:Violation
+    ] .
+
+prism:UnitPropertySubjectShape
+    a sh:NodeShape ;
+    rdfs:label "prism:unitProperty subject constraint"@en ;
+    sh:targetSubjectsOf prism:unitProperty ;
+    sh:class owl:DatatypeProperty ;
+    sh:message "prism:unitProperty SHOULD be applied to an owl:DatatypeProperty subject."@en ;
+    sh:severity sh:Warning .
+
+prism:UnitPropertyValueShape
+    a sh:NodeShape ;
+    rdfs:label "prism:unitProperty value constraint"@en ;
+    sh:targetSubjectsOf prism:unitProperty ;
+    sh:property [
+        sh:path prism:unitProperty ;
+        sh:nodeKind sh:IRI ;
+        sh:message "The value of prism:unitProperty MUST be an IRI (a property that carries the unit for this value)."@en ;
+        sh:severity sh:Violation
+    ] .

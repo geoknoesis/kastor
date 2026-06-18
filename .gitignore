@@ -20,6 +20,9 @@ build/
 
 # Cursor IDE (local skills, agent state — do not commit)
 .cursor/
+
+# Claude Code (local skills, agents, commands, settings — do not commit)
+.claude/
 *.iws
 *.iml
 *.ipr
@@ -690,6 +693,7 @@ shacl-conformance-out.txt
 hs_err_pid*.log
 replay_pid*.txt
 
-# Eclipse / IDE Kotlin layout: compiled mirrors under module bin/{main,test}
+# Eclipse / IDE Kotlin layout: compiled mirrors under module bin/{main,test,jmh}
 **/bin/main/
 **/bin/test/
+**/bin/jmh/
