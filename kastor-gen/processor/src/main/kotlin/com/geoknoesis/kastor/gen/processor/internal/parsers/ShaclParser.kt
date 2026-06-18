@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.gen.processor.internal.parsers
 
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue
 import com.google.devtools.ksp.processing.KSPLogger
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.rdf.model.Resource
@@ -135,7 +136,7 @@ class ShaclParser(private val logger: KSPLogger) {
             
             // Extract sh:in values (RDF list), preserving member kind (IRI vs literal)
             val inValuesTyped = propertyShape.getProperty(inProp)?.resource?.let { listResource ->
-                val typed = mutableListOf<com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue>()
+                val typed = mutableListOf<ShaclInValue>()
                 var current: org.apache.jena.rdf.model.Resource? = listResource
                 while (current != null && !current.hasProperty(model.createProperty("${RDF_NS}nil"))) {
                     val first = current.getProperty(model.createProperty("${RDF_NS}first"))
@@ -143,12 +144,12 @@ class ShaclParser(private val logger: KSPLogger) {
                         val node = stmt.`object`
                         when {
                             node.isURIResource -> typed.add(
-                                com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue(
+                                ShaclInValue(
                                     value = node.asResource().uri, isIri = true,
                                 )
                             )
                             node.isLiteral -> typed.add(
-                                com.geoknoesis.kastor.gen.processor.api.model.ShaclInValue(
+                                ShaclInValue(
                                     value = node.asLiteral().lexicalForm, isIri = false,
                                     datatype = node.asLiteral().datatypeURI,
                                 )

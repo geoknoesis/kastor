@@ -22,7 +22,7 @@ class ShaclEnumParseTest {
             @prefix ex: <https://ex/#> .
             @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
             ex:DocShape a sh:NodeShape ; sh:targetClass ex:Doc ;
-              sh:property [ sh:path ex:status ; sh:datatype xsd:string ;
+              sh:property [ sh:path ex:status ; sh:class ex:DocumentStatus ;
                             sh:in ( ex:DRAFT ex:ACTIVE ) ] .
         """.trimIndent()
         val shapes = ShaclParser(logger).parseShaclContent(ttl)
@@ -50,5 +50,6 @@ class ShaclEnumParseTest {
         assertEquals(2, typed.size)
         assertTrue(typed.none { it.isIri })
         assertTrue(typed.any { it.value == "LOW" })
+        assertTrue(typed.all { it.datatype == "http://www.w3.org/2001/XMLSchema#string" })
     }
 }
