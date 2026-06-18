@@ -16,7 +16,7 @@ private val IRI_CLASS = ClassName("com.geoknoesis.kastor.rdf", "Iri")
 
 internal class EnumGenerator(private val logger: KSPLogger) {
 
-    public fun generateEnums(model: OntologyModel, packageName: String): Map<String, FileSpec> =
+    internal fun generateEnums(model: OntologyModel, packageName: String): Map<String, FileSpec> =
         model.enums.sortedBy { it.name }.associate { it.name to fileFor(it, packageName) }
 
     private fun fileFor(e: EnumModel, packageName: String): FileSpec {
@@ -41,7 +41,7 @@ internal class EnumGenerator(private val logger: KSPLogger) {
             )
 
         e.members.forEach { m ->
-            val argLiteral: String = if (iriKind) m.iri ?: "" else m.code ?: ""
+            val argLiteral: String = if (iriKind) m.iri ?: error("EnumMember '${m.constantName}' has null iri for IRI-kind enum '${e.name}'") else m.code ?: error("EnumMember '${m.constantName}' has null code for LITERAL-kind enum '${e.name}'")
             val constructorArgs = if (iriKind) "Iri(%S)" else "%S"
             knownBuilder.addEnumConstant(
                 m.constantName,
@@ -93,9 +93,12 @@ internal class EnumGenerator(private val logger: KSPLogger) {
             .addType(companionObject)
             .build()
 
-        return FileSpec.builder(packageName, e.name)
-            .addImport("com.geoknoesis.kastor.rdf", "Iri")
+        val fileSpec = FileSpec.builder(packageName, e.name)
             .addType(sealedInterface)
+            .let { builder ->
+                if (iriKind) builder.addImport("com.geoknoesis.kastor.rdf", "Iri") else builder
+            }
             .build()
+        return fileSpec
     }
 }
