@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.annotations.NestedMode
+import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
+import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
@@ -33,13 +35,15 @@ class DataClassFactoryGenerator(
     private val writerGenerator: DataClassWriterGenerator? = null,
 ) {
 
-    fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> =
-        model.shapes
+    fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> {
+        val enumsByName = model.enums.associateBy { it.name }
+        return model.shapes
             .sortedBy { it.targetClass }
             .associate { shape ->
                 val name = factoryName(shape.targetClass)
-                name to generateFactory(shape, model.context, packageName)
+                name to generateFactory(shape, model.context, packageName, enumsByName)
             }
+    }
 
     private fun dataClassName(classIri: String) =
         NamingUtils.extractInterfaceName(classIri) + suffix
@@ -52,6 +56,7 @@ class DataClassFactoryGenerator(
         shape: ShaclShape,
         context: JsonLdContext,
         packageName: String,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): FileSpec {
         val dcName      = dataClassName(shape.targetClass)
         val fName       = factoryName(shape.targetClass)
@@ -89,10 +94,10 @@ class DataClassFactoryGenerator(
         )
 
         // from(handle: RdfHandle): DataClass
-        objectBuilder.addFunction(buildFromFunction(shape, context, packageName, dcClassName))
+        objectBuilder.addFunction(buildFromFunction(shape, context, packageName, dcClassName, enumsByName))
 
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
-        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName)
+        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName)
             ?.let { objectBuilder.addFunction(it) }
 
         file.addType(objectBuilder.build())
@@ -107,6 +112,7 @@ class DataClassFactoryGenerator(
         context: JsonLdContext,
         packageName: String,
         dcClassName: ClassName,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): FunSpec {
         val handleType = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle")
         val fn = FunSpec.builder("from")
@@ -115,7 +121,7 @@ class DataClassFactoryGenerator(
 
         // One local val per property, then the constructor call
         shape.properties.sortedBy { it.path }.forEach { property ->
-            fn.addCode(buildPropertyLoad(property, context, packageName))
+            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName))
         }
 
         // Constructor call: DataClass(prop1 = prop1Val, ...)
@@ -136,16 +142,67 @@ class DataClassFactoryGenerator(
         property: ShaclProperty,
         context: JsonLdContext,
         packageName: String,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): CodeBlock {
         val name  = NamingUtils.toValidKotlinIdentifier(property.name)
         val isList = property.maxCount == null || property.maxCount > 1
         val isRequired = !isList && property.minCount != null && property.minCount > 0
         val pred  = property.path
 
-        return if (property.targetClass != null) {
+        val enumModel = property.enumName?.let { enumsByName[it] }
+        return if (enumModel != null) {
+            buildEnumLoad(name, pred, enumModel, isList, isRequired)
+        } else if (property.targetClass != null) {
             buildObjectLoad(name, pred, property, packageName, isList, isRequired)
         } else {
             buildLiteralLoad(name, pred, property, isList, isRequired)
+        }
+    }
+
+    // enum property ───────────────────────────────────────────────────────────
+
+    private fun buildEnumLoad(
+        name: String,
+        pred: String,
+        enumModel: EnumModel,
+        isList: Boolean,
+        isRequired: Boolean,
+    ): CodeBlock = when (enumModel.memberKind) {
+        EnumMemberKind.IRI -> {
+            val listExpr = CodeBlock.of(
+                "KastorGraphOps.getObjectValues(handle.graph, handle.node, Iri(%S)) { child ->\n" +
+                "    %L.from(child as %T)\n" +
+                "}",
+                pred,
+                enumModel.name,
+                ClassName(CodegenConstants.RDF_PACKAGE, "Iri"),
+            )
+            buildCardinality(name, listExpr, isList, isRequired,
+                defaultForEmpty = "error(\"Required enum $name missing\")")
+        }
+        EnumMemberKind.LITERAL -> {
+            if (isList) {
+                CodeBlock.of(
+                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
+                    "val _$name = _${name}List.map { %L.from(it.lexical) }\n",
+                    pred,
+                    enumModel.name,
+                )
+            } else if (isRequired) {
+                CodeBlock.of(
+                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
+                    "val _$name = _${name}List.firstOrNull()?.let { %L.from(it.lexical) } ?: error(\"Required enum $name missing\")\n",
+                    pred,
+                    enumModel.name,
+                )
+            } else {
+                CodeBlock.of(
+                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
+                    "val _$name = _${name}List.firstOrNull()?.let { %L.from(it.lexical) }\n",
+                    pred,
+                    enumModel.name,
+                )
+            }
         }
     }
 

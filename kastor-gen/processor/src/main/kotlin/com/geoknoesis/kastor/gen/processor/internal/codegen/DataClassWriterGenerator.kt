@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.annotations.NestedMode
+import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
+import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
@@ -43,6 +45,7 @@ class DataClassWriterGenerator(
         shape: ShaclShape,
         packageName: String,
         dcClassName: ClassName,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): FunSpec {
         val fn = FunSpec.builder("toTriples")
             .addKdoc(
@@ -73,7 +76,7 @@ class DataClassWriterGenerator(
         )
 
         shape.properties.sortedBy { it.path }.forEach { property ->
-            fn.addCode(buildPropertyWrite(property, packageName))
+            fn.addCode(buildPropertyWrite(property, packageName, enumsByName))
         }
 
         fn.addStatement("return triples")
@@ -82,15 +85,61 @@ class DataClassWriterGenerator(
 
     // ── Per-property write code ───────────────────────────────────────────────
 
-    private fun buildPropertyWrite(property: ShaclProperty, packageName: String): CodeBlock {
+    private fun buildPropertyWrite(
+        property: ShaclProperty,
+        packageName: String,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
+    ): CodeBlock {
         val name   = NamingUtils.toValidKotlinIdentifier(property.name)
         val isList = property.maxCount == null || property.maxCount > 1
         val isRequired = !isList && property.minCount != null && property.minCount > 0
 
-        return if (property.targetClass != null) {
+        val enumModel = property.enumName?.let { enumsByName[it] }
+        return if (enumModel != null) {
+            buildEnumWrite(name, property.path, enumModel, isList, isRequired)
+        } else if (property.targetClass != null) {
             buildObjectWrite(name, property.path, property, packageName, isList, isRequired)
         } else {
             buildLiteralWrite(name, property.path, property, isList, isRequired)
+        }
+    }
+
+    // ── Enum properties ───────────────────────────────────────────────────────
+
+    private fun buildEnumWrite(
+        name: String,
+        pred: String,
+        enumModel: EnumModel,
+        isList: Boolean,
+        isRequired: Boolean,
+    ): CodeBlock = when (enumModel.memberKind) {
+        EnumMemberKind.IRI -> when {
+            isList -> CodeBlock.of(
+                "record.%L.forEach { triples += %T(subject, %T(%S), it.iri) }\n",
+                name, rdfTripleClass, iriClass, pred,
+            )
+            isRequired -> CodeBlock.of(
+                "triples += %T(subject, %T(%S), record.%L.iri)\n",
+                rdfTripleClass, iriClass, pred, name,
+            )
+            else -> CodeBlock.of(
+                "record.%L?.let { triples += %T(subject, %T(%S), it.iri) }\n",
+                name, rdfTripleClass, iriClass, pred,
+            )
+        }
+        EnumMemberKind.LITERAL -> when {
+            isList -> CodeBlock.of(
+                "record.%L.forEach { triples += %T(subject, %T(%S), %T(it.code)) }\n",
+                name, rdfTripleClass, iriClass, pred, literalClass,
+            )
+            isRequired -> CodeBlock.of(
+                "triples += %T(subject, %T(%S), %T(record.%L.code))\n",
+                rdfTripleClass, iriClass, pred, literalClass, name,
+            )
+            else -> CodeBlock.of(
+                "record.%L?.let { triples += %T(subject, %T(%S), %T(it.code)) }\n",
+                name, rdfTripleClass, iriClass, pred, literalClass,
+            )
         }
     }
 
