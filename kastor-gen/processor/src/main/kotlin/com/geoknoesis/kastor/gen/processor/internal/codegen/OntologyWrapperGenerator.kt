@@ -54,7 +54,7 @@ class OntologyWrapperGenerator(
         shape: ShaclShape,
         context: JsonLdContext,
         packageName: String,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
+        enumsByName: Map<String, EnumModel>,
     ): FileSpec {
         val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
         val wrapperName = "${interfaceName}Wrapper"
@@ -323,7 +323,7 @@ class OntologyWrapperGenerator(
             property.inValuesTyped?.takeIf { tv -> tv.isNotEmpty() && tv.all { it.isIri } }?.let { ivs ->
                 val allowed = ivs.joinToString(", ") { "Iri(\"${it.value}\")" }
                 functionBuilder.addCode("\n")
-                functionBuilder.addStatement("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.forEach { obj ->", pred)
+                functionBuilder.addStatement("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it as Iri }.forEach { obj ->", pred)
                 functionBuilder.addStatement("  if (obj !in listOf(%L)) violations.add(ShaclViolation(", allowed)
                 violationTail("`in`", pred, "in violated")
                 functionBuilder.addStatement("}")
@@ -369,7 +369,7 @@ class OntologyWrapperGenerator(
         val path = property.path
         val name = enum.name
         val single = property.maxCount == 1
-        val required = property.minCount != null && property.minCount!! > 0
+        val required = property.minCount != null && property.minCount > 0
         return if (enum.memberKind == EnumMemberKind.IRI) {
             val base = CodeBlock.of(
                 "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +

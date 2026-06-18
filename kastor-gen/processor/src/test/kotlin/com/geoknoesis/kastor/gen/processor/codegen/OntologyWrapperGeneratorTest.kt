@@ -655,6 +655,7 @@ class OntologyWrapperGeneratorTest {
             generator.generateWrappers(model, "com.example").getValue("DocWrapper").writeTo(it) }.toString()
         assertTrue(code.contains("override val status: DocumentStatus?"))
         assertTrue(code.contains("DocumentStatus.from("))
+        assertFalse(code.contains("OntoMapper.materialize"), "enum property must not route through the object/materialize path")
     }
 }
 
