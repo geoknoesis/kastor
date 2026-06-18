@@ -28,6 +28,7 @@ internal object TypeMapper {
         dataClassSuffix: String = "",
     ): TypeName {
         return when {
+            property.enumName != null -> applyCardinality(ClassName("", property.enumName), property)
             property.targetClass != null -> mapObjectProperty(property, nestedMode, dataClassSuffix)
             else -> mapLiteralProperty(property)
         }
