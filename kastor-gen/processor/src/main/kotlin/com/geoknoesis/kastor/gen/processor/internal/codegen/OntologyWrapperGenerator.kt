@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.annotations.ValidationMode
+import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
+import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
@@ -34,23 +36,25 @@ class OntologyWrapperGenerator(
      */
     fun generateWrappers(ontologyModel: OntologyModel, packageName: String): Map<String, FileSpec> {
         val wrappers = mutableMapOf<String, FileSpec>()
-        
+        val enumsByName = ontologyModel.enums.associateBy { it.name }
+
         ontologyModel.shapes.forEach { shape ->
             val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
             val wrapperName = "${interfaceName}Wrapper"
-            val fileSpec = generateWrapper(shape, ontologyModel.context, packageName)
+            val fileSpec = generateWrapper(shape, ontologyModel.context, packageName, enumsByName)
             wrappers[wrapperName] = fileSpec
-            
+
             logger.info("Generated wrapper: $wrapperName")
         }
-        
+
         return wrappers
     }
 
     private fun generateWrapper(
         shape: ShaclShape,
         context: JsonLdContext,
-        packageName: String
+        packageName: String,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): FileSpec {
         val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
         val wrapperName = "${interfaceName}Wrapper"
@@ -115,7 +119,7 @@ class OntologyWrapperGenerator(
         shape.properties
             .sortedBy { it.path }
             .forEach { property ->
-                classBuilder.addProperty(generatePropertyImplementation(property, context))
+                classBuilder.addProperty(generatePropertyImplementation(property, context, enumsByName))
             }
         
         // Add validation method
@@ -314,6 +318,16 @@ class OntologyWrapperGenerator(
                     functionBuilder.addStatement("}")
                 }
             }
+
+            // IRI-membered sh:in (enum) membership check on object values
+            property.inValuesTyped?.takeIf { tv -> tv.isNotEmpty() && tv.all { it.isIri } }?.let { ivs ->
+                val allowed = ivs.joinToString(", ") { "Iri(\"${it.value}\")" }
+                functionBuilder.addCode("\n")
+                functionBuilder.addStatement("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.forEach { obj ->", pred)
+                functionBuilder.addStatement("  if (obj !in listOf(%L)) violations.add(ShaclViolation(", allowed)
+                violationTail("`in`", pred, "in violated")
+                functionBuilder.addStatement("}")
+            }
         }
 
         functionBuilder.addStatement("return if (violations.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(violations)")
@@ -323,32 +337,58 @@ class OntologyWrapperGenerator(
 
     private fun generatePropertyImplementation(
         property: ShaclProperty,
-        context: JsonLdContext
+        context: JsonLdContext,
+        enumsByName: Map<String, EnumModel> = emptyMap(),
     ): PropertySpec {
         val propertyName = property.name
         val kotlinType = TypeMapper.toKotlinType(property, context)
-        
+
         val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
             .addModifiers(OVERRIDE)
             .addKdoc(
                 "%L\nPath: %L",
                 property.description, property.path
             )
-        
-        val initializer = if (property.targetClass != null) {
-            generateObjectPropertyInitializer(property)
-        } else {
-            generateLiteralPropertyInitializer(property)
+
+        val initializer = when {
+            property.enumName != null -> generateEnumPropertyInitializer(property, enumsByName.getValue(property.enumName))
+            property.targetClass != null -> generateObjectPropertyInitializer(property)
+            else -> generateLiteralPropertyInitializer(property)
         }
-        
+
         propertyBuilder.delegate(CodeBlock.builder()
             .add("lazy {\n")
             .add(initializer)
             .add("\n}")
             .build())
-        
+
         return propertyBuilder.build()
     }
+
+    private fun generateEnumPropertyInitializer(property: ShaclProperty, enum: EnumModel): CodeBlock {
+        val path = property.path
+        val name = enum.name
+        val single = property.maxCount == 1
+        val required = property.minCount != null && property.minCount!! > 0
+        return if (enum.memberKind == EnumMemberKind.IRI) {
+            val base = CodeBlock.of(
+                "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
+                "  $name.from(child as Iri)\n" +
+                "}", path)
+            cardinalityWrap(base, single, required, property.name)
+        } else {
+            val base = CodeBlock.of(
+                "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { $name.from(it.lexical) }", path)
+            cardinalityWrap(base, single, required, property.name)
+        }
+    }
+
+    private fun cardinalityWrap(base: CodeBlock, single: Boolean, required: Boolean, propName: String): CodeBlock =
+        when {
+            !single -> base // List<Enum>
+            required -> CodeBlock.of("%L.firstOrNull() ?: error(%S)", base, "Required enum $propName missing")
+            else -> CodeBlock.of("%L.firstOrNull()", base)
+        }
 
     private fun generateObjectPropertyInitializer(property: ShaclProperty): CodeBlock {
         val targetInterfaceName = NamingUtils.extractInterfaceName(property.targetClass!!)

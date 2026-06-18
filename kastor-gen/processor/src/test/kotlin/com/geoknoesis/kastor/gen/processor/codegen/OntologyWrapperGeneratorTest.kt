@@ -636,6 +636,26 @@ class OntologyWrapperGeneratorTest {
         assertTrue(code.contains("constraintIri = SHACL.`in`"), "validate() should enforce sh:in")
         assertTrue(code.contains("DRAFT") && code.contains("ACTIVE"), "validate() should reference the allowed values")
     }
+
+    @Test
+    fun `wrapper reads an IRI enum via from`() {
+        val prop = com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty(
+            path = "https://ex/#status", name = "status", description = "",
+            datatype = null, targetClass = "https://ex/#DocumentStatus", minCount = 0, maxCount = 1,
+            enumName = "DocumentStatus",
+        )
+        val shape = ShaclShape("https://ex/#DocShape", "https://ex/#Doc", listOf(prop))
+        val enum = com.geoknoesis.kastor.gen.processor.api.model.EnumModel(
+            "DocumentStatus", "https://ex/#DocumentStatus",
+            com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind.IRI,
+            listOf(com.geoknoesis.kastor.gen.processor.api.model.EnumMember("DRAFT", iri = "https://ex/#DRAFT")))
+        val ctx = JsonLdContext(emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        val model = OntologyModel(listOf(shape), ctx, enums = listOf(enum))
+        val code = java.io.StringWriter().also {
+            generator.generateWrappers(model, "com.example").getValue("DocWrapper").writeTo(it) }.toString()
+        assertTrue(code.contains("override val status: DocumentStatus?"))
+        assertTrue(code.contains("DocumentStatus.from("))
+    }
 }
 
 
