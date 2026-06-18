@@ -78,4 +78,53 @@ class ShaclEnumExtractorTest {
             listOf(ShaclShape("s", "https://ex/#Doc", listOf(prop))), ctx()))
         assertTrue(out.enums.isEmpty())
     }
+
+    @Test
+    fun `property whose targetClass has its own shape is treated as object reference not enum`() {
+        // DocumentStatus has its own NodeShape, so the property should NOT become an enum
+        val prop = ShaclProperty(
+            path = "https://ex/#status", name = "status", description = "",
+            datatype = null, targetClass = "https://ex/#DocumentStatus", minCount = 0, maxCount = 1,
+            inValuesTyped = listOf(
+                ShaclInValue("https://ex/#DRAFT", isIri = true),
+                ShaclInValue("https://ex/#ACTIVE", isIri = true),
+            ),
+        )
+        val docShape = ShaclShape("s1", "https://ex/#Doc", listOf(prop))
+        // DocumentStatus has its own shape → it's a real entity, not an enum
+        val statusShape = ShaclShape("s2", "https://ex/#DocumentStatus", emptyList())
+        val out = ShaclEnumExtractor(logger).enrich(OntologyModel(listOf(docShape, statusShape), ctx()))
+        assertTrue(out.enums.isEmpty())
+        assertNull(out.shapes.first().properties.single().enumName)
+    }
+
+    @Test
+    fun `enum name collision with different members keeps first enum and leaves second property as non-enum`() {
+        val prop1 = ShaclProperty(
+            path = "https://ex/#orderStatus", name = "orderStatus", description = "",
+            datatype = null, targetClass = "https://ex/#Status", minCount = 0, maxCount = 1,
+            inValuesTyped = listOf(
+                ShaclInValue("https://ex/#DRAFT", isIri = true),
+                ShaclInValue("https://ex/#ACTIVE", isIri = true),
+            ),
+        )
+        val prop2 = ShaclProperty(
+            path = "https://ex/#ticketStatus", name = "ticketStatus", description = "",
+            datatype = null, targetClass = "https://ex/#Status", minCount = 0, maxCount = 1,
+            inValuesTyped = listOf(
+                ShaclInValue("https://ex/#OPEN", isIri = true),
+                ShaclInValue("https://ex/#CLOSED", isIri = true),
+            ),
+        )
+        val shape1 = ShaclShape("s1", "https://ex/#Order", listOf(prop1))
+        val shape2 = ShaclShape("s2", "https://ex/#Ticket", listOf(prop2))
+        val out = ShaclEnumExtractor(logger).enrich(OntologyModel(listOf(shape1, shape2), ctx()))
+        // Only one enum named "Status" (the first one)
+        assertEquals(1, out.enums.size)
+        assertEquals("Status", out.enums.single().name)
+        // First property is tagged with the enum name
+        assertEquals("Status", out.shapes[0].properties.single().enumName)
+        // Second property is left as non-enum due to collision
+        assertNull(out.shapes[1].properties.single().enumName)
+    }
 }

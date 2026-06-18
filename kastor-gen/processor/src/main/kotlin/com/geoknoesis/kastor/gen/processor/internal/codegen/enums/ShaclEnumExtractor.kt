@@ -79,13 +79,11 @@ internal class ShaclEnumExtractor(private val logger: KSPLogger) {
 
         val existing = byName[name]
         if (existing != null) {
-            val existingNames = existing.members.map { it.constantName }.toSet()
-            val candidateNames = enumMembers.map { it.constantName }.toSet()
-            if (existingNames != candidateNames) {
+            if (existing.members.toSet() != enumMembers.toSet()) {
                 logger.warn("enum name collision for '$name' with different members; leaving ${prop.path} as non-enum")
                 return prop
             }
-            // Same name + identical members → reuse existing, tag the property
+            // Same name + identical members (full identity) → reuse existing, tag the property
         } else {
             byName[name] = candidate
         }
