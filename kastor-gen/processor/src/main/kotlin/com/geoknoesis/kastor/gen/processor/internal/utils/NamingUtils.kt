@@ -43,6 +43,15 @@ internal object NamingUtils {
      * Defaults to camelCase conversion.
      */
     fun toValidKotlinIdentifier(name: String): String = toCamelCase(name)
+
+    /** Converts a raw value/local-name to an UPPER_SNAKE Kotlin enum constant. */
+    fun toEnumConstant(raw: String): String {
+        val spaced = raw.replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+        val parts = spaced.split('-', '_', ' ', '.').filter { it.isNotBlank() }
+        val joined = parts.joinToString("_") { it.uppercase() }
+        val safe = joined.ifEmpty { "VALUE" }
+        return if (safe.first().isDigit()) "_$safe" else safe
+    }
 }
 
 
