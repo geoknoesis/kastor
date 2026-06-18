@@ -517,6 +517,125 @@ class OntologyWrapperGeneratorTest {
         assertTrue(wrappers.containsKey("DatasetWrapper"))
         assertTrue(wrappers.containsKey("DataDistributionWrapper"))
     }
+
+    @Test
+    fun `embedded validate enforces sh pattern`() {
+        val shape = ShaclShape(
+            shapeIri = "http://example.org/shapes/Doc",
+            targetClass = "http://example.org/Doc",
+            properties = listOf(
+                ShaclProperty(
+                    path = "http://example.org/documentId",
+                    name = "documentId",
+                    description = "Document identifier",
+                    datatype = "http://www.w3.org/2001/XMLSchema#string",
+                    targetClass = null,
+                    minCount = 1,
+                    maxCount = 1,
+                    pattern = "DOC-[0-9]+"
+                )
+            )
+        )
+
+        val context = JsonLdContext(
+            prefixes = emptyMap(),
+            typeMappings = emptyMap(),
+            propertyMappings = emptyMap()
+        )
+
+        val wrappers = generator.generateWrappers(OntologyModel(listOf(shape), context), "com.example.test")
+        val code = java.io.StringWriter().also { wrappers["DocWrapper"]!!.writeTo(it) }.toString()
+
+        // validate() must enforce sh:pattern, not only cardinality
+        assertTrue(
+            code.contains("constraintIri = SHACL.pattern"),
+            "Generated validate() should emit a sh:pattern violation check"
+        )
+        assertTrue(
+            code.contains("DOC-[0-9]+"),
+            "Generated validate() should reference the declared pattern"
+        )
+    }
+
+    @Test
+    fun `embedded validate enforces string length bounds`() {
+        val shape = ShaclShape(
+            shapeIri = "http://example.org/shapes/Doc",
+            targetClass = "http://example.org/Doc",
+            properties = listOf(
+                ShaclProperty(
+                    path = "http://example.org/title",
+                    name = "title",
+                    description = "Title",
+                    datatype = "http://www.w3.org/2001/XMLSchema#string",
+                    targetClass = null,
+                    minCount = 0,
+                    maxCount = 1,
+                    minLength = 2,
+                    maxLength = 20
+                )
+            )
+        )
+        val context = JsonLdContext(emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        val wrappers = generator.generateWrappers(OntologyModel(listOf(shape), context), "com.example.test")
+        val code = java.io.StringWriter().also { wrappers["DocWrapper"]!!.writeTo(it) }.toString()
+
+        assertTrue(code.contains("constraintIri = SHACL.minLength"), "validate() should enforce sh:minLength")
+        assertTrue(code.contains("constraintIri = SHACL.maxLength"), "validate() should enforce sh:maxLength")
+    }
+
+    @Test
+    fun `embedded validate enforces numeric bounds`() {
+        val shape = ShaclShape(
+            shapeIri = "http://example.org/shapes/Doc",
+            targetClass = "http://example.org/Doc",
+            properties = listOf(
+                ShaclProperty(
+                    path = "http://example.org/score",
+                    name = "score",
+                    description = "Score",
+                    datatype = "http://www.w3.org/2001/XMLSchema#decimal",
+                    targetClass = null,
+                    minCount = 0,
+                    maxCount = 1,
+                    minInclusive = 0.0,
+                    maxExclusive = 100.0
+                )
+            )
+        )
+        val context = JsonLdContext(emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        val wrappers = generator.generateWrappers(OntologyModel(listOf(shape), context), "com.example.test")
+        val code = java.io.StringWriter().also { wrappers["DocWrapper"]!!.writeTo(it) }.toString()
+
+        assertTrue(code.contains("constraintIri = SHACL.minInclusive"), "validate() should enforce sh:minInclusive")
+        assertTrue(code.contains("constraintIri = SHACL.maxExclusive"), "validate() should enforce sh:maxExclusive")
+    }
+
+    @Test
+    fun `embedded validate enforces sh in membership`() {
+        val shape = ShaclShape(
+            shapeIri = "http://example.org/shapes/Doc",
+            targetClass = "http://example.org/Doc",
+            properties = listOf(
+                ShaclProperty(
+                    path = "http://example.org/status",
+                    name = "status",
+                    description = "Status",
+                    datatype = "http://www.w3.org/2001/XMLSchema#string",
+                    targetClass = null,
+                    minCount = 0,
+                    maxCount = 1,
+                    inValues = listOf("DRAFT", "ACTIVE", "ARCHIVED")
+                )
+            )
+        )
+        val context = JsonLdContext(emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        val wrappers = generator.generateWrappers(OntologyModel(listOf(shape), context), "com.example.test")
+        val code = java.io.StringWriter().also { wrappers["DocWrapper"]!!.writeTo(it) }.toString()
+
+        assertTrue(code.contains("constraintIri = SHACL.`in`"), "validate() should enforce sh:in")
+        assertTrue(code.contains("DRAFT") && code.contains("ACTIVE"), "validate() should reference the allowed values")
+    }
 }
 
 

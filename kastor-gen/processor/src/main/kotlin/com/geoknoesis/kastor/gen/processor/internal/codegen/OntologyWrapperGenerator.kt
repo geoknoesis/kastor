@@ -23,6 +23,8 @@ class OntologyWrapperGenerator(
     private val externalValidatorClass: String? = null
 ) {
 
+    private var currentPackageName: String = ""
+
     /**
      * Generates Kotlin wrapper code from SHACL shapes.
      * 
@@ -53,15 +55,14 @@ class OntologyWrapperGenerator(
         val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
         val wrapperName = "${interfaceName}Wrapper"
         
+        currentPackageName = packageName
         val fileBuilder = FileSpec.builder(packageName, wrapperName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
-        
+
         // Add imports
         fileBuilder.addImport(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked", "OntoMapper", "KastorGraphOps", "RdfRef", "RdfHandle", "DefaultRdfHandle", "ShaclViolation", "ValidationResult")
-        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfHandle", "RdfResource", "MutableRdfGraph", "BlankNode")
-        // Note: getCbdClosure is an extension function on RdfGraph in the same package
-        // It will be available when the RDF package is imported
+        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfResource", "MutableRdfGraph", "BlankNode", "getCbdClosure")
         
         // Build wrapper class
         val classBuilder = TypeSpec.classBuilder(wrapperName)
@@ -72,11 +73,11 @@ class OntologyWrapperGenerator(
             )
             .primaryConstructor(
                 FunSpec.constructorBuilder()
-                    .addParameter("input", ClassName(CodegenConstants.RDF_PACKAGE, "RdfHandle"))
+                    .addParameter("input", ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle"))
                     .addModifiers(PRIVATE)
                     .build()
             )
-            .addSuperinterface(ClassName("", interfaceName))
+            .addSuperinterface(ClassName(packageName, interfaceName))
             .addSuperinterface(ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked"))
         
         // Known predicates set - sort by path IRI for deterministic output
@@ -98,7 +99,7 @@ class OntologyWrapperGenerator(
         
         // RDF handle property
         classBuilder.addProperty(
-            PropertySpec.builder("rdf", ClassName(CodegenConstants.RDF_PACKAGE, "RdfHandle"))
+            PropertySpec.builder("rdf", ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle"))
                 .addModifiers(OVERRIDE)
                 .delegate(
                     CodeBlock.of(
@@ -165,8 +166,8 @@ class OntologyWrapperGenerator(
         companionBuilder.addInitializerBlock(
             CodeBlock.of(
                 "OntoMapper.registry[%T::class.java] = { handle -> %T(handle) }",
-                ClassName("", interfaceName),
-                ClassName("", wrapperName)
+                ClassName(packageName, interfaceName),
+                ClassName(packageName, wrapperName)
             )
         )
         
@@ -194,7 +195,19 @@ class OntologyWrapperGenerator(
         val functionBuilder = FunSpec.builder("validate")
             .returns(ClassName(CodegenConstants.RUNTIME_PACKAGE, "ValidationResult"))
             .addStatement("val violations = mutableListOf<%T>()", ClassName(CodegenConstants.RUNTIME_PACKAGE, "ShaclViolation"))
-        
+
+        val shaclCn = ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL")
+        // Emits the shared trailer of a ShaclViolation(...) constructor call.
+        // [constraintTerm] is the SHACL member name (e.g. "pattern", "minLength", "`in`").
+        fun violationTail(constraintTerm: String, pathPred: String, message: String) {
+            functionBuilder.addStatement("    focusNode = rdf.node as RdfResource,")
+            functionBuilder.addStatement("    shapeIri = %T.NodeShape,", shaclCn)
+            functionBuilder.addStatement("    constraintIri = %T.%L,", shaclCn, constraintTerm)
+            functionBuilder.addStatement("    path = Iri(%S),", pathPred)
+            functionBuilder.addStatement("    message = %S", message)
+            functionBuilder.addStatement("  ))")
+        }
+
         // Sort properties by path IRI for deterministic output
         shape.properties
             .sortedBy { it.path }
@@ -236,8 +249,73 @@ class OntologyWrapperGenerator(
                 
                 functionBuilder.addStatement("}")
             }
+
+            // Value constraints apply to literal-valued properties only.
+            if (property.targetClass == null) {
+                val literals = CodeBlock.of(
+                    "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", pred
+                )
+
+                property.pattern?.let { pat ->
+                    functionBuilder.addCode("\n")
+                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
+                    functionBuilder.addStatement("  if (!%T(%S).matches(lit.lexical)) violations.add(ShaclViolation(", Regex::class, pat)
+                    violationTail("pattern", pred, "pattern $pat violated")
+                    functionBuilder.addStatement("}")
+                }
+
+                if (property.minLength != null || property.maxLength != null) {
+                    functionBuilder.addCode("\n")
+                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
+                    property.minLength?.let {
+                        functionBuilder.addStatement("  if (lit.lexical.length < %L) violations.add(ShaclViolation(", it)
+                        violationTail("minLength", pred, "minLength $it violated")
+                    }
+                    property.maxLength?.let {
+                        functionBuilder.addStatement("  if (lit.lexical.length > %L) violations.add(ShaclViolation(", it)
+                        violationTail("maxLength", pred, "maxLength $it violated")
+                    }
+                    functionBuilder.addStatement("}")
+                }
+
+                if (property.minInclusive != null || property.maxInclusive != null ||
+                    property.minExclusive != null || property.maxExclusive != null
+                ) {
+                    functionBuilder.addCode("\n")
+                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
+                    functionBuilder.addStatement("  val num = lit.lexical.toDoubleOrNull()")
+                    functionBuilder.addStatement("  if (num != null) {")
+                    property.minInclusive?.let {
+                        functionBuilder.addStatement("    if (num < %L) violations.add(ShaclViolation(", it)
+                        violationTail("minInclusive", pred, "minInclusive $it violated")
+                    }
+                    property.maxInclusive?.let {
+                        functionBuilder.addStatement("    if (num > %L) violations.add(ShaclViolation(", it)
+                        violationTail("maxInclusive", pred, "maxInclusive $it violated")
+                    }
+                    property.minExclusive?.let {
+                        functionBuilder.addStatement("    if (num <= %L) violations.add(ShaclViolation(", it)
+                        violationTail("minExclusive", pred, "minExclusive $it violated")
+                    }
+                    property.maxExclusive?.let {
+                        functionBuilder.addStatement("    if (num >= %L) violations.add(ShaclViolation(", it)
+                        violationTail("maxExclusive", pred, "maxExclusive $it violated")
+                    }
+                    functionBuilder.addStatement("  }")
+                    functionBuilder.addStatement("}")
+                }
+
+                property.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
+                    val allowed = values.joinToString(", ") { "\"$it\"" }
+                    functionBuilder.addCode("\n")
+                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
+                    functionBuilder.addStatement("  if (lit.lexical !in listOf(%L)) violations.add(ShaclViolation(", allowed)
+                    violationTail("`in`", pred, "in violated")
+                    functionBuilder.addStatement("}")
+                }
+            }
         }
-        
+
         functionBuilder.addStatement("return if (violations.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(violations)")
         
         return functionBuilder.build()
@@ -282,14 +360,14 @@ class OntologyWrapperGenerator(
                     "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
                     "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
                     "}.firstOrNull() ?: error(%S)",
-                    path, ClassName("", targetInterfaceName), "Required object ${property.name} missing"
+                    path, ClassName(currentPackageName, targetInterfaceName), "Required object ${property.name} missing"
                 )
             } else {
                 CodeBlock.of(
                     "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
                     "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
                     "}.firstOrNull()",
-                    path, ClassName("", targetInterfaceName)
+                    path, ClassName(currentPackageName, targetInterfaceName)
                 )
             }
         } else {
@@ -297,7 +375,7 @@ class OntologyWrapperGenerator(
                 "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
                 "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
                 "}",
-                path, ClassName("", targetInterfaceName)
+                path, ClassName(currentPackageName, targetInterfaceName)
             )
         }
     }
@@ -385,7 +463,7 @@ class OntologyWrapperGenerator(
                     .build()
             )
             .addParameter(
-                ParameterSpec.builder("subject", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
+                ParameterSpec.builder("subject", ClassName(CodegenConstants.RDF_PACKAGE, "Iri").copy(nullable = true))
                     .defaultValue("null")
                     .build()
             )
