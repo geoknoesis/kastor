@@ -14,7 +14,7 @@ import com.geoknoesis.kastor.rdf.Iri as RdfIri
  *
  * @sample com.example.CreateShaclShape
  */
-internal data class ShaclShape(
+data class ShaclShape(
     val shapeIri: String,
     val targetClass: String,
     val properties: List<ShaclProperty>
@@ -47,7 +47,7 @@ internal data class ShaclShape(
  * @param qualifiedMinCount Qualified minimum count (sh:qualifiedMinCount)
  * @param qualifiedMaxCount Qualified maximum count (sh:qualifiedMaxCount)
  */
-internal data class ShaclProperty(
+data class ShaclProperty(
     val path: String,
     val name: String,
     val description: String,
@@ -88,7 +88,7 @@ internal data class ShaclProperty(
  * @param typeMappings Map of type names to their IRIs
  * @param propertyMappings Map of property names to their definitions
  */
-internal data class JsonLdContext(
+data class JsonLdContext(
     val prefixes: Map<String, String>,
     val baseIri: RdfIri? = null,
     val vocabIri: RdfIri? = null,
@@ -99,18 +99,18 @@ internal data class JsonLdContext(
 /**
  * Model representing a JSON-LD property definition.
  */
-internal data class JsonLdProperty(
+data class JsonLdProperty(
     val id: RdfIri,
     val type: JsonLdType?,
     val container: JsonLdContainer? = null
 )
 
-internal sealed interface JsonLdType {
+sealed interface JsonLdType {
     data object Id : JsonLdType
     data class Iri(val iri: RdfIri) : JsonLdType
 }
 
-internal sealed interface JsonLdContainer {
+sealed interface JsonLdContainer {
     data object List : JsonLdContainer
     data object Set : JsonLdContainer
     data object Index : JsonLdContainer
@@ -131,7 +131,7 @@ internal sealed interface JsonLdContainer {
  *
  * @sample com.example.CreateOntologyModel
  */
-internal data class OntologyModel(
+data class OntologyModel(
     val shapes: List<ShaclShape>,
     val context: JsonLdContext,
     val enums: List<EnumModel> = emptyList(),
