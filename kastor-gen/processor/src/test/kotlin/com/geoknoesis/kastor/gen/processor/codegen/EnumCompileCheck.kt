@@ -161,6 +161,41 @@ internal object EnumCompileCheck {
         triples += RdfTriple(subject, Iri("https://ex/#reviewState"), Literal(state.code))
         return triples
     }
+
+    // ── Area 6: DSL IRI-enum setter compile check ─────────────────────────────────────────────
+    //
+    // Mirrors the generated DSL builder setter for an IRI-membered enum (scalar):
+    //   graph.addTriple(resource, Iri("pred"), value.iri)
+    //
+    // The critical check: value.iri is already an Iri (RdfTerm), so it must NOT be wrapped
+    // in Iri(...) again. This function proves that `value.iri` type-checks as an RdfTerm
+    // in the triple object position. It models the generated setter body using RdfTriple
+    // directly (same semantics, avoids the MutableRdfGraph.addTriple receiver-type complexity).
+
+    @Suppress("unused")
+    fun dslSetIriEnum(
+        resource: RdfResource,
+        value: DocumentStatusCC,
+    ): List<RdfTriple> {
+        val triples = mutableListOf<RdfTriple>()
+        // Mirrors: graph.addTriple(resource, Iri("https://ex/#status"), value.iri)
+        // value.iri is Iri — a subtype of RdfTerm — no Iri(...) wrapping needed or valid.
+        triples += RdfTriple(resource, Iri("https://ex/#status"), value.iri)
+        return triples
+    }
+
+    @Suppress("unused")
+    fun dslSetIriEnumList(
+        resource: RdfResource,
+        values: Array<DocumentStatusCC>,
+    ): List<RdfTriple> {
+        val triples = mutableListOf<RdfTriple>()
+        // Mirrors: values.forEach { graph.addTriple(resource, Iri("pred"), it.iri) }
+        values.forEach {
+            triples += RdfTriple(resource, Iri("https://ex/#status"), it.iri)
+        }
+        return triples
+    }
 }
 
 class EnumCompileCheckTest {

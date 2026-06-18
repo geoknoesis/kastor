@@ -72,6 +72,24 @@ class InstanceDslEnumTest {
     }
 
     @Test
+    fun `IRI enum setter does NOT double-wrap the Iri`() {
+        val code = renderIriEnumDsl(isList = false)
+        assertFalse(
+            code.contains("Iri(value.iri)"),
+            "must not double-wrap the Iri — generated:\n$code"
+        )
+    }
+
+    @Test
+    fun `IRI enum setter writes the Iri directly as triple object`() {
+        val code = renderIriEnumDsl(isList = false)
+        assertTrue(
+            code.contains(", value.iri)") || code.contains(", `value`.iri)"),
+            "writes the Iri directly (not wrapped) — generated:\n$code"
+        )
+    }
+
+    @Test
     fun `IRI enum setter does NOT write Literal(value`() {
         val code = renderIriEnumDsl(isList = false)
         assertFalse(

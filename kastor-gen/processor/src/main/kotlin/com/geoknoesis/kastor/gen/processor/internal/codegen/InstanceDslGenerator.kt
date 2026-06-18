@@ -158,7 +158,13 @@ class InstanceDslGenerator(
             val propertyName = determinePropertyName(property, options)
             val isRequired = (property.minCount ?: 0) >= 1
             val isList = property.maxCount == null || property.maxCount > 1
-            val enumModel = property.enumName?.let { enumsByName[it] }
+            val enumModel = property.enumName?.let { enumName ->
+                val found = enumsByName[enumName]
+                if (found == null) {
+                    logger.warn("DSL: enumName '$enumName' not found in model.enums; falling back to String setter")
+                }
+                found
+            }
 
             PropertyBuilderModel(
                 propertyName = propertyName,

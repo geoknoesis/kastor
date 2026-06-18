@@ -354,9 +354,8 @@ sealed class PropertyTypeStrategy {
             when (memberKind) {
                 EnumMemberKind.IRI ->
                     builder.addStatement(
-                        "graph.addTriple(resource, %L, %T(value.iri))",
-                        propertyIri,
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+                        "graph.addTriple(resource, %L, value.iri)",
+                        propertyIri
                     )
                 EnumMemberKind.LITERAL ->
                     builder.addStatement(
@@ -384,9 +383,8 @@ sealed class PropertyTypeStrategy {
                 EnumMemberKind.IRI -> {
                     builder.addStatement("values.forEach {")
                     builder.addStatement(
-                        "    graph.addTriple(resource, %L, %T(it.iri))",
-                        propertyIri,
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+                        "    graph.addTriple(resource, %L, it.iri)",
+                        propertyIri
                     )
                     builder.addStatement("}")
                 }
