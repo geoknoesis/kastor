@@ -9,6 +9,8 @@ import com.geoknoesis.kastor.gen.processor.internal.codegen.DataClassWriterGener
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.EnumGenerator
+import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.ShaclEnumExtractor
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileGenerationException
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
@@ -45,16 +47,21 @@ class GenerationCoordinator(
         nestedMode: NestedMode = NestedMode.INTERFACE,
         generateWriteSupport: Boolean = false,
     ) {
+        val enriched = ShaclEnumExtractor(logger).enrich(model)
+        EnumGenerator(logger)
+            .generateEnums(enriched, packageName)
+            .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+
         val interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
         val wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
 
         if (generateInterfaces) {
-            interfaceGenerator.generateInterfaces(model, packageName)
+            interfaceGenerator.generateInterfaces(enriched, packageName)
                 .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
         }
 
         if (generateWrappers) {
-            wrapperGenerator.generateWrappers(model, packageName)
+            wrapperGenerator.generateWrappers(enriched, packageName)
                 .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
         }
 
@@ -79,9 +86,9 @@ class GenerationCoordinator(
                 nestedMode = nestedMode,
                 writerGenerator = writerGen,
             )
-            dcGenerator.generateDataClasses(model, packageName)
+            dcGenerator.generateDataClasses(enriched, packageName)
                 .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
-            factoryGenerator.generateFactories(model, packageName)
+            factoryGenerator.generateFactories(enriched, packageName)
                 .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
         }
     }
