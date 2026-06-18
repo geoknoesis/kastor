@@ -14,7 +14,7 @@ import com.geoknoesis.kastor.rdf.Iri as RdfIri
  *
  * @sample com.example.CreateShaclShape
  */
-data class ShaclShape(
+internal data class ShaclShape(
     val shapeIri: String,
     val targetClass: String,
     val properties: List<ShaclProperty>
@@ -47,7 +47,7 @@ data class ShaclShape(
  * @param qualifiedMinCount Qualified minimum count (sh:qualifiedMinCount)
  * @param qualifiedMaxCount Qualified maximum count (sh:qualifiedMaxCount)
  */
-data class ShaclProperty(
+internal data class ShaclProperty(
     val path: String,
     val name: String,
     val description: String,
@@ -66,6 +66,8 @@ data class ShaclProperty(
     val maxExclusive: Double? = null,
     // Value constraints
     val inValues: List<String>? = null,
+    val inValuesTyped: List<ShaclInValue>? = null,
+    val enumName: String? = null,
     val hasValue: String? = null,
     // Node constraints
     val nodeKind: String? = null,
@@ -86,7 +88,7 @@ data class ShaclProperty(
  * @param typeMappings Map of type names to their IRIs
  * @param propertyMappings Map of property names to their definitions
  */
-data class JsonLdContext(
+internal data class JsonLdContext(
     val prefixes: Map<String, String>,
     val baseIri: RdfIri? = null,
     val vocabIri: RdfIri? = null,
@@ -97,18 +99,18 @@ data class JsonLdContext(
 /**
  * Model representing a JSON-LD property definition.
  */
-data class JsonLdProperty(
+internal data class JsonLdProperty(
     val id: RdfIri,
     val type: JsonLdType?,
     val container: JsonLdContainer? = null
 )
 
-sealed interface JsonLdType {
+internal sealed interface JsonLdType {
     data object Id : JsonLdType
     data class Iri(val iri: RdfIri) : JsonLdType
 }
 
-sealed interface JsonLdContainer {
+internal sealed interface JsonLdContainer {
     data object List : JsonLdContainer
     data object Set : JsonLdContainer
     data object Index : JsonLdContainer
@@ -125,12 +127,14 @@ sealed interface JsonLdContainer {
  *
  * @param shapes List of SHACL shapes defining class structures
  * @param context JSON-LD context providing type and property mappings
+ * @param enums List of generated enum types derived from sh:in constraints
  *
  * @sample com.example.CreateOntologyModel
  */
-data class OntologyModel(
+internal data class OntologyModel(
     val shapes: List<ShaclShape>,
-    val context: JsonLdContext
+    val context: JsonLdContext,
+    val enums: List<EnumModel> = emptyList(),
 )
 
 
