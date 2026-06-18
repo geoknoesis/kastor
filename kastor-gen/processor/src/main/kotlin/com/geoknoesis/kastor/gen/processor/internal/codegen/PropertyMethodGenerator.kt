@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
+import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.PropertyBuilderModel
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
 import com.google.devtools.ksp.processing.KSPLogger
@@ -24,6 +25,10 @@ internal class PropertyMethodGenerator(
         options: DslGenerationOptions
     ): List<FunSpec> {
         val propertyIri = CodegenConstants.iriConstant(property.propertyIri)
+        // Enum-typed properties take a dedicated type-safe path before the generic strategy dispatch.
+        if (property.enumName != null && property.enumMemberKind != null) {
+            return PropertyTypeStrategy.EnumStrategy.generateMethods(property, propertyIri, options)
+        }
         val strategy = PropertyTypeStrategy.from(property.kotlinType)
         return strategy.generateMethods(property, propertyIri, options)
     }
@@ -304,6 +309,103 @@ sealed class PropertyTypeStrategy {
         }
     }
     
+    /**
+     * Strategy for enum-typed properties.
+     *
+     * IRI-membered enums: setter writes `graph.addTriple(resource, pred, value.iri)`.
+     * LITERAL-membered enums: setter writes `graph.addTriple(resource, pred, Literal(value.code, XSD.string))`.
+     * List variants use vararg + forEach.
+     *
+     * The property's [PropertyBuilderModel.enumName] supplies the Kotlin parameter type and
+     * [PropertyBuilderModel.enumMemberKind] selects between .iri and .code.
+     */
+    object EnumStrategy : PropertyTypeStrategy() {
+        override fun generateMethods(
+            property: PropertyBuilderModel,
+            propertyIri: CodeBlock,
+            options: DslGenerationOptions
+        ): List<FunSpec> {
+            val enumName = requireNotNull(property.enumName) { "EnumStrategy requires enumName" }
+            val memberKind = requireNotNull(property.enumMemberKind) { "EnumStrategy requires enumMemberKind" }
+            val enumType = ClassName("", enumName)
+            val methods = mutableListOf<FunSpec>()
+
+            // Scalar setter
+            methods.add(generateEnumScalarMethod(property, propertyIri, enumType, memberKind))
+
+            // List (vararg) setter when the property can hold multiple values
+            if (property.isList) {
+                methods.add(generateEnumListMethod(property, propertyIri, enumType, memberKind))
+            }
+
+            return methods
+        }
+
+        private fun generateEnumScalarMethod(
+            property: PropertyBuilderModel,
+            propertyIri: CodeBlock,
+            enumType: ClassName,
+            memberKind: EnumMemberKind
+        ): FunSpec {
+            val builder = FunSpec.builder(property.propertyName)
+                .addKdoc(buildKdoc(property))
+                .addParameter("value", enumType)
+
+            when (memberKind) {
+                EnumMemberKind.IRI ->
+                    builder.addStatement(
+                        "graph.addTriple(resource, %L, %T(value.iri))",
+                        propertyIri,
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+                    )
+                EnumMemberKind.LITERAL ->
+                    builder.addStatement(
+                        "graph.addTriple(resource, %L, %T(value.code, %T.string))",
+                        propertyIri,
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
+                        ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD")
+                    )
+            }
+
+            return builder.build()
+        }
+
+        private fun generateEnumListMethod(
+            property: PropertyBuilderModel,
+            propertyIri: CodeBlock,
+            enumType: ClassName,
+            memberKind: EnumMemberKind
+        ): FunSpec {
+            val builder = FunSpec.builder(property.propertyName)
+                .addKdoc(buildKdoc(property))
+                .addParameter("values", enumType, VARARG)
+
+            when (memberKind) {
+                EnumMemberKind.IRI -> {
+                    builder.addStatement("values.forEach {")
+                    builder.addStatement(
+                        "    graph.addTriple(resource, %L, %T(it.iri))",
+                        propertyIri,
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+                    )
+                    builder.addStatement("}")
+                }
+                EnumMemberKind.LITERAL -> {
+                    builder.addStatement("values.forEach {")
+                    builder.addStatement(
+                        "    graph.addTriple(resource, %L, %T(it.code, %T.string))",
+                        propertyIri,
+                        ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
+                        ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD")
+                    )
+                    builder.addStatement("}")
+                }
+            }
+
+            return builder.build()
+        }
+    }
+
     companion object {
         fun from(type: TypeName): PropertyTypeStrategy {
             return when {

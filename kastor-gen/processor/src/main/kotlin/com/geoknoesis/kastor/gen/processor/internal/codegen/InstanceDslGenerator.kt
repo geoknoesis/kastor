@@ -72,26 +72,27 @@ class InstanceDslGenerator(
         val shapeMap = model.shapes.groupByTargetClass()
         val classes = extractClasses(model)
         val classIris = classes.map { it.classIri }.toSet()
-        
+        val enumsByName = model.enums.associateBy { it.name }
+
         val fromClasses = classes.mapNotNull { ontologyClass ->
             shapeMap[ontologyClass.classIri]?.let { shape ->
-                buildClassBuilder(ontologyClass, shape, model.context, options)
+                buildClassBuilder(ontologyClass, shape, model.context, options, enumsByName)
             } ?: run {
                 logger.warn("No SHACL shape found for class: ${ontologyClass.classIri}")
                 null
             }
         }
-        
+
         // Sort shapes by targetClass IRI for deterministic output
         val fromShapes = model.shapes
             .sortedBy { it.targetClass }
             .filter { it.targetClass !in classIris }
-            .map { buildClassBuilderFromShape(it, model.context, options) }
-        
+            .map { buildClassBuilderFromShape(it, model.context, options, enumsByName) }
+
         // Sort final result by classIri for deterministic output
         return (fromClasses + fromShapes).sortedBy { it.classIri }
     }
-    
+
     private fun extractClasses(model: OntologyModel): List<OntologyClass> {
         // Extract classes from shapes if no explicit ontology classes provided
         // This is a fallback - in practice, classes should come from the ontology
@@ -102,17 +103,18 @@ class InstanceDslGenerator(
             )
         }
     }
-    
+
     private fun buildClassBuilder(
         ontologyClass: OntologyClass,
         shape: ShaclShape,
         context: JsonLdContext,
-        options: DslGenerationOptions
+        options: DslGenerationOptions,
+        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>
     ): ClassBuilderModel {
         // Sort properties by path IRI for deterministic output
-        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options)
+        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options, enumsByName)
         val builderName = NamingUtils.toCamelCase(ontologyClass.className)
-        
+
         return ClassBuilderModel(
             className = ontologyClass.className,
             classIri = ontologyClass.classIri,
@@ -121,17 +123,18 @@ class InstanceDslGenerator(
             shapeIri = shape.shapeIri
         )
     }
-    
+
     private fun buildClassBuilderFromShape(
         shape: ShaclShape,
         context: JsonLdContext,
-        options: DslGenerationOptions
+        options: DslGenerationOptions,
+        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>
     ): ClassBuilderModel {
         val className = VocabularyMapper.extractLocalName(shape.targetClass)
         val builderName = NamingUtils.toCamelCase(className)
         // Sort properties by path IRI for deterministic output
-        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options)
-        
+        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options, enumsByName)
+
         return ClassBuilderModel(
             className = className,
             classIri = shape.targetClass,
@@ -147,21 +150,25 @@ class InstanceDslGenerator(
     private fun buildPropertyBuilders(
         properties: List<ShaclProperty>,
         context: JsonLdContext,
-        @Suppress("UNUSED_PARAMETER") options: DslGenerationOptions
+        @Suppress("UNUSED_PARAMETER") options: DslGenerationOptions,
+        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel> = emptyMap()
     ): List<PropertyBuilderModel> {
         return properties.map { property ->
             val kotlinType = TypeMapper.toKotlinType(property, context)
             val propertyName = determinePropertyName(property, options)
             val isRequired = (property.minCount ?: 0) >= 1
             val isList = property.maxCount == null || property.maxCount > 1
-            
+            val enumModel = property.enumName?.let { enumsByName[it] }
+
             PropertyBuilderModel(
                 propertyName = propertyName,
                 propertyIri = property.path,
                 kotlinType = kotlinType,
                 isRequired = isRequired,
                 isList = isList,
-                constraints = PropertyConstraints.from(property)
+                constraints = PropertyConstraints.from(property),
+                enumName = property.enumName,
+                enumMemberKind = enumModel?.memberKind
             )
         }
     }

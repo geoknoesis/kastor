@@ -37,6 +37,8 @@ data class ClassBuilderModel(
  * @param isRequired Whether the property is required (from sh:minCount >= 1)
  * @param isList Whether the property accepts multiple values (from sh:maxCount > 1)
  * @param constraints SHACL constraints for the property
+ * @param enumName Kotlin enum type name when this property is enum-typed (sh:in with enumName set)
+ * @param enumMemberKind Whether enum members are IRIs or literal codes; non-null iff enumName is non-null
  */
 data class PropertyBuilderModel(
     val propertyName: String,         // Kotlin property name (camelCase)
@@ -44,7 +46,9 @@ data class PropertyBuilderModel(
     val kotlinType: TypeName,         // Kotlin type (e.g., String, List<String>, String?)
     val isRequired: Boolean,           // From sh:minCount >= 1
     val isList: Boolean,               // From sh:maxCount > 1 or null
-    val constraints: PropertyConstraints
+    val constraints: PropertyConstraints,
+    val enumName: String? = null,      // Kotlin enum type name, non-null when property is enum-typed
+    val enumMemberKind: EnumMemberKind? = null  // IRI vs LITERAL; non-null iff enumName != null
 )
 
 /**
