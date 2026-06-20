@@ -38,7 +38,7 @@ subprojects {
 
   if (!isBom) {
     extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
-      jvmToolchain(17)
+      jvmToolchain(21)
     }
   }
 

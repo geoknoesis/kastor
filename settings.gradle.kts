@@ -1,9 +1,14 @@
 pluginManagement {
-  repositories { 
+  repositories {
     gradlePluginPortal()
     mavenCentral()
     mavenLocal()  // For local plugin development
   }
+}
+plugins {
+  // Resolves/auto-provisions Java toolchains (and the Gradle daemon JVM) so the
+  // build runs on Java 21 regardless of the launching JAVA_HOME. See gradle/gradle-daemon-jvm.properties.
+  id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 dependencyResolutionManagement {
   repositories { mavenCentral(); mavenLocal() }
