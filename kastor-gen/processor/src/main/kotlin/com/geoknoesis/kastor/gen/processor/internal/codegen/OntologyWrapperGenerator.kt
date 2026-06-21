@@ -310,10 +310,14 @@ class OntologyWrapperGenerator(
                 }
 
                 property.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
-                    val allowed = values.joinToString(", ") { "\"$it\"" }
+                    // %S per value so KotlinPoet escapes quotes/backslashes in the generated source.
+                    val placeholders = values.joinToString(", ") { "%S" }
                     functionBuilder.addCode("\n")
                     functionBuilder.addStatement("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement("  if (lit.lexical !in listOf(%L)) violations.add(ShaclViolation(", allowed)
+                    functionBuilder.addStatement(
+                        "  if (lit.lexical !in listOf($placeholders)) violations.add(ShaclViolation(",
+                        *values.toTypedArray()
+                    )
                     violationTail("`in`", pred, "in violated")
                     functionBuilder.addStatement("}")
                 }
@@ -321,10 +325,14 @@ class OntologyWrapperGenerator(
 
             // IRI-membered sh:in (enum) membership check on object values
             property.inValuesTyped?.takeIf { tv -> tv.isNotEmpty() && tv.all { it.isIri } }?.let { ivs ->
-                val allowed = ivs.joinToString(", ") { "Iri(\"${it.value}\")" }
+                // Iri(%S) per value so KotlinPoet escapes quotes/backslashes in the generated source.
+                val placeholders = ivs.joinToString(", ") { "Iri(%S)" }
                 functionBuilder.addCode("\n")
                 functionBuilder.addStatement("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it as Iri }.forEach { obj ->", pred)
-                functionBuilder.addStatement("  if (obj !in listOf(%L)) violations.add(ShaclViolation(", allowed)
+                functionBuilder.addStatement(
+                    "  if (obj !in listOf($placeholders)) violations.add(ShaclViolation(",
+                    *ivs.map { it.value }.toTypedArray()
+                )
                 violationTail("`in`", pred, "in violated")
                 functionBuilder.addStatement("}")
             }

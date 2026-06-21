@@ -657,6 +657,35 @@ class OntologyWrapperGeneratorTest {
         assertTrue(code.contains("DocumentStatus.from("))
         assertFalse(code.contains("OntoMapper.materialize"), "enum property must not route through the object/materialize path")
     }
+
+    @Test
+    fun `sh in literal values are escaped in generated validate`() {
+        val shape = ShaclShape(
+            shapeIri = "http://example.org/shapes/Doc",
+            targetClass = "http://example.org/Doc",
+            properties = listOf(
+                ShaclProperty(
+                    path = "http://example.org/code",
+                    name = "code",
+                    description = "Code",
+                    datatype = "http://www.w3.org/2001/XMLSchema#string",
+                    targetClass = null,
+                    minCount = 0,
+                    maxCount = 1,
+                    inValues = listOf("A\"B")
+                )
+            )
+        )
+        val context = JsonLdContext(emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        val code = java.io.StringWriter().also {
+            generator.generateWrappers(OntologyModel(listOf(shape), context), "com.example").getValue("DocWrapper").writeTo(it)
+        }.toString()
+        // The sh:in value contains a double-quote; it must be emitted escaped so the generated listOf(...) compiles.
+        assertTrue(
+            code.contains("\"A\\\"B\""),
+            "sh:in value with a quote must be KotlinPoet-escaped in the generated validate()"
+        )
+    }
 }
 
 
