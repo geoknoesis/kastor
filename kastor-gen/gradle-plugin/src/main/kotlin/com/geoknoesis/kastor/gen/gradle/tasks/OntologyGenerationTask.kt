@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.gradle.tasks
 
+import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
@@ -138,7 +139,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
         override fun exception(e: Throwable) {
             logger.error("Exception occurred", e)
         }
-    })
+    }, ValidationAnnotations.NONE)
     
     private val wrapperGenerator = OntologyWrapperGenerator(object : KSPLogger {
         override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
