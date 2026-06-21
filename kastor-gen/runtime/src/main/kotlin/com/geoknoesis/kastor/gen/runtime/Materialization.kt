@@ -163,8 +163,10 @@ object OntoMapper {
     }
   }
 
-  private fun tryLoad(className: String, loader: ClassLoader) {
+  private fun tryLoad(className: String, loader: ClassLoader?) {
     try {
+      // loader may be null for bootstrap-loaded types (e.g. java.lang.Object);
+      // Class.forName treats a null loader as the bootstrap class loader.
       Class.forName(className, true, loader)
     } catch (_: ClassNotFoundException) {
       // Not present; caller decides whether to error.
