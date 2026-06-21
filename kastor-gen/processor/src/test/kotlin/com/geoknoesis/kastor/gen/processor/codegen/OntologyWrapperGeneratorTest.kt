@@ -555,6 +555,15 @@ class OntologyWrapperGeneratorTest {
             code.contains("DOC-[0-9]+"),
             "Generated validate() should reference the declared pattern"
         )
+        // SHACL sh:pattern uses SPARQL REGEX (unanchored find) semantics, not full-string match.
+        assertTrue(
+            code.contains(".containsMatchIn("),
+            "sh:pattern must use containsMatchIn (find), per SHACL/SPARQL REGEX semantics"
+        )
+        assertFalse(
+            code.contains(".matches("),
+            "sh:pattern must not use anchored .matches() (full-string)"
+        )
     }
 
     @Test

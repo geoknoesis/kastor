@@ -80,7 +80,7 @@ internal class ValidationCodeGenerator(
                 
                 // Pattern
                 if (property.constraints.pattern != null) {
-                    functionBuilder.addStatement("        if (!%T(\"%S\").matches(value)) {",
+                    functionBuilder.addStatement("        if (!%T(%S).containsMatchIn(value)) {",
                         Regex::class, property.constraints.pattern)
                     functionBuilder.addStatement("            violations.add(\"%L must match pattern: %S\")",
                         property.propertyName, property.constraints.pattern)

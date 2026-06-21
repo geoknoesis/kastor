@@ -263,7 +263,7 @@ class OntologyWrapperGenerator(
                 property.pattern?.let { pat ->
                     functionBuilder.addCode("\n")
                     functionBuilder.addStatement("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement("  if (!%T(%S).matches(lit.lexical)) violations.add(ShaclViolation(", Regex::class, pat)
+                    functionBuilder.addStatement("  if (!%T(%S).containsMatchIn(lit.lexical)) violations.add(ShaclViolation(", Regex::class, pat)
                     violationTail("pattern", pred, "pattern $pat violated")
                     functionBuilder.addStatement("}")
                 }

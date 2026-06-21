@@ -29,7 +29,7 @@ internal object EmbeddedValidationCompileCheck {
 
         // sh:pattern
         KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri("http://example.org/id")).forEach { lit ->
-            if (!Regex("DOC-[0-9]+").matches(lit.lexical)) violations.add(ShaclViolation(
+            if (!Regex("DOC-[0-9]+").containsMatchIn(lit.lexical)) violations.add(ShaclViolation(
                 focusNode = rdf.node as RdfResource,
                 shapeIri = SHACL.NodeShape,
                 constraintIri = SHACL.pattern,

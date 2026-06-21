@@ -504,10 +504,10 @@ private fun addImmediateValidation(
     if (property.constraints.pattern != null) {
         val errorMessage = "${property.propertyName} must match pattern: ${property.constraints.pattern}"
         val statement = if (indent.isEmpty()) {
-            CodeBlock.of("require(%T(%S).matches(%L)) { %S }",
+            CodeBlock.of("require(%T(%S).containsMatchIn(%L)) { %S }",
                 Regex::class, property.constraints.pattern, valueVar, errorMessage)
         } else {
-            CodeBlock.of("%S require(%T(%S).matches(%L)) { %S }",
+            CodeBlock.of("%S require(%T(%S).containsMatchIn(%L)) { %S }",
                 indent, Regex::class, property.constraints.pattern, valueVar, errorMessage)
         }
         functionBuilder.addCode(statement)
