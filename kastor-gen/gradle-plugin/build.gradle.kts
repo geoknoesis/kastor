@@ -21,7 +21,7 @@ dependencies {
 
     // Testing
     testImplementation(libs.kotlin.test)
-    testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
     testImplementation("org.gradle:gradle-tooling-api:8.0")
     testImplementation("org.gradle:gradle-test-kit:8.0")
 }
