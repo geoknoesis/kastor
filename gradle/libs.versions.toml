@@ -13,7 +13,7 @@ djlTokenizers = "0.28.0"
 jmhGradle = "0.7.2"
 jmh = "1.37"
 koog = "0.8.0"
-kotlinxSerializationJson = "1.8.1"
+kotlinxSerializationJson = "1.11.0"
 assertj = "3.27.3"
 dependencyAnalysis = "3.12.0"
 

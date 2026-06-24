@@ -25,7 +25,7 @@ dependencies {
   implementation("com.squareup:kotlinpoet-ksp:2.2.0")
   
   // JSON serialization for JSON-LD context parsing
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
   
   // Optional: Jena for compile-time schema parsing
   implementation(libs.jena.arq)
