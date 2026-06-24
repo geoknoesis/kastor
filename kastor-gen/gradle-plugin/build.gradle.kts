@@ -17,7 +17,7 @@ dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:${libs.versions.ksp.get()}")
     
     // KotlinPoet (transitive from processor, but needed for FileSpec)
-    implementation("com.squareup:kotlinpoet:2.2.0")
+    implementation("com.squareup:kotlinpoet:2.3.0")
 
     // Testing
     testImplementation(libs.kotlin.test)
