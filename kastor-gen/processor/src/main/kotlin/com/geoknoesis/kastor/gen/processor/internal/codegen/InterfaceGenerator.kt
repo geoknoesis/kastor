@@ -28,27 +28,43 @@ class InterfaceGenerator(
      * @param packageName The target package name
      * @return Map of interface names to generated FileSpec
      */
-    fun generateInterfaces(ontologyModel: OntologyModel, packageName: String): Map<String, FileSpec> {
+    /**
+     * @param fallbackUnshapedToIri when true, object properties whose `sh:class` target has no shape in
+     *   [ontologyModel] fall back to the IRI (String) instead of a dangling reference. Requires the model
+     *   to contain ALL shapes (the Gradle task passes the full model); leave false for partial models.
+     */
+    fun generateInterfaces(
+        ontologyModel: OntologyModel,
+        packageName: String,
+        fallbackUnshapedToIri: Boolean = false,
+    ): Map<String, FileSpec> {
         val interfaces = mutableMapOf<String, FileSpec>()
-        
+
+        // The set of interface names that WILL be generated — used to fall back to IRI (String) for any
+        // sh:class target that has no shape of its own. Null = do not filter (legacy / partial models).
+        val knownTypes: Set<String>? =
+            if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.extractInterfaceName(it.targetClass) }.toSet()
+            else null
+
         // Sort shapes by targetClass IRI to ensure deterministic output
         ontologyModel.shapes
             .sortedBy { it.targetClass }
             .forEach { shape ->
                 val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
-                val fileSpec = generateInterface(shape, ontologyModel.context, packageName)
+                val fileSpec = generateInterface(shape, ontologyModel.context, packageName, knownTypes)
                 interfaces[interfaceName] = fileSpec
-                
+
                 logger.info("Generated interface: $interfaceName")
             }
-        
+
         return interfaces
     }
 
     private fun generateInterface(
         shape: ShaclShape,
         context: JsonLdContext,
-        packageName: String
+        packageName: String,
+        knownTypes: Set<String>?,
     ): FileSpec {
         val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
         
@@ -78,7 +94,7 @@ class InterfaceGenerator(
         shape.properties
             .sortedBy { it.path }
             .forEach { property ->
-                interfaceBuilder.addProperty(generateProperty(property, context))
+                interfaceBuilder.addProperty(generateProperty(property, context, packageName, knownTypes))
             }
         
         fileBuilder.addType(interfaceBuilder.build())
@@ -87,9 +103,11 @@ class InterfaceGenerator(
 
     private fun generateProperty(
         property: ShaclProperty,
-        @Suppress("UNUSED_PARAMETER") context: JsonLdContext
+        context: JsonLdContext,
+        packageName: String,
+        knownTypes: Set<String>?,
     ): PropertySpec {
-        val kotlinType = TypeMapper.toKotlinType(property, context)
+        val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = packageName, knownTypes = knownTypes)
         val propertyName = NamingUtils.toValidKotlinIdentifier(property.name)
         
         val kdoc = buildString {
@@ -130,7 +148,7 @@ class InterfaceGenerator(
         if (!isList) {
             if (min != null && min > 0) {
                 annotations.add(
-                    AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "NotNull"))
+                    AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "NotNull"))
                         .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
                         .build()
                 )
@@ -138,13 +156,13 @@ class InterfaceGenerator(
         } else {
             if (min != null && min > 0) {
                 annotations.add(
-                    AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "NotEmpty"))
+                    AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "NotEmpty"))
                         .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
                         .build()
                 )
             }
             if (min != null || max != null) {
-                val annotationBuilder = AnnotationSpec.builder(ClassName(validationPackage(), "constraints", "Size"))
+                val annotationBuilder = AnnotationSpec.builder(ClassName("${validationPackage()}.constraints", "Size"))
                     .useSiteTarget(AnnotationSpec.UseSiteTarget.GET)
                 min?.let { annotationBuilder.addMember("min = %L", it) }
                 max?.let { annotationBuilder.addMember("max = %L", it) }

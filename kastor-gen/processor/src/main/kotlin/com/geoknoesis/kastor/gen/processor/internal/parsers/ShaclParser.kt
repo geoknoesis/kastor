@@ -127,8 +127,15 @@ class ShaclParser(private val logger: KSPLogger) {
             val maxInclusive = propertyShape.getProperty(maxInclusiveProp)?.double
             val minExclusive = propertyShape.getProperty(minExclusiveProp)?.double
             val maxExclusive = propertyShape.getProperty(maxExclusiveProp)?.double
-            val hasValue = propertyShape.getProperty(hasValueProp)?.let { 
-                it.string ?: it.resource?.uri 
+            // sh:hasValue may be an IRI (e.g. a combination-matrix pin like sbe:differentEvents) OR a
+            // literal. Inspect the node kind — calling Statement.getString() on a non-literal throws
+            // LiteralRequiredException, which previously aborted parsing of every remaining shape.
+            val hasValue = propertyShape.getProperty(hasValueProp)?.`object`?.let { node ->
+                when {
+                    node.isURIResource -> node.asResource().uri
+                    node.isLiteral -> node.asLiteral().lexicalForm
+                    else -> null
+                }
             }
             val qualifiedValueShape = propertyShape.getProperty(qualifiedValueShapeProp)?.resource?.uri
             val qualifiedMinCount = propertyShape.getProperty(qualifiedMinCountProp)?.int

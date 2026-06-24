@@ -247,37 +247,36 @@ abstract class OntologyGenerationTask : DefaultTask() {
         // Create output directories
         val outputDir = outputDirectory.get().asFile
         
-        // Generate interfaces and wrappers for each shape
+        // Generate against the FULL model once, so cross-type references resolve and unshaped sh:class
+        // targets fall back to IRI (String) correctly. (Previously each shape was generated in isolation,
+        // which made every object property an IRI string because no other type was "known".)
+        val fullModel = OntologyModel(shaclShapes, jsonLdContext)
+        val allInterfaces = if (generateInterfaces) interfaceGenerator.generateInterfaces(fullModel, actualInterfacePackage, fallbackUnshapedToIri = true) else emptyMap()
+        val allWrappers = if (generateWrappers) wrapperGenerator.generateWrappers(fullModel, wrapperPackage) else emptyMap()
+
+        // Write interfaces and wrappers for each shape
         shaclShapes.forEach { shape ->
-            val className = jsonLdContext.typeMappings[shape.targetClass] 
+            val className = jsonLdContext.typeMappings[shape.targetClass]
                 ?: shape.targetClass.substringAfterLast('#').substringAfterLast('/')
-            
+
             logger.info("Generating code for class: $className")
-            
+
             if (generateInterfaces) {
                 val interfaceDir = File(outputDir, actualInterfacePackage.replace('.', '/'))
                 interfaceDir.mkdirs()
-                val interfaceFileSpec = interfaceGenerator.generateInterfaces(OntologyModel(listOf(shape), jsonLdContext), actualInterfacePackage)[className]
-                val interfaceFile = File(interfaceDir, "$className.kt")
-                interfaceFileSpec?.let {
-                    interfaceFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                        it.writeTo(writer)
-                    }
+                allInterfaces[className]?.let { spec ->
+                    File(interfaceDir, "$className.kt").bufferedWriter(StandardCharsets.UTF_8).use { spec.writeTo(it) }
+                    logger.info("Generated interface: $className")
                 }
-                logger.info("Generated interface: ${interfaceFile.absolutePath}")
             }
-            
+
             if (generateWrappers) {
                 val wrapperDir = File(outputDir, wrapperPackage.replace('.', '/'))
                 wrapperDir.mkdirs()
-                val wrapperFileSpec = wrapperGenerator.generateWrappers(OntologyModel(listOf(shape), jsonLdContext), wrapperPackage)["${className}Wrapper"]
-                val wrapperFile = File(wrapperDir, "${className}Wrapper.kt")
-                wrapperFileSpec?.let {
-                    wrapperFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                        it.writeTo(writer)
-                    }
+                allWrappers["${className}Wrapper"]?.let { spec ->
+                    File(wrapperDir, "${className}Wrapper.kt").bufferedWriter(StandardCharsets.UTF_8).use { spec.writeTo(it) }
+                    logger.info("Generated wrapper: ${className}Wrapper")
                 }
-                logger.info("Generated wrapper: ${wrapperFile.absolutePath}")
             }
         }
         

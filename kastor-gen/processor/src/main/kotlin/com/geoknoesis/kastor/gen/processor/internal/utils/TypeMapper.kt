@@ -21,15 +21,32 @@ internal object TypeMapper {
      *   - [NestedMode.DATA_CLASS] → property type is the generated data class (interface name + [dataClassSuffix])
      *   - [NestedMode.IRI_ONLY]   → property type is String (IRI value, no sub-object materialisation)
      */
+    /**
+     * [knownTypes] (when non-null) is the set of interface names that will actually be generated. An
+     * `sh:class` target that is NOT in this set has no generated type (e.g. `sbe:Hypothesis`/`sbe:Analysis`,
+     * which SBEO references but does not shape), so the property falls back to the IRI (String) instead of
+     * emitting a dangling, unresolvable reference. `null` disables the check (legacy callers).
+     */
     fun toKotlinType(
         property: ShaclProperty,
         context: JsonLdContext,
         nestedMode: NestedMode = NestedMode.INTERFACE,
         dataClassSuffix: String = "",
+        objectPackage: String = "",
+        knownTypes: Set<String>? = null,
     ): TypeName {
         return when {
-            property.enumName != null -> applyCardinality(ClassName("", property.enumName), property)
-            property.targetClass != null -> mapObjectProperty(property, nestedMode, dataClassSuffix)
+            // Referenced enum/interface/data-class types are generated into [objectPackage]; qualify them
+            // so KotlinPoet does not emit an invalid default-package import (e.g. `import InformationItem`).
+            property.enumName != null -> applyCardinality(ClassName(objectPackage, property.enumName), property)
+            property.targetClass != null -> {
+                val baseName = NamingUtils.extractInterfaceName(property.targetClass!!)
+                if (knownTypes != null && nestedMode != NestedMode.IRI_ONLY && baseName !in knownTypes) {
+                    applyCardinality(String::class.asTypeName(), property) // unshaped sh:class target -> IRI
+                } else {
+                    mapObjectProperty(property, nestedMode, dataClassSuffix, objectPackage)
+                }
+            }
             else -> mapLiteralProperty(property)
         }
     }
@@ -38,11 +55,12 @@ internal object TypeMapper {
         property: ShaclProperty,
         nestedMode: NestedMode,
         dataClassSuffix: String,
+        objectPackage: String,
     ): TypeName {
         val baseName = NamingUtils.extractInterfaceName(property.targetClass!!)
         val targetType: TypeName = when (nestedMode) {
-            NestedMode.INTERFACE  -> ClassName("", baseName)
-            NestedMode.DATA_CLASS -> ClassName("", "$baseName$dataClassSuffix")
+            NestedMode.INTERFACE  -> ClassName(objectPackage, baseName)
+            NestedMode.DATA_CLASS -> ClassName(objectPackage, "$baseName$dataClassSuffix")
             NestedMode.IRI_ONLY   -> String::class.asTypeName()
         }
 
