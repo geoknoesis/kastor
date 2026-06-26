@@ -13,6 +13,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Skip embedding/semantic tests that download the all-MiniLM-L6-v2 ONNX model
+      # from HuggingFace — the model is unavailable on the CI runner. These tests are
+      # designed to run locally; they self-skip on this flag (see OopsCalibrationTest /
+      # OopsBenchmarkTest). The opt-in ONNX manual test stays off unless
+      # KASTOR_RUN_EMBEDDING_TESTS=1.
+      KASTOR_SKIP_EMBEDDING_TESTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
