@@ -16,6 +16,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 
+// Bound network waits so a slow/hostile endpoint cannot pin a thread indefinitely.
+private const val CONNECT_TIMEOUT_MS = 30_000
+private const val READ_TIMEOUT_MS = 60_000
+
 class SparqlRepository(private val endpoint: String) : RdfRepository {
     
     override val defaultGraph: RdfGraph = SparqlGraph(this)
@@ -168,6 +172,8 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/sparql-query")
             setRequestProperty("Accept", "application/sparql-results+json")
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
             doOutput = true
         }
         try {
@@ -190,6 +196,8 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/sparql-update")
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
             doOutput = true
         }
         try {
@@ -365,7 +373,7 @@ class SparqlGraph(
     
     private fun formatSubject(subject: RdfResource): String = when (subject) {
         is Iri -> iriRef(subject.value)
-        is BlankNode -> "_:${subject.id}"
+        is BlankNode -> bnodeLabel(subject.id)
     }
 
     private fun formatPredicate(predicate: Iri): String = iriRef(predicate.value)
@@ -375,7 +383,7 @@ class SparqlGraph(
             is Iri -> iriRef(obj.value)
             is Literal -> {
                 when (obj) {
-                    is LangString -> "\"${escapeLiteral(obj.lexical)}\"@${obj.lang}"
+                    is LangString -> "\"${escapeLiteral(obj.lexical)}\"@${langTag(obj.lang)}"
                     is TypedLiteral -> {
                         if (obj.datatype != XSD.string) {
                             "\"${escapeLiteral(obj.lexical)}\"^^${iriRef(obj.datatype.value)}"
@@ -387,7 +395,7 @@ class SparqlGraph(
                     is FalseLiteral -> "\"false\"^^${iriRef(XSD.boolean.value)}"
                 }
             }
-            is BlankNode -> "_:${obj.id}"
+            is BlankNode -> bnodeLabel(obj.id)
             is TripleTerm -> "<<${formatSubject(obj.triple.subject)} ${formatPredicate(obj.triple.predicate)} ${formatObject(obj.triple.obj)}>>"
             else -> throw IllegalArgumentException("Unsupported RDF term type for SPARQL formatting: ${obj.javaClass.simpleName}")
         }
@@ -399,6 +407,23 @@ class SparqlGraph(
             "IRI contains characters illegal in a SPARQL IRIREF: '$value'"
         }
         return "<$value>"
+    }
+
+    /**
+     * Validate a language tag before interpolating it into a SPARQL string. A valid
+     * BCP-47 tag only contains letters, digits and hyphens, so this both enforces
+     * well-formedness and prevents a tag from a hostile endpoint breaking out of the
+     * literal (e.g. `en" . DROP ...`).
+     */
+    private fun langTag(lang: String): String {
+        require(SAFE_LANG_TAG.matches(lang)) { "Invalid language tag for SPARQL: '$lang'" }
+        return lang
+    }
+
+    /** Validate a blank-node label so it cannot inject SPARQL (no whitespace, braces, dots-as-terminators). */
+    private fun bnodeLabel(id: String): String {
+        require(SAFE_BNODE_LABEL.matches(id)) { "Unsafe blank node label for SPARQL: '$id'" }
+        return "_:$id"
     }
 
     /** Escape a string literal's lexical form for inclusion inside `"..."` per Turtle/SPARQL rules. */
@@ -415,6 +440,10 @@ class SparqlGraph(
 
     private companion object {
         private val ILLEGAL_IRI_CHARS = setOf('<', '>', '"', '{', '}', '|', '^', '`', '\\')
+        private val SAFE_LANG_TAG = Regex("[A-Za-z]+(?:-[A-Za-z0-9]+)*")
+        // Start with letter/digit/underscore, end with letter/digit/underscore/hyphen
+        // (not a dot, which SPARQL would read as a statement terminator).
+        private val SAFE_BNODE_LABEL = Regex("[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?")
     }
 }
 

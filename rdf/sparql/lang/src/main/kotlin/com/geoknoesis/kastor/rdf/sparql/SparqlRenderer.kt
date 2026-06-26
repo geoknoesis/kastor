@@ -494,12 +494,12 @@ object SparqlRenderer {
     private fun renderTerm(term: RdfTerm): String = when (term) {
         is Var -> term.toString()
         is Iri -> term.toString()
-        is BlankNode -> term.toString()
+        is BlankNode -> "_:${bnodeLabel(term.id)}"
         is LangString -> {
             val dir = term.direction
             when (dir) {
-                null -> "\"${escapeLiteral(term.lexical)}\"@${term.lang}"
-                else -> "\"${escapeLiteral(term.lexical)}\"@${term.lang}--${dir.token}"
+                null -> "\"${escapeLiteral(term.lexical)}\"@${langTag(term.lang)}"
+                else -> "\"${escapeLiteral(term.lexical)}\"@${langTag(term.lang)}--${dir.token}"
             }
         }
         is Literal -> term.toString()
@@ -509,7 +509,30 @@ object SparqlRenderer {
     private fun renderTripleTerm(term: TripleTermPatternAst): String =
         "<<( ${renderTerm(term.subject)} ${renderTerm(term.predicate)} ${renderTerm(term.obj)} )>>"
 
-    private fun escapeLiteral(s: String): String =
-        s.replace("\\", "\\\\").replace("\"", "\\\"")
+    // Escape control characters too, not just \ and ", so a newline in a literal
+    // cannot terminate the SPARQL string and inject trailing syntax.
+    private fun escapeLiteral(s: String): String = buildString(s.length) {
+        for (c in s) when (c) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> append(c)
+        }
+    }
+
+    private fun langTag(lang: String): String {
+        require(SAFE_LANG_TAG.matches(lang)) { "Invalid language tag for SPARQL: '$lang'" }
+        return lang
+    }
+
+    private fun bnodeLabel(id: String): String {
+        require(SAFE_BNODE_LABEL.matches(id)) { "Unsafe blank node label for SPARQL: '$id'" }
+        return id
+    }
+
+    private val SAFE_LANG_TAG = Regex("[A-Za-z]+(?:-[A-Za-z0-9]+)*")
+    private val SAFE_BNODE_LABEL = Regex("[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?")
 }
 

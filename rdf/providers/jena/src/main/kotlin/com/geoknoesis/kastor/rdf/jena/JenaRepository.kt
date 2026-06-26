@@ -261,6 +261,9 @@ class JenaRepository private constructor(
         val startTime = System.currentTimeMillis()
         try {
             val jenaUpdate = org.apache.jena.update.UpdateFactory.create(query.sparql)
+            // UpdateExecutionFactory.create returns a legacy UpdateProcessor, which is
+            // not AutoCloseable and executes synchronously — there is no cursor/handle
+            // to release after execute() (unlike QueryExecution on the read paths).
             val exec = org.apache.jena.update.UpdateExecutionFactory.create(jenaUpdate, dataset)
             exec.execute()
             val executionTime = System.currentTimeMillis() - startTime

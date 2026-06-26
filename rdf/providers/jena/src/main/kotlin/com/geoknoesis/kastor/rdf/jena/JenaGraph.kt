@@ -58,13 +58,19 @@ internal class JenaGraph(val model: Model) : MutableRdfGraph {
     
     override fun getTriples(): List<RdfTriple> {
         val triples = mutableListOf<RdfTriple>()
+        // StmtIterator wraps native Jena resources and must be closed even if term
+        // conversion throws mid-iteration, otherwise TDB2 file handles/locks leak.
         val iterator: StmtIterator = model.listStatements()
-        while (iterator.hasNext()) {
-            val statement = iterator.nextStatement()
-            val subject = JenaTerms.fromNode(statement.subject) as RdfResource
-            val predicate = JenaTerms.fromNode(statement.predicate) as Iri
-            val obj = JenaTerms.fromNode(statement.`object`)
-            triples.add(RdfTriple(subject, predicate, obj))
+        try {
+            while (iterator.hasNext()) {
+                val statement = iterator.nextStatement()
+                val subject = JenaTerms.fromNode(statement.subject) as RdfResource
+                val predicate = JenaTerms.fromNode(statement.predicate) as Iri
+                val obj = JenaTerms.fromNode(statement.`object`)
+                triples.add(RdfTriple(subject, predicate, obj))
+            }
+        } finally {
+            iterator.close()
         }
         return triples
     }

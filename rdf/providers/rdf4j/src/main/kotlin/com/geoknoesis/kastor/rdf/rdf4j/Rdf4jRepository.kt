@@ -120,6 +120,10 @@ class Rdf4jRepository(
     }
     
     private val valueFactory: ValueFactory = SimpleValueFactory.getInstance()
+
+    // Guards against double close() (e.g. two threads, or close() inside a use{}
+    // after an explicit close) shutting the repository down twice.
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     
     override val defaultGraph: RdfGraph = Rdf4jGraph(connection)
     
@@ -356,7 +360,7 @@ class Rdf4jRepository(
         return !wasEmpty
     }
     
-    override fun isClosed(): Boolean = !repository.isInitialized || !connection.isOpen
+    override fun isClosed(): Boolean = closed.get() || !repository.isInitialized || !connection.isOpen
     
     override fun getCapabilities(): ProviderCapabilities {
         return ProviderCapabilities(
@@ -370,6 +374,7 @@ class Rdf4jRepository(
     }
     
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         if (connection.isOpen) {
             connection.close()
         }

@@ -169,10 +169,13 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
 
         override fun run() {
             if (!closed) {
-                System.err.println(
-                    "WARNING: MemoryRepository was not closed properly! " +
-                        "Always use 'use' block or call 'close()' explicitly. " +
-                        "This is a resource leak."
+                // Route through SLF4J so the warning reaches the application's log
+                // pipeline instead of raw stderr. The logger is already class-loaded,
+                // so it is safe to use from the Cleaner thread.
+                logger.warn(
+                    "MemoryRepository was not closed properly! " +
+                        "Always use a 'use' block or call 'close()' explicitly. " +
+                        "This is a resource leak.",
                 )
             }
         }
@@ -180,6 +183,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
 
     private companion object {
         val cleaner: Cleaner = Cleaner.create()
+        val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(MemoryRepository::class.java)
     }
     
     override fun getCapabilities(): ProviderCapabilities {
