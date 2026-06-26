@@ -30,6 +30,15 @@ class Conformer(
     val label: String,
     private val provider: RdfProvider,
     private val newDatasetRepo: () -> RdfRepository,
+    /**
+     * Classifies a parse failure as a *known upstream limitation* of the provider
+     * rather than a Kastor defect. When it returns a non-null reason for a thrown
+     * exception, the runner reports the test as **skipped** (JUnit assumption)
+     * instead of failed — keeping the suite honest without masking regressions
+     * (any failure it does **not** recognise still fails). Defaults to "never",
+     * so providers like Jena are unaffected.
+     */
+    val knownLimitation: (W3cTestCase, Throwable) -> String? = { _, _ -> null },
 ) {
     fun parseGraph(stream: InputStream, formatName: String, baseIri: String? = null): MutableRdfGraph =
         provider.parseGraph(stream, formatName, baseIri)
@@ -166,7 +175,21 @@ object Rdf12ConformanceRunner {
         }
 
     private fun runPositive(conformer: Conformer, case: W3cTestCase) {
-        parseAction(conformer, case)
+        runCatching { parseAction(conformer, case) }.exceptionOrNull()?.let { ex ->
+            skipIfKnownLimitation(conformer, case, ex)
+            throw ex
+        }
+    }
+
+    /**
+     * If [ex] is a provider-recognised upstream limitation, abort the test as a
+     * skipped assumption (which never returns); otherwise return so the caller
+     * rethrows it as a genuine failure.
+     */
+    private fun skipIfKnownLimitation(conformer: Conformer, case: W3cTestCase, ex: Throwable) {
+        conformer.knownLimitation(case, ex)?.let { reason ->
+            Assumptions.assumeTrue(false, "known ${conformer.label} limitation: $reason (${case.iri})")
+        }
     }
 
     private fun runNegative(conformer: Conformer, case: W3cTestCase) {
@@ -204,8 +227,15 @@ object Rdf12ConformanceRunner {
     private fun runEval(conformer: Conformer, case: W3cTestCase) {
         val expectedPath = case.result
             ?: error("eval test missing mf:result: ${case.iri}")
-        val actual = parseAction(conformer, case)
-        val expected = parseExpected(conformer, case, expectedPath)
+        // Both the action and the expected-result file may use RDF 1.2 syntax a
+        // provider cannot parse, so classify failures from either as a known
+        // upstream limitation rather than a Kastor defect.
+        val (actual, expected) = runCatching {
+            parseAction(conformer, case) to parseExpected(conformer, case, expectedPath)
+        }.getOrElse { ex ->
+            skipIfKnownLimitation(conformer, case, ex)
+            throw ex
+        }
         val ok = actual.isIsomorphicTo(expected)
         check(ok) {
             "eval mismatch for ${case.iri}\n" +
