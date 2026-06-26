@@ -2,10 +2,16 @@ package com.geoknoesis.kastor.ontoquality.embed
 
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import kotlin.math.sqrt
 
-@DisabledIfEnvironmentVariable(named = "KASTOR_SKIP_EMBEDDING_TESTS", matches = "1")
+/**
+ * Manual test: downloads the all-MiniLM-L6-v2 ONNX model from HuggingFace and runs
+ * real inference, so it is opt-in (skipped by default, including CI, where the model
+ * download is unavailable). Run with `KASTOR_RUN_EMBEDDING_TESTS=1`. Mirrors the
+ * opt-in gating used by the OOPS benchmark tests.
+ */
+@EnabledIfEnvironmentVariable(named = "KASTOR_RUN_EMBEDDING_TESTS", matches = "1")
 class OnnxEmbeddingModelManualTest {
 
     @Test
