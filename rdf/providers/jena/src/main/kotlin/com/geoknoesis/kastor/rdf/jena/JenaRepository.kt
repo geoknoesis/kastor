@@ -344,21 +344,11 @@ class JenaRepository private constructor(
         }
     }
     
-    private fun convertNode(node: RDFNode): RdfTerm {
-        return when (node) {
-            is Resource -> convertResource(node)
-            is Literal -> {
-                if (node.language.isNotEmpty()) {
-                    Literal(node.lexicalForm, node.language)
-                } else if (node.datatype != null) {
-                    Literal(node.lexicalForm, Iri(node.datatype.uri))
-                } else {
-                    Literal(node.lexicalForm)
-                }
-            }
-            else -> throw IllegalArgumentException("Unsupported RDF node type: ${node.javaClass.simpleName}")
-        }
-    }
+    // Delegate to the shared JenaTerms.fromNode so SPARQL results preserve the same
+    // fidelity as graph reads: base direction on language literals, triple terms
+    // (RDF 1.2), and canonical typed-literal mapping. The previous local conversion
+    // dropped direction and could not represent triple-term values.
+    private fun convertNode(node: RDFNode): RdfTerm = JenaTerms.fromNode(node)
 }
 
 

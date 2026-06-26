@@ -46,6 +46,16 @@ internal object JenaTerms {
         Node::class.java.getMethod("getLiteralBaseDirection")
     }.getOrNull()
 
+    // Triple-term reflection handles resolved once at class load instead of per call.
+    // fromNode() runs these for every node in a graph/result, so a per-call
+    // getMethod() (≈100× slower than an invoke) was a real hot-path cost.
+    private val isTripleTermMethod: java.lang.reflect.Method? =
+        runCatching { Node::class.java.getMethod("isTripleTerm") }.getOrNull()
+    private val isNodeTripleMethod: java.lang.reflect.Method? =
+        runCatching { Node::class.java.getMethod("isNodeTriple") }.getOrNull()
+    private val getTripleMethod: java.lang.reflect.Method? =
+        runCatching { Node::class.java.getMethod("getTriple") }.getOrNull()
+
     /**
      * Converts a Kastor RDF term to a Jena RDFNode.
      */
@@ -204,18 +214,16 @@ internal object JenaTerms {
         return Direction.fromToken(value.toString())
     }
 
-    private fun Node.isTripleTermSafe(): Boolean = runCatching {
+    private fun Node.isTripleTermSafe(): Boolean {
         // Jena 5.4+: Node.isTripleTerm(); fallback to the legacy isNodeTriple().
-        Node::class.java.getMethod("isTripleTerm").invoke(this) as Boolean
-    }.getOrElse {
-        runCatching {
-            Node::class.java.getMethod("isNodeTriple").invoke(this) as Boolean
-        }.getOrDefault(false)
+        isTripleTermMethod?.let { m -> runCatching { m.invoke(this) as Boolean }.getOrNull()?.let { return it } }
+        isNodeTripleMethod?.let { m -> runCatching { m.invoke(this) as Boolean }.getOrNull()?.let { return it } }
+        return false
     }
 
-    private fun Node.getTripleTermSafe(): Triple = runCatching {
-        Node::class.java.getMethod("getTriple").invoke(this) as Triple
-    }.getOrThrow()
+    private fun Node.getTripleTermSafe(): Triple =
+        (getTripleMethod ?: error("Jena Node.getTriple() is unavailable on this Jena version"))
+            .invoke(this) as Triple
 
     /**
      * Converts a Kastor RDF resource to a Jena Resource. RDF 1.2 forbids triple
