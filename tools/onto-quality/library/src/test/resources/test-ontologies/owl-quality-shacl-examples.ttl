@@ -1,0 +1,269 @@
+# ============================================================================
+#  OWL Quality — usage examples
+#
+#  A small ontology designed to exercise the SHACL shapes in
+#  owl-quality-shacl.ttl. The file deliberately contains both clean entities
+#  (which should pass) and broken ones (which should each trigger specific
+#  shapes). Loading both files together in a SHACL engine produces one
+#  validation result per intended violation.
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+@prefix ex:     <http://example.org/zoo/> .
+
+# ----------------------------------------------------------------------------
+#  Ontology header — DELIBERATELY MINIMAL to trigger P09
+# ----------------------------------------------------------------------------
+
+<http://example.org/zoo>
+    a               owl:Ontology .
+    # missing rdfs:label, rdfs:comment, dct:creator, versionIRI, license
+
+# ----------------------------------------------------------------------------
+#  A few clean classes (these should not trigger most shapes)
+# ----------------------------------------------------------------------------
+
+ex:Animal
+    a                  owl:Class ;
+    rdfs:label         "Animal"@en ;
+    rdfs:comment       "A living creature able to move voluntarily."@en .
+
+ex:Mammal
+    a                  owl:Class ;
+    rdfs:label         "Mammal"@en ;
+    rdfs:comment       "A warm-blooded vertebrate."@en ;
+    rdfs:subClassOf    ex:Animal .
+
+# ----------------------------------------------------------------------------
+#  Broken classes — each triggers specific shapes
+# ----------------------------------------------------------------------------
+
+# ---- P08: class without rdfs:label / rdfs:comment ---------------------------
+
+ex:Reptile
+    a                  owl:Class ;
+    rdfs:subClassOf    ex:Animal .
+    # missing label, missing definition
+
+# ---- Naming convention violation (P22) -------------------------------------
+
+ex:bird
+    a                  owl:Class ;
+    rdfs:label         "Bird"@en ;
+    rdfs:comment       "A feathered vertebrate."@en ;
+    rdfs:subClassOf    ex:Animal .
+
+ex:fish_species
+    a                  owl:Class ;
+    rdfs:label         "Fish species"@en ;
+    rdfs:comment       "A species of fish."@en ;
+    rdfs:subClassOf    ex:Animal .
+
+# ---- Two same-language labels on one class --------------------------------
+
+ex:Whale
+    a                  owl:Class ;
+    rdfs:label         "Whale"@en , "Cetacean"@en ;
+    rdfs:comment       "A large marine mammal."@en ;
+    rdfs:subClassOf    ex:Mammal .
+
+# ---- P27: equivalentClass paired with subClassOf for the same pair --------
+
+ex:Carnivore
+    a                  owl:Class ;
+    rdfs:label         "Carnivore"@en ;
+    rdfs:comment       "A meat-eating animal."@en ;
+    owl:equivalentClass ex:MeatEater ;
+    rdfs:subClassOf    ex:MeatEater .   # redundant
+
+ex:MeatEater
+    a                  owl:Class ;
+    rdfs:label         "Meat eater"@en ;
+    rdfs:comment       "Equivalent to Carnivore."@en .
+
+# ---- P06: subClassOf cycle ------------------------------------------------
+
+ex:CycleClassA
+    a                  owl:Class ;
+    rdfs:label         "Cycle A"@en ;
+    rdfs:comment       "First class in a cycle."@en ;
+    rdfs:subClassOf    ex:CycleClassB .
+
+ex:CycleClassB
+    a                  owl:Class ;
+    rdfs:label         "Cycle B"@en ;
+    rdfs:comment       "Second class in a cycle."@en ;
+    rdfs:subClassOf    ex:CycleClassA .
+
+# ---- P04: orphan class — no relations to anything else -------------------
+
+ex:OrphanClass
+    a                  owl:Class ;
+    rdfs:label         "Orphan"@en ;
+    rdfs:comment       "Not connected to any other class."@en .
+
+# ----------------------------------------------------------------------------
+#  Object properties
+# ----------------------------------------------------------------------------
+
+# ---- A clean object property ----------------------------------------------
+
+ex:eats
+    a                  owl:ObjectProperty ;
+    rdfs:label         "eats"@en ;
+    rdfs:comment       "Relates an animal to its food."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal .
+
+# ---- P11: object property without domain or range -------------------------
+
+ex:livesNear
+    a                  owl:ObjectProperty ;
+    rdfs:label         "lives near"@en ;
+    rdfs:comment       "Geographic proximity."@en .
+    # missing rdfs:domain and rdfs:range
+
+# ---- P19: multiple rdfs:domain values -------------------------------------
+
+ex:hasHabitat
+    a                  owl:ObjectProperty ;
+    rdfs:label         "has habitat"@en ;
+    rdfs:comment       "Where an animal lives."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:domain        ex:Plant ;   # second domain (note: also untyped Plant -> P34)
+    rdfs:range         ex:Habitat .
+
+# ---- ObjectProperty whose range is a datatype (smell) ---------------------
+
+ex:hasName
+    a                  owl:ObjectProperty ;
+    rdfs:label         "has name"@en ;
+    rdfs:comment       "Should probably be a DatatypeProperty."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         xsd:string .
+
+# ---- owl:Thing as domain (P-convention) -----------------------------------
+
+ex:vagueProperty
+    a                  owl:ObjectProperty ;
+    rdfs:label         "vague property"@en ;
+    rdfs:comment       "Domain is owl:Thing — equivalent to no domain."@en ;
+    rdfs:domain        owl:Thing ;
+    rdfs:range         ex:Animal .
+
+# ---- P25: property declared as its own owl:inverseOf -----------------------
+
+ex:sameSpecies
+    a                  owl:ObjectProperty ;
+    rdfs:label         "same species as"@en ;
+    rdfs:comment       "Should be SymmetricProperty, not self-inverse."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal ;
+    owl:inverseOf      ex:sameSpecies .
+
+# ---- P26: SymmetricProperty with an explicit inverseOf --------------------
+
+ex:related
+    a                  owl:ObjectProperty , owl:SymmetricProperty ;
+    rdfs:label         "related to"@en ;
+    rdfs:comment       "Symmetric but also declares an inverse — contradiction."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal ;
+    owl:inverseOf      ex:sameSpecies .
+
+# ---- Property hierarchy cycle ----------------------------------------------
+
+ex:propX
+    a                  owl:ObjectProperty ;
+    rdfs:label         "property X"@en ;
+    rdfs:comment       "First half of a property cycle."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal ;
+    rdfs:subPropertyOf ex:propY .
+
+ex:propY
+    a                  owl:ObjectProperty ;
+    rdfs:label         "property Y"@en ;
+    rdfs:comment       "Second half of a property cycle."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal ;
+    rdfs:subPropertyOf ex:propX .
+
+# ---- Multiple rdfs:range (P19) --------------------------------------------
+
+ex:livesIn
+    a                  owl:ObjectProperty ;
+    rdfs:label         "lives in"@en ;
+    rdfs:comment       "Animal-to-region property with multiple ranges (mis-modelled)."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Habitat ;
+    rdfs:range         ex:Region .   # second range — INTERSECTION, almost never intended
+
+# ---- Property name not lowerCamelCase (P22) --------------------------------
+
+ex:Has_Predator
+    a                  owl:ObjectProperty ;
+    rdfs:label         "has predator"@en ;
+    rdfs:comment       "Bad: starts uppercase AND uses underscore."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         ex:Animal .
+
+# ----------------------------------------------------------------------------
+#  Datatype properties
+# ----------------------------------------------------------------------------
+
+ex:ageInYears
+    a                  owl:DatatypeProperty ;
+    rdfs:label         "age in years"@en ;
+    rdfs:comment       "An animal's age."@en ;
+    rdfs:domain        ex:Animal ;
+    rdfs:range         xsd:integer .
+
+# ---- Datatype property without rdfs:range (P11) ---------------------------
+
+ex:weight
+    a                  owl:DatatypeProperty ;
+    rdfs:label         "weight"@en ;
+    rdfs:comment       "Weight in kg."@en ;
+    rdfs:domain        ex:Animal .
+    # missing rdfs:range
+
+# ----------------------------------------------------------------------------
+#  P34: an IRI used as a class but never declared as one
+# ----------------------------------------------------------------------------
+
+# ex:Plant appears in rdfs:domain of ex:hasHabitat above, but has no
+# rdf:type owl:Class declaration. The UntypedClassShape should fire.
+# Same for ex:Habitat (used as rdfs:range of ex:hasHabitat).
+
+# ----------------------------------------------------------------------------
+#  P35: an IRI used as a predicate but not declared as a property
+# ----------------------------------------------------------------------------
+
+ex:Lion
+    a                  owl:Class ;
+    rdfs:label         "Lion"@en ;
+    rdfs:comment       "Panthera leo."@en ;
+    rdfs:subClassOf    ex:Mammal ;
+    ex:undeclaredProp  "yes" .         # ex:undeclaredProp has no type triple
+
+# ----------------------------------------------------------------------------
+#  Deprecation hygiene
+# ----------------------------------------------------------------------------
+
+ex:OldClass
+    a                  owl:Class ;
+    rdfs:label         "Old Class"@en ;
+    rdfs:comment       "Deprecated."@en ;
+    owl:deprecated     true .
+
+ex:NewClass
+    a                  owl:Class ;
+    rdfs:label         "New Class"@en ;
+    rdfs:comment       "Replaces OldClass but still subclasses it (smell)."@en ;
+    rdfs:subClassOf    ex:OldClass .

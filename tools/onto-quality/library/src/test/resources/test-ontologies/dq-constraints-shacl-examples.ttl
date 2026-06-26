@@ -1,0 +1,111 @@
+# ============================================================================
+#  Usage examples for the DQ Constraints SHACL library
+#
+#  Where SHACL-Core can express a constraint compactly, the examples use it
+#  directly — that's the SHACL idiom and runs in any SHACL-Core engine
+#  without the SPARQL Extensions module. The parameterised components from
+#  this library are reserved for constraints that SHACL-Core cannot express
+#  natively (checksums, cross-resource lookups, dynamic value lists).
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix dqcsh:  <http://semwebquality.org/ontologies/dq-constraints-shacl#> .
+@prefix ex:     <http://example.org/> .
+
+# ---------- Example 1: zip code must be 5 digits ----------------------------
+# Native SHACL: sh:pattern.
+
+ex:AddressShape
+    a               sh:NodeShape ;
+    sh:targetClass  ex:Address ;
+    sh:property     [ sh:path ex:zipCode ;
+                      sh:pattern "^[0-9]{5}$" ] .
+
+# ---------- Example 2: EAN-13 checksum on a Product -------------------------
+# SHACL-Core cannot express checksums (no arithmetic on substrings).
+# Use the parameterised component.
+
+ex:ProductShape
+    a                         sh:NodeShape ;
+    sh:targetClass            ex:Product ;
+    dqcsh:ean13All_property   ex:ean .
+
+# ---------- Example 3: price must be > 0 and < 1 000 000 --------------------
+# Native SHACL: sh:minExclusive + sh:maxExclusive on one property shape.
+
+ex:PricedThingShape
+    a               sh:NodeShape ;
+    sh:targetClass  ex:PricedThing ;
+    sh:property     [ sh:path ex:price ;
+                      sh:minExclusive 0 ;
+                      sh:maxExclusive 1000000 ] .
+
+# ---------- Example 4: every Person must have a name ------------------------
+# Native SHACL: sh:minCount.
+
+ex:PersonShape
+    a               sh:NodeShape ;
+    sh:targetClass  ex:Person ;
+    sh:property     [ sh:path ex:name ;
+                      sh:minCount 1 ] .
+
+# ---------- Example 5: unique email across all Customers --------------------
+# SHACL 1.2 Core does not yet have a uniqueness-across-class constraint
+# component (sh:uniqueLang only covers per-focus-node uniqueness).
+# Use the parameterised component.
+
+ex:CustomerShape
+    a                                sh:NodeShape ;
+    sh:targetClass                   ex:Customer ;
+    dqcsh:uniqueValueClass_class     ex:Customer ;
+    dqcsh:uniqueValueClass_property  ex:email .
+
+# ---------- Example 6a: country code from a small static list ---------------
+# Native SHACL: sh:in.
+
+ex:OrderShape
+    a               sh:NodeShape ;
+    sh:targetClass  ex:Order ;
+    sh:property     [ sh:path ex:countryCode ;
+                      sh:in ( "DE" "FR" "US" "GB" "JP" ) ] .
+
+# ---------- Example 6b: country code from a dynamic reference graph ---------
+# When the legal-value list is itself RDF data (e.g. instances of a
+# Country class loaded from elsewhere), SHACL-Core has no native answer.
+# Use the parameterised component.
+
+ex:OrderShapeRef
+    a                                   sh:NodeShape ;
+    sh:targetClass                      ex:Order ;
+    dqcsh:legalClass_class              ex:Order ;
+    dqcsh:legalClass_property           ex:countryCode ;
+    dqcsh:legalClass_referenceClass     ex:Country ;
+    dqcsh:legalClass_referenceProperty  ex:iso3166Alpha2 .
+
+# ---------- Example 7: start date must be before end date -------------------
+# Native SHACL: sh:lessThan (compares the property at sh:path with the
+# values of the named property on the same focus node).
+
+ex:EventShape
+    a               sh:NodeShape ;
+    sh:targetClass  ex:Event ;
+    sh:property     [ sh:path ex:startDate ;
+                      sh:lessThan ex:endDate ] .
+
+# ---------- Example 8: functional dependency country+state vs. trusted list -
+# SHACL-Core has no cross-resource pair lookup. Use the parameterised
+# component: every (country, state) pair on an Address must also occur as a
+# (countryCode, stateCode) pair on some CountryStatePair instance.
+
+ex:USAddressShape
+    a                                        sh:NodeShape ;
+    sh:targetClass                           ex:Address ;
+    dqcsh:fdTrustedClass_class               ex:Address ;
+    dqcsh:fdTrustedClass_property1           ex:country ;
+    dqcsh:fdTrustedClass_property2           ex:state ;
+    dqcsh:fdTrustedClass_referenceClass      ex:CountryStatePair ;
+    dqcsh:fdTrustedClass_referenceProperty1  ex:countryCode ;
+    dqcsh:fdTrustedClass_referenceProperty2  ex:stateCode .

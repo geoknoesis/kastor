@@ -698,3 +698,9 @@ replay_pid*.log
 **/bin/main/
 **/bin/test/
 **/bin/jmh/
+
+# The broad `test-*` rule (auto-generated, ~line 646) wrongly ignores committed test
+# fixtures under src/test/resources/test-ontologies, so CI's clean checkout lacked them
+# and QualityChecker tests failed. Re-include them.
+!**/src/test/resources/test-ontologies/
+!**/src/test/resources/test-ontologies/**

@@ -1,0 +1,158 @@
+# ============================================================================
+#  SKOS Validation — usage examples
+#
+#  Loading this file together with skos-validation-shacl.ttl in a SHACL
+#  engine should produce one violation per "inconsistent" example below.
+#  The consistent examples should pass.
+# ============================================================================
+
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex:     <http://example.org/taxonomy/> .
+
+# ----------------------------------------------------------------------------
+#  A consistent mini-taxonomy
+# ----------------------------------------------------------------------------
+
+ex:Animals
+    a                    skos:ConceptScheme ;
+    rdfs:label           "Animal taxonomy (example)" ;
+    skos:hasTopConcept   ex:Vertebrate , ex:Invertebrate .
+
+ex:Vertebrate
+    a                    skos:Concept ;
+    skos:topConceptOf    ex:Animals ;
+    skos:prefLabel       "Vertebrate"@en , "Vertebré"@fr ;
+    skos:altLabel        "Animal with backbone"@en ;
+    skos:narrower        ex:Mammal , ex:Bird ;
+    skos:notation        "V001" .
+
+ex:Invertebrate
+    a                    skos:Concept ;
+    skos:topConceptOf    ex:Animals ;
+    skos:prefLabel       "Invertebrate"@en ;
+    skos:related         ex:Vertebrate ;  # symmetric counterpart asserted below
+    skos:notation        "V002" .
+
+ex:Vertebrate skos:related ex:Invertebrate .  # symmetric counterpart
+
+ex:Mammal
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:broader         ex:Vertebrate ;
+    skos:prefLabel       "Mammal"@en ;
+    skos:notation        "V001.01" .
+
+ex:Bird
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:broader         ex:Vertebrate ;
+    skos:prefLabel       "Bird"@en ;
+    skos:notation        "V001.02" .
+
+# ----------------------------------------------------------------------------
+#  Examples of inconsistent data — each triggers a specific shape
+# ----------------------------------------------------------------------------
+
+# ---- S9 violation: a resource that is both Concept and ConceptScheme -------
+
+ex:BadDualType
+    a                    skos:Concept , skos:ConceptScheme ;
+    skos:prefLabel       "Schizophrenic resource"@en .
+
+# ---- S13 violation: same string is both prefLabel and altLabel -------------
+
+ex:BadOverlappingLabels
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Cat"@en ;
+    skos:altLabel        "Cat"@en .
+
+# ---- S14 violation: two prefLabels in the same language --------------------
+
+ex:BadTwoPrefLabels
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Dog"@en , "Canine"@en .
+
+# ---- Convention: empty label string ----------------------------------------
+
+ex:BadEmptyLabel
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       ""@en .
+
+# ---- Convention: trailing whitespace in label ------------------------------
+
+ex:BadWhitespaceLabel
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       " Reptile "@en .
+
+# ---- S27 violation: same pair are related AND broader ----------------------
+
+ex:BadRelatedAndBroader
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Felidae"@en ;
+    skos:broader         ex:Mammal ;
+    skos:related         ex:Mammal .  # clash: associative + hierarchical to same target
+
+# ---- Convention: cycle in skos:broader -------------------------------------
+
+ex:BadCycleA
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "CycleA"@en ;
+    skos:broader         ex:BadCycleB .
+
+ex:BadCycleB
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "CycleB"@en ;
+    skos:broader         ex:BadCycleA .
+
+# ---- S46 violation: exactMatch and broadMatch to same target ---------------
+
+ex:BadConflictingMatch
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Pelican"@en ;
+    skos:exactMatch      <http://other.example/Pelican> ;
+    skos:broadMatch      <http://other.example/Pelican> .
+
+# ---- Convention: notation reused within one scheme -------------------------
+
+ex:BadNotationDup1
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Frog"@en ;
+    skos:notation        "DUP" .
+
+ex:BadNotationDup2
+    a                    skos:Concept ;
+    skos:inScheme        ex:Animals ;
+    skos:prefLabel       "Toad"@en ;
+    skos:notation        "DUP" .
+
+# ---- Convention: orphan concept (no scheme membership) ---------------------
+
+ex:OrphanConcept
+    a                    skos:Concept ;
+    skos:prefLabel       "Wandering Concept"@en .
+
+# ---- S6 violation: hasTopConcept points at a non-Concept -------------------
+
+ex:BadScheme
+    a                    skos:ConceptScheme ;
+    rdfs:label           "Misconfigured scheme" ;
+    skos:hasTopConcept   "Vertebrate" .   # literal where a Concept is required
+
+# ---- Convention: an OrderedCollection without memberList -------------------
+
+ex:BadOrderedCollection
+    a                    skos:OrderedCollection ;
+    skos:prefLabel       "Top 5 vertebrates"@en ;
+    skos:member          ex:Mammal , ex:Bird .   # but where is memberList?
