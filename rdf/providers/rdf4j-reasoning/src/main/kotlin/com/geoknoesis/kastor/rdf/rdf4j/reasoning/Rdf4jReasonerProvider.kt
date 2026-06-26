@@ -8,6 +8,9 @@ import org.eclipse.rdf4j.model.Resource
 import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.repository.sail.SailRepository
+import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer
+import org.eclipse.rdf4j.sail.memory.MemoryStore
 
 class Rdf4jReasonerProvider : RdfReasonerProvider {
     
@@ -150,16 +153,40 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
         )
     }
     
-    // Helper methods - simplified implementation
-    private fun createRDFSInferenceModel(model: Model): Model {
-        // For now, just return the original model
-        // In a full implementation, you would use RDF4J's inference capabilities
-        return LinkedHashModel(model)
-    }
-    
-    private fun createOWLInferenceModel(model: Model): Model {
-        // For now, just return the original model
-        return LinkedHashModel(model)
+    /**
+     * Materialize RDFS entailments by loading the data into a forward-chaining
+     * [SchemaCachingRDFSInferencer]-backed store and reading back the closure
+     * (base + inferred statements).
+     */
+    private fun createRDFSInferenceModel(model: Model): Model = runRdfsInference(model)
+
+    /**
+     * RDF4J ships RDFS-level forward chaining only (no OWL reasoner). OWL_EL is
+     * therefore approximated by RDFS entailment, which covers the
+     * subClassOf/subPropertyOf/domain/range fragment shared with OWL. Callers
+     * needing full OWL semantics should use the HermiT-backed reasoner.
+     */
+    private fun createOWLInferenceModel(model: Model): Model = runRdfsInference(model)
+
+    private fun runRdfsInference(model: Model): Model {
+        val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
+        repository.init()
+        try {
+            repository.connection.use { connection ->
+                connection.begin()
+                connection.add(model)
+                connection.commit()
+                // includeInferred = true returns the asserted statements plus the
+                // inferred RDFS closure materialized by the inferencer.
+                val closure = LinkedHashModel()
+                connection.getStatements(null, null, null, true).use { statements ->
+                    statements.forEach { closure.add(it) }
+                }
+                return closure
+            }
+        } finally {
+            repository.shutDown()
+        }
     }
     
     private fun extractInferredTriples(originalModel: Model, infModel: Model): List<RdfTriple> {
