@@ -38,11 +38,28 @@ internal object NamingUtils {
         return toPascalCase(localName)
     }
     
+    /** Kotlin hard keywords that cannot be used as identifiers unless backtick-escaped. */
+    private val KOTLIN_HARD_KEYWORDS = setOf(
+        "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in",
+        "interface", "is", "null", "object", "package", "return", "super", "this", "throw",
+        "true", "try", "typealias", "typeof", "val", "var", "when", "while",
+    )
+
     /**
-     * Converts a name to a valid Kotlin identifier.
-     * Defaults to camelCase conversion.
+     * Converts a name to a valid Kotlin identifier in camelCase. Ontology terms whose
+     * local name collides with a Kotlin keyword (e.g. `class`, `object`, `in`) are
+     * backtick-escaped, and names starting with a digit are prefixed with `_`, so the
+     * generated code always compiles.
      */
-    fun toValidKotlinIdentifier(name: String): String = toCamelCase(name)
+    fun toValidKotlinIdentifier(name: String): String {
+        val camel = toCamelCase(name)
+        val safe = when {
+            camel.isEmpty() -> "value"
+            camel.first().isDigit() -> "_$camel"
+            else -> camel
+        }
+        return if (safe in KOTLIN_HARD_KEYWORDS) "`$safe`" else safe
+    }
 
     /** Converts a raw value/local-name to an UPPER_SNAKE Kotlin enum constant. */
     fun toEnumConstant(raw: String): String {

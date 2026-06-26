@@ -153,11 +153,16 @@ internal class ValidationCodeGenerator(
         
         functionBuilder.addCode("\n")
         functionBuilder.addStatement("if (violations.isNotEmpty()) {")
-        functionBuilder.addStatement("    throw %T(", ClassName("com.geoknoesis.kastor.gen.runtime", "ValidationException"))
-        functionBuilder.addStatement("        \"%L \${resource} validation failed: \${violations.joinToString(\", \")}\",",
-            classBuilder.className)
-        functionBuilder.addStatement("        violations")
-        functionBuilder.addStatement("    )")
+        // `violations` is a List<String>. The runtime ValidationException's second
+        // parameter is List<ShaclViolation> (defaulted to emptyList), so we pass only
+        // the message — folding the violation strings into it — instead of the old
+        // two-arg call, which passed List<String> where List<ShaclViolation> was
+        // expected and would not compile in generated code.
+        functionBuilder.addStatement(
+            "    throw %T(\"%L \${resource} validation failed: \${violations.joinToString(\", \")}\")",
+            ClassName("com.geoknoesis.kastor.gen.runtime", "ValidationException"),
+            classBuilder.className,
+        )
         functionBuilder.addStatement("}")
         
         return functionBuilder.build()

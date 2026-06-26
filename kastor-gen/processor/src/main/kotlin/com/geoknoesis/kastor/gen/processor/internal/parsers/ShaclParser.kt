@@ -145,7 +145,12 @@ class ShaclParser(private val logger: KSPLogger) {
             val inValuesTyped = propertyShape.getProperty(inProp)?.resource?.let { listResource ->
                 val typed = mutableListOf<ShaclInValue>()
                 var current: org.apache.jena.rdf.model.Resource? = listResource
-                while (current != null && !current.hasProperty(model.createProperty("${RDF_NS}nil"))) {
+                // Terminate when we reach the list terminator node rdf:nil itself.
+                // (rdf:nil is the tail node's identity, not a predicate on the tail;
+                // testing hasProperty(rdf:nil) is always false and risks looping on
+                // malformed/cyclic lists.)
+                val nilUri = "${RDF_NS}nil"
+                while (current != null && current.uri != nilUri) {
                     val first = current.getProperty(model.createProperty("${RDF_NS}first"))
                     first?.let { stmt ->
                         val node = stmt.`object`
