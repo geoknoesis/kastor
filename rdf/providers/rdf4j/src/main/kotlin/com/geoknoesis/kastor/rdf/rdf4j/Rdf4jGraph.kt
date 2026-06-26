@@ -56,24 +56,35 @@ internal class Rdf4jGraph(
     
     override fun getTriples(): List<RdfTriple> {
         val triples = mutableListOf<RdfTriple>()
-        val result: RepositoryResult<Statement> = connection.getStatements(null, null, null, false, context)
-        while (result.hasNext()) {
-            val statement = result.next()
-            val subject = Rdf4jTerms.fromRdf4jResource(statement.subject)
-            val predicate = Rdf4jTerms.fromRdf4jIri(statement.predicate)
-            val obj = Rdf4jTerms.fromRdf4jValue(statement.`object`)
-            triples.add(RdfTriple(subject, predicate, obj))
+        // RepositoryResult holds a native cursor that must be closed; `use` guarantees
+        // release even if term conversion throws part-way through iteration.
+        connection.getStatements(null, null, null, false, context).use { result ->
+            while (result.hasNext()) {
+                val statement = result.next()
+                val subject = Rdf4jTerms.fromRdf4jResource(statement.subject)
+                val predicate = Rdf4jTerms.fromRdf4jIri(statement.predicate)
+                val obj = Rdf4jTerms.fromRdf4jValue(statement.`object`)
+                triples.add(RdfTriple(subject, predicate, obj))
+            }
         }
         return triples
     }
-    
+
     override fun clear(): Boolean {
-        val wasEmpty = connection.isEmpty
-        connection.clear()
+        // Only clear this graph's context. `connection.clear()` with no arguments
+        // wipes every context in the repository (silent cross-graph data loss).
+        val wasEmpty = if (context != null) {
+            !connection.hasStatement(null, null, null, false, context)
+        } else {
+            connection.isEmpty
+        }
+        if (context != null) connection.clear(context) else connection.clear()
         return !wasEmpty
     }
-    
-    override fun size(): Int = connection.size().toInt()
+
+    // `connection.size()` with no context counts the whole repository; scope to this graph.
+    override fun size(): Int =
+        if (context != null) connection.size(context).toInt() else connection.size().toInt()
 }
 
 

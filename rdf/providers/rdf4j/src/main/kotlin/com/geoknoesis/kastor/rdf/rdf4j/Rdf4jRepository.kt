@@ -319,18 +319,27 @@ class Rdf4jRepository(
         }
     }
     
-    override fun transaction(operations: RdfRepository.() -> Unit) {
-        connection.begin()
-        try {
+    override fun transaction(operations: RdfRepository.() -> Unit) = runInTransaction(operations)
+
+    override fun readTransaction(operations: RdfRepository.() -> Unit) = runInTransaction(operations)
+
+    /**
+     * Runs [operations] inside a single RDF4J transaction. If a transaction is
+     * already active on the shared connection (a nested `transaction { }` call),
+     * this joins the existing one instead of calling `begin()` again — RDF4J
+     * throws `IllegalStateException` on a second `begin()`. Only the outermost
+     * call commits/rolls back.
+     *
+     * Note: a [Rdf4jRepository] owns a single [RepositoryConnection], which is
+     * not thread-safe. Concurrent access from multiple threads must be
+     * externally synchronized or use one repository instance per thread.
+     */
+    private fun runInTransaction(operations: RdfRepository.() -> Unit) {
+        if (connection.isActive) {
+            // Already inside a transaction managed by an outer call — just run.
             operations(this)
-            connection.commit()
-        } catch (e: Exception) {
-            connection.rollback()
-            throw e
+            return
         }
-    }
-    
-    override fun readTransaction(operations: RdfRepository.() -> Unit) {
         connection.begin()
         try {
             operations(this)

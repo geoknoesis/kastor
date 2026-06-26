@@ -117,19 +117,13 @@ internal object Rdf4jFormatSupport {
         val writer = StringWriter()
         
         try {
-            // Collect all statements from the connection
+            // A context-less getStatements() already returns every statement across
+            // the default graph AND all named contexts, each carrying its own context.
+            // Iterating contextIDs and re-adding per context would duplicate every
+            // named-graph statement, so we collect exactly once.
             val statements = mutableListOf<org.eclipse.rdf4j.model.Statement>()
             connection.getStatements(null, null, null, false).use { stmts ->
                 stmts.forEach { statements.add(it) }
-            }
-            connection.getContextIDs().use { contexts ->
-                contexts.forEach { context ->
-                    if (context != null) {
-                        connection.getStatements(null, null, null, false, context).use { stmts ->
-                            stmts.forEach { statements.add(it) }
-                        }
-                    }
-                }
             }
             // Write statements using Rio
             Rio.write(statements, writer, rdf4jFormat)
@@ -160,7 +154,11 @@ internal object Rdf4jFormatSupport {
             ?: throw UnsupportedOperationException("Rdf4jFormatSupport can only parse into RDF4J repositories")
 
         val connection = rdf4jRepo.getRdf4jConnection()
-
+        // Buffer into our own transaction so a parse failure mid-stream rolls back
+        // cleanly instead of leaving partially-loaded data committed. Join an
+        // already-active transaction (don't double-begin) and let the outer caller commit.
+        val ownTransaction = !connection.isActive
+        if (ownTransaction) connection.begin()
         try {
             val parser = Rio.createParser(rdf4jFormat)
             parser.setRDFHandler(object : org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler() {
@@ -174,7 +172,9 @@ internal object Rdf4jFormatSupport {
                 }
             })
             parser.parse(inputStream, baseIri)
+            if (ownTransaction) connection.commit()
         } catch (e: Exception) {
+            if (ownTransaction && connection.isActive) connection.rollback()
             throw RdfFormatException.Generic("Failed to parse RDF dataset: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
         }
     }
