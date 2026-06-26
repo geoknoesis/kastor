@@ -42,13 +42,15 @@ object RdfDebug {
      * Whether to log prefix expansion (QName to IRI resolution).
      * Default: false
      */
+    @Volatile
     var showPrefixExpansion: Boolean = false
         private set
-    
+
     /**
      * Whether to log SPARQL query execution details.
      * Default: false
      */
+    @Volatile
     var showQueryTrace: Boolean = false
         private set
     

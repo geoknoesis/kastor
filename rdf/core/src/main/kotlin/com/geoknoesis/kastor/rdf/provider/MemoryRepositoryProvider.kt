@@ -2,6 +2,8 @@ package com.geoknoesis.kastor.rdf.provider
 
 import com.geoknoesis.kastor.rdf.*
 import java.lang.ref.Cleaner
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Memory repository provider implementation.
@@ -70,7 +72,7 @@ class MemoryRepositoryProvider : RdfProvider {
  */
 class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     
-    private val graphs = mutableMapOf<Iri, MutableRdfGraph>()
+    private val graphs = ConcurrentHashMap<Iri, MutableRdfGraph>()
     @Volatile
     private var closed = false
     private val leakState = LeakState()
@@ -79,24 +81,25 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override val defaultGraph: RdfGraph by lazy { MemoryGraph() }
     
     override fun getGraph(name: Iri): RdfGraph {
-        return graphs.getOrPut(name) { MemoryGraph() }
+        // computeIfAbsent is atomic on ConcurrentHashMap, unlike Kotlin's getOrPut.
+        return graphs.computeIfAbsent(name) { MemoryGraph() }
     }
-    
+
     override fun hasGraph(name: Iri): Boolean = graphs.containsKey(name)
-    
+
     override fun listGraphs(): List<Iri> = graphs.keys.toList()
-    
+
     override val namedGraphs: Map<Iri, RdfGraph>
         get() {
             return graphs.toMap()
         }
-    
+
     override fun createGraph(name: Iri): RdfGraph {
-        if (graphs.containsKey(name)) {
+        val graph = MemoryGraph()
+        // Atomic check-and-insert avoids a TOCTOU race between containsKey and put.
+        if (graphs.putIfAbsent(name, graph) != null) {
             throw IllegalArgumentException("Graph $name already exists")
         }
-        val graph = MemoryGraph()
-        graphs[name] = graph
         return graph
     }
     
@@ -198,45 +201,53 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
  * Simple in-memory graph implementation.
  */
 class MemoryGraph(initialTriples: Collection<RdfTriple> = emptyList()) : MutableRdfGraph {
-    
-    private val triples = mutableSetOf<RdfTriple>().apply { addAll(initialTriples) }
-    
+
+    // Insertion-ordered set guarded for concurrent access. Single-element
+    // operations are synchronized internally by the wrapper; compound reads
+    // (iteration) must hold the set's monitor, which we do via `synchronized`.
+    private val triples: MutableSet<RdfTriple> =
+        Collections.synchronizedSet(LinkedHashSet<RdfTriple>(initialTriples))
+
     override fun addTriple(triple: RdfTriple) {
         triples.add(triple)
     }
-    
+
     override fun addTriples(triples: Collection<RdfTriple>) {
         this.triples.addAll(triples)
     }
-    
+
     override fun removeTriple(triple: RdfTriple): Boolean {
         return triples.remove(triple)
     }
-    
+
     override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
-        return this.triples.removeAll(triples)
+        return this.triples.removeAll(triples.toSet())
     }
-    
+
     override fun hasTriple(triple: RdfTriple): Boolean {
         return triples.contains(triple)
     }
-    
+
     override fun getTriples(): List<RdfTriple> {
-        return triples.toList()
+        // Snapshot under the monitor to avoid ConcurrentModificationException.
+        return synchronized(triples) { triples.toList() }
     }
-    
+
     override fun getTriplesSequence(): Sequence<RdfTriple> {
-        return triples.asSequence()
+        // Return a sequence over a stable snapshot, not the live set.
+        return synchronized(triples) { triples.toList() }.asSequence()
     }
-    
+
     override fun size(): Int {
         return triples.size
     }
-    
+
     override fun clear(): Boolean {
-        val hadTriples = triples.isNotEmpty()
-        triples.clear()
-        return hadTriples
+        return synchronized(triples) {
+            val hadTriples = triples.isNotEmpty()
+            triples.clear()
+            hadTriples
+        }
     }
 }
 

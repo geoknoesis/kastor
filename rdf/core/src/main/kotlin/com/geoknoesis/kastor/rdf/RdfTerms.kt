@@ -377,7 +377,9 @@ sealed interface Literal : RdfTerm {
         operator fun invoke(value: LocalDate): Literal = Literal(value.toString(), XSD.date)
         operator fun invoke(value: LocalTime): Literal = Literal(value.toString(), XSD.time)
         operator fun invoke(value: LocalDateTime): Literal = Literal(value.toString(), XSD.dateTime)
-        operator fun invoke(value: OffsetDateTime): Literal = Literal(value.toString(), XSD.dateTime)
+        // OffsetDateTime always carries a zone offset, so xsd:dateTimeStamp (which
+        // mandates a timezone) is the precise type, consistent with Instant below.
+        operator fun invoke(value: OffsetDateTime): Literal = Literal(value.toString(), XSD.dateTimeStamp)
         operator fun invoke(value: Instant): Literal = Literal(value.toString(), XSD.dateTimeStamp)
         operator fun invoke(value: Year): Literal = Literal(value.toString(), XSD.gYear)
         operator fun invoke(value: YearMonth): Literal = Literal(value.toString(), XSD.gYearMonth)

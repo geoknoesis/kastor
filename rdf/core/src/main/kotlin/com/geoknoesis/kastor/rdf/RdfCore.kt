@@ -1655,7 +1655,10 @@ object DefaultRdfProvider {
      * Default provider ID used when no provider is specified.
      */
     const val DEFAULT_PROVIDER_ID = "memory"
-    
+
+    // Shared mutable selection on a singleton: @Volatile gives set()/get() across
+    // threads a happens-before relationship (mirrors RdfProviderRegistry.delegate).
+    @Volatile
     private var current: String = DEFAULT_PROVIDER_ID
     
     fun set(provider: String) {

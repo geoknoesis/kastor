@@ -298,11 +298,15 @@ internal class DatasetImpl(
     }
     
     private fun executeConstructOnMaterializedUnion(query: SparqlConstruct): Sequence<RdfTriple> {
-        return executeOnMaterializedUnion(query) { repo, q -> repo.construct(q as SparqlConstruct) }
+        // Force the lazy result to a list before the union repo is closed in the
+        // finally block; some providers tie the sequence to a live connection.
+        return executeOnMaterializedUnion(query) { repo, q -> repo.construct(q as SparqlConstruct).toList() }
+            .asSequence()
     }
-    
+
     private fun executeDescribeOnMaterializedUnion(query: SparqlDescribe): Sequence<RdfTriple> {
-        return executeOnMaterializedUnion(query) { repo, q -> repo.describe(q as SparqlDescribe) }
+        return executeOnMaterializedUnion(query) { repo, q -> repo.describe(q as SparqlDescribe).toList() }
+            .asSequence()
     }
 }
 

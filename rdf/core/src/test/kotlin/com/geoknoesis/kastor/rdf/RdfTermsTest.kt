@@ -147,7 +147,9 @@ class RdfTermsTest {
         // Test OffsetDateTime literal
         val offsetDateTimeLit = Literal(OffsetDateTime.parse("2023-12-25T14:30:45+01:00"))
         assertTrue(offsetDateTimeLit.lexical.contains("2023-12-25T14:30:45"), "OffsetDateTime literal should format correctly")
-        assertEquals(XSD.dateTime, offsetDateTimeLit.datatype, "OffsetDateTime literal should have xsd:dateTime datatype")
+        // OffsetDateTime always carries a zone offset, so it maps to xsd:dateTimeStamp
+        // (consistent with Instant), the subtype that mandates a timezone.
+        assertEquals(XSD.dateTimeStamp, offsetDateTimeLit.datatype, "OffsetDateTime literal should have xsd:dateTimeStamp datatype")
         
         // Test Instant literal
         val instantLit = Literal(Instant.parse("2023-12-25T14:30:45Z"))

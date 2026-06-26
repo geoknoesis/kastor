@@ -110,7 +110,11 @@ class WeisfeilerLehmanIsomorphism {
         return when (term) {
             is Iri -> "iri:${term.value}"
             is BlankNode -> "bnode:${term.id}"
+            // LangString must precede Literal: language tag and base direction are part
+            // of the term's identity, otherwise "x"@en, "x"@fr and "x"@en--rtl collide.
+            is LangString -> "literal:${term.lexical}:${term.datatype.value}:${term.lang}:${term.direction?.token ?: ""}"
             is Literal -> "literal:${term.lexical}:${term.datatype.value}"
+            is TripleTerm -> "triple:(${getNodeId(term.triple.subject)} ${getNodeId(term.triple.predicate)} ${getNodeId(term.triple.obj)})"
             else -> "unknown:${term.hashCode()}"
         }
     }
@@ -122,10 +126,9 @@ class WeisfeilerLehmanIsomorphism {
         return when (term) {
             is Iri -> "IRI"
             is BlankNode -> "BLANK" // All blank nodes get the same label
-            is Literal -> when (term) {
-                is LangString -> "LITERAL_LANG:${term.lang}"
-                else -> "LITERAL:${term.datatype.value}"
-            }
+            is LangString -> "LITERAL_LANG:${term.lang}:${term.direction?.token ?: ""}"
+            is Literal -> "LITERAL:${term.datatype.value}"
+            is TripleTerm -> "TRIPLE:(${getNodeLabel(term.triple.subject)} ${getNodeLabel(term.triple.predicate)} ${getNodeLabel(term.triple.obj)})"
             else -> "UNKNOWN"
         }
     }
