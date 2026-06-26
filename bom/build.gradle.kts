@@ -27,8 +27,11 @@ dependencies {
         api(project(":rdf:cli"))
 
         api(project(":kastor-gen:runtime"))
-        api(project(":kastor-gen:processor"))
-        api(project(":kastor-gen:gradle-plugin"))
+        // NOTE: :kastor-gen:processor (a KSP annotation processor) and
+        // :kastor-gen:gradle-plugin (a Gradle plugin) are intentionally excluded.
+        // They are build-time artifacts — consumers add the processor via `ksp(...)`
+        // and apply the plugin via `plugins {}`. Constraining them in a consumer BOM
+        // would drag the Gradle API / tooling jars onto user classpaths.
         api(project(":kastor-gen:validation-jena"))
         api(project(":kastor-gen:validation-rdf4j"))
     }

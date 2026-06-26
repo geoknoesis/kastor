@@ -11,8 +11,8 @@ dependencies {
     implementation(project(":rdf:jena"))
 
     // OWL API 4.x + HermiT (versions aligned; isolated to this module).
-    implementation("net.sourceforge.owlapi:owlapi-distribution:4.5.29")
-    implementation("net.sourceforge.owlapi:org.semanticweb.hermit:1.4.5.519")
+    implementation(libs.owlapi.distribution)
+    implementation(libs.hermit)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

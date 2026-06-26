@@ -692,6 +692,7 @@ shacl-conformance-out.txt
 *.dmp
 hs_err_pid*.log
 replay_pid*.txt
+replay_pid*.log
 
 # Eclipse / IDE Kotlin layout: compiled mirrors under module bin/{main,test,jmh}
 **/bin/main/

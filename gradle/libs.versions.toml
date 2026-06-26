@@ -16,6 +16,11 @@ koog = "0.8.0"
 kotlinxSerializationJson = "1.8.1"
 assertj = "3.27.3"
 dependencyAnalysis = "3.12.0"
+kotlinpoet = "2.2.0"
+clikt = "5.0.1"
+owlapi = "4.5.29"
+hermit = "1.4.5.519"
+gradleToolingApi = "8.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -54,6 +59,14 @@ djl-huggingface-tokenizers = { module = "ai.djl.huggingface:tokenizers", version
 
 koog-agents = { module = "ai.koog:koog-agents", version.ref = "koog" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+
+ksp-symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "ksp" }
+kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }
+kotlinpoet-ksp = { module = "com.squareup:kotlinpoet-ksp", version.ref = "kotlinpoet" }
+clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
+owlapi-distribution = { module = "net.sourceforge.owlapi:owlapi-distribution", version.ref = "owlapi" }
+hermit = { module = "net.sourceforge.owlapi:org.semanticweb.hermit", version.ref = "hermit" }
+gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "gradleToolingApi" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

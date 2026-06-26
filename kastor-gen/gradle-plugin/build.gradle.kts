@@ -14,16 +14,16 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
 
     // KSP
-    implementation("com.google.devtools.ksp:symbol-processing-api:${libs.versions.ksp.get()}")
-    
+    implementation(libs.ksp.symbol.processing.api)
+
     // KotlinPoet (transitive from processor, but needed for FileSpec)
-    implementation("com.squareup:kotlinpoet:2.2.0")
+    implementation(libs.kotlinpoet)
 
     // Testing
     testImplementation(libs.kotlin.test)
-    testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
-    testImplementation("org.gradle:gradle-tooling-api:8.0")
-    testImplementation("org.gradle:gradle-test-kit:8.0")
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.gradle.tooling.api)
+    testImplementation(gradleTestKit())
 }
 
 gradlePlugin {
@@ -37,10 +37,8 @@ gradlePlugin {
     }
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
-}
+// Java source/target is governed by the root `jvmToolchain(21)`; no per-module
+// sourceCompatibility/targetCompatibility needed.
 
 tasks.test {
     useJUnitPlatform()

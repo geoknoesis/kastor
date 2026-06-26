@@ -8,7 +8,7 @@ dependencies {
   api(project(":rdf:jena"))
   
   // Jena SHACL support
-  implementation("org.apache.jena:jena-shacl:${libs.versions.jena.get()}")
+  implementation(libs.jena.shacl)
   
   testImplementation(libs.kotlin.test)
   testImplementation(libs.junit.jupiter)

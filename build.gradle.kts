@@ -93,7 +93,9 @@ subprojects {
 
 // Collect all artifacts (jar, sourcesJar, javadocJar) into build/artifacts
 val collectArtifacts = tasks.register<org.gradle.api.tasks.Copy>("collectArtifacts") {
-  duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.INCLUDE
+  // WARN (not INCLUDE) so colliding artifact filenames are surfaced in the build
+  // log instead of silently overwriting each other in build/artifacts.
+  duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.WARN
   subprojects.forEach { p ->
     dependsOn("${p.path}:assemble")
     // The :bom module is a Gradle platform and has no sources/javadoc jars.
