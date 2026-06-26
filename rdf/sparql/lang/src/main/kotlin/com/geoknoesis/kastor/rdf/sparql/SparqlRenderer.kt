@@ -333,9 +333,13 @@ object SparqlRenderer {
     
     private fun renderOrderClause(clause: OrderClauseAst): String {
         val expr = renderExpression(clause.expression)
+        // SPARQL 1.1 grammar (OrderCondition):
+        //   ( ('ASC' | 'DESC') BrackettedExpression ) | ( Constraint | Var )
+        // Ascending is the default, so a bare expression is emitted for ASC
+        // (`ORDER BY ?x`); DESC must wrap as `DESC(expr)`. `?x DESC` is invalid.
         return when (clause.direction) {
-            OrderDirection.ASC -> "$expr ASC"
-            OrderDirection.DESC -> "$expr DESC"
+            OrderDirection.ASC -> expr
+            OrderDirection.DESC -> "DESC($expr)"
         }
     }
     

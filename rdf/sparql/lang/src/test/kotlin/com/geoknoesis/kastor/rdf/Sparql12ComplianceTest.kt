@@ -466,7 +466,8 @@ class Sparql12ComplianceTest {
         assertTrue(queryString.contains("GROUP BY ?department"))
         assertTrue(queryString.contains("HAVING"))
         assertTrue(queryString.contains("COUNT(?employee) >"))
-        assertTrue(queryString.contains("ORDER BY ?employeeCount DESC"))
+        // SPARQL 1.1 grammar requires DESC to wrap the expression: `DESC(?x)`, not `?x DESC`.
+        assertTrue(queryString.contains("ORDER BY DESC(?employeeCount)"))
     }
 
     @Test
