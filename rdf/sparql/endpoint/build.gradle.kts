@@ -7,6 +7,8 @@ plugins {
 dependencies {
   api(project(":rdf:core"))
   implementation(libs.httpclient5)
+  // SPARQL 1.1 Query Results JSON parsing for SELECT/ASK responses.
+  implementation(libs.kotlinx.serialization.json)
 }
 
 publishing {
