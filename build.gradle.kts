@@ -10,7 +10,7 @@ apply(plugin = "com.autonomousapps.dependency-analysis")
 
 allprojects {
   group = "com.geoknoesis.kastor"
-  version = "0.2.0"
+  version = "0.2.1"
 }
 
 subprojects {
