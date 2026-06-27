@@ -179,9 +179,16 @@ value class Iri(val value: String) : RdfResource {
  * @param value The IRI string to validate
  * @return true if the IRI appears valid, false otherwise
  */
+private val IRI_FORBIDDEN_CHARS = setOf('<', '>', '"', '{', '}', '|', '\\', '^', '`')
+
 private fun isValidIri(value: String): Boolean {
     if (value.isEmpty()) return false
-    
+
+    // RFC 3987 excludes spaces, control characters, and the delimiters below from IRIs. Reject them up front:
+    // java.net.URI throws on exactly these, falling through to the Unicode-tolerant structural check, which
+    // would otherwise accept malformed values (e.g. SPARQL/Turtle-injection payloads inside <...>).
+    if (value.any { it.isWhitespace() || it.isISOControl() || it in IRI_FORBIDDEN_CHARS }) return false
+
     // Try to parse as URI first (for ASCII IRIs)
     try {
         val uri = java.net.URI(value)

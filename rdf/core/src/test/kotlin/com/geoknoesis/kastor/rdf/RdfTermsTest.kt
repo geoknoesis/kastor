@@ -26,6 +26,35 @@ class RdfTermsTest {
         val dataIri = Iri("data:text/plain;base64,SGVsbG8gV29ybGQ=")
         assertEquals("data:text/plain;base64,SGVsbG8gV29ybGQ=", dataIri.value, "Data IRI should preserve value")
     }
+
+    @Test
+    fun `IRI rejects RFC-3987-illegal characters`() {
+        // These characters are excluded from IRIs by RFC 3987. They are exactly what enables SPARQL/Turtle
+        // injection when an IRI is interpolated into <...>, and must be rejected even though java.net.URI
+        // parsing fails over to the Unicode-tolerant structural fallback.
+        val illegal = listOf(
+            "http://example.org/a> ; <http://x/b",   // angle brackets + spaces (breakout attempt)
+            "http://example.org/a b",                // space
+            "http://example.org/a\"b",               // double quote
+            "http://example.org/a{b}",               // braces
+            "http://example.org/a|b",                // pipe
+            "http://example.org/a\\b",               // backslash
+            "http://example.org/a^b",                // caret
+            "http://example.org/a`b",                // backtick
+            "http://example.org/a\tb",               // control char (tab)
+        )
+        for (v in illegal) {
+            assertThrows(IllegalArgumentException::class.java, { Iri(v) }, "should reject illegal IRI: '$v'")
+        }
+    }
+
+    @Test
+    fun `IRI still accepts legitimate ASCII and Unicode IRIs`() {
+        // Guard against over-rejection: valid IRIs, including non-ASCII ucschar, must still be accepted.
+        assertEquals("http://example.org/r", Iri("http://example.org/r").value)
+        assertEquals("urn:example:resource", Iri("urn:example:resource").value)
+        assertEquals("http://example.org/例え/パス", Iri("http://example.org/例え/パス").value)
+    }
     
     @Test
     fun `blank node creation works`() {
