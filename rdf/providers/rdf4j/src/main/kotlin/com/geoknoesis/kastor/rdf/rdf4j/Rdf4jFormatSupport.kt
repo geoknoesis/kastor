@@ -113,23 +113,19 @@ internal object Rdf4jFormatSupport {
         val rdf4jRepo = repository as? Rdf4jRepository
             ?: throw UnsupportedOperationException("Rdf4jFormatSupport can only serialize RDF4J repositories")
         
-        val connection = rdf4jRepo.getRdf4jConnection()
-        val writer = StringWriter()
-        
-        try {
-            // A context-less getStatements() already returns every statement across
-            // the default graph AND all named contexts, each carrying its own context.
-            // Iterating contextIDs and re-adding per context would duplicate every
-            // named-graph statement, so we collect exactly once.
-            val statements = mutableListOf<org.eclipse.rdf4j.model.Statement>()
-            connection.getStatements(null, null, null, false).use { stmts ->
-                stmts.forEach { statements.add(it) }
+        return rdf4jRepo.withConnection { connection ->
+            val writer = StringWriter()
+            try {
+                // Stream statements straight from the store to the Rio writer via
+                // connection.export(), instead of materializing every statement into a
+                // List first — avoids holding a second full copy of the dataset in heap.
+                // A context-less export() covers the default graph and all named contexts,
+                // each carrying its own context, with no duplication.
+                connection.export(Rio.createWriter(rdf4jFormat, writer))
+                writer.toString()
+            } catch (e: Exception) {
+                throw RdfFormatException.Generic("Failed to serialize dataset: ${e.message}", RdfErrorCode.FORMAT_SERIALIZATION_ERROR, e)
             }
-            // Write statements using Rio
-            Rio.write(statements, writer, rdf4jFormat)
-            return writer.toString()
-        } catch (e: Exception) {
-            throw RdfFormatException.Generic("Failed to serialize dataset: ${e.message}", RdfErrorCode.FORMAT_SERIALIZATION_ERROR, e)
         }
     }
     
@@ -153,29 +149,32 @@ internal object Rdf4jFormatSupport {
         val rdf4jRepo = repository as? Rdf4jRepository
             ?: throw UnsupportedOperationException("Rdf4jFormatSupport can only parse into RDF4J repositories")
 
-        val connection = rdf4jRepo.getRdf4jConnection()
-        // Buffer into our own transaction so a parse failure mid-stream rolls back
-        // cleanly instead of leaving partially-loaded data committed. Join an
-        // already-active transaction (don't double-begin) and let the outer caller commit.
-        val ownTransaction = !connection.isActive
-        if (ownTransaction) connection.begin()
-        try {
-            val parser = Rio.createParser(rdf4jFormat)
-            parser.setRDFHandler(object : org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler() {
-                override fun handleStatement(statement: org.eclipse.rdf4j.model.Statement) {
-                    val context = statement.context
-                    if (context != null) {
-                        connection.add(statement.subject, statement.predicate, statement.`object`, context)
-                    } else {
-                        connection.add(statement.subject, statement.predicate, statement.`object`)
+        rdf4jRepo.withConnection { connection ->
+            // withConnection yields the active transaction's connection inside a
+            // transaction { } block, else a fresh per-call connection. Buffer into our
+            // own transaction so a parse failure mid-stream rolls back cleanly instead of
+            // leaving partially-loaded data committed. Join an already-active transaction
+            // (don't double-begin) and let the outer caller commit.
+            val ownTransaction = !connection.isActive
+            if (ownTransaction) connection.begin()
+            try {
+                val parser = Rio.createParser(rdf4jFormat)
+                parser.setRDFHandler(object : org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler() {
+                    override fun handleStatement(statement: org.eclipse.rdf4j.model.Statement) {
+                        val context = statement.context
+                        if (context != null) {
+                            connection.add(statement.subject, statement.predicate, statement.`object`, context)
+                        } else {
+                            connection.add(statement.subject, statement.predicate, statement.`object`)
+                        }
                     }
-                }
-            })
-            parser.parse(inputStream, baseIri)
-            if (ownTransaction) connection.commit()
-        } catch (e: Exception) {
-            if (ownTransaction && connection.isActive) connection.rollback()
-            throw RdfFormatException.Generic("Failed to parse RDF dataset: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+                })
+                parser.parse(inputStream, baseIri)
+                if (ownTransaction) connection.commit()
+            } catch (e: Exception) {
+                if (ownTransaction && connection.isActive) connection.rollback()
+                throw RdfFormatException.Generic("Failed to parse RDF dataset: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+            }
         }
     }
 }
