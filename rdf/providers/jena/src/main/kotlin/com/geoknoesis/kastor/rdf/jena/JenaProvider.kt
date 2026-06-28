@@ -105,6 +105,33 @@ class JenaProvider : RdfProvider {
         return JenaBridge.fromJenaModel(model)
     }
 
+    /**
+     * Truly streaming triple parse. Jena's [org.apache.jena.riot.system.AsyncParser]
+     * runs the parser on a background thread feeding a bounded queue, so triples are
+     * produced incrementally and memory stays roughly constant regardless of input size
+     * — unlike the default `parseStreaming`, which builds a full in-memory model first.
+     * Backs [com.geoknoesis.kastor.rdf.Rdf.parseStreaming] and `parseStreamingFlow`.
+     *
+     * The caller owns [inputStream]; consume the whole sequence so the backing parser
+     * thread terminates promptly.
+     */
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
+        val lang = org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
+        // A throwaway model is used only to view parsed graph Nodes as RDFNodes for
+        // JenaTerms conversion (datatype/lang/triple-term aware).
+        val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
+        return org.apache.jena.riot.system.AsyncParser
+            .asyncParseTriples(inputStream, lang, null)
+            .asSequence()
+            .map { triple ->
+                RdfTriple(
+                    JenaTerms.fromNode(model.asRDFNode(triple.subject)) as RdfResource,
+                    JenaTerms.fromNode(model.asRDFNode(triple.predicate)) as Iri,
+                    JenaTerms.fromNode(model.asRDFNode(triple.`object`)),
+                )
+            }
+    }
+
     override fun parseDataset(
         repository: RdfRepository,
         inputStream: java.io.InputStream,
