@@ -1,97 +1,109 @@
 package com.geoknoesis.kastor.rdf.rdf4j
 
 import com.geoknoesis.kastor.rdf.*
-import org.eclipse.rdf4j.model.IRI
-import org.eclipse.rdf4j.model.Resource
-import org.eclipse.rdf4j.model.Value
-import org.eclipse.rdf4j.model.Statement
-import org.eclipse.rdf4j.repository.RepositoryConnection
-import org.eclipse.rdf4j.repository.RepositoryResult
 
 /**
- * Internal RDF4J adapter for RdfGraph.
- * This is an implementation detail and should not be used directly.
- * Use [RdfGraph] interface instead.
+ * Internal RDF4J adapter for [RdfGraph].
+ *
+ * Holds no connection of its own. Every operation borrows a connection from the owning
+ * [Rdf4jRepository] (via `withConnection`), which transparently reuses the current
+ * thread's transaction connection inside a `transaction { }` block and otherwise uses a
+ * fresh per-operation connection. This keeps graph access thread-safe.
+ *
+ * @param context the named-graph context, or null for the default graph.
  */
 internal class Rdf4jGraph(
-    private val connection: RepositoryConnection,
-    private val context: org.eclipse.rdf4j.model.Resource? = null
+    private val repo: Rdf4jRepository,
+    private val context: org.eclipse.rdf4j.model.Resource? = null,
 ) : MutableRdfGraph {
-    
-    override fun addTriple(triple: RdfTriple) {
-        val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
-        val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
-        val obj = Rdf4jTerms.toRdf4jValue(triple.obj)
-        connection.add(subject, predicate, obj, context)
+
+    override fun addTriple(triple: RdfTriple) = repo.withConnection { conn ->
+        conn.add(
+            Rdf4jTerms.toRdf4jResource(triple.subject),
+            Rdf4jTerms.toRdf4jIri(triple.predicate),
+            Rdf4jTerms.toRdf4jValue(triple.obj),
+            context,
+        )
     }
-    
-    override fun addTriples(triples: Collection<RdfTriple>) {
-        triples.forEach { addTriple(it) }
+
+    override fun addTriples(triples: Collection<RdfTriple>) = repo.withConnection { conn ->
+        // Borrow one connection for the whole batch rather than one per triple.
+        triples.forEach { triple ->
+            conn.add(
+                Rdf4jTerms.toRdf4jResource(triple.subject),
+                Rdf4jTerms.toRdf4jIri(triple.predicate),
+                Rdf4jTerms.toRdf4jValue(triple.obj),
+                context,
+            )
+        }
     }
-    
-    override fun removeTriple(triple: RdfTriple): Boolean {
-        val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
-        val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
-        val obj = Rdf4jTerms.toRdf4jValue(triple.obj)
-        connection.remove(subject, predicate, obj, context)
-        return true
+
+    override fun removeTriple(triple: RdfTriple): Boolean = repo.withConnection { conn ->
+        conn.remove(
+            Rdf4jTerms.toRdf4jResource(triple.subject),
+            Rdf4jTerms.toRdf4jIri(triple.predicate),
+            Rdf4jTerms.toRdf4jValue(triple.obj),
+            context,
+        )
+        true
     }
-    
-    override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
+
+    override fun removeTriples(triples: Collection<RdfTriple>): Boolean = repo.withConnection { conn ->
         var anyRemoved = false
         triples.forEach { triple ->
-            if (removeTriple(triple)) {
-                anyRemoved = true
-            }
+            conn.remove(
+                Rdf4jTerms.toRdf4jResource(triple.subject),
+                Rdf4jTerms.toRdf4jIri(triple.predicate),
+                Rdf4jTerms.toRdf4jValue(triple.obj),
+                context,
+            )
+            anyRemoved = true
         }
-        return anyRemoved
+        anyRemoved
     }
-    
-    override fun hasTriple(triple: RdfTriple): Boolean {
-        val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
-        val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
-        val obj = Rdf4jTerms.toRdf4jValue(triple.obj)
-        return connection.hasStatement(subject, predicate, obj, false, context)
+
+    override fun hasTriple(triple: RdfTriple): Boolean = repo.withConnection { conn ->
+        conn.hasStatement(
+            Rdf4jTerms.toRdf4jResource(triple.subject),
+            Rdf4jTerms.toRdf4jIri(triple.predicate),
+            Rdf4jTerms.toRdf4jValue(triple.obj),
+            false,
+            context,
+        )
     }
-    
-    override fun getTriples(): List<RdfTriple> {
+
+    override fun getTriples(): List<RdfTriple> = repo.withConnection { conn ->
         val triples = mutableListOf<RdfTriple>()
         // RepositoryResult holds a native cursor that must be closed; `use` guarantees
         // release even if term conversion throws part-way through iteration.
-        connection.getStatements(null, null, null, false, context).use { result ->
+        conn.getStatements(null, null, null, false, context).use { result ->
             while (result.hasNext()) {
                 val statement = result.next()
-                val subject = Rdf4jTerms.fromRdf4jResource(statement.subject)
-                val predicate = Rdf4jTerms.fromRdf4jIri(statement.predicate)
-                val obj = Rdf4jTerms.fromRdf4jValue(statement.`object`)
-                triples.add(RdfTriple(subject, predicate, obj))
+                triples.add(
+                    RdfTriple(
+                        Rdf4jTerms.fromRdf4jResource(statement.subject),
+                        Rdf4jTerms.fromRdf4jIri(statement.predicate),
+                        Rdf4jTerms.fromRdf4jValue(statement.`object`),
+                    ),
+                )
             }
         }
-        return triples
+        triples
     }
 
-    override fun clear(): Boolean {
-        // Only clear this graph's context. `connection.clear()` with no arguments
-        // wipes every context in the repository (silent cross-graph data loss).
+    override fun clear(): Boolean = repo.withConnection { conn ->
+        // Only clear this graph's context; a context-less clear() would wipe every graph.
         val wasEmpty = if (context != null) {
-            !connection.hasStatement(null, null, null, false, context)
+            !conn.hasStatement(null, null, null, false, context)
         } else {
-            connection.isEmpty
+            conn.isEmpty
         }
-        if (context != null) connection.clear(context) else connection.clear()
-        return !wasEmpty
+        if (context != null) conn.clear(context) else conn.clear()
+        !wasEmpty
     }
 
-    // `connection.size()` with no context counts the whole repository; scope to this graph.
-    override fun size(): Int =
-        if (context != null) connection.size(context).toInt() else connection.size().toInt()
+    // size() with no context counts the whole repository; scope to this graph's context.
+    override fun size(): Int = repo.withConnection { conn ->
+        if (context != null) conn.size(context).toInt() else conn.size().toInt()
+    }
 }
-
-
-
-
-
-
-
-
-

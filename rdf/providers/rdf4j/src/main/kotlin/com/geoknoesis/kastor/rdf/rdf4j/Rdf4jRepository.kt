@@ -30,15 +30,23 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  */
 class Rdf4jRepository(
     private val repository: Repository,
-    private val connection: RepositoryConnection = repository.connection
 ) : RdfRepository {
-    
+
+    /** Connection pinned to the current thread's active `transaction { }`, if any. */
+    private val txConnection = ThreadLocal<RepositoryConnection?>()
+
     /**
-     * Internal method to access the underlying RDF4J RepositoryConnection.
-     * Used by Rdf4jProvider for dataset serialization/parsing.
+     * Runs [block] with a RepositoryConnection. Inside a `transaction { }` on the
+     * current thread it reuses that transaction's connection; otherwise it borrows a
+     * fresh connection from the repository (RDF4J manages a connection pool) and closes
+     * it when [block] returns. RDF4J connections are not thread-safe, so borrowing one
+     * per operation is what makes concurrent reads/writes safe.
      */
-    internal fun getRdf4jConnection(): RepositoryConnection = connection
-    
+    internal fun <T> withConnection(block: (RepositoryConnection) -> T): T {
+        val tx = txConnection.get()
+        return if (tx != null) block(tx) else repository.connection.use { block(it) }
+    }
+
     /**
      * Internal method to access the underlying RDF4J Repository.
      * Used by Rdf4jProvider for dataset operations.
@@ -125,29 +133,23 @@ class Rdf4jRepository(
     // after an explicit close) shutting the repository down twice.
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     
-    override val defaultGraph: RdfGraph = Rdf4jGraph(connection)
-    
-    override fun getGraph(name: Iri): RdfGraph {
-        val context = valueFactory.createIRI(name.value)
-        return Rdf4jGraph(connection, context)
+    override val defaultGraph: RdfGraph = Rdf4jGraph(this, null)
+
+    override fun getGraph(name: Iri): RdfGraph =
+        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+
+    override fun hasGraph(name: Iri): Boolean = withConnection { conn ->
+        conn.hasStatement(null, null, null, false, valueFactory.createIRI(name.value))
     }
-    
-    override fun hasGraph(name: Iri): Boolean {
-        val context = valueFactory.createIRI(name.value)
-        return connection.hasStatement(null, null, null, false, context)
-    }
-    
-    override fun listGraphs(): List<Iri> {
+
+    override fun listGraphs(): List<Iri> = withConnection { conn ->
         // RDF4J's `contextIDs` includes blank-node contexts (graph names that
         // were generated for an unnamed `GRAPH _:b { ... }` block in TriG).
         // Those are reported as `BNode` values whose string form (`genid-...-g`)
         // is not a valid absolute IRI - constructing an `Iri` from them
         // throws. RDF 1.1/1.2 only allows IRI-named graphs to be referenced
-        // via `GRAPH <iri> { ... }`, so we filter out blank-node contexts
-        // here. Callers that want them should drop down to the underlying
-        // RDF4J connection (via [getRdf4jConnection]).
-        val iter = connection.contextIDs
-        try {
+        // via `GRAPH <iri> { ... }`, so we filter out blank-node contexts here.
+        conn.contextIDs.use { iter ->
             val out = mutableListOf<Iri>()
             while (iter.hasNext()) {
                 val ctx = iter.next()
@@ -155,22 +157,18 @@ class Rdf4jRepository(
                     out.add(Iri(ctx.stringValue()))
                 }
             }
-            return out
-        } finally {
-            iter.close()
+            out
         }
     }
-    
-    override fun createGraph(name: Iri): RdfGraph {
+
+    override fun createGraph(name: Iri): RdfGraph =
+        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+
+    override fun removeGraph(name: Iri): Boolean = withConnection { conn ->
         val context = valueFactory.createIRI(name.value)
-        return Rdf4jGraph(connection, context)
-    }
-    
-    override fun removeGraph(name: Iri): Boolean {
-        val context = valueFactory.createIRI(name.value)
-        val wasEmpty = connection.hasStatement(null, null, null, false, context)
-        connection.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
-        return !wasEmpty
+        val had = conn.hasStatement(null, null, null, false, context)
+        conn.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
+        had
     }
 
     override fun editDefaultGraph(): MutableRdfGraph {
@@ -181,10 +179,10 @@ class Rdf4jRepository(
         return getGraph(name) as MutableRdfGraph
     }
     
-    override fun select(query: SparqlSelect): SparqlQueryResult {
+    override fun select(query: SparqlSelect): SparqlQueryResult = withConnection { conn ->
         val startTime = System.currentTimeMillis()
         val prepared = try {
-            connection.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
+            conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
         } catch (e: Exception) {
             RdfDebug.logQueryError("SELECT", query.sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
@@ -193,40 +191,39 @@ class Rdf4jRepository(
                 cause = e
             )
         }
-        val result = prepared.evaluate()
         try {
-            val rows = mutableListOf<BindingSet>()
-            while (result.hasNext()) {
-                val bindingSet = result.next()
-                val values = mutableMapOf<String, RdfTerm>()
-                bindingSet.bindingNames.forEach { name ->
-                    val value = bindingSet.getValue(name)
-                    if (value != null) {
-                        values[name] = Rdf4jTerms.fromRdf4jValue(value)
+            prepared.evaluate().use { result ->
+                val rows = mutableListOf<BindingSet>()
+                while (result.hasNext()) {
+                    val bindingSet = result.next()
+                    val values = mutableMapOf<String, RdfTerm>()
+                    bindingSet.bindingNames.forEach { name ->
+                        val value = bindingSet.getValue(name)
+                        if (value != null) {
+                            values[name] = Rdf4jTerms.fromRdf4jValue(value)
+                        }
                     }
+                    rows.add(MapBindingSet(values))
                 }
-                rows.add(MapBindingSet(values))
+                RdfDebug.logQueryTrace("SELECT", query.sparql, null, System.currentTimeMillis() - startTime, rows.size)
+                Rdf4jResultSet(rows)
             }
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("SELECT", query.sparql, null, executionTime, rows.size)
-            return Rdf4jResultSet(rows)
+        } catch (e: RdfQueryException) {
+            throw e
         } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryError("SELECT", query.sparql, "Failed to execute: ${e.message}")
             throw RdfQueryException(
                 message = "Failed to execute SPARQL query: ${e.message}",
                 query = query.sparql,
                 cause = e
             )
-        } finally {
-            result.close()
         }
     }
     
-    override fun ask(query: SparqlAsk): Boolean {
+    override fun ask(query: SparqlAsk): Boolean = withConnection { conn ->
         val startTime = System.currentTimeMillis()
         val prepared = try {
-            connection.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
+            conn.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
         } catch (e: Exception) {
             RdfDebug.logQueryError("ASK", query.sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
@@ -235,13 +232,11 @@ class Rdf4jRepository(
                 cause = e
             )
         }
-        return try {
+        try {
             val result = prepared.evaluate()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("ASK", query.sparql, null, executionTime, if (result) 1 else 0)
+            RdfDebug.logQueryTrace("ASK", query.sparql, null, System.currentTimeMillis() - startTime, if (result) 1 else 0)
             result
         } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryError("ASK", query.sparql, "Failed to execute: ${e.message}")
             throw RdfQueryException(
                 message = "Failed to execute SPARQL ASK query: ${e.message}",
@@ -251,20 +246,32 @@ class Rdf4jRepository(
         }
     }
     
-    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> =
+        graphQuery("CONSTRUCT", query.sparql)
+
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> =
+        graphQuery("DESCRIBE", query.sparql)
+
+    /**
+     * Shared CONSTRUCT/DESCRIBE execution. The result is materialized to a list inside
+     * the connection scope because the borrowed connection (and its GraphQueryResult
+     * cursor) is closed as soon as [withConnection] returns — a lazy sequence over a
+     * closed connection would fail. Callers that need lazy streaming over large graphs
+     * should use a scoped query API.
+     */
+    private fun graphQuery(kind: String, sparql: String): Sequence<RdfTriple> = withConnection { conn ->
         val startTime = System.currentTimeMillis()
         val prepared = try {
-            connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
+            conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
         } catch (e: Exception) {
-            RdfDebug.logQueryError("CONSTRUCT", query.sparql, "Failed to prepare: ${e.message}")
+            RdfDebug.logQueryError(kind, sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
-                message = "Failed to prepare SPARQL CONSTRUCT query: ${e.message}",
-                query = query.sparql,
+                message = "Failed to prepare SPARQL $kind query: ${e.message}",
+                query = sparql,
                 cause = e
             )
         }
-        val result = prepared.evaluate()
-        return result.use { graphResult ->
+        prepared.evaluate().use { graphResult ->
             val triples = graphResult.iterator().asSequence().map { statement ->
                 RdfTriple(
                     Rdf4jTerms.fromRdf4jResource(statement.subject),
@@ -272,95 +279,68 @@ class Rdf4jRepository(
                     Rdf4jTerms.fromRdf4jValue(statement.`object`)
                 )
             }.toList()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("CONSTRUCT", query.sparql, null, executionTime, triples.size)
-            triples.asSequence()
-        }
-    }
-    
-    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
-        val startTime = System.currentTimeMillis()
-        val prepared = try {
-            connection.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql)
-        } catch (e: Exception) {
-            RdfDebug.logQueryError("DESCRIBE", query.sparql, "Failed to prepare: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to prepare SPARQL DESCRIBE query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-        val result = prepared.evaluate()
-        return result.use { graphResult ->
-            val triples = graphResult.iterator().asSequence().map { statement ->
-                RdfTriple(
-                    Rdf4jTerms.fromRdf4jResource(statement.subject),
-                    Rdf4jTerms.fromRdf4jIri(statement.predicate),
-                    Rdf4jTerms.fromRdf4jValue(statement.`object`)
-                )
-            }.toList()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("DESCRIBE", query.sparql, null, executionTime, triples.size)
+            RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
             triples.asSequence()
         }
     }
     
     override fun update(query: UpdateQuery) {
-        val startTime = System.currentTimeMillis()
-        try {
-            val update = connection.prepareUpdate(QueryLanguage.SPARQL, query.sparql)
-            update.execute()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL UPDATE: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
+        withConnection { conn ->
+            val startTime = System.currentTimeMillis()
+            try {
+                conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).execute()
+                RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
+            } catch (e: Exception) {
+                RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
+                throw RdfQueryException(
+                    message = "Failed to execute SPARQL UPDATE: ${e.message}",
+                    query = query.sparql,
+                    cause = e
+                )
+            }
         }
     }
-    
+
     override fun transaction(operations: RdfRepository.() -> Unit) = runInTransaction(operations)
 
     override fun readTransaction(operations: RdfRepository.() -> Unit) = runInTransaction(operations)
 
     /**
-     * Runs [operations] inside a single RDF4J transaction. If a transaction is
-     * already active on the shared connection (a nested `transaction { }` call),
-     * this joins the existing one instead of calling `begin()` again — RDF4J
-     * throws `IllegalStateException` on a second `begin()`. Only the outermost
-     * call commits/rolls back.
-     *
-     * Note: a [Rdf4jRepository] owns a single [RepositoryConnection], which is
-     * not thread-safe. Concurrent access from multiple threads must be
-     * externally synchronized or use one repository instance per thread.
+     * Runs [operations] inside a single RDF4J transaction. A fresh connection is
+     * borrowed and pinned to the current thread (via [txConnection]) so every
+     * operation in the block — including those on graphs obtained from this
+     * repository — shares the same transaction. A nested `transaction { }` on the
+     * same thread joins the outer one instead of calling `begin()` again (which RDF4J
+     * rejects); only the outermost call begins/commits/rolls back.
      */
     private fun runInTransaction(operations: RdfRepository.() -> Unit) {
-        if (connection.isActive) {
-            // Already inside a transaction managed by an outer call — just run.
+        if (txConnection.get() != null) {
+            // Already inside a transaction on this thread — join it.
             operations(this)
             return
         }
-        connection.begin()
-        try {
-            operations(this)
-            connection.commit()
-        } catch (e: Exception) {
-            connection.rollback()
-            throw e
+        repository.connection.use { conn ->
+            txConnection.set(conn)
+            try {
+                conn.begin()
+                operations(this)
+                conn.commit()
+            } catch (e: Exception) {
+                if (conn.isActive) conn.rollback()
+                throw e
+            } finally {
+                txConnection.remove()
+            }
         }
     }
-    
-    override fun clear(): Boolean {
-        val wasEmpty = connection.isEmpty
-        connection.clear()
-        return !wasEmpty
+
+    override fun clear(): Boolean = withConnection { conn ->
+        val wasEmpty = conn.isEmpty
+        conn.clear()
+        !wasEmpty
     }
-    
-    override fun isClosed(): Boolean = closed.get() || !repository.isInitialized || !connection.isOpen
+
+    override fun isClosed(): Boolean = closed.get() || !repository.isInitialized
     
     override fun getCapabilities(): ProviderCapabilities {
         return ProviderCapabilities(
@@ -375,9 +355,8 @@ class Rdf4jRepository(
     
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        if (connection.isOpen) {
-            connection.close()
-        }
+        // No long-lived connection to close (connections are per-operation); just shut
+        // down the repository. Guarded by the AtomicBoolean against double-close.
         repository.shutDown()
     }
 }
