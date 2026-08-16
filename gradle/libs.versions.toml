@@ -1,6 +1,6 @@
 [versions]
 kotlin = "2.3.21"
-coroutines = "1.10.2"
+coroutines = "1.11.0"
 ksp = "2.3.7"
 junit = "5.13.4"
 junitPlatform = "1.13.4"
