@@ -49,7 +49,10 @@ See [annotations.md](annotations.md) for the full `@Rdf` / `@file:Rdf` / `Prefix
 
 ```kotlin
 object OntoMapper {
-    val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
+    fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)
+    fun unregister(type: Class<*>): Boolean
+    fun isRegistered(type: Class<*>): Boolean
+    fun registeredTypes(): Set<Class<*>>
     fun <T : Any> materialize(ref: RdfRef, type: Class<T>): T
     fun <T : Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T
 }
@@ -102,9 +105,7 @@ RDF4J-based SHACL validation adapter.
 
 ## Version Compatibility
 
-- Kotlin: 1.9.24+
-- JDK: 21+
-- KSP: 1.9.24-1.0.20+
+Built and tested with Kotlin 2.4.20, KSP 2.3.12 and JDK 21+.
 
 ## Getting Started
 

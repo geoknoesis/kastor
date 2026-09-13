@@ -234,8 +234,8 @@ namedGraphs.forEach { graphName ->
 ### SHACL Validation
 
 ```kotlin
-val validation = JenaValidation()
-val person: Person = rdfRef.asType(validation)
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
+val person: Person = rdfRef.asValidatedType(validation)
 val rdfHandle = person.asRdf()
 
 // Validate against SHACL shapes

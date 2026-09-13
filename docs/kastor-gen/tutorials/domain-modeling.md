@@ -334,7 +334,7 @@ Use SHACL for structural validation:
 
 ```kotlin
 // Materialize with validation
-val validation = JenaValidation()
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
 val product: Product = rdfRef.asValidatedType(validation)
 
 // Or validate manually

@@ -12,7 +12,8 @@ HISTORICAL = {
     "docs/kastor/guides/migrating-to-rdf-1.2.md",
     "docs/kastor/reference/versioning-policy.md",
 }
-SKIPPED_TREES = ("docs/project/", "docs/superpowers/")
+# docs/_site/ is the local, git-ignored Jekyll build output and mirrors stale sources.
+SKIPPED_TREES = ("docs/project/", "docs/superpowers/", "docs/_site/")
 PATTERNS = [
     re.compile(r"com\.geoknoesis\.kastor(?:\.gen)?:[A-Za-z0-9_.-]+:(?P<v>\d+\.\d+\.\d+[A-Za-z0-9.-]*)"),
     re.compile(r'id\("com\.geoknoesis\.kastor\.gen"\)\s+version\s+"(?P<v>[^"]+)"'),

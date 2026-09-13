@@ -476,7 +476,7 @@ independently shippable.
 5. **Cut over** (~half day). Switch the processor to call the new generator
    by default; remove the legacy generators; update tests.
 6. **Polish** (~1 day). Inline naming/QName helpers, remove dead code in
-   `processor/api/extensions/`, update `samples/` and `examples/` to use
+   `processor/api/extensions/`, update `examples/` to use
    `@Rdf`.
 
 Total: ~6 working days. Each milestone is gated on `./gradlew test` staying

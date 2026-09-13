@@ -32,7 +32,7 @@ annotation class Rdf(
   val externalValidatorClass: String = "",
   // ── Data-class generation ────────────────────────────────────────────────
   val generateDataClass: Boolean = false,
-  val dataClassSuffix: String = "",
+  val dataClassSuffix: String = "Record",
   val dataClassImplementsInterface: Boolean = false,
   val nestedMode: NestedMode = NestedMode.INTERFACE,
   val generateWriteSupport: Boolean = false,
@@ -44,7 +44,7 @@ annotation class Rdf(
 | Field | Default | Description |
 |---|---|---|
 | `generateDataClass` | `false` | Emit an immutable Kotlin `data class` (and its factory) alongside or instead of the interface+wrapper pair. |
-| `dataClassSuffix` | `""` | Suffix appended to the shape name for the generated data class. E.g. `"Record"` → `PersonRecord`. |
+| `dataClassSuffix` | `"Record"` | Suffix appended to the shape name for the generated data class (`Person` → `PersonRecord`). An empty suffix is rejected when interfaces or wrappers are also generated (or `dataClassImplementsInterface = true`), because the data class would collide with the interface. |
 | `dataClassImplementsInterface` | `false` | When `true`, the generated data class also implements the generated interface, providing structural alignment. |
 | `nestedMode` | `INTERFACE` | How `sh:class` object properties are typed inside the data class — see [`NestedMode`](#nestedmode) below. |
 | `generateWriteSupport` | `false` | Adds a `toTriples(record, subject): List<RdfTriple>` function to the factory object, serializing the data class back to RDF triples. Requires `generateDataClass = true`. |
@@ -93,7 +93,7 @@ With `generateWriteSupport = true` the factory gains a `toTriples` function alon
 ```kotlin
 // Generated (simplified):
 object PersonRecordFactory {
-    init { OntoMapper.registry[PersonRecord::class.java] = { h -> from(h) } }
+    init { OntoMapper.register(PersonRecord::class.java) { handle -> from(handle) } }
 
     fun from(handle: RdfHandle): PersonRecord { ... }
 
@@ -216,7 +216,7 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 
     companion object {
         init {
-            OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+            OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
         }
     }
 }
@@ -323,24 +323,33 @@ interface Employee : Person {
 
 ## Configuration
 
-### KSP Configuration
+Generation is configured through the `@Rdf` fields above; the processor needs no KSP arguments.
 
-Configure KSP processor in `build.gradle.kts`:
+### Resolving `shacl`, `context` and `ontologyPath`
+
+A relative path such as `@Rdf(shacl = "person-shape.ttl")` is resolved, in order, against:
+
+1. the resource directories of the source set containing the annotated file
+   (`src/<set>/kotlin/…/File.kt` → `src/<set>/resources`, then `src/main/resources`, then the project directory);
+2. the directories listed in the KSP option `kastor.gen.resources` (separated by the platform path separator);
+3. the processor class path (legacy behaviour).
+
+Absolute paths are used as-is.
 
 ```kotlin
 ksp {
-    arg("kastor.gen.package", "com.example.mydomain")
-    arg("kastor.gen.generate.registry", "true")
-    arg("kastor.gen.validation.enabled", "true")
+    // Optional: extra directories to search for ontology files
+    arg("kastor.gen.resources", "${projectDir}/ontologies")
 }
 ```
 
-### Available Arguments
+`kastor.gen.resources` is the only KSP option the processor reads.
 
-- `kastor.gen.package` - Base package for generated code
-- `kastor.gen.generate.registry` - Whether to generate registry entries
-- `kastor.gen.validation.enabled` - Whether to enable validation
-- `kastor.gen.cache.enabled` - Whether to enable caching
+### Incremental builds
+
+KSP regenerates when the annotated Kotlin source changes, but it **does not see edits to the SHACL or
+JSON-LD files** themselves. After editing an ontology resource, touch the annotated source file or run a
+clean build — or use the [Gradle plugin](gradle-plugin.md), which tracks those files as task inputs.
 
 ## Best Practices
 
@@ -363,20 +372,18 @@ ksp {
 
 ### Common Errors
 
-1. **Missing IRI:**
-   ```
-   Error: @Rdf requires an IRI
-   ```
+Ontology-driven generation fails the build (rather than silently producing partial or empty output) when:
 
-2. **Invalid Target:**
-   ```
-   Error: @Rdf is not applicable here
-   ```
+1. **The SHACL file is not valid Turtle** — reported as `invalid Turtle: …`.
+2. **Generated names collide** — two classes map to the same type name (compared case-insensitively, since
+   file names must differ on case-insensitive file systems), a class has more than one node shape, or two
+   properties of one shape map to the same Kotlin name. The message lists the IRIs involved; fix it with
+   distinct JSON-LD context terms or `sh:name` values.
+3. **`dataClassSuffix` is empty** while interfaces/wrappers are generated.
 
-3. **Unsupported Type:**
-   ```
-   Error: Type 'CustomType' is not supported for RDF mapping
-   ```
+Constructs the generator cannot represent are skipped with a **warning** naming the shape and property
+(complex property paths, properties without `sh:datatype`/`sh:class`/`sh:node`/`sh:nodeKind`, shapes
+without a target class, …); the rest of the ontology is still generated.
 
 ### Troubleshooting
 

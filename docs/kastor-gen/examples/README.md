@@ -4,9 +4,14 @@ Practical examples and use cases demonstrating Kastor Gen capabilities.
 
 **Runnable Gradle modules** (clone the [Kastor repo](https://github.com/geoknoesis/kastor); these paths are not separate pages on this documentation site):
 
-- [**`examples/dcat-us`**](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us) — DCAT-style SHACL + JSON-LD, KSP, `:examples:dcat-us`
-- [**`examples/hello-codegen`**](https://github.com/geoknoesis/kastor/tree/main/examples/hello-codegen) — minimal codegen pipeline
+- [**`examples/hello-codegen`**](https://github.com/geoknoesis/kastor/tree/main/examples/hello-codegen) — minimal codegen pipeline. `@file:Rdf(shacl = "person-shape.ttl")` makes the KSP processor generate a `Person` interface and `PersonWrapper`; `main` materializes RDF data as a `Person`.
+  Run: `./gradlew :examples:hello-codegen:run`
+- [**`examples/dcat-us`**](https://github.com/geoknoesis/kastor/tree/main/examples/dcat-us) — generates one interface + wrapper per node shape of the DCAT-US 3.0 SHACL shapes (with a JSON-LD context that disambiguates `vcard:Address` / `locn:Address`).
+  Run: `./gradlew :examples:dcat-us:runGeneratedExample` (generated types), `:examples:dcat-us:run` (plain RDF API), `:examples:dcat-us:runManualExample` (hand-written classes)
 - [**`examples/hello-world`**](https://github.com/geoknoesis/kastor/tree/main/examples/hello-world) — RDF-only starter
+
+Generated sources are written under each module's `build/generated/ksp/main/kotlin` and are not checked in.
+Requires JDK 21+.
 
 ## Table of Contents
 

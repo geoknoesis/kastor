@@ -55,7 +55,7 @@ Kastor Gen generates type-safe interfaces automatically:
 flowchart LR
   Ontology["SHACL + JSON-LD"] --> KSP["KSP processor"]
   KSP --> Dom["Domain interfaces"]
-  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.registry"]
+  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.register"]
   KSP --> DC["Data classes (eager)\n+ Factory objects"]
   Graph["RdfGraph / RdfRepository"] --> Mat["materialize / asType"]
   Wrap --> Mat
@@ -218,13 +218,33 @@ Both modes register in `OntoMapper` so **`graph.materialize<CatalogRecord>(node)
 
 ### 1. Add Dependencies
 
-> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+> Kastor Gen is **not yet published** to Maven Central or the Gradle Plugin Portal. Requires JDK 21+.
+
+Inside the Kastor build (or a composite build that includes it):
 
 ```kotlin
-dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.3.0-SNAPSHOT")
+plugins {
+    id("org.jetbrains.kotlin.jvm")
+    id("com.google.devtools.ksp")
 }
+
+dependencies {
+    implementation(project(":kastor-gen:runtime"))
+    ksp(project(":kastor-gen:processor"))
+}
+```
+
+From another project, first run
+`./gradlew :rdf:core:publishToMavenLocal :kastor-gen:runtime:publishToMavenLocal :kastor-gen:processor:publishToMavenLocal`
+in a Kastor checkout, add `mavenLocal()` to your repositories, and depend on
+`com.geoknoesis.kastor:kastor-gen-runtime` / `ksp("com.geoknoesis.kastor:kastor-gen-processor")` with the
+Kastor build's project version. See [Getting Started](tutorials/getting-started.md).
+
+Try the working examples in the repository:
+
+```bash
+./gradlew :examples:hello-codegen:run
+./gradlew :examples:dcat-us:runGeneratedExample
 ```
 
 ### 2. Define Domain Interface

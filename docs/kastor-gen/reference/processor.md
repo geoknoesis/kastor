@@ -97,11 +97,15 @@ Represents a SHACL NodeShape.
 
 ```kotlin
 data class ShaclShape(
+    val shapeIri: String,
     val targetClass: String,
     val properties: List<ShaclProperty>,
-    val iri: String? = null
+    /** Target classes of parent shapes (`sh:node` on the node shape or `rdfs:subClassOf`). */
+    val parentClasses: List<String> = emptyList(),
 )
 ```
+
+Blank-node node shapes get a stable synthetic `shapeIri` (`urn:kastor:shape:<targetClass>`).
 
 #### `ShaclProperty`
 
@@ -110,11 +114,13 @@ Represents a property in a SHACL shape.
 ```kotlin
 data class ShaclProperty(
     val path: String,
-    val name: String? = null,
-    val description: String? = null,
-    val datatype: String? = null,
-    val classIri: String? = null,
-    // ... constraint properties
+    val name: String,
+    val description: String,
+    val datatype: String?,
+    val targetClass: String?,
+    val minCount: Int?,
+    val maxCount: Int?,
+    // ... constraint properties (minLength, pattern, minInclusive, inValues, nodeKind, ...)
 )
 ```
 
@@ -125,9 +131,9 @@ JSON-LD context providing type mappings.
 ```kotlin
 data class JsonLdContext(
     val prefixes: Map<String, String>,
-    val baseIri: String?,
-    val vocabIri: String?,
-    val typeMappings: Map<String, JsonLdType>,
+    val baseIri: Iri? = null,
+    val vocabIri: Iri? = null,
+    val typeMappings: Map<String, Iri>,
     val propertyMappings: Map<String, JsonLdProperty>
 )
 ```
@@ -197,6 +203,16 @@ All exception classes are public for error handling:
 - `FileGenerationException` - Thrown when file generation fails
 - `ProcessingException` - Thrown when processing fails
 
+## Processor options
+
+The processor reads one KSP option:
+
+| Option | Description |
+|---|---|
+| `kastor.gen.resources` | Extra directories (platform path-separator separated) searched for relative `shacl`, `context` and `ontologyPath` files, after the annotated file's source-set resources. |
+
+See [Annotations: resolving paths](annotations.md#resolving-shacl-context-and-ontologypath).
+
 ## Usage Patterns
 
 ### Basic Usage
@@ -250,9 +266,11 @@ These are subject to change without notice and are not part of the public API co
 
 ## Version Compatibility
 
-- Kotlin: 1.9.24+
+Built and tested with:
+
+- Kotlin: 2.4.20
+- KSP: 2.3.12
 - JDK: 21+
-- KSP: 1.9.24-1.0.20+
 
 ## See Also
 

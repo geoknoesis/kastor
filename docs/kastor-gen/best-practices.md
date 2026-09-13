@@ -222,7 +222,7 @@ Use validation for critical operations:
 
 ```kotlin
 // ✅ Good: Validation for critical operations
-val validation = JenaValidation()
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
 val catalog: Catalog = catalogRef.asValidatedType(validation)
 
 // Or validate explicitly
@@ -361,7 +361,7 @@ object OntoMapperConfig {
     
     fun initialize() {
         if (validationEnabled) {
-            val validation = JenaValidation()
+            val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
         }
     }
 }
@@ -379,7 +379,7 @@ fun loadCatalog(iri: String, graph: RdfGraph): Catalog {
     require(iri.isNotBlank()) { "IRI cannot be blank" }
     require(graph.getTriples().isNotEmpty()) { "Graph cannot be empty" }
     
-    val validation = JenaValidation()
+    val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
     val catalogRef = RdfRef(Iri(iri), graph)
     return catalogRef.asValidatedType(validation)
 }
@@ -440,8 +440,8 @@ dependencies {
 }
 
 ksp {
-    arg("validation.enabled", "true")
-    arg("shacl.shapes.path", "ontologies/production.shacl.ttl")
+    // The only processor option: extra directories searched for @Rdf(shacl/context/ontologyPath) files
+    arg("kastor.gen.resources", "${projectDir}/ontologies")
 }
 ```
 
@@ -456,12 +456,12 @@ import org.slf4j.LoggerFactory
 
 // ✅ Good: Runtime configuration
 fun initializeOntoMapper() {
-    val validation = JenaValidation() // optional module: `kastor-gen:validation-jena`
+    val validation = JenaValidation.fromTurtle(shapesTtl) // optional module `kastor-gen:validation-jena`; shapesTtl = SHACL Turtle
 
     // Eager-load wrapper classes you materialize in hot paths
     OntoMapper.initialize(Person::class.java, Catalog::class.java)
 
-    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper ready ({} factories)", OntoMapper.registry.size)
+    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper ready ({} factories)", OntoMapper.registeredTypes().size)
 }
 ```
 
