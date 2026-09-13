@@ -42,10 +42,14 @@ class QualityChecker private constructor(
     /**
      * Validates after optional OWL/RDFS materialisation per [reasoning], and merges **reasoning preflight**
      * inconsistency rows (Kastor **K07**; pitfall metadata from **`OOPS_PITFALL_REGISTRY`**, included in [QualityChecker.default]).
+     *
+     * SHACL validation runs on the materialised graph, but the [MetricsProvider] always receives the **asserted**
+     * [ontology]: reasoner closures (reflexive/transitive `rdfs:subClassOf`, `rdfs:Resource` typing) would put
+     * every class in a cycle and make structural metrics and importance scores meaningless.
      */
     fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport {
         val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
-        val metricsContext = computeMetricsContext(materialized.graph)
+        val metricsContext = computeMetricsContext(ontology)
         val raw = validator.validate(materialized.graph, mergedShapes)
         val base = QualityReport.from(raw, catalogs, metricsContext)
         val rr = materialized.reasoningResult ?: return base
