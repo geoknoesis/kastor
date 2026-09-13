@@ -112,15 +112,18 @@ Transport, HTTP and result-format failures surface as `RdfQueryException` (HTTP 
 try {
     val results = repo.select(SparqlSelectQuery("SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10"))
     results.forEach { println(it) }
-} catch (e: SparqlException) {
-    when (e) {
-        is TimeoutException -> println("Query timed out")
-        is AuthenticationException -> println("Authentication failed")
-        is NetworkException -> println("Network error: ${e.message}")
-        else -> println("SPARQL error: ${e.message}")
-    }
+} catch (e: RdfQueryException) {
+    // Transport failures (including timeouts), HTTP error statuses such as 401/403,
+    // response-size limits and malformed results. HTTP error bodies are part of the message.
+    println("SPARQL error [${e.errorCode.code}]: ${e.message}")
+    e.query?.let { println("Query: $it") }
+} catch (e: IllegalArgumentException) {
+    // Invalid SparqlEndpointConfig values, or blank nodes passed to find/has/remove
+    println("Invalid request: ${e.message}")
 }
 ```
+
+`RdfQueryException` (package `com.geoknoesis.kastor.rdf`) is one of the `RdfException` subclasses in `rdf-core`, alongside `RdfFormatException`, `RdfProviderException` and `RdfTransactionException`. Each carries an `errorCode` for programmatic handling. Transactions are not supported by this adapter: `transaction { }` and `readTransaction { }` throw `UnsupportedOperationException`.
 
 ## Performance Tips
 
