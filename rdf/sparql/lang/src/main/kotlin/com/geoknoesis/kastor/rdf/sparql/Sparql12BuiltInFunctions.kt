@@ -5,6 +5,8 @@ import com.geoknoesis.kastor.rdf.vocab.SPARQL12
 
 /**
  * Built-in SPARQL 1.2 functions for service description.
+ *
+ * [SparqlExtensionFunctionRegistry] registers these on first use.
  */
 object Sparql12BuiltInFunctions {
     
@@ -179,12 +181,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         )
     )
-    
-    init {
-        // Register all built-in functions
-        functions.forEach { function -> SparqlExtensionFunctionRegistry.register(function) }
     }
-}
 
 
 

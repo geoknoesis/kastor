@@ -6,6 +6,8 @@ dependencies {
   api(project(":rdf:core"))
   implementation(libs.kotlinx.coroutines.core)
   testRuntimeOnly(project(":rdf:jena"))
+  // Rendered queries/updates/Turtle are validated with Jena's parsers in tests.
+  testImplementation(libs.jena.arq)
 }
 
 publishing {

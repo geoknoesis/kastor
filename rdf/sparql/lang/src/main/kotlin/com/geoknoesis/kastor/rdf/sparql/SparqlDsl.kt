@@ -134,7 +134,7 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
     private var reduced = false
     
     fun version(version: String) {
-        this.version = version
+        this.version = VersionDeclaration(version).version
     }
     
     fun prefix(prefix: String, namespace: String) {
@@ -198,10 +198,12 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
     }
     
     fun limit(value: Int) {
+        require(value >= 0) { "LIMIT must not be negative: $value" }
         limit = value
     }
-    
+
     fun offset(value: Int) {
+        require(value >= 0) { "OFFSET must not be negative: $value" }
         offset = value
     }
     
@@ -235,7 +237,7 @@ class AskBuilder {
     private val fromNamed = mutableListOf<Iri>()
     
     fun version(version: String) {
-        this.version = version
+        this.version = VersionDeclaration(version).version
     }
     
     fun prefix(prefix: String, namespace: String) {
@@ -279,7 +281,7 @@ class ConstructBuilder {
     private val fromNamed = mutableListOf<Iri>()
     
     fun version(version: String) {
-        this.version = version
+        this.version = VersionDeclaration(version).version
     }
     
     fun prefix(prefix: String, namespace: String) {
@@ -294,10 +296,13 @@ class ConstructBuilder {
         fromNamed.add(graph)
     }
     
+    /**
+     * CONSTRUCT templates are triples-only (SPARQL has no quad CONSTRUCT); any other
+     * pattern, including GRAPH blocks, is rejected rather than silently dropped.
+     */
     fun template(block: PatternBuilder.() -> Unit) {
         val builder = PatternBuilder()
         builder.apply(block)
-        // Extract triple patterns from the pattern builder
         extractTriplePatterns(builder.build(), template)
     }
     
@@ -311,7 +316,9 @@ class ConstructBuilder {
         when (pattern) {
             is TriplePatternAst -> result.add(pattern)
             is GroupPatternAst -> pattern.patterns.forEach { extractTriplePatterns(it, result) }
-            else -> {} // Other patterns not valid in CONSTRUCT template
+            else -> throw IllegalArgumentException(
+                "CONSTRUCT templates may only contain triple patterns; ${pattern::class.simpleName} is not allowed"
+            )
         }
     }
     
@@ -338,7 +345,7 @@ class DescribeBuilder(private val initialTerms: List<RdfTerm>) {
     private val fromNamed = mutableListOf<Iri>()
     
     fun version(version: String) {
-        this.version = version
+        this.version = VersionDeclaration(version).version
     }
     
     fun prefix(prefix: String, namespace: String) {
@@ -387,6 +394,12 @@ class PatternBuilder {
         patterns.add(OptionalPatternAst(builder.build()))
     }
     
+    /**
+     * `{ previous } UNION { block }`: the pattern added immediately before this call
+     * becomes the left operand (a chain of `union {}` calls extends the same UNION).
+     * When nothing precedes it, the block starts a new group that a following
+     * `union {}` can combine with.
+     */
     fun union(block: PatternBuilder.() -> Unit) {
         if (patterns.isEmpty()) {
             val builder = PatternBuilder()
@@ -400,17 +413,14 @@ class PatternBuilder {
         }
     }
     
+    /**
+     * `MINUS { block }`, applied (as in SPARQL) to everything that precedes it in the
+     * current group. It is never turned into a plain group/join.
+     */
     fun minus(block: PatternBuilder.() -> Unit) {
-        if (patterns.isEmpty()) {
-            val builder = PatternBuilder()
-            builder.apply(block)
-            patterns.add(builder.build())
-        } else {
-            val builder = PatternBuilder()
-            builder.apply(block)
-            val last = patterns.removeAt(patterns.size - 1)
-            patterns.add(MinusPatternAst(last, builder.build()))
-        }
+        val builder = PatternBuilder()
+        builder.apply(block)
+        patterns.add(MinusPatternAst(GroupPatternAst(emptyList()), builder.build()))
     }
     
     fun graph(graphName: RdfTerm, block: PatternBuilder.() -> Unit) {
@@ -429,7 +439,8 @@ class PatternBuilder {
         patterns.add(ValuesPatternAst(listOf(variable), values.map { listOf(it) }))
     }
     
-    fun values(variables: List<Var>, values: List<List<RdfTerm>>) {
+    /** Multi-variable VALUES; a `null` entry renders as `UNDEF`. */
+    fun values(variables: List<Var>, values: List<List<RdfTerm?>>) {
         patterns.add(ValuesPatternAst(variables, values))
     }
     
@@ -459,7 +470,9 @@ class PatternBuilder {
         patterns.add(FilterPatternAst(expression))
     }
     
-    // Convenience: filter with direct expression
+    // Hidden: it made `filter { ... }` ambiguous with the FilterBuilder overload.
+    // Kept (hidden) for binary compatibility only.
+    @Deprecated("Use filter { ... } (FilterBuilder receiver) or filter(expression)", level = DeprecationLevel.HIDDEN)
     fun filter(expr: () -> FilterExpressionAst) {
         patterns.add(FilterPatternAst(expr()))
     }
@@ -692,10 +705,10 @@ fun contains(expr: ExpressionAst, substring: String): FilterExpressionAst =
     FunctionCallAst("CONTAINS", listOf(expr, TermExpressionAst(string(substring))))
 
 fun startsWith(expr: ExpressionAst, prefix: String): FilterExpressionAst =
-    FunctionCallAst("STARTS_WITH", listOf(expr, TermExpressionAst(string(prefix))))
+    FunctionCallAst("STRSTARTS", listOf(expr, TermExpressionAst(string(prefix))))
 
 fun endsWith(expr: ExpressionAst, suffix: String): FilterExpressionAst =
-    FunctionCallAst("ENDS_WITH", listOf(expr, TermExpressionAst(string(suffix))))
+    FunctionCallAst("STRENDS", listOf(expr, TermExpressionAst(string(suffix))))
 
 fun strBefore(expr: ExpressionAst, substring: String): ExpressionAst =
     FunctionCallAst("STRBEFORE", listOf(expr, TermExpressionAst(string(substring))))
@@ -720,6 +733,10 @@ fun if_(condition: FilterExpressionAst, thenValue: ExpressionAst, elseValue: Exp
 fun count(expr: ExpressionAst, distinct: Boolean = false): AggregateExpressionAst =
     AggregateExpressionAst(AggregateFunction.COUNT, expr, distinct)
 
+/** `COUNT(*)` / `COUNT(DISTINCT *)`. */
+fun countAll(distinct: Boolean = false): AggregateExpressionAst =
+    AggregateExpressionAst(AggregateFunction.COUNT, null, distinct)
+
 fun sum(expr: ExpressionAst, distinct: Boolean = false): AggregateExpressionAst =
     AggregateExpressionAst(AggregateFunction.SUM, expr, distinct)
 
@@ -734,6 +751,10 @@ fun max(expr: ExpressionAst): AggregateExpressionAst =
 
 fun groupConcat(expr: ExpressionAst, distinct: Boolean = false): AggregateExpressionAst =
     AggregateExpressionAst(AggregateFunction.GROUP_CONCAT, expr, distinct)
+
+/** `GROUP_CONCAT(expr ; SEPARATOR="separator")`. */
+fun groupConcat(expr: ExpressionAst, separator: String, distinct: Boolean = false): AggregateExpressionAst =
+    AggregateExpressionAst(AggregateFunction.GROUP_CONCAT, expr, distinct, separator)
 
 fun sample(expr: ExpressionAst): AggregateExpressionAst =
     AggregateExpressionAst(AggregateFunction.SAMPLE, expr, false)
@@ -777,7 +798,7 @@ class UpdateBuilder {
     private val operations = mutableListOf<UpdateOperationAst>()
     
     fun version(version: String) {
-        this.version = version
+        this.version = VersionDeclaration(version).version
     }
     
     fun prefix(prefix: String, namespace: String) {
@@ -843,65 +864,71 @@ class UpdateBuilder {
     )
 }
 
+/** Triples of one `GRAPH <g> { ... }` block in INSERT DATA / DELETE DATA. */
+@SparqlDslMarker
+class GraphDataBuilder {
+    internal val triples = mutableListOf<TriplePatternAst>()
+
+    fun triple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
+        triples.add(TriplePatternAst(subject, predicate, obj))
+    }
+}
+
 @SparqlDslMarker
 class InsertDataBuilder {
     private val data = mutableListOf<TriplePatternAst>()
-    private val using = mutableListOf<Iri>()
-    private val usingNamed = mutableListOf<Iri>()
-    private var with: Iri? = null
+    private val graphData = mutableListOf<QuadBlockAst>()
     
-    fun using(graph: Iri) {
-        using.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun using(graph: Iri): Unit = throw UnsupportedOperationException("USING is not valid here")
     
-    fun usingNamed(graph: Iri) {
-        usingNamed.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun usingNamed(graph: Iri): Unit = throw UnsupportedOperationException("USING NAMED is not valid here")
     
-    fun with(graph: Iri) {
-        with = graph
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun with(graph: Iri): Unit = throw UnsupportedOperationException("WITH is not valid here")
     
     fun triple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
         data.add(TriplePatternAst(subject, predicate, obj))
     }
     
+    /** Data in a named graph: `GRAPH <graph> { ... }`. */
+    fun graph(graph: Iri, block: GraphDataBuilder.() -> Unit) {
+        graphData.add(QuadBlockAst(graph, GraphDataBuilder().apply(block).triples.toList()))
+    }
+    
     fun build(): InsertDataOperationAst = InsertDataOperationAst(
         data = data,
-        using = using,
-        usingNamed = usingNamed,
-        with = with
+        graphData = graphData
     )
 }
 
 @SparqlDslMarker
 class DeleteDataBuilder {
     private val data = mutableListOf<TriplePatternAst>()
-    private val using = mutableListOf<Iri>()
-    private val usingNamed = mutableListOf<Iri>()
-    private var with: Iri? = null
+    private val graphData = mutableListOf<QuadBlockAst>()
     
-    fun using(graph: Iri) {
-        using.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun using(graph: Iri): Unit = throw UnsupportedOperationException("USING is not valid here")
     
-    fun usingNamed(graph: Iri) {
-        usingNamed.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun usingNamed(graph: Iri): Unit = throw UnsupportedOperationException("USING NAMED is not valid here")
     
-    fun with(graph: Iri) {
-        with = graph
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun with(graph: Iri): Unit = throw UnsupportedOperationException("WITH is not valid here")
     
     fun triple(subject: RdfTerm, predicate: RdfTerm, obj: RdfTerm) {
         data.add(TriplePatternAst(subject, predicate, obj))
     }
     
+    /** Data in a named graph: `GRAPH <graph> { ... }`. */
+    fun graph(graph: Iri, block: GraphDataBuilder.() -> Unit) {
+        graphData.add(QuadBlockAst(graph, GraphDataBuilder().apply(block).triples.toList()))
+    }
+    
     fun build(): DeleteDataOperationAst = DeleteDataOperationAst(
         data = data,
-        using = using,
-        usingNamed = usingNamed,
-        with = with
+        graphData = graphData
     )
 }
 
@@ -909,6 +936,8 @@ class DeleteDataBuilder {
 class ModifyBuilder {
     private val delete = mutableListOf<TriplePatternAst>()
     private val insert = mutableListOf<TriplePatternAst>()
+    private val deleteGraphs = mutableListOf<QuadBlockAst>()
+    private val insertGraphs = mutableListOf<QuadBlockAst>()
     private var where: GraphPatternAst? = null
     private val using = mutableListOf<Iri>()
     private val usingNamed = mutableListOf<Iri>()
@@ -926,16 +955,18 @@ class ModifyBuilder {
         with = graph
     }
     
+    /** DELETE template: triple patterns and `graph(g) { ... }` blocks of triple patterns. */
     fun delete(block: PatternBuilder.() -> Unit) {
         val builder = PatternBuilder()
         builder.apply(block)
-        extractTriplePatterns(builder.build(), delete)
+        extractQuadPatterns(builder.build(), delete, deleteGraphs)
     }
-    
+
+    /** INSERT template: triple patterns and `graph(g) { ... }` blocks of triple patterns. */
     fun insert(block: PatternBuilder.() -> Unit) {
         val builder = PatternBuilder()
         builder.apply(block)
-        extractTriplePatterns(builder.build(), insert)
+        extractQuadPatterns(builder.build(), insert, insertGraphs)
     }
     
     fun where(block: PatternBuilder.() -> Unit) {
@@ -944,43 +975,54 @@ class ModifyBuilder {
         where = builder.build()
     }
     
-    private fun extractTriplePatterns(pattern: GraphPatternAst, result: MutableList<TriplePatternAst>) {
+    private fun extractQuadPatterns(
+        pattern: GraphPatternAst,
+        triples: MutableList<TriplePatternAst>,
+        graphs: MutableList<QuadBlockAst>,
+    ) {
         when (pattern) {
-            is TriplePatternAst -> result.add(pattern)
-            is GroupPatternAst -> pattern.patterns.forEach { extractTriplePatterns(it, result) }
-            else -> {} // Other patterns not valid in DELETE/INSERT
+            is TriplePatternAst -> triples.add(pattern)
+            is GroupPatternAst -> pattern.patterns.forEach { extractQuadPatterns(it, triples, graphs) }
+            is GraphPatternAstImpl -> {
+                val inner = mutableListOf<TriplePatternAst>()
+                val nested = mutableListOf<QuadBlockAst>()
+                extractQuadPatterns(pattern.pattern, inner, nested)
+                require(nested.isEmpty()) { "GRAPH blocks cannot be nested in a DELETE/INSERT template" }
+                graphs.add(QuadBlockAst(pattern.graphName, inner))
+            }
+            else -> throw IllegalArgumentException(
+                "DELETE/INSERT templates may only contain triple patterns and GRAPH blocks; " +
+                    "${pattern::class.simpleName} is not allowed"
+            )
         }
     }
-    
+
     fun build(): ModifyOperationAst = ModifyOperationAst(
         delete = delete,
         insert = insert,
         where = where,
         using = using,
         usingNamed = usingNamed,
-        with = with
+        with = with,
+        deleteGraphs = deleteGraphs,
+        insertGraphs = insertGraphs
     )
 }
 
 @SparqlDslMarker
 class DeleteWhereBuilder {
     private var where: GraphPatternAst? = null
-    private val using = mutableListOf<Iri>()
-    private val usingNamed = mutableListOf<Iri>()
-    private var with: Iri? = null
     
-    fun using(graph: Iri) {
-        using.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun using(graph: Iri): Unit = throw UnsupportedOperationException("USING is not valid in DELETE WHERE")
     
-    fun usingNamed(graph: Iri) {
-        usingNamed.add(graph)
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun usingNamed(graph: Iri): Unit = throw UnsupportedOperationException("USING NAMED is not valid in DELETE WHERE")
     
-    fun with(graph: Iri) {
-        with = graph
-    }
+    @Deprecated("USING/USING NAMED/WITH are only valid on modify { } (DELETE/INSERT ... WHERE)", level = DeprecationLevel.ERROR)
+    fun with(graph: Iri): Unit = throw UnsupportedOperationException("WITH is not valid in DELETE WHERE")
     
+    /** DELETE WHERE quad pattern: triple patterns and `graph(g) { ... }` blocks only. */
     fun where(block: PatternBuilder.() -> Unit) {
         val builder = PatternBuilder()
         builder.apply(block)
@@ -988,10 +1030,7 @@ class DeleteWhereBuilder {
     }
     
     fun build(): DeleteWhereOperationAst = DeleteWhereOperationAst(
-        where = where ?: GroupPatternAst(emptyList()),
-        using = using,
-        usingNamed = usingNamed,
-        with = with
+        where = where ?: GroupPatternAst(emptyList())
     )
 }
 
