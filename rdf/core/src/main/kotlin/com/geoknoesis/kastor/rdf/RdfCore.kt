@@ -475,26 +475,24 @@ object Rdf {
     fun parseFromInputStream(inputStream: InputStream, format: String): MutableRdfGraph {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         val providers = RdfProviderRegistry.discoverProviders()
-        val candidates = providers.filter { it.supportsInputFormat(formatEnum.formatName) }
+        // The stream goes straight to the highest-priority provider that declares the input format; nothing
+        // is buffered. Another provider is only tried if one declines before consuming any input.
+        val input = CountingInputStream(inputStream)
 
-        if (candidates.isNotEmpty()) {
-            // Read the stream exactly once: every candidate gets the full input, and the bytes
-            // give parse errors a source snippet.
-            val data = inputStream.readBytes()
-            for (provider in candidates) {
-                try {
-                    return provider.parseGraph(data.inputStream(), formatEnum.formatName)
-                } catch (e: UnsupportedOperationException) {
-                    // Provider doesn't actually support it, try next
-                    continue
-                } catch (e: RdfFormatException) {
-                    // Format error, rethrow
-                    throw e
-                } catch (e: Exception) {
-                    // Extract parsing error context with line/column information
-                    val parseError = extractParseErrorContext(e, formatEnum.formatName, data)
-                    throw RdfFormatException.ParseError(parseError)
-                }
+        for (provider in providers) {
+            if (!provider.supportsInputFormat(formatEnum.formatName)) continue
+            try {
+                return provider.parseGraph(input, formatEnum.formatName)
+            } catch (e: UnsupportedOperationException) {
+                if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
+                continue
+            } catch (e: RdfFormatException) {
+                throw e
+            } catch (e: Exception) {
+                e.inputLimitCause()?.let { throw it }
+                // Extract parsing error context with line/column information
+                val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
+                throw RdfFormatException.ParseError(parseError)
             }
         }
 
@@ -503,7 +501,7 @@ object Rdf {
             providers.flatMap { it.getCapabilities().supportedInputFormats }.distinct()
         )
     }
-    
+
     /**
      * Parse RDF data from an input stream into a graph (type-safe version).
      * 
