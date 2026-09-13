@@ -193,7 +193,7 @@ class NativeExtendedFeaturesTest {
     }
 
     @Test
-    fun `maxCount zero uses sole triple object as witness value`() {
+    fun `maxCount results carry no sh value per SHACL`() {
         val shapes =
             Rdf.graph {
                 val shape = Iri("${ex}S")
@@ -213,7 +213,7 @@ class NativeExtendedFeaturesTest {
             NativeShaclValidatorProvider().createValidator(ValidationConfig.default()).validate(data, shapes)
         assertFalse(report.isValid)
         val v = report.violations.first { it.constraint.constraintType == ConstraintType.MAX_COUNT }
-        assertTrue(v.value is Literal)
-        assertTrue((v.value as Literal).lexical == "only")
+        // SHACL §4.2.2: MaxCountConstraintComponent results have no sh:value.
+        assertTrue(v.value == null)
     }
 }
