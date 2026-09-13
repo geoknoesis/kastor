@@ -59,7 +59,7 @@ val query = select("name", "age") {
 
 This generates:
 ```sparql
-VERSION 1.2
+VERSION "1.2"
 
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
@@ -330,31 +330,34 @@ SPARQL 1.2 introduces many new built-in functions:
 ```kotlin
 val query = select {
     version("1.2")
-    expression(replaceAll(var_("text"), "old", "new"), "replaced")
-    expression(encodeForUri(var_("text")), "encoded")
-    expression(decodeForUri(var_("text")), "decoded")
+    expression(replace(var_("text"), "old", "new"), "replaced")   // REPLACE
+    expression(encodeForUri(var_("text")), "encoded")             // ENCODE_FOR_URI
     expression(contains(var_("text"), "substring"), "hasSubstring")
-    expression(startsWith(var_("text"), "prefix"), "hasPrefix")
-    expression(endsWith(var_("text"), "suffix"), "hasSuffix")
+    expression(startsWith(var_("text"), "prefix"), "hasPrefix")   // STRSTARTS
+    expression(endsWith(var_("text"), "suffix"), "hasSuffix")     // STRENDS
     where {
         pattern(var_("s"), iri("ex:text"), var_("text"))
     }
 }
 ```
 
+`replaceAll(...)` is a deprecated alias that also renders `REPLACE` (SPARQL `REPLACE` already replaces every match). `decodeForUri(...)` is deprecated with level ERROR: SPARQL has no `DECODE_FOR_URI` function.
+
 #### Enhanced Numeric Functions
 ```kotlin
 val query = select {
     version("1.2")
-    expression(rand(), "randomValue")
-    expression(random(), "randomValue2")
-    expression(now(), "currentTime")
-    expression(timezone(), "timezone")
+    expression(rand(), "randomValue")                 // RAND()
+    expression(now(), "currentTime")                  // NOW()
+    expression(timezone(var_("when")), "timezone")    // TIMEZONE(?when)
+    expression(dateTime(var_("text")), "asDateTime")  // xsd:dateTime(?text) cast; also date(...), time(...)
     where {
         pattern(var_("s"), iri("ex:value"), var_("value"))
     }
 }
 ```
+
+`random()` and the zero-argument `timezone()` are deprecated with level ERROR because standard SPARQL has no equivalent: use `rand()` and `timezone(expr)`.
 
 #### Literal Base Direction Functions
 ```kotlin
@@ -367,6 +370,8 @@ val query = select(SparqlSelectQuery("text"))) {
     }
 }
 ```
+
+The one-argument forms `hasLang(x)` / `hasLangdir(x)` render the SPARQL 1.2 built-ins `hasLANG(?x)` / `hasLANGDIR(?x)`. The two-argument forms are portable shortcuts: `hasLang(x, "en")` renders `LANGMATCHES(LANG(?x), "en")` and `hasLangdir(x, "rtl")` renders `LANGDIR(?x) = "rtl"` (only `ltr` and `rtl` are accepted).
 
 #### RDF-star Functions
 ```kotlin
@@ -396,7 +401,7 @@ select("avgAge", "maxAge", "count") {
     groupBy()
 }
 
-// In HAVING
+// In HAVING (renders HAVING (COUNT(?age) > 10))
 having {
     filter(count(ageVar) gt 10)
 }
@@ -405,12 +410,13 @@ having {
 ### Available Aggregates
 
 - `count()`: Count results
+- `countAll()`: `COUNT(*)` (`countAll(distinct = true)` for `COUNT(DISTINCT *)`)
 - `countDistinct()`: Count unique values
 - `sum()`: Sum of values
 - `avg()`: Average of values
 - `min()`: Minimum value
 - `max()`: Maximum value
-- `groupConcat()`: Concatenate values
+- `groupConcat()`: Concatenate values; `groupConcat(expr, separator)` renders `GROUP_CONCAT(?x ; SEPARATOR="...")`
 
 ## SubSelect
 
@@ -453,28 +459,26 @@ val query = select(SparqlSelectQuery("confidence"))) {
     prefix("foaf", FOAF.namespace)
     prefix("ex", "http://example.org/")
     where {
-        // Quoted triple pattern
+        // Reified-triple pattern: matches any reifier of the triple
         quotedTriple(var_("person"), FOAF.name, var_("name"))
-        
-        // Use quoted triple in patterns
-        pattern(quotedTriple(var_("person"), FOAF.name, var_("name")), 
-                iri("ex:confidence"), var_("confidence"))
     }
 }
 ```
 
 This generates:
 ```sparql
-VERSION 1.2
+VERSION "1.2"
 
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 PREFIX ex: <http://example.org/>
 
 SELECT ?confidence
 WHERE {
-  << ?person foaf:name ?name >> ex:confidence ?confidence .
+  << ?person foaf:name ?name >> .
 }
 ```
+
+`quotedTriple(...)` renders the SPARQL 1.2 reified triple `<< s p o >>`. A bare triple term `<<( s p o )>>` is not a valid standalone graph pattern and is rejected by the renderer; to bind the reifier, use `ReifierPatternAst`, which renders `?r <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( s p o )>> .` (`rdf:reifies` is always written as a full IRI).
 
 ### SPARQL 1.2 RDF-star Functions
 

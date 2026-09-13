@@ -56,25 +56,28 @@ val query = """
 
 ### 2. Enhanced String Functions
 
-#### `replaceAll` Function
+#### `REPLACE` Function
 ```kotlin
 val query = """
     SELECT ?result WHERE {
-        BIND(replaceAll("Hello World", "World", "Universe") AS ?result)
+        BIND(REPLACE("Hello World", "World", "Universe") AS ?result)
     }
 """
 // Result: "Hello Universe"
 ```
 
-#### URI Encoding/Decoding
+In the Kotlin query DSL use `replace(expr, pattern, replacement)`; `replaceAll(...)` is a deprecated alias that renders the same `REPLACE` call.
+
+#### URI Encoding
 ```kotlin
 val query = """
-    SELECT ?encoded ?decoded WHERE {
-        BIND(encodeForUri("Hello World!") AS ?encoded)
-        BIND(decodeForUri("Hello%20World%21") AS ?decoded)
+    SELECT ?encoded WHERE {
+        BIND(ENCODE_FOR_URI("Hello World!") AS ?encoded)
     }
 """
 ```
+
+SPARQL has no `DECODE_FOR_URI`; the DSL's `decodeForUri(...)` is deprecated with level ERROR.
 
 ### 3. Language and Direction Functions
 
@@ -84,58 +87,66 @@ val query = """
     SELECT ?langdir ?hasLang ?hasLangdir WHERE {
         ?s rdfs:label "Hello"@en .
         BIND(LANGDIR(?s) AS ?langdir)
-        BIND(hasLANG(?s, "en") AS ?hasLang)
-        BIND(hasLANGDIR(?s, "ltr") AS ?hasLangdir)
+        BIND(hasLANG(?s) AS ?hasLang)
+        BIND(hasLANGDIR(?s) AS ?hasLangdir)
     }
 """
 ```
+
+`hasLANG` and `hasLANGDIR` take one argument. In the Kotlin DSL, `hasLang(x)` / `hasLangdir(x)` render these built-ins, while `hasLang(x, "en")` renders `LANGMATCHES(LANG(?x), "en")` and `hasLangdir(x, "ltr")` renders `LANGDIR(?x) = "ltr"`.
 
 ### 4. Date/Time Functions
 
 #### Current Time Functions
 ```kotlin
 val query = """
-    SELECT ?now ?timezone ?date ?time WHERE {
-        BIND(now() AS ?now)
-        BIND(timezone() AS ?timezone)
-        BIND(date() AS ?date)
-        BIND(time() AS ?time)
+    SELECT ?now ?timezone WHERE {
+        BIND(NOW() AS ?now)
+        BIND(TIMEZONE(NOW()) AS ?timezone)
     }
 """
 ```
 
+`TIMEZONE` requires a dateTime argument; the DSL's zero-argument `timezone()` is deprecated with level ERROR (use `timezone(expr)`).
+
 #### Date/Time Construction
 ```kotlin
 val query = """
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
     SELECT ?datetime WHERE {
-        BIND(dateTime("2024-01-15T10:30:00Z") AS ?datetime)
+        BIND(xsd:dateTime("2024-01-15T10:30:00Z") AS ?datetime)
     }
 """
 ```
+
+The DSL's `dateTime(expr)`, `date(expr)` and `time(expr)` render these XSD casts.
 
 ### 5. Random Functions
 
 #### Random Number Generation
 ```kotlin
 val query = """
-    SELECT ?random ?rand WHERE {
-        BIND(random() AS ?random)
-        BIND(rand() AS ?rand)
+    SELECT ?rand WHERE {
+        BIND(RAND() AS ?rand)
     }
 """
 ```
+
+SPARQL has no `RANDOM()`; the DSL's `random()` is deprecated with level ERROR (use `rand()`).
 
 ### 6. Version Declaration
 
 #### Explicit SPARQL Version
 ```kotlin
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT ?s ?p ?o WHERE {
         ?s ?p ?o
     }
 """
 ```
+
+The version specifier is a string literal. The DSL's `version("1.2")` renders `VERSION "1.2"` and rejects values that are not of the form `X.Y`.
 
 ## 🔧 Provider Capabilities
 
@@ -249,27 +260,24 @@ Kastor registers all SPARQL 1.2 built-in functions:
 - `OBJECT(triple)`
 
 ### String Functions
-- `replaceAll(string, pattern, replacement)`
-- `encodeForUri(string)`
-- `decodeForUri(string)`
+- `REPLACE(string, pattern, replacement)`
+- `ENCODE_FOR_URI(string)`
+- `STRSTARTS(string, prefix)` / `STRENDS(string, suffix)`
 
 ### Language/Direction Functions
 - `LANGDIR(term)`
-- `hasLANG(term, language)`
-- `hasLANGDIR(term, direction)`
-- `STRLANGDIR(string, direction)`
+- `hasLANG(term)`
+- `hasLANGDIR(term)`
+- `STRLANGDIR(string, language, direction)`
 
 ### Date/Time Functions
-- `now()`
-- `timezone()`
-- `dateTime(string)`
-- `date()`
-- `time()`
-- `tz(datetime, timezone)`
+- `NOW()`
+- `TIMEZONE(datetime)`
+- `TZ(datetime)`
+- `xsd:dateTime(...)`, `xsd:date(...)`, `xsd:time(...)` casts
 
 ### Random Functions
-- `random()`
-- `rand()`
+- `RAND()`
 
 ## 🎯 Best Practices
 
@@ -277,7 +285,7 @@ Kastor registers all SPARQL 1.2 built-in functions:
 Always declare SPARQL version for clarity:
 ```kotlin
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT * WHERE { ?s ?p ?o }
 """
 ```
@@ -351,7 +359,7 @@ fun sparql12Example() {
     
     // Query with SPARQL 1.2 features
     val query = """
-        VERSION 1.2
+        VERSION "1.2"
         SELECT ?person ?certainty ?source WHERE {
             << ?person :knows :bob >> :certainty ?certainty .
             << ?person :knows :bob >> :source ?source .
@@ -379,7 +387,7 @@ val query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }"
 
 // After (SPARQL 1.2)
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT ?s ?p ?o WHERE { ?s ?p ?o }
 """
 ```
@@ -396,7 +404,7 @@ val config = RdfConfig {
 // Use new string functions
 val query = """
     SELECT ?result WHERE {
-        BIND(replaceAll("Hello World", "World", "Universe") AS ?result)
+        BIND(REPLACE("Hello World", "World", "Universe") AS ?result)
     }
 """
 ```

@@ -437,13 +437,13 @@ val phonePred = iri("http://example.org/phone")
 
 val query = select("name", "contact") {
     where {
-        triple(`var`("person"), namePred, `var`("name"))
         union {
             triple(`var`("person"), emailPred, `var`("contact"))
         }
         union {
             triple(`var`("person"), phonePred, `var`("contact"))
         }
+        triple(`var`("person"), namePred, `var`("name"))
     }
 }
 
@@ -454,16 +454,12 @@ println(query)
 ```sparql
 SELECT ?name ?contact
 WHERE {
+  { ?person <http://example.org/email> ?contact . } UNION { ?person <http://example.org/phone> ?contact . }
   ?person <http://example.org/name> ?name .
-  {
-    ?person <http://example.org/email> ?contact .
-  }
-  UNION
-  {
-    ?person <http://example.org/phone> ?contact .
-  }
 }
 ```
+
+**Note**: `union { }` uses the pattern added immediately before it as its left operand (`{ previous } UNION { block }`), and further `union { }` calls extend the same UNION. That is why the name pattern comes *after* the unions here: placed first, it would itself become the first UNION branch.
 
 **In plain English**: "Find people and their contact information (either email or phone)"
 
@@ -528,6 +524,8 @@ WHERE {
 ```
 
 **In plain English**: "Find people and their friends, friends of friends, friends of friends of friends, etc."
+
+**Note**: paths are parenthesised by operator precedence when rendered. `negation()` accepts only IRIs and inverse IRIs (`!(p|^q)`). The bounded repetition helpers `exactly`, `atLeast`, `atMost` and `between` build `{n,m}` paths, which are not standard SPARQL 1.1/1.2, so the renderer rejects them. Expand them into explicit sequences or alternatives instead.
 
 ### 16. Alternative Relationships
 
