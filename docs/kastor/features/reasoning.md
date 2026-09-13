@@ -39,25 +39,16 @@ Consistency results come from the engine's own checks rather than being assumed.
 
 ```
 rdf/
-├── core/                    # Core RDF interfaces (no reasoning)
-├── reasoning/               # Dedicated reasoning module
-│   ├── RdfReasonerProvider.kt
-│   ├── RdfReasoner.kt
-│   ├── ReasonerConfig.kt
-│   ├── ReasoningResults.kt
-│   ├── ReasonerRegistry.kt
-│   ├── RdfReasoning.kt      # Factory object
-│   └── providers/
-│       └── MemoryReasonerProvider.kt
-├── jena-reasoning/          # Jena RdfReasonerProvider (+ SPI)
-│   └── reasoning/
-│       └── JenaReasonerProvider.kt
-├── rdf4j-reasoning/         # RDF4J RdfReasonerProvider (+ SPI)
-│   └── reasoning/
-│       └── Rdf4jReasonerProvider.kt
-└── examples/                # Reasoning examples
-    ├── BasicReasoningExample.kt
-    └── ReasonerProviderExample.kt
+├── core/                        # Core RDF interfaces (no reasoning)
+├── reasoning/
+│   ├── facade/                  # rdf-reasoning: RdfReasoning, RdfReasonerProvider/RdfReasoner,
+│   │                            #   ReasonerConfig, ReasonerRegistry, ReasoningResults,
+│   │                            #   providers/MemoryReasonerProvider
+│   └── hermit/                  # rdf-reasoning-hermit: HermitReasonerProvider (OWL 2 DL)
+├── providers/
+│   ├── jena-reasoning/          # rdf-jena-reasoning: JenaReasonerProvider (+ SPI)
+│   └── rdf4j-reasoning/         # rdf-rdf4j-reasoning: Rdf4jReasonerProvider (+ SPI)
+└── examples/                    # BasicReasoningExample.kt, ReasonerProviderExample.kt
 ```
 
 ## 🚀 **Usage Examples**
@@ -126,13 +117,15 @@ result.inferredTriples.forEach { triple ->
 // Get available providers
 val providers = RdfReasoning.reasonerProviders()
 providers.forEach { provider ->
-    println("${provider.name} (${provider.id}) - v${provider.version}")
+    println("${provider.name} (${provider.getType()}) - v${provider.version}")
     println("  Supported types: ${provider.getSupportedTypes().joinToString(", ")}")
 }
 
 // Use specific provider
-val jenaReasoner = providers.find { it.id == "jena" }?.createReasoner(ReasonerConfig.rdfs())
-val rdf4jReasoner = providers.find { it.id == "rdf4j" }?.createReasoner(ReasonerConfig.rdfs())
+// (com.geoknoesis.kastor.rdf.jena.reasoning.JenaReasonerProvider,
+//  com.geoknoesis.kastor.rdf.rdf4j.reasoning.Rdf4jReasonerProvider)
+val jenaReasoner = JenaReasonerProvider().createReasoner(ReasonerConfig.rdfs())
+val rdf4jReasoner = Rdf4jReasonerProvider().createReasoner(ReasonerConfig.rdfs())
 ```
 
 ### **Configuration Options**
@@ -208,6 +201,8 @@ data class ConsistencyResult(
 
 ### **Validation Reports**
 
+`RdfReasoner.validateOntology(graph)` returns the reasoning module's own `com.geoknoesis.kastor.rdf.reasoning.ValidationReport` (not the SHACL `ValidationReport`):
+
 ```kotlin
 data class ValidationReport(
     val isValid: Boolean,
@@ -238,7 +233,7 @@ data class ReasonerCapabilities(
 
 The framework uses Java ServiceLoader for automatic discovery of reasoner providers:
 
-- **Core Module**: `MemoryReasonerProvider` (always available)
+- **`rdf-reasoning` artifact**: `MemoryReasonerProvider` (always available once `rdf-reasoning` is on the classpath)
 - **`rdf-jena-reasoning` artifact**: `JenaReasonerProvider` (SPI + direct import)
 - **`rdf-rdf4j-reasoning` artifact**: `Rdf4jReasonerProvider` (SPI + direct import)
 
@@ -246,20 +241,16 @@ Add **`com.geoknoesis.kastor:rdf-jena-reasoning`** / **`com.geoknoesis.kastor:rd
 
 ## 📊 **Performance Considerations**
 
-### **Built-in Memory Reasoner**
-- **Performance**: Fast (PerformanceProfile.FAST)
-- **Memory Usage**: Low
-- **Best For**: Small to medium graphs, basic RDFS reasoning
+Each provider reports a coarse `typicalPerformance` hint in `ReasonerCapabilities`:
 
-### **Jena Reasoner**
-- **Performance**: Medium (PerformanceProfile.MEDIUM)
-- **Memory Usage**: Moderate
-- **Best For**: Medium to large graphs, OWL reasoning
+| Provider | `typicalPerformance` | Supported types | Custom rules |
+|----------|----------------------|-----------------|--------------|
+| Memory (`MemoryReasonerProvider`) | `FAST` | `RDFS` | No |
+| Jena (`JenaReasonerProvider`) | `MEDIUM` | `RDFS`, `OWL_RL`, `CUSTOM` | Yes |
+| RDF4J (`Rdf4jReasonerProvider`) | `FAST` | `RDFS` | No |
+| HermiT (`HermitReasonerProvider`) | `SLOW` | `HERMIT`, `OWL_DL` | No |
 
-### **RDF4J Reasoner**
-- **Performance**: Fast (PerformanceProfile.FAST)
-- **Memory Usage**: Low
-- **Best For**: Large graphs, streaming operations
+These hints are not benchmarks, and none of the providers supports incremental reasoning. Measure with your own data before choosing a backend.
 
 ## 🧪 **Testing**
 
@@ -270,7 +261,8 @@ class BasicReasoningTest {
     @Test
     fun `memory reasoner performs basic RDFS inference`() {
         val graph = createSampleGraph()
-        val reasoner = Rdf.reasoner(ReasonerType.RDFS)
+        // Picks the highest-priority RDFS provider: the memory reasoner unless Jena/RDF4J reasoning is on the classpath
+        val reasoner = RdfReasoning.reasoner(ReasonerType.RDFS)
         
         val result = reasoner.reason(graph)
         
@@ -286,10 +278,10 @@ class BasicReasoningTest {
 
 The architecture is designed to support:
 
-1. **Advanced Reasoners**: Pellet, HermiT, FaCT++
+1. **Advanced Reasoners**: Pellet, FaCT++ (HermiT is already available via `rdf-reasoning-hermit`)
 2. **Streaming Reasoning**: For very large graphs
 3. **Incremental Reasoning**: Only reason about new/changed triples
-4. **Custom Rules**: User-defined inference rules
+4. **Custom Rules on more backends**: `CUSTOM` rules are currently supported by the Jena provider only
 5. **Explanation Generation**: Why certain triples were inferred
 6. **Performance Optimization**: Caching, parallel processing
 
@@ -318,9 +310,7 @@ To add reasoning to existing Kastor applications:
 3. **Handle Results**:
    ```kotlin
    // Add inferred triples to your repository
-   result.inferredTriples.forEach { triple ->
-       repository.add(triple)
-   }
+   repository.addTriples(null, result.inferredTriples)
    
    // Check consistency
    if (!result.consistencyCheck.isConsistent) {
