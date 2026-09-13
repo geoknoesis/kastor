@@ -128,8 +128,8 @@ Rdf.memory().use { repo ->
 
 // Transaction with automatic commit/rollback
 repo.transaction {
-    addTriple(person has name with "Alice")
-    addTriple(person has age with 30)
+    addTriple(person, name, string("Alice"))
+    addTriple(person, age, 30.toLiteral())
     // Automatically committed if successful, rolled back if exception
 }
 ```
