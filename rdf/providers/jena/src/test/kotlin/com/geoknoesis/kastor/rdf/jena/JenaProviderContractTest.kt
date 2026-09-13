@@ -135,4 +135,23 @@ class JenaProviderContractTest {
         assertFalse(JenaProvider().getCapabilities("memory").supportsServiceDescription)
         assertNull(JenaProvider().generateServiceDescription("http://example.org/sparql"))
     }
+
+    @Test
+    fun `parsing is spec-strict and rejects terms that are not valid RDF`() {
+        val invalid = listOf(
+            "<http://e/s> <http://e/p> <http://e/o>" to "TURTLE", // missing final DOT
+            "( 1 2 3 ) ." to "TURTLE", // collection without predicate-object list
+            "<s> <http://e/p> <http://e/o> ." to "N-TRIPLES", // relative IRI in N-Triples
+            "<http://e/s> <http://e/p> \"x\"@cantbethislong ." to "N-TRIPLES", // malformed language tag
+            "<http://e/s> <http://e/p> \"x\"^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#langString> ." to "N-TRIPLES",
+        )
+        for ((document, format) in invalid) {
+            assertThrows(RdfFormatException::class.java, { JenaProvider().parseGraph(document.byteInputStream(), format) }, document)
+        }
+        JenaRepository.MemoryRepository().use { repo ->
+            assertThrows(RdfFormatException::class.java) {
+                JenaProvider().parseDataset(repo, "<http://e/g> { <http://e/s> <http://e/p> \"x\"@en--unk }".byteInputStream(), "TRIG")
+            }
+        }
+    }
 }

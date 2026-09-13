@@ -169,4 +169,20 @@ class Rdf4jProviderContractTest {
         assertEquals("1.1", caps.rdfVersion)
         assertTrue(caps.supportedInputFormats.none { it.endsWith("-1.2") }, "RDF4J does not implement RDF 1.2 syntaxes")
     }
+
+    @Test
+    fun `terms that are not valid RDF are format errors, not raw exceptions`() {
+        val invalid = listOf(
+            "<http://e/s> <http://e/p> \"x\"@en--LTR .", // directions are lowercase only
+            "<http://e/s> <http://e/p> \"x\"@en--unk .",
+        )
+        for (document in invalid) {
+            assertThrows(RdfFormatException::class.java, { Rdf4jProvider().parseGraph(document.byteInputStream(), "N-TRIPLES") }, document)
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                assertThrows(RdfFormatException::class.java, { Rdf4jProvider().parseDataset(repo, document.byteInputStream(), "N-QUADS") }, document)
+            }
+        }
+        val rtl = Rdf4jProvider().parseGraph("<http://e/s> <http://e/p> \"x\"@ar--rtl .".byteInputStream(), "N-TRIPLES")
+        assertEquals(LangString("x", "ar", Direction.RTL), rtl.getTriples().single().obj)
+    }
 }

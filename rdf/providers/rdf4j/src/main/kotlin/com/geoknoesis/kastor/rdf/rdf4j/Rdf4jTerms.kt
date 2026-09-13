@@ -27,7 +27,27 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  */
 internal object Rdf4jTerms {
     private val valueFactory = SimpleValueFactory.getInstance()
-    private val directionSuffix = Regex("^(.+)--(ltr|rtl)$", RegexOption.IGNORE_CASE)
+    // RDF 1.2 base directions are lowercase only ("en--LTR" is not a directional tag).
+    private val directionSuffix = Regex("^(.+)--(ltr|rtl)$")
+    private val languageTag = Regex("^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$")
+    private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+    private const val RDF_DIR_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
+
+    /**
+     * Checks literal well-formedness that Rio tolerates: a well-formed BCP 47 language tag, and no
+     * `rdf:langString` / `rdf:dirLangString` literal without a language tag.
+     * @throws IllegalArgumentException when the term is not valid RDF.
+     */
+    fun requireWellFormed(term: RdfTerm) {
+        when (term) {
+            is LangString -> require(languageTag.matches(term.lang)) { "Invalid language tag: '${term.lang}'" }
+            is Literal -> require(term.datatype.value != RDF_LANG_STRING && term.datatype.value != RDF_DIR_LANG_STRING) {
+                "Literal typed ${term.datatype.value} requires a language tag"
+            }
+            is TripleTerm -> requireWellFormed(term.triple.obj)
+            else -> Unit
+        }
+    }
 
     fun toRdf4jResource(term: RdfTerm): Resource {
         return when (term) {

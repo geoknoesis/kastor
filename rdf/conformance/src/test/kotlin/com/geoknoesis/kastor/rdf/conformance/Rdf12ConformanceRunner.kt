@@ -1,9 +1,10 @@
 package com.geoknoesis.kastor.rdf.conformance
 
 import com.geoknoesis.kastor.rdf.MutableRdfGraph
+import com.geoknoesis.kastor.rdf.RdfFormatException
+import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfProvider
 import com.geoknoesis.kastor.rdf.RdfRepository
-import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.isIsomorphicTo
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import org.junit.jupiter.api.Assumptions
@@ -23,7 +24,7 @@ import java.nio.file.Path
  *
  * The adapter exposes only what the W3C syntax suites need: parse a graph,
  * parse a dataset (for TriG / N-Quads), and provide a temporary repository
- * for dataset parsing (RDF4J needs a target repository).
+ * for dataset parsing.
  */
 class Conformer(
     /** Human-readable provider label - "Jena", "RDF4J", ... - used in test display names. */
@@ -31,33 +32,48 @@ class Conformer(
     private val provider: RdfProvider,
     private val newDatasetRepo: () -> RdfRepository,
     /**
-     * Classifies a parse failure as a *known upstream limitation* of the provider
-     * rather than a Kastor defect. When it returns a non-null reason for a thrown
-     * exception, the runner reports the test as **skipped** (JUnit assumption)
-     * instead of failed — keeping the suite honest without masking regressions
-     * (any failure it does **not** recognise still fails). Defaults to "never",
-     * so providers like Jena are unaffected.
+     * Explicit, committed list of W3C test IRIs this provider is known not to pass, each with a reason
+     * (see `conformance-allowlist.tsv`). Only listed tests may be skipped; a listed test that starts
+     * passing fails so the entry gets removed.
      */
-    val knownLimitation: (W3cTestCase, Throwable) -> String? = { _, _ -> null },
+    val allowlist: Map<String, String> = emptyMap(),
+    /**
+     * For allowlisted positive/eval tests: returns true when the thrown exception is the documented
+     * upstream failure (e.g. a Rio parse error). Any other exception still fails the test.
+     */
+    val expectedFailure: (Throwable) -> Boolean = { it is RdfFormatException },
 ) {
-    fun parseGraph(stream: InputStream, formatName: String, baseIri: String? = null): MutableRdfGraph =
-        provider.parseGraph(stream, formatName, baseIri)
+    /** Parses a graph and materialises every triple, so term-conversion failures surface here. */
+    fun parseGraph(stream: InputStream, formatName: String, baseIri: String? = null): RdfGraph =
+        provider.parseGraph(stream, formatName, baseIri).let { MemoryGraph(it.getTriples()) }
 
-    /** Parse a dataset (TriG or N-Quads) and flatten it to a single graph for comparison. */
-    fun parseDatasetAsGraph(
-        stream: InputStream,
-        formatName: String,
-        baseIri: String? = null,
-    ): MutableRdfGraph {
+    /**
+     * Parses a dataset (TriG or N-Quads) into graph name → graph (`null` = default graph), so named
+     * graphs are compared graph by graph instead of being flattened into one graph.
+     */
+    fun parseDataset(stream: InputStream, formatName: String, baseIri: String? = null): Map<String?, RdfGraph> {
         val repo = newDatasetRepo()
         return repo.use {
             provider.parseDataset(repo, stream, formatName, baseIri)
-            val triples = mutableListOf<RdfTriple>()
-            repo.defaultGraph.getTriples().forEach(triples::add)
-            repo.listGraphs().forEach { name ->
-                repo.getGraph(name).getTriples().forEach(triples::add)
-            }
-            MemoryGraph(triples)
+            val graphs = linkedMapOf<String?, RdfGraph>(null to MemoryGraph(repo.defaultGraph.getTriples()))
+            repo.listGraphs().forEach { name -> graphs[name.value] = MemoryGraph(repo.getGraph(name).getTriples()) }
+            graphs.filter { (name, graph) -> name == null || graph.size() > 0 }
+        }
+    }
+}
+
+/** Loads the committed conformance allowlist (`provider<TAB>test IRI<TAB>reason`, `#` comments). */
+object ConformanceAllowlist {
+    fun forProvider(label: String): Map<String, String> {
+        val stream = ConformanceAllowlist::class.java.classLoader.getResourceAsStream("conformance-allowlist.tsv")
+            ?: return emptyMap()
+        return stream.bufferedReader().useLines { lines ->
+            lines.map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .map { it.split('\t') }
+                .onEach { require(it.size == 3 && it[2].isNotBlank()) { "allowlist rows need provider, test IRI and a reason: $it" } }
+                .filter { it[0] == label }
+                .associate { it[1] to it[2] }
         }
     }
 }
@@ -65,32 +81,22 @@ class Conformer(
 /**
  * Drives the W3C RDF 1.2 syntax test suites against a Kastor provider.
  *
- * The runner is provider-agnostic at the test-method level: each [W3cTestCase]
- * is converted to a JUnit 5 [DynamicTest] that calls Kastor's provider-agnostic
- * `Rdf.parse*` methods. Which provider is exercised is decided by the caller
- * before invoking [forManifest], typically by registering only that provider on
- * the test classpath (so `:rdf:conformance` declares both `:rdf:jena` and
- * `:rdf:rdf4j` and the [com.geoknoesis.kastor.rdf.RdfProviderRegistry] picks the
- * appropriate one).
+ * Outcomes are strict:
+ * - **positive syntax / eval**: any exception fails, unless the test is allowlisted for the provider and
+ *   the exception is the documented upstream failure (then it is skipped).
+ * - **negative syntax / negative eval**: the parser must reject the input with [RdfFormatException].
+ *   Any other exception (NPE, ClassCastException, ...) fails, and so does a clean parse — unless the test
+ *   is allowlisted as a known lenient parser (then it is skipped).
+ * - An allowlisted test that behaves correctly fails, so stale entries are removed.
+ * - TriG / N-Quads eval results are compared as datasets, graph by graph.
  *
- * The runner is also self-skipping: when the submodule under
- * `rdf/conformance/test-data/` has not been initialised, it returns a single
- * dynamic test that invokes JUnit's [Assumptions.assumeTrue] with a clear
- * message. That keeps `:rdf:conformance:test` green on a fresh clone that
- * forgot `--recursive`.
+ * The runner is self-skipping when the W3C test data under `rdf/conformance/test-data/` is absent.
  */
 object Rdf12ConformanceRunner {
 
     /**
      * Build a [DynamicContainer] tree for one manifest file plus all the
      * sub-manifests it includes, exercised against [conformer].
-     *
-     * @param conformer The provider under test.
-     * @param displayName Human-readable label that appears in IDE/Gradle test
-     *   output, typically "Turtle 1.2 (Jena)" or similar.
-     * @param manifest Absolute path to the top-level `manifest.ttl` we should
-     *   start parsing at. Need not exist; if absent, a single skipped test is
-     *   returned.
      */
     fun forManifest(conformer: Conformer, displayName: String, manifest: Path): DynamicContainer {
         if (!Files.isRegularFile(manifest)) {
@@ -129,10 +135,6 @@ object Rdf12ConformanceRunner {
      * Walks the top-level RDF 1.2 manifest at `[rootDir]/rdf12/manifest.ttl`
      * (which itself `mf:include`s the per-format sub-manifests) and returns a
      * single container of every test row it transitively names.
-     *
-     * We deliberately do **not** walk the directory tree for `manifest.ttl`
-     * files - the W3C structure layers index manifests on top of leaf
-     * manifests, so directory walking would double-count every test.
      */
     fun forRoot(conformer: Conformer, rootDir: Path): List<DynamicNode> {
         if (!Files.isDirectory(rootDir)) {
@@ -168,95 +170,94 @@ object Rdf12ConformanceRunner {
             }
             when (case.kind) {
                 TestKind.POSITIVE_SYNTAX -> runPositive(conformer, case)
-                TestKind.NEGATIVE_SYNTAX -> runNegative(conformer, case)
-                TestKind.NEGATIVE_EVAL -> runNegativeEval(conformer, case)
+                TestKind.NEGATIVE_SYNTAX, TestKind.NEGATIVE_EVAL -> runNegative(conformer, case)
                 TestKind.EVAL -> runEval(conformer, case)
             }
         }
 
-    private fun runPositive(conformer: Conformer, case: W3cTestCase) {
-        runCatching { parseAction(conformer, case) }.exceptionOrNull()?.let { ex ->
-            skipIfKnownLimitation(conformer, case, ex)
-            throw ex
+    private fun allowlisted(conformer: Conformer, case: W3cTestCase): String? = conformer.allowlist[case.iri]
+
+    private fun staleAllowlistEntry(conformer: Conformer, case: W3cTestCase, reason: String): Nothing =
+        throw AssertionError(
+            "ALLOWLIST-STALE ${case.iri}: test now behaves correctly for ${conformer.label}; " +
+                "remove it from conformance-allowlist.tsv (reason was: $reason)",
+        )
+
+    /** Rethrows [ex] as a failure unless the test is allowlisted and [ex] is the documented upstream failure. */
+    private fun failOrSkip(conformer: Conformer, case: W3cTestCase, ex: Throwable): Nothing {
+        val reason = allowlisted(conformer, case)
+        if (reason != null && conformer.expectedFailure(ex)) {
+            Assumptions.assumeTrue(false, "ALLOWLISTED ${conformer.label} ${case.iri}: $reason")
         }
+        throw AssertionError("FAILED ${case.iri}: ${ex.javaClass.name}: ${ex.message}", ex)
+    }
+
+    private fun runPositive(conformer: Conformer, case: W3cTestCase) {
+        runCatching { parseAction(conformer, case) }.exceptionOrNull()?.let { failOrSkip(conformer, case, it) }
+        allowlisted(conformer, case)?.let { staleAllowlistEntry(conformer, case, it) }
     }
 
     /**
-     * If [ex] is a provider-recognised upstream limitation, abort the test as a
-     * skipped assumption (which never returns); otherwise return so the caller
-     * rethrows it as a genuine failure.
+     * Negative syntax and negative eval tests: the input must be rejected with [RdfFormatException].
+     * A clean parse is only tolerated (as a skip) for explicitly allowlisted lenient-parser cases.
      */
-    private fun skipIfKnownLimitation(conformer: Conformer, case: W3cTestCase, ex: Throwable) {
-        conformer.knownLimitation(case, ex)?.let { reason ->
-            Assumptions.assumeTrue(false, "known ${conformer.label} limitation: $reason (${case.iri})")
-        }
-    }
-
     private fun runNegative(conformer: Conformer, case: W3cTestCase) {
         val threw = runCatching { parseAction(conformer, case) }.exceptionOrNull()
-        if (threw != null) return
-        Assumptions.assumeTrue(
-            false,
-            "negative-syntax test parsed cleanly (parser is lenient): ${case.iri}",
-        )
-    }
-
-    /**
-     * `rdft:Test*NegativeEval`: the input is syntactically legal, but
-     * semantically invalid (typically an ill-typed literal). The spec wording
-     * is "implementations must produce some kind of failure" but most
-     * conformant Turtle parsers - including Jena's and RDF4J's - emit the
-     * triple anyway and surface the issue as a warning. We accept either:
-     *
-     * - a hard parse error (best behaviour), or
-     * - a successful parse where the document at least did not crash
-     *
-     * and skip the test as `Assumption` when the parser is lenient. That
-     * matches what the W3C tests bundles call "MAY produce a warning" in
-     * recent EARL submissions.
-     */
-    private fun runNegativeEval(conformer: Conformer, case: W3cTestCase) {
-        val outcome = runCatching { parseAction(conformer, case) }
-        if (outcome.isFailure) return // hard error - the strictest acceptable behaviour
-        Assumptions.assumeTrue(
-            false,
-            "negative-eval test parsed cleanly (parser is lenient on ill-typed literals): ${case.iri}",
-        )
+        val reason = allowlisted(conformer, case)
+        when {
+            threw is RdfFormatException -> if (reason != null) staleAllowlistEntry(conformer, case, reason)
+            threw != null && reason != null && conformer.expectedFailure(threw) ->
+                Assumptions.assumeTrue(false, "ALLOWLISTED ${conformer.label} ${case.iri}: $reason")
+            threw != null -> throw AssertionError(
+                "FAILED ${case.iri}: negative test must fail with RdfFormatException, got ${threw.javaClass.name}: ${threw.message}",
+                threw,
+            )
+            reason != null -> Assumptions.assumeTrue(false, "ALLOWLISTED ${conformer.label} ${case.iri}: $reason")
+            else -> throw AssertionError("FAILED ${case.iri}: negative ${case.kind} test parsed without error")
+        }
     }
 
     private fun runEval(conformer: Conformer, case: W3cTestCase) {
         val expectedPath = case.result
             ?: error("eval test missing mf:result: ${case.iri}")
-        // Both the action and the expected-result file may use RDF 1.2 syntax a
-        // provider cannot parse, so classify failures from either as a known
-        // upstream limitation rather than a Kastor defect.
         val (actual, expected) = runCatching {
-            parseAction(conformer, case) to parseExpected(conformer, case, expectedPath)
-        }.getOrElse { ex ->
-            skipIfKnownLimitation(conformer, case, ex)
-            throw ex
+            parseActionAsDataset(conformer, case) to parseExpected(conformer, case, expectedPath)
+        }.getOrElse { failOrSkip(conformer, case, it) }
+        val mismatch = datasetMismatch(expected, actual)
+        if (mismatch != null) {
+            val reason = allowlisted(conformer, case)
+            if (reason != null) Assumptions.assumeTrue(false, "ALLOWLISTED ${conformer.label} ${case.iri}: $reason")
+            throw AssertionError("FAILED ${case.iri}: eval mismatch ($mismatch)\n  expected: $expectedPath")
         }
-        val ok = actual.isIsomorphicTo(expected)
-        check(ok) {
-            "eval mismatch for ${case.iri}\n" +
-                "  expected: $expectedPath\n" +
-                "  actual size = ${actual.size()}, expected size = ${expected.size()}"
-        }
+        allowlisted(conformer, case)?.let { staleAllowlistEntry(conformer, case, it) }
     }
 
-    private fun parseAction(conformer: Conformer, case: W3cTestCase): MutableRdfGraph =
-        case.action.toFile().inputStream().use { stream ->
-            when (case.format) {
-                TestFormat.TURTLE, TestFormat.N_TRIPLES ->
-                    conformer.parseGraph(stream, case.format.parserKey, case.assumedBaseIri)
-                TestFormat.TRIG, TestFormat.N_QUADS ->
-                    conformer.parseDatasetAsGraph(stream, case.format.parserKey, case.assumedBaseIri)
+    /** Null when both datasets have the same graph names and every graph is isomorphic. */
+    private fun datasetMismatch(expected: Map<String?, RdfGraph>, actual: Map<String?, RdfGraph>): String? {
+        if (expected.keys != actual.keys) return "graph names differ: expected ${expected.keys}, actual ${actual.keys}"
+        for ((name, graph) in expected) {
+            val other = actual.getValue(name)
+            if (!other.isIsomorphicTo(graph)) {
+                return "graph ${name ?: "(default)"} not isomorphic: expected ${graph.size()} triples, actual ${other.size()}"
             }
         }
+        return null
+    }
 
-    private fun parseExpected(conformer: Conformer, case: W3cTestCase, path: Path): MutableRdfGraph {
-        // Eval expectations are typically N-Triples (graph) or N-Quads
-        // (dataset). Pick by extension; fall back to the action's format.
+    private fun isDataset(format: TestFormat) = format == TestFormat.TRIG || format == TestFormat.N_QUADS
+
+    private fun parseAction(conformer: Conformer, case: W3cTestCase): Any = parseActionAsDataset(conformer, case)
+
+    private fun parseActionAsDataset(conformer: Conformer, case: W3cTestCase): Map<String?, RdfGraph> =
+        case.action.toFile().inputStream().use { stream -> parse(conformer, stream, case.format, case.assumedBaseIri) }
+
+    private fun parse(conformer: Conformer, stream: InputStream, format: TestFormat, base: String?): Map<String?, RdfGraph> =
+        if (isDataset(format)) conformer.parseDataset(stream, format.parserKey, base)
+        else mapOf(null to conformer.parseGraph(stream, format.parserKey, base))
+
+    private fun parseExpected(conformer: Conformer, case: W3cTestCase, path: Path): Map<String?, RdfGraph> {
+        // Eval expectations are typically N-Triples (graph) or N-Quads (dataset). Pick by extension;
+        // fall back to the action's format.
         val ext = path.toString().lowercase().substringAfterLast('.')
         val expectedFormat = when (ext) {
             "nt" -> TestFormat.N_TRIPLES
@@ -265,13 +266,6 @@ object Rdf12ConformanceRunner {
             "trig" -> TestFormat.TRIG
             else -> case.format
         }
-        return path.toFile().inputStream().use { stream ->
-            when (expectedFormat) {
-                TestFormat.TURTLE, TestFormat.N_TRIPLES ->
-                    conformer.parseGraph(stream, expectedFormat.parserKey, case.assumedBaseIri)
-                TestFormat.TRIG, TestFormat.N_QUADS ->
-                    conformer.parseDatasetAsGraph(stream, expectedFormat.parserKey, case.assumedBaseIri)
-            }
-        }
+        return path.toFile().inputStream().use { stream -> parse(conformer, stream, expectedFormat, case.assumedBaseIri) }
     }
 }

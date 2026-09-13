@@ -1,0 +1,164 @@
+# W3C RDF 1.2 conformance allowlist: tests a provider is KNOWN not to pass, each with a justification.
+# Columns (tab-separated): provider label (Jena | RDF4J) <TAB> W3C test IRI <TAB> reason
+# Only listed tests may be skipped. An unlisted failure fails the build; a listed test that starts
+# behaving correctly fails too (remove its row). Positive/eval rows are only skipped when the failure is the
+# documented upstream one (see Rdf4jConformanceTest.rdf4jUpstreamFailure).
+#
+# Jena 6.2.0: no entries (full suite passes).
+#
+# RDF4J 5.3.1 (Rio) entries below are upstream parser gaps, generated from a strict run and reviewed by category.
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-bnode-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-nested-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-3	RDF4J 5.3.1 Rio silently rewrites "..."^^rdf:langString without a language tag into a plain literal
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-01	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-bnode-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-nested-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-04	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-05	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-07	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-bnode-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-bnode-02	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-01	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-04	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-02	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-03	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-04	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-05	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-07	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-09	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-10	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-11	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-12	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-02	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-03	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-4	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: ""^^<http://www.w3.org/2001/XMLSchema#integer)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-5	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: ""^^<http://www.w3.org/2001/XMLSchema#integer)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-6	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: ""^^<http://www.w3.org/2001/XMLSchema#integer)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-7	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-8	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-4	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-nested-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-nested-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-compound-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-bnode-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-bnode-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-bnode-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-3	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-4	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-5	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-6	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-7	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-8	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-2	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-bnode-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-nested-1	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-01	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-04	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-05	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-07	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-04	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-05	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-07	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-bnode-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-bnode-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-01	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-02	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-03	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-04	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-05	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-07	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-09	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-10	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-11	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-12	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '|')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-01	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-02	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-03	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-4	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: ""^^<http://www.w3.org/2001/XMLSchema#integer)
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-4	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-nested-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-nested-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-compound-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-1	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-2	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-3	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-1	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-2	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-3	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-4	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-5	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-6	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-7	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-8	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-1	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-2	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01	RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)

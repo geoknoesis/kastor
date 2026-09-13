@@ -100,7 +100,7 @@ class JenaProvider : RdfProvider {
         val lang = JenaParsing.graphLang(format)
         val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
         try {
-            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(model.graph) }
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.graph(model.graph))) }
         } catch (failure: Throwable) {
             model.close()
             throw failure
@@ -118,6 +118,7 @@ class JenaProvider : RdfProvider {
         val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, null)).asyncParseTriples()
         return object : TripleStream {
             private var closed = false
+            private val knownIris = HashSet<String>()
             private val rows = Sequence {
                 object : Iterator<RdfTriple> {
                     override fun hasNext(): Boolean {
@@ -126,7 +127,7 @@ class JenaProvider : RdfProvider {
                     }
                     override fun next(): RdfTriple {
                         check(!closed) { "Triple stream is closed" }
-                        return JenaTerms.fromJenaTriple(JenaParsing.parseWithFormatErrors(format) { parser.next() })
+                        return JenaTerms.fromJenaTriple(JenaParsing.parseWithFormatErrors(format) { parser.next().also { JenaParsing.validateTriple(it, knownIris) } })
                     }
                 }
             }.constrainOnce()
@@ -145,7 +146,7 @@ class JenaProvider : RdfProvider {
             ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
         val parsed = org.apache.jena.query.DatasetFactory.create()
         try {
-            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(parsed) }
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
             repository.transaction {
                 val jena = repository as? JenaRepository
                 if (jena != null) {
@@ -188,12 +189,73 @@ internal object JenaParsing {
             return lang
         }
 
-        /** Builds a parser with the shared base-IRI policy: without a base, relative IRIs are errors. */
+        /**
+         * Builds a spec-strict parser with the shared base-IRI policy: without a base, relative IRIs are errors.
+         * (Jena's default non-strict mode accepts e.g. a missing final DOT or bare collections.)
+         */
         fun parser(inputStream: java.io.InputStream, lang: Lang, baseIri: String?): RDFParserBuilder {
-            val builder = RDFParser.source(inputStream).lang(lang)
+            val builder = RDFParser.source(inputStream).lang(lang).strict(true)
             return if (baseIri != null) builder.base(baseIri)
             else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
         }
+
+        private val languageTag = Regex("^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$")
+        private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+        private const val RDF_DIR_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
+
+        /**
+         * Rejects terms that Jena's parser tolerates but that are not valid RDF (and cannot be represented
+         * by Kastor terms): IRIs Kastor's [Iri] rejects, malformed language tags, and `rdf:langString` /
+         * `rdf:dirLangString` literals without a language tag. Throws [RiotException].
+         */
+        fun validateTriple(triple: org.apache.jena.graph.Triple, knownIris: MutableSet<String>) {
+            validateNode(triple.subject, knownIris)
+            validateNode(triple.predicate, knownIris)
+            validateNode(triple.`object`, knownIris)
+        }
+
+        private fun validateNode(node: org.apache.jena.graph.Node, knownIris: MutableSet<String>) {
+            when {
+                node.isURI -> validateIri(node.uri, knownIris)
+                node.isTripleTerm -> validateTriple(node.triple, knownIris)
+                node.isLiteral -> {
+                    val language = node.literalLanguage
+                    if (!language.isNullOrEmpty()) {
+                        if (!languageTag.matches(language)) throw RiotException("Invalid language tag: '$language'")
+                    } else if (node.literalDatatypeURI == RDF_LANG_STRING || node.literalDatatypeURI == RDF_DIR_LANG_STRING) {
+                        throw RiotException("Literal typed ${node.literalDatatypeURI} requires a language tag")
+                    } else {
+                        node.literalDatatypeURI?.let { validateIri(it, knownIris) }
+                    }
+                }
+            }
+        }
+
+        private fun validateIri(iri: String, knownIris: MutableSet<String>) {
+            if (iri in knownIris) return
+            try {
+                Iri(iri)
+            } catch (e: IllegalArgumentException) {
+                throw RiotException(e.message ?: "Invalid IRI: $iri")
+            }
+            if (knownIris.size > 100_000) knownIris.clear()
+            knownIris.add(iri)
+        }
+
+        /** Wraps a parser sink so every triple/quad is validated before it is stored. */
+        fun validating(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =
+            object : org.apache.jena.riot.system.StreamRDFWrapper(target) {
+                private val knownIris = HashSet<String>()
+                override fun triple(triple: org.apache.jena.graph.Triple) {
+                    validateTriple(triple, knownIris)
+                    super.triple(triple)
+                }
+                override fun quad(quad: org.apache.jena.sparql.core.Quad) {
+                    if (!quad.isDefaultGraph) validateNode(quad.graph, knownIris)
+                    validateTriple(quad.asTriple(), knownIris)
+                    super.quad(quad)
+                }
+            }
 
         inline fun <T> parseWithFormatErrors(format: String, block: () -> T): T = try {
             block()

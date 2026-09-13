@@ -129,12 +129,19 @@ internal object Rdf4jFormatSupport {
             val parser = Rio.createParser(rdf4jFormat)
             parser.setRDFHandler(object : AbstractRDFHandler() {
                 override fun handleStatement(statement: Statement) {
-                    triples.add(toTriple(statement))
+                    triples.add(checkedTriple(statement))
                 }
             })
             parser.parse(inputStream, baseIri)
         }
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
+    }
+
+    /** Converts and validates a parsed statement; terms Kastor cannot represent become Rio parse errors. */
+    private fun checkedTriple(statement: Statement): RdfTriple = try {
+        toTriple(statement).also { Rdf4jTerms.requireWellFormed(it.obj) }
+    } catch (e: IllegalArgumentException) {
+        throw RDFParseException("Invalid RDF term: ${e.message}").also { it.initCause(e) }
     }
 
     private fun toTriple(statement: Statement) = RdfTriple(
@@ -172,7 +179,7 @@ internal object Rdf4jFormatSupport {
             try {
                 val parser = Rio.createParser(rdf4jFormat)
                 parser.setRDFHandler(object : AbstractRDFHandler() {
-                    override fun handleStatement(statement: Statement) = offer(toTriple(statement))
+                    override fun handleStatement(statement: Statement) = offer(checkedTriple(statement))
                 })
                 parser.parse(input, "")
                 offer(End)
@@ -275,6 +282,7 @@ internal object Rdf4jFormatSupport {
                 val parser = Rio.createParser(rdf4jFormat)
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
+                        checkedTriple(statement)
                         val context = statement.context
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)
