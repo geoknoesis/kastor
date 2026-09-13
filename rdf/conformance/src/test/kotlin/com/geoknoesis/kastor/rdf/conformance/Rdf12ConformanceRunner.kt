@@ -73,8 +73,19 @@ object ConformanceAllowlist {
                 .map { it.split('\t') }
                 .onEach { require(it.size == 3 && it[2].isNotBlank()) { "allowlist rows need provider, test IRI and a reason: $it" } }
                 .filter { it[0] == label }
-                .associate { it[1] to it[2] }
+                .associate { testKey(it[1]) to it[2] }
         }
+    }
+
+    /**
+     * Checkout-independent key for a W3C test IRI. Manifests without an `@base` (the RDF 1.1 suites)
+     * yield `file:` IRIs containing the absolute checkout path; those are reduced to the part starting
+     * at `test-data/` so allowlist rows match in every checkout and on CI.
+     */
+    fun testKey(iri: String): String {
+        if (!iri.startsWith("file:")) return iri
+        val index = iri.indexOf("/test-data/")
+        return if (index < 0) iri else iri.substring(index + 1)
     }
 }
 
@@ -175,7 +186,7 @@ object Rdf12ConformanceRunner {
             }
         }
 
-    private fun allowlisted(conformer: Conformer, case: W3cTestCase): String? = conformer.allowlist[case.iri]
+    private fun allowlisted(conformer: Conformer, case: W3cTestCase): String? = conformer.allowlist[ConformanceAllowlist.testKey(case.iri)]
 
     private fun staleAllowlistEntry(conformer: Conformer, case: W3cTestCase, reason: String): Nothing =
         throw AssertionError(

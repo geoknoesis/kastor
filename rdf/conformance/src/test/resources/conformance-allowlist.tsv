@@ -1,5 +1,6 @@
 # W3C RDF 1.2 conformance allowlist: tests a provider is KNOWN not to pass, each with a justification.
 # Columns (tab-separated): provider label (Jena | RDF4J) <TAB> W3C test IRI <TAB> reason
+# Tests from manifests without @base are keyed from `test-data/...` (checkout-independent).
 # Only listed tests may be skipped. An unlisted failure fails the build; a listed test that starts
 # behaving correctly fails too (remove its row). Positive/eval rows are only skipped when the failure is the
 # documented upstream one (see Rdf4jConformanceTest.rdf4jUpstreamFailure).
@@ -83,22 +84,22 @@ RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-versi
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-06	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-07	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive "@version")
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-08	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-01	RDF4J 5.3.1 Rio parses RDF 1.2 reified-triple/triple-term syntax as an RDF-star triple in subject position, which the RDF 1.2 data model cannot represent
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-02	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-03	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')
@@ -145,20 +146,20 @@ RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-7	RDF
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-8	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-1	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-2	RDF4J 5.3.1 Rio crashes with NullPointerException (Values.triple) on RDF 1.2 annotation syntax
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01	RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
-RDF4J	file:///D:/work/kwt/providers/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01	RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01	RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10	RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04	RDF4J 5.3.1 Rio accepts an invalid string escape sequence
+RDF4J	test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02	RDF4J 5.3.1 Rio accepts a malformed double literal (123e)
