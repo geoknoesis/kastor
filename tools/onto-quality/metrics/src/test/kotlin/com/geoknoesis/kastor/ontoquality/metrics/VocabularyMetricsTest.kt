@@ -52,7 +52,11 @@ class VocabularyMetricsTest {
         assertEquals(3.0, oq.depthOfInheritanceTree.rawValue, EPS)
         assertEquals(1.0, oq.numberOfAncestorClasses.rawValue, EPS)
         assertEquals(1.0, oq.numberOfChildren.rawValue, EPS)
-        assertEquals(1.0, oq.tangledness.rawValue, EPS)
+        // No multiple inheritance: TMOnto is 0 (best band).
+        assertEquals(0.0, oq.tangledness.rawValue, EPS)
+        assertEquals(5, oq.tangledness.score)
+        // One path A-B-C-D of length 3.
+        assertEquals(3.0, oq.lackOfCohesionInMethods.rawValue, EPS)
     }
 
     @Test

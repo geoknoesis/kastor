@@ -100,7 +100,7 @@ kastor-m:moduleVersion
 kastor-m:depthOfInheritanceTree
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "depth of inheritance tree" ;
-    rdfs:comment   "Length of the longest acyclic path from a root class to a leaf class, over named-IRI rdfs:subClassOf edges. Cycle participants are excluded from the path." ;
+    rdfs:comment   "Length (edges) of the longest acyclic path from a root class to a leaf class, over asserted named-IRI rdfs:subClassOf edges. Cycle participants are excluded from the path. Source: Duque-Ramos et al. 2014 (OQuaRE DITOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:integer ;
     skos:closeMatch kastor-m-oquare:DITOnto .
@@ -108,7 +108,7 @@ kastor-m:depthOfInheritanceTree
 kastor-m:numberOfAncestorClasses
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of ancestor classes" ;
-    rdfs:comment   "Mean number of direct superclasses per leaf class. Formula: sum(|direct-superclasses(leaf)|) / |leaves|." ;
+    rdfs:comment   "Mean number of direct superclasses per leaf class. Formula: sum(|direct-superclasses(leaf)|) / |leaves|. Source: Duque-Ramos et al. 2014 (OQuaRE NACOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NACOnto .
@@ -116,7 +116,7 @@ kastor-m:numberOfAncestorClasses
 kastor-m:numberOfChildren
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of children" ;
-    rdfs:comment   "Mean number of direct subclasses per class, excluding subclasses of owl:Thing. Formula: sum(|direct-subclasses(C)|) / (|classes| - 1)." ;
+    rdfs:comment   "Mean number of direct subclasses per non-root class. Formula: sum(|direct-subclasses(C)|) / (|classes| - |root classes|). Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NOCOnto .
@@ -124,7 +124,7 @@ kastor-m:numberOfChildren
 kastor-m:couplingBetweenObjects
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "coupling between objects" ;
-    rdfs:comment   "Mean number of direct parents per class, excluding parents that are owl:Thing." ;
+    rdfs:comment   "Mean number of direct superclasses per non-root class. Formula: sum(|direct-superclasses(C)|) / (|classes| - |root classes|). Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:CBOOnto .
@@ -132,7 +132,7 @@ kastor-m:couplingBetweenObjects
 kastor-m:weightedMethodCount
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "weighted method count" ;
-    rdfs:comment   "Mean number of properties and subclasses per class. Formula: sum(|properties_with_domain(C)| + |direct-subclasses(C)|) / |classes|." ;
+    rdfs:comment   "Mean number of property usages and direct subclasses per class. Formula: sum(|P_C| + |direct-subclasses(C)|) / |classes|, where P_C are declared object/datatype properties used by C via rdfs:domain or an owl:Restriction. Source: Duque-Ramos et al. 2014 (OQuaRE WMCOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:WMCOnto .
@@ -140,7 +140,7 @@ kastor-m:weightedMethodCount
 kastor-m:responseForClass
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "response for class" ;
-    rdfs:comment   "Mean number of properties (datatype + object) accessible from a class. Formula: sum(|domain-of-properties(C)|) / |classes|." ;
+    rdfs:comment   "Mean number of property usages and direct superclasses per non-root class. Formula: sum(|P_C| + |direct-superclasses(C)|) / (|classes| - |root classes|). Source: Duque-Ramos et al. 2014 (OQuaRE RFCOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:RFCOnto .
@@ -148,7 +148,7 @@ kastor-m:responseForClass
 kastor-m:numberOfProperties
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of properties" ;
-    rdfs:comment   "Mean number of datatype and object properties per class. Close to but distinct from responseForClass." ;
+    rdfs:comment   "Mean number of object/datatype property usages per class. Formula: sum(|P_C|) / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE NOMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NOMOnto .
@@ -156,7 +156,7 @@ kastor-m:numberOfProperties
 kastor-m:lackOfCohesionInMethods
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "lack of cohesion in methods" ;
-    rdfs:comment   "Length of paths from leaves to owl:Thing divided by total paths. Definition per Duque-Ramos 2014." ;
+    rdfs:comment   "Mean length of the root-to-leaf paths. Formula: sum(length(path)) / |paths| over all root-to-leaf paths of the acyclic asserted hierarchy. Source: Duque-Ramos et al. 2014 (OQuaRE LCOMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:LCOMOnto .
@@ -164,7 +164,7 @@ kastor-m:lackOfCohesionInMethods
 kastor-m:relationshipRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "relationship richness" ;
-    rdfs:comment   "Ratio of non-subClassOf relations to all relations. Indicates whether the ontology models domain relations beyond pure taxonomy." ;
+    rdfs:comment   "Share of property usages among class relationships. Formula: sum(|P_C|) / (|subClassOf edges| + sum(|P_C|)). rdf:type, annotation and import triples are not relationships. Source: Duque-Ramos et al. 2014 (OQuaRE RROnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:RROnto .
@@ -172,7 +172,7 @@ kastor-m:relationshipRichness
 kastor-m:inheritanceRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "inheritance richness" ;
-    rdfs:comment   "Ratio of subClassOf relations to all relations." ;
+    rdfs:comment   "Mean number of direct subclass links per class. Formula: |subClassOf edges| / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE INROnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:INROnto .
@@ -180,7 +180,7 @@ kastor-m:inheritanceRichness
 kastor-m:attributeRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "attribute richness" ;
-    rdfs:comment   "Mean datatype properties per class. Formula: |datatype property domain assertions| / |classes|." ;
+    rdfs:comment   "Mean datatype attributes per class. Formula: |datatype property rdfs:domain assertions on named classes| / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE AROnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:AROnto .
@@ -188,7 +188,7 @@ kastor-m:attributeRichness
 kastor-m:classRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "class richness" ;
-    rdfs:comment   "Ratio of classes that have instances. Formula: |classes with at least one rdf:type assertion| / |classes|. On TBox-only graphs this is 0; this is not a quality signal." ;
+    rdfs:comment   "Mean number of instances per class. Formula: |distinct rdf:type assertions to named classes| / |classes|. On TBox-only graphs this is 0; this is not a quality signal. Source: Duque-Ramos et al. 2014 (OQuaRE CROnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:CROnto .
@@ -196,7 +196,7 @@ kastor-m:classRichness
 kastor-m:annotationRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "annotation richness" ;
-    rdfs:comment   "Mean number of annotations (label, comment, definition) per class." ;
+    rdfs:comment   "Mean number of annotations (rdfs:label, rdfs:comment, skos:definition) per class. Formula: sum(|annotations(C)|) / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE ANOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:ANOnto .
@@ -204,7 +204,7 @@ kastor-m:annotationRichness
 kastor-m:propertiesRichness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "properties richness" ;
-    rdfs:comment   "Number of properties divided by (number of subClassOf edges + number of properties). Distinct from numberOfProperties." ;
+    rdfs:comment   "Declared object/datatype properties divided by (number of subClassOf edges + number of those properties). Source: Duque-Ramos et al. 2014 (OQuaRE PROnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:PROnto .
@@ -212,7 +212,7 @@ kastor-m:propertiesRichness
 kastor-m:tangledness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "tangledness" ;
-    rdfs:comment   "Mean number of paths from owl:Thing to a leaf class divided by number of leaves. Measures multiple-inheritance density." ;
+    rdfs:comment   "Mean number of direct superclasses of the classes that have more than one direct superclass; 0 when there is no multiple inheritance. Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:TMOnto .
