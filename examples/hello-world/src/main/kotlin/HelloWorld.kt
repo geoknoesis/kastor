@@ -28,8 +28,8 @@ fun main() {
     // Add RDF data using the DSL
     repo.add {
         prefixes {
-            "foaf" to "http://xmlns.com/foaf/0.1/"
-            "ex" to "http://example.org/"
+            put("foaf", "http://xmlns.com/foaf/0.1/")
+            put("ex", "http://example.org/")
         }
         
         val alice = iri("http://example.org/alice")
