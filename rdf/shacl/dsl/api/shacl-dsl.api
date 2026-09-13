@@ -20,6 +20,7 @@ public final class com/geoknoesis/kastor/rdf/dsl/NodeShapeDsl {
 	public final fun and (Ljava/util/List;)V
 	public final fun and (Lkotlin/jvm/functions/Function1;)V
 	public final fun and ([Ljava/lang/String;)V
+	public final fun andShapes (Lkotlin/jvm/functions/Function1;)V
 	public final fun closed (Z)V
 	public final fun deactivated (Z)V
 	public static synthetic fun deactivated$default (Lcom/geoknoesis/kastor/rdf/dsl/NodeShapeDsl;ZILjava/lang/Object;)V
@@ -36,6 +37,7 @@ public final class com/geoknoesis/kastor/rdf/dsl/NodeShapeDsl {
 	public final fun or (Ljava/util/List;)V
 	public final fun or (Lkotlin/jvm/functions/Function1;)V
 	public final fun or ([Ljava/lang/String;)V
+	public final fun orShapes (Lkotlin/jvm/functions/Function1;)V
 	public final fun property (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
 	public final fun property-UeRWmDE (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
 	public final fun severity (Lcom/geoknoesis/kastor/rdf/dsl/Severity;)V
@@ -63,6 +65,7 @@ public final class com/geoknoesis/kastor/rdf/dsl/NodeShapeDsl {
 	public final fun xone (Ljava/util/List;)V
 	public final fun xone (Lkotlin/jvm/functions/Function1;)V
 	public final fun xone ([Ljava/lang/String;)V
+	public final fun xoneShapes (Lkotlin/jvm/functions/Function1;)V
 }
 
 public final class com/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl {
@@ -86,12 +89,16 @@ public final class com/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl {
 	public final fun getIn ()Ljava/util/List;
 	public final fun getLanguageIn ()Ljava/util/List;
 	public final fun getMaxCount ()Ljava/lang/Integer;
-	public final fun getMaxExclusive ()Ljava/lang/Double;
-	public final fun getMaxInclusive ()Ljava/lang/Double;
+	public final synthetic fun getMaxExclusive ()Ljava/lang/Double;
+	public final fun getMaxExclusive ()Ljava/lang/Number;
+	public final synthetic fun getMaxInclusive ()Ljava/lang/Double;
+	public final fun getMaxInclusive ()Ljava/lang/Number;
 	public final fun getMaxLength ()Ljava/lang/Integer;
 	public final fun getMinCount ()Ljava/lang/Integer;
-	public final fun getMinExclusive ()Ljava/lang/Double;
-	public final fun getMinInclusive ()Ljava/lang/Double;
+	public final synthetic fun getMinExclusive ()Ljava/lang/Double;
+	public final fun getMinExclusive ()Ljava/lang/Number;
+	public final synthetic fun getMinInclusive ()Ljava/lang/Double;
+	public final fun getMinInclusive ()Ljava/lang/Number;
 	public final fun getMinLength ()Ljava/lang/Integer;
 	public final fun getNodeKind ()Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
 	public final fun getPath-UX4i1w8 ()Ljava/lang/String;
@@ -118,8 +125,12 @@ public final class com/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl {
 	public final fun lessThan-J_zqV-w (Ljava/lang/String;)V
 	public final fun lessThanOrEquals (Ljava/lang/String;)V
 	public final fun lessThanOrEquals-J_zqV-w (Ljava/lang/String;)V
+	public final fun maxExclusive (Lcom/geoknoesis/kastor/rdf/Literal;)V
+	public final fun maxInclusive (Lcom/geoknoesis/kastor/rdf/Literal;)V
 	public final fun message (Ljava/lang/String;)V
 	public final fun message (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun minExclusive (Lcom/geoknoesis/kastor/rdf/Literal;)V
+	public final fun minInclusive (Lcom/geoknoesis/kastor/rdf/Literal;)V
 	public final fun name (Ljava/lang/String;)V
 	public final fun name (Ljava/lang/String;Ljava/lang/String;)V
 	public final fun node (Ljava/lang/String;)V
@@ -141,12 +152,16 @@ public final class com/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl {
 	public final fun setIn (Ljava/util/List;)V
 	public final fun setLanguageIn (Ljava/util/List;)V
 	public final fun setMaxCount (Ljava/lang/Integer;)V
-	public final fun setMaxExclusive (Ljava/lang/Double;)V
-	public final fun setMaxInclusive (Ljava/lang/Double;)V
+	public final synthetic fun setMaxExclusive (Ljava/lang/Double;)V
+	public final fun setMaxExclusive (Ljava/lang/Number;)V
+	public final synthetic fun setMaxInclusive (Ljava/lang/Double;)V
+	public final fun setMaxInclusive (Ljava/lang/Number;)V
 	public final fun setMaxLength (Ljava/lang/Integer;)V
 	public final fun setMinCount (Ljava/lang/Integer;)V
-	public final fun setMinExclusive (Ljava/lang/Double;)V
-	public final fun setMinInclusive (Ljava/lang/Double;)V
+	public final synthetic fun setMinExclusive (Ljava/lang/Double;)V
+	public final fun setMinExclusive (Ljava/lang/Number;)V
+	public final synthetic fun setMinInclusive (Ljava/lang/Double;)V
+	public final fun setMinInclusive (Ljava/lang/Number;)V
 	public final fun setMinLength (Ljava/lang/Integer;)V
 	public final fun setNodeKind (Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;)V
 	public final fun setPath-xWoYxd4 (Ljava/lang/String;)V
@@ -188,6 +203,12 @@ public final class com/geoknoesis/kastor/rdf/dsl/ShaclDsl {
 
 public final class com/geoknoesis/kastor/rdf/dsl/ShaclDslKt {
 	public static final fun shacl (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/ShapeListDsl {
+	public final fun shape (Ljava/lang/String;)V
+	public final fun shape (Lkotlin/jvm/functions/Function1;)V
+	public final fun shape-J_zqV-w (Ljava/lang/String;)V
 }
 
 public final class com/geoknoesis/kastor/rdf/dsl/SparqlConstraintDsl {
