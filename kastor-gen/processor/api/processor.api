@@ -938,19 +938,28 @@ public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperP
 }
 
 public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
+	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/List;)V
+	public synthetic fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun candidates (Ljava/lang/String;Ljava/io/File;)Ljava/util/List;
+	public static synthetic fun candidates$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Ljava/util/List;
 	public final fun createClassesFromShapes (Ljava/util/List;)Ljava/util/List;
 	public final fun createEmptyContext ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
-	public final fun loadOntologyClasses (Ljava/lang/String;)Ljava/util/List;
-	public final fun loadOntologyModel (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
-	public static synthetic fun loadOntologyModel$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
+	public final fun loadOntologyClasses (Ljava/lang/String;Ljava/io/File;)Ljava/util/List;
+	public static synthetic fun loadOntologyClasses$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Ljava/util/List;
+	public final fun loadOntologyModel (Ljava/lang/String;Ljava/lang/String;Ljava/io/File;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
+	public static synthetic fun loadOntologyModel$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
 }
 
 public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor : com/google/devtools/ksp/processing/SymbolProcessor {
+	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor$Companion;
+	public static final field RESOURCES_OPTION Ljava/lang/String;
 	public fun <init> (Lcom/google/devtools/ksp/processing/CodeGenerator;Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/Map;)V
 	public fun finish ()V
 	public fun onError ()V
 	public fun process (Lcom/google/devtools/ksp/processing/Resolver;)Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor$Companion {
 }
 
 public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessorProvider : com/google/devtools/ksp/processing/SymbolProcessorProvider {

@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.gen.processor.api.exceptions.ProcessingException
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
+import java.io.File
 
 /**
  * KSP processor for generating domain interfaces, wrappers, and instance DSL from SHACL / JSON-LD,
@@ -16,7 +17,10 @@ public class OntologyProcessor(
 ) : SymbolProcessor {
 
   private val annotationParser = AnnotationParser(logger)
-  private val fileReader = OntologyFileReader(logger)
+  private val fileReader = OntologyFileReader(
+    logger,
+    options[RESOURCES_OPTION].orEmpty().split(File.pathSeparatorChar).filter { it.isNotBlank() }.map(::File),
+  )
   private val coordinator = GenerationCoordinator(logger, codeGenerator)
 
   override fun process(resolver: Resolver): List<KSAnnotated> {
@@ -42,6 +46,7 @@ public class OntologyProcessor(
             val model = fileReader.loadOntologyModel(
               request.shaclPath,
               request.contextPath?.takeIf { it.isNotBlank() },
+              near = sourceFileOf(symbol),
             )
             coordinator.generateInstanceDsl(
               model = model,
@@ -69,6 +74,7 @@ public class OntologyProcessor(
             val model = fileReader.loadOntologyModel(
               request.shaclPath,
               request.contextPath.takeIf { it.isNotBlank() },
+              near = sourceFileOf(symbol),
             )
             coordinator.generateFromOntology(
               model = model,
@@ -105,6 +111,14 @@ public class OntologyProcessor(
     }
 
     return processed.filterNot { it.validate() }.toList()
+  }
+
+  private fun sourceFileOf(symbol: KSAnnotated): File? =
+    ((symbol as? KSDeclaration)?.containingFile ?: (symbol as? KSFile))?.filePath?.let(::File)
+
+  public companion object {
+    /** KSP option: extra directories (path-separator separated) to resolve `@Rdf(shacl/context)` paths against. */
+    public const val RESOURCES_OPTION: String = "kastor.gen.resources"
   }
 }
 
