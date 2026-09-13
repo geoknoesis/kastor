@@ -159,42 +159,44 @@ val repositories = mapOf(
 
 ## 🌟 RDF-star Support
 
-RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples.
+Kastor follows the RDF 1.2 model: triple terms (`<<( s p o )>>`) appear only in object position, and statement metadata is attached to a reifier (`_:r rdf:reifies <<( s p o )>>`). See [RDF-star and triple terms](../features/rdf-star.md).
 
 ### **Supported Providers**
-- **Memory Provider**: ✅ Full RDF-star support
-- **Jena Provider**: ✅ Full RDF-star support  
-- **RDF4J Provider**: ✅ Full RDF-star support
-- **SPARQL Provider**: ❌ Depends on endpoint support
+- **Memory Provider**: ❌ RDF 1.1 graph store (`supportsTripleTerms = false`)
+- **Jena Provider**: ✅ RDF 1.2 triple terms
+- **RDF4J Provider**: ✅ RDF 1.2 triple terms
+- **SPARQL Provider**: ❌ The HTTP adapter does not decode triple terms from results
 
-### **RDF-star Usage Example**
+### **RDF 1.2 Reifier Example**
 ```kotlin
-val repo = Rdf.memory() // Memory provider supports RDF-star
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
 
 repo.add {
     val alice = iri("http://example.org/alice")
     val bob = iri("http://example.org/bob")
-    
+
     // Basic fact
     alice - FOAF.knows - bob
-    
-    // Metadata about the statement using RDF-star
-    val statement = embedded(alice, FOAF.knows, bob)
-    statement - DCTERMS.source - "LinkedIn"
-    statement - iri("http://example.org/confidence") - 0.95
+
+    // Metadata about the statement: _:r rdf:reifies <<( alice foaf:knows bob )>>
+    reifies(alice, FOAF.knows, bob) { r ->
+        r - DCTERMS.source - "LinkedIn"
+        r - iri("http://example.org/confidence") - 0.95
+    }
 }
 ```
 
-### **Checking RDF-star Support**
+### **Checking Triple-Term Support**
 ```kotlin
-val repo = Rdf.memory()
 val capabilities = repo.getCapabilities()
 
-if (capabilities.supportsRdfStar) {
-    // Use RDF-star features
-    println("RDF-star is supported!")
+if (capabilities.supportsTripleTerms) {
+    println("RDF 1.2 triple terms are supported")
 } else {
-    println("RDF-star is not supported by this provider")
+    println("Triple terms are not supported by this provider")
 }
 ```
 

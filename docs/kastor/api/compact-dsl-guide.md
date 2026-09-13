@@ -1026,99 +1026,111 @@ The new **`values()` and `list()`** functions make it even easier to work with m
 
 Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.
 
-## 🌟 RDF-star Support
+## 🌟 RDF-star Support (RDF 1.2 reifiers)
 
-RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples. This is useful for adding provenance, confidence scores, temporal information, and other metadata about statements.
+Kastor follows the RDF 1.2 model for statements about statements. A triple term `<<( s p o )>>` may appear only as an **object**, and metadata is attached to a **reifier**: `_:r rdf:reifies <<( s p o )>>`. The compact DSL creates reifiers with `reifies(...)`, which is available in both `Rdf.graph { }` and `repo.add { }`. This is useful for provenance, confidence scores, temporal information and other metadata about statements.
 
-### **RDF-star Syntax**
+### **Reifier Syntax**
 
 ```kotlin
 val graph = Rdf.graph {
     val alice = iri("http://example.org/alice")
     val bob = iri("http://example.org/bob")
-    
+
     // Basic facts
     alice - FOAF.knows - bob
     alice - FOAF.age - 30
-    
-    // RDF-star: Add metadata about statements
-    val aliceKnowsBob = embedded(alice, FOAF.knows, bob)
-    aliceKnowsBob - DCTERMS.source - "LinkedIn"
-    aliceKnowsBob - iri("http://example.org/confidence") - 0.95
-    aliceKnowsBob - DCTERMS.date - "2025-01-15"
-    
-    // RDF-star: Add temporal metadata about age
-    val aliceAge = embedded(alice, FOAF.age, 30)
-    aliceAge - DCTERMS.date - "2025-01-15"
-    aliceAge - iri("http://example.org/validUntil") - "2025-12-31"
+
+    // Metadata about a statement: _:r rdf:reifies <<( alice foaf:knows bob )>>
+    reifies(alice, FOAF.knows, bob) { r ->
+        r - DCTERMS.source - "LinkedIn"
+        r - iri("http://example.org/confidence") - 0.95
+        r - DCTERMS.date - "2025-01-15"
+    }
+
+    // Temporal metadata about the age statement
+    reifies(alice, FOAF.age, 30.toLiteral()) { r ->
+        r - DCTERMS.date - "2025-01-15"
+        r - iri("http://example.org/validUntil") - "2025-12-31"
+    }
 }
 ```
 
-### **Embedded Triple Creation**
+The reifier does not assert the triple; add it separately (as above) when it belongs to the data.
 
-The `embedded()` function creates a quoted triple that can be used as a subject or object:
+### **Creating Reifiers**
 
 ```kotlin
-// Method 1: Using variables
-val subject = iri("http://example.org/alice")
-val predicate = FOAF.knows
-val obj = iri("http://example.org/bob")
-val statement = embedded(subject, predicate, obj)
+Rdf.graph {
+    val alice = iri("http://example.org/alice")
+    val bob = iri("http://example.org/bob")
 
-// Method 2: Direct specification
-val statement2 = embedded(alice, FOAF.knows, bob)
+    // Method 1: subject, predicate, object (fresh blank-node reifier)
+    val r1 = reifies(alice, FOAF.knows, bob)
 
-// Method 3: Using QNames
-val statement3 = embedded("http://example.org/alice", "foaf:name", "Alice")
+    // Method 2: an existing RdfTriple
+    val claim = RdfTriple(alice, FOAF.knows, bob)
+    val r2 = reifies(claim)
+
+    // Method 3: a named reifier IRI
+    val r3 = reifies(alice, FOAF.knows, bob, reifier = iri("http://example.org/claim1"))
+
+    // reifies returns the reifier, so you can add triples to it later
+    r3 - DCTERMS.source - "LinkedIn"
+}
 ```
+
+A triple term on its own is created with `quoted(RdfTriple(...))` (a `TripleTerm`), and can only be used in object position. The older `embedded(s, p, o)` helper just builds an `RdfStarTriple` holder; attach metadata with `reifies` instead.
 
 ### **Nested Metadata**
 
-RDF-star supports nested metadata - metadata about metadata:
+A reifier is an ordinary resource, so metadata about metadata is either more triples on the same reifier or a reifier for a triple whose subject is that reifier:
 
 ```kotlin
 val graph = Rdf.graph {
     val alice = iri("http://example.org/alice")
-    
-    // First embedded triple
-    val aliceName = embedded(alice, FOAF.name, "Alice Johnson")
-    aliceName - DCTERMS.source - "Profile"
-    
-    // Metadata about the metadata
-    val metadataTriple = embedded(aliceName, DCTERMS.source, "Profile")
-    metadataTriple - iri("http://example.org/verified") - true
-    metadataTriple - DCTERMS.date - "2025-01-15"
+
+    val nameClaim = reifies(alice, FOAF.name, string("Alice Johnson"), reifier = iri("http://example.org/nameClaim"))
+    nameClaim - DCTERMS.source - "Profile"
+
+    // Metadata about the "source" annotation
+    reifies(nameClaim, DCTERMS.source, string("Profile")) { r ->
+        r - iri("http://example.org/verified") - true
+        r - DCTERMS.date - "2025-01-15"
+    }
 }
 ```
 
 ### **Provider Support**
 
-RDF-star support depends on the repository provider:
+Triple terms need an RDF 1.2 store:
 
 ```kotlin
-val repo = Rdf.memory()
-val capabilities = repo.getCapabilities()
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
 
-if (capabilities.supportsRdfStar) {
-    // Use RDF-star features
+if (repo.getCapabilities().supportsTripleTerms) {
     repo.add {
-        val statement = embedded(alice, FOAF.knows, bob)
-        statement - DCTERMS.source - "LinkedIn"
+        reifies(alice, FOAF.knows, bob) { r ->
+            r - DCTERMS.source - "LinkedIn"
+        }
     }
 } else {
-    println("RDF-star not supported by this provider")
+    println("Triple terms are not supported by this provider")
 }
 ```
 
 **Supported Providers:**
-- ✅ **Memory Provider**: Full RDF-star support
-- ✅ **Jena Provider**: Full RDF-star support
-- ✅ **RDF4J Provider**: Full RDF-star support
-- ❌ **SPARQL Provider**: Depends on endpoint support
+- ❌ **Memory Provider**: RDF 1.1 graph store (`supportsTripleTerms = false`)
+- ✅ **Jena Provider**: RDF 1.2 triple terms
+- ✅ **RDF4J Provider**: RDF 1.2 triple terms
+- ❌ **SPARQL Provider**: the HTTP adapter does not decode triple terms
 
 ### **Use Cases**
 
-RDF-star is particularly useful for:
+Reifiers are particularly useful for:
 
 - **Provenance**: Tracking the source of statements
 - **Confidence**: Adding confidence scores to statements
@@ -1130,30 +1142,18 @@ RDF-star is particularly useful for:
 // Example: Scientific data with provenance and confidence
 val graph = Rdf.graph {
     val result = iri("http://example.org/experiment1")
-    val temperature = embedded(result, iri("http://example.org/temperature"), 25.5)
-    
-    temperature - iri("http://example.org/instrument") - "Thermometer-123"
-    temperature - iri("http://example.org/confidence") - 0.98
-    temperature - DCTERMS.date - "2025-01-15T14:30:00Z"
-    temperature - iri("http://example.org/calibrated") - true
-}
-```
+    val temperature = iri("http://example.org/temperature")
 
-### **Error Handling**
-
-The DSL validates embedded triples and throws meaningful errors:
-
-```kotlin
-try {
-    Rdf.graph {
-        // Error: Literal cannot be a subject
-        val invalid = embedded("Alice", FOAF.knows, bob)
-        invalid - DCTERMS.source - "Test"
+    result - temperature - 25.5
+    reifies(result, temperature, 25.5.toLiteral()) { r ->
+        r - iri("http://example.org/instrument") - "Thermometer-123"
+        r - iri("http://example.org/confidence") - 0.98
+        r - DCTERMS.date - "2025-01-15T14:30:00Z"
+        r - iri("http://example.org/calibrated") - true
     }
-} catch (e: IllegalArgumentException) {
-    println("Error: ${e.message}")
-    // Output: "RDF-star embedded triple subject must be a resource, got: TypedLiteral"
 }
 ```
 
+### **Type Safety**
 
+`reifies` takes an `RdfResource` subject and an `Iri` predicate, so a literal subject is a compile-time error rather than a runtime failure. RDF 1.2 forbids triple terms in subject position; see the [migration guide](../guides/migrating-to-rdf-1.2.md).
