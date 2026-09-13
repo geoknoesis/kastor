@@ -1,16 +1,20 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.annotations.ValidationMode
-import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
-import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
+import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
+import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
@@ -18,6 +22,9 @@ import com.squareup.kotlinpoet.KModifier.*
 /**
  * Generator for Kotlin wrapper classes from SHACL shapes and JSON-LD context using KotlinPoet.
  * Creates RDF-backed wrapper implementations.
+ *
+ * The generator is stateless: all per-call information travels in an immutable context, so one instance
+ * can be reused (also concurrently) for different models and packages.
  */
 public class OntologyWrapperGenerator(
     private val logger: KSPLogger,
@@ -25,89 +32,87 @@ public class OntologyWrapperGenerator(
     private val externalValidatorClass: String? = null
 ) {
 
-    private var currentPackageName: String = ""
-    private var domainPackage: String = ""
-    private var knownTypes: Set<String>? = null
+    private class Ctx(
+        val model: OntologyModel,
+        val packageName: String,
+        val domainPackage: String,
+        val knownTypes: Set<String>?,
+        val enumsByName: Map<String, EnumModel>,
+        val supers: Map<String, List<ShaclShape>>,
+    )
+
+    private val runtime = CodegenConstants.RUNTIME_PACKAGE
+    private val iriClass = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+    private val graphOps = ClassName(runtime, "KastorGraphOps")
 
     /**
      * Generates Kotlin wrapper code from SHACL shapes.
-     * 
+     *
      * @param ontologyModel The combined SHACL + JSON-LD model
      * @param packageName The target package name
+     * @param interfacePackage package of the generated domain interfaces and enums
+     * @param fallbackUnshapedToIri when true, `sh:class` targets without a shape are exposed as IRI strings
      * @return Map of wrapper class names to generated FileSpec
      */
     public fun generateWrappers(ontologyModel: OntologyModel, packageName: String, interfacePackage: String = packageName, fallbackUnshapedToIri: Boolean = false): Map<String, FileSpec> {
-        domainPackage = interfacePackage
-        knownTypes = if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.domainName(it.targetClass, ontologyModel.context) }.toSet() else null
-        val wrappers = mutableMapOf<String, FileSpec>()
-        val enumsByName = ontologyModel.enums.associateBy { it.name }
+        GenerationNames.checkCollisions(ontologyModel)
+        val ctx = Ctx(
+            model = ontologyModel,
+            packageName = packageName,
+            domainPackage = interfacePackage,
+            knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(ontologyModel) else null,
+            enumsByName = ontologyModel.enums.associateBy { it.name },
+            supers = GenerationNames.superTypes(ontologyModel),
+        )
+        val wrappers = sortedMapOf<String, FileSpec>()
 
-        ontologyModel.shapes.forEach { shape ->
-            val interfaceName = NamingUtils.domainName(shape.targetClass, ontologyModel.context)
-            val wrapperName = "${interfaceName}Wrapper"
-            val fileSpec = generateWrapper(shape, ontologyModel.context, packageName, enumsByName)
-            wrappers[wrapperName] = fileSpec
-
+        ontologyModel.shapes.sortedBy { it.targetClass }.forEach { shape ->
+            val wrapperName = "${NamingUtils.domainName(shape.targetClass, ontologyModel.context)}Wrapper"
+            wrappers[wrapperName] = generateWrapper(shape, ctx)
             logger.info("Generated wrapper: $wrapperName")
         }
 
         return wrappers
     }
 
-    private fun generateWrapper(
-        shape: ShaclShape,
-        context: JsonLdContext,
-        packageName: String,
-        enumsByName: Map<String, EnumModel>,
-    ): FileSpec {
+    private fun generateWrapper(shape: ShaclShape, ctx: Ctx): FileSpec {
+        val context = ctx.model.context
         val interfaceName = NamingUtils.domainName(shape.targetClass, context)
         val wrapperName = "${interfaceName}Wrapper"
-        
-        currentPackageName = domainPackage
-        val fileBuilder = FileSpec.builder(packageName, wrapperName)
+        val properties = GenerationNames.effectiveProperties(shape, ctx.supers)
+
+        val fileBuilder = FileSpec.builder(ctx.packageName, wrapperName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
 
         // Add imports
-        fileBuilder.addImport(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked", "OntoMapper", "KastorGraphOps", "RdfRef", "RdfHandle", "DefaultRdfHandle", "ShaclViolation", "ValidationResult")
+        fileBuilder.addImport(runtime, "RdfBacked", "OntoMapper", "KastorGraphOps", "RdfRef", "RdfHandle", "DefaultRdfHandle", "ShaclViolation", "ValidationResult")
         fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "Iri", "RdfResource", "MutableRdfGraph", "BlankNode", "getCbdClosure")
-        
+
         // Build wrapper class
         val classBuilder = TypeSpec.classBuilder(wrapperName)
             .addModifiers(INTERNAL)
-            .addKdoc(
-                "RDF-backed wrapper for %L\nGenerated from SHACL shape: %L",
-                interfaceName, shape.shapeIri
-            )
+            .addKdoc("%L", kdocText("RDF-backed wrapper for $interfaceName\nGenerated from SHACL shape: ${shape.shapeIri}"))
             .primaryConstructor(
                 FunSpec.constructorBuilder()
-                    .addParameter("input", ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle"))
+                    .addParameter("input", ClassName(runtime, "RdfHandle"))
                     .addModifiers(PRIVATE)
                     .build()
             )
-            .addSuperinterface(ClassName(domainPackage, interfaceName))
-            .addSuperinterface(ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked"))
-        
-        // Known predicates set - sort by path IRI for deterministic output
-        val knownIris = shape.properties
-            .sortedBy { it.path }
-            .map { 
-                CodeBlock.of("Iri(%S)", it.path)
-            }
-        val setType = KotlinPoetUtils.setOf(
-            ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
-        )
-        val knownIrisCode = knownIris.joinToString(", ") { it.toString() }
+            .addSuperinterface(ClassName(ctx.domainPackage, interfaceName))
+            .addSuperinterface(ClassName(runtime, "RdfBacked"))
+
+        // Known predicates set - sorted by path IRI for deterministic output
         classBuilder.addProperty(
-            PropertySpec.builder("known", setType)
+            PropertySpec.builder("known", KotlinPoetUtils.setOf(iriClass))
                 .addModifiers(PRIVATE)
-                .initializer("setOf(%L)", CodeBlock.of(knownIrisCode))
+                .initializer("setOf(%L)", properties.map { CodeBlock.of("Iri(%S)", it.path) }.joinToCode(", "))
                 .build()
         )
-        
+
         // RDF handle property
         classBuilder.addProperty(
-            PropertySpec.builder("rdf", ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle"))
+            PropertySpec.builder("rdf", ClassName(runtime, "RdfHandle"))
                 .addModifiers(OVERRIDE)
                 .delegate(
                     CodeBlock.of(
@@ -118,19 +123,15 @@ public class OntologyWrapperGenerator(
                 )
                 .build()
         )
-        
-        // Generate property implementations - sort by path IRI for deterministic output
-        shape.properties
-            .sortedBy { it.path }
-            .forEach { property ->
-                classBuilder.addProperty(generatePropertyImplementation(property, context, enumsByName))
-            }
-        
-        // Add validation method
+
+        properties.forEach { property ->
+            classBuilder.addProperty(generatePropertyImplementation(property, ctx))
+        }
+
+        val companionBuilder = TypeSpec.companionObjectBuilder()
+
         when (validationMode) {
-            ValidationMode.NONE -> { 
-                // No validation code generated
-            }
+            ValidationMode.NONE -> Unit
             ValidationMode.EXTERNAL -> {
                 require(externalValidatorClass != null) {
                     "EXTERNAL validation mode requires externalValidatorClass to be specified"
@@ -138,366 +139,248 @@ public class OntologyWrapperGenerator(
                 classBuilder.addFunction(generateExternalValidation())
             }
             ValidationMode.EMBEDDED -> {
-                classBuilder.addFunction(generateEmbeddedValidation(shape))
+                classBuilder.addFunction(generateEmbeddedValidation(shape, properties, ctx, companionBuilder))
             }
         }
-        
-        // Add writeToGraph method
+
         classBuilder.addFunction(generateWriteToGraph())
-        
-        // Companion object
-        val companionBuilder = TypeSpec.companionObjectBuilder()
-        
-        // Property mappings - sort by path IRI for deterministic output
-        val mappingEntries = shape.properties
-            .sortedBy { it.path }
-            .map { property ->
-                val jsonLdName = context.propertyMappings.entries
-                    .find { it.value.id.value == property.path }
-                    ?.key
-                    ?: property.name
-                CodeBlock.of("%S to Iri(%S)", jsonLdName, property.path)
-            }
-        val mapType = KotlinPoetUtils.mapOf(
-            String::class.asTypeName(),
-            ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
-        )
-        val mappingCode = mappingEntries.joinToString(", ") { it.toString() }
+
+        // Property mappings - sorted by path IRI for deterministic output
+        val mappingEntries = properties.map { property ->
+            val jsonLdName = context.propertyMappings.entries
+                .filter { it.value.id.value == property.path }
+                .minByOrNull { it.key }
+                ?.key
+                ?: property.name
+            CodeBlock.of("%S to Iri(%S)", jsonLdName, property.path)
+        }
         companionBuilder.addProperty(
-            PropertySpec.builder("propertyMappings", mapType)
+            PropertySpec.builder("propertyMappings", KotlinPoetUtils.mapOf(String::class.asTypeName(), iriClass))
                 .addKdoc("Mapping metadata: JSON-LD property names → RDF predicate IRIs")
-                .initializer("mapOf(%L)", CodeBlock.of(mappingCode))
+                .initializer("mapOf(%L)", mappingEntries.joinToCode(", "))
                 .build()
         )
-        
-        // Registry init
+
         companionBuilder.addInitializerBlock(
-            CodeBlock.of(
-                "OntoMapper.registry[%T::class.java] = { handle -> %T(handle) }",
-                ClassName(domainPackage, interfaceName),
-                ClassName(packageName, wrapperName)
-            )
+            CodeBlock.builder().addStatement(
+                "OntoMapper.register(%T::class.java) { handle -> %T(handle) }",
+                ClassName(ctx.domainPackage, interfaceName),
+                ClassName(ctx.packageName, wrapperName)
+            ).build()
         )
-        
+
         classBuilder.addType(companionBuilder.build())
         fileBuilder.addType(classBuilder.build())
-        
+
         return fileBuilder.build()
     }
 
     private fun generateExternalValidation(): FunSpec {
         val validatorRef = externalValidatorClass?.takeIf { it.isNotBlank() }
         val functionBuilder = FunSpec.builder("validate")
-            .returns(ClassName(CodegenConstants.RUNTIME_PACKAGE, "ValidationResult"))
-        
+            .returns(ClassName(runtime, "ValidationResult"))
+
         if (validatorRef != null) {
             functionBuilder.addStatement("return %T().validate(rdf.graph, rdf.node)", ClassName.bestGuess(validatorRef))
         } else {
             functionBuilder.addStatement("return rdf.validate()")
         }
-        
+
         return functionBuilder.build()
     }
 
-    private fun generateEmbeddedValidation(shape: ShaclShape): FunSpec {
-        val functionBuilder = FunSpec.builder("validate")
-            .returns(ClassName(CodegenConstants.RUNTIME_PACKAGE, "ValidationResult"))
-            .addStatement("val violations = mutableListOf<%T>()", ClassName(CodegenConstants.RUNTIME_PACKAGE, "ShaclViolation"))
-
+    private fun generateEmbeddedValidation(
+        shape: ShaclShape,
+        properties: List<ShaclProperty>,
+        ctx: Ctx,
+        companion: TypeSpec.Builder,
+    ): FunSpec {
+        val violationClass = ClassName(runtime, "ShaclViolation")
         val shaclCn = ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL")
-        // Emits the shared trailer of a ShaclViolation(...) constructor call.
-        // [constraintTerm] is the SHACL member name (e.g. "pattern", "minLength", "`in`").
-        fun violationTail(constraintTerm: String, pathPred: String, message: String) {
-            functionBuilder.addStatement("    focusNode = rdf.node as RdfResource,")
-            functionBuilder.addStatement("    shapeIri = %T.NodeShape,", shaclCn)
-            functionBuilder.addStatement("    constraintIri = %T.%L,", shaclCn, constraintTerm)
-            functionBuilder.addStatement("    path = Iri(%S),", pathPred)
-            functionBuilder.addStatement("    message = %S", message)
-            functionBuilder.addStatement("  ))")
+        val functionBuilder = FunSpec.builder("validate")
+            .returns(ClassName(runtime, "ValidationResult"))
+            .addStatement("val violations = mutableListOf<%T>()", violationClass)
+
+        fun violation(constraintTerm: String, pathPred: String, message: String, value: CodeBlock?): CodeBlock =
+            CodeBlock.builder()
+                .add("%T(\n", violationClass).indent()
+                .add("focusNode = rdf.node as RdfResource,\n")
+                .add("shapeIri = Iri(%S),\n", shape.shapeIri)
+                .add("constraintIri = %T.%N,\n", shaclCn, constraintTerm)
+                .add("path = Iri(%S),\n", pathPred)
+                .apply { if (value != null) add("actualValue = %L,\n", value) }
+                .add("message = %S,\n", message)
+                .unindent().add(")")
+                .build()
+
+        fun check(condition: CodeBlock, constraintTerm: String, pred: String, message: String, value: CodeBlock?) {
+            functionBuilder.beginControlFlow("if (%L)", condition)
+            functionBuilder.addStatement("violations += %L", violation(constraintTerm, pred, message, value))
+            functionBuilder.endControlFlow()
         }
 
-        // Sort properties by path IRI for deterministic output
-        shape.properties
-            .sortedBy { it.path }
-            .forEach { property ->
+        var patternIndex = 0
+        properties.forEach { property ->
             val pred = property.path
+            val kind = TypeMapper.valueKind(property, ctx.model.context, ctx.knownTypes)
             val min = property.minCount
             val max = property.maxCount
-            
+
             if (min != null || max != null) {
-                val countExpr = if (property.targetClass != null) {
-                    CodeBlock.of("KastorGraphOps.countObjectValues(rdf.graph, rdf.node, Iri(%S))", pred)
-                } else {
-                    CodeBlock.of("KastorGraphOps.countLiteralValues(rdf.graph, rdf.node, Iri(%S))", pred)
-                }
-                
-                functionBuilder.addCode("\n")
-                functionBuilder.addStatement("run {")
-                functionBuilder.addStatement("  val count = %L", countExpr)
-                
-                min?.let {
-                    functionBuilder.addStatement("  if (count < %L) violations.add(ShaclViolation(", it)
-                    functionBuilder.addStatement("    focusNode = rdf.node as RdfResource,")
-                    functionBuilder.addStatement("    shapeIri = %T.NodeShape,", ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL"))
-                    functionBuilder.addStatement("    constraintIri = %T.minCount,", ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL"))
-                    functionBuilder.addStatement("    path = Iri(%S),", pred)
-                    functionBuilder.addStatement("    message = %S", "minCount $it violated")
-                    functionBuilder.addStatement("  ))")
-                }
-                
-                max?.let {
-                    functionBuilder.addStatement("  if (count > %L) violations.add(ShaclViolation(", it)
-                    functionBuilder.addStatement("    focusNode = rdf.node as RdfResource,")
-                    functionBuilder.addStatement("    shapeIri = %T.NodeShape,", ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL"))
-                    functionBuilder.addStatement("    constraintIri = %T.maxCount,", ClassName(CodegenConstants.VOCAB_PACKAGE, "SHACL"))
-                    functionBuilder.addStatement("    path = Iri(%S),", pred)
-                    functionBuilder.addStatement("    message = %S", "maxCount $it violated")
-                    functionBuilder.addStatement("  ))")
-                }
-                
-                functionBuilder.addStatement("}")
+                val countFn = if (kind == ValueKind.LITERAL) "countLiteralValues" else "countObjectValues"
+                functionBuilder.beginControlFlow("run")
+                functionBuilder.addStatement("val count = %T.%N(rdf.graph, rdf.node, Iri(%S))", graphOps, countFn, pred)
+                min?.let { check(CodeBlock.of("count < %L", it), "minCount", pred, "minCount $it violated for $pred", null) }
+                max?.let { check(CodeBlock.of("count > %L", it), "maxCount", pred, "maxCount $it violated for $pred", null) }
+                functionBuilder.endControlFlow()
             }
 
-            // Value constraints apply to literal-valued properties only.
-            if (property.targetClass == null) {
-                val literals = CodeBlock.of(
-                    "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", pred
-                )
+            if (kind == ValueKind.LITERAL || (kind == ValueKind.ENUM && property.inValuesTyped?.none { it.isIri } != false)) {
+                val literals = CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", graphOps, pred)
 
                 property.pattern?.let { pat ->
-                    functionBuilder.addCode("\n")
-                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement("  if (!%T(%S).containsMatchIn(lit.lexical)) violations.add(ShaclViolation(", Regex::class, pat)
-                    violationTail("pattern", pred, "pattern $pat violated")
-                    functionBuilder.addStatement("}")
+                    val constant = "PATTERN_${patternIndex++}"
+                    companion.addProperty(
+                        PropertySpec.builder(constant, Regex::class)
+                            .addModifiers(PRIVATE)
+                            .initializer(regexCode(pat, property.patternFlags))
+                            .build()
+                    )
+                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
+                    check(CodeBlock.of("!%N.containsMatchIn(lit.lexical)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("lit"))
+                    functionBuilder.endControlFlow()
                 }
 
                 if (property.minLength != null || property.maxLength != null) {
-                    functionBuilder.addCode("\n")
-                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
+                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
                     property.minLength?.let {
-                        functionBuilder.addStatement("  if (lit.lexical.length < %L) violations.add(ShaclViolation(", it)
-                        violationTail("minLength", pred, "minLength $it violated")
+                        check(CodeBlock.of("lit.lexical.length < %L", it), "minLength", pred, "minLength $it violated for $pred", CodeBlock.of("lit"))
                     }
                     property.maxLength?.let {
-                        functionBuilder.addStatement("  if (lit.lexical.length > %L) violations.add(ShaclViolation(", it)
-                        violationTail("maxLength", pred, "maxLength $it violated")
+                        check(CodeBlock.of("lit.lexical.length > %L", it), "maxLength", pred, "maxLength $it violated for $pred", CodeBlock.of("lit"))
                     }
-                    functionBuilder.addStatement("}")
+                    functionBuilder.endControlFlow()
                 }
 
                 if (property.minInclusive != null || property.maxInclusive != null ||
                     property.minExclusive != null || property.maxExclusive != null
                 ) {
-                    functionBuilder.addCode("\n")
-                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement("  val num = lit.lexical.toDoubleOrNull()")
-                    functionBuilder.addStatement("  if (num != null) {")
-                    property.minInclusive?.let {
-                        functionBuilder.addStatement("    if (num < %L) violations.add(ShaclViolation(", it)
-                        violationTail("minInclusive", pred, "minInclusive $it violated")
-                    }
-                    property.maxInclusive?.let {
-                        functionBuilder.addStatement("    if (num > %L) violations.add(ShaclViolation(", it)
-                        violationTail("maxInclusive", pred, "maxInclusive $it violated")
-                    }
-                    property.minExclusive?.let {
-                        functionBuilder.addStatement("    if (num <= %L) violations.add(ShaclViolation(", it)
-                        violationTail("minExclusive", pred, "minExclusive $it violated")
-                    }
-                    property.maxExclusive?.let {
-                        functionBuilder.addStatement("    if (num >= %L) violations.add(ShaclViolation(", it)
-                        violationTail("maxExclusive", pred, "maxExclusive $it violated")
-                    }
-                    functionBuilder.addStatement("  }")
-                    functionBuilder.addStatement("}")
+                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
+                    functionBuilder.addStatement("val num = lit.lexical.trim().toDoubleOrNull()")
+                    functionBuilder.beginControlFlow("if (num != null)")
+                    property.minInclusive?.let { check(CodeBlock.of("num < %L", it), "minInclusive", pred, "minInclusive $it violated for $pred", CodeBlock.of("lit")) }
+                    property.maxInclusive?.let { check(CodeBlock.of("num > %L", it), "maxInclusive", pred, "maxInclusive $it violated for $pred", CodeBlock.of("lit")) }
+                    property.minExclusive?.let { check(CodeBlock.of("num <= %L", it), "minExclusive", pred, "minExclusive $it violated for $pred", CodeBlock.of("lit")) }
+                    property.maxExclusive?.let { check(CodeBlock.of("num >= %L", it), "maxExclusive", pred, "maxExclusive $it violated for $pred", CodeBlock.of("lit")) }
+                    functionBuilder.endControlFlow()
+                    functionBuilder.endControlFlow()
                 }
 
-                property.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
-                    // %S per value so KotlinPoet escapes quotes/backslashes in the generated source.
-                    val placeholders = values.joinToString(", ") { "%S" }
-                    functionBuilder.addCode("\n")
-                    functionBuilder.addStatement("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement(
-                        "  if (lit.lexical !in listOf($placeholders)) violations.add(ShaclViolation(",
-                        *values.toTypedArray()
-                    )
-                    violationTail("`in`", pred, "in violated")
-                    functionBuilder.addStatement("}")
+                property.inValues?.takeIf { it.isNotEmpty() && property.inValuesTyped?.any { v -> v.isIri } != true }?.let { values ->
+                    val allowed = values.map { CodeBlock.of("%S", it) }.joinToCode(", ")
+                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
+                    check(CodeBlock.of("lit.lexical !in listOf(%L)", allowed), "in", pred, "sh:in violated for $pred", CodeBlock.of("lit"))
+                    functionBuilder.endControlFlow()
                 }
             }
 
-            // IRI-membered sh:in (enum) membership check on object values
+            // IRI-membered sh:in: every object value (IRI or blank node) must be one of the listed IRIs.
             property.inValuesTyped?.takeIf { tv -> tv.isNotEmpty() && tv.all { it.isIri } }?.let { ivs ->
-                // Iri(%S) per value so KotlinPoet escapes quotes/backslashes in the generated source.
-                val placeholders = ivs.joinToString(", ") { "Iri(%S)" }
-                functionBuilder.addCode("\n")
-                functionBuilder.addStatement("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it as Iri }.forEach { obj ->", pred)
-                functionBuilder.addStatement(
-                    "  if (obj !in listOf($placeholders)) violations.add(ShaclViolation(",
-                    *ivs.map { it.value }.toTypedArray()
-                )
-                violationTail("`in`", pred, "in violated")
-                functionBuilder.addStatement("}")
+                val allowed = ivs.map { CodeBlock.of("Iri(%S)", it.value) }.joinToCode(", ")
+                functionBuilder.beginControlFlow("%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.forEach { obj ->", graphOps, pred)
+                check(CodeBlock.of("obj !in listOf(%L)", allowed), "in", pred, "sh:in violated for $pred", CodeBlock.of("obj"))
+                functionBuilder.endControlFlow()
             }
         }
 
         functionBuilder.addStatement("return if (violations.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(violations)")
-        
+
         return functionBuilder.build()
     }
 
-    private fun generatePropertyImplementation(
-        property: ShaclProperty,
-        context: JsonLdContext,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
-    ): PropertySpec {
-        val propertyName = property.name
-        val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = domainPackage, knownTypes = knownTypes)
+    private fun generatePropertyImplementation(property: ShaclProperty, ctx: Ctx): PropertySpec {
+        val context = ctx.model.context
+        val propertyName = NamingUtils.propertyName(property)
+        val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = ctx.domainPackage, knownTypes = ctx.knownTypes)
 
         val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
             .addModifiers(OVERRIDE)
-            .addKdoc(
-                "%L\nPath: %L",
-                property.description, property.path
-            )
+            .addKdoc("%L", kdocText("${property.description}\nPath: ${property.path}"))
 
-        val initializer = when {
-            property.enumName != null -> generateEnumPropertyInitializer(property, enumsByName.getValue(property.enumName))
-            property.targetClass != null -> generateObjectPropertyInitializer(property, context)
-            else -> generateLiteralPropertyInitializer(property)
-        }
+        val initializer = valuesInitializer(property, ctx)
 
-        propertyBuilder.delegate(CodeBlock.builder()
-            .add("lazy {\n")
-            .add(initializer)
-            .add("\n}")
-            .build())
+        propertyBuilder.delegate(
+            CodeBlock.builder()
+                .add("lazy {\n").indent()
+                .add(initializer)
+                .unindent().add("\n}")
+                .build()
+        )
 
         return propertyBuilder.build()
     }
 
-    private fun generateEnumPropertyInitializer(property: ShaclProperty, enum: EnumModel): CodeBlock {
+    private fun valuesInitializer(property: ShaclProperty, ctx: Ctx): CodeBlock {
+        val context = ctx.model.context
         val path = property.path
-        val name = "$domainPackage.${enum.name}"
-        val single = property.maxCount == 1
-        val required = property.minCount != null && property.minCount > 0
-        return if (enum.memberKind == EnumMemberKind.IRI) {
-            val base = CodeBlock.of(
-                "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
-                "  $name.from(child as Iri)\n" +
-                "}", path)
-            cardinalityWrap(base, single, required, property.name)
-        } else {
-            val base = CodeBlock.of(
-                "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { $name.from(it.lexical) }", path)
-            cardinalityWrap(base, single, required, property.name)
+        val label = NamingUtils.propertyName(property)
+        return when (TypeMapper.valueKind(property, context, ctx.knownTypes)) {
+            ValueKind.ENUM -> {
+                val enum = ctx.enumsByName.getValue(property.enumName!!)
+                val enumType = ClassName(ctx.domainPackage, enum.name)
+                val base = if (enum.memberKind == EnumMemberKind.IRI) {
+                    CodeBlock.of(
+                        "%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.filterIsInstance<Iri>().map { %T.from(it) }",
+                        graphOps, path, enumType,
+                    )
+                } else {
+                    CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { %T.from(it.lexical) }", graphOps, path, enumType)
+                }
+                cardinalityWrap(base, property, "Required enum $label missing")
+            }
+            ValueKind.IRI -> cardinalityWrap(
+                CodeBlock.of("%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.filterIsInstance<Iri>().map { it.value }", graphOps, path),
+                property, "Required IRI $label missing",
+            )
+            ValueKind.OBJECT -> {
+                val target = ClassName(ctx.domainPackage, NamingUtils.domainName(property.targetClass!!, context))
+                cardinalityWrap(
+                    CodeBlock.of(
+                        "%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n⇥OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n⇤}",
+                        graphOps, path, target,
+                    ),
+                    property, "Required object $label missing",
+                )
+            }
+            ValueKind.LITERAL -> {
+                val mapping = TypeMapper.literalMapping(property.datatype)
+                val values = CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", graphOps, path)
+                val base = if (mapping.isString) CodeBlock.of("%L.map { it.lexical }", values)
+                else CodeBlock.of("%L.mapNotNull { %L }", values, mapping.decode(CodeBlock.of("it")))
+                when {
+                    Cardinality.isList(property) && Cardinality.isRequired(property) ->
+                        CodeBlock.of("%L.ifEmpty { error(%S) }", base, "Required literal $label missing")
+                    Cardinality.isRequiredSingle(property) -> {
+                        val required = CodeBlock.of("%T.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S))", graphOps, path)
+                        if (mapping.isString) CodeBlock.of("%L.lexical", required)
+                        else CodeBlock.of(
+                            "%L ?: error(%S)",
+                            mapping.decode(required),
+                            "Literal $label is not a valid ${property.datatype}",
+                        )
+                    }
+                    else -> cardinalityWrap(base, property, "Required literal $label missing")
+                }
+            }
         }
     }
 
-    private fun cardinalityWrap(base: CodeBlock, single: Boolean, required: Boolean, propName: String): CodeBlock =
+    private fun cardinalityWrap(base: CodeBlock, property: ShaclProperty, missingMessage: String): CodeBlock =
         when {
-            !single -> base // List<Enum>
-            required -> CodeBlock.of("%L.firstOrNull() ?: error(%S)", base, "Required enum $propName missing")
+            Cardinality.isList(property) -> base
+            Cardinality.isRequiredSingle(property) -> CodeBlock.of("%L.firstOrNull() ?: error(%S)", base, missingMessage)
             else -> CodeBlock.of("%L.firstOrNull()", base)
         }
-
-    private fun generateObjectPropertyInitializer(property: ShaclProperty, context: JsonLdContext): CodeBlock {
-        val targetInterfaceName = NamingUtils.domainName(property.targetClass!!, context)
-        val path = property.path
-        if (knownTypes?.contains(targetInterfaceName) == false) {
-            val base = CodeBlock.of("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child -> (child as Iri).value }", path)
-            return cardinalityWrap(base, property.maxCount == 1, (property.minCount ?: 0) > 0, property.name)
-        }
-        return if (property.maxCount == 1) {
-            if (property.minCount != null && property.minCount > 0) {
-                CodeBlock.of(
-                    "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
-                    "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
-                    "}.firstOrNull() ?: error(%S)",
-                    path, ClassName(currentPackageName, targetInterfaceName), "Required object ${property.name} missing"
-                )
-            } else {
-                CodeBlock.of(
-                    "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
-                    "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
-                    "}.firstOrNull()",
-                    path, ClassName(currentPackageName, targetInterfaceName)
-                )
-            }
-        } else {
-            CodeBlock.of(
-                "KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n" +
-                "  OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n" +
-                "}",
-                path, ClassName(currentPackageName, targetInterfaceName)
-            )
-        }
-    }
-
-    private fun generateLiteralPropertyInitializer(property: ShaclProperty): CodeBlock {
-        val baseType = when (property.datatype) {
-            "http://www.w3.org/2001/XMLSchema#string" -> "String"
-            "http://www.w3.org/2001/XMLSchema#int", "http://www.w3.org/2001/XMLSchema#integer" -> "Int"
-            "http://www.w3.org/2001/XMLSchema#double", "http://www.w3.org/2001/XMLSchema#float" -> "Double"
-            "http://www.w3.org/2001/XMLSchema#boolean" -> "Boolean"
-            "http://www.w3.org/2001/XMLSchema#anyURI" -> "String"
-            else -> "String"
-        }
-        
-        val isSingleValue = property.maxCount == 1
-        val isRequired = property.minCount != null && property.minCount > 0
-        val path = property.path
-        return if (isSingleValue) {
-            if (isRequired) {
-                requiredLiteralAccessor(baseType, path)
-            } else {
-                CodeBlock.of(
-                    "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { it.lexical }%L",
-                    path, getSingleValueConversionMethod(baseType)
-                )
-            }
-        } else {
-            if (isRequired) {
-                CodeBlock.of(
-                    "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { it.lexical }%L.ifEmpty { error(%S) }",
-                    path, getConversionMethod(baseType), "Required literal ${property.name} missing"
-                )
-            } else {
-                CodeBlock.of(
-                    "KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { it.lexical }%L",
-                    path, getConversionMethod(baseType)
-                )
-            }
-        }
-    }
-
-    private fun getConversionMethod(kotlinType: String): String {
-        return when (kotlinType) {
-            "Int" -> ".mapNotNull { it.toIntOrNull() }"
-            "Double" -> ".mapNotNull { it.toDoubleOrNull() }"
-            "Boolean" -> ".mapNotNull { it.toBooleanStrictOrNull() }"
-            else -> ""
-        }
-    }
-
-    private fun getSingleValueConversionMethod(kotlinType: String): String {
-        return when (kotlinType) {
-            "Int" -> ".firstOrNull()?.toIntOrNull()"
-            "Double" -> ".firstOrNull()?.toDoubleOrNull()"
-            "Boolean" -> ".firstOrNull()?.toBooleanStrictOrNull()"
-            else -> ".firstOrNull()"
-        }
-    }
-
-    private fun requiredLiteralAccessor(kotlinType: String, path: String): CodeBlock {
-        return when (kotlinType) {
-            "Int" -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical.toInt()", path)
-            "Double" -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical.toDouble()", path)
-            "Boolean" -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical.toBooleanStrict()", path)
-            else -> CodeBlock.of("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S)).lexical", path)
-        }
-    }
 
     private fun generateWriteToGraph(): FunSpec {
         return FunSpec.builder("writeToGraph")
@@ -517,13 +400,13 @@ public class OntologyWrapperGenerator(
                     .build()
             )
             .addParameter(
-                ParameterSpec.builder("subject", ClassName(CodegenConstants.RDF_PACKAGE, "Iri").copy(nullable = true))
+                ParameterSpec.builder("subject", iriClass.copy(nullable = true))
                     .defaultValue("null")
                     .build()
             )
             .addCode(
                 CodeBlock.builder()
-                    .addStatement("val originalSubject = (rdf.node as? %T)", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
+                    .addStatement("val originalSubject = (rdf.node as? %T)", iriClass)
                     .addStatement("  ?: (rdf.node as? %T)", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
                     .addStatement("  ?: throw IllegalArgumentException(%S)", "Subject resource required")
                     .addStatement("")
@@ -551,4 +434,3 @@ public class OntologyWrapperGenerator(
     }
 
 }
-

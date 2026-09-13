@@ -68,7 +68,7 @@ class DataClassFactoryGeneratorTest {
         val shape = ShaclShape("http://example.org/shapes/Catalog", "http://example.org/Catalog", emptyList())
         val code = render(generator(), shape)
         assertTrue(code.contains("OntoMapper"), "Expected OntoMapper reference in:\n$code")
-        assertTrue(code.contains("registry"), "Expected registry access in:\n$code")
+        assertTrue(code.contains("register("), "Expected registration in:\n$code")
         assertTrue(code.contains("CatalogRecord::class.java"), "Expected CatalogRecord::class.java in:\n$code")
     }
 

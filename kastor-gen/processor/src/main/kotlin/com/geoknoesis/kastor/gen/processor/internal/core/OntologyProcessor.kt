@@ -47,6 +47,7 @@ public class OntologyProcessor(
               model = model,
               dslName = request.dslName,
               packageName = request.targetPackage,
+              sources = listOfNotNull((symbol as? KSDeclaration)?.containingFile ?: (symbol as? KSFile)),
             )
             processed.add(symbol)
           } catch (e: Exception) {
@@ -72,6 +73,7 @@ public class OntologyProcessor(
             coordinator.generateFromOntology(
               model = model,
               packageName = request.targetPackage,
+              sources = listOfNotNull((symbol as? KSDeclaration)?.containingFile ?: (symbol as? KSFile)),
               generateInterfaces = request.generateInterfaces,
               generateWrappers = request.generateWrappers,
               validationMode = request.validationMode,

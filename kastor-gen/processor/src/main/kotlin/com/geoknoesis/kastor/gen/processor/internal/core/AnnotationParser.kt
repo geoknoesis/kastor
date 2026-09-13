@@ -24,7 +24,7 @@ public class AnnotationParser(private val logger: KSPLogger) {
     val validationAnnotations: ValidationAnnotations,
     val externalValidatorClass: String?,
     val generateDataClass: Boolean = false,
-    val dataClassSuffix: String = "",
+    val dataClassSuffix: String = "Record",
     val dataClassImplementsInterface: Boolean = false,
     val nestedMode: NestedMode = NestedMode.INTERFACE,
     val generateWriteSupport: Boolean = false,
@@ -64,7 +64,7 @@ public class AnnotationParser(private val logger: KSPLogger) {
     val validationMode = parseValidationMode(getAnnotationValue(annotation, "validationMode"))
     val validationAnnotations = parseValidationAnnotations(getAnnotationValue(annotation, "validationAnnotations"))
     val externalValidatorClass = getAnnotationValue(annotation, "externalValidatorClass") as? String
-    val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: ""
+    val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: "Record"
     val dataClassImplementsInterface = getAnnotationValue(annotation, "dataClassImplementsInterface") as? Boolean ?: false
     val nestedMode = parseNestedMode(getAnnotationValue(annotation, "nestedMode"))
     val generateWriteSupport = getAnnotationValue(annotation, "generateWriteSupport") as? Boolean ?: false

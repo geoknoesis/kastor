@@ -3,12 +3,16 @@ package com.geoknoesis.kastor.gen.processor.internal.codegen
 import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
 import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.ClassName
 import com.squareup.kotlinpoet.CodeBlock
@@ -16,7 +20,7 @@ import com.squareup.kotlinpoet.FunSpec
 
 /**
  * Generates a `toTriples(record, subject)` function that serializes a data-class snapshot
- * back to a list of RDF triples — the write-path mirror of [DataClassFactoryGenerator.buildFromFunction].
+ * back to a list of RDF triples — the write-path mirror of [DataClassFactoryGenerator]'s `from()`.
  *
  * The returned [FunSpec] is inserted into the existing factory object by [DataClassFactoryGenerator];
  * it is NOT written to a separate file.
@@ -24,6 +28,7 @@ import com.squareup.kotlinpoet.FunSpec
  * ## Design constraints
  * - Returns `List<RdfTriple>` only; callers decide whether to append or replace.
  * - Always emits `rdf:type` for the shape's target class.
+ * - Literals are written with the property's declared `sh:datatype` (via `XsdLiterals.encode`).
  * - Object properties in [NestedMode.DATA_CLASS] cannot be serialized (no subject IRI available)
  *   and are skipped with a comment; a warning is logged at generation time.
  */
@@ -35,9 +40,10 @@ public class DataClassWriterGenerator(
 
     private val rdfTripleClass   = ClassName(CodegenConstants.RDF_PACKAGE, "RdfTriple")
     private val iriClass         = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
-    private val literalClass     = ClassName(CodegenConstants.RDF_PACKAGE, "Literal")
+    private val rdfTermClass     = ClassName(CodegenConstants.RDF_PACKAGE, "RdfTerm")
     private val rdfBackedClass   = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked")
     private val rdfVocabRdfClass = ClassName(CodegenConstants.VOCAB_PACKAGE, "RDF")
+    private val xsdLiterals      = ClassName(CodegenConstants.RUNTIME_PACKAGE, "XsdLiterals")
 
     // ── Public entry point ────────────────────────────────────────────────────
 
@@ -46,18 +52,23 @@ public class DataClassWriterGenerator(
         packageName: String,
         dcClassName: ClassName,
         enumsByName: Map<String, EnumModel> = emptyMap(),
+        context: JsonLdContext = JsonLdContext(prefixes = emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap()),
+        knownTypes: Set<String>? = null,
+        properties: List<ShaclProperty> = shape.properties.sortedBy { it.path },
     ): FunSpec {
         val fn = FunSpec.builder("toTriples")
             .addKdoc(
-                "Serializes a [%T] snapshot to a list of RDF triples.\n\n" +
-                "Always includes `rdf:type %L`.\n" +
-                "Callers are responsible for clearing stale triples before adding the result.\n" +
-                "Object sub-objects (if any) must be serialized separately.\n" +
-                (if (nestedMode == NestedMode.DATA_CLASS) {
-                    "\n**Note:** `NestedMode.DATA_CLASS` object properties are not included — " +
-                    "data-class snapshots carry no subject IRI for nested objects.\n"
-                } else ""),
-                dcClassName, shape.targetClass,
+                "%L",
+                kdocText(
+                    "Serializes a [${dcClassName.simpleName}] snapshot to a list of RDF triples.\n\n" +
+                        "Always includes `rdf:type ${shape.targetClass}`.\n" +
+                        "Callers are responsible for clearing stale triples before adding the result.\n" +
+                        "Object sub-objects (if any) must be serialized separately.\n" +
+                        (if (nestedMode == NestedMode.DATA_CLASS) {
+                            "\n**Note:** `NestedMode.DATA_CLASS` object properties are not included — " +
+                                "data-class snapshots carry no subject IRI for nested objects.\n"
+                        } else "")
+                ),
             )
             .addParameter("record", dcClassName)
             .addParameter("subject", iriClass)
@@ -66,17 +77,15 @@ public class DataClassWriterGenerator(
         fn.addStatement("val triples = mutableListOf<%T>()", rdfTripleClass)
 
         // rdf:type triple — always
-        fn.addCode(
-            CodeBlock.of(
-                "triples += %T(subject, %T.type, %L)\n",
-                rdfTripleClass,
-                rdfVocabRdfClass,
-                CodegenConstants.iriConstant(shape.targetClass),
-            )
+        fn.addStatement(
+            "triples += %T(subject, %T.type, %L)",
+            rdfTripleClass,
+            rdfVocabRdfClass,
+            CodegenConstants.iriConstant(shape.targetClass),
         )
 
-        shape.properties.sortedBy { it.path }.forEach { property ->
-            fn.addCode(buildPropertyWrite(property, packageName, enumsByName))
+        properties.forEach { property ->
+            fn.addCode(buildPropertyWrite(property, enumsByName, context, knownTypes))
         }
 
         fn.addStatement("return triples")
@@ -87,121 +96,52 @@ public class DataClassWriterGenerator(
 
     private fun buildPropertyWrite(
         property: ShaclProperty,
-        packageName: String,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
+        enumsByName: Map<String, EnumModel>,
+        context: JsonLdContext,
+        knownTypes: Set<String>?,
     ): CodeBlock {
-        val name   = NamingUtils.toValidKotlinIdentifier(property.name)
-        val isList = property.maxCount == null || property.maxCount > 1
-        val isRequired = !isList && property.minCount != null && property.minCount > 0
+        val name = NamingUtils.propertyName(property)
+        val pred = property.path
+        val kind = TypeMapper.valueKind(property, context, knownTypes, nestedMode)
 
-        val enumModel = property.enumName?.let { enumsByName[it] }
-        return if (enumModel != null) {
-            buildEnumWrite(name, property.path, enumModel, isList, isRequired)
-        } else if (property.targetClass != null) {
-            buildObjectWrite(name, property.path, property, packageName, isList, isRequired)
+        // Expression producing the RDF term for the element `it`.
+        val term: CodeBlock = when (kind) {
+            ValueKind.ENUM -> {
+                val enumModel = enumsByName[property.enumName]
+                if (enumModel == null || enumModel.memberKind == EnumMemberKind.IRI) {
+                    CodeBlock.of("it.iri")
+                } else {
+                    val datatype = property.datatype
+                        ?: enumModel.members.firstNotNullOfOrNull { it.datatype }
+                        ?: "http://www.w3.org/2001/XMLSchema#string"
+                    CodeBlock.of("%T.encode(it.code, %T(%S))", xsdLiterals, iriClass, datatype)
+                }
+            }
+            ValueKind.IRI -> CodeBlock.of("%T(it)", iriClass)
+            ValueKind.OBJECT -> when (nestedMode) {
+                NestedMode.DATA_CLASS -> return buildDataClassSkip(name, property)
+                // Live wrappers expose their node; other implementations have no subject and are skipped.
+                else -> CodeBlock.of("((it as? %T)?.rdf?.node ?: return@let)", rdfBackedClass)
+            }
+            ValueKind.LITERAL -> {
+                val mapping = TypeMapper.literalMapping(property.datatype)
+                if (mapping.isString && mapping.writeDatatype == "http://www.w3.org/2001/XMLSchema#string") {
+                    CodeBlock.of("%T(it)", ClassName(CodegenConstants.RDF_PACKAGE, "Literal"))
+                } else {
+                    mapping.encode(CodeBlock.of("it"))
+                }
+            }
+        }
+
+        val add = CodeBlock.of("triples += %T(subject, %T(%S), %L)", rdfTripleClass, iriClass, pred, term)
+        return if (Cardinality.isList(property)) {
+            CodeBlock.builder()
+                .beginControlFlow("record.%N.forEach { value ->", name)
+                .addStatement("value.let { %L }", add)
+                .endControlFlow()
+                .build()
         } else {
-            buildLiteralWrite(name, property.path, property, isList, isRequired)
-        }
-    }
-
-    // ── Enum properties ───────────────────────────────────────────────────────
-
-    private fun buildEnumWrite(
-        name: String,
-        pred: String,
-        enumModel: EnumModel,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock = when (enumModel.memberKind) {
-        EnumMemberKind.IRI -> when {
-            isList -> CodeBlock.of(
-                "record.%L.forEach { triples += %T(subject, %T(%S), it.iri) }\n",
-                name, rdfTripleClass, iriClass, pred,
-            )
-            isRequired -> CodeBlock.of(
-                "triples += %T(subject, %T(%S), record.%L.iri)\n",
-                rdfTripleClass, iriClass, pred, name,
-            )
-            else -> CodeBlock.of(
-                "record.%L?.let { triples += %T(subject, %T(%S), it.iri) }\n",
-                name, rdfTripleClass, iriClass, pred,
-            )
-        }
-        EnumMemberKind.LITERAL -> when {
-            isList -> CodeBlock.of(
-                "record.%L.forEach { triples += %T(subject, %T(%S), %T(it.code)) }\n",
-                name, rdfTripleClass, iriClass, pred, literalClass,
-            )
-            isRequired -> CodeBlock.of(
-                "triples += %T(subject, %T(%S), %T(record.%L.code))\n",
-                rdfTripleClass, iriClass, pred, literalClass, name,
-            )
-            else -> CodeBlock.of(
-                "record.%L?.let { triples += %T(subject, %T(%S), %T(it.code)) }\n",
-                name, rdfTripleClass, iriClass, pred, literalClass,
-            )
-        }
-    }
-
-    // ── Object properties ─────────────────────────────────────────────────────
-
-    private fun buildObjectWrite(
-        name: String,
-        pred: String,
-        property: ShaclProperty,
-        packageName: String,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock = when (nestedMode) {
-        NestedMode.IRI_ONLY   -> buildIriOnlyWrite(name, pred, isList)
-        NestedMode.INTERFACE  -> buildInterfaceWrite(name, pred, property, packageName, isList)
-        NestedMode.DATA_CLASS -> buildDataClassSkip(name, property)
-    }
-
-    private fun buildIriOnlyWrite(name: String, pred: String, isList: Boolean): CodeBlock =
-        if (isList) {
-            CodeBlock.of(
-                "record.%L.forEach { triples += %T(subject, %T(%S), %T(it)) }\n",
-                name, rdfTripleClass, iriClass, pred, iriClass,
-            )
-        } else {
-            CodeBlock.of(
-                "record.%L?.let { triples += %T(subject, %T(%S), %T(it)) }\n",
-                name, rdfTripleClass, iriClass, pred, iriClass,
-            )
-        }
-
-    private fun buildInterfaceWrite(
-        name: String,
-        pred: String,
-        property: ShaclProperty,
-        packageName: String,
-        isList: Boolean,
-    ): CodeBlock {
-        // Extract the backing node by casting to RdfBacked (live wrappers implement it).
-        // If the object is not RdfBacked (e.g. another snapshot), the cast returns null and
-        // the triple is silently skipped — callers should ensure wrappers are used here.
-        val extractNode = CodeBlock.of(
-            "(obj as? %T)?.rdf?.node as? %T",
-            rdfBackedClass,
-            iriClass,
-        )
-        return if (isList) {
-            CodeBlock.of(
-                "record.%L.forEach { obj ->\n" +
-                "    val objNode = %L\n" +
-                "    objNode?.let { triples += %T(subject, %T(%S), it) }\n" +
-                "}\n",
-                name, extractNode, rdfTripleClass, iriClass, pred,
-            )
-        } else {
-            CodeBlock.of(
-                "record.%L?.let { obj ->\n" +
-                "    val objNode = %L\n" +
-                "    objNode?.let { triples += %T(subject, %T(%S), it) }\n" +
-                "}\n",
-                name, extractNode, rdfTripleClass, iriClass, pred,
-            )
+            CodeBlock.builder().addStatement("record.%N?.let { %L }", name, add).build()
         }
     }
 
@@ -215,33 +155,5 @@ public class DataClassWriterGenerator(
             "// toTriples: '%L' skipped — NestedMode.DATA_CLASS object refs carry no subject IRI\n",
             name,
         )
-    }
-
-    // ── Literal properties ────────────────────────────────────────────────────
-
-    private fun buildLiteralWrite(
-        name: String,
-        pred: String,
-        property: ShaclProperty,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        val typeName = TypeMapper.mapDatatype(property.datatype).toString().substringAfterLast('.')
-        // Literal companion invoke operators exist for String, Int, Double, Boolean.
-        // All are emitted as Literal(value) — the companion resolves the correct overload.
-        return when {
-            isList -> CodeBlock.of(
-                "record.%L.forEach { triples += %T(subject, %T(%S), %T(it)) }\n",
-                name, rdfTripleClass, iriClass, pred, literalClass,
-            )
-            isRequired -> CodeBlock.of(
-                "triples += %T(subject, %T(%S), %T(record.%L))\n",
-                rdfTripleClass, iriClass, pred, literalClass, name,
-            )
-            else -> CodeBlock.of(
-                "record.%L?.let { triples += %T(subject, %T(%S), %T(it)) }\n",
-                name, rdfTripleClass, iriClass, pred, literalClass,
-            )
-        }
     }
 }

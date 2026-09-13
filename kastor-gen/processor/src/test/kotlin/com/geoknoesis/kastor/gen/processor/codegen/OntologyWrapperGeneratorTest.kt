@@ -133,7 +133,7 @@ class OntologyWrapperGeneratorTest {
         
         // Check companion object
         assertTrue(catalogCode.contains("companion object {"))
-        assertTrue(catalogCode.contains("OntoMapper.registry[Catalog::class.java]"))
+        assertTrue(catalogCode.contains("OntoMapper.register(Catalog::class.java)"))
         assertTrue(catalogCode.contains("CatalogWrapper(handle)"))
     }
 
@@ -201,17 +201,17 @@ class OntologyWrapperGeneratorTest {
         // Check int property
         assertTrue(testCode.contains("override val intProp: Int by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
-        assertTrue(testCode.contains(".lexical.toInt()"))
+        assertTrue(testCode.contains("XsdLiterals.int("))
         
         // Check boolean property
         assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
-        assertTrue(testCode.contains(".lexical.toBooleanStrict()"))
+        assertTrue(testCode.contains("XsdLiterals.boolean("))
         
         // Check double property
         assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
         assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
-        assertTrue(testCode.contains(".lexical.toDouble()"))
+        assertTrue(testCode.contains("XsdLiterals.double("))
     }
 
     @Test
@@ -406,7 +406,7 @@ class OntologyWrapperGeneratorTest {
         assertTrue(emptyCode.contains("setOf"))
         assertTrue(emptyCode.contains(")"))
         assertTrue(emptyCode.contains("companion object {"))
-        assertTrue(emptyCode.contains("OntoMapper.registry[Empty::class.java]"))
+        assertTrue(emptyCode.contains("OntoMapper.register(Empty::class.java)"))
         assertTrue(emptyCode.contains("EmptyWrapper(handle)"))
     }
 

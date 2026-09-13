@@ -47,7 +47,9 @@ public data class PropertyBuilderModel(
     val isList: Boolean,               // From sh:maxCount > 1 or null
     val constraints: PropertyConstraints,
     val enumName: String? = null,      // Kotlin enum type name, non-null when property is enum-typed
-    val enumMemberKind: EnumMemberKind? = null  // IRI vs LITERAL; non-null iff enumName != null
+    val enumMemberKind: EnumMemberKind? = null, // IRI vs LITERAL; non-null iff enumName != null
+    val datatype: String? = null,      // Declared sh:datatype; setters write literals with this datatype
+    val isIriValued: Boolean = false,  // sh:class / sh:nodeKind sh:IRI: setters take the IRI string and write an IRI
 )
 
 /**
@@ -74,6 +76,7 @@ public data class PropertyConstraints(
     val minLength: Int? = null,
     val maxLength: Int? = null,
     val pattern: String? = null,
+    val patternFlags: String? = null,
     val minInclusive: Double? = null,
     val maxInclusive: Double? = null,
     val minExclusive: Double? = null,
@@ -94,6 +97,7 @@ public data class PropertyConstraints(
                 minLength = property.minLength,
                 maxLength = property.maxLength,
                 pattern = property.pattern,
+                patternFlags = property.patternFlags,
                 minInclusive = property.minInclusive,
                 maxInclusive = property.maxInclusive,
                 minExclusive = property.minExclusive,

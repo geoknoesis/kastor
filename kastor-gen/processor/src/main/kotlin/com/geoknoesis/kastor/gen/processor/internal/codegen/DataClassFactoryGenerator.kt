@@ -1,7 +1,5 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
-import com.geoknoesis.kastor.gen.runtime.OntoMapper
-
 import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
@@ -9,24 +7,30 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
-import com.squareup.kotlinpoet.KModifier.OVERRIDE
 
 /**
  * Generates factory objects that eagerly load a [DataClassGenerator]-produced data class
- * from an `RdfHandle` and register themselves in [OntoMapper].
+ * from an `RdfHandle` and register themselves in `OntoMapper`.
  *
  * Each generated factory file contains a single Kotlin `object`:
  * ```
- * object PersonRecordFactory : RdfProjection {
- *     init { OntoMapper.registry[PersonRecord::class.java] = { h -> from(h) } }
+ * object PersonRecordFactory {
+ *     init { OntoMapper.register(PersonRecord::class.java) { h -> from(h) } }
  *     fun from(handle: RdfHandle): PersonRecord { ... }
  * }
  * ```
+ *
+ * Nested objects in [NestedMode.DATA_CLASS] are materialized eagerly through `OntoMapper.materialize`, whose
+ * per-call scope reuses shared nodes and reports cyclic data with a `MaterializationException`.
  *
  * The data class file itself has zero RDF imports; all infrastructure lives here.
  */
@@ -36,32 +40,46 @@ public class DataClassFactoryGenerator(
     private val nestedMode: NestedMode,
     private val writerGenerator: DataClassWriterGenerator? = null,
 ) {
+    private val iriClass = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+    private val graphOps = ClassName(CodegenConstants.RUNTIME_PACKAGE, "KastorGraphOps")
+    private val ontoMapper = ClassName(CodegenConstants.RUNTIME_PACKAGE, "OntoMapper")
+    private val rdfRef = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfRef")
 
-    public fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> {
+    /**
+     * @param fallbackUnshapedToIri when true, `sh:class` targets without a shape in [model] are loaded as IRI strings
+     */
+    public fun generateFactories(model: OntologyModel, packageName: String, fallbackUnshapedToIri: Boolean = false): Map<String, FileSpec> {
+        GenerationNames.checkCollisions(model)
         val enumsByName = model.enums.associateBy { it.name }
+        val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
+        val supers = GenerationNames.superTypes(model)
         return model.shapes
             .sortedBy { it.targetClass }
-            .associate { shape ->
-                val name = factoryName(shape.targetClass)
-                name to generateFactory(shape, model.context, packageName, enumsByName)
+            .associateTo(sortedMapOf()) { shape ->
+                val name = factoryName(shape.targetClass, model.context)
+                name to generateFactory(
+                    shape, GenerationNames.effectiveProperties(shape, supers), model.context, packageName, enumsByName, knownTypes,
+                )
             }
     }
 
-    private fun dataClassName(classIri: String) =
-        NamingUtils.extractInterfaceName(classIri) + suffix
+    private fun dataClassName(classIri: String, context: JsonLdContext) =
+        NamingUtils.domainName(classIri, context) + suffix
 
-    private fun factoryName(classIri: String) = "${dataClassName(classIri)}Factory"
+    private fun factoryName(classIri: String, context: JsonLdContext) = "${dataClassName(classIri, context)}Factory"
 
     // ── Per-shape factory generation ──────────────────────────────────────────
 
     private fun generateFactory(
         shape: ShaclShape,
+        properties: List<ShaclProperty>,
         context: JsonLdContext,
         packageName: String,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
+        enumsByName: Map<String, EnumModel>,
+        knownTypes: Set<String>?,
     ): FileSpec {
-        val dcName      = dataClassName(shape.targetClass)
-        val fName       = factoryName(shape.targetClass)
+        val dcName      = dataClassName(shape.targetClass, context)
+        val fName       = factoryName(shape.targetClass, context)
         val dcClassName = ClassName(packageName, dcName)
 
         val file = FileSpec.builder(packageName, fName)
@@ -81,25 +99,24 @@ public class DataClassFactoryGenerator(
 
         val objectBuilder = TypeSpec.objectBuilder(fName)
             .addKdoc(
-                "Factory that loads [%L] eagerly from an RDF graph and registers itself in [OntoMapper].\n" +
-                "Generated from SHACL shape: %L",
-                dcName, shape.shapeIri,
+                "%L",
+                kdocText(
+                    "Factory that loads [$dcName] eagerly from an RDF graph and registers itself in OntoMapper.\n" +
+                        "Generated from SHACL shape: ${shape.shapeIri}"
+                ),
             )
 
         // OntoMapper registration in init block
         objectBuilder.addInitializerBlock(
-            CodeBlock.of(
-                "%T.registry[%T::class.java] = { handle -> from(handle) }\n",
-                ClassName(CodegenConstants.RUNTIME_PACKAGE, "OntoMapper"),
-                dcClassName,
-            )
+            CodeBlock.builder()
+                .addStatement("%T.register(%T::class.java) { handle -> from(handle) }", ontoMapper, dcClassName)
+                .build()
         )
 
-        // from(handle: RdfHandle): DataClass
-        objectBuilder.addFunction(buildFromFunction(shape, context, packageName, dcClassName, enumsByName))
+        objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes))
 
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
-        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName)
+        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, properties)
             ?.let { objectBuilder.addFunction(it) }
 
         file.addType(objectBuilder.build())
@@ -110,11 +127,12 @@ public class DataClassFactoryGenerator(
     // ── from() function ───────────────────────────────────────────────────────
 
     private fun buildFromFunction(
-        shape: ShaclShape,
+        properties: List<ShaclProperty>,
         context: JsonLdContext,
         packageName: String,
         dcClassName: ClassName,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
+        enumsByName: Map<String, EnumModel>,
+        knownTypes: Set<String>?,
     ): FunSpec {
         val handleType = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle")
         val fn = FunSpec.builder("from")
@@ -122,18 +140,22 @@ public class DataClassFactoryGenerator(
             .returns(dcClassName)
 
         // One local val per property, then the constructor call
-        shape.properties.sortedBy { it.path }.forEach { property ->
-            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName))
+        properties.forEach { property ->
+            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName, knownTypes))
         }
 
-        // Constructor call: DataClass(prop1 = prop1Val, ...)
-        val args = shape.properties
-            .sortedBy { it.path }
-            .joinToString(",\n    ") { p ->
-                val name = NamingUtils.toValidKotlinIdentifier(p.name)
-                "$name = _$name"
-            }
-        fn.addStatement("return %T(\n    %L\n)", dcClassName, args)
+        // Constructor call: DataClass(prop1 = _prop1, ...). Local names derive from the unescaped identifier.
+        val args = properties.map { p ->
+            val name = NamingUtils.propertyName(p)
+            CodeBlock.of("%N = %N", name, "_$name")
+        }
+        fn.addCode(
+            CodeBlock.builder()
+                .add("return %T(\n", dcClassName).indent()
+                .apply { args.forEach { add("%L,\n", it) } }
+                .unindent().add(")\n")
+                .build()
+        )
 
         return fn.build()
     }
@@ -144,248 +166,62 @@ public class DataClassFactoryGenerator(
         property: ShaclProperty,
         context: JsonLdContext,
         packageName: String,
-        enumsByName: Map<String, EnumModel> = emptyMap(),
+        enumsByName: Map<String, EnumModel>,
+        knownTypes: Set<String>?,
     ): CodeBlock {
-        val name  = NamingUtils.toValidKotlinIdentifier(property.name)
-        val isList = property.maxCount == null || property.maxCount > 1
-        val isRequired = !isList && property.minCount != null && property.minCount > 0
-        val pred  = property.path
+        val name = NamingUtils.propertyName(property)
+        val pred = property.path
+        val label = "$name <$pred>"
+        val kind = TypeMapper.valueKind(property, context, knownTypes, nestedMode)
 
-        val enumModel = property.enumName?.let { enumsByName[it] }
-        return if (enumModel != null) {
-            buildEnumLoad(name, pred, enumModel, isList, isRequired)
-        } else if (property.targetClass != null) {
-            buildObjectLoad(name, pred, property, packageName, isList, isRequired)
-        } else {
-            buildLiteralLoad(name, pred, property, isList, isRequired)
-        }
-    }
-
-    // enum property ───────────────────────────────────────────────────────────
-
-    private fun buildEnumLoad(
-        name: String,
-        pred: String,
-        enumModel: EnumModel,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock = when (enumModel.memberKind) {
-        EnumMemberKind.IRI -> {
-            val listExpr = CodeBlock.of(
-                "KastorGraphOps.getObjectValues(handle.graph, handle.node, Iri(%S)) { child ->\n" +
-                "    %L.from(child as %T)\n" +
-                "}",
-                pred,
-                enumModel.name,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Iri"),
+        val listExpr: CodeBlock = when (kind) {
+            ValueKind.ENUM -> {
+                val enumModel = enumsByName[property.enumName]
+                    ?: error("enum ${property.enumName} referenced by $pred is not in the model")
+                val enumType = ClassName(packageName, enumModel.name)
+                if (enumModel.memberKind == EnumMemberKind.IRI) {
+                    CodeBlock.of(
+                        "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { it }.filterIsInstance<%T>().map { %T.from(it) }",
+                        graphOps, iriClass, pred, iriClass, enumType,
+                    )
+                } else {
+                    CodeBlock.of(
+                        "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).map { %T.from(it.lexical) }",
+                        graphOps, iriClass, pred, enumType,
+                    )
+                }
+            }
+            ValueKind.IRI -> CodeBlock.of(
+                "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { it }.filterIsInstance<%T>().map { it.value }",
+                graphOps, iriClass, pred, iriClass,
             )
-            buildCardinality(name, listExpr, isList, isRequired,
-                defaultForEmpty = "error(\"Required enum $name missing\")")
-        }
-        EnumMemberKind.LITERAL -> {
-            if (isList) {
+            ValueKind.OBJECT -> {
+                val baseName = NamingUtils.domainName(property.targetClass!!, context)
+                val targetType = when (nestedMode) {
+                    NestedMode.DATA_CLASS -> ClassName(packageName, "$baseName$suffix")
+                    else -> ClassName(packageName, baseName)
+                }
                 CodeBlock.of(
-                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
-                    "val _$name = _${name}List.map { %L.from(it.lexical) }\n",
-                    pred,
-                    enumModel.name,
+                    "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { child ->\n⇥%T.materialize(%T(child, handle.graph), %T::class.java)\n⇤}",
+                    graphOps, iriClass, pred, ontoMapper, rdfRef, targetType,
                 )
-            } else if (isRequired) {
+            }
+            ValueKind.LITERAL -> {
+                val mapping = TypeMapper.literalMapping(property.datatype)
                 CodeBlock.of(
-                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
-                    "val _$name = _${name}List.firstOrNull()?.let { %L.from(it.lexical) } ?: error(\"Required enum $name missing\")\n",
-                    pred,
-                    enumModel.name,
-                )
-            } else {
-                CodeBlock.of(
-                    "val _${name}List = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))\n" +
-                    "val _$name = _${name}List.firstOrNull()?.let { %L.from(it.lexical) }\n",
-                    pred,
-                    enumModel.name,
+                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { %L }",
+                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("it")),
                 )
             }
         }
-    }
 
-    // object / IRI property ───────────────────────────────────────────────────
-
-    private fun buildObjectLoad(
-        name: String,
-        pred: String,
-        property: ShaclProperty,
-        packageName: String,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        val targetBaseName = NamingUtils.extractInterfaceName(property.targetClass!!)
-
-        return when (nestedMode) {
-            NestedMode.IRI_ONLY -> buildIriOnlyLoad(name, pred, isList, isRequired)
-
-            NestedMode.INTERFACE -> {
-                val targetType = ClassName(packageName, targetBaseName)
-                buildMaterializeLoad(name, pred, targetType, isList, isRequired)
-            }
-
-            NestedMode.DATA_CLASS -> {
-                val targetType = ClassName(packageName, "$targetBaseName$suffix")
-                buildMaterializeLoad(name, pred, targetType, isList, isRequired)
-            }
-        }
-    }
-
-    private fun buildIriOnlyLoad(
-        name: String,
-        pred: String,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        // Cast object nodes to Iri and extract value string; non-Iri objects are skipped
-        val listExpr = CodeBlock.of(
-            "KastorGraphOps.getObjectValues(handle.graph, handle.node, Iri(%S)) { child ->\n" +
-            "    (child as? %T)?.value ?: child.toString()\n" +
-            "}",
-            pred,
-            ClassName(CodegenConstants.RDF_PACKAGE, "Iri"),
-        )
-        return buildCardinality(name, listExpr, isList, isRequired, defaultForEmpty = "\"\"")
-    }
-
-    private fun buildMaterializeLoad(
-        name: String,
-        pred: String,
-        targetType: ClassName,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        val listExpr = CodeBlock.of(
-            "KastorGraphOps.getObjectValues(handle.graph, handle.node, Iri(%S)) { child ->\n" +
-            "    %T.materialize(%T(child, handle.graph), %T::class.java)\n" +
-            "}",
-            pred,
-            ClassName(CodegenConstants.RUNTIME_PACKAGE, "OntoMapper"),
-            ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfRef"),
-            targetType,
-        )
-        return buildCardinality(name, listExpr, isList, isRequired,
-            defaultForEmpty = "error(\"Required object $name missing\")")
-    }
-
-    // literal property ────────────────────────────────────────────────────────
-
-    private fun buildLiteralLoad(
-        name: String,
-        pred: String,
-        property: ShaclProperty,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        val kotlinType = TypeMapper.mapDatatype(property.datatype)
-        val typeName = kotlinType.toString().substringAfterLast('.')
-
-        return when (typeName) {
-            "Int" -> buildTypedLiteralLoad(name, pred, isList, isRequired,
-                listConvert = ".mapNotNull { it.lexical.toIntOrNull() }",
-                singleConvert = "?.toIntOrNull()",
-                requiredConvert = ".lexical.toInt()",
-                defaultEmpty = "0",
-            )
-            "Double" -> buildTypedLiteralLoad(name, pred, isList, isRequired,
-                listConvert = ".mapNotNull { it.lexical.toDoubleOrNull() }",
-                singleConvert = "?.toDoubleOrNull()",
-                requiredConvert = ".lexical.toDouble()",
-                defaultEmpty = "0.0",
-            )
-            "Boolean" -> buildTypedLiteralLoad(name, pred, isList, isRequired,
-                listConvert = ".mapNotNull { it.lexical.toBooleanStrictOrNull() }",
-                singleConvert = "?.toBooleanStrictOrNull()",
-                requiredConvert = ".lexical.toBooleanStrict()",
-                defaultEmpty = "false",
-            )
-            else -> buildStringLiteralLoad(name, pred, isList, isRequired)
-        }
-    }
-
-    private fun buildStringLiteralLoad(
-        name: String,
-        pred: String,
-        isList: Boolean,
-        isRequired: Boolean,
-    ): CodeBlock {
-        return if (isList) {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S)).map { it.lexical }\n",
-                pred,
-            )
-        } else if (isRequired) {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getRequiredLiteralValue(handle.graph, handle.node, Iri(%S)).lexical\n",
-                pred,
-            )
-        } else {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S)).map { it.lexical }.firstOrNull()\n",
-                pred,
-            )
-        }
-    }
-
-    private fun buildTypedLiteralLoad(
-        name: String,
-        pred: String,
-        isList: Boolean,
-        isRequired: Boolean,
-        listConvert: String,
-        singleConvert: String,
-        requiredConvert: String,
-        defaultEmpty: String,
-    ): CodeBlock {
-        return if (isList) {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S))$listConvert\n",
-                pred,
-            )
-        } else if (isRequired) {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getRequiredLiteralValue(handle.graph, handle.node, Iri(%S))$requiredConvert\n",
-                pred,
-            )
-        } else {
-            CodeBlock.of(
-                "val _$name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri(%S)).map { it.lexical }.firstOrNull()$singleConvert\n",
-                pred,
-            )
-        }
-    }
-
-    // ── Cardinality wrapper for object loads ──────────────────────────────────
-
-    private fun buildCardinality(
-        name: String,
-        listExpr: CodeBlock,
-        isList: Boolean,
-        isRequired: Boolean,
-        defaultForEmpty: String,
-    ): CodeBlock {
-        val listVal = CodeBlock.builder()
-            .add("val _${name}List = ")
-            .add(listExpr)
-            .add("\n")
-            .build()
-
-        return if (isList) {
-            CodeBlock.builder().add(listVal)
-                .addStatement("val _$name = _${name}List")
+        val local = "_$name"
+        return when {
+            Cardinality.isList(property) -> CodeBlock.builder().addStatement("val %N = %L", local, listExpr).build()
+            Cardinality.isRequiredSingle(property) -> CodeBlock.builder()
+                .addStatement("val %N = %L.firstOrNull() ?: error(%S)", local, listExpr, "Required value $label missing or invalid")
                 .build()
-        } else if (isRequired) {
-            CodeBlock.builder().add(listVal)
-                .addStatement("val _$name = _${name}List.firstOrNull() ?: $defaultForEmpty")
-                .build()
-        } else {
-            CodeBlock.builder().add(listVal)
-                .addStatement("val _$name = _${name}List.firstOrNull()")
-                .build()
+            else -> CodeBlock.builder().addStatement("val %N = %L.firstOrNull()", local, listExpr).build()
         }
     }
 }

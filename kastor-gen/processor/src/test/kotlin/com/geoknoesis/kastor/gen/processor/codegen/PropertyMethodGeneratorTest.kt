@@ -222,7 +222,6 @@ class PropertyMethodGeneratorTest {
 
     @Test
     fun `generatePropertyMethods adds immediate validation for pattern`() {
-        // Use a simpler pattern without $ to avoid string interpolation issues
         val property = PropertyBuilderModel(
             propertyName = "email",
             propertyIri = "http://example.org/email",
@@ -232,29 +231,24 @@ class PropertyMethodGeneratorTest {
             constraints = PropertyConstraints(pattern = "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}")
         )
 
-        try {
-            val methods = generator.generatePropertyMethods(property, DslGenerationOptions(output = DslGenerationOptions.OutputConfig(supportLanguageTags = false)))
+        val methods = generator.generatePropertyMethods(property, DslGenerationOptions(output = DslGenerationOptions.OutputConfig(supportLanguageTags = false)))
 
-            assertEquals(1, methods.size)
-            val method = methods[0]
-            assertEquals("email", method.name)
-            
-            // Write the method to a FileSpec to get the actual generated code
-            val fileSpec = FileSpec.builder("test", "Test")
-                .addFunction(method)
-                .build()
-            val writer = java.io.StringWriter()
-            fileSpec.writeTo(writer)
-            val code = writer.toString()
-            
-            // Check that validation code is present - should have require statement
-            assertTrue(code.contains("require"), "Code should contain 'require' for validation. Code: $code")
-            // Pattern validation is verified by the presence of require - pattern constraints always generate require statements
-        } catch (e: IllegalArgumentException) {
-            // Pattern might have issues with special characters - skip this test if pattern is invalid
-            // This is acceptable as the pattern validation logic handles it
-            assertTrue(true, "Pattern validation handled exception: ${e.message}")
-        }
+        assertEquals(1, methods.size)
+        val method = methods[0]
+        assertEquals("email", method.name)
+        
+        // Write the method to a FileSpec to get the actual generated code
+        val fileSpec = FileSpec.builder("test", "Test")
+            .addFunction(method)
+            .build()
+        val writer = java.io.StringWriter()
+        fileSpec.writeTo(writer)
+        val code = writer.toString()
+        
+        // Check that validation code is present - should have require statement
+        assertTrue(code.contains("require"), "Code should contain 'require' for validation. Code: $code")
+        assertTrue(code.contains("Regex(") && code.contains("containsMatchIn(value)"), code)
+        // Pattern validation is verified by the presence of require - pattern constraints always generate require statements
     }
 
     @Test

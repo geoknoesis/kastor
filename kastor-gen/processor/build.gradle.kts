@@ -32,7 +32,15 @@ dependencies {
   
   testImplementation(libs.kotlin.test)
   testImplementation(libs.junit.jupiter)
+  // In-process Kotlin compiler used by tests that compile generated sources for tricky
+  // ontology inputs (same artifact/version the Kotlin Gradle plugin already resolves).
+  testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:${libs.versions.kotlin.get()}")
   testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.test {
+  // Compiling generated sources in-process needs more than the 512m worker default.
+  maxHeapSize = "1g"
 }
 
 publishing {
