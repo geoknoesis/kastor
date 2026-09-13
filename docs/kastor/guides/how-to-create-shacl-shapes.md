@@ -160,7 +160,7 @@ if (!report.isValid) {
 
 ## Validation
 
-Expect **`report.isValid == false`** when mandatory properties are missing and **`true`** once the data graph satisfies every declared constraint.
+Expect **`report.isValid == false`** when mandatory properties are missing and **`true`** once the data graph satisfies every declared constraint. `isValid` follows `sh:conforms`, so results with Warning or Info severity also make it `false`; use **`report.hasViolations`** if only Violation-level results should count.
 
 ## Troubleshooting
 
