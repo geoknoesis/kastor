@@ -196,7 +196,7 @@ data class DetailedProviderCapabilities(
 )
 ```
 
-The default `RdfProvider.getDetailedCapabilities` reports an empty `supportedSparqlFeatures` map. Providers that override it choose their own feature names; the SPARQL provider, for example, reports `RDF-star`, `Federation`, `Property Paths`, `Aggregation`, `Subqueries`, `Named Graphs`, `Updates` and `Transactions`. `hasProviderWithFeature`, `supportsFeature` and `getSupportedFeatures` use these names.
+The default `RdfProvider.getDetailedCapabilities` reports an empty `supportedSparqlFeatures` map. Providers that override it choose their own feature names. Among the bundled providers only the SPARQL provider does (memory, Jena and RDF4J report none); it reports `RDF-star`, `Federation`, `Property Paths`, `Aggregation`, `Subqueries`, `Named Graphs`, `Updates` and `Transactions`. `hasProviderWithFeature`, `supportsFeature` and `getSupportedFeatures` use these names.
 
 ## 🎨 Registry Integration
 
@@ -237,9 +237,9 @@ if (sparqlProvider != null) {
 // Discover all capabilities
 val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
-// Check feature support across providers
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+// Compare providers by capability flags (supportedSparqlFeatures is filled only by the SPARQL provider)
+val hasRdfStarSupport = allCapabilities.values.any { it.basic.supportsRdfStar }
+val hasFederationSupport = allCapabilities.values.any { it.basic.supportsFederation }
 
 // Get provider statistics
 val statistics = RdfProviderRegistry.getProviderStatistics()
@@ -395,7 +395,7 @@ class SpecializedProvider : RdfProvider {
 
 ```kotlin
 // Check capabilities before using features
-val provider = RdfProviderRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory") ?: error("provider 'memory' is not registered")
 val capabilities = provider.getDetailedCapabilities()
 
 if (capabilities.basic.supportsRdfStar) {
@@ -465,8 +465,8 @@ fun enhancedProviderExample() {
     println("Total providers with detailed capabilities: ${allCapabilities.size}")
     
     // Check feature support
-    val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-    val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+    val hasRdfStarSupport = allCapabilities.values.any { it.basic.supportsRdfStar }
+    val hasFederationSupport = allCapabilities.values.any { it.basic.supportsFederation }
     println("RDF-star support available: $hasRdfStarSupport")
     println("Federation support available: $hasFederationSupport")
     

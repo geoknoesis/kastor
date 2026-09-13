@@ -111,9 +111,11 @@ allDescriptions.forEach { (providerType, description) ->
 ### Feature Availability Checking
 
 ```kotlin
-// Check if any provider supports specific features
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+// supportedSparqlFeatures keys are provider-defined: only the SPARQL provider reports any
+// ("RDF-star", "Federation", "Updates", ...). Compare all providers with capability flags instead.
+val allCapabilities = RdfProviderRegistry.discoverAllCapabilities().values
+val hasRdfStarSupport = allCapabilities.any { it.basic.supportsRdfStar }
+val hasFederationSupport = allCapabilities.any { it.basic.supportsFederation }
 val hasInferenceSupport = RdfProviderRegistry
     .discoverAllCapabilities()
     .values
@@ -127,12 +129,14 @@ println("Inference support available: $hasInferenceSupport")
 ### Provider-Specific Feature Checking
 
 ```kotlin
-// Feature names are those each provider reports in DetailedProviderCapabilities.supportedSparqlFeatures
-val memorySupportsRdfStar = RdfProviderRegistry.supportsFeature("memory", "RDF-star")
-val jenaSupportsRdfStar = RdfProviderRegistry.supportsFeature("jena", "RDF-star")
+// supportsFeature reads DetailedProviderCapabilities.supportedSparqlFeatures. Only the SPARQL
+// provider fills that map; memory, jena and rdf4j report none, so use capability flags for them.
+val sparqlSupportsUpdates = RdfProviderRegistry.supportsFeature("sparql", "Updates")   // true
+val jenaTripleTerms = RdfProviderRegistry.getProvider("jena")
+    ?.getCapabilities("memory")?.supportsTripleTerms ?: false
 
-println("Memory supports RDF-star: $memorySupportsRdfStar")
-println("Jena supports RDF-star: $jenaSupportsRdfStar")
+println("SPARQL provider supports updates: $sparqlSupportsUpdates")
+println("Jena supports triple terms: $jenaTripleTerms")
 ```
 
 ### Supported Features by Provider

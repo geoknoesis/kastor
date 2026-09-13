@@ -221,9 +221,10 @@ val customDescription = RdfProviderRegistry.generateServiceDescription(
 // Discover all provider capabilities
 val allCapabilities = RdfProviderRegistry.discoverAllCapabilities()
 
-// Check specific features across providers
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+// supportedSparqlFeatures keys are provider-defined: only the SPARQL provider reports any
+// ("RDF-star", "Federation", "Updates", ...). Compare all providers with capability flags instead.
+val hasRdfStarSupport = allCapabilities.values.any { it.basic.supportsRdfStar }
+val hasFederationSupport = allCapabilities.values.any { it.basic.supportsFederation }
 
 // Get supported features by provider
 val supportedFeatures = RdfProviderRegistry.getSupportedFeatures()
@@ -348,7 +349,7 @@ val capabilities = ProviderCapabilities(
 
 ```kotlin
 // Check capabilities before using features
-val provider = RdfProviderRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("memory") ?: error("provider 'memory' is not registered")
 val capabilities = provider.getDetailedCapabilities()
 
 if (capabilities.basic.supportsRdfStar) {
