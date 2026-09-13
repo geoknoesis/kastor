@@ -105,7 +105,7 @@ class SparqlRendererGrammarTest {
         assertParsesQuery(query)
         assertTrue(query.contains("\"a\\\"b\"^^<urn:dt>"))
         assertTrue(query.contains("\"true\"^^<${XSD.boolean.value}>"))
-        assertTrue(query.contains("\"x\\\"y\"@en-GB"))
+        assertTrue(query.contains("\"x\\\"y\"@en-gb"))
         assertTrue(query.contains("\"z\"@ar--rtl"))
     }
 
