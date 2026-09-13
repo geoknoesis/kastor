@@ -59,6 +59,8 @@ class JenaProvider : RdfProvider {
             supportsNamedGraphs = true,
             supportsUpdates = true,
             supportsRdfStar = true,
+            // Jena models rdf:dirLangString natively (NodeFactory.createLiteralDirLang).
+            supportsBaseDirection = true,
             maxMemoryUsage = Long.MAX_VALUE,
             sparqlVersion = "1.2",
             supportsPropertyPaths = true,
@@ -197,10 +199,6 @@ internal object JenaParsing {
             else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
         }
 
-        private val languageTag = Regex("^[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*$")
-        private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
-        private const val RDF_DIR_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
-
         /**
          * Rejects terms that Jena's parser tolerates but that are not valid RDF (and cannot be represented
          * by Kastor terms): IRIs Kastor's [Iri] rejects, malformed language tags, and `rdf:langString` /
@@ -218,13 +216,9 @@ internal object JenaParsing {
                 node.isTripleTerm -> validateTriple(node.triple, knownIris)
                 node.isLiteral -> {
                     val language = node.literalLanguage
-                    if (!language.isNullOrEmpty()) {
-                        if (!languageTag.matches(language)) throw RiotException("Invalid language tag: '$language'")
-                    } else if (node.literalDatatypeURI == RDF_LANG_STRING || node.literalDatatypeURI == RDF_DIR_LANG_STRING) {
-                        throw RiotException("Literal typed ${node.literalDatatypeURI} requires a language tag")
-                    } else {
-                        node.literalDatatypeURI?.let { validateIri(it, knownIris) }
-                    }
+                    LiteralValidation.problem(node.literalDatatypeURI, language, node.literalBaseDirection != null)
+                        ?.let { throw RiotException(it) }
+                    if (language.isNullOrEmpty()) node.literalDatatypeURI?.let { validateIri(it, knownIris) }
                 }
             }
         }
