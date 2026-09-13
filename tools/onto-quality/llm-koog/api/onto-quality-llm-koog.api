@@ -23,21 +23,34 @@ public final class com/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig {
 	public static final field ANTHROPIC_API_KEY Ljava/lang/String;
 	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig$Companion;
 	public static final field OPENAI_API_KEY Ljava/lang/String;
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;)V
-	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;I)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;ILjava/time/Duration;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;ILjava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
 	public final fun component5 ()Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
-	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
+	public final fun component6 ()Ljava/time/Duration;
+	public final fun component7 ()I
+	public final fun component8 ()Ljava/time/Duration;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;ILjava/time/Duration;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;Ljava/time/Duration;ILjava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getApiKey ()Ljava/lang/String;
 	public final fun getBaseUrl ()Ljava/lang/String;
+	public final fun getMaxRetries ()I
 	public final fun getModelId ()Ljava/lang/String;
 	public final fun getModelPreset ()Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
 	public final fun getProvider ()Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public final fun getRequestTimeout ()Ljava/time/Duration;
+	public final fun getRetryBackoff ()Ljava/time/Duration;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

@@ -50,6 +50,41 @@ class ExplainedQualityReportTest {
         assertFalse(explained.describeMarkdown().contains("## LLM explanations"))
     }
 
+    @Test
+    fun markdownNeutralisesLinksImagesHtmlAndHeadingsInLlmText() {
+        val report = minimalQualityReport()
+        val ref = FindingRef.from(report.findings.single())
+        val hostile = "Click [here](http://evil.example/x) ![pixel](https://evil.example/p.png) " +
+            "<script>alert(1)</script> <https://auto.example> www.evil.example\n# Injected heading\n1. list"
+        val explained =
+            ExplainedQualityReport(
+                report,
+                listOf(
+                    FindingExplanation(
+                        findingRef = ref,
+                        summary = hostile,
+                        whyItMatters = hostile,
+                        suggestedActions = listOf(hostile),
+                        confidenceNote = hostile,
+                        modelId = "evil`model",
+                        providerKind = "test",
+                        promptRunId = "abc",
+                    ),
+                ),
+                listOf(ExplanationFailure(listOf(ref), "boom [x](http://y)")),
+            )
+        val md = explained.describeMarkdown()
+        val llmSection = md.substringAfter("## LLM explanations")
+        listOf("](http", "![", "<script>", "<https://", "http://", "https://", "www.evil").forEach {
+            assertFalse(llmSection.contains(it), "rendered Markdown must not contain raw '$it':\n$llmSection")
+        }
+        assertFalse(llmSection.lines().any { it.startsWith("# ") }, "LLM text must not create headings")
+        assertTrue(llmSection.contains("\\[here\\]"))
+        assertTrue(llmSection.contains("`evilmodel`"))
+        assertTrue(explained.hasExplanationFailures)
+        assertTrue(llmSection.contains("1 finding(s) not explained"))
+    }
+
     private fun minimalQualityReport(): QualityReport {
         val violation =
             ValidationViolation(

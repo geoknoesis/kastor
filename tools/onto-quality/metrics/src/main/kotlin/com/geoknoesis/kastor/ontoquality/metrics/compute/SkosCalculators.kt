@@ -162,10 +162,11 @@ internal object SkosCalculators {
                 .mapValues { (_, ch) -> ch.filter { it in concepts }.sorted().toList() }
                 .filter { it.value.size >= 2 }
 
+        val relatedWithinCohort = countRelatedWithinCohorts(parentToChildren, scratch.relatedPairs)
         val cohortObjs =
             parentToChildren
                 .map { (parent, sibs) ->
-                    val related = countRelatedAmong(sibs.toSet(), graph)
+                    val related = relatedWithinCohort[parent] ?: 0L
                     SkosSiblingCohort(parent = parent, siblings = sibs, relatedEdgesAmongSiblings = related)
                 }
                 .sortedWith(compareByDescending<SkosSiblingCohort> { it.siblings.size }.thenBy { it.parent })
@@ -236,15 +237,27 @@ internal object SkosCalculators {
         return CohortSizeDistribution(twoToFive = a, sixToTen = b, elevenToTwenty = c, overTwenty = d)
     }
 
-    private fun countRelatedAmong(siblings: Set<String>, graph: RdfGraph): Long {
-        if (siblings.size < 2) return 0L
-        var n = 0L
-        for (t in graph.getTriplesSequence()) {
-            if (t.predicate != SKOS.related) continue
-            val s = (t.subject as? Iri)?.value ?: continue
-            val o = (t.obj as? Iri)?.value ?: continue
-            if (s in siblings && o in siblings) n++
+    /**
+     * `skos:related` edges whose endpoints are both in a cohort, per cohort parent. Uses the related pairs
+     * collected during the single [GraphScanner] pass: O(|related| × cohorts-per-concept) instead of one
+     * full graph scan per cohort.
+     */
+    private fun countRelatedWithinCohorts(
+        parentToChildren: Map<String, List<String>>,
+        relatedPairs: List<Pair<String, String>>,
+    ): Map<String, Long> {
+        val cohortParentsOf = HashMap<String, MutableSet<String>>()
+        for ((parent, siblings) in parentToChildren) {
+            for (sibling in siblings) cohortParentsOf.getOrPut(sibling) { HashSet() }.add(parent)
         }
-        return n
+        val counts = HashMap<String, Long>()
+        for ((s, o) in relatedPairs) {
+            val sParents = cohortParentsOf[s] ?: continue
+            val oParents = cohortParentsOf[o] ?: continue
+            for (parent in sParents) {
+                if (parent in oParents) counts[parent] = (counts[parent] ?: 0L) + 1L
+            }
+        }
+        return counts
     }
 }

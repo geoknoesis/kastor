@@ -42,6 +42,8 @@ internal data class SkosScratch(
     var narrowMatchEdges: Long = 0,
     var relatedMatchEdges: Long = 0,
     val parentToNarrowers: MutableMap<String, MutableSet<String>> = mutableMapOf(),
+    /** `skos:related` IRI pairs, collected once so sibling-cohort metrics need no further graph scans. */
+    val relatedPairs: MutableList<Pair<String, String>> = mutableListOf(),
 )
 
 internal object GraphScanner {
@@ -82,8 +84,12 @@ internal object GraphScanner {
         val restrictionSubjects = mutableSetOf<String>()
 
         val annotationCounts = mutableMapOf<String, Long>()
-        var nonSubclassIriEdges = 0L
-        var subclassEdgeCount = 0L
+
+        /// class IRI -> anonymous class-expression node attached via rdfs:subClassOf / owl:equivalentClass
+        val classExpressionLinks = mutableListOf<Pair<String, String>>()
+
+        /// restriction node key -> owl:onProperty IRIs
+        val onPropertyOf = mutableMapOf<String, MutableSet<String>>()
 
         val importsList = mutableListOf<String>()
         val skos = SkosScratch()
@@ -135,24 +141,28 @@ internal object GraphScanner {
                         OWL.AnnotationProperty.value -> annotationPropSubjects.add(subIri)
                         OWL.Ontology.value -> ontologySubjects.add(subIri)
                         OWL.NamedIndividual.value -> individualSubjects.add(subIri)
-                        OWL.Restriction.value -> restrictionSubjects.add(subjectKey(t.subject))
                         SKOS.Concept.value -> skos.concepts.add(subIri)
                         SKOS.ConceptScheme.value -> skos.schemes.add(subIri)
                         SKOS.Collection.value -> skos.collectionCount++
                         SKOS.OrderedCollection.value -> skos.orderedCollectionCount++
                     }
                 }
+                if (objIri == OWL.Restriction.value) restrictionSubjects.add(sk)
             }
 
             if (t.predicate == RDFS.subClassOf && subIri != null && objIri != null) {
                 if (objIri != owlThing) {
                     subclassPairs.add(subIri to objIri)
-                    subclassEdgeCount++
                 }
             }
 
-            if (subIri != null && objIri != null && t.predicate != RDFS.subClassOf) {
-                nonSubclassIriEdges++
+            if ((t.predicate == RDFS.subClassOf || t.predicate == OWL.equivalentClass) && subIri != null) {
+                val o = t.obj
+                if (o is BlankNode) classExpressionLinks.add(subIri to "_:${o.id}")
+            }
+
+            if (t.predicate == OWL.onProperty && objIri != null) {
+                onPropertyOf.getOrPut(sk) { mutableSetOf() }.add(objIri)
             }
 
             if (t.predicate == RDFS.domain && subIri != null && objIri != null) {
@@ -180,7 +190,10 @@ internal object GraphScanner {
                         skos.narrowerEdges++
                         skos.parentToNarrowers.getOrPut(subIri) { mutableSetOf() }.add(objIri)
                     }
-                    SKOS.related -> skos.relatedEdges++
+                    SKOS.related -> {
+                        skos.relatedEdges++
+                        skos.relatedPairs.add(subIri to objIri)
+                    }
                     SKOS.broaderTransitive -> skos.broaderTransitiveEdges++
                     SKOS.narrowerTransitive -> skos.narrowerTransitiveEdges++
                     SKOS.exactMatch -> skos.exactMatchEdges++
@@ -221,13 +234,7 @@ internal object GraphScanner {
         val subClassChildrenOf = subChildren.mapValues { it.value.toSet() }
         val superClassesOf = superMap.mapValues { it.value.toSet() }
 
-        val successors = mutableMapOf<String, MutableSet<String>>()
-        for ((ch, pars) in superClassesOf) {
-            for (pa in pars) {
-                successors.getOrPut(ch) { mutableSetOf() }.add(pa)
-            }
-        }
-        val cycleParticipants = CycleDetector.cycleParticipants(namedClasses, successors)
+        val cycleParticipants = CycleDetector.cycleParticipants(namedClasses, superClassesOf)
 
         val roots =
             namedClasses
@@ -245,17 +252,22 @@ internal object GraphScanner {
                 }
                 .toSet()
 
-        val propertiesByDomain = mutableMapOf<String, MutableSet<String>>()
+        /// P_C: declared object/datatype properties used by a named class via rdfs:domain or an owl:Restriction.
+        val usableProperties = objectProperties + datatypeProperties
+        val propertiesOfClass = mutableMapOf<String, MutableSet<String>>()
         for ((prop, dom) in domainPairs) {
-            if (dom !in namedClasses) continue
-            if (prop !in allProperties) continue
-            propertiesByDomain.getOrPut(dom) { mutableSetOf() }.add(prop)
+            if (dom !in namedClasses || prop !in usableProperties) continue
+            propertiesOfClass.getOrPut(dom) { mutableSetOf() }.add(prop)
+        }
+        for ((cls, node) in classExpressionLinks) {
+            if (cls !in namedClasses) continue
+            for (prop in onPropertyOf[node].orEmpty()) {
+                if (prop in usableProperties) propertiesOfClass.getOrPut(cls) { mutableSetOf() }.add(prop)
+            }
         }
 
-        var dtDomAssertions = 0L
-        for ((prop, _) in domainPairs) {
-            if (prop in datatypeProperties) dtDomAssertions++
-        }
+        val dtDomAssertions =
+            domainPairs.distinct().count { (prop, dom) -> prop in datatypeProperties && dom in namedClasses }.toLong()
 
         var annOnClasses = 0L
         for (c in namedClasses) {
@@ -263,32 +275,22 @@ internal object GraphScanner {
         }
 
         val classesWithInstances = mutableSetOf<String>()
+        val instanceAssertions = mutableSetOf<Pair<String, String>>()
         for ((subj, typ) in typeAssertions) {
             if (typ !in namedClasses) continue
-            /// instance if subject is distinct from type (allows punning); counts class used as object of type
             classesWithInstances.add(typ)
+            instanceAssertions.add(subj to typ)
         }
 
-        val (ditDepthOf, _) =
-            computeDitDepths(
+        val hierarchy =
+            computeHierarchyDp(
                 namedClasses = namedClasses,
                 cycleParticipants = cycleParticipants,
                 superClassesOf = superClassesOf,
-                owlThing = owlThing,
+                subClassChildrenOf = subClassChildrenOf,
+                leaves = leaves,
                 maxCap = config.maxDepthCap,
             )
-
-        val filteredChildren =
-            subClassChildrenOf
-                .mapValues { (_, ch) ->
-                    ch.filter { it in namedClasses && it !in cycleParticipants }.toSet()
-                }
-                .filterKeys { it !in cycleParticipants }
-
-        var paths = 0L
-        for (r in roots) {
-            paths += countPaths(r, filteredChildren, namedClasses, cycleParticipants)
-        }
 
         val iq =
             IntermediateQuantities(
@@ -302,14 +304,18 @@ internal object GraphScanner {
                 leaves = leaves,
                 roots = roots,
                 cycleParticipants = cycleParticipants,
-                propertiesByDomain = propertiesByDomain.mapValues { it.value.toSet() },
+                propertiesOfClass = propertiesOfClass.mapValues { it.value.toSet() },
                 datatypePropertyDomainAssertions = dtDomAssertions,
                 annotationAssertionsOnClasses = annOnClasses,
                 classesWithInstances = classesWithInstances,
-                subClassEdgeCount = subclassEdgeCount,
-                nonSubClassEdgeCount = nonSubclassIriEdges,
-                ditDepthOf = ditDepthOf,
-                pathsFromThingToLeaves = paths,
+                instanceAssertionCount = instanceAssertions.size.toLong(),
+                subClassEdgeCount = superClassesOf.values.sumOf { it.size.toLong() },
+                propertyUsageCount = propertiesOfClass.values.sumOf { it.size.toLong() },
+                ditDepthOf = hierarchy.depthOf,
+                // Double.toLong() saturates at Long.MAX_VALUE.
+                pathsFromThingToLeaves = hierarchy.pathCount.toLong(),
+                pathCount = hierarchy.pathCount,
+                totalPathLength = hierarchy.totalPathLength,
             )
 
         val distinctImports = importsList.distinct()
@@ -396,55 +402,74 @@ internal object GraphScanner {
         }
     }
 
-    private fun computeDitDepths(
+    private class HierarchyDp(
+        val depthOf: Map<String, Int>,
+        val pathCount: Double,
+        val totalPathLength: Double,
+    )
+
+    /**
+     * One iterative pass in topological (Kahn) order over the acyclic part of the named hierarchy;
+     * no recursion, so arbitrarily deep chains do not consume the call stack.
+     *
+     * - `depth(c)` = 0 for roots, else `max(depth(parent) + 1)`, capped at [maxCap] (the cap bounds the
+     *   reported value only, never the traversal).
+     * - `paths(c)` = 1 for roots, else `sum(paths(parent))` — memoized, so a lattice with 2^n root-to-leaf
+     *   paths costs O(V + E) instead of enumerating paths.
+     * - `length(c)` = total edge length of all root-to-c paths = `sum(length(parent) + paths(parent))`.
+     *
+     * Counts are doubles: they stay exact up to 2^53 and only overflow to +Infinity beyond ~1e308.
+     */
+    private fun computeHierarchyDp(
         namedClasses: Set<String>,
         cycleParticipants: Set<String>,
         superClassesOf: Map<String, Set<String>>,
-        owlThing: String,
+        subClassChildrenOf: Map<String, Set<String>>,
+        leaves: Set<String>,
         maxCap: Int,
-    ): Pair<Map<String, Int>, Boolean> {
-        val memo = mutableMapOf<String, Int>()
-        val visiting = mutableSetOf<String>()
-        var capHit = false
+    ): HierarchyDp {
+        fun acyclic(c: String) = c in namedClasses && c !in cycleParticipants
 
-        fun depthOf(c: String): Int {
-            if (c in cycleParticipants) return 0
-            memo[c]?.let { return it }
-            if (c in visiting) return 0
-            visiting.add(c)
-            val parents =
-                superClassesOf[c].orEmpty().filter {
-                    it in namedClasses && it != owlThing && it !in cycleParticipants
-                }
-            val raw =
-                if (parents.isEmpty()) {
-                    0
-                } else {
-                    parents.maxOf { depthOf(it) + 1 }
-                }
-            visiting.remove(c)
-            if (raw >= maxCap) capHit = true
-            val d = min(raw, maxCap)
-            memo[c] = d
-            return d
+        val remainingParents = HashMap<String, Int>()
+        val queue = ArrayDeque<String>()
+        val depth = HashMap<String, Int>()
+        val paths = HashMap<String, Double>()
+        val lengths = HashMap<String, Double>()
+        for (c in namedClasses) {
+            if (!acyclic(c)) continue
+            val parents = superClassesOf[c].orEmpty().count { acyclic(it) }
+            remainingParents[c] = parents
+            if (parents == 0) {
+                queue.addLast(c)
+                depth[c] = 0
+                paths[c] = 1.0
+                lengths[c] = 0.0
+            }
+        }
+        while (queue.isNotEmpty()) {
+            val c = queue.removeFirst()
+            val d = depth.getValue(c)
+            val p = paths.getValue(c)
+            val len = lengths.getValue(c)
+            for (child in subClassChildrenOf[c].orEmpty()) {
+                if (!acyclic(child)) continue
+                depth[child] = maxOf(depth[child] ?: 0, min(d + 1, maxCap))
+                paths[child] = (paths[child] ?: 0.0) + p
+                lengths[child] = (lengths[child] ?: 0.0) + len + p
+                val left = remainingParents.getValue(child) - 1
+                remainingParents[child] = left
+                if (left == 0) queue.addLast(child)
+            }
         }
 
-        for (c in namedClasses) depthOf(c)
-        return memo to capHit
-    }
-
-    private fun countPaths(
-        node: String,
-        filteredChildren: Map<String, Set<String>>,
-        namedClasses: Set<String>,
-        cycleParticipants: Set<String>,
-    ): Long {
-        if (node in cycleParticipants) return 0L
-        val children =
-            filteredChildren[node].orEmpty().filter {
-                it in namedClasses && it !in cycleParticipants
-            }
-        if (children.isEmpty()) return 1L
-        return children.sumOf { countPaths(it, filteredChildren, namedClasses, cycleParticipants) }
+        val depthOf = HashMap<String, Int>()
+        for (c in namedClasses) depthOf[c] = if (c in cycleParticipants) 0 else depth[c] ?: 0
+        var pathCount = 0.0
+        var totalLength = 0.0
+        for (leaf in leaves) {
+            pathCount += paths[leaf] ?: 0.0
+            totalLength += lengths[leaf] ?: 0.0
+        }
+        return HierarchyDp(depthOf, pathCount, totalLength)
     }
 }

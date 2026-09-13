@@ -16,6 +16,7 @@ dependencies {
   implementation(project(":rdf:jena"))
   implementation(libs.clikt)
   implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.serialization.json)
 }
 
 publishing {

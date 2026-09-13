@@ -1,5 +1,8 @@
 package com.geoknoesis.kastor.ontoquality.metrics.compute
 
+/**
+ * OQuaRE 1–5 scoring bands (Duque-Ramos et al. 2014, scale table; 5 = best).
+ */
 internal object OquareScoring {
     fun scoreDIT(v: Number): Int = scoreOver8Pattern(v.toDouble())
 
@@ -26,6 +29,7 @@ internal object OquareScoring {
         }
     }
 
+    /** TMOnto: > 8 → 1, (6, 8] → 2, (4, 6] → 3, (2, 4] → 4, ≤ 2 (including no tangling) → 5. */
     fun scoreTM(v: Number): Int {
         val d = v.toDouble()
         return when {
@@ -33,11 +37,16 @@ internal object OquareScoring {
             d > 6.0 -> 2
             d > 4.0 -> 3
             d > 2.0 -> 4
-            d > 1.0 -> 5
             else -> 5
         }
     }
 
+    /**
+     * Richness metrics (RROnto, INROnto, AROnto, CROnto, ANOnto, PROnto). OQuaRE bands these as percentages:
+     * [0, 20%] → 1, (20, 40%] → 2, (40, 60%] → 3, (60, 80%] → 4, > 80% → 5. Per-class averages (INROnto,
+     * AROnto, CROnto, ANOnto) are unbounded above; any value above 0.8 — including values greater than 1,
+     * e.g. several annotations per class — falls into the top band, as in the OQuaRE scale.
+     */
     fun scoreRichness(ratio: Double): Int =
         when {
             ratio <= 0.20 -> 1

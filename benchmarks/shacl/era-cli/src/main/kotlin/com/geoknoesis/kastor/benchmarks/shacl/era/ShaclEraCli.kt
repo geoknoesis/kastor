@@ -8,7 +8,8 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ValidationProfile
 import com.geoknoesis.kastor.rdf.shacl.toShaclValidationReportRdf
 import java.io.FileWriter
-import java.util.concurrent.TimeUnit
+import java.io.PrintStream
+import java.util.Locale
 
 /**
  * CLI compatible with [ERA-SHACL-Benchmark](https://github.com/oeg-upm/ERA-SHACL-Benchmark):
@@ -19,26 +20,26 @@ import java.util.concurrent.TimeUnit
  * Validation time: <seconds>
  * ```
  *
- * **Timing note:** Matches the reference Jena split: **Load time** is data graph parse only; shapes are
- * loaded before the validation timer; **Validation time** is the full native `validate(data, shapes)` call
- * (compile + execute). For strict parity with Jena’s second metric (execute-only), see design doc Section 12.4.2.
+ * Standard output contains exactly those two lines (ERA `run_benchmark.sh` parses them; see this module's
+ * README). Seconds are printed with microsecond resolution (six decimals).
+ *
+ * **Timing:** **Load time** covers parsing both the data graph and the shapes graph (all input RDF loading).
+ * **Validation time** is the full `validate(data, shapes)` call (shape compilation + execution). Writing the
+ * report file is outside both timers.
  */
 fun main(args: Array<String>) {
   if (args.size != 3) {
     System.err.println("Usage: ShaclEraCli <data.ttl> <shapes.ttl> <report.ttl>")
     kotlin.system.exitProcess(2)
   }
-  val dataPath = args[0]
-  val shapesPath = args[1]
-  val reportPath = args[2]
+  runEraBenchmark(dataPath = args[0], shapesPath = args[1], reportPath = args[2], out = System.out)
+}
 
+internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: String, out: PrintStream) {
   val loadStart = System.nanoTime()
   val data = Rdf.parseFromFile(dataPath, "TURTLE")
-  val loadSeconds = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - loadStart) / 1000.0
-  println("Data graph size: ${data.size()}")
-  println("Load time: $loadSeconds")
-
   val shapes = Rdf.parseFromFile(shapesPath, "TURTLE")
+  out.println("Load time: ${formatSeconds(System.nanoTime() - loadStart)}")
 
   val validator =
       ShaclValidation.validator(
@@ -50,10 +51,12 @@ fun main(args: Array<String>) {
       )
   val valStart = System.nanoTime()
   val report = validator.validate(data, shapes)
-  val valSeconds = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - valStart) / 1000.0
-  println("Validation time: $valSeconds")
+  out.println("Validation time: ${formatSeconds(System.nanoTime() - valStart)}")
 
   val reportGraph = report.toShaclValidationReportRdf()
   val ttl = reportGraph.serialize(RdfFormat.TURTLE)
   FileWriter(reportPath).use { it.write(ttl) }
 }
+
+/** Nanoseconds as decimal seconds with six fractional digits (locale-independent `.` separator). */
+internal fun formatSeconds(nanos: Long): String = String.format(Locale.ROOT, "%.6f", nanos / 1_000_000_000.0)

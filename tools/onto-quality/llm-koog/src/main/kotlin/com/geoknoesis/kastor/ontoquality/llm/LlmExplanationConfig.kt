@@ -5,6 +5,7 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.ollama.client.OllamaModels
+import java.time.Duration
 
 /** Backing LLM vendor (Koog client selection). */
 enum class LlmProvider {
@@ -33,8 +34,12 @@ enum class ExplanationModelPreset {
  * Otherwise [modelPreset] selects a catalog model; [ExplanationModelPreset.AUTO] uses a pragmatic default per provider.
  *
  * API keys: when [apiKey] is null, [OPENAI_API_KEY] / [ANTHROPIC_API_KEY] are read from the environment. Ollama ignores [apiKey].
+ * [toString] redacts [apiKey] so configs can be logged safely.
+ *
+ * Reliability: every LLM request is bounded by [requestTimeout]; failed or timed-out requests are retried up to
+ * [maxRetries] times, waiting [retryBackoff] × 2^attempt between attempts.
  */
-data class LlmExplanationConfig(
+data class LlmExplanationConfig @JvmOverloads constructor(
     val provider: LlmProvider,
     val apiKey: String? = null,
     val baseUrl: String? = null,
@@ -44,7 +49,24 @@ data class LlmExplanationConfig(
      */
     val modelId: String? = null,
     val modelPreset: ExplanationModelPreset = ExplanationModelPreset.AUTO,
+    /** Upper bound for a single LLM request (including the JSON repair request). */
+    val requestTimeout: Duration = Duration.ofSeconds(60),
+    /** Additional attempts after a failed or timed-out request (0 disables retries). */
+    val maxRetries: Int = 2,
+    /** Base delay before the first retry; doubled for each further retry. */
+    val retryBackoff: Duration = Duration.ofSeconds(1),
 ) {
+    init {
+        require(!requestTimeout.isNegative && !requestTimeout.isZero) { "requestTimeout must be positive" }
+        require(maxRetries in 0..10) { "maxRetries must be between 0 and 10" }
+        require(!retryBackoff.isNegative) { "retryBackoff must not be negative" }
+    }
+
+    override fun toString(): String =
+        "LlmExplanationConfig(provider=$provider, apiKey=${if (apiKey == null) "null" else "***"}, baseUrl=$baseUrl, " +
+            "modelId=$modelId, modelPreset=$modelPreset, requestTimeout=$requestTimeout, maxRetries=$maxRetries, " +
+            "retryBackoff=$retryBackoff)"
+
     companion object {
         const val OPENAI_API_KEY = "OPENAI_API_KEY"
         const val ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"

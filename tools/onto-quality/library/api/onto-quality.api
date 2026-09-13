@@ -239,10 +239,13 @@ public final class com/geoknoesis/kastor/ontoquality/catalog/ShapeMetadata {
 
 public final class com/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport {
 	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 	public final fun component2 ()Ljava/util/List;
-	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;Lcom/geoknoesis/kastor/ontoquality/QualityReport;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplainedQualityReport;
 	public final fun describeMarkdown ()Ljava/lang/String;
 	public final fun describeMarkdown (Lcom/geoknoesis/kastor/ontoquality/MarkdownReportOptions;)Ljava/lang/String;
 	public final fun describeText ()Ljava/lang/String;
@@ -250,8 +253,23 @@ public final class com/geoknoesis/kastor/ontoquality/explanation/ExplainedQualit
 	public final fun explanationsByRef ()Ljava/util/Map;
 	public final fun getConforms ()Z
 	public final fun getExplanations ()Ljava/util/List;
+	public final fun getFailures ()Ljava/util/List;
+	public final fun getHasExplanationFailures ()Z
 	public final fun getHasLlmExplanations ()Z
 	public final fun getReport ()Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFindingRefs ()Ljava/util/List;
+	public final fun getReason ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
