@@ -163,7 +163,7 @@ import com.geoknoesis.kastor.rdf.*
 
 val person: Person = graph.materialize(node)
 
-val validation: ValidationContext = JenaValidation() // optional module: `kastor-gen:validation-jena`
+val validation: ValidationContext = JenaValidation.fromTurtle(shapesTtl) // optional module `kastor-gen:validation-jena`
 val person2: Person = graph.materializeValidated(node, validation)
 
 val person3 = OntoMapper.materialize(ref, Person::class.java)
@@ -284,7 +284,7 @@ inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext
 
 **Usage:**
 ```kotlin
-val validation = JenaValidation()
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
 val person: Person = ref.asValidatedType(validation)
 ```
 

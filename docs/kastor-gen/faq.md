@@ -136,7 +136,7 @@ OntoMapper supports SHACL validation:
 
 ```kotlin
 // Validate during materialization
-val validation = JenaValidation()
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
 val catalog: Catalog = catalogRef.asValidatedType(validation)
 
 // Or validate explicitly

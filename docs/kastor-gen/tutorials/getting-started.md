@@ -187,7 +187,7 @@ fun main() {
     // ... (previous code)
     
     // Materialize with validation
-    val validation = JenaValidation()
+    val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
     val alice: Person = aliceRef.asValidatedType(validation)
     println("Validation passed!")
     
