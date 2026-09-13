@@ -7,20 +7,48 @@ plugins {
   alias(libs.plugins.kotlin.serialization) apply false
   alias(libs.plugins.jmh) apply false
   alias(libs.plugins.dependency.analysis) apply false
-  id("org.jetbrains.dokka") version "2.2.0" apply false
+  alias(libs.plugins.dokka) apply false
 }
 
 apply(plugin = "com.autonomousapps.dependency-analysis")
 
+// The version is defined once, in gradle.properties (`version=`). Releases are tagged `vX.Y.Z`.
 allprojects {
   group = "com.geoknoesis.kastor"
-  version = "0.2.1"
 }
+
+/** Non-published platforms: the consumer BOM and the build-internal constraints platform. */
+val platformProjects = setOf(":bom", ":build-platform")
+
+/**
+ * Line-coverage floors enforced by `jacocoTestCoverageVerification` (wired into `check`).
+ * Measured from a clean local run (2026-09-12) minus roughly ten points of headroom; ratchet
+ * upwards as coverage improves. Modules without an entry are not gated.
+ */
+val coverageFloors = mapOf(
+  ":rdf:core" to "0.55",
+  ":rdf:jena" to "0.45",
+  ":rdf:rdf4j" to "0.50",
+  ":rdf:reasoning" to "0.65",
+  ":rdf:reasoning-hermit" to "0.50",
+  ":rdf:shacl-dsl" to "0.60",
+  ":rdf:shacl-validation" to "0.50",
+  ":rdf:sparql-lang" to "0.35",
+  ":rdf:sparql" to "0.55",
+  ":rdf:testkit" to "0.75",
+  ":kastor-gen:processor" to "0.50",
+  ":kastor-gen:runtime" to "0.35",
+  ":kastor-gen:validation-jena" to "0.70",
+  ":kastor-gen:validation-rdf4j" to "0.55",
+  ":tools:onto-quality" to "0.75",
+  ":tools:onto-quality-metrics" to "0.80",
+  ":tools:onto-quality-embed" to "0.15",
+)
 
 subprojects {
   dependencyLocking { lockAllConfigurations() }
-  // Tool classpaths (including Dokka) do not inherit the public BOM. Apply the
-  // same security floors there; the BOM carries them to published consumers.
+  // Tool classpaths (including Dokka) do not see :build-platform. Apply the same security
+  // floors there. None of this is published.
   configurations.configureEach {
     resolutionStrategy.eachDependency {
       when {
@@ -33,15 +61,15 @@ subprojects {
       }
     }
   }
-  // The `:bom` module is a Gradle platform; it must not apply Kotlin/java-library.
-  val isBom = project.path == ":bom"
+  // Platform modules must not apply Kotlin/java-library.
+  val isPlatform = project.path in platformProjects
 
   val skipDependencyAnalysis =
-    isBom ||
+    isPlatform ||
       project.path.startsWith(":benchmarks:") ||
       project.path.startsWith(":examples:")
 
-  if (!isBom) {
+  if (!isPlatform) {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "java-library")
     if (!skipDependencyAnalysis) {
@@ -55,7 +83,7 @@ subprojects {
     apply(plugin = "com.google.devtools.ksp")
   }
 
-  if (!isBom) {
+  if (!isPlatform) {
     extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
       jvmToolchain(21)
     }
@@ -68,11 +96,25 @@ subprojects {
     )
   )
 
-  repositories {
-    mavenCentral()
-  }
+  // Repositories are declared only in settings.gradle.kts (FAIL_ON_PROJECT_REPOS).
 
-  if (!isBom) {
+  if (!isPlatform) {
+    // Build-internal third-party platforms and security floors. Added at resolution time to
+    // every resolvable configuration that sees a Kastor project (the same reach the former
+    // BOM-borne floors had), and never to a declared/published scope, so consumers' POMs and
+    // Gradle module metadata do not inherit them.
+    val buildPlatformScope = configurations.dependencyScope("kastorBuildPlatform") {
+      description = "Build-internal third-party platforms and security floors (never published)."
+    }
+    dependencies.add(buildPlatformScope.name, dependencies.platform(dependencies.project(mapOf("path" to ":build-platform"))))
+    afterEvaluate {
+      configurations.configureEach {
+        if (isCanBeResolved && hierarchy.any { c -> c.dependencies.any { it is ProjectDependency } }) {
+          extendsFrom(buildPlatformScope.get())
+        }
+      }
+    }
+
     dependencies {
       add("api", platform(project(":bom")))
       add("testImplementation", rootProject.libs.kotlin.test)
@@ -88,8 +130,15 @@ subprojects {
       }
     }
 
+    val testMaxHeap = providers.gradleProperty("kastor.test.maxHeap").orElse("1g")
+    val testMaxForks = providers.gradleProperty("kastor.test.maxParallelForks").map(String::toInt).orElse(1)
     tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
       useJUnitPlatform()
+      // Bound every test JVM. The JVM default (25% of physical RAM) multiplied by concurrent
+      // forks and daemons exhausted memory on developer machines. Override per machine in
+      // ~/.gradle/gradle.properties: kastor.test.maxHeap=2g, kastor.test.maxParallelForks=2.
+      maxHeapSize = testMaxHeap.get()
+      maxParallelForks = testMaxForks.get()
       // Persistent-store tests can retain mapped files until the worker JVM exits.
       // Keep scratch files on the build volume and clean after successful worker exit.
       val scratch = layout.buildDirectory.dir("test-tmp/$name").get().asFile
@@ -120,6 +169,20 @@ subprojects {
     tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().configureEach {
       reports { xml.required.set(true); html.required.set(true) }
     }
+    coverageFloors[project.path]?.let { floor ->
+      val verification = tasks.named<org.gradle.testing.jacoco.tasks.JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+        violationRules {
+          rule {
+            limit {
+              counter = "LINE"
+              value = "COVEREDRATIO"
+              minimum = floor.toBigDecimal()
+            }
+          }
+        }
+      }
+      tasks.named("check") { dependsOn(verification) }
+    }
     tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
       manifest.attributes["Implementation-Version"] = project.version.toString()
       isPreserveFileTimestamps = false
@@ -143,8 +206,20 @@ subprojects {
       }
     }
   }
+
+  // Resolves every resolvable configuration so `--write-locks` refreshes complete lock state:
+  //   ./gradlew resolveAndLockAll --write-locks
+  tasks.register("resolveAndLockAll") {
+    group = "help"
+    description = "Resolves all resolvable configurations (use with --write-locks)."
+    notCompatibleWithConfigurationCache("Resolves configurations at execution time")
+    doLast {
+      configurations.filter { it.isCanBeResolved }.forEach { it.resolve() }
+    }
+  }
+
   pluginManager.withPlugin("maven-publish") {
-    if (!isBom) {
+    if (!isPlatform) {
       apply(plugin = "org.jetbrains.dokka")
       extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
@@ -171,6 +246,8 @@ subprojects {
         }
       }
     }
+    tasks.withType<PublishToMavenRepository>().configureEach { mustRunAfter(":cleanReleaseRepository") }
+    // Signing is optional for local staging, but mandatory for :centralBundle (enforced below).
     val signingKey = providers.environmentVariable("KASTOR_SIGNING_KEY")
     if (signingKey.isPresent) {
       apply(plugin = "signing")
@@ -182,12 +259,57 @@ subprojects {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Release publication
+//
+//   publishAllPublicationsToStagingRepository  -> build/release-repository (unsigned allowed)
+//   centralBundle                              -> signed Maven Central Portal bundle zip
+//
+// The bundle is uploaded by .github/workflows/publish.yml (tag `vX.Y.Z`, protected `release`
+// environment). Nothing in this build uploads anywhere.
+// ---------------------------------------------------------------------------------------------
+val releaseRepository = layout.buildDirectory.dir("release-repository")
+
+val cleanReleaseRepository = tasks.register<Delete>("cleanReleaseRepository") {
+  group = "publishing"
+  description = "Deletes build/release-repository so bundles never contain stale versions."
+  delete(releaseRepository)
+}
+
+val publishingProjects = provider { subprojects.filter { it.plugins.hasPlugin("maven-publish") } }
+
+val centralBundle = tasks.register<Zip>("centralBundle") {
+  group = "publishing"
+  description = "Builds a signed Maven Central Portal bundle from the staging repository (release versions only)."
+  dependsOn(cleanReleaseRepository)
+  dependsOn(publishingProjects.map { projects -> projects.map { "${it.path}:publishAllPublicationsToStagingRepository" } })
+  from(releaseRepository) { exclude("**/maven-metadata*") }
+  archiveFileName.set(provider { "kastor-${project.version}-central-bundle.zip" })
+  destinationDirectory.set(layout.buildDirectory.dir("central"))
+  isPreserveFileTimestamps = false
+  isReproducibleFileOrder = true
+}
+
+gradle.taskGraph.whenReady {
+  if (hasTask(centralBundle.get())) {
+    val releaseVersion = project.version.toString()
+    check(!releaseVersion.endsWith("-SNAPSHOT") && releaseVersion != "unspecified") {
+      "centralBundle publishes release versions only (current version: $releaseVersion). " +
+        "Set version=X.Y.Z in gradle.properties in the release commit and tag it vX.Y.Z."
+    }
+    check(providers.environmentVariable("KASTOR_SIGNING_KEY").isPresent) {
+      "Release publication must be signed: set KASTOR_SIGNING_KEY (ASCII-armored private key) " +
+        "and KASTOR_SIGNING_PASSWORD. Unsigned artifacts are only allowed in the local staging repository."
+    }
+  }
+}
+
 // Collect only current task outputs, retaining module paths to avoid filename collisions.
 val collectArtifacts = tasks.register<org.gradle.api.tasks.Sync>("collectArtifacts") {
   duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.FAIL
   subprojects.forEach { p ->
     dependsOn("${p.path}:assemble")
-    if (p.path != ":bom") {
+    if (p.path !in platformProjects) {
       listOf("jar", "sourcesJar", "javadocJar").forEach { taskName ->
         from(p.tasks.named<org.gradle.jvm.tasks.Jar>(taskName).flatMap { it.archiveFile }) {
           into(p.path.removePrefix(":").replace(":", "/"))
@@ -222,8 +344,6 @@ tasks.register("helloCodegen") {
 tasks.register("conformanceSmokeTest") {
   group = "verification"
   description =
-    "Runs :rdf:conformance RDF 1.2 harness smoke tests (bundled fixture; no W3C submodule)."
+    "Runs :rdf:conformance RDF 1.2 harness smoke tests (bundled fixture; no W3C corpus download)."
   dependsOn(":rdf:conformance:conformanceSmokeTest")
 }
-
-
