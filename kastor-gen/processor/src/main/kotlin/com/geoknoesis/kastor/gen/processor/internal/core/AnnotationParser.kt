@@ -121,33 +121,28 @@ public class AnnotationParser(private val logger: KSPLogger) {
   private fun getAnnotationValue(annotation: KSAnnotation, name: String): Any? =
     annotation.arguments.find { it.name?.asString() == name }?.value
 
-  private fun parseValidationMode(value: Any?): ValidationMode {
-    return when (value) {
-      is ValidationMode -> value
-      is KSType -> ValidationMode.valueOf(value.declaration.simpleName.asString())
-      is KSName -> ValidationMode.valueOf(value.asString())
-      is String -> ValidationMode.valueOf(value)
-      else -> ValidationMode.EMBEDDED
-    }
-  }
+  private fun parseValidationMode(value: Any?): ValidationMode = parseEnum(value, ValidationMode.EMBEDDED)
 
-  private fun parseValidationAnnotations(value: Any?): ValidationAnnotations {
-    return when (value) {
-      is ValidationAnnotations -> value
-      is KSType -> ValidationAnnotations.valueOf(value.declaration.simpleName.asString())
-      is KSName -> ValidationAnnotations.valueOf(value.asString())
-      is String -> ValidationAnnotations.valueOf(value)
-      else -> ValidationAnnotations.JAKARTA
-    }
-  }
+  private fun parseValidationAnnotations(value: Any?): ValidationAnnotations = parseEnum(value, ValidationAnnotations.JAKARTA)
 
-  private fun parseNestedMode(value: Any?): NestedMode {
-    return when (value) {
-      is NestedMode -> value
-      is KSType -> NestedMode.valueOf(value.declaration.simpleName.asString())
-      is KSName -> NestedMode.valueOf(value.asString())
-      is String -> NestedMode.valueOf(value)
-      else -> NestedMode.INTERFACE
+  private fun parseNestedMode(value: Any?): NestedMode = parseEnum(value, NestedMode.INTERFACE)
+
+  /**
+   * Enum annotation arguments arrive as a KSType (KSP1), an enum-entry KSClassDeclaration (KSP2), a KSName or
+   * a String depending on the KSP version; all are mapped by simple name. Unknown values are reported.
+   */
+  private inline fun <reified E : Enum<E>> parseEnum(value: Any?, default: E): E {
+    val name = when (value) {
+      null -> return default
+      is Enum<*> -> value.name
+      is KSType -> value.declaration.simpleName.asString()
+      is KSClassDeclaration -> value.simpleName.asString()
+      is KSName -> value.getShortName()
+      else -> value.toString().substringAfterLast('.')
+    }
+    return enumValues<E>().firstOrNull { it.name == name } ?: run {
+      logger.warn("Unknown ${E::class.simpleName} value '$value' in @Rdf; using $default")
+      default
     }
   }
 }

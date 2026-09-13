@@ -45,6 +45,13 @@ public class OntoMapperProcessor(
       if (iriRaw.isBlank() || shaclRaw.isNotBlank()) {
         return@forEach
       }
+      // Interfaces generated from SHACL by OntologyProcessor also carry @Rdf(iri) and come with their own
+      // wrapper; generating a second one would fail with FileAlreadyExistsException in the next round.
+      val qualified = symbol.qualifiedName?.asString()
+      if (qualified != null && resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualified + "Wrapper")) != null) {
+        logger.info("Skipping $qualified: a wrapper already exists")
+        return@forEach
+      }
 
       val prefixMappings = prefixMappingsFor(symbol)
       logger.info("Resolved ${prefixMappings.size} prefix mappings for ${symbol.qualifiedName?.asString()}")
