@@ -133,6 +133,50 @@ class GeneratedRuntimeBehaviourTest {
     }
 
     @Test
+    fun `shape inheritance produces superinterfaces whose properties wrappers and data classes implement`() {
+        val logger = RecordingLogger()
+        val model = OntologyModel(
+            listOf(
+                ShaclShape(EX + "AgentShape", EX + "Agent", listOf(prop("name", minCount = 1), prop("title"))),
+                ShaclShape(
+                    EX + "PersonShape", EX + "Person",
+                    listOf(prop("age", datatype = "${XSD_NS}int"), prop("title")),
+                    parentClasses = listOf(EX + "Agent"),
+                ),
+            ),
+            emptyContext,
+        )
+        val pkg = "gen.inherit"
+        val files = InterfaceGenerator(logger, ValidationAnnotations.NONE).generateInterfaces(model, pkg).values +
+            OntologyWrapperGenerator(logger).generateWrappers(model, pkg).values +
+            DataClassGenerator(logger, "Record", NestedMode.INTERFACE, true, ValidationAnnotations.NONE).generateDataClasses(model, pkg).values +
+            DataClassFactoryGenerator(logger, "Record", NestedMode.INTERFACE, DataClassWriterGenerator(logger, "Record", NestedMode.INTERFACE))
+                .generateFactories(model, pkg).values
+        val probe = """
+            package gen.inherit
+
+            import com.geoknoesis.kastor.gen.runtime.*
+            import com.geoknoesis.kastor.rdf.*
+            import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+
+            fun probe(): String {
+                val g = MemoryGraph()
+                val p = Iri("urn:p")
+                g.addTriple(RdfTriple(p, Iri("https://example.test/name"), Literal("Pat")))
+                g.addTriple(RdfTriple(p, Iri("https://example.test/age"), Literal("41", Iri("http://www.w3.org/2001/XMLSchema#int"))))
+                val person: Person = OntoMapper.materialize(RdfRef(p, g), Person::class.java)
+                val agent: Agent = person
+                val record: Agent = PersonRecord(name = "Pat", age = 41)
+                return agent.name + "/" + person.age + "/" + record.name
+            }
+        """.trimIndent()
+        val result = KotlinSourceCompiler.compile(files, mapOf("gen/inherit/Probe.kt" to probe))
+        result.assertOk()
+        val output = result.classLoader().loadClass("gen.inherit.ProbeKt").getMethod("probe").invoke(null)
+        kotlin.test.assertEquals("Pat/41/Pat", output)
+    }
+
+    @Test
     fun `property names that collapse to the same identifier fail with the colliding IRIs`() {
         val model = OntologyModel(
             listOf(
