@@ -47,7 +47,12 @@ class GenerationConsumerTest {
         File(dir, "shapes.ttl").writeText("""
             @prefix sh: <http://www.w3.org/ns/shacl#> .
             @prefix ex: <https://example.test/> .
+            @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
             ex:PersonShape a sh:NodeShape; sh:targetClass ex:Person;
+                sh:property [ sh:path ex:title; sh:name "Title"; sh:datatype xsd:string; sh:maxCount 1;
+                              sh:description "100% of image/* files */ and ${'$'}graph" ];
+                sh:property [ sh:path ex:issued; sh:name "date-issued"; sh:datatype xsd:date; sh:maxCount 1 ];
+                sh:property [ sh:path ex:clazz; sh:name "class"; sh:datatype xsd:string; sh:maxCount 1 ];
                 sh:property [ sh:path ex:friend; sh:name "friend"; sh:class ex:Person; sh:maxCount 1 ];
                 sh:property [ sh:path ex:external; sh:name "external"; sh:class ex:External; sh:maxCount 1 ] .
             ex:OldShape a sh:NodeShape; sh:targetClass ex:Old .
@@ -65,6 +70,7 @@ class GenerationConsumerTest {
                 val human = OntoMapper.materialize(RdfRef(node, graph), Human::class.java)
                 check(human.friend != null)
                 check(human.external == null)
+                check(human.title == null && human.dateIssued == null && human.`class` == null)
                 println("consumer-ok")
             }
         """.trimIndent())
