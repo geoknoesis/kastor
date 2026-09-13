@@ -356,4 +356,18 @@ class SparqlEndpointHttpTest {
         }
         assertEquals(capabilities, provider.getCapabilities(null))
     }
+
+    @Test
+    fun `registry discovers the sparql provider and its detailed capabilities are truthful`() {
+        val provider = RdfProviderRegistry.getProvider("sparql")
+        assertTrue(provider is SparqlProvider, "expected SparqlProvider via ServiceLoader, got $provider")
+        val detailed = provider!!.getDetailedCapabilities(provider.defaultVariantId())
+        assertEquals(ProviderCategory.SPARQL_ENDPOINT, detailed.providerCategory)
+        assertEquals(provider.getCapabilities(provider.defaultVariantId()), detailed.basic)
+        assertEquals(false, detailed.supportedSparqlFeatures["RDF-star"])
+        assertEquals(false, detailed.supportedSparqlFeatures["Federation"])
+        assertEquals(true, detailed.supportedSparqlFeatures["Property Paths"])
+        assertFalse(detailed.basic.supportsVersionDeclaration)
+        assertTrue(RdfProviderRegistry.supportsFeature("sparql", "Named Graphs"))
+    }
 }

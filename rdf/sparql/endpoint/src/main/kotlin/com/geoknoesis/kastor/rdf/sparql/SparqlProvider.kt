@@ -32,4 +32,31 @@ class SparqlProvider : RdfProvider {
      * no transactions). The remote server may support more; it is not probed.
      */
     override fun getCapabilities(variantId: String?): ProviderCapabilities = SPARQL_ENDPOINT_CAPABILITIES
+
+    override fun getProviderCategory(): ProviderCategory = ProviderCategory.SPARQL_ENDPOINT
+
+    /** Feature flags derived from [getCapabilities], so both views always agree. */
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
+        val basic = getCapabilities(variantId)
+        return DetailedProviderCapabilities(
+            basic = basic,
+            providerCategory = getProviderCategory(),
+            supportedSparqlFeatures = mapOf(
+                "RDF-star" to basic.supportsRdfStar,
+                "Federation" to basic.supportsFederation,
+                "Property Paths" to basic.supportsPropertyPaths,
+                "Aggregation" to basic.supportsAggregation,
+                "Subqueries" to basic.supportsSubSelect,
+                "Named Graphs" to basic.supportsNamedGraphs,
+                "Updates" to basic.supportsUpdates,
+                "Transactions" to basic.supportsTransactions,
+            ),
+            customExtensionFunctions = emptyList(),
+            limitations = listOf(
+                "CONSTRUCT and DESCRIBE are not supported (no RDF parser in this adapter)",
+                "No transactions",
+                "RDF 1.2 triple terms and directional literals are not decoded from results",
+            ),
+        )
+    }
 }
