@@ -56,10 +56,14 @@ class ReleaseRegressionTest {
     @Test fun `blank nodes are inserted as one request and unsafe identity operations fail`() = endpoint { repo ->
         val t = RdfTriple(BlankNode("a"), Iri("urn:p"), BlankNode("b"))
         val graph = repo.editDefaultGraph()
-        assertThrows(IllegalArgumentException::class.java) { graph.addTriple(t) }
         graph.addTriples(listOf(t, RdfTriple(BlankNode("b"), Iri("urn:p"), Literal("v"))))
         assertEquals(2, graph.size())
+        // addTriple follows the same rule as a one-element addTriples: fresh blank nodes per call.
+        graph.addTriple(t)
+        assertEquals(3, graph.size())
         assertThrows(IllegalArgumentException::class.java) { graph.removeTriple(t) }
+        // (Expression-bodied JUnit tests must return Unit, otherwise they are silently skipped.)
+        assertEquals(3, graph.size())
     }
     @Test fun `malformed or unsupported results fail instead of becoming empty`() {
         for (json in listOf("{}", "{\"results\":{\"bindings\":[{\"x\":{\"type\":\"unknown\",\"value\":\"x\"}}]}}")) {
