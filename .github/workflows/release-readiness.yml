@@ -56,9 +56,9 @@ jobs:
       - name: Audit pinned dependency versions
         run: python scripts/audit-dependencies.py
       - name: Verify executed test counts and skips
-        # Floors are ~90% of a clean build (3,129 executed overall; 1,849 RDF corpus on 2026-09-12).
+        # Floors: ~90% of a clean build overall (3,402 executed on 2026-09-13); RDF corpus 1,863 executed.
         run: |
-          python scripts/check-test-results.py build/modules --minimum 2815 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules --minimum 3060 --skip-allowlist scripts/test-skip-allowlist.json
           python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1800 --skip-allowlist scripts/test-skip-allowlist.json
       - name: Retain staged artifacts and reports
         if: always()

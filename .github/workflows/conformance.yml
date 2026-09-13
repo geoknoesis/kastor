@@ -42,7 +42,7 @@ jobs:
         shell: bash
 
       - name: Require populated conformance suites
-        # Floors are ~90% of executed counts on a clean build (RDF 1,849; SHACL 179 on 2026-09-12).
+        # Floors are ~90% of executed counts on a clean build (RDF 1,863; SHACL 222 on 2026-09-13).
         run: |
           python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1660 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 160 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 200 --skip-allowlist scripts/test-skip-allowlist.json
