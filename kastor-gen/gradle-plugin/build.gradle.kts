@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     id("java-gradle-plugin")
     id("maven-publish")
+    alias(libs.plugins.plugin.publish)
 }
 
 dependencies {
@@ -30,13 +31,23 @@ dependencies {
 }
 
 gradlePlugin {
+    website.set("https://github.com/geoknoesis/kastor")
+    vcsUrl.set("https://github.com/geoknoesis/kastor")
     plugins {
         create("kastorGen") {
             id = "com.geoknoesis.kastor.gen"
             implementationClass = "com.geoknoesis.kastor.gen.gradle.OntoMapperPlugin"
             displayName = "Kastor Gen"
-            description = "Generate domain interfaces and wrappers from SHACL and JSON-LD context files"
+            description = "Generate Kotlin domain interfaces, RDF-backed wrappers, vocabularies and DSLs from SHACL shapes and JSON-LD contexts"
+            tags.set(listOf("rdf", "shacl", "json-ld", "kotlin", "code-generation", "semantic-web", "ontology"))
         }
+    }
+}
+
+// Release naming: every published kastor-gen artifact is kastor-gen-*; the plugin marker keeps the plugin id.
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        if (name == "pluginMaven") artifactId = "kastor-gen-gradle-plugin"
     }
 }
 
@@ -45,4 +56,6 @@ gradlePlugin {
 
 tasks.test {
     useJUnitPlatform()
+    // TestKit consumer builds share one bounded, reusable Gradle user home / daemon directory.
+    systemProperty("kastor.testkit.dir", layout.buildDirectory.dir("testkit").get().asFile.absolutePath)
 }

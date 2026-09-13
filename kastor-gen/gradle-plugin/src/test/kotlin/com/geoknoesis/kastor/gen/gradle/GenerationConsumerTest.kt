@@ -10,13 +10,18 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.*
 
+/** Shared TestKit directory so nested daemons are reused across tests and runs (set by the Gradle test task). */
+internal fun testKitDir(): File =
+    File(System.getProperty("kastor.testkit.dir") ?: File(System.getProperty("java.io.tmpdir"), "kastor-testkit").path)
+        .apply { mkdirs() }
+
 class GenerationConsumerTest {
     @TempDir lateinit var dir: File
     @Test fun `consumer compiles renamed cross package types and regenerates changed inputs`() {
         File(dir, "settings.gradle").writeText("rootProject.name = 'consumer'")
         File(dir, "gradle.properties").writeText("""
             org.gradle.workers.max=1
-            org.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=384m -XX:ActiveProcessorCount=2
+            org.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=256m -XX:ActiveProcessorCount=2
             kotlin.compiler.execution.strategy=in-process
             kotlin.internal.collectFUSMetrics=false
         """.trimIndent())
@@ -74,7 +79,7 @@ class GenerationConsumerTest {
                 println("consumer-ok")
             }
         """.trimIndent())
-        fun run(vararg args: String) = GradleRunner.create().withProjectDir(dir).withPluginClasspath().forwardOutput()
+        fun run(vararg args: String) = GradleRunner.create().withProjectDir(dir).withTestKitDir(testKitDir()).withPluginClasspath().forwardOutput()
             .withEnvironment(System.getenv() + ("JAVA_HOME" to System.getProperty("java.home")))
             .withArguments(*args, "--stacktrace", "--no-build-cache", "--configuration-cache", "--configuration-cache-problems=fail").build()
         assertTrue(run("run").output.contains("consumer-ok"))

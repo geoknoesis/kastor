@@ -78,4 +78,5 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmhGradle" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
+plugin-publish = { id = "com.gradle.plugin-publish", version = "2.2.1" }
 
