@@ -15,7 +15,7 @@ The enhanced Jena implementation provides:
 
 ### Version alignment
 
-Kastor currently integrates with **Apache Jena 5.6.0**. If you depend on a different Jena
+Kastor currently integrates with **Apache Jena 6.2.0** (paired with Apache Thrift 0.24.0). If you depend on a different Jena
 version in your application, align your dependency set to avoid classpath conflicts.
 
 ## Repository Variants
