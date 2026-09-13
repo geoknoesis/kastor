@@ -34,7 +34,7 @@ publishing {
             artifact(tasks.named("javadocJar"))
 
             groupId = project.group.toString()
-            artifactId = project.name
+            artifactId = "rdf-shacl-validation"
             version = project.version.toString()
         }
     }

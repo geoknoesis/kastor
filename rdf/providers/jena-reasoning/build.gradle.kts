@@ -18,7 +18,7 @@ publishing {
       artifact(tasks.named("javadocJar"))
 
       groupId = project.group.toString()
-      artifactId = project.name
+      artifactId = "rdf-jena-reasoning"
       version = project.version.toString()
     }
   }
