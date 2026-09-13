@@ -61,9 +61,10 @@ object KastorGraphOps {
   /**
    * Retrieves and materializes object values for a given subject and predicate.
    *
-   * For each object term, [factory] is invoked. [Error], [IllegalStateException], and
-   * [ValidationException] propagate (failed wiring or validation). Any other exception
-   * is treated as a failed materialization for that object only and omitted from the result.
+   * Only IRI and blank-node objects are passed to [factory]; literal objects are skipped. Failures are
+   * never silently dropped: [Error], [ValidationException] and [MaterializationException] propagate
+   * unchanged, and any other exception is rethrown as a [MaterializationException] naming the
+   * subject, predicate and object that could not be materialized.
    *
    * @param graph The RDF graph to query
    * @param subj The subject node
@@ -81,13 +82,19 @@ object KastorGraphOps {
       .mapNotNull { triple ->
         when (val obj = triple.obj) {
           is Iri, is BlankNode ->
-            runCatching { factory(obj) }.getOrElse { e ->
-              when (e) {
-                is Error -> throw e
-                is IllegalStateException -> throw e
-                is ValidationException -> throw e
-                else -> null
-              }
+            try {
+              factory(obj)
+            } catch (e: Error) {
+              throw e
+            } catch (e: ValidationException) {
+              throw e
+            } catch (e: MaterializationException) {
+              throw e
+            } catch (e: Exception) {
+              throw MaterializationException(
+                "Failed to materialize value of <${pred.value}> for $subj (object $obj): ${e.message ?: e::class.java.name}",
+                e,
+              )
             }
           else -> null
         }

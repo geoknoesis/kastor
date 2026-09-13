@@ -80,48 +80,122 @@ inline fun <reified T : Any> RdfRepository.materializeValidated(
 
 /** Central materializer populated by generated registration code.
  *
- * [materialize] and [materializeValidated] resolve a wrapper `factory` from [registry], then invoke
- * it with a provisional [DefaultRdfHandle] (no mapped-predicate filter for extras, and optional
+ * [materialize] and [materializeValidated] resolve a wrapper `factory` registered via [register], then
+ * invoke it with a provisional [DefaultRdfHandle] (no mapped-predicate filter for extras, and optional
  * [ValidationContext]). Generated wrappers typically replace that handle in a lazy `rdf` delegate
  * so [RdfHandle.extras] excludes mapped predicates and validation is wired as generated.
+ *
+ * ## Nested materialization and cycles
+ * Each outermost [materialize] call opens a per-thread materialization scope that lasts until it returns.
+ * Within the scope a (type, node, graph) that was already materialized is reused, and re-entering a
+ * (type, node, graph) that is *still being built* fails fast with a [MaterializationException] naming the
+ * cycle instead of recursing until `StackOverflowError`. That only happens for eagerly-loaded immutable
+ * snapshots (data classes generated with `NestedMode.DATA_CLASS`) over cyclic data such as
+ * `a foaf:knows b . b foaf:knows a`: an immutable value cannot contain itself. Live wrappers load nested
+ * objects lazily and are unaffected; use `NestedMode.INTERFACE` or `NestedMode.IRI_ONLY` for cyclic data.
  */
 object OntoMapper {
-  
+
   /** Registry mapping domain interface classes to their wrapper factories. */
-  @JvmField
-  val registry: MutableMap<Class<*>, (RdfHandle) -> Any> = java.util.concurrent.ConcurrentHashMap()
-  
+  private val registry: MutableMap<Class<*>, (RdfHandle) -> Any> = java.util.concurrent.ConcurrentHashMap()
+
   const val ERROR_NO_FACTORY = "No wrapper factory registered for"
   const val ERROR_NOT_RDF_BACKED = "Object is not RDF-backed:"
 
+  /** Registers (or replaces) the factory used to materialize [type]. Called by generated code. */
+  @JvmStatic
+  fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T) {
+    registry[type] = factory
+  }
+
+  /** Removes the factory for [type]; returns true when one was registered. */
+  @JvmStatic
+  fun unregister(type: Class<*>): Boolean = registry.remove(type) != null
+
+  /** Whether a factory is currently registered for [type]. */
+  @JvmStatic
+  fun isRegistered(type: Class<*>): Boolean = registry.containsKey(type)
+
+  /** Snapshot of the currently registered types. */
+  @JvmStatic
+  fun registeredTypes(): Set<Class<*>> = registry.keys.toSet()
+
+  private class ScopeKey(val type: Class<*>, val node: RdfTerm, val graph: RdfGraph) {
+    override fun equals(other: Any?): Boolean =
+      other is ScopeKey && other.type == type && other.node == node && other.graph === graph
+    override fun hashCode(): Int = (type.hashCode() * 31 + node.hashCode()) * 31 + System.identityHashCode(graph)
+    override fun toString(): String = "${type.simpleName} $node"
+  }
+
+  private class Scope {
+    val inProgress = LinkedHashSet<ScopeKey>()
+    val done = HashMap<ScopeKey, Any>()
+  }
+
+  private val currentScope = ThreadLocal<Scope?>()
+
+  private fun <T : Any> withinScope(ref: RdfRef, type: Class<T>, build: () -> T): T {
+    val existing = currentScope.get()
+    val scope = existing ?: Scope().also { currentScope.set(it) }
+    try {
+      val key = ScopeKey(type, ref.node, ref.graph)
+      scope.done[key]?.let {
+        @Suppress("UNCHECKED_CAST")
+        return it as T
+      }
+      if (!scope.inProgress.add(key)) {
+        val path = (scope.inProgress.dropWhile { it != key } + key).joinToString(" -> ")
+        throw MaterializationException(
+          "Cyclic reference while materializing immutable snapshot: $path. " +
+            "Eager snapshots cannot represent cycles; use NestedMode.INTERFACE or NestedMode.IRI_ONLY."
+        )
+      }
+      try {
+        val instance = build()
+        scope.done[key] = instance
+        return instance
+      } finally {
+        scope.inProgress.remove(key)
+      }
+    } finally {
+      if (existing == null) currentScope.remove()
+    }
+  }
+
+  private fun factoryFor(type: Class<*>): (RdfHandle) -> Any =
+    registry[type] ?: run {
+      loadWrapperClass(type)
+      registry[type]
+    } ?: error("$ERROR_NO_FACTORY ${type.name}")
+
   /**
    * Materializes an RDF node as a domain object without validation.
-   * 
+   *
    * This is the fast path for materialization. No SHACL validation is performed.
    * Use [materializeValidated] when validation is required.
-   * 
+   *
    * @param ref The RDF reference (node + graph)
    * @param type The target domain interface class
    * @return Instance of the domain interface backed by RDF
    * @throws IllegalStateException if no factory is registered for the type
+   * @throws MaterializationException if an eagerly-loaded snapshot graph is cyclic
    */
   @JvmStatic
   fun <T: Any> materialize(ref: RdfRef, type: Class<T>): T {
-    val factory = registry[type] ?: run {
-      loadWrapperClass(type)
-      registry[type]
-    } ?: error("$ERROR_NO_FACTORY ${type.name}")
-    val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet(), validationContext = null)
-    @Suppress("UNCHECKED_CAST")
-    return factory(handle) as T
+    val factory = factoryFor(type)
+    return withinScope(ref, type) {
+      val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet(), validationContext = null)
+      @Suppress("UNCHECKED_CAST")
+      factory(handle) as T
+    }
   }
 
   /**
    * Materializes an RDF node as a domain object and validates it against SHACL shapes.
-   * 
+   *
    * Validation is mandatory when using this method. The validation context must be provided,
    * and validation failures will throw [ValidationException].
-   * 
+   *
    * @param ref The RDF reference (node + graph)
    * @param type The target domain interface class
    * @param validation The validation context (required, not nullable)
@@ -131,17 +205,14 @@ object OntoMapper {
    */
   @JvmStatic
   fun <T: Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T {
-    val factory = registry[type] ?: run {
-      loadWrapperClass(type)
-      registry[type]
-    } ?: error("$ERROR_NO_FACTORY ${type.name}")
+    val factory = factoryFor(type)
     val handle = DefaultRdfHandle(ref.node, ref.graph, known = emptySet(), validationContext = validation)
     @Suppress("UNCHECKED_CAST")
     val instance = factory(handle) as T
     handle.validate().orThrow()
     return instance
   }
-  
+
   /**
    * Explicitly loads wrapper classes for the given domain types (e.g. to avoid first-hit
    * class-loading races in server startup).
