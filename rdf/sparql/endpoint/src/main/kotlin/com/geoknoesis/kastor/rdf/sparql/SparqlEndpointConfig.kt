@@ -148,6 +148,8 @@ internal val SPARQL_ENDPOINT_CAPABILITIES = ProviderCapabilities(
     supportsUpdates = true,
     supportsRdfStar = false,
     supportsTripleTerms = false,
+    // Directional literals are not decoded from JSON results and remote support cannot be assumed.
+    supportsBaseDirection = false,
     maxMemoryUsage = Long.MAX_VALUE,
     sparqlVersion = "1.1",
     supportsPropertyPaths = true,

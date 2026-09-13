@@ -53,6 +53,8 @@ class MemoryRepositoryProvider : RdfProvider {
             supportsNamedGraphs = true,
             supportsUpdates = false,
             supportsRdfStar = true,
+            // LangString terms (including base direction) are stored as given.
+            supportsBaseDirection = true,
             maxMemoryUsage = Long.MAX_VALUE
         )
     }

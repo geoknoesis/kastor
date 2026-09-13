@@ -1704,7 +1704,19 @@ data class ProviderCapabilities(
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
     val defaultGraphs: List<String> = emptyList(),
-    val sparqlFeatures: Set<SparqlFeature> = emptySet()
+    val sparqlFeatures: Set<SparqlFeature> = emptySet(),
+    /**
+     * True if the provider stores the RDF 1.2 base direction of `rdf:dirLangString` literals natively,
+     * so a [LangString] with a [Direction] round-trips as a directional literal in storage, SPARQL and
+     * serializers (Jena, the in-memory provider).
+     *
+     * False when base direction is not modelled natively. RDF4J has no base-direction model: Kastor
+     * encodes the direction into the language tag as `lang--dir` (for example `"...."@ar--rtl`) and
+     * decodes it on read, so values round-trip through Kastor, but RDF4J itself sees an ordinary
+     * language tag (SPARQL `LANG(?o)` returns `ar--rtl`; `LANGMATCHES` and Rio serializers treat it as
+     * a tag). Remote SPARQL endpoints report false because support cannot be assumed.
+     */
+    val supportsBaseDirection: Boolean = false,
 )
 
 /**

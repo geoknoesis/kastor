@@ -74,6 +74,8 @@ class Rdf4jProvider : RdfProvider {
             supportsUpdates = true,
             supportsRdfStar = supportsRdfStar,
             supportsShacl = supportsShacl,
+            // No native base direction: Kastor encodes it into the language tag as "lang--dir".
+            supportsBaseDirection = false,
             maxMemoryUsage = Long.MAX_VALUE,
             sparqlVersion = "1.1",
             supportsPropertyPaths = true,
