@@ -24,7 +24,7 @@ import java.nio.charset.StandardCharsets
 /**
  * Coordinates code generation from ontology models.
  */
-class GenerationCoordinator(
+public class GenerationCoordinator(
     private val logger: KSPLogger,
     private val codeGenerator: CodeGenerator
 ) {
@@ -33,7 +33,7 @@ class GenerationCoordinator(
     /**
      * Generates interfaces and wrappers from ontology model.
      */
-    fun generateFromOntology(
+    public fun generateFromOntology(
         model: OntologyModel,
         packageName: String,
         generateInterfaces: Boolean,
@@ -96,7 +96,7 @@ class GenerationCoordinator(
     /**
      * Generates instance DSL from ontology model.
      */
-    fun generateInstanceDsl(
+    public fun generateInstanceDsl(
         model: OntologyModel,
         dslName: String,
         packageName: String

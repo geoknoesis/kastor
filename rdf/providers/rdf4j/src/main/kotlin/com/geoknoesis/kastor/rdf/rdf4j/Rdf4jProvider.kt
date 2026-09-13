@@ -9,7 +9,7 @@ class Rdf4jProvider : RdfProvider {
     
     override val id: String = "rdf4j"
     override val name: String = "RDF4J Repository"
-    override val version: String = "4.0.0"
+    override val version: String = org.eclipse.rdf4j.model.impl.SimpleValueFactory::class.java.`package`.implementationVersion ?: "unknown"
     
     override fun variants(): List<RdfVariant> {
         return listOf(
@@ -72,7 +72,8 @@ class Rdf4jProvider : RdfProvider {
         val supportsRdfStar = true
 
         return ProviderCapabilities(
-            rdfVersion = "1.2",
+            // Rio has partial RDF 1.2 term support; it does not implement the full 1.2 syntax suite.
+            rdfVersion = "1.1",
             supportsTripleTerms = true,
             supportsInference = supportsInference,
             supportsTransactions = true,
@@ -81,11 +82,11 @@ class Rdf4jProvider : RdfProvider {
             supportsRdfStar = supportsRdfStar,
             supportsShacl = supportsShacl,
             maxMemoryUsage = Long.MAX_VALUE,
-            sparqlVersion = "1.2",
+            sparqlVersion = "1.1",
             supportsPropertyPaths = true,
             supportsAggregation = true,
             supportsSubSelect = true,
-            supportsVersionDeclaration = true,
+            supportsVersionDeclaration = false,
             supportsServiceDescription = true,
             supportedInputFormats = formats,
             supportedOutputFormats = formats // RDF4J supports same formats for input and output
@@ -94,10 +95,7 @@ class Rdf4jProvider : RdfProvider {
     
     override fun supportsFormat(format: String): Boolean {
         val normalized = format.uppercase().trim()
-        return normalized in listOf(
-            "TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", 
-            "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ"
-        )
+        return normalized in getCapabilities(null).supportedInputFormats
     }
     
     override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {

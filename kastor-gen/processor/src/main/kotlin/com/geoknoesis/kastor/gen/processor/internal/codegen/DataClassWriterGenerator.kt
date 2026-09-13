@@ -27,7 +27,7 @@ import com.squareup.kotlinpoet.FunSpec
  * - Object properties in [NestedMode.DATA_CLASS] cannot be serialized (no subject IRI available)
  *   and are skipped with a comment; a warning is logged at generation time.
  */
-class DataClassWriterGenerator(
+public class DataClassWriterGenerator(
     private val logger: KSPLogger,
     private val suffix: String,
     private val nestedMode: NestedMode,
@@ -41,7 +41,7 @@ class DataClassWriterGenerator(
 
     // ── Public entry point ────────────────────────────────────────────────────
 
-    fun buildToTriplesFunction(
+    public fun buildToTriplesFunction(
         shape: ShaclShape,
         packageName: String,
         dcClassName: ClassName,

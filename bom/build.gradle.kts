@@ -11,7 +11,22 @@ javaPlatform {
 }
 
 dependencies {
+    api(platform("com.fasterxml.jackson:jackson-bom:${libs.versions.jackson.get()}"))
+    api(platform("io.netty:netty-bom:4.2.18.Final"))
+    api(platform("io.opentelemetry:opentelemetry-bom:1.66.0"))
     constraints {
+        // Security floors are published so independent consumers receive them too.
+        api("com.google.guava:guava:33.7.1-jre")
+        api("commons-beanutils:commons-beanutils:1.11.0")
+        api("org.apache.httpcomponents.client5:httpclient5:5.6.4")
+        api("org.apache.httpcomponents.core5:httpcore5:5.4.3")
+        api("org.apache.httpcomponents.core5:httpcore5-h2:5.4.3")
+        api("org.apache.httpcomponents:httpclient:4.5.14")
+        api("org.apache.james:apache-mime4j-core:0.8.15")
+        api("org.apache.thrift:libthrift:0.24.0")
+        api("org.jsoup:jsoup:${libs.versions.jsoup.get()}")
+        api("org.apache.commons:commons-lang3:${libs.versions.commonsLang3.get()}")
+        api("at.yawk.lz4:lz4-java:1.11.3")
         api(project(":rdf:core"))
         api(project(":rdf:sparql-contract"))
         api(project(":rdf:sparql-lang"))
@@ -22,6 +37,7 @@ dependencies {
         api(project(":rdf:rdf4j-reasoning"))
         api(project(":rdf:sparql"))
         api(project(":rdf:reasoning-hermit"))
+        api(project(":rdf:reasoning"))
         api(project(":rdf:shacl-validation"))
         api(project(":rdf:testkit"))
         api(project(":rdf:cli"))

@@ -17,6 +17,8 @@ class DefaultRdfHandle(
   private val known: Set<Iri>,
   internal val validationContext: ValidationContext? = null,
 ) : RdfHandle {
+  /** Preserve validation while applying a generated wrapper's mapped-predicate filter. */
+  fun withKnownPredicates(predicates: Set<Iri>): DefaultRdfHandle = DefaultRdfHandle(node, graph, predicates, validationContext)
 
   override val isValidationConfigured: Boolean get() = validationContext != null
 

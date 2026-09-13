@@ -16,7 +16,7 @@ import com.squareup.kotlinpoet.KModifier.*
  * Generator for Kotlin domain interfaces from SHACL shapes using KotlinPoet.
  * Creates pure domain interfaces with no RDF dependencies.
  */
-class InterfaceGenerator(
+public class InterfaceGenerator(
     private val logger: KSPLogger,
     private val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA
 ) {
@@ -33,7 +33,7 @@ class InterfaceGenerator(
      *   [ontologyModel] fall back to the IRI (String) instead of a dangling reference. Requires the model
      *   to contain ALL shapes (the Gradle task passes the full model); leave false for partial models.
      */
-    fun generateInterfaces(
+    public fun generateInterfaces(
         ontologyModel: OntologyModel,
         packageName: String,
         fallbackUnshapedToIri: Boolean = false,
@@ -43,14 +43,14 @@ class InterfaceGenerator(
         // The set of interface names that WILL be generated — used to fall back to IRI (String) for any
         // sh:class target that has no shape of its own. Null = do not filter (legacy / partial models).
         val knownTypes: Set<String>? =
-            if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.extractInterfaceName(it.targetClass) }.toSet()
+            if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.domainName(it.targetClass, ontologyModel.context) }.toSet()
             else null
 
         // Sort shapes by targetClass IRI to ensure deterministic output
         ontologyModel.shapes
             .sortedBy { it.targetClass }
             .forEach { shape ->
-                val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+                val interfaceName = NamingUtils.domainName(shape.targetClass, ontologyModel.context)
                 val fileSpec = generateInterface(shape, ontologyModel.context, packageName, knownTypes)
                 interfaces[interfaceName] = fileSpec
 
@@ -66,7 +66,7 @@ class InterfaceGenerator(
         packageName: String,
         knownTypes: Set<String>?,
     ): FileSpec {
-        val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+        val interfaceName = NamingUtils.domainName(shape.targetClass, context)
         
         val fileBuilder = FileSpec.builder(packageName, interfaceName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")

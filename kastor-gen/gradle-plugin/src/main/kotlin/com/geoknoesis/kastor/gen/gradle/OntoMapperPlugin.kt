@@ -24,63 +24,37 @@ class OntoMapperPlugin : Plugin<Project> {
         }
         extension.ontologies = ontologyContainer
         
-        // Register tasks for each ontology configuration
-        project.afterEvaluate {
-            // Create tasks for each ontology in the container
-            extension.ontologies?.forEach { ontologyConfig ->
-                val taskName = "generateOntology${ontologyConfig.name.replaceFirstChar { it.uppercaseChar() }}"
-                project.tasks.register(taskName, OntologyGenerationTask::class.java) { task ->
-                    task.group = "kastor-gen"
-                    task.description = "Generate domain interfaces and wrappers for ${ontologyConfig.name} ontology"
-                    
-                    // Configure the task with ontology-specific values
-                    task.shaclPath.set(ontologyConfig.shaclPath)
-                    task.contextPath.set(ontologyConfig.contextPath)
-                    task.interfacePackage.set(ontologyConfig.interfacePackage)
-                    task.wrapperPackage.set(ontologyConfig.wrapperPackage)
-                    task.vocabularyPackage.set(ontologyConfig.vocabularyPackage)
-                    task.generateInterfaces.set(ontologyConfig.generateInterfaces)
-                    task.generateWrappers.set(ontologyConfig.generateWrappers)
-                    task.generateVocabulary.set(ontologyConfig.generateVocabulary)
-                    task.vocabularyName.set(ontologyConfig.vocabularyName)
-                    task.vocabularyNamespace.set(ontologyConfig.vocabularyNamespace)
-                    task.vocabularyPrefix.set(ontologyConfig.vocabularyPrefix)
-                    task.generateDsl.set(ontologyConfig.generateDsl)
-                    task.dslPackage.set(ontologyConfig.dslPackage)
-                    task.dslName.set(ontologyConfig.dslName)
-                    task.outputDirectory.set(project.file(ontologyConfig.outputDirectory))
-                }
-            }
-            
-            // Create a main task that depends on all ontology generation tasks
-            val mainTask = project.tasks.register("generateOntology") { task ->
+        val mainTask = project.tasks.register("generateOntology") {
+            it.group = "kastor-gen"
+            it.description = "Generate interfaces and wrappers for all configured ontologies"
+        }
+        ontologyContainer.all { config ->
+            require(config.name.matches(Regex("[A-Za-z][A-Za-z0-9_-]*"))) { "Invalid ontology name: ${config.name}" }
+            val taskName = "generateOntology${config.name.replaceFirstChar { it.uppercaseChar() }}"
+            val generation = project.tasks.register(taskName, OntologyGenerationTask::class.java) { task ->
                 task.group = "kastor-gen"
-                task.description = "Generate domain interfaces and wrappers from all configured ontologies"
-                
-                // Add dependencies on all individual ontology tasks
-                extension.ontologies?.forEach { ontologyConfig ->
-                    val taskName = "generateOntology${ontologyConfig.name.replaceFirstChar { it.uppercaseChar() }}"
-                    task.dependsOn(taskName)
-                }
+                task.description = "Generate ontology ${config.name}"
+                task.shaclPath.set(config.shaclPath)
+                task.contextPath.set(config.contextPath)
+                task.interfacePackage.set(config.interfacePackage)
+                task.wrapperPackage.set(config.wrapperPackage)
+                task.vocabularyPackage.set(config.vocabularyPackage)
+                task.generateInterfaces.set(config.generateInterfaces)
+                task.generateWrappers.set(config.generateWrappers)
+                task.generateVocabulary.set(config.generateVocabulary)
+                task.vocabularyName.set(config.vocabularyName)
+                task.vocabularyNamespace.set(config.vocabularyNamespace)
+                task.vocabularyPrefix.set(config.vocabularyPrefix)
+                task.generateDsl.set(config.generateDsl)
+                task.dslPackage.set(config.dslPackage)
+                task.dslName.set(config.dslName)
+                task.outputDirectory.set(project.file(config.outputDirectory).resolve(config.name))
             }
-            
-            
-            // Make the main generation task run before compileKotlin
-            project.tasks.named("compileKotlin") { compileTask ->
-                compileTask.dependsOn(mainTask)
+            mainTask.configure { it.dependsOn(generation) }
+            project.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+                project.extensions.getByType(org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension::class.java)
+                    .sourceSets.getByName("main").kotlin.srcDir(generation.flatMap { it.outputDirectory })
             }
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-

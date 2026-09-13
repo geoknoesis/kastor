@@ -15,7 +15,7 @@ package com.geoknoesis.kastor.rdf
  *    - Examples: SPARQL query execution, transaction operations
  *    - Always include context (query strings, operation details) for debugging
  * 
- * 2. **Semantic Failures** → Sealed Results ([ValidationResult])
+ * 2. **Semantic Failures** → Sealed Results (`ValidationResult`)
  *    - Operations that can fail semantically but are expected outcomes
  *    - Examples: SHACL validation (violations are data issues, not technical errors)
  *    - Use sealed classes to represent success/failure states

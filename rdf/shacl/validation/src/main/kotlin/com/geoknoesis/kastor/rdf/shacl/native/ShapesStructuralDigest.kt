@@ -20,16 +20,16 @@ import java.security.MessageDigest
  */
 internal object ShapesStructuralDigest {
 
-    fun digest(shapesTriples: List<RdfTriple>, config: ValidationConfig): String =
+    fun digest(shapesTriples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget = ValidationBudget.NONE): String =
         when (config.cache.shapesDigestMode) {
-            ShapesDigestMode.SHAPES_STRUCTURAL_DIGEST_V1 -> structuralDigestV1(shapesTriples, config)
+            ShapesDigestMode.SHAPES_STRUCTURAL_DIGEST_V1 -> structuralDigestV1(shapesTriples, config, budget)
             ShapesDigestMode.SHAPES_RDF_CANONICAL_DIGEST ->
                 throw ShapeCompileException(
                     "SHAPES_RDF_CANONICAL_DIGEST is not implemented yet; use SHAPES_STRUCTURAL_DIGEST_V1",
                 )
         }
 
-    private fun structuralDigestV1(triples: List<RdfTriple>, config: ValidationConfig): String {
+    private fun structuralDigestV1(triples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget): String {
         val profilePart = config.profile.name
         val flagPart =
             listOf(
@@ -37,13 +37,14 @@ internal object ShapesStructuralDigest {
                 config.strictMode,
                 config.allowTripleTermsInShapeParameters,
             ).joinToString(",") { it.toString() }
-        val rows = triples.map { canonicalTripleRow(it) }.sorted()
+        val rows = triples.map { budget.check("shape digest"); canonicalTripleRow(it) }.sortedWith { a, b -> budget.check("shape digest sorting"); a.compareTo(b) }
         val md = MessageDigest.getInstance("SHA-256")
         md.update(profilePart.toByteArray(StandardCharsets.UTF_8))
         md.update(0)
         md.update(flagPart.toByteArray(StandardCharsets.UTF_8))
         md.update(0)
         rows.forEach { row ->
+            budget.check("shape digest")
             md.update(row.toByteArray(StandardCharsets.UTF_8))
             md.update(0)
         }
@@ -51,18 +52,21 @@ internal object ShapesStructuralDigest {
     }
 
     private fun canonicalTripleRow(t: RdfTriple): String =
-        "${termKey(t.subject)} ${termKey(t.predicate)} ${termKey(t.obj)}"
+        fields(termKey(t.subject), termKey(t.predicate), termKey(t.obj))
+
+    // Length framing makes delimiters, NULs and nested terms unambiguous.
+    private fun fields(vararg values: String): String = values.joinToString("") { "${it.length}:$it" }
 
     private fun termKey(term: RdfTerm): String =
         when (term) {
-            is Iri -> "I|<${term.value}>"
-            is BlankNode -> "B|${term.id}"
+            is Iri -> "I" + fields(term.value)
+            is BlankNode -> "B" + fields(term.id)
             is TripleTerm ->
-                "T|<<(${termKey(term.triple.subject as RdfTerm)} ${termKey(term.triple.predicate as RdfTerm)} ${termKey(term.triple.obj)})>>"
-            is LangString -> "L|${term.lexical}|${term.lang}|${term.direction ?: ""}|${term.datatype.value}"
-            is TypedLiteral -> "D|${term.lexical}|${term.datatype.value}"
-            is Literal -> "LIT|${term.lexical}|${term.datatype.value}"
-            else -> term.toString()
+                "T" + canonicalTripleRow(term.triple)
+            is LangString -> "L" + fields(term.lexical, term.lang, term.direction?.name ?: "", term.datatype.value)
+            is TypedLiteral -> "D" + fields(term.lexical, term.datatype.value)
+            is Literal -> "LIT" + fields(term.lexical, term.datatype.value)
+            else -> fields(term.javaClass.name, term.toString())
         }
 
     fun compileCacheKey(digest: String, config: ValidationConfig): String =

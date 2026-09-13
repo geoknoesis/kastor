@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.ontoquality.catalog
 
+import com.geoknoesis.kastor.ontoquality.QualityFinding
+import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.ontoquality.PitfallReference
 import com.geoknoesis.kastor.ontoquality.QualityCategory
 import com.geoknoesis.kastor.ontoquality.QualityTier

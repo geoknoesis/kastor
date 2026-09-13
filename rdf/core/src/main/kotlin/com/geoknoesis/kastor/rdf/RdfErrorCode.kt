@@ -20,7 +20,6 @@ package com.geoknoesis.kastor.rdf
  * - `VALIDATION_*` - Validation errors
  * - `CONFIGURATION_*` - Configuration errors
  * 
- * @sample com.example.ErrorCodeHandling
  */
 enum class RdfErrorCode(
     val code: String,

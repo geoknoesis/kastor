@@ -1,0 +1,56 @@
+public final class com/geoknoesis/kastor/ontoquality/llm/DefaultQualityExplanationEnricher : com/geoknoesis/kastor/ontoquality/explanation/QualityExplanationEnricher {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;)V
+	public fun enrich (Lcom/geoknoesis/kastor/ontoquality/QualityReport;Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationOptions;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/llm/DefaultQualityExplanationEnricherKt {
+	public static final fun qualityExplanationEnricher (Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;)Lcom/geoknoesis/kastor/ontoquality/explanation/QualityExplanationEnricher;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset : java/lang/Enum {
+	public static final field ANTHROPIC_HAIKU_4_5 Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static final field ANTHROPIC_SONNET_4_5 Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static final field AUTO Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static final field OLLAMA_LLAMA_3_2 Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static final field OPENAI_GPT4O Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static final field OPENAI_GPT4O_MINI Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public static fun values ()[Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig {
+	public static final field ANTHROPIC_API_KEY Ljava/lang/String;
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig$Companion;
+	public static final field OPENAI_API_KEY Ljava/lang/String;
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getApiKey ()Ljava/lang/String;
+	public final fun getBaseUrl ()Ljava/lang/String;
+	public final fun getModelId ()Ljava/lang/String;
+	public final fun getModelPreset ()Lcom/geoknoesis/kastor/ontoquality/llm/ExplanationModelPreset;
+	public final fun getProvider ()Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig$Companion {
+}
+
+public final class com/geoknoesis/kastor/ontoquality/llm/LlmProvider : java/lang/Enum {
+	public static final field ANTHROPIC Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public static final field OLLAMA Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public static final field OPENAI Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public static fun values ()[Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+}
+

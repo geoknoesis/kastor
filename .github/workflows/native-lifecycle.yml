@@ -1,0 +1,55 @@
+name: Native embedding lifecycle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      KASTOR_RUN_EMBEDDING_TESTS: "1"
+      KASTOR_RUN_SOAK_TESTS: "1"
+      KASTOR_SOAK_CYCLES: "200"
+      KASTOR_SKIP_EMBEDDING_TESTS: "0"
+      KASTOR_OOPS_BENCHMARK: "1"
+      KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the report gate
+        run: python scripts/test_check_test_results.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Verify native inference, ownership and repeated cleanup
+        shell: bash
+        run: ./gradlew :tools:onto-quality-embed:test :tools:onto-quality:test --no-daemon --max-workers=1
+      - name: Reject missing or skipped native tests
+        run: >-
+          python scripts/check-test-results.py build/modules/tools/onto-quality-embed/test-results/test --minimum 15
+          --require-suite com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest
+          --require-suite com.geoknoesis.kastor.ontoquality.embed.NativeResourceSoakTest
+      - name: Reject missing or skipped semantic integration tests
+        run: >-
+          python scripts/check-test-results.py build/modules/tools/onto-quality/test-results/test --minimum 72
+          --require-suite com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest
+          --require-suite 'com.geoknoesis.kastor.ontoquality.OopsCalibrationTest$SemanticTierAfterEnrichment'
+      - name: Retain native lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-lifecycle-${{ matrix.os }}
+          path: |
+            build/modules/tools/onto-quality-embed/reports/
+            build/modules/tools/onto-quality-embed/test-results/
+            build/modules/tools/onto-quality/reports/
+            build/modules/tools/onto-quality/test-results/

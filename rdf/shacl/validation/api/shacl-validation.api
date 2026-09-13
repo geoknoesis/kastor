@@ -1,0 +1,712 @@
+public final class com/geoknoesis/kastor/rdf/shacl/CacheConfig {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+	public final fun copy (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;)Lcom/geoknoesis/kastor/rdf/shacl/CacheConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/CacheConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getShapesDigestMode ()Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+	public final fun getShapesGraphVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ConstraintType : java/lang/Enum {
+	public static final field AND Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field CLASS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field CLOSED Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field CUSTOM_CONSTRAINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field DATATYPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field DISJOINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field EQUALS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field FLAGS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field HAS_VALUE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field IN Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field JS_CONSTRAINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field LANGUAGE_IN Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field LESS_THAN Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field LESS_THAN_OR_EQUALS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MAX_COUNT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MAX_EXCLUSIVE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MAX_INCLUSIVE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MAX_LENGTH Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MAX_LIST_LENGTH Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MEMBER_SHAPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MIN_COUNT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MIN_EXCLUSIVE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MIN_INCLUSIVE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MIN_LENGTH Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field MIN_LIST_LENGTH Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field NODE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field NODE_BY_EXPRESSION Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field NODE_KIND Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field NOT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field OR Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field PATTERN Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field PROPERTY_SHAPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field PY_CONSTRAINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field QUALIFIED_MAX_COUNT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field QUALIFIED_MIN_COUNT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field QUALIFIED_VALUE_SHAPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field REIFICATION_REQUIRED Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field REIFIER_SHAPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field ROOT_CLASS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SHAPE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SINGLE_LINE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SOME_VALUE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SPARQL_CONSTRAINT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SPARQL_CONSTRAINT_COMPONENT Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field SUBSET_OF Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field UNIQUE_LANG Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field UNIQUE_MEMBERS Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field UNIQUE_VALUES_FOR Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static final field XONE Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig {
+	public fun <init> ()V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Map;ZLcom/geoknoesis/kastor/rdf/Dataset;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Map;ZLcom/geoknoesis/kastor/rdf/Dataset;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UX4i1w8 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Map;
+	public final fun component3 ()Z
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/Dataset;
+	public final fun copy-xsCThGc (Ljava/lang/String;Ljava/util/Map;ZLcom/geoknoesis/kastor/rdf/Dataset;)Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;
+	public static synthetic fun copy-xsCThGc$default (Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;Ljava/lang/String;Ljava/util/Map;ZLcom/geoknoesis/kastor/rdf/Dataset;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAuxiliaryGraphs ()Ljava/util/Map;
+	public final fun getDiscoverShapesGraphFromData ()Z
+	public final fun getShapesGraphNamedGraph-UX4i1w8 ()Ljava/lang/String;
+	public final fun getValidationDataset ()Lcom/geoknoesis/kastor/rdf/Dataset;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/EnginePreference : java/lang/Enum {
+	public static final field AUTO Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public static final field BRIDGE_FIRST Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public static final field NATIVE_FIRST Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ImportConfig {
+	public fun <init> ()V
+	public fun <init> (ZIZ)V
+	public synthetic fun <init> (ZIZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()I
+	public final fun component3 ()Z
+	public final fun copy (ZIZ)Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;ZIZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllowImportFetch ()Z
+	public final fun getMaxImportDepth ()I
+	public final fun getResolveOwlImports ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/PerformanceProfile : java/lang/Enum {
+	public static final field FAST Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public static final field MEDIUM Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public static final field THOROUGH Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ProviderNotFoundException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun getProviderId ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/RegistryStatistics {
+	public fun <init> (ILjava/util/List;Ljava/util/List;Ljava/util/Map;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/Map;
+	public final fun copy (ILjava/util/List;Ljava/util/List;Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;ILjava/util/List;Ljava/util/List;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getProvidersByProfile ()Ljava/util/Map;
+	public final fun getSupportedProfiles ()Ljava/util/List;
+	public final fun getTotalProviders ()I
+	public final fun getUnsupportedProfiles ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShaclConstraint {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Ljava/lang/String;Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraintType ()Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getParameters ()Ljava/util/Map;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getSeverity ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShaclShape {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLjava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLjava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Ljava/util/List;
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLjava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclShape;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ShaclShape;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLjava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclShape;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClosed ()Z
+	public final fun getConstraints ()Ljava/util/List;
+	public final fun getDeactivated ()Z
+	public final fun getIgnoredProperties ()Ljava/util/List;
+	public final fun getShapeUri ()Ljava/lang/String;
+	public final fun getTargetClass ()Ljava/lang/String;
+	public final fun getTargetNode ()Ljava/lang/String;
+	public final fun getTargetObjectsOf ()Ljava/lang/String;
+	public final fun getTargetSubjectsOf ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShaclValidation {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidation;
+	public final fun fastValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun getBestProvider (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
+	public final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public final fun largeGraphValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun memoryConstrainedValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun strictValidator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun supportedProfiles ()Ljava/util/List;
+	public final fun validator ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun validator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun validatorProviders ()Ljava/util/List;
+}
+
+public class com/geoknoesis/kastor/rdf/shacl/ShaclValidationException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/shacl/ShaclValidator {
+	public abstract fun conforms (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public abstract fun getValidationStatistics (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public abstract fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public abstract fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public abstract fun validateConstraints (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateDataset (Lcom/geoknoesis/kastor/rdf/Dataset;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public abstract fun validateResource (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateViolationsFlow (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShaclValidator$DefaultImpls {
+	public static fun validateDataset (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;Lcom/geoknoesis/kastor/rdf/Dataset;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public static fun validateViolationsFlow (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lkotlinx/coroutines/flow/Flow;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider {
+	public abstract fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public abstract fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public abstract fun getName ()Ljava/lang/String;
+	public abstract fun getSupportedProfiles ()Ljava/util/List;
+	public abstract fun getType ()Ljava/lang/String;
+	public abstract fun getVersion ()Ljava/lang/String;
+	public abstract fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public fun priority ()I
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider$DefaultImpls {
+	public static fun priority (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;)I
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/shacl/ShapeCacheControl {
+	public abstract fun clearCache ()V
+	public abstract fun getCacheStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/ShapeCacheStatistics;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShapeCacheStatistics {
+	public fun <init> (IIJJJ)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun copy (IIJJJ)Lcom/geoknoesis/kastor/rdf/shacl/ShapeCacheStatistics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ShapeCacheStatistics;IIJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ShapeCacheStatistics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEntries ()I
+	public final fun getEvictions ()J
+	public final fun getHits ()J
+	public final fun getMisses ()J
+	public final fun getVersionTags ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShapeCompileException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShapesDigestMode : java/lang/Enum {
+	public static final field SHAPES_RDF_CANONICAL_DIGEST Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+	public static final field SHAPES_STRUCTURAL_DIGEST_V1 Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/ShapesDigestMode;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShapesGraphAccessException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ShapesGraphNotFoundException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/StaleShapesGraphTagException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy : java/lang/Enum {
+	public static final field BATCH_FALLBACK Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+	public static final field SKIP_WITH_WARNING Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension {
+	public fun <init> ()V
+	public fun <init> (ILcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;)V
+	public synthetic fun <init> (ILcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+	public final fun copy (ILcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;)Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;ILcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxPerFocusBuffer ()I
+	public final fun getStreamingBufferPolicy ()Lcom/geoknoesis/kastor/rdf/shacl/StreamingBufferPolicy;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/UnsupportedProfileException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationConfig {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig$Companion;
+	public fun <init> ()V
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJ)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()Z
+	public final fun component13 ()Ljava/util/Map;
+	public final fun component14 ()Ljava/lang/String;
+	public final fun component15 ()Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public final fun component16 ()I
+	public final fun component17 ()Lcom/geoknoesis/kastor/rdf/shacl/CacheConfig;
+	public final fun component18 ()Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;
+	public final fun component19 ()Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;
+	public final fun component2 ()Z
+	public final fun component20 ()Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;
+	public final fun component21 ()Z
+	public final fun component22 ()J
+	public final fun component3 ()Z
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/time/Duration;
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()I
+	public final fun component9 ()Z
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJ)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllowTripleTermsInShapeParameters ()Z
+	public final fun getBatchSize ()I
+	public final fun getCache ()Lcom/geoknoesis/kastor/rdf/shacl/CacheConfig;
+	public final fun getCustomParameters ()Ljava/util/Map;
+	public final fun getDataset ()Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;
+	public final fun getEnableExplanations ()Z
+	public final fun getEnableSuggestions ()Z
+	public final fun getEnginePreference ()Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;
+	public final fun getImports ()Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;
+	public final fun getIncludeWarnings ()Z
+	public final fun getMaxCombinedGraphTriples ()J
+	public final fun getMaxRecursionDepth ()I
+	public final fun getMaxViolations ()I
+	public final fun getParallelValidation ()Z
+	public final fun getProfile ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public final fun getProviderId ()Ljava/lang/String;
+	public final fun getStreaming ()Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;
+	public final fun getStreamingMode ()Z
+	public final fun getStrictMode ()Z
+	public final fun getTimeout ()Ljava/time/Duration;
+	public final fun getValidateClosedShapes ()Z
+	public final fun getValidateInactiveShapes ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationConfig$Companion {
+	public final fun default ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun forFastValidation ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun forLargeGraphs ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun forMemoryConstrained ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun rdf4jUntrustedInputLimits (JI)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public static synthetic fun rdf4jUntrustedInputLimits$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig$Companion;JIILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun shaclCore ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun shaclSparql ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun strict ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationExplanation {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationExplanation;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationExplanation;Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationExplanation;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExamples ()Ljava/util/List;
+	public final fun getReasoning ()Ljava/lang/String;
+	public final fun getReferences ()Ljava/util/List;
+	public final fun getViolation ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationProfile : java/lang/Enum {
+	public static final field COMPREHENSIVE Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field CUSTOM Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field PERMISSIVE Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field SHACL_CORE Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field SHACL_DASH Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field SHACL_JS Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field SHACL_PY Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field SHACL_SPARQL Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static final field STRICT Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationReport {
+	public fun <init> (ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;Ljava/time/Duration;IILjava/util/Map;Ljava/util/Map;Z)V
+	public synthetic fun <init> (ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;Ljava/time/Duration;IILjava/util/Map;Ljava/util/Map;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component10 ()Z
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public final fun component5 ()Ljava/time/Duration;
+	public final fun component6 ()I
+	public final fun component7 ()I
+	public final fun component8 ()Ljava/util/Map;
+	public final fun component9 ()Ljava/util/Map;
+	public final fun copy (ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;Ljava/time/Duration;IILjava/util/Map;Ljava/util/Map;Z)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;Ljava/time/Duration;IILjava/util/Map;Ljava/util/Map;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraintViolations ()Ljava/util/Map;
+	public final fun getShapeViolations ()Ljava/util/Map;
+	public final fun getStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public final fun getSummary ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationSummary;
+	public final fun getValidatedConstraints ()I
+	public final fun getValidatedResources ()I
+	public final fun getValidationTime ()Ljava/time/Duration;
+	public final fun getViolations ()Ljava/util/List;
+	public final fun getViolationsBySeverity (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;)Ljava/util/List;
+	public final fun getViolationsForConstraint (Lcom/geoknoesis/kastor/rdf/shacl/ConstraintType;)Ljava/util/List;
+	public final fun getViolationsForResource (Lcom/geoknoesis/kastor/rdf/RdfResource;)Ljava/util/List;
+	public final fun getViolationsForShape (Ljava/lang/String;)Ljava/util/List;
+	public final fun getViolationsTruncated ()Z
+	public final fun getWarnings ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isValid ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationReportNormalizationKt {
+	public static final fun paritySortKey (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;)Ljava/lang/String;
+	public static final fun sortedParityViolationKeys (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;)Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationReportRdfKt {
+	public static final fun toShaclValidationReportRdf (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public static synthetic fun toShaclValidationReportRdf$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Lcom/geoknoesis/kastor/rdf/RdfResource;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationStatistics {
+	public fun <init> (IIIIILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;Ljava/lang/Long;)V
+	public synthetic fun <init> (IIIIILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component10 ()Ljava/lang/Long;
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()I
+	public final fun component6 ()Ljava/util/Map;
+	public final fun component7 ()Ljava/util/Map;
+	public final fun component8 ()Ljava/util/Map;
+	public final fun component9 ()Ljava/time/Duration;
+	public final fun copy (IIIIILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;Ljava/lang/Long;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;IIIIILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;Ljava/lang/Long;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAverageValidationTimePerResource ()Ljava/time/Duration;
+	public final fun getConstraintsByType ()Ljava/util/Map;
+	public final fun getMemoryUsage ()Ljava/lang/Long;
+	public final fun getShapesProcessed ()I
+	public final fun getTotalConstraints ()I
+	public final fun getTotalResources ()I
+	public final fun getValidatedConstraints ()I
+	public final fun getValidatedResources ()I
+	public final fun getViolationsByType ()Ljava/util/Map;
+	public final fun getWarningsByType ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationSuggestion {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/lang/String;D)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/lang/String;DILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()D
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/lang/String;D)Lcom/geoknoesis/kastor/rdf/shacl/ValidationSuggestion;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationSuggestion;Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Ljava/lang/String;Ljava/lang/String;DILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationSuggestion;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCodeExample ()Ljava/lang/String;
+	public final fun getConfidence ()D
+	public final fun getSuggestedAction ()Ljava/lang/String;
+	public final fun getViolation ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationSummary {
+	public fun <init> (ZILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;II)V
+	public final fun component1 ()Z
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/Map;
+	public final fun component4 ()Ljava/util/Map;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun component6 ()Ljava/time/Duration;
+	public final fun component7 ()I
+	public final fun component8 ()I
+	public final fun copy (ZILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;II)Lcom/geoknoesis/kastor/rdf/shacl/ValidationSummary;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationSummary;ZILjava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/time/Duration;IIILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationSummary;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getTotalViolations ()I
+	public final fun getValidatedConstraints ()I
+	public final fun getValidatedResources ()I
+	public final fun getValidationTime ()Ljava/time/Duration;
+	public final fun getViolationsByConstraint ()Ljava/util/Map;
+	public final fun getViolationsBySeverity ()Ljava/util/Map;
+	public final fun getViolationsByShape ()Ljava/util/Map;
+	public fun hashCode ()I
+	public final fun isValid ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ljava/util/Map;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraint ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public final fun getContext ()Ljava/util/Map;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getExplanation ()Ljava/lang/String;
+	public final fun getFocusNode ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getPath ()Ljava/util/List;
+	public final fun getResultSeverityIri ()Ljava/lang/String;
+	public final fun getSeverity ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public final fun getShapeUri ()Ljava/lang/String;
+	public final fun getSuggestedFix ()Ljava/lang/String;
+	public final fun getValue ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getViolationCode ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationWarning {
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationWarning;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationWarning;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationWarning;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraint ()Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;
+	public final fun getExplanation ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getResource ()Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public final fun getShapeUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities {
+	public fun <init> (ZZZZZZZZZZZJLcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;)V
+	public synthetic fun <init> (ZZZZZZZZZZZJLcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()J
+	public final fun component13 ()Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Z
+	public final fun component9 ()Z
+	public final fun copy (ZZZZZZZZZZZJLcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;ZZZZZZZZZZZJLcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxGraphSize ()J
+	public final fun getPerformanceProfile ()Lcom/geoknoesis/kastor/rdf/shacl/PerformanceProfile;
+	public final fun getSupportsCustomConstraints ()Z
+	public final fun getSupportsIncrementalValidation ()Z
+	public final fun getSupportsParallelValidation ()Z
+	public final fun getSupportsRdf12TripleTermsInData ()Z
+	public final fun getSupportsRdf12TripleTermsInShapeParameters ()Z
+	public final fun getSupportsShaclCore ()Z
+	public final fun getSupportsShaclDash ()Z
+	public final fun getSupportsShaclJs ()Z
+	public final fun getSupportsShaclPy ()Z
+	public final fun getSupportsShaclSparql ()Z
+	public final fun getSupportsStreamingValidation ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidatorRegistry {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/ValidatorRegistry;
+	public final fun clear ()V
+	public final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public final fun discoverProviders ()Ljava/util/List;
+	public final fun getBestProviderForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;
+	public final fun getProviders ()Ljava/util/List;
+	public final fun getProvidersForProfile (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Ljava/util/List;
+	public final fun getRegistryStatistics ()Lcom/geoknoesis/kastor/rdf/shacl/RegistryStatistics;
+	public final fun getSupportedProfiles ()Ljava/util/List;
+	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public final fun register (Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ViolationSeverity : java/lang/Enum {
+	public static final field DEBUG Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static final field ERROR Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static final field INFO Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static final field TRACE Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static final field VIOLATION Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static final field WARNING Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/native/ShaclTermEqualityKt {
+	public static final fun isLexicallyFalse (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Z
+	public static final fun isLexicallyTrue (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Z
+	public static final fun literalLexicalString (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/lang/String;
+	public static final fun shaclRdfTermEquals (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Z
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/providers/MemoryShaclValidator : com/geoknoesis/kastor/rdf/shacl/ShaclValidator {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)V
+	public fun conforms (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public fun getValidationStatistics (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationStatistics;
+	public fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateConstraints (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateDataset (Lcom/geoknoesis/kastor/rdf/Dataset;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateResource (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;
+	public fun validateViolationsFlow (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/providers/MemoryShaclValidatorProvider : com/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider {
+	public fun <init> ()V
+	public fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public fun getName ()Ljava/lang/String;
+	public fun getSupportedProfiles ()Ljava/util/List;
+	public fun getType ()Ljava/lang/String;
+	public fun getVersion ()Ljava/lang/String;
+	public fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public fun priority ()I
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/providers/NativeShaclValidatorProvider : com/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider {
+	public fun <init> ()V
+	public fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public fun getName ()Ljava/lang/String;
+	public fun getSupportedProfiles ()Ljava/util/List;
+	public fun getType ()Ljava/lang/String;
+	public fun getVersion ()Ljava/lang/String;
+	public fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public fun priority ()I
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/providers/ValidationException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+

@@ -1,0 +1,83 @@
+name: Release readiness
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staged-consumer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      KASTOR_SKIP_EMBEDDING_TESTS: "1"
+      KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the report gate
+        run: python scripts/test_check_test_results.py
+      - name: Test the performance report gate
+        run: python scripts/test_check_performance.py
+      - name: Test the staged publication gate
+        run: python scripts/test_check_staged_publications.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Checkout pinned RDF corpus
+        uses: actions/checkout@v4
+        with:
+          repository: w3c/rdf-tests
+          ref: 369a90d1a60c021b746df2e411da0ff36258a758
+          path: rdf/conformance/test-data
+      - name: Checkout pinned SHACL corpus
+        uses: actions/checkout@v4
+        with:
+          repository: w3c/data-shapes
+          ref: 94d8bc2bd4fc4fdc6f2964d1ec4a892329e05f06
+          path: build/upstream-shacl
+      - name: Install SHACL corpus
+        shell: bash
+        run: |
+          mkdir -p rdf/shacl/validation/test-data
+          cp -R build/upstream-shacl/shacl12-test-suite rdf/shacl/validation/test-data/w3c-shacl12
+      - name: Check and stage publications
+        run: ./gradlew check :rdf:conformance:test conformanceSmokeTest publishAllPublicationsToStagingRepository --no-daemon
+        shell: bash
+      - name: Inspect metadata and documentation jars
+        run: python scripts/check-staged-publications.py
+      - name: Compile and execute independent Maven consumer
+        run: ./gradlew -p release-smoke run --refresh-dependencies --no-daemon
+        shell: bash
+      - name: Consume published plugin and exercise cooperating KSP rounds
+        run: ./gradlew -p release-plugin-smoke run --refresh-dependencies --configuration-cache --configuration-cache-problems=fail --no-daemon
+        shell: bash
+      - name: Verify plugin configuration cache reuse
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew -p release-plugin-smoke run --configuration-cache --configuration-cache-problems=fail --no-daemon | tee plugin-cache.log
+          grep -q 'Reusing configuration cache' plugin-cache.log
+      - name: Verify local test signing and tamper rejection
+        run: python scripts/verify-local-signing.py
+      - name: Audit pinned dependency versions
+        run: python scripts/audit-dependencies.py
+      - name: Verify executed test counts
+        run: |
+          python scripts/check-test-results.py build/modules --minimum 2800
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1800
+      - name: Retain staged artifacts and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-release-${{ matrix.os }}
+          path: |
+            build/release-repository/
+            build/modules/**/reports/
+            build/review/

@@ -25,7 +25,7 @@ import com.squareup.kotlinpoet.KModifier.DATA
  * A companion [DataClassFactoryGenerator] produces a separate factory file
  * that performs the eager RDF load and registers the factory in OntoMapper.
  */
-class DataClassGenerator(
+public class DataClassGenerator(
     private val logger: KSPLogger,
     private val suffix: String,
     private val nestedMode: NestedMode,
@@ -33,7 +33,7 @@ class DataClassGenerator(
     private val validationAnnotations: ValidationAnnotations,
 ) {
 
-    fun generateDataClasses(model: OntologyModel, packageName: String): Map<String, FileSpec> =
+    public fun generateDataClasses(model: OntologyModel, packageName: String): Map<String, FileSpec> =
         model.shapes
             .sortedBy { it.targetClass }
             .associate { shape ->

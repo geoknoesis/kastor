@@ -40,11 +40,11 @@ internal object TypeMapper {
             // so KotlinPoet does not emit an invalid default-package import (e.g. `import InformationItem`).
             property.enumName != null -> applyCardinality(ClassName(objectPackage, property.enumName), property)
             property.targetClass != null -> {
-                val baseName = NamingUtils.extractInterfaceName(property.targetClass!!)
+                val baseName = NamingUtils.domainName(property.targetClass!!, context)
                 if (knownTypes != null && nestedMode != NestedMode.IRI_ONLY && baseName !in knownTypes) {
                     applyCardinality(String::class.asTypeName(), property) // unshaped sh:class target -> IRI
                 } else {
-                    mapObjectProperty(property, nestedMode, dataClassSuffix, objectPackage)
+                    mapObjectProperty(property, nestedMode, dataClassSuffix, objectPackage, context)
                 }
             }
             else -> mapLiteralProperty(property)
@@ -56,8 +56,9 @@ internal object TypeMapper {
         nestedMode: NestedMode,
         dataClassSuffix: String,
         objectPackage: String,
+        context: JsonLdContext,
     ): TypeName {
-        val baseName = NamingUtils.extractInterfaceName(property.targetClass!!)
+        val baseName = NamingUtils.domainName(property.targetClass!!, context)
         val targetType: TypeName = when (nestedMode) {
             NestedMode.INTERFACE  -> ClassName(objectPackage, baseName)
             NestedMode.DATA_CLASS -> ClassName(objectPackage, "$baseName$dataClassSuffix")

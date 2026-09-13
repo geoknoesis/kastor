@@ -9,7 +9,7 @@ import com.google.devtools.ksp.validate
  * KSP processor for generating domain interfaces, wrappers, and instance DSL from SHACL / JSON-LD,
  * driven by `@Rdf` on classes or files.
  */
-class OntologyProcessor(
+public class OntologyProcessor(
   private val codeGenerator: CodeGenerator,
   private val logger: KSPLogger,
   private val options: Map<String, String>,
@@ -106,7 +106,7 @@ class OntologyProcessor(
   }
 }
 
-class OntologyProcessorProvider : SymbolProcessorProvider {
+public class OntologyProcessorProvider : SymbolProcessorProvider {
   override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
     OntologyProcessor(
       codeGenerator = environment.codeGenerator,

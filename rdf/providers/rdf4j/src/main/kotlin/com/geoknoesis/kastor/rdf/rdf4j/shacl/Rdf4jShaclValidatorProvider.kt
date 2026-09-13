@@ -8,7 +8,7 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationProfile
 import com.geoknoesis.kastor.rdf.shacl.ValidatorCapabilities
 
 /**
- * SPI provider for Eclipse RDF4J [ShaclSail] (`getType()` = `rdf4j`).
+ * SPI provider for Eclipse RDF4J `ShaclSail` (`getType()` = `rdf4j`).
  *
  * Requires this module (`:rdf:rdf4j`) on the classpath together with `:rdf:shacl-validation`.
  */

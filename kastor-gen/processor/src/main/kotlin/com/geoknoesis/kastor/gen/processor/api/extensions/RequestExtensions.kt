@@ -33,7 +33,6 @@ internal fun AnnotationParser.InstanceDslGenerationRequest.toOntologyModel(reade
  *
  * @throws IllegalArgumentException if dslName or packageName are invalid
  *
- * @sample com.example.CreateInstanceDslRequest
  *
  * @see InstanceDslRequest
  * @see InstanceDslRequestBuilder
@@ -62,13 +61,13 @@ public class InstanceDslRequestBuilder(
     private val dslName: String,
     private val packageName: String
 ) {
-    lateinit var ontologyModel: OntologyModel
-    var options: DslGenerationOptions = DslGenerationOptions()
+    public lateinit var ontologyModel: OntologyModel
+    public var options: DslGenerationOptions = DslGenerationOptions()
     
     /**
      * Sets the ontology model directly.
      */
-    fun ontologyModel(model: OntologyModel) {
+    public fun ontologyModel(model: OntologyModel) {
         this.ontologyModel = model
     }
     
@@ -80,7 +79,7 @@ public class InstanceDslRequestBuilder(
      * @param contextPath Optional path to JSON-LD context file (relative to resources)
      * @param logger KSP logger for file reading operations
      */
-    fun fromOntology(shaclPath: String, contextPath: String? = null, logger: KSPLogger) {
+    public fun fromOntology(shaclPath: String, contextPath: String? = null, logger: KSPLogger) {
         val reader = OntologyFileReader(logger)
         this.ontologyModel = reader.loadOntologyModel(shaclPath, contextPath)
     }
@@ -88,21 +87,21 @@ public class InstanceDslRequestBuilder(
     /**
      * Configures generation options using a DSL builder.
      */
-    fun options(block: DslGenerationOptionsBuilder.() -> Unit) {
+    public fun options(block: DslGenerationOptionsBuilder.() -> Unit) {
         options = dslOptions(block)
     }
     
     /**
      * Alternative method name for configuring options (for better fluency).
      */
-    fun withOptions(block: DslGenerationOptionsBuilder.() -> Unit) {
+    public fun withOptions(block: DslGenerationOptionsBuilder.() -> Unit) {
         options(block)
     }
     
     /**
      * Builds the InstanceDslRequest.
      */
-    fun build(): InstanceDslRequest {
+    public fun build(): InstanceDslRequest {
         return InstanceDslRequest(
             dslName = dslName,
             ontologyModel = ontologyModel,
@@ -126,7 +125,6 @@ public class InstanceDslRequestBuilder(
  *
  * @throws IllegalArgumentException if dslName or packageName are invalid
  *
- * @sample com.example.CreateDslRequest
  *
  * @see InstanceDslRequest
  * @see InstanceDslRequestBuilder
@@ -163,7 +161,6 @@ public fun dsl(
  *
  * @throws IllegalArgumentException if required properties are not set
  *
- * @sample com.example.CreateDslRequestFluent
  *
  * @see FluentDslBuilder
  * @see InstanceDslRequest
@@ -190,21 +187,21 @@ public class FluentDslBuilder {
     /**
      * Sets the DSL name.
      */
-    fun name(dslName: String) {
+    public fun name(dslName: String) {
         this.dslName = dslName
     }
     
     /**
      * Sets the target package name.
      */
-    fun packageName(packageName: String) {
+    public fun packageName(packageName: String) {
         this.packageName = packageName
     }
     
     /**
      * Sets the ontology model directly.
      */
-    fun ontologyModel(model: OntologyModel) {
+    public fun ontologyModel(model: OntologyModel) {
         this.ontologyModel = model
     }
     
@@ -216,7 +213,7 @@ public class FluentDslBuilder {
      * @param contextPath Optional path to JSON-LD context file (relative to resources)
      * @param logger KSP logger for file reading operations
      */
-    fun fromOntology(shaclPath: String, contextPath: String? = null, logger: KSPLogger) {
+    public fun fromOntology(shaclPath: String, contextPath: String? = null, logger: KSPLogger) {
         val reader = OntologyFileReader(logger)
         this.ontologyModel = reader.loadOntologyModel(shaclPath, contextPath)
     }
@@ -224,14 +221,14 @@ public class FluentDslBuilder {
     /**
      * Configures generation options using a DSL builder.
      */
-    fun withOptions(block: DslGenerationOptionsBuilder.() -> Unit) {
+    public fun withOptions(block: DslGenerationOptionsBuilder.() -> Unit) {
         options = dslOptions(block)
     }
     
     /**
      * Builds the InstanceDslRequest.
      */
-    fun build(): InstanceDslRequest {
+    public fun build(): InstanceDslRequest {
         requireNotNull(dslName) { "dslName must be set using name()" }
         requireNotNull(packageName) { "packageName must be set using packageName()" }
         requireNotNull(ontologyModel) { "ontologyModel must be set using ontologyModel() or fromOntology()" }

@@ -10,7 +10,7 @@ plugins {
 // error because the legacy modules still have unannotated public API.
 tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin").configure {
     compilerOptions {
-        freeCompilerArgs.add("-Xexplicit-api=warning")
+        freeCompilerArgs.add("-Xexplicit-api=strict")
     }
 }
 

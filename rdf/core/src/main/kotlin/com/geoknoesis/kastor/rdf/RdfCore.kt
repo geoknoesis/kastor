@@ -78,9 +78,11 @@ private fun extractParseErrorContext(
  * and `graph()` DSL are stable and part of the public API.
  */
 object Rdf {
-    private val urlIoExecutor: Executor = Executors.newCachedThreadPool { runnable ->
-        Thread(runnable, "kastor-url-io").apply { isDaemon = true }
-    }
+    private val urlIoExecutor: Executor = java.util.concurrent.ThreadPoolExecutor(
+        4, 4, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.ArrayBlockingQueue(64),
+        java.util.concurrent.ThreadFactory { runnable -> Thread(runnable, "kastor-url-io").apply { isDaemon = true } },
+        java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+    ).apply { allowCoreThreadTimeOut(true) }
     
     /**
      * Default location for persistent repositories.
@@ -379,7 +381,33 @@ object Rdf {
         format: String = "TURTLE",
         executor: Executor = urlIoExecutor
     ): CompletableFuture<MutableRdfGraph> {
-        return CompletableFuture.supplyAsync({ parseFromUrl(url, format) }, executor)
+        val active = java.util.concurrent.atomic.AtomicReference<java.net.URLConnection?>()
+        val input = java.util.concurrent.atomic.AtomicReference<java.io.InputStream?>()
+        val result = object : CompletableFuture<MutableRdfGraph>() {
+            override fun cancel(mayInterruptIfRunning: Boolean): Boolean {
+                val cancelled = super.cancel(mayInterruptIfRunning)
+                if (cancelled) {
+                    (active.get() as? java.net.HttpURLConnection)?.disconnect()
+                    runCatching { input.get()?.close() }
+                }
+                return cancelled
+            }
+        }
+        try { executor.execute {
+            if (!result.isCancelled) {
+                try {
+                    val connection = java.net.URL(url).openConnection()
+                    active.set(connection)
+                    connection.connectTimeout = 30_000; connection.readTimeout = 30_000
+                    if (!result.isCancelled) connection.getInputStream().use { stream ->
+                        input.set(stream)
+                        if (!result.isCancelled) result.complete(parseFromInputStream(stream, format))
+                    }
+                } catch (e: Throwable) { result.completeExceptionally(e)
+                } finally { (active.get() as? java.net.HttpURLConnection)?.disconnect(); input.set(null) }
+            }
+        } } catch (e: java.util.concurrent.RejectedExecutionException) { result.completeExceptionally(e) }
+        return result
     }
 
     /**
@@ -452,28 +480,19 @@ object Rdf {
     }
     
     /**
-     * Parse RDF data from an input stream as a sequence of triples (streaming).
-     * 
-     * This method enables memory-efficient parsing of large RDF files by returning
-     * triples as a lazy sequence rather than loading everything into memory at once.
-     * 
-     * **Memory Efficiency:**
-     * - The input stream is processed incrementally
-     * - Triples are yielded as they are parsed (lazy evaluation)
-     * - Suitable for processing large files without running out of memory
+     * Legacy sequence convenience API. Bundled providers materialize the input before returning.
+     * Use [openTripleStream] for bounded, scoped consumption and deterministic early-stop cleanup.
      * 
      * **Example:**
      * ```kotlin
-     * Rdf.parseStreaming(File("large.ttl").inputStream(), RdfFormat.TURTLE)
-     *     .chunked(1000) // Process in batches
-     *     .forEach { batch ->
-     *         repo.addTriples(batch)
-     *     }
+     * Rdf.openTripleStream(File("large.ttl").inputStream(), RdfFormat.TURTLE).use { triples ->
+     *     triples.chunked(1000).forEach { batch -> repo.addTriples(batch) }
+     * }
      * ```
      * 
      * @param inputStream The input stream containing RDF data
      * @param format The RDF format
-     * @return A sequence of RDF triples (lazy evaluation)
+     * @return A sequence over the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      */
     fun parseStreaming(inputStream: InputStream, format: String): Sequence<RdfTriple> {
@@ -506,11 +525,11 @@ object Rdf {
     }
     
     /**
-     * Parse RDF data from an input stream as a sequence of triples (streaming, type-safe version).
+     * Type-safe legacy sequence API; use [openTripleStream] for scoped streaming.
      * 
      * @param inputStream The input stream containing RDF data
      * @param format The RDF format enum value
-     * @return A sequence of RDF triples (lazy evaluation)
+     * @return A sequence over the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      */
     fun parseStreaming(inputStream: InputStream, format: RdfFormat): Sequence<RdfTriple> {
@@ -863,7 +882,7 @@ interface RdfRepository : Dataset, SparqlMutable {
      * 
      * **Error Handling Pattern:**
      * - **Technical failures** (parsing, execution) → [RdfQueryException]
-     * - **Semantic failures** (validation) → [ValidationResult] sealed class
+     * - **Semantic failures** (validation) → `ValidationResult` sealed class
      * - **Operations that should never fail** → Direct return types
      * 
      * @param query The SPARQL SELECT query to execute
@@ -1218,7 +1237,6 @@ object RdfProviderRegistry : ProviderRegistry {
      * 
      * @param providers The providers to register
      * 
-     * @sample com.example.RegisterMultipleProviders
      */
     fun registerAll(vararg providers: RdfProvider) {
         providers.forEach { register(it) }
@@ -1471,6 +1489,15 @@ interface RdfProvider {
      * @throws RdfFormatException if the format is not supported or parsing fails
      * @throws UnsupportedOperationException if the provider doesn't support parsing
      */
+    /** Explicit resource scope for parsers; the fallback materializes a graph before returning. */
+    fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
+        val rows = inputStream.use { parseGraph(it, format).getTriplesSequence().constrainOnce() }
+        return object : TripleStream {
+            override fun iterator(): Iterator<RdfTriple> = rows.iterator()
+            override fun close() = Unit
+        }
+    }
+
     fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
         // Default implementation: parse to graph, then return triples as sequence
         val graph = parseGraph(inputStream, format)

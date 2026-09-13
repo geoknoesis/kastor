@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
+import com.geoknoesis.kastor.gen.runtime.OntoMapper
+
 import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.EnumModel
@@ -16,7 +18,7 @@ import com.squareup.kotlinpoet.KModifier.OVERRIDE
 
 /**
  * Generates factory objects that eagerly load a [DataClassGenerator]-produced data class
- * from an [RdfHandle] and register themselves in [OntoMapper].
+ * from an `RdfHandle` and register themselves in [OntoMapper].
  *
  * Each generated factory file contains a single Kotlin `object`:
  * ```
@@ -28,14 +30,14 @@ import com.squareup.kotlinpoet.KModifier.OVERRIDE
  *
  * The data class file itself has zero RDF imports; all infrastructure lives here.
  */
-class DataClassFactoryGenerator(
+public class DataClassFactoryGenerator(
     private val logger: KSPLogger,
     private val suffix: String,
     private val nestedMode: NestedMode,
     private val writerGenerator: DataClassWriterGenerator? = null,
 ) {
 
-    fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> {
+    public fun generateFactories(model: OntologyModel, packageName: String): Map<String, FileSpec> {
         val enumsByName = model.enums.associateBy { it.name }
         return model.shapes
             .sortedBy { it.targetClass }

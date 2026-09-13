@@ -12,7 +12,11 @@ import java.time.Duration
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.notExists
-import kotlin.io.path.writeBytes
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeoutException
 
 /**
  * Downloads `all-MiniLM-L6-v2` ONNX assets on first use.
@@ -28,9 +32,9 @@ object ModelDownloader {
     const val MODEL_CACHE_ENV = "KASTOR_MODEL_CACHE"
 
     private const val MODEL_REL_URL =
-        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/onnx/model.onnx"
     private const val TOKENIZER_REL_URL =
-        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/tokenizer.json"
 
     /** Expected SHA-256 of `model.onnx` as distributed at calibration time. */
     const val EXPECTED_MODEL_SHA256 = "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452"
@@ -40,7 +44,7 @@ object ModelDownloader {
         "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
 
     private val httpClient: HttpClient =
-        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(60)).build()
+        HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(60)).followRedirects(HttpClient.Redirect.NORMAL).build()
 
     fun resolveCacheRoot(overrideCacheRoot: Path? = null): Path {
         if (overrideCacheRoot != null) return overrideCacheRoot.normalize()
@@ -56,49 +60,92 @@ object ModelDownloader {
     fun resolveMiniLmDir(cacheRoot: Path = resolveCacheRoot()): Path =
         cacheRoot.resolve("all-MiniLM-L6-v2")
 
-    fun ensureMiniLmFiles(cacheRoot: Path = resolveCacheRoot()): Pair<Path, Path> {
-        val dir = resolveMiniLmDir(cacheRoot)
-        if (dir.notExists()) dir.createDirectories()
+    private val inFlight = ConcurrentHashMap<Path, CompletableFuture<Pair<Path, Path>>>()
 
-        val modelPath = dir.resolve("model.onnx")
-        val tokenizerPath = dir.resolve("tokenizer.json")
+    fun ensureMiniLmFiles(cacheRoot: Path = resolveCacheRoot()): Pair<Path, Path> =
+        ensureMiniLmFiles(cacheRoot, Duration.ofMinutes(10))
 
-        ensureFile(modelPath, URI.create(MODEL_REL_URL), EXPECTED_MODEL_SHA256, "model.onnx")
-        ensureFile(
-            tokenizerPath,
-            URI.create(TOKENIZER_REL_URL),
-            EXPECTED_TOKENIZER_SHA256,
-            "tokenizer.json",
-        )
-        return modelPath to tokenizerPath
+    /** Concurrent callers share only an in-flight verification; digests are never trusted indefinitely. */
+    fun ensureMiniLmFiles(cacheRoot: Path, timeout: Duration): Pair<Path, Path> {
+        val budget = DownloadBudget(timeout)
+        val dir = resolveMiniLmDir(cacheRoot).toAbsolutePath().normalize()
+        Files.createDirectories(dir)
+        val key = dir.toRealPath()
+        val future = CompletableFuture<Pair<Path, Path>>()
+        val existing = inFlight.putIfAbsent(key, future)
+        if (existing != null) {
+            try { return existing.get(budget.remaining().toNanos(), TimeUnit.NANOSECONDS) }
+            catch (e: InterruptedException) { Thread.currentThread().interrupt(); budget.check(); throw e }
+            catch (e: TimeoutException) { throw java.net.SocketTimeoutException("Model initialization wait timed out") }
+            catch (e: ExecutionException) { throw e.cause ?: e }
+        }
+        try {
+            val result = withModelCacheLock(key, budget) {
+                val model = key.resolve("model.onnx")
+                val tokenizer = key.resolve("tokenizer.json")
+                ensureFile(model, URI.create(MODEL_REL_URL), EXPECTED_MODEL_SHA256, "model.onnx", budget)
+                ensureFile(tokenizer, URI.create(TOKENIZER_REL_URL), EXPECTED_TOKENIZER_SHA256, "tokenizer.json", budget)
+                model to tokenizer
+            }
+            future.complete(result)
+            return result
+        } catch (e: Throwable) { future.completeExceptionally(e); throw e }
+        finally { inFlight.remove(key, future) }
     }
 
-    private fun ensureFile(target: Path, uri: URI, expectedSha256: String, label: String) {
+    internal fun ensureFile(target: Path, uri: URI, expectedSha256: String, label: String, budget: DownloadBudget = DownloadBudget(Duration.ofMinutes(10))) {
+        budget.check()
         if (target.exists()) {
-            val hash = sha256Hex(target)
+            require(Files.size(target) <= 512L * 1024 * 1024) { "Cached model asset exceeds 512 MiB" }
+            val hash = sha256Hex(target, budget)
             require(hash.equals(expectedSha256, ignoreCase = true)) {
                 "SHA-256 mismatch for cached $label at $target (got $hash, expected $expectedSha256). Delete the file to re-download."
             }
             return
         }
         log.info("Downloading {} from {} …", label, uri)
-        val request = HttpRequest.newBuilder(uri).timeout(Duration.ofMinutes(10)).GET().build()
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
-        require(response.statusCode() in 200..299) { "HTTP ${response.statusCode()} downloading $label" }
-        val bytes = response.body()
-        val hash = sha256Hex(bytes)
-        require(hash.equals(expectedSha256, ignoreCase = true)) {
-            "SHA-256 mismatch for downloaded $label (got $hash, expected $expectedSha256)"
+        val request = HttpRequest.newBuilder(uri).timeout(budget.remaining()).GET().build()
+        val response = try { httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream()) }
+            catch (e: InterruptedException) { Thread.currentThread().interrupt(); budget.check(); throw e }
+        response.body().use { input ->
+            val owner = Thread.currentThread()
+            val watchdog = modelDownloadWatchdog.scheduleAtFixedRate({
+                if (owner.isInterrupted || budget.expired()) runCatching { input.close() }
+            }, 0, 10, TimeUnit.MILLISECONDS)
+            try {
+            require(response.statusCode() in 200..299) { "HTTP ${response.statusCode()} downloading $label" }
+            val temporary = Files.createTempFile(target.parent, ".download-", ".tmp")
+            try {
+                val digest = MessageDigest.getInstance("SHA-256")
+                var count = 0L
+                Files.newOutputStream(temporary).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        budget.check()
+                        val n = input.read(buffer)
+                        budget.check()
+                        if (n < 0) break
+                        count += n
+                        require(count <= 512L * 1024 * 1024) { "Model asset exceeds 512 MiB" }
+                        digest.update(buffer, 0, n); output.write(buffer, 0, n)
+                    }
+                }
+                val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                require(hash.equals(expectedSha256, true)) { "SHA-256 mismatch downloading $label" }
+                Files.move(temporary, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            } finally { Files.deleteIfExists(temporary) }
+            } catch (e: Exception) { budget.check(); throw e }
+            finally { watchdog.cancel(false) }
         }
-        Files.write(target, bytes)
-        log.info("Wrote {} ({} bytes, sha256={})", target, bytes.size, hash)
     }
 
-    private fun sha256Hex(path: Path): String = sha256Hex(Files.readAllBytes(path))
-
-    private fun sha256Hex(bytes: ByteArray): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        val digest = md.digest(bytes)
-        return digest.joinToString("") { "%02x".format(it) }
+    private fun sha256Hex(path: Path, budget: DownloadBudget): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        Files.newInputStream(path).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) { budget.check(); val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
 }

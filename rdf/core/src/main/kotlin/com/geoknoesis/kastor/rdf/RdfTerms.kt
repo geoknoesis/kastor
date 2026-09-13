@@ -153,6 +153,8 @@ value class Iri(val value: String) : RdfResource {
     override fun toString(): String = "<$value>"
 }
 
+private val IRI_FORBIDDEN_CHARS = setOf('<', '>', '"', '{', '}', '|', '\\', '^', '`')
+
 /**
  * Validates an IRI according to RFC 3987.
  * 
@@ -179,8 +181,6 @@ value class Iri(val value: String) : RdfResource {
  * @param value The IRI string to validate
  * @return true if the IRI appears valid, false otherwise
  */
-private val IRI_FORBIDDEN_CHARS = setOf('<', '>', '"', '{', '}', '|', '\\', '^', '`')
-
 private fun isValidIri(value: String): Boolean {
     if (value.isEmpty()) return false
 
@@ -918,6 +918,13 @@ typealias BNode = BlankNode
  * managing triples within a graph.
  */
 interface RdfGraph {
+    /** Match a pattern. Indexed providers override this to avoid scanning the graph. */
+    fun find(subject: RdfResource? = null, predicate: Iri? = null, obj: RdfTerm? = null): List<RdfTriple> =
+        getTriplesSequence().filter {
+            (subject == null || it.subject == subject) && (predicate == null || it.predicate == predicate) &&
+                (obj == null || it.obj == obj)
+        }.toList()
+
     /**
      * Checks if a triple exists in the graph.
      * 

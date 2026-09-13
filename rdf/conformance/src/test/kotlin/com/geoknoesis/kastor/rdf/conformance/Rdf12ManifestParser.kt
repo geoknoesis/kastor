@@ -209,7 +209,12 @@ object Rdf12ManifestParser {
             result = result,
             approved = approved,
             comment = comment,
-            assumedBaseIri = assumedBase,
+            // The manifest supplies a document directory. Relative RDF terms resolve
+            // against the action document URL, including its filename and fragment.
+            assumedBaseIri = assumedBase?.let { base ->
+                val relative = manifest.parent.relativize(action).joinToString("/") { it.toString() }
+                java.net.URI(base).resolve(relative).toString()
+            } ?: actionUri,
         )
     }
 

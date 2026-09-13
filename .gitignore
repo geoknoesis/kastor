@@ -704,3 +704,4 @@ replay_pid*.log
 # and QualityChecker tests failed. Re-include them.
 !**/src/test/resources/test-ontologies/
 !**/src/test/resources/test-ontologies/**
+/.kotlin/

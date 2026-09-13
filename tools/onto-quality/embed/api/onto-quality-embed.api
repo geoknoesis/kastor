@@ -1,0 +1,105 @@
+public abstract interface class com/geoknoesis/kastor/ontoquality/embed/EmbeddingModel {
+	public abstract fun embed (Ljava/util/List;)Ljava/util/List;
+	public abstract fun getDimension ()I
+	public abstract fun getMaxTokens ()I
+	public abstract fun getName ()Ljava/lang/String;
+	public abstract fun getTokenizerDescription ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/EnrichmentVocabulary {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/embed/EnrichmentVocabulary;
+	public static final field NS Ljava/lang/String;
+	public final fun getEnrichment-tqZU9bw ()Ljava/lang/String;
+	public final fun getEntitiesProcessed-tqZU9bw ()Ljava/lang/String;
+	public final fun getLabelDefinitionDriftScore-tqZU9bw ()Ljava/lang/String;
+	public final fun getModel-tqZU9bw ()Ljava/lang/String;
+	public final fun getModelHash-tqZU9bw ()Ljava/lang/String;
+	public final fun getPairsAboveThreshold-tqZU9bw ()Ljava/lang/String;
+	public final fun getSemanticallyCloseTo-tqZU9bw ()Ljava/lang/String;
+	public final fun getThreshold-tqZU9bw ()Ljava/lang/String;
+	public final fun getTimestamp-tqZU9bw ()Ljava/lang/String;
+	public final fun getTokenizer-tqZU9bw ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/LabelExtractor {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;
+	public final fun extractLabelAndDefinitionTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)Ljava/util/List;
+	public static synthetic fun extractLabelAndDefinitionTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/List;
+	public final fun extractLabelTexts (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)Ljava/util/Map;
+	public static synthetic fun extractLabelTexts$default (Lcom/geoknoesis/kastor/ontoquality/embed/LabelExtractor;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)Ljava/util/Map;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/ModelDownloader {
+	public static final field EXPECTED_MODEL_SHA256 Ljava/lang/String;
+	public static final field EXPECTED_TOKENIZER_SHA256 Ljava/lang/String;
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/embed/ModelDownloader;
+	public static final field MODEL_CACHE_ENV Ljava/lang/String;
+	public static final field MODEL_CACHE_PROPERTY Ljava/lang/String;
+	public final fun ensureMiniLmFiles (Ljava/nio/file/Path;)Lkotlin/Pair;
+	public final fun ensureMiniLmFiles (Ljava/nio/file/Path;Ljava/time/Duration;)Lkotlin/Pair;
+	public static synthetic fun ensureMiniLmFiles$default (Lcom/geoknoesis/kastor/ontoquality/embed/ModelDownloader;Ljava/nio/file/Path;ILjava/lang/Object;)Lkotlin/Pair;
+	public final fun resolveCacheRoot (Ljava/nio/file/Path;)Ljava/nio/file/Path;
+	public static synthetic fun resolveCacheRoot$default (Lcom/geoknoesis/kastor/ontoquality/embed/ModelDownloader;Ljava/nio/file/Path;ILjava/lang/Object;)Ljava/nio/file/Path;
+	public final fun resolveMiniLmDir (Ljava/nio/file/Path;)Ljava/nio/file/Path;
+	public static synthetic fun resolveMiniLmDir$default (Lcom/geoknoesis/kastor/ontoquality/embed/ModelDownloader;Ljava/nio/file/Path;ILjava/lang/Object;)Ljava/nio/file/Path;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel : com/geoknoesis/kastor/ontoquality/embed/EmbeddingModel, java/lang/AutoCloseable {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;
+	public static final field MODEL_ID_CUSTOM Ljava/lang/String;
+	public static final field MODEL_ID_MINILM Ljava/lang/String;
+	public fun close ()V
+	public fun embed (Ljava/util/List;)Ljava/util/List;
+	public fun getDimension ()I
+	public fun getMaxTokens ()I
+	public fun getName ()Ljava/lang/String;
+	public final fun getOnnxModelPath ()Ljava/nio/file/Path;
+	public fun getTokenizerDescription ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion {
+	public final fun fromCliOptions (Ljava/lang/String;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/Integer;ILjava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public static synthetic fun fromCliOptions$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/lang/String;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/Integer;ILjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public final fun fromLocalFiles (Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/String;IILjava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public static synthetic fun fromLocalFiles$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/String;IILjava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public final fun fromMiniLm (Ljava/nio/file/Path;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public static synthetic fun fromMiniLm$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/nio/file/Path;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher : java/lang/AutoCloseable {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/embed/SemanticEnricher$Companion;
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;D)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/embed/EmbeddingModel;DLcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;)V
+	public fun close ()V
+	public final fun enrich (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun enrichmentOnly (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher$Companion {
+	public final fun default ()Lcom/geoknoesis/kastor/ontoquality/embed/SemanticEnricher;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SimilarityIndex {
+	public fun <init> (Ljava/util/Map;)V
+	public final fun pairsAboveThreshold (D)Lkotlin/sequences/Sequence;
+	public final fun pairsAboveThreshold (DLcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;)Lkotlin/sequences/Sequence;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits {
+	public fun <init> ()V
+	public fun <init> (JILjava/time/Duration;)V
+	public synthetic fun <init> (JILjava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/time/Duration;
+	public final fun copy (JILjava/time/Duration;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;JILjava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxDistanceEvaluations ()J
+	public final fun getMaxPairs ()I
+	public final fun getTimeout ()Ljava/time/Duration;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

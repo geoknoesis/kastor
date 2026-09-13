@@ -4,7 +4,11 @@ plugins {
   id("maven-publish")
 }
 
+// Upstream LZ4 relocated; exclude the old capability to avoid a duplicate provider.
+configurations.configureEach { exclude(group = "org.lz4", module = "lz4-java") }
+
 dependencies {
+  implementation("at.yawk.lz4:lz4-java")
   api(project(":rdf:core"))
   implementation(project(":rdf:shacl-validation"))
   implementation(libs.rdf4j.repository.api)
@@ -14,7 +18,6 @@ dependencies {
   implementation(libs.rdf4j.sail.inferencer)
   implementation(libs.rdf4j.shacl)
   implementation(libs.rdf4j.queryrender)
-  implementation(libs.rdf4j.runtime)
   implementation(libs.rdf4j.rio.jsonld)
   implementation(libs.rdf4j.rio.turtle)
   implementation(libs.rdf4j.rio.rdfxml)

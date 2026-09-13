@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.ontoquality.catalog
 
+import com.geoknoesis.kastor.ontoquality.QualityChecker
+
 object BundledCatalogs {
     val OWL_QUALITY: ShapeCatalog =
         ResourceCatalog(
@@ -64,8 +66,8 @@ object BundledCatalogs {
         )
 
     /**
-     * **Documentation / registry:** one deactivated [sh:NodeShape] per OOPS! catalogue entry P01–P41
-     * plus Kastor extension pitfalls **K01–K07** (`skos:definition`, [oqsh:pitfall]). Shapes are `sh:deactivated true`;
+     * **Documentation / registry:** one deactivated `sh:NodeShape` per OOPS! catalogue entry P01–P41
+     * plus Kastor extension pitfalls **K01–K07** (`skos:definition`, `oqsh:pitfall`). Shapes are `sh:deactivated true`;
      * they produce **no** validation results — use for portals, LLM context, or merged shape metadata.
      * Pair with [all] for active checks plus full pitfall discovery.
      */
@@ -96,7 +98,7 @@ object BundledCatalogs {
      * and RDF 1.2 hygiene — **without** [OWL_QUALITY] (often noisy for pure SKOS).
      *
      * For semantic-similarity shapes, use [SKOS_VOCABULARY_QC_WITH_EMBEDDING] after
-     * [com.geoknoesis.kastor.ontoquality.embed.SemanticEnricher].
+     * `SemanticEnricher` from the `onto-quality-embed` module.
      */
     val SKOS_VOCABULARY_QC: List<ShapeCatalog> =
         listOf(

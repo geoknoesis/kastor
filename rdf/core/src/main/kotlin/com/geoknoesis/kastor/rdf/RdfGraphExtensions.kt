@@ -119,7 +119,6 @@ fun RdfGraph.serialize(format: RdfFormat, options: SerializationOptions = Serial
  * @return The serialized RDF data as a string
  * @throws RdfFormatException if no provider supports the format or serialization fails
  * 
- * @sample com.example.SerializeWithOptionsBuilder
  */
 fun RdfGraph.serialize(
     format: RdfFormat,

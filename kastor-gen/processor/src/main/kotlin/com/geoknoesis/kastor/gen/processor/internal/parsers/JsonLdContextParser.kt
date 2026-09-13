@@ -19,7 +19,7 @@ import java.io.InputStream
  * Parser for JSON-LD context files.
  * Extracts type mappings and property definitions for code generation.
  */
-class JsonLdContextParser(private val logger: KSPLogger) {
+public class JsonLdContextParser(private val logger: KSPLogger) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -29,7 +29,7 @@ class JsonLdContextParser(private val logger: KSPLogger) {
      * @param inputStream The JSON-LD context file input stream
      * @return Parsed JSON-LD context
      */
-    fun parseContext(inputStream: InputStream): JsonLdContext {
+    public fun parseContext(inputStream: InputStream): JsonLdContext {
         val content = inputStream.bufferedReader().use { it.readText() }
         return parseContextContent(content)
     }
@@ -40,7 +40,7 @@ class JsonLdContextParser(private val logger: KSPLogger) {
      * @param content The JSON-LD context content as string
      * @return Parsed JSON-LD context
      */
-    fun parseContextContent(content: String): JsonLdContext {
+    public fun parseContextContent(content: String): JsonLdContext {
         val jsonObject = json.parseToJsonElement(content).jsonObject
         val contexts = extractContexts(jsonObject["@context"])
         if (contexts.isEmpty()) throw IllegalArgumentException("No @context found")

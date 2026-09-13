@@ -6,6 +6,7 @@ dependencies {
   api(project(":rdf:core"))
   implementation(project(":rdf:jena"))
   implementation(libs.jena.arq)
+  testImplementation(project(":rdf:rdf4j"))
 }
 
 publishing {

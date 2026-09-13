@@ -14,7 +14,7 @@ import com.google.devtools.ksp.processing.KSPLogger
 /**
  * Reads and parses ontology files (SHACL, JSON-LD context, OWL/RDFS).
  */
-class OntologyFileReader(private val logger: KSPLogger) {
+public class OntologyFileReader(private val logger: KSPLogger) {
     
     private val shaclParser = ShaclParser(logger)
     private val contextParser = JsonLdContextParser(logger)
@@ -23,7 +23,7 @@ class OntologyFileReader(private val logger: KSPLogger) {
     /**
      * Loads ontology model from SHACL and context files.
      */
-    fun loadOntologyModel(shaclPath: String, contextPath: String? = null): OntologyModel {
+    public fun loadOntologyModel(shaclPath: String, contextPath: String? = null): OntologyModel {
         logger.info("Processing SHACL file: $shaclPath")
         
         val shaclInputStream = javaClass.classLoader.getResourceAsStream(shaclPath)
@@ -50,7 +50,7 @@ class OntologyFileReader(private val logger: KSPLogger) {
     /**
      * Loads ontology classes from OWL/RDFS file.
      */
-    fun loadOntologyClasses(ontologyPath: String?): List<OntologyClass> {
+    public fun loadOntologyClasses(ontologyPath: String?): List<OntologyClass> {
         if (ontologyPath == null || ontologyPath.isEmpty()) {
             return emptyList()
         }
@@ -67,7 +67,7 @@ class OntologyFileReader(private val logger: KSPLogger) {
     /**
      * Creates empty context for cases where context is not provided.
      */
-    fun createEmptyContext(): JsonLdContext {
+    public fun createEmptyContext(): JsonLdContext {
         return JsonLdContext(
             prefixes = emptyMap(),
             propertyMappings = emptyMap(),
@@ -78,7 +78,7 @@ class OntologyFileReader(private val logger: KSPLogger) {
     /**
      * Creates ontology classes from SHACL shapes as fallback.
      */
-    fun createClassesFromShapes(shapes: List<ShaclShape>): List<OntologyClass> {
+    public fun createClassesFromShapes(shapes: List<ShaclShape>): List<OntologyClass> {
         return shapes.map { shape ->
             OntologyClass(
                 classIri = shape.targetClass,

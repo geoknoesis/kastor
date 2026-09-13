@@ -219,15 +219,15 @@ class OntologyProcessorEndToEndTest {
         val wrappers = wrapperGenerator.generateWrappers(ontologyModel, "com.example.test")
 
         // Verify generated code structure
-        val simpleCatalogInterface = interfaces["Catalog"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
+        val simpleCatalogInterface = interfaces["SimpleCatalog"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         assertNotNull(simpleCatalogInterface)
-        assertTrue(simpleCatalogInterface!!.contains("interface Catalog {"))
+        assertTrue(simpleCatalogInterface!!.contains("interface SimpleCatalog {"))
         assertTrue(simpleCatalogInterface.contains("val title: String"))
         assertTrue(simpleCatalogInterface.contains("val description: String"))
 
-        val simpleCatalogWrapper = wrappers["CatalogWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
+        val simpleCatalogWrapper = wrappers["SimpleCatalogWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         assertNotNull(simpleCatalogWrapper)
-        assertTrue(simpleCatalogWrapper!!.contains("internal class CatalogWrapper"))
+        assertTrue(simpleCatalogWrapper!!.contains("internal class SimpleCatalogWrapper"))
         assertTrue(simpleCatalogWrapper.contains("override val title: String by lazy {"))
         assertTrue(simpleCatalogWrapper.contains("override val description: String? by lazy {"))
 
@@ -245,8 +245,8 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogInterface.contains("@Rdf(iri = \"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper has proper registry entry
-        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[Catalog::class.java]"))
-        assertTrue(simpleCatalogWrapper.contains("CatalogWrapper(handle)"))
+        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[SimpleCatalog::class.java]"))
+        assertTrue(simpleCatalogWrapper.contains("SimpleCatalogWrapper(handle)"))
 
         // Verify that generated wrapper has proper known predicates
         assertTrue(simpleCatalogWrapper.contains("private val known: Set<Iri>"))

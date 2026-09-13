@@ -2,93 +2,41 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
 import org.apache.jena.rdf.model.Model
-import org.apache.jena.rdf.model.RDFNode
-import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.Property
-import org.apache.jena.rdf.model.StmtIterator
 
-/**
- * Internal Jena adapter for RdfGraph.
- * This is an implementation detail and should not be used directly.
- * Use [RdfGraph] interface instead.
- */
-internal class JenaGraph(val model: Model) : MutableRdfGraph {
-    
-    override fun addTriple(triple: RdfTriple) {
-        val subject = JenaTerms.toResource(model, triple.subject)
-        val predicate = JenaTerms.toProperty(model, triple.predicate)
-        val obj = JenaTerms.toNode(model, triple.obj)
-        model.add(subject, predicate, obj)
+internal class JenaGraph(val model: Model, private val repository: JenaRepository? = null) : MutableRdfGraph {
+    private fun <T> read(block: (Model) -> T): T = repository?.withRead { block(repository.readModel(model)) } ?: block(model)
+    private fun <T> write(block: () -> T): T = repository?.withWrite(block) ?: block()
+    override fun addTriple(triple: RdfTriple): Unit = write {
+        model.add(JenaTerms.toResource(model, triple.subject), JenaTerms.toProperty(model, triple.predicate), JenaTerms.toNode(model, triple.obj))
+        Unit
     }
-    
-    override fun addTriples(triples: Collection<RdfTriple>) {
-        triples.forEach { addTriple(it) }
+    override fun addTriples(triples: Collection<RdfTriple>): Unit = write { triples.forEach(::addTriple) }
+    override fun removeTriple(triple: RdfTriple): Boolean = write {
+        val s = JenaTerms.toResource(model, triple.subject)
+        val p = JenaTerms.toProperty(model, triple.predicate)
+        val o = JenaTerms.toNode(model, triple.obj)
+        val exists = model.contains(s, p, o)
+        if (exists) model.remove(s, p, o)
+        exists
     }
-    
-    override fun removeTriple(triple: RdfTriple): Boolean {
-        val subject = JenaTerms.toResource(model, triple.subject)
-        val predicate = JenaTerms.toProperty(model, triple.predicate)
-        val obj = JenaTerms.toNode(model, triple.obj)
-        // Model.remove(Resource, Property, RDFNode) returns the model itself, so
-        // we have to consult containsment to know whether anything was actually
-        // removed.
-        val existed = model.contains(subject, predicate, obj)
-        if (existed) {
-            model.remove(subject, predicate, obj)
-        }
-        return existed
+    override fun removeTriples(triples: Collection<RdfTriple>): Boolean = write {
+        var changed = false
+        triples.forEach { if (removeTriple(it)) changed = true }
+        changed
     }
-    
-    override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
-        var anyRemoved = false
-        triples.forEach { triple ->
-            if (removeTriple(triple)) {
-                anyRemoved = true
-            }
-        }
-        return anyRemoved
+    override fun hasTriple(triple: RdfTriple): Boolean = read {
+        it.contains(JenaTerms.toResource(it, triple.subject), JenaTerms.toProperty(it, triple.predicate), JenaTerms.toNode(it, triple.obj))
     }
-    
-    override fun hasTriple(triple: RdfTriple): Boolean {
-        val subject = JenaTerms.toResource(model, triple.subject)
-        val predicate = JenaTerms.toProperty(model, triple.predicate)
-        val obj = JenaTerms.toNode(model, triple.obj)
-        return model.contains(subject, predicate, obj)
-    }
-    
-    override fun getTriples(): List<RdfTriple> {
-        val triples = mutableListOf<RdfTriple>()
-        // StmtIterator wraps native Jena resources and must be closed even if term
-        // conversion throws mid-iteration, otherwise TDB2 file handles/locks leak.
-        val iterator: StmtIterator = model.listStatements()
+    override fun getTriples(): List<RdfTriple> = find()
+    override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> = read { view ->
+        val iterator = view.listStatements(subject?.let { JenaTerms.toResource(view, it) },
+            predicate?.let { JenaTerms.toProperty(view, it) }, obj?.let { JenaTerms.toNode(view, it) })
         try {
-            while (iterator.hasNext()) {
-                val statement = iterator.nextStatement()
-                val subject = JenaTerms.fromNode(statement.subject) as RdfResource
-                val predicate = JenaTerms.fromNode(statement.predicate) as Iri
-                val obj = JenaTerms.fromNode(statement.`object`)
-                triples.add(RdfTriple(subject, predicate, obj))
-            }
-        } finally {
-            iterator.close()
-        }
-        return triples
+            iterator.asSequence().map {
+                RdfTriple(JenaTerms.fromResource(it.subject), JenaTerms.fromProperty(it.predicate), JenaTerms.fromNode(it.`object`))
+            }.toList()
+        } finally { iterator.close() }
     }
-    
-    override fun clear(): Boolean {
-        val wasEmpty = model.isEmpty
-        model.removeAll()
-        return !wasEmpty
-    }
-    
-    override fun size(): Int = model.size().toInt()
+    override fun clear(): Boolean = write { val changed = !model.isEmpty; model.removeAll(); changed }
+    override fun size(): Int = read { Math.toIntExact(it.size()) }
 }
-
-
-
-
-
-
-
-
-

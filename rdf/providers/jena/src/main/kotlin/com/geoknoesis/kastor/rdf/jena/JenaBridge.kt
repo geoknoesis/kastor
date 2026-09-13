@@ -53,13 +53,18 @@ object JenaBridge {
             else -> {
                 // For non-Jena graphs, create a new model and copy triples
                 val model = ModelFactory.createDefaultModel()
-                rdfGraph.getTriples().forEach { triple ->
-                    val subject = JenaTerms.toResource(model, triple.subject)
-                    val predicate = JenaTerms.toProperty(model, triple.predicate)
-                    val obj = JenaTerms.toNode(model, triple.obj)
-                    model.add(subject, predicate, obj)
+                try {
+                    rdfGraph.getTriples().forEach { triple ->
+                        val subject = JenaTerms.toResource(model, triple.subject)
+                        val predicate = JenaTerms.toProperty(model, triple.predicate)
+                        val obj = JenaTerms.toNode(model, triple.obj)
+                        model.add(subject, predicate, obj)
+                    }
+                    model
+                } catch (failure: Throwable) {
+                    model.close()
+                    throw failure
                 }
-                model
             }
         }
     }
@@ -132,7 +137,7 @@ object JenaBridge {
      * Normalises a Kastor format alias (including the RDF 1.2 spellings such as
      * `TURTLE-1.2`) to the language string Jena expects in `Model.read(...)`.
      */
-    internal fun normalizeJenaLang(format: String): String = when (format.uppercase()) {
+    internal fun normalizeJenaLang(format: String): String = when (format.uppercase().trim()) {
         "TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR" -> "TURTLE"
         "RDF/XML", "RDFXML", "XML" -> "RDF/XML"
         "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12" -> "N-TRIPLES"
@@ -188,7 +193,7 @@ object JenaBridge {
         }
         
         val stringWriter = java.io.StringWriter()
-        return when (format.uppercase()) {
+        return when (format.uppercase().trim()) {
             "TURTLE", "TTL", "TURTLE-1.2", "TURTLE12", "TURTLESTAR" -> {
                 model.write(stringWriter, "TURTLE")
                 stringWriter.toString()
@@ -255,7 +260,7 @@ object JenaBridge {
             defaultModel.setNsPrefix(prefix, uri)
         }
         
-        val jenaFormat = when (format.uppercase()) {
+        val jenaFormat = when (format.uppercase().trim()) {
             "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> JenaRDFFormat.TRIG
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> JenaRDFFormat.NQUADS
             else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
@@ -273,7 +278,7 @@ object JenaBridge {
      * @return A Jena Dataset containing the loaded data
      */
     fun parseDatasetFromStream(inputStream: java.io.InputStream, format: String = "TRIG"): Dataset {
-        val lang = when (format.uppercase()) {
+        val lang = when (format.uppercase().trim()) {
             "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> org.apache.jena.riot.Lang.TRIG
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> org.apache.jena.riot.Lang.NQUADS
             else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")

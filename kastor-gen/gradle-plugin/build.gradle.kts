@@ -9,6 +9,7 @@ dependencies {
 
     // Gradle API
     implementation(gradleApi())
+    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:${libs.versions.kotlin.get()}")
 
     // Kotlin
     implementation("org.jetbrains.kotlin:kotlin-stdlib")
@@ -22,8 +23,9 @@ dependencies {
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
-    testImplementation(libs.gradle.tooling.api)
     testImplementation(gradleTestKit())
+    testImplementation(project(":kastor-gen:runtime"))
+    testImplementation(project(":rdf:sparql-contract"))
 }
 
 gradlePlugin {

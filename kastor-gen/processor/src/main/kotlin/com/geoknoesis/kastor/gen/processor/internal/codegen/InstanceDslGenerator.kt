@@ -1,5 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
+import com.geoknoesis.kastor.gen.processor.api.exceptions.MissingShapeException
+import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
+
 import com.geoknoesis.kastor.gen.processor.api.model.ClassBuilderModel
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
@@ -26,7 +29,7 @@ import com.squareup.kotlinpoet.CodeBlock
  * Generator for instance DSL builders from ontology classes and SHACL shapes.
  * Creates type-safe DSL builders for creating RDF instances using KotlinPoet.
  */
-class InstanceDslGenerator(
+public class InstanceDslGenerator(
     private val logger: KSPLogger
 ) {
     private val propertyMethodGenerator = PropertyMethodGenerator(logger)
@@ -45,9 +48,8 @@ class InstanceDslGenerator(
      * @throws MissingShapeException if a required SHACL shape is missing
      * @throws InvalidConfigurationException if configuration is invalid
      *
-     * @sample com.example.GenerateSkosDsl
      */
-    fun generate(request: InstanceDslRequest): FileSpec {
+    public fun generate(request: InstanceDslRequest): FileSpec {
         logger.info("Generating DSL '${request.dslName}' for ${request.ontologyModel.shapes.size} shapes")
         
         val classBuilders = buildClassBuilders(request.ontologyModel, request.options)

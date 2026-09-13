@@ -19,13 +19,15 @@ import com.squareup.kotlinpoet.KModifier.*
  * Generator for Kotlin wrapper classes from SHACL shapes and JSON-LD context using KotlinPoet.
  * Creates RDF-backed wrapper implementations.
  */
-class OntologyWrapperGenerator(
+public class OntologyWrapperGenerator(
     private val logger: KSPLogger,
     private val validationMode: ValidationMode = ValidationMode.EMBEDDED,
     private val externalValidatorClass: String? = null
 ) {
 
     private var currentPackageName: String = ""
+    private var domainPackage: String = ""
+    private var knownTypes: Set<String>? = null
 
     /**
      * Generates Kotlin wrapper code from SHACL shapes.
@@ -34,12 +36,14 @@ class OntologyWrapperGenerator(
      * @param packageName The target package name
      * @return Map of wrapper class names to generated FileSpec
      */
-    fun generateWrappers(ontologyModel: OntologyModel, packageName: String): Map<String, FileSpec> {
+    public fun generateWrappers(ontologyModel: OntologyModel, packageName: String, interfacePackage: String = packageName, fallbackUnshapedToIri: Boolean = false): Map<String, FileSpec> {
+        domainPackage = interfacePackage
+        knownTypes = if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.domainName(it.targetClass, ontologyModel.context) }.toSet() else null
         val wrappers = mutableMapOf<String, FileSpec>()
         val enumsByName = ontologyModel.enums.associateBy { it.name }
 
         ontologyModel.shapes.forEach { shape ->
-            val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+            val interfaceName = NamingUtils.domainName(shape.targetClass, ontologyModel.context)
             val wrapperName = "${interfaceName}Wrapper"
             val fileSpec = generateWrapper(shape, ontologyModel.context, packageName, enumsByName)
             wrappers[wrapperName] = fileSpec
@@ -56,10 +60,10 @@ class OntologyWrapperGenerator(
         packageName: String,
         enumsByName: Map<String, EnumModel>,
     ): FileSpec {
-        val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+        val interfaceName = NamingUtils.domainName(shape.targetClass, context)
         val wrapperName = "${interfaceName}Wrapper"
         
-        currentPackageName = packageName
+        currentPackageName = domainPackage
         val fileBuilder = FileSpec.builder(packageName, wrapperName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
@@ -81,7 +85,7 @@ class OntologyWrapperGenerator(
                     .addModifiers(PRIVATE)
                     .build()
             )
-            .addSuperinterface(ClassName(packageName, interfaceName))
+            .addSuperinterface(ClassName(domainPackage, interfaceName))
             .addSuperinterface(ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfBacked"))
         
         // Known predicates set - sort by path IRI for deterministic output
@@ -108,7 +112,7 @@ class OntologyWrapperGenerator(
                 .delegate(
                     CodeBlock.of(
                         "lazy(LazyThreadSafetyMode.PUBLICATION) {\n" +
-                        "  if (input is DefaultRdfHandle) DefaultRdfHandle(input.node, input.graph, known) else input\n" +
+                        "  if (input is DefaultRdfHandle) input.withKnownPredicates(known) else input\n" +
                         "}"
                     )
                 )
@@ -170,7 +174,7 @@ class OntologyWrapperGenerator(
         companionBuilder.addInitializerBlock(
             CodeBlock.of(
                 "OntoMapper.registry[%T::class.java] = { handle -> %T(handle) }",
-                ClassName(packageName, interfaceName),
+                ClassName(domainPackage, interfaceName),
                 ClassName(packageName, wrapperName)
             )
         )
@@ -349,7 +353,7 @@ class OntologyWrapperGenerator(
         enumsByName: Map<String, EnumModel> = emptyMap(),
     ): PropertySpec {
         val propertyName = property.name
-        val kotlinType = TypeMapper.toKotlinType(property, context)
+        val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = domainPackage, knownTypes = knownTypes)
 
         val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
             .addModifiers(OVERRIDE)
@@ -360,7 +364,7 @@ class OntologyWrapperGenerator(
 
         val initializer = when {
             property.enumName != null -> generateEnumPropertyInitializer(property, enumsByName.getValue(property.enumName))
-            property.targetClass != null -> generateObjectPropertyInitializer(property)
+            property.targetClass != null -> generateObjectPropertyInitializer(property, context)
             else -> generateLiteralPropertyInitializer(property)
         }
 
@@ -375,7 +379,7 @@ class OntologyWrapperGenerator(
 
     private fun generateEnumPropertyInitializer(property: ShaclProperty, enum: EnumModel): CodeBlock {
         val path = property.path
-        val name = enum.name
+        val name = "$domainPackage.${enum.name}"
         val single = property.maxCount == 1
         val required = property.minCount != null && property.minCount > 0
         return if (enum.memberKind == EnumMemberKind.IRI) {
@@ -398,10 +402,13 @@ class OntologyWrapperGenerator(
             else -> CodeBlock.of("%L.firstOrNull()", base)
         }
 
-    private fun generateObjectPropertyInitializer(property: ShaclProperty): CodeBlock {
-        val targetInterfaceName = NamingUtils.extractInterfaceName(property.targetClass!!)
+    private fun generateObjectPropertyInitializer(property: ShaclProperty, context: JsonLdContext): CodeBlock {
+        val targetInterfaceName = NamingUtils.domainName(property.targetClass!!, context)
         val path = property.path
-        
+        if (knownTypes?.contains(targetInterfaceName) == false) {
+            val base = CodeBlock.of("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child -> (child as Iri).value }", path)
+            return cardinalityWrap(base, property.maxCount == 1, (property.minCount ?: 0) > 0, property.name)
+        }
         return if (property.maxCount == 1) {
             if (property.minCount != null && property.minCount > 0) {
                 CodeBlock.of(
@@ -441,7 +448,6 @@ class OntologyWrapperGenerator(
         val isSingleValue = property.maxCount == 1
         val isRequired = property.minCount != null && property.minCount > 0
         val path = property.path
-        
         return if (isSingleValue) {
             if (isRequired) {
                 requiredLiteralAccessor(baseType, path)

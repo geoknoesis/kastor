@@ -15,7 +15,15 @@ object RdfGraphIsomorphism {
     /** True if [expected] and [actual] contain the same RDF up to blank node relabelling. */
     fun isIsomorphic(expected: RdfGraph, actual: RdfGraph): Boolean {
         val left = JenaBridge.toJenaModel(expected)
-        val right = JenaBridge.toJenaModel(actual)
-        return left.isIsomorphicWith(right)
+        try {
+            val right = JenaBridge.toJenaModel(actual)
+            try {
+                return left.isIsomorphicWith(right)
+            } finally {
+                if (JenaBridge.getJenaModel(actual) == null) right.close()
+            }
+        } finally {
+            if (JenaBridge.getJenaModel(expected) == null) left.close()
+        }
     }
 }

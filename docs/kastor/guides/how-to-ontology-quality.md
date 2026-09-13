@@ -115,7 +115,7 @@ Shapes in **`embedding-quality`** expect **`oqsh:semanticallyCloseTo`** triples 
 import com.geoknoesis.kastor.ontoquality.embed.SemanticEnricher
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
 
-val enriched = SemanticEnricher.default().enrich(ontology)
+val enriched = SemanticEnricher.default().use { it.enrich(ontology) }
 
 val checker = QualityChecker.builder(validator)
     .addCatalog(BundledCatalogs.EMBEDDING_QUALITY)

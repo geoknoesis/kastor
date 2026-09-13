@@ -1,0 +1,40 @@
+public final class com/geoknoesis/kastor/rdf/testing/RdfGraphAssertionsKt {
+	public static final fun assertDefaultGraphIsomorphicTurtle (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;)V
+	public static synthetic fun assertDefaultGraphIsomorphicTurtle$default (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;ILjava/lang/Object;)V
+	public static final fun assertGraphIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)V
+	public static synthetic fun assertGraphIsomorphic$default (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)V
+	public static final fun assertGraphIsomorphicTurtle (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)V
+	public static synthetic fun assertGraphIsomorphicTurtle$default (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/testing/RdfGraphIsomorphism {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/testing/RdfGraphIsomorphism;
+	public final fun isIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+}
+
+public final class com/geoknoesis/kastor/rdf/testing/RdfGraphSnapshots {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/testing/RdfGraphSnapshots;
+	public final fun formatSnippet (Lcom/geoknoesis/kastor/rdf/RdfGraph;I)Ljava/lang/String;
+	public static synthetic fun formatSnippet$default (Lcom/geoknoesis/kastor/rdf/testing/RdfGraphSnapshots;Lcom/geoknoesis/kastor/rdf/RdfGraph;IILjava/lang/Object;)Ljava/lang/String;
+	public final fun sortedNtriplesLines (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/List;
+	public final fun sortedNtriplesString (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/testing/StrictGraphDiff {
+	public fun <init> (Ljava/util/List;Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/testing/StrictGraphDiff;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/testing/StrictGraphDiff;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/testing/StrictGraphDiff;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOnlyInLeft ()Ljava/util/List;
+	public final fun getOnlyInRight ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isEmpty ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/testing/StrictGraphDiffKt {
+	public static final fun strictGraphDiff (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/testing/StrictGraphDiff;
+}
+

@@ -1,0 +1,1248 @@
+public final class com/geoknoesis/kastor/rdf/SelectBuilderCommonPrefixes {
+	public static final fun addCommonPrefixes (Lcom/geoknoesis/kastor/rdf/sparql/SelectBuilder;[Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AddOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-tqZU9bw ()Ljava/lang/String;
+	public final fun component2-tqZU9bw ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-VXt0FlY (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/AddOperationAst;
+	public static synthetic fun copy-VXt0FlY$default (Lcom/geoknoesis/kastor/rdf/sparql/AddOperationAst;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AddOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDestination-tqZU9bw ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public final fun getSource-tqZU9bw ()Ljava/lang/String;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component3 ()Z
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDistinct ()Z
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun getFunction ()Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AggregateFunction : java/lang/Enum {
+	public static final field AVG Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field COUNT Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field GROUP_CONCAT Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field MAX Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field MIN Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field SAMPLE Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static final field SUM Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getFunctionName ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AliasedSelectItemAst : com/geoknoesis/kastor/rdf/sparql/SelectItemAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/AliasedSelectItemAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/AliasedSelectItemAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AliasedSelectItemAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlias ()Ljava/lang/String;
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AlternativePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/AlternativePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/AlternativePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AlternativePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AndExpressionAst : com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/AndExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/AndExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AndExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ArithmeticExpressionAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun getOperator ()Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ArithmeticOperator : java/lang/Enum {
+	public static final field ADD Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public static final field DIVIDE Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public static final field MULTIPLY Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public static final field SUBTRACT Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getSymbol ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/sparql/ArithmeticOperator;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AskBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;
+	public final fun from-J_zqV-w (Ljava/lang/String;)V
+	public final fun fromNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun version (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/AskQueryAst : com/geoknoesis/kastor/rdf/sparql/SparqlQueryAst {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFrom ()Ljava/util/List;
+	public final fun getFromNamed ()Ljava/util/List;
+	public fun getPrefixes ()Ljava/util/List;
+	public fun getVersion ()Ljava/lang/String;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/BasicPathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/BasicPathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/BasicPathAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/BasicPathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTerm ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/BindPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/Var;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/BindPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/BindPatternAst;Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/BindPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun getVariable ()Lcom/geoknoesis/kastor/rdf/Var;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/BindingTypedAccessKt {
+	public static final fun requireVariables (Lcom/geoknoesis/kastor/rdf/BindingSet;[Ljava/lang/String;)V
+	public static final fun typeLabelFor (Lkotlin/reflect/KClass;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ClearOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public fun <init> ()V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UX4i1w8 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-z3iZ69M (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ClearOperationAst;
+	public static synthetic fun copy-z3iZ69M$default (Lcom/geoknoesis/kastor/rdf/sparql/ClearOperationAst;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ClearOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGraph-UX4i1w8 ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ComparisonExpressionAst : com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ComparisonExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ComparisonExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ComparisonExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun getOperator ()Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ComparisonOperator : java/lang/Enum {
+	public static final field EQ Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static final field GT Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static final field GTE Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static final field LT Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static final field LTE Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static final field NE Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getSymbol ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/sparql/ComparisonOperator;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ConditionalExpressionAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ConditionalExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ConditionalExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ConditionalExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCondition ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun getElseValue ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun getThenValue ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ConstructBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;
+	public final fun from-J_zqV-w (Ljava/lang/String;)V
+	public final fun fromNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun template (Lkotlin/jvm/functions/Function1;)V
+	public final fun version (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ConstructQueryAst : com/geoknoesis/kastor/rdf/sparql/SparqlQueryAst {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFrom ()Ljava/util/List;
+	public final fun getFromNamed ()Ljava/util/List;
+	public fun getPrefixes ()Ljava/util/List;
+	public final fun getTemplate ()Ljava/util/List;
+	public fun getVersion ()Ljava/lang/String;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/CopyOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-tqZU9bw ()Ljava/lang/String;
+	public final fun component2-tqZU9bw ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-VXt0FlY (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/CopyOperationAst;
+	public static synthetic fun copy-VXt0FlY$default (Lcom/geoknoesis/kastor/rdf/sparql/CopyOperationAst;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/CopyOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDestination-tqZU9bw ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public final fun getSource-tqZU9bw ()Ljava/lang/String;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/CreateOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-tqZU9bw ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-Fw9SXsQ (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/CreateOperationAst;
+	public static synthetic fun copy-Fw9SXsQ$default (Lcom/geoknoesis/kastor/rdf/sparql/CreateOperationAst;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/CreateOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGraph-tqZU9bw ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DeleteDataBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/DeleteDataOperationAst;
+	public final fun triple (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun using-J_zqV-w (Ljava/lang/String;)V
+	public final fun usingNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun with-J_zqV-w (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DeleteDataOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-HMI5rLE (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/DeleteDataOperationAst;
+	public static synthetic fun copy-HMI5rLE$default (Lcom/geoknoesis/kastor/rdf/sparql/DeleteDataOperationAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/DeleteDataOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getData ()Ljava/util/List;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DeleteWhereBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/DeleteWhereOperationAst;
+	public final fun using-J_zqV-w (Ljava/lang/String;)V
+	public final fun usingNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+	public final fun with-J_zqV-w (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DeleteWhereOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-HMI5rLE (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/DeleteWhereOperationAst;
+	public static synthetic fun copy-HMI5rLE$default (Lcom/geoknoesis/kastor/rdf/sparql/DeleteWhereOperationAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/DeleteWhereOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DescribeBuilder {
+	public fun <init> (Ljava/util/List;)V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;
+	public final fun from-J_zqV-w (Ljava/lang/String;)V
+	public final fun fromNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun version (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DescribeQueryAst : com/geoknoesis/kastor/rdf/sparql/SparqlQueryAst {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescribeTerms ()Ljava/util/List;
+	public final fun getFrom ()Ljava/util/List;
+	public final fun getFromNamed ()Ljava/util/List;
+	public fun getPrefixes ()Ljava/util/List;
+	public fun getVersion ()Ljava/lang/String;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/DropOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public fun <init> ()V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UX4i1w8 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-z3iZ69M (Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/DropOperationAst;
+	public static synthetic fun copy-z3iZ69M$default (Lcom/geoknoesis/kastor/rdf/sparql/DropOperationAst;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/DropOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGraph-UX4i1w8 ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/FilterBuilder {
+	public fun <init> ()V
+	public final fun and (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun eq (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun gt (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun gte (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun lt (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun lte (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun ne (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun not (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun or (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/FilterPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/FilterPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/FilterPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/FunctionCallAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst, com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/FunctionCallAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/FunctionCallAst;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/FunctionCallAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Ljava/util/List;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/GraphPatternAstImpl : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAstImpl;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAstImpl;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAstImpl;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGraphName ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPattern ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/GroupPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/GroupPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/GroupPatternAst;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/GroupPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPatterns ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/HavingBuilder {
+	public fun <init> ()V
+	public final fun filter (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun getFilters ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/InsertDataBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/InsertDataOperationAst;
+	public final fun triple (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun using-J_zqV-w (Ljava/lang/String;)V
+	public final fun usingNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun with-J_zqV-w (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/InsertDataOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-HMI5rLE (Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/InsertDataOperationAst;
+	public static synthetic fun copy-HMI5rLE$default (Lcom/geoknoesis/kastor/rdf/sparql/InsertDataOperationAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/InsertDataOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getData ()Ljava/util/List;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/InversePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/InversePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/InversePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/InversePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/LoadOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-tqZU9bw ()Ljava/lang/String;
+	public final fun component2-UX4i1w8 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-9QcZHAc (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/LoadOperationAst;
+	public static synthetic fun copy-9QcZHAc$default (Lcom/geoknoesis/kastor/rdf/sparql/LoadOperationAst;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/LoadOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInto-UX4i1w8 ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public final fun getSource-tqZU9bw ()Ljava/lang/String;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/MinusPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/MinusPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/MinusPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/MinusPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ModifyBuilder {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/ModifyOperationAst;
+	public final fun delete (Lkotlin/jvm/functions/Function1;)V
+	public final fun insert (Lkotlin/jvm/functions/Function1;)V
+	public final fun using-J_zqV-w (Ljava/lang/String;)V
+	public final fun usingNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+	public final fun with-J_zqV-w (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ModifyOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public fun <init> ()V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-wt97nKI (Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ModifyOperationAst;
+	public static synthetic fun copy-wt97nKI$default (Lcom/geoknoesis/kastor/rdf/sparql/ModifyOperationAst;Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ModifyOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDelete ()Ljava/util/List;
+	public final fun getInsert ()Ljava/util/List;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/MoveOperationAst : com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-tqZU9bw ()Ljava/lang/String;
+	public final fun component2-tqZU9bw ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6-UX4i1w8 ()Ljava/lang/String;
+	public final fun copy-VXt0FlY (Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/MoveOperationAst;
+	public static synthetic fun copy-VXt0FlY$default (Lcom/geoknoesis/kastor/rdf/sparql/MoveOperationAst;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/MoveOperationAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDestination-tqZU9bw ()Ljava/lang/String;
+	public final fun getSilent ()Z
+	public final fun getSource-tqZU9bw ()Ljava/lang/String;
+	public fun getUsing ()Ljava/util/List;
+	public fun getUsingNamed ()Ljava/util/List;
+	public fun getWith-UX4i1w8 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/NegationPathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/NegationPathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/NegationPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/NegationPathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/NotExpressionAst : com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/NotExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/NotExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/NotExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/OneOrMorePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/OneOrMorePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/OneOrMorePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/OneOrMorePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/OptionalPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/OptionalPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/OptionalPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/OptionalPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPattern ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/OrExpressionAst : com/geoknoesis/kastor/rdf/sparql/FilterExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/OrExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/OrExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/OrExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/OrderClauseAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;)Lcom/geoknoesis/kastor/rdf/sparql/OrderClauseAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/OrderClauseAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/OrderClauseAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDirection ()Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+	public final fun getExpression ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/OrderDirection : java/lang/Enum {
+	public static final field ASC Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+	public static final field DESC Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/PatternBuilder {
+	public fun <init> ()V
+	public final fun bind (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun bind (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun filter (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)V
+	public final fun filter (Lkotlin/jvm/functions/Function0;)V
+	public final fun filter (Lkotlin/jvm/functions/Function1;)V
+	public final fun graph (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/jvm/functions/Function1;)V
+	public final fun minus (Lkotlin/jvm/functions/Function1;)V
+	public final fun optional (Lkotlin/jvm/functions/Function1;)V
+	public final fun propertyPath (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun quotedTriple (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun service (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/jvm/functions/Function1;)V
+	public final fun subSelect (Lkotlin/jvm/functions/Function1;)V
+	public final fun triple (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun union (Lkotlin/jvm/functions/Function1;)V
+	public final fun values (Lcom/geoknoesis/kastor/rdf/Var;[Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun values (Ljava/util/List;Ljava/util/List;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/PropertyPathPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathPatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getObj ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun getSubject ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getObj ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPredicate ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getSubject ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/RangePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Integer;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Integer;)Lcom/geoknoesis/kastor/rdf/sparql/RangePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/RangePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Integer;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/RangePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMax ()Ljava/lang/Integer;
+	public final fun getMin ()I
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/RdfStarTriplePatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/RdfStarTriplePatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/RdfStarTriplePatternAst;Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/RdfStarTriplePatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getObj ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPredicate ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getQuotedTriple ()Lcom/geoknoesis/kastor/rdf/sparql/QuotedTriplePatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ReifierPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/ReifierPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ReifierPatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ReifierPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReifier ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getTripleTerm ()Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SelectBuilder {
+	public fun <init> (Ljava/util/List;)V
+	public final fun aggregate (Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;Z)V
+	public static synthetic fun aggregate$default (Lcom/geoknoesis/kastor/rdf/sparql/SelectBuilder;Lcom/geoknoesis/kastor/rdf/sparql/AggregateFunction;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;
+	public final fun distinct ()V
+	public final fun expression (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)V
+	public final fun from-J_zqV-w (Ljava/lang/String;)V
+	public final fun fromNamed-J_zqV-w (Ljava/lang/String;)V
+	public final fun groupBy ([Lcom/geoknoesis/kastor/rdf/Var;)V
+	public final fun having (Lkotlin/jvm/functions/Function1;)V
+	public final fun limit (I)V
+	public final fun offset (I)V
+	public final fun orderBy (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;)V
+	public final fun orderBy (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;)V
+	public static synthetic fun orderBy$default (Lcom/geoknoesis/kastor/rdf/sparql/SelectBuilder;Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;ILjava/lang/Object;)V
+	public static synthetic fun orderBy$default (Lcom/geoknoesis/kastor/rdf/sparql/SelectBuilder;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/OrderDirection;ILjava/lang/Object;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun reduced ()V
+	public final fun variable (Lcom/geoknoesis/kastor/rdf/Var;)V
+	public final fun variable (Ljava/lang/String;)V
+	public final fun version (Ljava/lang/String;)V
+	public final fun where (Lkotlin/jvm/functions/Function1;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/SelectItemAst {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SelectQueryAst : com/geoknoesis/kastor/rdf/sparql/SparqlQueryAst {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;Ljava/lang/Integer;ZZ)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;Ljava/lang/Integer;ZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component10 ()Ljava/lang/Integer;
+	public final fun component11 ()Ljava/lang/Integer;
+	public final fun component12 ()Z
+	public final fun component13 ()Z
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/util/List;
+	public final fun component9 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;Ljava/lang/Integer;ZZ)Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;Ljava/util/List;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/lang/Integer;Ljava/lang/Integer;ZZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDistinct ()Z
+	public final fun getFrom ()Ljava/util/List;
+	public final fun getFromNamed ()Ljava/util/List;
+	public final fun getGroupBy ()Ljava/util/List;
+	public final fun getHaving ()Ljava/util/List;
+	public final fun getLimit ()Ljava/lang/Integer;
+	public final fun getOffset ()Ljava/lang/Integer;
+	public final fun getOrderBy ()Ljava/util/List;
+	public fun getPrefixes ()Ljava/util/List;
+	public final fun getReduced ()Z
+	public final fun getSelectItems ()Ljava/util/List;
+	public fun getVersion ()Ljava/lang/String;
+	public final fun getWhere ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SequencePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/SequencePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/SequencePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/SequencePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ServicePatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/ServicePatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ServicePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ServicePatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndpoint ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPattern ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/Sparql12BuiltInFunctions {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/Sparql12BuiltInFunctions;
+	public final fun getFunctions ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlDslKt {
+	public static final fun alternative (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun and (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ask (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlAsk;
+	public static synthetic fun ask$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/SparqlAsk;
+	public static final fun atLeast (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;I)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun atMost (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;I)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun avg (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static synthetic fun avg$default (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun between (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;II)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun bound (Lcom/geoknoesis/kastor/rdf/Var;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun concat ([Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun construct (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlConstruct;
+	public static final fun contains (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun count (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static synthetic fun count$default (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun date (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun dateTime (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun decodeForUri (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun describe ([Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public static synthetic fun describe$default ([Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public static final fun describeAll (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public static synthetic fun describeAll$default (Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public static final fun div (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun encodeForUri (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun endsWith (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;D)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;J)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;Lcom/geoknoesis/kastor/rdf/Literal;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/Var;Z)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun eq (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun exactly (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;I)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun expr (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun expr (Lcom/geoknoesis/kastor/rdf/Var;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun function (Ljava/lang/String;[Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun groupConcat (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static synthetic fun groupConcat$default (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun gt (Lcom/geoknoesis/kastor/rdf/Var;D)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun gt (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun gt (Lcom/geoknoesis/kastor/rdf/Var;J)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun gt (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun gte (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun gte (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun hasLang (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun hasLangdir (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun if_ (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun inverse (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun isBlank (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun isIRI (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun isLiteral (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun isNumeric (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun isTriple (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun langdir (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun lcase (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun lt (Lcom/geoknoesis/kastor/rdf/Var;D)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun lt (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun lt (Lcom/geoknoesis/kastor/rdf/Var;J)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun lt (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun lte (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun lte (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun max (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun min (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun minus (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/Var;D)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/Var;I)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/Var;J)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/Var;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/Var;Z)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun ne (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun negation (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun not (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun now ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun object (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun oneOrMore (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun or (Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun path (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun plus (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun predicate (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun rand ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun random ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun regex (Lcom/geoknoesis/kastor/rdf/Var;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static synthetic fun regex$default (Lcom/geoknoesis/kastor/rdf/Var;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun replace (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun replaceAll (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun sample (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun select (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static final fun select ([Lcom/geoknoesis/kastor/rdf/Var;Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static final fun select ([Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static synthetic fun select$default ([Lcom/geoknoesis/kastor/rdf/Var;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static synthetic fun select$default ([Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static final fun sequence (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun startsWith (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/FilterExpressionAst;
+	public static final fun strAfter (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun strBefore (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun strlangdir (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun strlen (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun subject (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun substr (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Integer;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static synthetic fun substr$default (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ILjava/lang/Integer;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun sum (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Z)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static synthetic fun sum$default (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/AggregateExpressionAst;
+	public static final fun time (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun times (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun timezone ()Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun triple (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun tz (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun ucase (Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;)Lcom/geoknoesis/kastor/rdf/sparql/ExpressionAst;
+	public static final fun update (Lkotlin/jvm/functions/Function1;)Ljava/lang/String;
+	public static final fun zeroOrMore (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public static final fun zeroOrOne (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+}
+
+public abstract interface annotation class com/geoknoesis/kastor/rdf/sparql/SparqlDslMarker : java/lang/annotation/Annotation {
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlExtensionFunctionRegistry {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/SparqlExtensionFunctionRegistry;
+	public final fun getAllFunctions ()Ljava/util/List;
+	public final fun getBuiltInFunctions ()Ljava/util/List;
+	public final fun getCustomFunctions ()Ljava/util/List;
+	public final fun getFunction (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlExtensionFunction;
+	public final fun getFunctionsByName (Ljava/lang/String;)Ljava/util/List;
+	public final fun isRegistered (Ljava/lang/String;)Z
+	public final fun register (Lcom/geoknoesis/kastor/rdf/SparqlExtensionFunction;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/SparqlQueryAst {
+	public abstract fun getPrefixes ()Ljava/util/List;
+	public abstract fun getVersion ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlQueryIntegration {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryIntegration;
+	public final fun toSparqlAsk (Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlAsk;
+	public final fun toSparqlConstruct (Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlConstruct;
+	public final fun toSparqlDescribe (Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public final fun toSparqlSelect (Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public final fun toUpdateQuery-0CDHL40 (Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlQueryIntegrationKt {
+	public static final fun toSparqlAsk (Lcom/geoknoesis/kastor/rdf/sparql/AskQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlAsk;
+	public static final fun toSparqlConstruct (Lcom/geoknoesis/kastor/rdf/sparql/ConstructQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlConstruct;
+	public static final fun toSparqlDescribe (Lcom/geoknoesis/kastor/rdf/sparql/DescribeQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlDescribe;
+	public static final fun toSparqlSelect (Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;)Lcom/geoknoesis/kastor/rdf/SparqlSelect;
+	public static final fun toUpdateQuery (Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlQueryResultFlowsKt {
+	public static final fun asFlow (Lcom/geoknoesis/kastor/rdf/SparqlQueryResult;[Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlRenderer {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/SparqlRenderer;
+	public final fun render (Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryAst;)Ljava/lang/String;
+	public final fun render (Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SparqlServiceDescriptionGenerator {
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;)V
+	public final fun generateAsJsonLd ()Ljava/lang/String;
+	public final fun generateAsSparqlResult ()Ljava/lang/String;
+	public final fun generateAsTurtle ()Ljava/lang/String;
+	public final fun generateServiceDescription ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/SubSelectPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;)Lcom/geoknoesis/kastor/rdf/sparql/SubSelectPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/SubSelectPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/SubSelectPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getQuery ()Lcom/geoknoesis/kastor/rdf/sparql/SelectQueryAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/TermExpressionAst : com/geoknoesis/kastor/rdf/sparql/ExpressionAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/TermExpressionAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/TermExpressionAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/TermExpressionAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTerm ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/TriplePatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/TriplePatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/TriplePatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/TriplePatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getObj ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPredicate ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getSubject ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/TripleTermObjectPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/TripleTermObjectPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/TripleTermObjectPatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/TripleTermObjectPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPredicate ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getSubject ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getTripleTerm ()Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/TripleTermPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getObj ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getPredicate ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getSubject ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/UnionPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;)Lcom/geoknoesis/kastor/rdf/sparql/UnionPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/UnionPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/UnionPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLeft ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public final fun getRight ()Lcom/geoknoesis/kastor/rdf/sparql/GraphPatternAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/UpdateBuilder {
+	public fun <init> ()V
+	public final fun add-JZ4Kbmc (Ljava/lang/String;Ljava/lang/String;Z)V
+	public static synthetic fun add-JZ4Kbmc$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;
+	public final fun clear-0FzXZss (Ljava/lang/String;Z)V
+	public static synthetic fun clear-0FzXZss$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun copy-JZ4Kbmc (Ljava/lang/String;Ljava/lang/String;Z)V
+	public static synthetic fun copy-JZ4Kbmc$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun create-UeRWmDE (Ljava/lang/String;Z)V
+	public static synthetic fun create-UeRWmDE$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun deleteData (Lkotlin/jvm/functions/Function1;)V
+	public final fun deleteWhere (Lkotlin/jvm/functions/Function1;)V
+	public final fun drop-0FzXZss (Ljava/lang/String;Z)V
+	public static synthetic fun drop-0FzXZss$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun insertData (Lkotlin/jvm/functions/Function1;)V
+	public final fun load-xr_64Z8 (Ljava/lang/String;Ljava/lang/String;Z)V
+	public static synthetic fun load-xr_64Z8$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun modify (Lkotlin/jvm/functions/Function1;)V
+	public final fun move-JZ4Kbmc (Ljava/lang/String;Ljava/lang/String;Z)V
+	public static synthetic fun move-JZ4Kbmc$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateBuilder;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun version (Ljava/lang/String;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/sparql/UpdateOperationAst {
+	public abstract fun getUsing ()Ljava/util/List;
+	public abstract fun getUsingNamed ()Ljava/util/List;
+	public abstract fun getWith-UX4i1w8 ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/UpdateRequestAst {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;Ljava/lang/String;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/UpdateRequestAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOperations ()Ljava/util/List;
+	public final fun getPrefixes ()Ljava/util/List;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ValuesPatternAst : com/geoknoesis/kastor/rdf/sparql/GraphPatternAst {
+	public fun <init> (Ljava/util/List;Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/sparql/ValuesPatternAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ValuesPatternAst;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ValuesPatternAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValues ()Ljava/util/List;
+	public final fun getVariables ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/VariableSelectItemAst : com/geoknoesis/kastor/rdf/sparql/SelectItemAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/Var;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/Var;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/Var;)Lcom/geoknoesis/kastor/rdf/sparql/VariableSelectItemAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/VariableSelectItemAst;Lcom/geoknoesis/kastor/rdf/Var;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/VariableSelectItemAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVariable ()Lcom/geoknoesis/kastor/rdf/Var;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/WildcardSelectItemAst : com/geoknoesis/kastor/rdf/sparql/SelectItemAst {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/WildcardSelectItemAst;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ZeroOrMorePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrMorePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrMorePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrMorePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/sparql/ZeroOrOnePathAst : com/geoknoesis/kastor/rdf/sparql/PropertyPathAst {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;)Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrOnePathAst;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrOnePathAst;Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/sparql/ZeroOrOnePathAst;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lcom/geoknoesis/kastor/rdf/sparql/PropertyPathAst;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

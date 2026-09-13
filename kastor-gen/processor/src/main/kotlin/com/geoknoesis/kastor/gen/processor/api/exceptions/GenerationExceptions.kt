@@ -22,9 +22,9 @@ import com.squareup.kotlinpoet.FileSpec
  * @see FileGenerationException
  * @see ProcessingException
  */
-sealed class GenerationException(
+public sealed class GenerationException(
     message: String,
-    val details: Map<String, Any> = emptyMap(),
+    public val details: Map<String, Any> = emptyMap(),
     cause: Throwable? = null
 ) : Exception(message, cause)
 
@@ -37,11 +37,10 @@ sealed class GenerationException(
  * @param classIri The IRI of the class that is missing a shape
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleMissingShape
  */
-class MissingShapeException(
-    val classIri: String,
-    val context: ErrorContext? = null,
+public class MissingShapeException(
+    public val classIri: String,
+    public val context: ErrorContext? = null,
     cause: Throwable? = null
 ) : GenerationException(
     "No SHACL shape found for class: $classIri${context?.let { " (file: ${it.file ?: "unknown"})" } ?: ""}",
@@ -55,11 +54,11 @@ class MissingShapeException(
     },
     cause
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates a MissingShapeException from an error context.
          */
-        fun fromContext(
+        public fun fromContext(
             classIri: String,
             context: ErrorContext,
             cause: Throwable? = null
@@ -83,12 +82,11 @@ class MissingShapeException(
  * @param reason Detailed reason why the configuration is invalid
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleInvalidConfiguration
  */
-class InvalidConfigurationException(
-    val config: String,
-    val reason: String,
-    val context: ErrorContext? = null,
+public class InvalidConfigurationException(
+    public val config: String,
+    public val reason: String,
+    public val context: ErrorContext? = null,
     cause: Throwable? = null
 ) : GenerationException(
     "Invalid configuration: $config - $reason${context?.let { " (${it.file ?: "unknown location"})" } ?: ""}",
@@ -102,11 +100,11 @@ class InvalidConfigurationException(
     },
     cause
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates an InvalidConfigurationException from an error context.
          */
-        fun fromContext(
+        public fun fromContext(
             config: String,
             reason: String,
             context: ErrorContext,
@@ -131,11 +129,10 @@ class InvalidConfigurationException(
  * @param path The file path that was not found
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleFileNotFound
  */
-class FileNotFoundException(
-    val path: String,
-    val context: ErrorContext? = null,
+public class FileNotFoundException(
+    public val path: String,
+    public val context: ErrorContext? = null,
     cause: Throwable? = null
 ) : GenerationException(
     "File not found: $path${context?.let { " (requested from: ${it.file ?: "unknown"})" } ?: ""}",
@@ -148,11 +145,11 @@ class FileNotFoundException(
     },
     cause
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates a FileNotFoundException from an error context.
          */
-        fun fromContext(
+        public fun fromContext(
             path: String,
             context: ErrorContext,
             cause: Throwable? = null
@@ -176,12 +173,11 @@ class FileNotFoundException(
  * @param violations List of validation violation messages
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleValidationError
  */
-class ValidationException(
+public class ValidationException(
     message: String,
-    val violations: List<String> = emptyList(),
-    val context: ErrorContext? = null,
+    public val violations: List<String> = emptyList(),
+    public val context: ErrorContext? = null,
     cause: Throwable? = null
 ) : GenerationException(
     message,
@@ -196,11 +192,11 @@ class ValidationException(
     },
     cause
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates a ValidationException from an error context.
          */
-        fun fromContext(
+        public fun fromContext(
             message: String,
             violations: List<String> = emptyList(),
             context: ErrorContext,
@@ -226,11 +222,10 @@ class ValidationException(
  * @param packageName The package name where the file should be written
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleFileGenerationError
  */
-class FileGenerationException(
-    val fileSpec: FileSpec,
-    val packageName: String,
+public class FileGenerationException(
+    public val fileSpec: FileSpec,
+    public val packageName: String,
     cause: Throwable? = null
 ) : GenerationException(
     "Failed to write generated file: ${fileSpec.name} in package $packageName",
@@ -251,22 +246,21 @@ class FileGenerationException(
  * @param annotationName The name of the annotation that failed to process
  * @param cause The underlying exception that caused this error
  *
- * @sample com.example.HandleProcessingError
  */
-class ProcessingException(
+public class ProcessingException(
     message: String,
-    val annotationName: String? = null,
+    public val annotationName: String? = null,
     cause: Throwable? = null
 ) : GenerationException(
     message,
     annotationName?.let { mapOf("annotation" to it) } ?: emptyMap(),
     cause
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates a ProcessingException from an error context.
          */
-        fun fromContext(
+        public fun fromContext(
             message: String,
             context: ErrorContext,
             cause: Throwable? = null
@@ -289,7 +283,7 @@ class ProcessingException(
  * @param failure The failure result to convert
  * @return An appropriate GenerationException for the failure type
  */
-fun toException(failure: GenerationResult.Failure): GenerationException {
+public fun toException(failure: GenerationResult.Failure): GenerationException {
     return when (failure) {
         is GenerationResult.Failure.FileError ->
             FileNotFoundException.fromContext(

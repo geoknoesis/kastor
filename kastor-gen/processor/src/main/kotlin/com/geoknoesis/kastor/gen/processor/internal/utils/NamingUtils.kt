@@ -5,6 +5,9 @@ package com.geoknoesis.kastor.gen.processor.internal.utils
  * Single source of truth for naming conventions.
  */
 internal object NamingUtils {
+    fun domainName(iri: String, context: com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext): String =
+        context.typeMappings.entries.firstOrNull { it.value.value == iri }?.key?.let { toPascalCase(it) } ?: extractInterfaceName(iri)
+
     
     /**
      * Converts a name to camelCase.

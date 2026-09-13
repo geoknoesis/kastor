@@ -20,19 +20,19 @@ class MemoryRepositoryTest {
         RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
 
     @Test
-    fun `createGraph rejects duplicates and listGraphs updates`() {
+    fun `createGraph is idempotent and lists nonempty graphs`() {
         val repo = memory()
         val graphName = Iri("http://example.org/graph")
 
         assertFalse(repo.hasGraph(graphName))
         val graph = repo.createGraph(graphName)
         assertNotNull(graph)
+        assertFalse(repo.hasGraph(graphName))
+        repo.editGraph(graphName).addTriple(RdfTriple(Iri("urn:s"), Iri("urn:p"), string("o")))
         assertTrue(repo.hasGraph(graphName))
         assertEquals(listOf(graphName), repo.listGraphs())
 
-        assertThrows(IllegalArgumentException::class.java) {
-            repo.createGraph(graphName)
-        }
+        assertEquals(graph, repo.createGraph(graphName))
 
         assertTrue(repo.removeGraph(graphName))
         assertFalse(repo.hasGraph(graphName))
@@ -48,7 +48,7 @@ class MemoryRepositoryTest {
         val graphName = Iri("http://example.org/graph")
 
         assertTrue(repo.namedGraphs.isEmpty())
-        repo.createGraph(graphName)
+        repo.editGraph(graphName).addTriple(RdfTriple(Iri("urn:s"), Iri("urn:p"), string("o")))
         assertTrue(repo.namedGraphs.containsKey(graphName))
         repo.removeGraph(graphName)
         assertFalse(repo.namedGraphs.containsKey(graphName))
@@ -108,8 +108,8 @@ class MemoryRepositoryTest {
         assertFalse(repo.isClosed())
         repo.close()
         assertTrue(repo.isClosed())
-        assertEquals(0, repo.defaultGraph.size())
-        assertTrue(repo.namedGraphs.isEmpty())
+        assertThrows(IllegalStateException::class.java) { repo.defaultGraph.size() }
+        assertThrows(IllegalStateException::class.java) { repo.namedGraphs }
     }
 }
 

@@ -1,0 +1,52 @@
+name: Performance regression comparison
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: "Verified baseline ref containing the same benchmark cases"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the performance report gate
+        run: python scripts/test_check_performance.py
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.baseline_ref }}
+          path: build/performance-baseline
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Build both harnesses before measuring
+        shell: bash
+        run: |
+          ./gradlew -p build/performance-baseline :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
+          ./gradlew :benchmarks:shacl:jmhJar --no-daemon --max-workers=2
+      - name: Measure baseline then candidate on the same runner
+        shell: bash
+        run: |
+          mkdir -p build/performance-results
+          baseline_jars=(build/performance-baseline/build/modules/benchmarks/shacl/libs/*-jmh.jar)
+          candidate_jars=(build/modules/benchmarks/shacl/libs/*-jmh.jar)
+          test "${#baseline_jars[@]}" -eq 1
+          test "${#candidate_jars[@]}" -eq 1
+          java -jar "${baseline_jars[0]}" '.*ScalingBenchmark.*' -wi 5 -i 8 -w 1s -r 1s -f 2 -t 1 -jvmArgs '-Xmx1024m -XX:ActiveProcessorCount=2' -prof gc -rf json -rff build/performance-results/baseline.json
+          java -jar "${candidate_jars[0]}" '.*ScalingBenchmark.*' -wi 5 -i 8 -w 1s -r 1s -f 2 -t 1 -jvmArgs '-Xmx1024m -XX:ActiveProcessorCount=2' -prof gc -rf json -rff build/performance-results/candidate.json
+      - name: Gate latency and allocation regressions
+        run: python scripts/check-performance.py build/performance-results/baseline.json build/performance-results/candidate.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-comparison
+          path: build/performance-results/

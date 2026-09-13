@@ -14,5 +14,5 @@ import java.nio.file.Path
  * runner walks; the runner itself looks for a `rdf12` child below it.
  */
 object TestData {
-    val rootDir: Path = Path.of("test-data", "rdf").toAbsolutePath().normalize()
+    val rootDir: Path = Path.of(System.getProperty("conformance.dataDir", "test-data"), "rdf").toAbsolutePath().normalize()
 }

@@ -49,6 +49,7 @@ data class ReasonerConfig(
         fun hermit(): ReasonerConfig =
             ReasonerConfig(
                 reasonerType = ReasonerType.HERMIT,
+                streamingMode = false,
                 timeout = Duration.ofMinutes(10),
             )
         

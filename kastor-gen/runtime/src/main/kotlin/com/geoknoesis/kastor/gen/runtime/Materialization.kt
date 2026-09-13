@@ -80,7 +80,7 @@ inline fun <reified T : Any> RdfRepository.materializeValidated(
 
 /** Central materializer populated by generated registration code.
  *
- * [materialize] and [materializeValidated] resolve a wrapper [factory] from [registry], then invoke
+ * [materialize] and [materializeValidated] resolve a wrapper `factory` from [registry], then invoke
  * it with a provisional [DefaultRdfHandle] (no mapped-predicate filter for extras, and optional
  * [ValidationContext]). Generated wrappers typically replace that handle in a lazy `rdf` delegate
  * so [RdfHandle.extras] excludes mapped predicates and validation is wired as generated.
@@ -89,7 +89,7 @@ object OntoMapper {
   
   /** Registry mapping domain interface classes to their wrapper factories. */
   @JvmField
-  val registry = mutableMapOf<Class<*>, (RdfHandle) -> Any>()
+  val registry: MutableMap<Class<*>, (RdfHandle) -> Any> = java.util.concurrent.ConcurrentHashMap()
   
   const val ERROR_NO_FACTORY = "No wrapper factory registered for"
   const val ERROR_NOT_RDF_BACKED = "Object is not RDF-backed:"

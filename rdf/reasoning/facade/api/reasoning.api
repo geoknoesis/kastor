@@ -1,0 +1,382 @@
+public final class com/geoknoesis/kastor/rdf/reasoning/ClassificationResult {
+	public fun <init> (Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/Map;
+	public final fun component2 ()Ljava/util/Map;
+	public final fun component3 ()Ljava/util/Map;
+	public final fun component4 ()Ljava/util/Map;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassHierarchy ()Ljava/util/Map;
+	public final fun getDisjointClasses ()Ljava/util/Map;
+	public final fun getEquivalentClasses ()Ljava/util/Map;
+	public final fun getInstanceClassifications ()Ljava/util/Map;
+	public final fun getPropertyHierarchy ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ConsistencyResult {
+	public fun <init> (ZLjava/util/List;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (ZLjava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (ZLjava/util/List;Ljava/util/List;Ljava/util/List;)Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;ZLjava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExplanations ()Ljava/util/List;
+	public final fun getInconsistencies ()Ljava/util/List;
+	public final fun getWarnings ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isConsistent ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/CustomRule {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/CustomRule;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/CustomRule;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/CustomRule;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConclusion ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPattern ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/Explanation {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTriple;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/RdfTriple;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTriple;)Lcom/geoknoesis/kastor/rdf/reasoning/Explanation;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/Explanation;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTriple;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/Explanation;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConclusion ()Lcom/geoknoesis/kastor/rdf/RdfTriple;
+	public final fun getPremises ()Ljava/util/List;
+	public final fun getRule ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/Inconsistency {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;)Lcom/geoknoesis/kastor/rdf/reasoning/Inconsistency;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/Inconsistency;Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/Inconsistency;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAffectedResources ()Ljava/util/List;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getSeverity ()Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public final fun getType ()Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/InconsistencyType : java/lang/Enum {
+	public static final field CARDINALITY_VIOLATION Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field CLASS_CONFLICT Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field DISJOINTNESS_VIOLATION Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field DOMAIN_RANGE_VIOLATION Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field EQUIVALENCE_CONFLICT Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field FUNCTIONAL_PROPERTY_VIOLATION Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static final field PROPERTY_CONFLICT Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/reasoning/InconsistencyType;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/PerformanceProfile : java/lang/Enum {
+	public static final field FAST Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public static final field MEDIUM Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public static final field SLOW Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/reasoning/RdfReasoner {
+	public abstract fun classify (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public abstract fun getInferredTriples (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/List;
+	public abstract fun isConsistent (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public abstract fun reason (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;
+	public abstract fun validateOntology (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider {
+	public abstract fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public abstract fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;
+	public abstract fun getName ()Ljava/lang/String;
+	public abstract fun getSupportedTypes ()Ljava/util/List;
+	public abstract fun getType ()Ljava/lang/String;
+	public abstract fun getVersion ()Ljava/lang/String;
+	public abstract fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/RdfReasoning {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoning;
+	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public final fun reasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public final fun reasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public final fun reasonerProviders ()Ljava/util/List;
+	public final fun supportedReasonerTypes ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities {
+	public fun <init> (Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;)V
+	public synthetic fun <init> (Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/Set;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()J
+	public final fun component8 ()Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public final fun copy (Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxGraphSize ()J
+	public final fun getSupportedTypes ()Ljava/util/Set;
+	public final fun getSupportsClassification ()Z
+	public final fun getSupportsConsistencyChecking ()Z
+	public final fun getSupportsCustomRules ()Z
+	public final fun getSupportsExplanation ()Z
+	public final fun getSupportsIncrementalReasoning ()Z
+	public final fun getTypicalPerformance ()Lcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig$Companion;
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;Ljava/util/Set;Ljava/time/Duration;ZLjava/util/List;Ljava/util/Map;ZJJZZJ)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;Ljava/util/Set;Ljava/time/Duration;ZLjava/util/List;Ljava/util/Map;ZJJZZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()J
+	public final fun component2 ()Ljava/util/Set;
+	public final fun component3 ()Ljava/time/Duration;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Ljava/util/Map;
+	public final fun component7 ()Z
+	public final fun component8 ()J
+	public final fun component9 ()J
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;Ljava/util/Set;Ljava/time/Duration;ZLjava/util/List;Ljava/util/Map;ZJJZZJ)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;Ljava/util/Set;Ljava/time/Duration;ZLjava/util/List;Ljava/util/Map;ZJJZZJILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBatchSize ()J
+	public final fun getCacheResults ()Z
+	public final fun getCustomRules ()Ljava/util/List;
+	public final fun getEnableIncrementalReasoning ()Z
+	public final fun getEnabledRules ()Ljava/util/Set;
+	public final fun getIncludeAxioms ()Z
+	public final fun getMaterializationThreshold ()J
+	public final fun getMaxMemoryUsage ()J
+	public final fun getParameters ()Ljava/util/Map;
+	public final fun getReasonerType ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public final fun getStreamingMode ()Z
+	public final fun getTimeout ()Ljava/time/Duration;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig$Companion {
+	public final fun default ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun forLargeGraphs ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun forMemoryConstrained ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun hermit ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun owlDl ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun owlEl ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun rdfs ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerRegistry {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerRegistry;
+	public final fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public final fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public final fun discoverProviders ()Ljava/util/List;
+	public final fun getProviders ()Ljava/util/List;
+	public final fun getSupportedTypes ()Ljava/util/List;
+	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public final fun register (Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerType : java/lang/Enum {
+	public static final field CUSTOM Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field FACT_PLUS_PLUS Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field HERMIT Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field OWL_DL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field OWL_EL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field OWL_QL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field OWL_RL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field PELLET Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field RDFS Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasoningResult {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;Ljava/time/Duration;Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;
+	public final fun component5 ()Ljava/time/Duration;
+	public final fun component6 ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;Ljava/time/Duration;Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;Ljava/time/Duration;Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassification ()Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public final fun getConsistencyCheck ()Lcom/geoknoesis/kastor/rdf/reasoning/ConsistencyResult;
+	public final fun getInferredTriples ()Ljava/util/List;
+	public final fun getOriginalGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public final fun getReasoningTime ()Ljava/time/Duration;
+	public final fun getStatistics ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasoningRule : java/lang/Enum {
+	public static final field CUSTOM_RULE Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_DIFFERENT_FROM Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_DISJOINT_CLASS Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_EQUIVALENT_CLASS Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_FUNCTIONAL_PROPERTY Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_INTERSECTION_OF Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_INVERSE_FUNCTIONAL_PROPERTY Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_INVERSE_OF Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_SAME_AS Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_SYMMETRIC_PROPERTY Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_TRANSITIVE_PROPERTY Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field OWL_UNION_OF Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field RDFS_DOMAIN Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field RDFS_RANGE Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field RDFS_SUBCLASS Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static final field RDFS_SUBPROPERTY Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningRule;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics {
+	public fun <init> (IIIILjava/util/Map;JLjava/time/Duration;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/util/Map;
+	public final fun component6 ()J
+	public final fun component7 ()Ljava/time/Duration;
+	public final fun copy (IIIILjava/util/Map;JLjava/time/Duration;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;IIIILjava/util/Map;JLjava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningStatistics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassesProcessed ()I
+	public final fun getCpuTime ()Ljava/time/Duration;
+	public final fun getInferredTriples ()I
+	public final fun getMemoryUsage ()J
+	public final fun getPropertiesProcessed ()I
+	public final fun getRulesApplied ()Ljava/util/Map;
+	public final fun getTotalTriples ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/Severity : java/lang/Enum {
+	public static final field CRITICAL Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public static final field ERROR Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public static final field INFO Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public static final field WARNING Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ValidationReport {
+	public fun <init> (ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;
+	public final fun copy (ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;ZLjava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStatistics ()Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;
+	public final fun getViolations ()Ljava/util/List;
+	public final fun getWarnings ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun isValid ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ValidationStatistics {
+	public fun <init> (IIILjava/time/Duration;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/time/Duration;
+	public final fun copy (IIILjava/time/Duration;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;IIILjava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationStatistics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraintsChecked ()I
+	public final fun getValidationTime ()Ljava/time/Duration;
+	public final fun getViolationsFound ()I
+	public final fun getWarningsFound ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/ValidationViolation {
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public final fun copy (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationViolation;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/reasoning/ValidationViolation;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/reasoning/Severity;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationViolation;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConstraint ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getResource ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getSeverity ()Lcom/geoknoesis/kastor/rdf/reasoning/Severity;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasoner : com/geoknoesis/kastor/rdf/reasoning/RdfReasoner {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)V
+	public fun classify (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public fun getInferredTriples (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/List;
+	public fun isConsistent (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public fun reason (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;
+	public fun validateOntology (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasonerProvider : com/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider {
+	public fun <init> ()V
+	public fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;
+	public fun getName ()Ljava/lang/String;
+	public fun getSupportedTypes ()Ljava/util/List;
+	public fun getType ()Ljava/lang/String;
+	public fun getVersion ()Ljava/lang/String;
+	public fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+}
+

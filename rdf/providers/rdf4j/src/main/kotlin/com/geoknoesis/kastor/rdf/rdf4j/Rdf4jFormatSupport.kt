@@ -149,7 +149,7 @@ internal object Rdf4jFormatSupport {
         val rdf4jRepo = repository as? Rdf4jRepository
             ?: throw UnsupportedOperationException("Rdf4jFormatSupport can only parse into RDF4J repositories")
 
-        rdf4jRepo.withConnection { connection ->
+        rdf4jRepo.withWriteConnection { connection ->
             // withConnection yields the active transaction's connection inside a
             // transaction { } block, else a fresh per-call connection. Buffer into our
             // own transaction so a parse failure mid-stream rolls back cleanly instead of

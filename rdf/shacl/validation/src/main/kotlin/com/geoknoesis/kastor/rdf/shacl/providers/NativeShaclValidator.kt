@@ -32,6 +32,7 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.ValidationWarning
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import java.time.Duration
+import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.ClosedMode
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledPropertyShape
@@ -66,18 +67,44 @@ import com.geoknoesis.kastor.rdf.shacl.native.distinctShaclTerms
 /**
  * Kastor native SHACL Core validator (compile → plan → execute → report).
  */
-internal class NativeShaclValidator(private val config: ValidationConfig) : ShaclValidator {
+internal class NativeShaclValidator(private val config: ValidationConfig) : ShaclValidator, com.geoknoesis.kastor.rdf.shacl.ShapeCacheControl {
 
     private companion object {
         val singleLineBreakRegex = Regex("[\\f\\r\\n\\u000B]")
     }
 
-    private data class ValidationContext(
+    private val compileCache = NativeCompileCache()
+    override val cacheStatistics get() = compileCache.statistics()
+    override fun clearCache() = compileCache.clear()
+    init {
+        require(!config.parallelValidation) { "Native parallel validation is unsupported" }
+        require(!config.streamingMode) { "Native streaming validation is unsupported" }
+        require(config.maxViolations > 0 && !config.timeout.isNegative && !config.timeout.isZero)
+    }
+    private class ValidationContext(
         val compiled: CompiledShapeGraph,
         val data: DataGraphIndex,
-        val mergedDataAndShapes: RdfGraph,
+        val mergedGraph: () -> RdfGraph,
         val shapesIndex: ShapeGraphIndex,
-    )
+        val budget: ValidationBudget,
+    ) : AutoCloseable {
+        val regexes = mutableMapOf<Pair<String, String?>, Regex>()
+        private val session = lazy { SparqlConstraintEvaluator.Session(mergedGraph()) }
+        fun checkDeadline() {
+            budget.check()
+        }
+        fun select(query: String, focus: RdfTerm): Boolean {
+            checkDeadline()
+            return session.value.selectReturnsRows(query, focus, Duration.ofNanos(budget.remainingNanos()))
+        }
+        fun text(value: String): CharSequence = object : CharSequence {
+            override val length: Int get() { checkDeadline(); return value.length }
+            override fun get(index: Int): Char { checkDeadline(); return value[index] }
+            override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = text(value.substring(startIndex, endIndex))
+            override fun toString(): String = value
+        }
+        override fun close() { if (session.isInitialized()) session.value.close() }
+    }
 
     override fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport =
         runValidation(graph, shapes, config.dataset.validationDataset)
@@ -85,7 +112,9 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     override fun validateDataset(dataset: Dataset, shapes: RdfGraph?): ValidationReport =
         runValidation(dataset.defaultGraph, shapes ?: Rdf.graph { }, dataset)
 
-    private fun runValidation(graph: RdfGraph, shapes: RdfGraph, datasetForDiscovery: Dataset?): ValidationReport {
+    private fun runValidation(graph: RdfGraph, shapes: RdfGraph, datasetForDiscovery: Dataset?, focusOnly: RdfResource? = null): ValidationReport {
+        val budget = ValidationBudget(config.timeout)
+        budget.check("admission")
         val start = System.currentTimeMillis()
         val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
         if (combinedEstimate > config.maxCombinedGraphTriples) {
@@ -95,89 +124,91 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         }
         val mergedShapesTriples =
             try {
-                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery)
+                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery, budget)
             } catch (e: ShapesGraphNotFoundException) {
                 throw ShaclValidationException(e.message ?: "Referenced shapes graph not found", e)
             }
         val digest =
             try {
-                ShapesStructuralDigest.digest(mergedShapesTriples, config)
+                ShapesStructuralDigest.digest(mergedShapesTriples, config, budget)
             } catch (e: ShapeCompileException) {
                 throw ShaclValidationException("SHACL shapes digest failed: ${e.message}", e)
             }
-        config.cache.shapesGraphVersion?.let { NativeCompileCache.assertTagOrRecord(it, digest) }
+        config.cache.shapesGraphVersion?.let { compileCache.assertTagOrRecord(it, digest, budget) }
         val cacheKey = ShapesStructuralDigest.compileCacheKey(digest, config)
-        val compiled =
-            NativeCompileCache.getCompiled(cacheKey)
-                ?: try {
-                    ShapesCompiler.compile(mergedShapesTriples, config).also { NativeCompileCache.putCompiled(cacheKey, it) }
-                } catch (e: ShapeCompileException) {
-                    throw ShaclValidationException("SHACL shape graph compile failed: ${e.message}", e)
-                }
-        val shapesGraph = graphFromTriples(mergedShapesTriples)
-        val mergedForSparql = mergeGraphs(graph, shapesGraph)
-        val shapesIndex = ShapeGraphIndex(mergedShapesTriples)
-        val ctx = ValidationContext(compiled, DataGraphIndex(graph), mergedForSparql, shapesIndex)
+        if (graph.size().toLong() + mergedShapesTriples.size > config.maxCombinedGraphTriples) {
+            throw ShaclValidationException("Expanded data and shapes exceed maxCombinedGraphTriples")
+        }
+        val compiled = try {
+            compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
+        } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
+        val shapesGraph = graphFromTriples(mergedShapesTriples, budget)
+        val shapesIndex = ShapeGraphIndex(mergedShapesTriples, budget)
+        val ctx = ValidationContext(compiled, DataGraphIndex(graph, budget), { mergeGraphs(graph, shapesGraph, budget) }, shapesIndex, budget)
+        try {
+        ctx.checkDeadline()
 
         val violations = mutableListOf<ValidationViolation>()
         val warnings = mutableListOf<ValidationWarning>()
-        var hitViolationCap = false
-
-        for (shape in compiled.orderedNodeShapes) {
-            if (shape.uniqueValuesForProps.isNotEmpty()) {
-                violations.addAll(validateUniqueValuesForShape(shape, ctx))
-                if (violations.size >= config.maxViolations) {
-                    hitViolationCap = true
-                    break
-                }
+        var totalResults = 0
+        var validatedConstraintSlots = 0
+        var invalid = false
+        fun record(results: List<ValidationViolation>) {
+            results.forEach { result ->
+                totalResults++
+                if (result.severity == ViolationSeverity.VIOLATION || result.severity == ViolationSeverity.ERROR) invalid = true
+                if (violations.size < config.maxViolations) violations.add(result)
             }
-            val focusNodes = computeFocusNodes(shape, ctx)
-            for (focus in focusNodes) {
-                violations.addAll(
-                    validateNodeShape(focus, shape, ctx, DepthState(0, emptyList())),
-                )
-                if (violations.size >= config.maxViolations) {
-                    hitViolationCap = true
-                    break
-                }
-            }
-            if (hitViolationCap) break
         }
 
-        val cap = config.maxViolations.coerceAtLeast(1)
-        val violationsTruncated = hitViolationCap || violations.size > cap
-        val cappedViolations = violations.take(cap)
+        for (shape in compiled.orderedNodeShapes) {
+            ctx.checkDeadline()
+            if (shape.uniqueValuesForProps.isNotEmpty()) {
+                record(validateUniqueValuesForShape(shape, ctx).filter { focusOnly == null || it.focusNode == focusOnly })
+            }
+            val allFocusNodes = computeFocusNodes(shape, ctx)
+            val focusNodes = if (focusOnly == null) allFocusNodes else allFocusNodes.filter { it == focusOnly }
+            validatedConstraintSlots = (validatedConstraintSlots.toLong() + countConstraintEvaluationSlots(shape, focusNodes.size))
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            for (focus in focusNodes) {
+                ctx.checkDeadline()
+                record(validateNodeShape(focus, shape, ctx, DepthState(0, emptyList())))
+            }
+        }
+        val violationsTruncated = totalResults > violations.size
+        val cappedViolations = violations
 
         val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
-        val validatedConstraintSlots = countConstraintEvaluationSlots(compiled, ctx)
-        val statistics = buildStatistics(graph, shapesGraph, cappedViolations, warnings, compiled, validatedConstraintSlots)
+        val statistics = buildStatistics(ctx.data.distinctResourceSubjects().size, cappedViolations, warnings, compiled, validatedConstraintSlots)
 
         return ValidationReport(
-            isValid = cappedViolations.none {
-                it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR
-            },
+            isValid = !invalid,
             violations = cappedViolations,
             warnings = warnings,
             statistics = statistics,
             validationTime = elapsed,
-            validatedResources = graph.getTriples().map { it.subject }.distinct().size,
+            validatedResources = if (focusOnly == null) ctx.data.distinctResourceSubjects().size else 1,
             validatedConstraints = validatedConstraintSlots.coerceAtLeast(cappedViolations.size),
             shapeViolations = cappedViolations.groupBy { it.shapeUri ?: "unknown" },
             constraintViolations = cappedViolations.groupBy { it.constraint.constraintType.name },
             violationsTruncated = violationsTruncated,
         )
+        } finally { ctx.close() }
     }
 
     private fun prepareMergedShapesTriples(
         data: RdfGraph,
         shapesArg: RdfGraph,
         datasetForDiscovery: Dataset?,
+        budget: ValidationBudget,
     ): List<RdfTriple> {
         val aux = config.dataset.auxiliaryGraphs
+        val auxiliarySize = aux.values.fold(0L) { n, g -> budget.check("auxiliary admission"); Math.addExact(n, g.size().toLong()) }
+        if (auxiliarySize > config.maxCombinedGraphTriples) throw ShaclValidationException("Auxiliary shapes exceed maxCombinedGraphTriples")
         val ds = datasetForDiscovery ?: config.dataset.validationDataset
         val primary: List<RdfTriple> =
             when (val name = config.dataset.shapesGraphNamedGraph) {
-                null -> shapesArg.getTriples()
+                null -> budget.snapshot(shapesArg, "primary shapes")
                 else -> {
                     val g =
                         ds?.getNamedGraph(name)
@@ -185,17 +216,20 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                             ?: throw ShapesGraphNotFoundException(
                                 "dataset.shapesGraphNamedGraph <$name> not found in validationDataset or auxiliaryGraphs",
                             )
-                    g.getTriples()
+                    budget.snapshot(g, "named shapes")
                 }
             }
-        val expanded = OwlImportsExpander.expand(graphFromTriples(primary), config.imports, aux)
+        val expanded = OwlImportsExpander.expand(graphFromTriples(primary, budget), config.imports, aux, config.maxCombinedGraphTriples, budget)
         val extra =
             if (config.dataset.discoverShapesGraphFromData) {
-                ShapesGraphTriplesCollector.collectFromData(data, ds, aux)
+                ShapesGraphTriplesCollector.collectFromData(data, ds, aux, config.maxCombinedGraphTriples, budget)
             } else {
                 emptyList()
             }
-        return (expanded.getTriples() + extra).distinct()
+        val unique = linkedSetOf<RdfTriple>()
+        for (t in budget.snapshot(expanded, "expanded shapes")) { budget.check("shape merge"); unique.add(t) }
+        for (t in extra) { budget.check("shape merge"); unique.add(t) }
+        return unique.toList()
     }
 
     private fun multisetTermsEqual(a: List<RdfTerm>, b: List<RdfTerm>): Boolean {
@@ -232,15 +266,8 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         return validate(graph, Rdf.graph { })
     }
 
-    override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport {
-        val triples = graph.getTriples().filter { it.subject == resource || it.obj == resource }
-        val filtered = Rdf.graph {
-            triples.forEach { t ->
-                t.subject - t.predicate - t.obj
-            }
-        }
-        return validate(filtered, shapes)
-    }
+    override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport =
+        runValidation(graph, shapes, config.dataset.validationDataset, resource)
 
     override fun validateConstraints(graph: RdfGraph, constraints: List<com.geoknoesis.kastor.rdf.shacl.ShaclConstraint>): ValidationReport {
         if (constraints.isNotEmpty()) {
@@ -297,23 +324,15 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     }
 
     /** Approximates constraint checks: focus count × (property constraints + logical + node refs + optional closed). */
-    private fun countConstraintEvaluationSlots(compiled: CompiledShapeGraph, ctx: ValidationContext): Int {
-        var total = 0
-        for (shape in compiled.orderedNodeShapes) {
-            val f = computeFocusNodes(shape, ctx).size
-            if (f == 0) continue
-            val perFocus =
-                shape.nodeConstraints.size +
-                    shape.propertyShapes.sumOf { it.constraints.size + it.logicalParts.size } +
-                    shape.logicalParts.size +
-                    shape.nodeRefs.size +
-                    shape.nodeByExpressionRefs.size +
-                    if (config.validateClosedShapes && shape.closed != ClosedMode.NONE) 1 else 0
-            var slots = f * perFocus
-            if (shape.uniqueValuesForProps.isNotEmpty() && f > 0) slots += 1
-            total += slots
-        }
-        return total
+    private fun countConstraintEvaluationSlots(shape: CompiledNodeShape, focusCount: Int): Int {
+        if (focusCount == 0) return 0
+        val perFocus = shape.nodeConstraints.size.toLong() +
+            shape.propertyShapes.sumOf { it.constraints.size.toLong() + it.logicalParts.size } +
+            shape.logicalParts.size + shape.nodeRefs.size + shape.nodeByExpressionRefs.size +
+            if (config.validateClosedShapes && shape.closed != ClosedMode.NONE) 1 else 0
+        var slots = focusCount * perFocus
+        if (shape.uniqueValuesForProps.isNotEmpty()) slots += 1
+        return slots.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     private fun validateNodeShape(
@@ -322,6 +341,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         ctx: ValidationContext,
         state: DepthState,
     ): List<ValidationViolation> {
+        ctx.checkDeadline()
         val vs = mutableListOf<ValidationViolation>()
         val compiled = ctx.compiled
 
@@ -866,10 +886,10 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                         }
                     }
                 is PropertyConstraint.Pattern -> {
-                    val rx = compileRegex(c.pattern, c.flags)
+                    val rx = ctx.regexes.getOrPut(c.pattern to c.flags) { compileRegex(c.pattern, c.flags) }
                     values.forEach { v ->
                         val lex = literalLexicalString(v)
-                        if (lex == null || !rx.containsMatchIn(lex)) {
+                        if (lex == null || !rx.containsMatchIn(ctx.text(lex))) {
                             vs.add(
                                 violation(
                                     focus,
@@ -1597,7 +1617,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                                 pathTerms,
                             ),
                         )
-                    } else if (SparqlConstraintEvaluator.selectReturnsRows(queryText, ctx.mergedDataAndShapes, focus)) {
+                    } else if (ctx.select(queryText, focus)) {
                         vs.add(
                             violation(
                                 focus,
@@ -1757,6 +1777,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         ctx: ValidationContext,
         state: DepthState,
     ): List<ValidationViolation> {
+        ctx.checkDeadline()
         val vs = mutableListOf<ValidationViolation>()
         val shapeRef = constraints.filterIsInstance<PropertyConstraint.ReifierShape>().singleOrNull()
         val reifReq = constraints.filterIsInstance<PropertyConstraint.ReificationRequired>().singleOrNull()?.required == true
@@ -1885,14 +1906,12 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         )
 
     private fun buildStatistics(
-        graph: RdfGraph,
-        shapes: RdfGraph,
+        totalResources: Int,
         violations: List<ValidationViolation>,
         warnings: List<ValidationWarning>,
         compiled: CompiledShapeGraph,
         validatedConstraintSlots: Int,
     ): ValidationStatistics {
-        val triples = graph.getTriples()
         val constraintsByType = violations.groupingBy { it.constraint.constraintType }.eachCount()
         val violationsByType = constraintsByType
         val warningsByType = warnings.mapNotNull { it.constraint?.constraintType }.groupingBy { it }.eachCount()
@@ -1903,7 +1922,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                     ns.propertyShapes.sumOf { ps -> ps.constraints.size + ps.logicalParts.size }
             }
         return ValidationStatistics(
-            totalResources = triples.map { it.subject }.distinct().size,
+            totalResources = totalResources,
             validatedResources = violations.map { it.focusNode }.distinct().size,
             totalConstraints = propConstraints,
             validatedConstraints = validatedConstraintSlots.coerceAtLeast(violations.size),

@@ -20,7 +20,7 @@ class Rdf12Test {
     fun `Rdf4jProvider advertises RDF 1 dot 2 capability`() {
         val provider = Rdf4jProvider()
         val caps = provider.getCapabilities("memory")
-        assertEquals("1.2", caps.rdfVersion)
+        assertEquals("1.1", caps.rdfVersion) // partial 1.2 term support does not imply full syntax support
         assertTrue(caps.supportsTripleTerms)
     }
 

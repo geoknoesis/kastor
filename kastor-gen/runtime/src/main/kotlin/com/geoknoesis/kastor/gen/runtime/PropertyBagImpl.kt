@@ -27,8 +27,7 @@ internal class PropertyBagImpl(
    * Computed once on first access and reused for all subsequent queries.
    */
   private val byPred: Map<Iri, List<RdfTerm>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
-    graph.getTriples()
-      .filter { it.subject == subj }
+    (subj as? com.geoknoesis.kastor.rdf.RdfResource)?.let { graph.find(it) }.orEmpty()
       .filter { it.predicate !in exclude }
       .groupBy { it.predicate }
       .mapValues { (_, triples) -> triples.map { it.obj } }

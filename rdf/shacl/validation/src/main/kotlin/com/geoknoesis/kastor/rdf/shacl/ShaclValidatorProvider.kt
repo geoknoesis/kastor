@@ -66,7 +66,7 @@ interface ShaclValidator {
 
     /**
      * Validate using a SPARQL dataset’s default graph as data. Named graphs are still visible for
-     * `sh:shapesGraph` resolution when [ValidationConfig.dataset.validationDataset] is aligned by the implementation.
+     * `sh:shapesGraph` resolution when `ValidationConfig.dataset.validationDataset` is aligned by the implementation.
      */
     fun validateDataset(dataset: Dataset, shapes: RdfGraph?): ValidationReport {
         val shapesGraph = shapes ?: Rdf.graph { }

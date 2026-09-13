@@ -15,7 +15,7 @@ import kotlin.math.sqrt
 /**
  * BERT-style sentence embedding from a local ONNX model plus HuggingFace `tokenizer.json`.
  *
- * The bundled preset loads [all-MiniLM-L6-v2]. For domain models (e.g. biomedical), pass your own
+ * The bundled preset loads `all-MiniLM-L6-v2`. For domain models (e.g. biomedical), pass your own
  * ONNX export and tokenizer that expose `input_ids`, `attention_mask`, and (if present) `token_type_ids`,
  * with a rank-3 float output (batch × sequence × hidden).
  *
@@ -34,15 +34,13 @@ class OnnxEmbeddingModel private constructor(
 
     private val log = LoggerFactory.getLogger(OnnxEmbeddingModel::class.java)
     private val env = OrtEnvironment.getEnvironment()
-    private val session: OrtSession =
-        env.createSession(
-            modelPath.toString(),
-            OrtSession.SessionOptions().also { opts ->
-                opts.setIntraOpNumThreads(1)
-            },
-        )
-
-    private val tokenizer: HuggingFaceTokenizer = HuggingFaceTokenizer.newInstance(tokenizerPath)
+    private val session: OrtSession = OrtSession.SessionOptions().use { options ->
+        options.setIntraOpNumThreads(1)
+        env.createSession(modelPath.toString(), options)
+    }
+    private val tokenizer: HuggingFaceTokenizer = try { HuggingFaceTokenizer.newInstance(tokenizerPath) }
+        catch (e: Throwable) { session.close(); throw e }
+    private var closed = false
 
     private val inferenceLock = ReentrantLock()
 
@@ -57,13 +55,15 @@ class OnnxEmbeddingModel private constructor(
         )
     }
 
-    override fun embed(texts: List<String>): List<FloatArray> {
-        if (texts.isEmpty()) return emptyList()
-        return texts.chunked(BATCH_SIZE).flatMap { batch -> embedBatch(batch) }
+    override fun embed(texts: List<String>): List<FloatArray> = inferenceLock.withLock {
+        check(!closed) { "Embedding model is closed" }
+        texts.chunked(BATCH_SIZE).flatMap { batch -> embedBatch(batch) }
     }
-
-    override fun close() {
-        session.close()
+    override fun close(): Unit = inferenceLock.withLock {
+        if (!closed) {
+            closed = true
+            try { tokenizer.close() } finally { session.close() }
+        }
     }
 
     private fun embedBatch(texts: List<String>): List<FloatArray> {

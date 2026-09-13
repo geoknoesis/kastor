@@ -1,6 +1,8 @@
 package com.geoknoesis.kastor.gen.processor.internal.model
 
-data class ClassModel(
+import com.geoknoesis.kastor.rdf.MutableRdfGraph
+
+public data class ClassModel(
     val qualifiedName: String,
     val simpleName: String,
     val packageName: String,
@@ -8,7 +10,7 @@ data class ClassModel(
     val properties: List<PropertyModel>
 )
 
-data class PropertyModel(
+public data class PropertyModel(
     val name: String,
     val kotlinType: String,
     val predicateIri: String,
@@ -17,7 +19,7 @@ data class PropertyModel(
     val mutable: Boolean = false,
 )
 
-enum class PropertyType {
+public enum class PropertyType {
     LITERAL,
     OBJECT,
     OBJECT_LIST

@@ -12,7 +12,11 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     env:
       # Skip embedding/semantic tests that download the all-MiniLM-L6-v2 ONNX model
       # from HuggingFace — the model is unavailable on the CI runner. These tests are
@@ -20,11 +24,12 @@ jobs:
       # OopsBenchmarkTest). The opt-in ONNX manual test stays off unless
       # KASTOR_RUN_EMBEDDING_TESTS=1.
       KASTOR_SKIP_EMBEDDING_TESTS: "1"
+      KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -32,7 +37,7 @@ jobs:
           cache: gradle
 
       - name: Gradle test
-        run: ./gradlew test --no-daemon -x :rdf:conformance:test
+        run: ./gradlew check --no-daemon -x :rdf:conformance:test
         shell: bash
 
       - name: Dependency health (advisory)
@@ -42,6 +47,20 @@ jobs:
       - name: RDF 1.2 conformance smoke
         run: ./gradlew :rdf:conformance:conformanceSmokeTest --no-daemon
         shell: bash
+
+      - name: Verify executed test counts
+        run: python scripts/check-test-results.py build/modules --minimum 800
+
+      - name: Coverage reports
+        run: ./gradlew jacocoTestReport --no-daemon
+        shell: bash
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.os }}
+          path: build/modules/**/reports/
 
       - name: Compile SHACL benchmark modules
         # JMH + ERA CLI are not pulled in by `test`; compile explicitly so they do not rot.

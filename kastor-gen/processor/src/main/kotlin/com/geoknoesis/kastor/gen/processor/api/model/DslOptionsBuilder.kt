@@ -21,7 +21,7 @@ import com.geoknoesis.kastor.gen.annotations.ValidationMode
  * ```
  */
 @DslMarker
-annotation class DslOptionsMarker
+public annotation class DslOptionsMarker
 
 /**
  * Creates DslGenerationOptions using a fluent DSL builder.
@@ -32,7 +32,6 @@ annotation class DslOptionsMarker
  * @param block DSL builder block for configuring options
  * @return Configured DslGenerationOptions instance
  *
- * @sample com.example.ConfigureDslOptions
  *
  * @see DslGenerationOptions
  * @see DslGenerationOptionsBuilder
@@ -62,7 +61,7 @@ public class DslGenerationOptionsBuilder {
      * @param block Builder block for validation configuration
      * @see ValidationConfigBuilder
      */
-    fun validation(block: ValidationConfigBuilder.() -> Unit) {
+    public fun validation(block: ValidationConfigBuilder.() -> Unit) {
         validationConfig = ValidationConfigBuilder().apply(block).build()
     }
     
@@ -72,7 +71,7 @@ public class DslGenerationOptionsBuilder {
      * @param block Builder block for naming configuration
      * @see NamingConfigBuilder
      */
-    fun naming(block: NamingConfigBuilder.() -> Unit) {
+    public fun naming(block: NamingConfigBuilder.() -> Unit) {
         namingConfig = NamingConfigBuilder().apply(block).build()
     }
     
@@ -82,11 +81,11 @@ public class DslGenerationOptionsBuilder {
      * @param block Builder block for output configuration
      * @see OutputConfigBuilder
      */
-    fun output(block: OutputConfigBuilder.() -> Unit) {
+    public fun output(block: OutputConfigBuilder.() -> Unit) {
         outputConfig = OutputConfigBuilder().apply(block).build()
     }
     
-    fun build(): DslGenerationOptions {
+    public fun build(): DslGenerationOptions {
         return DslGenerationOptions(
             validation = validationConfig,
             naming = namingConfig,
@@ -107,12 +106,12 @@ public class DslGenerationOptionsBuilder {
  */
 @DslOptionsMarker
 public class ValidationConfigBuilder {
-    var enabled: Boolean = true
-    var mode: ValidationMode = ValidationMode.EMBEDDED
-    var strict: Boolean = false
-    var validateOnBuild: Boolean = true
+    public var enabled: Boolean = true
+    public var mode: ValidationMode = ValidationMode.EMBEDDED
+    public var strict: Boolean = false
+    public var validateOnBuild: Boolean = true
     
-    fun build(): DslGenerationOptions.ValidationConfig {
+    public fun build(): DslGenerationOptions.ValidationConfig {
         return DslGenerationOptions.ValidationConfig(
             enabled = enabled,
             mode = mode,
@@ -132,10 +131,10 @@ public class ValidationConfigBuilder {
  */
 @DslOptionsMarker
 public class NamingConfigBuilder {
-    var strategy: NamingStrategy = NamingStrategy.CAMEL_CASE
-    var usePropertyNames: Boolean = true
+    public var strategy: NamingStrategy = NamingStrategy.CAMEL_CASE
+    public var usePropertyNames: Boolean = true
     
-    fun build(): DslGenerationOptions.NamingConfig {
+    public fun build(): DslGenerationOptions.NamingConfig {
         return DslGenerationOptions.NamingConfig(
             strategy = strategy,
             usePropertyNames = usePropertyNames
@@ -155,12 +154,12 @@ public class NamingConfigBuilder {
  */
 @DslOptionsMarker
 public class OutputConfigBuilder {
-    var includeComments: Boolean = true
-    var includeKdoc: Boolean = true
-    var supportLanguageTags: Boolean = true
-    var defaultLanguage: String? = null
+    public var includeComments: Boolean = true
+    public var includeKdoc: Boolean = true
+    public var supportLanguageTags: Boolean = true
+    public var defaultLanguage: String? = null
     
-    fun build(): DslGenerationOptions.OutputConfig {
+    public fun build(): DslGenerationOptions.OutputConfig {
         return DslGenerationOptions.OutputConfig(
             includeComments = includeComments,
             includeKdoc = includeKdoc,

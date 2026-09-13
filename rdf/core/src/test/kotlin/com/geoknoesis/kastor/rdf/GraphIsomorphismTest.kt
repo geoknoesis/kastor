@@ -111,7 +111,7 @@ class GraphIsomorphismTest {
         repo2.addTriple(RdfTriple(person2, friendPred, bnode2a))
         repo2.addTriple(RdfTriple(bnode2a, namePred, string("Hank")))
         
-        assertTrue(repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph), "Complex graphs with blank nodes should be isomorphic")
+        assertFalse(repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph), "Different fixed IRIs must not be renamed by isomorphism")
         
         repo1.close()
         repo2.close()

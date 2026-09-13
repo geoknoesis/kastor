@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
 import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
@@ -10,9 +12,9 @@ import com.google.devtools.ksp.symbol.*
 /**
  * Parses `@Rdf` annotations and extracts generation requests.
  */
-class AnnotationParser(private val logger: KSPLogger) {
+public class AnnotationParser(private val logger: KSPLogger) {
 
-  data class OntologyGenerationRequest(
+  public data class OntologyGenerationRequest(
     val shaclPath: String,
     val contextPath: String,
     val targetPackage: String,
@@ -28,7 +30,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     val generateWriteSupport: Boolean = false,
   )
 
-  data class InstanceDslGenerationRequest(
+  public data class InstanceDslGenerationRequest(
     val ontologyPath: String?,
     val shaclPath: String,
     val contextPath: String?,
@@ -43,7 +45,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     parseInstanceDslFromRdf(annotation, packageName)
 
   /** Ontology-driven interfaces/wrappers when [Rdf.shacl] is set and generation toggles allow it. */
-  fun parseOntologyFromRdf(annotation: KSAnnotation, defaultPackage: String): OntologyGenerationRequest? {
+  public fun parseOntologyFromRdf(annotation: KSAnnotation, defaultPackage: String): OntologyGenerationRequest? {
     if (annotation.shortName.asString() != "Rdf") return null
     val generateDsl = getAnnotationValue(annotation, "generateDsl") as? Boolean ?: false
     if (generateDsl) return null
@@ -85,7 +87,7 @@ class AnnotationParser(private val logger: KSPLogger) {
   }
 
   /** Instance DSL when [Rdf.generateDsl] is true with [Rdf.dslName] and [Rdf.shacl]. */
-  fun parseInstanceDslFromRdf(annotation: KSAnnotation, defaultPackage: String): InstanceDslGenerationRequest? {
+  public fun parseInstanceDslFromRdf(annotation: KSAnnotation, defaultPackage: String): InstanceDslGenerationRequest? {
     if (annotation.shortName.asString() != "Rdf") return null
     val generateDsl = getAnnotationValue(annotation, "generateDsl") as? Boolean ?: false
     if (!generateDsl) return null
@@ -110,8 +112,8 @@ class AnnotationParser(private val logger: KSPLogger) {
     )
   }
 
-  companion object {
-    const val RDF_ANNOTATION: String = RDF_ANNOTATION_FQN
+  public companion object {
+    public const val RDF_ANNOTATION: String = RDF_ANNOTATION_FQN
   }
 
   private fun nonBlank(s: String?): String? = s?.takeIf { it.isNotBlank() }

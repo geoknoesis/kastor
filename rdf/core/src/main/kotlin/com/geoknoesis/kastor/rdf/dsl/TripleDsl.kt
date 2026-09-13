@@ -641,7 +641,7 @@ class TripleDsl {
      *
      * Emits `_:r rdf:reifies <<( s p o )>> .` and runs [configure] with `_:r`
      * (the reifier) bound as the subject of further triples added inside the
-     * block. The triple identified by [subject], [predicate], and [obj] is **not**
+     * block. The triple identified by `subject`, `predicate`, and `obj` is **not**
      * itself asserted - if you want to assert it, call `triple(subject, predicate, obj)`
      * separately.
      *

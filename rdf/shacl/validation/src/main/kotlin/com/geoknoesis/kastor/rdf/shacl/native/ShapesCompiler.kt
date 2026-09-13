@@ -133,12 +133,13 @@ internal object ShapesCompiler {
         NODE_SCALAR,
     }
 
-    fun compile(shapesTriples: List<RdfTriple>, config: ValidationConfig): CompiledShapeGraph {
-        val index = ShapeGraphIndex(shapesTriples)
-        val nodeShapeSubjects = findNodeShapes(shapesTriples)
+    fun compile(shapesTriples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget = ValidationBudget.NONE): CompiledShapeGraph {
+        val index = ShapeGraphIndex(shapesTriples, budget)
+        val nodeShapeSubjects = findNodeShapes(shapesTriples, index, budget)
         val compiled = mutableListOf<CompiledNodeShape>()
         val byNode = mutableMapOf<RdfResource, CompiledNodeShape>()
-        for (subject in nodeShapeSubjects.sortedWith(resourceOrdering)) {
+        for (subject in nodeShapeSubjects.sortedWith { a, b -> budget.check("shape ordering"); resourceOrdering.compare(a, b) }) {
+            budget.check("shape compilation")
             if (isDeactivated(subject, index)) continue
             val cn = compileNodeShape(subject, index, config)
             compiled.add(cn)
@@ -156,10 +157,10 @@ internal object ShapesCompiler {
         }
     }
 
-    private fun findNodeShapes(triples: List<RdfTriple>): List<RdfResource> {
+    private fun findNodeShapes(triples: List<RdfTriple>, index: ShapeGraphIndex, budget: ValidationBudget): List<RdfResource> {
         val set = LinkedHashSet<RdfResource>()
-        val index = ShapeGraphIndex(triples)
         for (t in triples) {
+            budget.check("shape discovery")
             if (t.predicate == RDF.type &&
                 (t.obj == SHACL.NodeShape || t.obj == SHACL.ShapeClass || t.obj == SHACL.Shape)
             ) {
@@ -168,6 +169,7 @@ internal object ShapesCompiler {
         }
         // Implicit node shapes: subjects with targets and parameters but no `rdf:type` (W3C misc/severity-002, etc.).
         for (t in triples) {
+            budget.check("shape discovery")
             val s = t.subject as? RdfResource ?: continue
             if (s in set) continue
             if (index.objects(s, SHACL.path).isNotEmpty()) continue
@@ -177,6 +179,7 @@ internal object ShapesCompiler {
         // Standalone shapes declared with `sh:path` plus targets (W3C path-* manifests); covers PropertyShape
         // roots whether or not an explicit `rdf:type` triple is present.
         for (t in triples) {
+            budget.check("shape discovery")
             val s = t.subject as? RdfResource ?: continue
             if (s in set) continue
             if (index.objects(s, SHACL.path).isEmpty()) continue
@@ -543,7 +546,9 @@ internal object ShapesCompiler {
         index: ShapeGraphIndex,
         config: ValidationConfig,
         inheritedSeverity: ViolationSeverity,
+        ancestors: Set<RdfResource> = emptySet(),
     ): CompiledPropertyShape {
+        if (ps in ancestors || ancestors.size >= 128) throw ShapeCompileException("Cyclic or excessively nested property shapes")
         val pathTerm = index.objects(ps, SHACL.path).singleOrNull()
             ?: throw ShapeCompileException("Property shape $ps must have exactly one sh:path")
         val path = ShaclPathParser.parse(pathTerm, index)
@@ -571,7 +576,7 @@ internal object ShapesCompiler {
                     val node = child as? RdfResource ?: return@mapNotNull null
                     if (isDeactivated(node, index)) return@mapNotNull null
                     if (isParameterTripleDeactivated(ps, SHACL.`property`, child, index)) return@mapNotNull null
-                    compilePropertyShape(node, index, config, inheritedSeverity)
+                    compilePropertyShape(node, index, config, inheritedSeverity, ancestors + ps)
                 }
 
         detectUnsupported(ps, index, config)

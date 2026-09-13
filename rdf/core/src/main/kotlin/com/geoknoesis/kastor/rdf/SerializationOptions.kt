@@ -15,7 +15,6 @@ package com.geoknoesis.kastor.rdf
  * @param jsonLdCompact Whether to compact JSON-LD output (JSON-LD format only)
  * @param jsonLdFrame JSON-LD frame for framing (JSON-LD format only)
  * 
- * @sample com.example.SerializeWithOptions
  */
 data class SerializationOptions(
     /**

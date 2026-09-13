@@ -37,14 +37,14 @@ internal class PropertyMethodGenerator(
 /**
  * Strategy for generating property methods based on type.
  */
-sealed class PropertyTypeStrategy {
-    abstract fun generateMethods(
+public sealed class PropertyTypeStrategy {
+    public abstract fun generateMethods(
         property: PropertyBuilderModel,
         propertyIri: CodeBlock,
         options: DslGenerationOptions
     ): List<FunSpec>
     
-    object StringStrategy : PropertyTypeStrategy() {
+    public object StringStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
             propertyIri: CodeBlock,
@@ -153,7 +153,7 @@ sealed class PropertyTypeStrategy {
         }
     }
     
-    object IntStrategy : PropertyTypeStrategy() {
+    public object IntStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
             propertyIri: CodeBlock,
@@ -205,7 +205,7 @@ sealed class PropertyTypeStrategy {
         }
     }
     
-    object DoubleStrategy : PropertyTypeStrategy() {
+    public object DoubleStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
             propertyIri: CodeBlock,
@@ -257,7 +257,7 @@ sealed class PropertyTypeStrategy {
         }
     }
     
-    object BooleanStrategy : PropertyTypeStrategy() {
+    public object BooleanStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
             propertyIri: CodeBlock,
@@ -319,7 +319,7 @@ sealed class PropertyTypeStrategy {
      * The property's [PropertyBuilderModel.enumName] supplies the Kotlin parameter type and
      * [PropertyBuilderModel.enumMemberKind] selects between .iri and .code.
      */
-    object EnumStrategy : PropertyTypeStrategy() {
+    public object EnumStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
             propertyIri: CodeBlock,
@@ -404,8 +404,8 @@ sealed class PropertyTypeStrategy {
         }
     }
 
-    companion object {
-        fun from(type: TypeName): PropertyTypeStrategy {
+    public companion object {
+        public fun from(type: TypeName): PropertyTypeStrategy {
             return when {
                 type.isStringType() -> StringStrategy
                 type.isIntType() -> IntStrategy

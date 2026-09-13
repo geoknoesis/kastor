@@ -14,22 +14,32 @@ import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Reads labels from an ontology, computes embeddings, and materializes similarity triples.
  *
- * Pairwise similarity uses a [SimilarityIndex]; swap that for an HNSW-backed implementation in v0.2.x
- * without changing this class's orchestration logic.
+ * Pairwise similarity uses an exact [SimilarityIndex] with explicit resource limits.
+ * Constructor-supplied models remain caller-owned. [default] creates an owned model;
+ * close that enricher with `use` to release its native resources.
  */
 class SemanticEnricher(
     private val model: EmbeddingModel,
     private val threshold: Double = 0.85,
-) {
+) : AutoCloseable {
+    private val closed = AtomicBoolean()
+    private var ownedModel: AutoCloseable? = null
+    private var searchLimits = SimilaritySearchLimits()
+    init { require(threshold.isFinite() && threshold in -1.0..1.0) }
+    constructor(model: EmbeddingModel, threshold: Double, limits: SimilaritySearchLimits) : this(model, threshold) {
+        searchLimits = limits
+    }
     /**
      * Reads labels from [ontology], embeds them, and returns a NEW [RdfGraph] containing the
      * original triples plus `oqsh:semanticallyCloseTo` triples and enrichment provenance.
      */
     fun enrich(ontology: RdfGraph): RdfGraph {
+        check(!closed.get()) { "Semantic enricher is closed" }
         val out = JenaBridge.createEmptyModel()
         out.addTriples(ontology.getTriples())
         out.addTriples(enrichmentOnly(ontology).getTriples())
@@ -40,6 +50,7 @@ class SemanticEnricher(
      * Like [enrich] but contains only enrichment triples (similarity, drift scores, provenance).
      */
     fun enrichmentOnly(ontology: RdfGraph): RdfGraph {
+        check(!closed.get()) { "Semantic enricher is closed" }
         val labelMap = LabelExtractor.extractLabelTexts(ontology)
         if (labelMap.isEmpty()) {
             return provenanceGraph(
@@ -54,11 +65,12 @@ class SemanticEnricher(
         val sortedEntries = labelMap.entries.sortedBy { it.key.toString() }
         val texts = sortedEntries.map { it.value }
         val vectors = model.embed(texts)
+        check(vectors.size == texts.size) { "Embedding model returned ${vectors.size} vectors for ${texts.size} inputs" }
         val embeddings = sortedEntries.map { it.key }.zip(vectors).toMap()
 
         val index = SimilarityIndex(embeddings)
         val similarityTriples =
-            index.pairsAboveThreshold(threshold).map { (a, b) ->
+            index.pairsAboveThreshold(threshold, searchLimits).map { (a, b) ->
                 RdfTriple(a, EnrichmentVocabulary.semanticallyCloseTo, b)
             }.toList()
 
@@ -105,8 +117,17 @@ class SemanticEnricher(
         val root = Iri("urn:onto-quality:enrichment:${UUID.randomUUID()}")
         val hash =
             modelPathForHash?.let { path ->
-                val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))
-                digest.joinToString("") { b -> "%02x".format(b) }
+                val digest = MessageDigest.getInstance("SHA-256")
+                Files.newInputStream(path).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        check(!Thread.currentThread().isInterrupted) { "Enrichment model hashing interrupted" }
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                digest.digest().joinToString("") { b -> "%02x".format(b) }
             } ?: "unknown"
 
         fun stringLit(s: String) = Literal(s, XSD.string)
@@ -142,8 +163,22 @@ class SemanticEnricher(
         return g
     }
 
+    /** Closes this enricher and any model it owns; caller-supplied models remain open. */
+    override fun close() {
+        if (closed.compareAndSet(false, true)) ownedModel?.close()
+    }
+
     companion object {
-        fun default(): SemanticEnricher = SemanticEnricher(model = OnnxEmbeddingModel.fromMiniLm())
+        /** Creates an enricher that owns its native model. Close the result with `use`. */
+        fun default(): SemanticEnricher {
+            val model = OnnxEmbeddingModel.fromMiniLm()
+            return try {
+                SemanticEnricher(model).apply { ownedModel = model }
+            } catch (failure: Throwable) {
+                model.close()
+                throw failure
+            }
+        }
 
         private fun dotProduct(a: FloatArray, b: FloatArray): Double {
             var s = 0.0

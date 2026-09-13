@@ -32,8 +32,7 @@ object KastorGraphOps {
    * @return List of literal values (empty if none found)
    */
   fun getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<Literal> {
-    return graph.getTriples()
-      .filter { it.subject == subj && it.predicate == pred }
+    return graph.find(subj as? com.geoknoesis.kastor.rdf.RdfResource ?: return emptyList(), pred)
       .mapNotNull { it.obj as? Literal }
   }
 
@@ -41,8 +40,8 @@ object KastorGraphOps {
    * Counts literal values for a given subject and predicate.
    */
   fun countLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): Int {
-    return graph.getTriples()
-      .count { it.subject == subj && it.predicate == pred && it.obj is Literal }
+    return graph.find(subj as? com.geoknoesis.kastor.rdf.RdfResource ?: return 0, pred)
+      .count { true && it.obj is Literal }
   }
 
   /**
@@ -78,8 +77,7 @@ object KastorGraphOps {
     pred: Iri,
     factory: (RdfTerm) -> T
   ): List<T> {
-    return graph.getTriples()
-      .filter { it.subject == subj && it.predicate == pred }
+    return graph.find(subj as? com.geoknoesis.kastor.rdf.RdfResource ?: return emptyList(), pred)
       .mapNotNull { triple ->
         when (val obj = triple.obj) {
           is Iri, is BlankNode ->
@@ -100,8 +98,8 @@ object KastorGraphOps {
    * Counts object values (IRI or BlankNode) for a given subject and predicate.
    */
   fun countObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): Int {
-    return graph.getTriples()
-      .count { it.subject == subj && it.predicate == pred && (it.obj is Iri || it.obj is BlankNode) }
+    return graph.find(subj as? com.geoknoesis.kastor.rdf.RdfResource ?: return 0, pred)
+      .count { true && (it.obj is Iri || it.obj is BlankNode) }
   }
 }
 

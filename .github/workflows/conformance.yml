@@ -19,12 +19,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - name: Checkout pinned RDF corpus
+        uses: actions/checkout@v4
+        with:
+          repository: w3c/rdf-tests
+          ref: 369a90d1a60c021b746df2e411da0ff36258a758
+          path: rdf/conformance/test-data
+
+      - name: Checkout pinned SHACL corpus
+        uses: actions/checkout@v4
+        with:
+          repository: w3c/data-shapes
+          ref: 94d8bc2bd4fc4fdc6f2964d1ec4a892329e05f06
+          path: build/upstream-shacl
 
       - name: RDF conformance tests
         run: ./gradlew :rdf:conformance:test --no-daemon
@@ -34,8 +48,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p rdf/shacl/validation/test-data
-          rm -rf rdf/shacl/validation/test-data/w3c-shacl12
-          git clone --depth 1 --branch gh-pages https://github.com/w3c/data-shapes.git /tmp/data-shapes-shacl
-          mv /tmp/data-shapes-shacl/shacl12-test-suite rdf/shacl/validation/test-data/w3c-shacl12
+          cp -R build/upstream-shacl/shacl12-test-suite rdf/shacl/validation/test-data/w3c-shacl12
           ./gradlew :rdf:shacl-validation:test --no-daemon
         shell: bash
+
+      - name: Require populated conformance suites
+        run: |
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 100
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 150

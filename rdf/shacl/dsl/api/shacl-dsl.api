@@ -1,0 +1,206 @@
+public final class com/geoknoesis/kastor/rdf/RdfShaclKt {
+	public static final fun shacl (Lcom/geoknoesis/kastor/rdf/Rdf;Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/NodeKind : java/lang/Enum {
+	public static final field BlankNode Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static final field BlankNodeOrIRI Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static final field BlankNodeOrLiteral Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static final field IRI Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static final field IRIOrLiteral Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static final field Literal Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getIri-tqZU9bw ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/NodeShapeDsl {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/dsl/GraphDsl;Lkotlin/jvm/functions/Function1;)V
+	public final fun and (Ljava/util/List;)V
+	public final fun and (Lkotlin/jvm/functions/Function1;)V
+	public final fun and ([Ljava/lang/String;)V
+	public final fun closed (Z)V
+	public final fun deactivated (Z)V
+	public static synthetic fun deactivated$default (Lcom/geoknoesis/kastor/rdf/dsl/NodeShapeDsl;ZILjava/lang/Object;)V
+	public final fun ignoredProperties (Ljava/util/List;)V
+	public final fun ignoredProperties ([Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun node (Ljava/lang/String;)V
+	public final fun node (Lkotlin/jvm/functions/Function1;)V
+	public final fun node-J_zqV-w (Ljava/lang/String;)V
+	public final fun not (Ljava/lang/String;)V
+	public final fun not (Lkotlin/jvm/functions/Function1;)V
+	public final fun not-J_zqV-w (Ljava/lang/String;)V
+	public final fun or (Ljava/util/List;)V
+	public final fun or (Lkotlin/jvm/functions/Function1;)V
+	public final fun or ([Ljava/lang/String;)V
+	public final fun property (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun property-UeRWmDE (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun severity (Lcom/geoknoesis/kastor/rdf/dsl/Severity;)V
+	public final fun shape (Ljava/lang/String;)V
+	public final fun shape-J_zqV-w (Ljava/lang/String;)V
+	public final fun sparql (Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryAst;Lkotlin/jvm/functions/Function1;)V
+	public final fun sparql (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun sparql$default (Lcom/geoknoesis/kastor/rdf/dsl/NodeShapeDsl;Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryAst;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun sparql$default (Lcom/geoknoesis/kastor/rdf/dsl/NodeShapeDsl;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun sparqlAsk (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun sparqlAsk$default (Lcom/geoknoesis/kastor/rdf/dsl/NodeShapeDsl;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun targetClass (Ljava/lang/String;)V
+	public final fun targetClass-J_zqV-w (Ljava/lang/String;)V
+	public final fun targetNode (Ljava/lang/String;)V
+	public final fun targetNode-J_zqV-w (Ljava/lang/String;)V
+	public final fun targetObjectsOf (Ljava/lang/String;)V
+	public final fun targetObjectsOf-J_zqV-w (Ljava/lang/String;)V
+	public final fun targetSubjectsOf (Ljava/lang/String;)V
+	public final fun targetSubjectsOf-J_zqV-w (Ljava/lang/String;)V
+	public final fun targetWhere (Ljava/lang/String;)V
+	public final fun targetWhere (Lkotlin/jvm/functions/Function1;)V
+	public final fun targetWhere-J_zqV-w (Ljava/lang/String;)V
+	public final fun targetWhereExpr (Ljava/lang/String;)V
+	public final fun targetWhereSelect (Lkotlin/jvm/functions/Function1;)V
+	public final fun xone (Ljava/util/List;)V
+	public final fun xone (Lkotlin/jvm/functions/Function1;)V
+	public final fun xone ([Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/dsl/GraphDsl;Lkotlin/jvm/functions/Function1;)V
+	public final fun class (Ljava/lang/String;)V
+	public final fun datatype (Ljava/lang/String;)V
+	public final fun deactivated (Z)V
+	public static synthetic fun deactivated$default (Lcom/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl;ZILjava/lang/Object;)V
+	public final fun description (Ljava/lang/String;)V
+	public final fun description (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun directionalLangString ()V
+	public final fun disjoint (Ljava/lang/String;)V
+	public final fun disjoint-J_zqV-w (Ljava/lang/String;)V
+	public final fun equals (Ljava/lang/String;)V
+	public final fun equals-J_zqV-w (Ljava/lang/String;)V
+	public final fun getClass-UX4i1w8 ()Ljava/lang/String;
+	public final fun getDatatype-UX4i1w8 ()Ljava/lang/String;
+	public final fun getFlags ()Ljava/lang/String;
+	public final fun getFractionDigits ()Ljava/lang/Integer;
+	public final fun getHasValue ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public final fun getIn ()Ljava/util/List;
+	public final fun getLanguageIn ()Ljava/util/List;
+	public final fun getMaxCount ()Ljava/lang/Integer;
+	public final fun getMaxExclusive ()Ljava/lang/Double;
+	public final fun getMaxInclusive ()Ljava/lang/Double;
+	public final fun getMaxLength ()Ljava/lang/Integer;
+	public final fun getMinCount ()Ljava/lang/Integer;
+	public final fun getMinExclusive ()Ljava/lang/Double;
+	public final fun getMinInclusive ()Ljava/lang/Double;
+	public final fun getMinLength ()Ljava/lang/Integer;
+	public final fun getNodeKind ()Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;
+	public final fun getPath-UX4i1w8 ()Ljava/lang/String;
+	public final fun getPattern ()Ljava/lang/String;
+	public final fun getQualifiedMaxCount ()Ljava/lang/Integer;
+	public final fun getQualifiedMinCount ()Ljava/lang/Integer;
+	public final fun getQualifiedValueShapesDisjoint ()Ljava/lang/Boolean;
+	public final fun getReificationRequired ()Ljava/lang/Boolean;
+	public final fun getSingleLine ()Ljava/lang/Boolean;
+	public final fun getTotalDigits ()Ljava/lang/Integer;
+	public final fun getUniqueLang ()Ljava/lang/Boolean;
+	public final fun group (Lcom/geoknoesis/kastor/rdf/RdfResource;)V
+	public final fun group (Ljava/lang/String;)V
+	public final fun hasValue (D)V
+	public final fun hasValue (I)V
+	public final fun hasValue (Ljava/lang/String;)V
+	public final fun hasValue-J_zqV-w (Ljava/lang/String;)V
+	public final fun in (Ljava/util/List;)V
+	public final fun in ([D)V
+	public final fun in ([I)V
+	public final fun in ([Ljava/lang/String;)V
+	public final fun languageDirection (Lcom/geoknoesis/kastor/rdf/Direction;)V
+	public final fun lessThan (Ljava/lang/String;)V
+	public final fun lessThan-J_zqV-w (Ljava/lang/String;)V
+	public final fun lessThanOrEquals (Ljava/lang/String;)V
+	public final fun lessThanOrEquals-J_zqV-w (Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun name (Ljava/lang/String;)V
+	public final fun name (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun node (Ljava/lang/String;)V
+	public final fun node (Lkotlin/jvm/functions/Function1;)V
+	public final fun node-J_zqV-w (Ljava/lang/String;)V
+	public final fun order (I)V
+	public final fun path (Ljava/lang/String;)V
+	public final fun qualifiedValueShape (Ljava/lang/String;)V
+	public final fun qualifiedValueShape (Lkotlin/jvm/functions/Function1;)V
+	public final fun qualifiedValueShape-J_zqV-w (Ljava/lang/String;)V
+	public final fun reifierShape (Ljava/lang/String;)V
+	public final fun reifierShape (Lkotlin/jvm/functions/Function1;)V
+	public final fun reifierShape-J_zqV-w (Ljava/lang/String;)V
+	public final fun setClass-xWoYxd4 (Ljava/lang/String;)V
+	public final fun setDatatype-xWoYxd4 (Ljava/lang/String;)V
+	public final fun setFlags (Ljava/lang/String;)V
+	public final fun setFractionDigits (Ljava/lang/Integer;)V
+	public final fun setHasValue (Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
+	public final fun setIn (Ljava/util/List;)V
+	public final fun setLanguageIn (Ljava/util/List;)V
+	public final fun setMaxCount (Ljava/lang/Integer;)V
+	public final fun setMaxExclusive (Ljava/lang/Double;)V
+	public final fun setMaxInclusive (Ljava/lang/Double;)V
+	public final fun setMaxLength (Ljava/lang/Integer;)V
+	public final fun setMinCount (Ljava/lang/Integer;)V
+	public final fun setMinExclusive (Ljava/lang/Double;)V
+	public final fun setMinInclusive (Ljava/lang/Double;)V
+	public final fun setMinLength (Ljava/lang/Integer;)V
+	public final fun setNodeKind (Lcom/geoknoesis/kastor/rdf/dsl/NodeKind;)V
+	public final fun setPath-xWoYxd4 (Ljava/lang/String;)V
+	public final fun setPattern (Ljava/lang/String;)V
+	public final fun setQualifiedMaxCount (Ljava/lang/Integer;)V
+	public final fun setQualifiedMinCount (Ljava/lang/Integer;)V
+	public final fun setQualifiedValueShapesDisjoint (Ljava/lang/Boolean;)V
+	public final fun setReificationRequired (Ljava/lang/Boolean;)V
+	public final fun setSingleLine (Ljava/lang/Boolean;)V
+	public final fun setTotalDigits (Ljava/lang/Integer;)V
+	public final fun setUniqueLang (Ljava/lang/Boolean;)V
+	public final fun severity (Lcom/geoknoesis/kastor/rdf/dsl/Severity;)V
+	public final fun sparql (Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryAst;Lkotlin/jvm/functions/Function1;)V
+	public final fun sparql (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun sparql$default (Lcom/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl;Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryAst;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun sparql$default (Lcom/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun sparqlAsk (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun sparqlAsk$default (Lcom/geoknoesis/kastor/rdf/dsl/PropertyShapeDsl;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/Severity : java/lang/Enum {
+	public static final field Info Lcom/geoknoesis/kastor/rdf/dsl/Severity;
+	public static final field Violation Lcom/geoknoesis/kastor/rdf/dsl/Severity;
+	public static final field Warning Lcom/geoknoesis/kastor/rdf/dsl/Severity;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getIri-tqZU9bw ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/dsl/Severity;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/dsl/Severity;
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/ShaclDsl {
+	public fun <init> ()V
+	public final fun build ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun nodeShape (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun prefixes (Lkotlin/jvm/functions/Function1;)V
+	public final fun propertyShape (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/ShaclDslKt {
+	public static final fun shacl (Lkotlin/jvm/functions/Function1;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/SparqlConstraintDsl {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/dsl/GraphDsl;Lkotlin/jvm/functions/Function1;)V
+	public final fun deactivated (Z)V
+	public static synthetic fun deactivated$default (Lcom/geoknoesis/kastor/rdf/dsl/SparqlConstraintDsl;ZILjava/lang/Object;)V
+	public final fun labelTemplate (Ljava/lang/String;)V
+	public final fun labelTemplate (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;)V
+	public final fun message (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun parameter (Ljava/lang/String;)V
+	public final fun parameter-J_zqV-w (Ljava/lang/String;)V
+	public final fun prefixes (Lkotlin/jvm/functions/Function1;)V
+	public final fun severity (Lcom/geoknoesis/kastor/rdf/dsl/Severity;)V
+}
+

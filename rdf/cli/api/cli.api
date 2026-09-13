@@ -1,0 +1,4 @@
+public final class com/geoknoesis/kastor/rdf/cli/KastorRdfCli {
+	public static final fun main ([Ljava/lang/String;)V
+}
+

@@ -30,7 +30,7 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
             supportsShaclPy = false,
             supportsShaclDash = false,
             supportsCustomConstraints = false,
-            supportsParallelValidation = true,
+            supportsParallelValidation = false,
             supportsStreamingValidation = false,
             supportsIncrementalValidation = false,
             supportsRdf12TripleTermsInData = true,

@@ -15,9 +15,9 @@ import java.io.StringReader
  * Extracts NodeShapes and their property constraints for code generation.
  * Uses Apache Jena for proper RDF parsing.
  */
-class ShaclParser(private val logger: KSPLogger) {
+public class ShaclParser(private val logger: KSPLogger) {
 
-    companion object {
+    public companion object {
         private const val SHACL_NS = "http://www.w3.org/ns/shacl#"
         private const val RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
         private const val RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#"
@@ -30,7 +30,7 @@ class ShaclParser(private val logger: KSPLogger) {
      * @param inputStream The SHACL file input stream
      * @return List of extracted SHACL shapes
      */
-    fun parseShacl(inputStream: InputStream): List<ShaclShape> {
+    public fun parseShacl(inputStream: InputStream): List<ShaclShape> {
         val content = inputStream.bufferedReader().use { it.readText() }
         return parseShaclContent(content)
     }
@@ -41,7 +41,7 @@ class ShaclParser(private val logger: KSPLogger) {
      * @param content The SHACL content as string
      * @return List of extracted SHACL shapes
      */
-    fun parseShaclContent(content: String): List<ShaclShape> {
+    public fun parseShaclContent(content: String): List<ShaclShape> {
         val shapes = mutableListOf<ShaclShape>()
         
         try {

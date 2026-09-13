@@ -1,0 +1,104 @@
+public class com/geoknoesis/kastor/gen/gradle/OntoMapperExtension {
+	public fun <init> ()V
+	public final fun getOntologies ()Lorg/gradle/api/NamedDomainObjectContainer;
+	public final fun ontologies (Lkotlin/jvm/functions/Function1;)V
+	public final fun ontology (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun setOntologies (Lorg/gradle/api/NamedDomainObjectContainer;)V
+}
+
+public final class com/geoknoesis/kastor/gen/gradle/OntoMapperPlugin : org/gradle/api/Plugin {
+	public fun <init> ()V
+	public synthetic fun apply (Ljava/lang/Object;)V
+	public fun apply (Lorg/gradle/api/Project;)V
+}
+
+public final class com/geoknoesis/kastor/gen/gradle/OntologyConfig {
+	public fun <init> ()V
+	public final fun getContextPath ()Ljava/lang/String;
+	public final fun getDslName ()Ljava/lang/String;
+	public final fun getDslPackage ()Ljava/lang/String;
+	public final fun getGenerateDsl ()Z
+	public final fun getGenerateInterfaces ()Z
+	public final fun getGenerateVocabulary ()Z
+	public final fun getGenerateWrappers ()Z
+	public final fun getInterfacePackage ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getOutputDirectory ()Ljava/lang/String;
+	public final fun getShaclPath ()Ljava/lang/String;
+	public final fun getVocabularyName ()Ljava/lang/String;
+	public final fun getVocabularyNamespace ()Ljava/lang/String;
+	public final fun getVocabularyPackage ()Ljava/lang/String;
+	public final fun getVocabularyPrefix ()Ljava/lang/String;
+	public final fun getWrapperPackage ()Ljava/lang/String;
+	public final fun setContextPath (Ljava/lang/String;)V
+	public final fun setDslName (Ljava/lang/String;)V
+	public final fun setDslPackage (Ljava/lang/String;)V
+	public final fun setGenerateDsl (Z)V
+	public final fun setGenerateInterfaces (Z)V
+	public final fun setGenerateVocabulary (Z)V
+	public final fun setGenerateWrappers (Z)V
+	public final fun setInterfacePackage (Ljava/lang/String;)V
+	public final fun setName (Ljava/lang/String;)V
+	public final fun setOutputDirectory (Ljava/lang/String;)V
+	public final fun setShaclPath (Ljava/lang/String;)V
+	public final fun setVocabularyName (Ljava/lang/String;)V
+	public final fun setVocabularyNamespace (Ljava/lang/String;)V
+	public final fun setVocabularyPackage (Ljava/lang/String;)V
+	public final fun setVocabularyPrefix (Ljava/lang/String;)V
+	public final fun setWrapperPackage (Ljava/lang/String;)V
+}
+
+public final class com/geoknoesis/kastor/gen/gradle/TermType : java/lang/Enum {
+	public static final field CLASS Lcom/geoknoesis/kastor/gen/gradle/TermType;
+	public static final field PROPERTY Lcom/geoknoesis/kastor/gen/gradle/TermType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/gradle/TermType;
+	public static fun values ()[Lcom/geoknoesis/kastor/gen/gradle/TermType;
+}
+
+public final class com/geoknoesis/kastor/gen/gradle/VocabularyGenerator {
+	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
+	public final fun generateVocabulary (Ljava/io/File;Ljava/io/File;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/gradle/VocabularyTerm {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/gradle/TermType;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/geoknoesis/kastor/gen/gradle/TermType;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/gradle/TermType;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/gradle/VocabularyTerm;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/gradle/VocabularyTerm;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/gradle/TermType;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/gradle/VocabularyTerm;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getIri ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getType ()Lcom/geoknoesis/kastor/gen/gradle/TermType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class com/geoknoesis/kastor/gen/gradle/tasks/OntologyGenerationTask : org/gradle/api/DefaultTask {
+	public fun <init> ()V
+	public final fun generateOntology ()V
+	public fun getContextFile ()Lorg/gradle/api/file/RegularFileProperty;
+	public final fun getContextInput ()Ljava/io/File;
+	public abstract fun getContextPath ()Lorg/gradle/api/provider/Property;
+	public abstract fun getDslName ()Lorg/gradle/api/provider/Property;
+	public abstract fun getDslPackage ()Lorg/gradle/api/provider/Property;
+	public abstract fun getGenerateDsl ()Lorg/gradle/api/provider/Property;
+	public abstract fun getGenerateInterfaces ()Lorg/gradle/api/provider/Property;
+	public abstract fun getGenerateVocabulary ()Lorg/gradle/api/provider/Property;
+	public abstract fun getGenerateWrappers ()Lorg/gradle/api/provider/Property;
+	public abstract fun getInterfacePackage ()Lorg/gradle/api/provider/Property;
+	public abstract fun getOutputDirectory ()Lorg/gradle/api/file/DirectoryProperty;
+	public fun getShaclFile ()Lorg/gradle/api/file/RegularFileProperty;
+	public final fun getShaclInput ()Ljava/io/File;
+	public abstract fun getShaclPath ()Lorg/gradle/api/provider/Property;
+	public abstract fun getVocabularyName ()Lorg/gradle/api/provider/Property;
+	public abstract fun getVocabularyNamespace ()Lorg/gradle/api/provider/Property;
+	public abstract fun getVocabularyPackage ()Lorg/gradle/api/provider/Property;
+	public abstract fun getVocabularyPrefix ()Lorg/gradle/api/provider/Property;
+	public abstract fun getWrapperPackage ()Lorg/gradle/api/provider/Property;
+}
+

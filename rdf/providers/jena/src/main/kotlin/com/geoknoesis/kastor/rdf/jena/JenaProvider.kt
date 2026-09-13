@@ -9,7 +9,7 @@ class JenaProvider : RdfProvider {
     
     override val id: String = "jena"
     override val name: String = "Jena Repository"
-    override val version: String = "4.0.0"
+    override val version: String = org.apache.jena.Jena.VERSION
     
     override fun variants(): List<RdfVariant> {
         return listOf(
@@ -48,7 +48,7 @@ class JenaProvider : RdfProvider {
         return ProviderCapabilities(
             rdfVersion = "1.2",
             supportsTripleTerms = true,
-            supportsInference = true,
+            supportsInference = variantId?.endsWith("-inference") == true,
             supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = true,
@@ -67,10 +67,7 @@ class JenaProvider : RdfProvider {
     
     override fun supportsFormat(format: String): Boolean {
         val normalized = format.uppercase().trim()
-        return normalized in listOf(
-            "TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", 
-            "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ"
-        )
+        return normalized in getCapabilities(null).supportedInputFormats
     }
     
     override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
@@ -83,7 +80,7 @@ class JenaProvider : RdfProvider {
             ?: throw UnsupportedOperationException("JenaProvider can only serialize Jena repositories")
         
         val dataset = jenaRepo.getJenaDataset()
-        return JenaBridge.serializeDataset(dataset, format, options)
+        return jenaRepo.withRead { JenaBridge.serializeDataset(dataset, format, options) }
     }
     
     override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
@@ -105,145 +102,53 @@ class JenaProvider : RdfProvider {
         return JenaBridge.fromJenaModel(model)
     }
 
-    /**
-     * Truly streaming triple parse. Jena's [org.apache.jena.riot.system.AsyncParser]
-     * runs the parser on a background thread feeding a bounded queue, so triples are
-     * produced incrementally and memory stays roughly constant regardless of input size
-     * — unlike the default `parseStreaming`, which builds a full in-memory model first.
-     * Backs [com.geoknoesis.kastor.rdf.Rdf.parseStreaming] and `parseStreamingFlow`.
-     *
-     * The caller owns [inputStream]; consume the whole sequence so the backing parser
-     * thread terminates promptly.
-     */
-    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
+    /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer. */
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
+        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+            .use { it.toList().asSequence() }
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
         val lang = org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
-        // A throwaway model is used only to view parsed graph Nodes as RDFNodes for
-        // JenaTerms conversion (datatype/lang/triple-term aware).
+            ?: throw IllegalArgumentException("Unknown RDF format $format")
+        val parser = org.apache.jena.riot.system.AsyncParser.asyncParseTriples(inputStream, lang, null)
         val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
-        return org.apache.jena.riot.system.AsyncParser
-            .asyncParseTriples(inputStream, lang, null)
-            .asSequence()
-            .map { triple ->
-                RdfTriple(
-                    JenaTerms.fromNode(model.asRDFNode(triple.subject)) as RdfResource,
-                    JenaTerms.fromNode(model.asRDFNode(triple.predicate)) as Iri,
-                    JenaTerms.fromNode(model.asRDFNode(triple.`object`)),
-                )
-            }
-    }
-
-    override fun parseDataset(
-        repository: RdfRepository,
-        inputStream: java.io.InputStream,
-        format: String,
-        baseIri: String?,
-    ) {
-        if (baseIri == null) {
-            parseDataset(repository, inputStream, format)
-            return
-        }
-        val data = inputStream.readBytes()
-        val parsedDataset = org.apache.jena.query.DatasetFactory.create()
-        org.apache.jena.riot.RDFParser
-            .source(data.inputStream())
-            .lang(org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format)))
-            .base(baseIri)
-            .parse(parsedDataset)
-        copyDataset(parsedDataset, repository)
-    }
-
-    private fun copyDataset(parsedDataset: org.apache.jena.query.Dataset, repository: RdfRepository) {
-        val jenaRepo = repository as? JenaRepository
-        if (jenaRepo != null) {
-            val dataset = jenaRepo.getJenaDataset()
-            dataset.defaultModel.removeAll()
-            dataset.defaultModel.add(parsedDataset.defaultModel)
-            parsedDataset.listNames().asSequence().forEach { graphName: String ->
-                if (dataset.containsNamedModel(graphName)) {
-                    dataset.removeNamedModel(graphName)
+        return object : TripleStream {
+            private var closed = false
+            private val rows = parser.asSequence().map { triple ->
+                check(!closed) { "Triple stream is closed" }
+                RdfTriple(JenaTerms.fromNode(model.asRDFNode(triple.subject)) as RdfResource,
+                    Iri(triple.predicate.uri), JenaTerms.fromNode(model.asRDFNode(triple.`object`)))
+            }.constrainOnce()
+            override fun iterator(): Iterator<RdfTriple> { check(!closed); return rows.iterator() }
+            override fun close() {
+                if (!closed) {
+                    closed = true
+                    try { inputStream.close() } finally { try { parser.close() } finally { model.close() } }
                 }
-                dataset.addNamedModel(graphName, parsedDataset.getNamedModel(graphName))
-            }
-            return
-        }
-        parsedDataset.defaultModel.listStatements().asSequence().forEach { stmt ->
-            repository.editDefaultGraph().addTriple(
-                RdfTriple(
-                    JenaTerms.fromResource(stmt.subject),
-                    JenaTerms.fromProperty(stmt.predicate),
-                    JenaTerms.fromNode(stmt.`object`),
-                )
-            )
-        }
-        parsedDataset.listNames().asSequence().forEach { graphName ->
-            val namedModel = parsedDataset.getNamedModel(graphName)
-            val graphIri = Iri(graphName)
-            if (!repository.hasGraph(graphIri)) repository.createGraph(graphIri)
-            namedModel.listStatements().asSequence().forEach { stmt ->
-                repository.editGraph(graphIri).addTriple(
-                    RdfTriple(
-                        JenaTerms.fromResource(stmt.subject),
-                        JenaTerms.fromProperty(stmt.predicate),
-                        JenaTerms.fromNode(stmt.`object`),
-                    )
-                )
             }
         }
     }
 
-    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
-        // If it's a Jena repository, we can directly use the dataset
-        val jenaRepo = repository as? JenaRepository
-        if (jenaRepo != null) {
-            val dataset = jenaRepo.getJenaDataset()
-            val parsedDataset = JenaBridge.parseDatasetFromStream(inputStream, format)
-            
-            // Copy default graph
-            dataset.defaultModel.removeAll()
-            dataset.defaultModel.add(parsedDataset.defaultModel)
-            
-            // Copy named graphs
-            parsedDataset.listNames().asSequence().forEach { graphName: String ->
-                if (dataset.containsNamedModel(graphName)) {
-                    dataset.removeNamedModel(graphName)
-                }
-                dataset.addNamedModel(graphName, parsedDataset.getNamedModel(graphName))
-            }
-        } else {
-            // For non-Jena repositories, copy triples manually
-            val dataset = JenaBridge.parseDatasetFromStream(inputStream, format)
-            
-            // Copy default graph to repository
-            dataset.defaultModel.listStatements().asSequence().forEach { statement: org.apache.jena.rdf.model.Statement ->
-                val subject = JenaTerms.fromResource(statement.subject)
-                val predicate = JenaTerms.fromProperty(statement.predicate)
-                val obj = JenaTerms.fromNode(statement.`object`)
-                repository.editDefaultGraph().addTriple(RdfTriple(subject, predicate, obj))
-            }
-            
-            // Copy named graphs to repository
-            dataset.listNames().asSequence().forEach { graphName: String ->
-                val namedModel = dataset.getNamedModel(graphName)
-                val graphIri = Iri(graphName)
-                if (!repository.hasGraph(graphIri)) {
-                    repository.createGraph(graphIri)
-                }
-                namedModel.listStatements().asSequence().forEach { statement: org.apache.jena.rdf.model.Statement ->
-                    val subject = JenaTerms.fromResource(statement.subject)
-                    val predicate = JenaTerms.fromProperty(statement.predicate)
-                    val obj = JenaTerms.fromNode(statement.`object`)
-                    repository.editGraph(graphIri).addTriple(RdfTriple(subject, predicate, obj))
+    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
+        val parsed = org.apache.jena.query.DatasetFactory.create()
+        try {
+            val parser = org.apache.jena.riot.RDFParser.source(inputStream)
+                .lang(org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format)))
+            if (baseIri != null) parser.base(baseIri)
+            parser.parse(parsed)
+            repository.transaction {
+                val jena = repository as? JenaRepository
+                if (jena != null) {
+                    val target = jena.getJenaDataset()
+                    target.defaultModel.add(parsed.defaultModel)
+                    parsed.listNames().forEachRemaining { target.getNamedModel(it).add(parsed.getNamedModel(it)) }
+                } else {
+                    editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
+                    parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
                 }
             }
-        }
+        } finally { parsed.close() }
     }
+    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) =
+        parseDataset(repository, inputStream, format, null)
 }
-
-
-
-
-
-
-
-
-

@@ -20,8 +20,8 @@ fun RdfBacked.replacePredicateLiterals(predicate: Iri, literal: Literal) {
   )
   val stale =
     rdf.graph
-      .getTriples()
-      .filter { it.subject == subj && it.predicate == predicate && it.obj is Literal }
+      .find(subj, predicate)
+      .filter { it.obj is Literal }
       .toList()
   if (stale.isNotEmpty()) {
     editor.removeTriples(stale)
@@ -40,8 +40,8 @@ fun RdfBacked.replacePredicateObjectTerm(predicate: Iri, obj: RdfTerm) {
   )
   val stale =
     rdf.graph
-      .getTriples()
-      .filter { it.subject == subj && it.predicate == predicate && (it.obj is Iri || it.obj is BlankNode) }
+      .find(subj, predicate)
+      .filter { it.obj is Iri || it.obj is BlankNode }
       .toList()
   if (stale.isNotEmpty()) {
     editor.removeTriples(stale)

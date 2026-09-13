@@ -7,6 +7,12 @@ plugins {
 }
 
 dependencies {
+  implementation(project(":tools:onto-quality-embed")) {
+    // These benchmarks use precomputed vectors, not native model inference.
+    exclude(group = "com.microsoft.onnxruntime")
+    exclude(group = "ai.djl.huggingface")
+    exclude(group = "ai.djl")
+  }
   implementation(project(":rdf:core"))
   implementation(project(":rdf:shacl-validation"))
   implementation(project(":rdf:rdf4j"))

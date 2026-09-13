@@ -18,6 +18,8 @@ Contributors: [repository architecture](docs/kastor/concepts/architecture.md) (G
 
 > 💝 **Support Kastor**: If this project helps you, consider [sponsoring](https://github.com/sponsors/geoknoesis) to ensure continued maintenance and feature development. Organizations using Kastor in production can contact us for enterprise support and custom adaptations.
 
+See [release contracts and verification](docs/reference/release-contract.md) for tested capabilities, resource ownership, generated snapshots, and experimental limitations.
+
 ## Why Kastor (in one sentence)
 Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces with a side-channel back to RDF, plus a vocabulary-agnostic DSL that keeps RDF explicit without forcing RDF types into your business code.
 
@@ -95,12 +97,8 @@ import org.eclipse.rdf4j.repository.Repository
 // Your existing RDF4J repository
 val rdf4jRepo: Repository = // ... your existing setup
 
-// Use it through Kastor's unified API
-val repo = Rdf.repository {
-    providerId = "rdf4j"
-    variantId = "native"
-    // Uses your existing RDF4J configuration
-}
+// Wrap the initialized repository. Closing the adapter also shuts down rdf4jRepo.
+val repo = com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository(rdf4jRepo)
 
 // Now write cleaner Kotlin code
 repo.add {
@@ -145,7 +143,7 @@ Kastor provides a **dual-layer architecture** that serves both RDF experts and a
 - **Zero RDF Dependencies**: Domain objects have no RDF library dependencies
 
 ### 🏗️ **Enterprise Ready**
-- **ACID Transactions**: Full transaction support across all backends
+- **Transactions**: Local memory, Jena, and RDF4J rollback; HTTP endpoints expose individual operations
 - **Performance Optimized**: Streaming, parallel processing, and memory management
 - **Production Backends**: Jena TDB2 and RDF4J Native Store support
 - **Validation & Reasoning**: Built-in SHACL validation and OWL/RDFS reasoning
@@ -198,7 +196,7 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **📈 Graph Operations**: Advanced triple storage, retrieval, manipulation, and graph algorithms
 - **🔍 SPARQL Integration**: Full SPARQL 1.1 support with type-safe query builders
 - **💾 Serialization**: Complete RDF format support (Turtle, RDF/XML, JSON-LD, N-Triples, N-Quads)
-- **🔒 ACID Transactions**: Production-grade transaction support with rollback capabilities
+- **🔒 ACID Transactions**: Local provider rollback with provider-specific guarantees
 - **🧮 Graph testing**: Module **`rdf-testkit`** — RDF-isomorphic assertions and golden Turtle checks; **`rdf-cli`** — `parse`, `to-turtle`, and `diff` from the command line ([guide](docs/kastor/guides/how-to-test-rdf-graphs.md))
 - **🎨 Natural Language DSL**: Intuitive syntax (`person is "foaf:Person"`, `person has name with "Alice"`)
 
