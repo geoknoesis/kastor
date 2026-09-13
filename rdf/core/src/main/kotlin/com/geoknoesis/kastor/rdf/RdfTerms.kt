@@ -1111,6 +1111,9 @@ interface RdfGraph {
  * 
  * Provides both read and write operations for RDF graphs.
  */
+/** Batch size of the default streaming `addTriples`/`removeTriples` overloads of [MutableRdfGraph]. */
+internal const val STREAMING_WRITE_BATCH_SIZE: Int = 10_000
+
 interface MutableRdfGraph : RdfGraph {
     /**
      * Adds a single triple to the graph.
@@ -1143,6 +1146,42 @@ interface MutableRdfGraph : RdfGraph {
      * @return true if any triples were removed
      */
     fun removeTriples(triples: Collection<RdfTriple>): Boolean
+
+    /**
+     * Adds triples from an [Iterable] that need not be a [Collection].
+     *
+     * Collections are delegated to the `Collection` overload; other iterables are streamed like a
+     * [Sequence]. Transactional providers override this to write in a single transaction.
+     */
+    fun addTriples(triples: Iterable<RdfTriple>) {
+        if (triples is Collection<RdfTriple>) addTriples(triples) else addTriples(triples.asSequence())
+    }
+
+    /**
+     * Adds triples from a [Sequence] while streaming: the sequence is consumed once and never fully
+     * materialised. The default writes bounded batches through the `Collection` overload; transactional
+     * providers (Jena, RDF4J) override it to stream into a single transaction.
+     */
+    fun addTriples(triples: Sequence<RdfTriple>) {
+        triples.chunked(STREAMING_WRITE_BATCH_SIZE).forEach { batch -> addTriples(batch) }
+    }
+
+    /**
+     * Removes triples from an [Iterable]; delegation as for the `Iterable` [addTriples] overload.
+     * @return true if any triples were removed
+     */
+    fun removeTriples(triples: Iterable<RdfTriple>): Boolean =
+        if (triples is Collection<RdfTriple>) removeTriples(triples) else removeTriples(triples.asSequence())
+
+    /**
+     * Removes triples from a [Sequence] while streaming (bounded batches by default).
+     * @return true if any triples were removed
+     */
+    fun removeTriples(triples: Sequence<RdfTriple>): Boolean {
+        var changed = false
+        triples.chunked(STREAMING_WRITE_BATCH_SIZE).forEach { batch -> if (removeTriples(batch)) changed = true }
+        return changed
+    }
 
     /**
      * Clear all triples from this graph.

@@ -35,17 +35,33 @@ internal class JenaGraph(
         model.graph.add(JenaTerms.toJenaTriple(triple))
     }
 
-    override fun addTriples(triples: Collection<RdfTriple>): Unit = write {
+    override fun addTriples(triples: Collection<RdfTriple>): Unit = write { addInCurrentTransaction(triples.iterator()) }
+
+    /** Streams [triples] into a single write transaction. */
+    override fun addTriples(triples: Iterable<RdfTriple>): Unit = write { addInCurrentTransaction(triples.iterator()) }
+
+    /** Streams [triples] into a single write transaction without materialising the sequence. */
+    override fun addTriples(triples: Sequence<RdfTriple>): Unit = write { addInCurrentTransaction(triples.iterator()) }
+
+    private fun addInCurrentTransaction(triples: Iterator<RdfTriple>) {
         val graph = model.graph
         triples.forEach { graph.add(JenaTerms.toJenaTriple(it)) }
     }
 
     override fun removeTriple(triple: RdfTriple): Boolean = write { removeInCurrentTransaction(triple) }
 
-    override fun removeTriples(triples: Collection<RdfTriple>): Boolean = write {
+    override fun removeTriples(triples: Collection<RdfTriple>): Boolean = write { removeAllInCurrentTransaction(triples.iterator()) }
+
+    /** Streams removals into a single write transaction. */
+    override fun removeTriples(triples: Iterable<RdfTriple>): Boolean = write { removeAllInCurrentTransaction(triples.iterator()) }
+
+    /** Streams removals into a single write transaction without materialising the sequence. */
+    override fun removeTriples(triples: Sequence<RdfTriple>): Boolean = write { removeAllInCurrentTransaction(triples.iterator()) }
+
+    private fun removeAllInCurrentTransaction(triples: Iterator<RdfTriple>): Boolean {
         var changed = false
         triples.forEach { if (removeInCurrentTransaction(it)) changed = true }
-        changed
+        return changed
     }
 
     private fun removeInCurrentTransaction(triple: RdfTriple): Boolean {
