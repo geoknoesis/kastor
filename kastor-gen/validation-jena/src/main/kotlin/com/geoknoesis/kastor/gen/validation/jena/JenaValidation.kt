@@ -1,243 +1,200 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
-import com.geoknoesis.kastor.gen.runtime.ValidationContext
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
+import com.geoknoesis.kastor.gen.runtime.ValidationContext
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.BlankNode
+import com.geoknoesis.kastor.rdf.Direction
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
-import org.apache.jena.rdf.model.AnonId
-import org.apache.jena.rdf.model.Model
-import org.apache.jena.rdf.model.ModelFactory
-import org.apache.jena.rdf.model.Property
-import org.apache.jena.rdf.model.RDFNode
-import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.ResourceFactory
+import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TripleTerm
+import com.geoknoesis.kastor.rdf.TypedLiteral
+import com.geoknoesis.kastor.rdf.jena.JenaBridge
+import org.apache.jena.graph.Graph
+import org.apache.jena.graph.GraphUtil
+import org.apache.jena.graph.Node
+import org.apache.jena.graph.NodeFactory
+import org.apache.jena.riot.Lang
+import org.apache.jena.riot.RDFParser
+import org.apache.jena.shacl.ShaclValidator
+import org.apache.jena.shacl.Shapes
+import org.apache.jena.shacl.validation.ReportEntry
+import org.apache.jena.shacl.validation.Severity
 import org.apache.jena.sparql.graph.GraphFactory
-import org.apache.jena.vocabulary.RDF
+import org.apache.jena.sparql.path.P_Link
+import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 
 /**
- * Jena-based SHACL validation adapter.
- * Bridges Kastor RdfGraph to Jena Model for SHACL validation.
+ * Jena-based SHACL validation adapter backed by `jena-shacl`.
+ *
+ * Shapes can be supplied in two ways:
+ * - **Separate shapes graph** (recommended): `JenaValidation(shapesGraph)` or [fromTurtle]. The
+ *   shapes are copied and parsed once at construction and reused for every [validate] call.
+ * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): shapes are
+ *   parsed from the data graph on each call. If the data graph declares no shapes the result is
+ *   [ValidationResult.Ok].
+ *
+ * [validate] evaluates only the shapes that target the given focus node and returns the results
+ * whose `sh:focusNode` is that node. Jena-backed Kastor graphs are validated in place (no copy);
+ * other graphs are converted to a Jena graph per call.
+ *
+ * Engine failures (malformed shapes, unsupported focus terms, ...) are thrown rather than being
+ * reported as violations or silently accepted.
  */
-class JenaValidation : ValidationContext {
-  
+class JenaValidation private constructor(private val fixedShapes: Shapes?) : ValidationContext {
+
+  /** Validates against SHACL shapes found in the data graph passed to [validate]. */
+  constructor() : this(null as Shapes?)
+
+  /** Validates against the SHACL shapes in [shapes] (copied and parsed once). */
+  constructor(shapes: RdfGraph) : this(parseShapes(copyOf(JenaBridge.toJenaGraph(shapes))))
+
   companion object {
-    private const val SHACL_NS = "http://www.w3.org/ns/shacl#"
-    private const val ERROR_CONVERT_RESOURCE = "Cannot convert %s to Jena Resource"
-    private const val ERROR_CONVERT_NODE = "Cannot convert %s to Jena RDFNode"
-    private const val ERROR_NO_FOCUS_RESULTS = "SHACL validation failed for focus node"
-    private val NODE_SHAPE = ResourceFactory.createResource("${SHACL_NS}NodeShape")
-    private val TARGET_CLASS = ResourceFactory.createProperty("${SHACL_NS}targetClass")
-    private val SHACL_PROPERTY = ResourceFactory.createProperty("${SHACL_NS}property")
-    private val PATH = ResourceFactory.createProperty("${SHACL_NS}path")
-    private val MIN_COUNT = ResourceFactory.createProperty("${SHACL_NS}minCount")
-    private val MESSAGE = ResourceFactory.createProperty("${SHACL_NS}message")
-    private val FOCUS_NODE = ResourceFactory.createProperty("${SHACL_NS}focusNode")
-    private val RESULT_MESSAGE = ResourceFactory.createProperty("${SHACL_NS}resultMessage")
-    private val RESULT_PATH = ResourceFactory.createProperty("${SHACL_NS}resultPath")
-    private val RESULT_SEVERITY = ResourceFactory.createProperty("${SHACL_NS}resultSeverity")
-  }
-  
+    private const val SH = "http://www.w3.org/ns/shacl#"
+    private const val RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    private const val MAX_SHAPE_ANCESTOR_DEPTH = 16
 
-  
-  /**
-   * Validates the focus node against SHACL shapes.
-   *
-   * This implementation performs basic SHACL validation using Jena's capabilities.
-   * For production use, configure proper SHACL shapes and validation rules.
-   */
+    private val SHAPE_MARKERS: List<Pair<Node, Node?>> = listOf(
+      NodeFactory.createURI(RDF_TYPE) to NodeFactory.createURI("${SH}NodeShape"),
+      NodeFactory.createURI(RDF_TYPE) to NodeFactory.createURI("${SH}PropertyShape"),
+      NodeFactory.createURI("${SH}targetClass") to null,
+      NodeFactory.createURI("${SH}targetNode") to null,
+      NodeFactory.createURI("${SH}targetSubjectsOf") to null,
+      NodeFactory.createURI("${SH}targetObjectsOf") to null,
+    )
+    private val SH_MESSAGE: Node = NodeFactory.createURI("${SH}message")
+
+    /** Creates a validator from SHACL shapes written in Turtle. */
+    @JvmStatic
+    fun fromTurtle(shapesTurtle: String): JenaValidation {
+      val graph = RDFParser.create().fromString(shapesTurtle).lang(Lang.TURTLE).toGraph()
+      return JenaValidation(parseShapes(graph))
+    }
+
+    private fun parseShapes(graph: Graph): Shapes = Shapes.parse(graph)
+
+    private fun copyOf(graph: Graph): Graph =
+      GraphFactory.createDefaultGraph().also { GraphUtil.addInto(it, graph) }
+  }
+
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+    val focusNode = toFocusNode(focus)
+    val dataGraph = JenaBridge.toJenaGraph(data)
+    val shapes = fixedShapes ?: run {
+      if (!declaresShapes(dataGraph)) return ValidationResult.Ok
+      parseShapes(dataGraph)
+    }
+
+    val report = ShaclValidator.get().validate(shapes, dataGraph, focusNode)
+    if (report.conforms()) return ValidationResult.Ok
+
+    val items = report.entries
+      .filter { it.focusNode() == focusNode }
+      .map { toViolation(it, shapes.graph) }
+    return if (items.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(items)
+  }
+
+  private fun declaresShapes(graph: Graph): Boolean =
+    SHAPE_MARKERS.any { (p, o) -> graph.contains(Node.ANY, p, o ?: Node.ANY) }
+
+  private fun toFocusNode(focus: RdfTerm): Node = when (focus) {
+    is Iri -> NodeFactory.createURI(focus.value)
+    is BlankNode -> NodeFactory.createBlankNode(focus.id.removePrefix("_:"))
+    else -> throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
+  }
+
+  private fun toViolation(entry: ReportEntry, shapesGraph: Graph): ShaclViolation {
+    val source = entry.source()
+    val component = entry.sourceConstraintComponent()?.takeIf { it.isURI }
+    val path = (entry.resultPath() as? P_Link)?.node?.takeIf { it.isURI }?.let { Iri(it.uri) }
+    val shapeMessage = source?.let { firstObject(shapesGraph, it, SH_MESSAGE) }
+      ?.takeIf { it.isLiteral }?.literalLexicalForm
+    val message = shapeMessage
+      ?: entry.message()?.takeIf { it.isNotBlank() }
+      ?: "SHACL constraint ${component?.localName ?: "violation"} failed"
+
+    return ShaclViolation(
+      focusNode = toTerm(entry.focusNode()) as RdfResource,
+      shapeIri = source?.let { resolveShapeIri(shapesGraph, it) } ?: KSHACL.Shape,
+      constraintIri = component?.let { Iri(it.uri) } ?: KSHACL.ConstraintComponent,
+      path = path,
+      actualValue = entry.value()?.let(::toTerm),
+      expectedValue = if (source != null && component != null) parameterValue(shapesGraph, source, component) else null,
+      message = message,
+      severity = when (entry.severity()) {
+        Severity.Warning -> ShaclSeverity.Warning
+        Severity.Info -> ShaclSeverity.Info
+        else -> ShaclSeverity.Violation
+      },
+    )
+  }
+
+  /** Returns [shape] if it is an IRI, otherwise the nearest IRI-named shape that references it. */
+  private fun resolveShapeIri(graph: Graph, shape: Node): Iri? {
+    if (shape.isURI) return Iri(shape.uri)
+    val seen = HashSet<Node>()
+    var frontier = listOf(shape)
+    repeat(MAX_SHAPE_ANCESTOR_DEPTH) {
+      val next = ArrayList<Node>()
+      for (node in frontier) {
+        if (!seen.add(node)) continue
+        val it = graph.find(Node.ANY, Node.ANY, node)
+        try {
+          while (it.hasNext()) {
+            val subject = it.next().subject
+            if (subject.isURI) return Iri(subject.uri)
+            next.add(subject)
+          }
+        } finally {
+          it.close()
+        }
+      }
+      if (next.isEmpty()) return null
+      frontier = next
+    }
+    return null
+  }
+
+  /** e.g. sh:DatatypeConstraintComponent -> the shape's sh:datatype value (non-list values only). */
+  private fun parameterValue(graph: Graph, shape: Node, component: Node): RdfTerm? {
+    val local = component.localName.removeSuffix("ConstraintComponent")
+    if (local.isEmpty() || local == component.localName) return null
+    val parameter = NodeFactory.createURI(SH + local.replaceFirstChar { it.lowercaseChar() })
+    return firstObject(graph, shape, parameter)?.takeUnless { it.isBlank }?.let(::toTerm)
+  }
+
+  private fun firstObject(graph: Graph, subject: Node, predicate: Node): Node? {
+    val it = graph.find(subject, predicate, Node.ANY)
     return try {
-      val jenaModel = convertToJenaModel(data)
-
-      if (!jenaModel.contains(null, RDF.type, NODE_SHAPE)) {
-        return ValidationResult.Ok
-      }
-
-      val shapesModel = extractShapesModel(jenaModel)
-      if (shapesModel.isEmpty) {
-        return ValidationResult.Ok
-      }
-
-      val focusResource = when (focus) {
-        is Iri -> jenaModel.createResource(focus.value)
-        is BlankNode -> jenaModel.createResource(AnonId(focus.id))
-        else -> null
-      } ?: return ValidationResult.Violations(listOf(
-        ShaclViolation(
-          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
-          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
-          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
-          message = ERROR_NO_FOCUS_RESULTS
-        )
-      ))
-
-      val dataModel = extractFocusDataModel(jenaModel, focusResource, shapesModel)
-      val violations = validateMinCount(dataModel, focusResource)
-      if (violations.isEmpty()) {
-        return ValidationResult.Ok
-      }
-
-      ValidationResult.Violations(violations)
-    } catch (e: Exception) {
-      ValidationResult.Violations(listOf(
-        ShaclViolation(
-          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
-          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
-          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
-          message = "SHACL validation failed: ${e.message}"
-        )
-      ))
+      if (it.hasNext()) it.next().`object` else null
+    } finally {
+      it.close()
     }
   }
 
-  private fun extractShapesModel(model: Model): Model {
-    val shapesModel = ModelFactory.createDefaultModel()
-    val shapeNodes = model.listResourcesWithProperty(RDF.type, NODE_SHAPE).toSet().toMutableSet()
-
-    var added = true
-    while (added) {
-      added = false
-      model.listStatements().forEachRemaining { statement ->
-        val subject = statement.subject
-        if (shapeNodes.contains(subject)) {
-          shapesModel.add(statement)
-          val obj = statement.`object`
-          if (obj.isResource && shapeNodes.add(obj.asResource())) {
-            added = true
-          }
-        }
+  private fun toTerm(node: Node): RdfTerm = when {
+    node.isURI -> Iri(node.uri)
+    node.isBlank -> BlankNode(node.blankNodeLabel)
+    node.isLiteral -> {
+      val lang = node.literalLanguage
+      if (!lang.isNullOrEmpty()) {
+        LangString(node.literalLexicalForm, lang, Direction.fromToken(node.literalBaseDirection?.direction()))
+      } else {
+        val datatype = Iri(node.literalDatatypeURI)
+        runCatching { Literal(node.literalLexicalForm, datatype) }
+          .getOrElse { TypedLiteral(node.literalLexicalForm, datatype) }
       }
     }
-
-    return shapesModel
-  }
-
-  private fun extractFocusDataModel(
-    model: Model,
-    focus: Resource,
-    shapesModel: Model
-  ): Model {
-    val dataModel = ModelFactory.createDefaultModel()
-    val focusNodes = mutableSetOf<Resource>(focus)
-
-    model.listStatements(focus, null, null as RDFNode?).forEachRemaining { statement ->
-      val obj = statement.`object`
-      if (obj.isResource) {
-        focusNodes.add(obj.asResource())
-      }
+    node.isTripleTerm -> {
+      val t = node.triple
+      TripleTerm(RdfTriple(toTerm(t.subject) as RdfResource, Iri(t.predicate.uri), toTerm(t.`object`)))
     }
-
-    model.listStatements().forEachRemaining { statement ->
-      if (shapesModel.contains(statement)) return@forEachRemaining
-      if (focusNodes.contains(statement.subject) || statement.`object` == focus) {
-        dataModel.add(statement)
-      }
-    }
-
-    return dataModel
-  }
-
-  private fun validateMinCount(
-    dataModel: Model,
-    focus: Resource
-  ): List<ShaclViolation> {
-    val nameProperty = ResourceFactory.createProperty("http://xmlns.com/foaf/0.1/name")
-    if (!dataModel.listStatements(focus, null as Property?, null as RDFNode?).hasNext()) {
-      return emptyList()
-    }
-
-    return if (!dataModel.contains(focus, nameProperty, null as RDFNode?)) {
-      val focusIri = Iri.of(focus.uri)
-      val pathIri = Iri.of(nameProperty.uri)
-      listOf(
-        ShaclViolation(
-          focusNode = focusIri,
-          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,
-          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,
-          path = pathIri,
-          message = "Name is required"
-        )
-      )
-    } else {
-      emptyList()
-    }
-  }
-  
-  private fun convertToJenaModel(kastorGraph: RdfGraph): Model {
-    val jenaGraph = GraphFactory.createDefaultGraph()
-    val jenaModel = ModelFactory.createModelForGraph(jenaGraph)
-    
-    // Convert Kastor triples to Jena statements
-    kastorGraph.getTriples().forEach { triple ->
-      val subject = convertToJenaResource(triple.subject, jenaModel)
-      val predicate = convertToJenaProperty(triple.predicate, jenaModel)
-      val obj = convertToJenaRDFNode(triple.obj, jenaModel)
-      
-      jenaModel.add(subject, predicate, obj)
-    }
-    
-    return jenaModel
-  }
-  
-  private fun convertToJenaResource(term: RdfTerm, jenaModel: Model): Resource {
-    return when (term) {
-      is Iri -> jenaModel.createResource(term.value)
-      is BlankNode -> jenaModel.createResource(AnonId(term.id))
-      else -> throw IllegalArgumentException(ERROR_CONVERT_RESOURCE.format(term))
-    }
-  }
-  
-  private fun convertToJenaProperty(predicate: Iri, jenaModel: Model): Property {
-    return jenaModel.createProperty(predicate.value)
-  }
-  
-  private fun convertToJenaRDFNode(term: RdfTerm, jenaModel: Model): RDFNode {
-    return when (term) {
-      is Iri -> jenaModel.createResource(term.value)
-      is BlankNode -> jenaModel.createResource(AnonId(term.id))
-      is Literal -> {
-        when (term) {
-          is com.geoknoesis.kastor.rdf.LangString -> {
-            // RDF 1.2: when a base direction is set, build the literal as a
-            // typed `rdf:dirLangString` so SHACL `sh:datatype rdf:dirLangString`
-            // constraints validate. Plain language strings stay as
-            // `rdf:langString`.
-            val direction = term.direction
-            if (direction != null) {
-              jenaModel.createTypedLiteral(
-                "${term.lexical}@${term.lang}--${direction.token}",
-                term.datatype.value,
-              )
-            } else {
-              jenaModel.createLiteral(term.lexical, term.lang)
-            }
-          }
-          else -> {
-            jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
-          }
-        }
-      }
-      else -> throw IllegalArgumentException(ERROR_CONVERT_NODE.format(term))
-    }
+    else -> throw IllegalStateException("Unsupported node in SHACL report: $node")
   }
 }
-
-/**
- * Exception thrown when SHACL validation fails.
- */
-
-
-
-
-
-
-
-
-

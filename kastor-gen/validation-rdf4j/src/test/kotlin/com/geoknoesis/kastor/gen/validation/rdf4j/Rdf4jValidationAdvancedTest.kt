@@ -140,7 +140,7 @@ class Rdf4jValidationAdvancedTest {
     }
 
     @Test
-    fun `validation handles language-tagged literals`() {
+    fun `language-tagged names violate sh datatype xsd string`() {
         val validation = Rdf4jValidation()
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -149,14 +149,17 @@ class Rdf4jValidationAdvancedTest {
 
         repo.add {
             person - com.geoknoesis.kastor.rdf.vocab.RDF.type - personClass
-            person - FOAF.name - Literal("Jean")
-            person - FOAF.name - Literal("John")
+            person - FOAF.name - LangString("Jean", "fr")
+            person - FOAF.name - LangString("John", "en")
         }
 
-        // Should handle language-tagged literals
-        assertDoesNotThrow {
-            validation.validate(repo.defaultGraph, person).orThrow()
-        }
+        // rdf:langString values are not xsd:string, so real SHACL reports a datatype violation per value
+        val result = validation.validate(repo.defaultGraph, person)
+        assertTrue(result is com.geoknoesis.kastor.gen.runtime.ValidationResult.Violations)
+        val items = (result as com.geoknoesis.kastor.gen.runtime.ValidationResult.Violations).items
+        assertEquals(2, items.size)
+        assertTrue(items.all { it.constraintIri.value == "http://www.w3.org/ns/shacl#DatatypeConstraintComponent" })
+        assertEquals(setOf(LangString("Jean", "fr"), LangString("John", "en")), items.map { it.actualValue }.toSet())
     }
 
     @Test
@@ -317,7 +320,7 @@ class Rdf4jValidationAdvancedTest {
             ageShape - shOr - list(intConstraint, stringConstraint)
             ageShape - shMessage - string("Age must be int or string")
 
-            intConstraint - shDatatype - Iri("${xsd}int")
+            intConstraint - shDatatype - Iri("${xsd}integer")
             stringConstraint - shDatatype - Iri("${xsd}string")
         }
     }
