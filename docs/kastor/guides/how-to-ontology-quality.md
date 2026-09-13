@@ -87,7 +87,7 @@ Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, 
 ```kotlin
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 
-// Jena RDFS or OWL Micro: materialize then validate (no consistency row unless the engine reports one)
+// Jena RDFS or OWL Micro (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
 val reportRdfs = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 
 // HermiT (OWL 2 DL): same pipeline; globally inconsistent ontologies add ERROR-level rows tagged Kastor **K07** (with default checker / registry)
@@ -124,7 +124,7 @@ val checker = QualityChecker.builder(validator)
 val report = checker.check(enriched)
 ```
 
-On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**.
+On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
 
 #### Domain-specific embeddings (e.g. medical)
 
@@ -180,7 +180,9 @@ val explained = runBlocking {
 println(explained.describeMarkdown())
 ```
 
-**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain-dry-run` to preview counts without an API call. JSON output includes **`findings`** and **`llmExplanations`** objects.
+Library callers can tune `LlmExplanationConfig.requestTimeout` (default 60 s), `maxRetries` (default 2) and `retryBackoff`. Batches that time out, fail after retries or return unusable JSON are listed in **`explained.failures`**; explanations from the other batches are kept.
+
+**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain-dry-run` to preview counts without an API call. Tune calls with `--llm-timeout` (seconds, default 60), `--llm-retries` (0–10, default 2), `--explain-max` (1–500) and `--explain-batch` (1–100). Explanation failures are reported on stderr; add `--fail-on-explain-error` to exit with status 3. JSON output (kotlinx.serialization) includes **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**.
 
 ## CLI (`onto-qa`)
 
@@ -196,12 +198,14 @@ Run via Gradle from the repository root:
 ./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog skos-vocabulary-embed --severity info"
 ```
 
+The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
+
 See the [module README](../../../tools/onto-quality/library/README.md) for threshold tuning, exit codes, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
 
 ## Validation
 
 - Kotlin: `report.conforms` / `report.describeText()` reflect SHACL outcomes for the selected catalogues.
-- CLI: non-zero exit when violations exceed `--severity` threshold (see [module README](../../../tools/onto-quality/library/README.md)).
+- CLI exit codes: **0** success; **1** findings reached `--severity`, or invalid usage; **2** the input could not be parsed; **3** LLM explanations failed and `--fail-on-explain-error` was set (1 takes precedence). See the [module README](../../../tools/onto-quality/library/README.md).
 
 ## Troubleshooting
 
