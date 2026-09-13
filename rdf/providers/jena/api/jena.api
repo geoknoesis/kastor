@@ -57,6 +57,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaProvider : com/geoknoesis/
 	public fun getDetailedCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public fun getId ()Ljava/lang/String;
 	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
 	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
 	public fun getVersion ()Ljava/lang/String;
 	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
@@ -68,6 +69,8 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaProvider : com/geoknoesis/
 	public fun serializeDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
 	public fun supportsVariant (Ljava/lang/String;)Z
 	public fun variants ()Ljava/util/List;
 }

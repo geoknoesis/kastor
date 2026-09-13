@@ -48,7 +48,9 @@ public final class com/geoknoesis/kastor/rdf/sparql/SparqlGraph : com/geoknoesis
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/SparqlMutable;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/SparqlMutable;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun addTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)V
+	public fun addTriples (Ljava/lang/Iterable;)V
 	public fun addTriples (Ljava/util/Collection;)V
+	public fun addTriples (Lkotlin/sequences/Sequence;)V
 	public fun clear ()Z
 	public fun find-BohvoVE (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
 	public fun getSourceGraphName-UX4i1w8 ()Ljava/lang/String;
@@ -59,7 +61,9 @@ public final class com/geoknoesis/kastor/rdf/sparql/SparqlGraph : com/geoknoesis
 	public fun getTriplesSequence ()Lkotlin/sequences/Sequence;
 	public fun hasTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Z
 	public fun removeTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Z
+	public fun removeTriples (Ljava/lang/Iterable;)Z
 	public fun removeTriples (Ljava/util/Collection;)Z
+	public fun removeTriples (Lkotlin/sequences/Sequence;)Z
 	public fun size ()I
 }
 
@@ -72,6 +76,7 @@ public final class com/geoknoesis/kastor/rdf/sparql/SparqlProvider : com/geoknoe
 	public fun getDetailedCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public fun getId ()Ljava/lang/String;
 	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
 	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
 	public fun getVersion ()Ljava/lang/String;
 	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
@@ -83,6 +88,8 @@ public final class com/geoknoesis/kastor/rdf/sparql/SparqlProvider : com/geoknoe
 	public fun serializeDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
 	public fun supportsVariant (Ljava/lang/String;)Z
 	public fun variants ()Ljava/util/List;
 }
