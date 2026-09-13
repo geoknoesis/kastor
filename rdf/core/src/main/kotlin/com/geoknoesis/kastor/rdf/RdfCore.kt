@@ -68,6 +68,16 @@ private fun extractParseErrorContext(
     )
 }
 
+private val XSD_DOUBLE_NUMBER = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?")
+
+/** Parses the `xsd:double` lexical space; returns null for anything outside it. */
+private fun parseXsdDouble(lexical: String): Double? = when (lexical) {
+    "INF", "+INF" -> Double.POSITIVE_INFINITY
+    "-INF" -> Double.NEGATIVE_INFINITY
+    "NaN" -> Double.NaN
+    else -> if (XSD_DOUBLE_NUMBER.matches(lexical)) lexical.toDouble() else null
+}
+
 /**
  * Kastor RDF - The Most Elegant RDF API for Kotlin
  * 
@@ -1076,20 +1086,21 @@ interface BindingSet {
     
     /**
      * Get a double value for a variable.
+     *
+     * Accepts the `xsd:double` lexical space: decimal/scientific notation plus `INF`, `+INF`,
+     * `-INF` and `NaN`. Java-only spellings such as `Infinity`, hex floats or `1d` return null.
      */
-    fun getDouble(variable: String): Double? = getString(variable)?.toDoubleOrNull()
-    
+    fun getDouble(variable: String): Double? = getString(variable)?.let(::parseXsdDouble)
+
     /**
      * Get a boolean value for a variable.
      *
-     * Accepts the same lexical forms as the [Literal] factory for `xsd:boolean`:
-     * `"true"` / `"false"` (case-insensitive) and `"1"` / `"0"`. Any other
-     * lexical form returns null.
+     * Accepts the `xsd:boolean` lexical space, which is case-sensitive: `"true"` / `"1"` and
+     * `"false"` / `"0"`. Any other lexical form returns null.
      */
-    fun getBoolean(variable: String): Boolean? = when (getString(variable)?.lowercase()) {
+    fun getBoolean(variable: String): Boolean? = when (getString(variable)) {
         "true", "1" -> true
         "false", "0" -> false
-        null -> null
         else -> null
     }
     

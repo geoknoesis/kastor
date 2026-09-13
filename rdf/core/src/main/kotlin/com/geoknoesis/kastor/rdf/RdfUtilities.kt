@@ -72,24 +72,24 @@ inline fun <T> RdfRepository.selectResult(
  * 
  * Two terms are equivalent if they are of the same type and have the same value:
  * - Two IRIs are equivalent if their string values are equal
- * - Two Literals are equivalent if their lexical values and datatypes are equal
+ * - Two Literals are equivalent if their lexical values and datatypes are equal and, for
+ *   language-tagged strings, their (case-normalised) language tags and base directions are equal
  * - Two BlankNodes are equivalent if their IDs are equal
  * - Two TripleTerms are equivalent if their embedded triples are equivalent
- * 
+ *
  * **Example:**
  * ```kotlin
  * val term1 = Iri("http://example.org/person")
  * val term2 = Iri("http://example.org/person")
  * assertTrue(term1 equivalentTo term2)
  * ```
- * 
+ *
  * @param other The other RDF term to compare
  * @return true if the terms are equivalent, false otherwise
  */
 infix fun RdfTerm.equivalentTo(other: RdfTerm): Boolean = when {
     this is Iri && other is Iri -> value == other.value
-    this is Literal && other is Literal -> 
-        lexical == other.lexical && datatype == other.datatype
+    this is Literal && other is Literal -> this == other
     this is BlankNode && other is BlankNode -> id == other.id
     this is TripleTerm && other is TripleTerm -> 
         triple.subject equivalentTo other.triple.subject &&
