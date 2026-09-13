@@ -2,7 +2,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix : <http://example.org/zoo#> .
 
-<> a owl:Ontology .
+<http://example.org/zoo> a owl:Ontology .
 
 :Animal a owl:Class .
 :Lion a owl:Class ;

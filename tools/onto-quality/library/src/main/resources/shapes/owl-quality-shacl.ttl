@@ -787,7 +787,7 @@ oqsh:NamespaceMismatchShape
                           FILTER isIRI(?ont)
                           FILTER REGEX(STR(?ont), \"^https?://\", \"i\")
                           ?entity rdf:type ?ptype .
-                          VALUES ?ptype { owl:Class owl:ObjectProperty owl:DatatypeProperty }
+                          FILTER (?ptype IN (owl:Class, owl:ObjectProperty, owl:DatatypeProperty))
                           FILTER isIRI(?entity)
                           FILTER REGEX(STR(?entity), \"^https?://\", \"i\")
                           FILTER (?entity NOT IN (owl:Thing, owl:Nothing, rdfs:Resource))
