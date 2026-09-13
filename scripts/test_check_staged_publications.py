@@ -72,6 +72,14 @@ class StagedPublicationGate(unittest.TestCase):
                 self.assertNotEqual(0, self.gate().returncode)
                 self.jar(classifier, name, b"content")
 
+    def test_kastor_artifact_ids_follow_naming_scheme(self):
+        for artifact, ok in (("rdf-sparql-lang", True), ("kastor-gen-runtime", True), ("onto-quality", True),
+                             ("kastor-bom", True), ("sparql-lang", False), ("gradle-plugin", False)):
+            with self.subTest(artifact=artifact):
+                self.pom.write_text(POM.format(packaging="").replace("<groupId>example</groupId>", "<groupId>com.geoknoesis.kastor</groupId>")
+                                    .replace("<artifactId>library</artifactId>", f"<artifactId>{artifact}</artifactId>"), encoding="utf-8")
+                self.assertEqual(ok, self.gate().returncode == 0)
+
     def test_invalid_zip_fails(self):
         (self.directory / "library-1.jar").write_bytes(b"not a zip")
         self.assertNotEqual(0, self.gate().returncode)

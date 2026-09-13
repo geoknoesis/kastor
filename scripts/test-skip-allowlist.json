@@ -1,0 +1,1613 @@
+{
+ "description": "Tests allowed to be skipped. Generated from a clean Windows build inventory (2026-09-12, 273 skips). scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed.",
+ "entries": [
+  {
+   "class": "com.geoknoesis.kastor.examples.dcat.DCAT_US_ExampleTest",
+   "test": "placeholder()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
+   "test": "benchmark semantic embedding catalogue against bundled OOPS fixtures()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
+   "test": "benchmark structural OWL quality against full bundled OOPS corpus()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.OopsCalibrationTest$SemanticTierAfterEnrichment",
+   "test": "semantic tier catches OOPS pitfall after enrichment(String)",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.embed.NativeResourceSoakTest",
+   "test": "native model creation inference and close remain stable()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
+   "test": "car and automobile have high cosine similarity()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
+   "test": "enrichment hashes the real model and preserves its source graph()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
+   "test": "normalized embeddings are unit length()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
+   "test": "repeated inference and concurrent close release native resources safely()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.llm.OpenAiExplanationIntegrationTest",
+   "test": "enrichesReportWithOpenAi()",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: Skipped: KASTOR_SKIP_OPENAI_LLM_TESTS=1"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkBatchOperations()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkLargeFileParsing()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkLargeGraphCreation()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkLargeGraphQuery()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkSerialization()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
+   "test": "benchmarkStreamingParse()",
+   "count": 1,
+   "reason": ""
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] N-Triples - Bad - invalid IRI",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] N-Triples - Bad - literal with bad language tag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] N-Triples - Bad - literal with missing language tag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] N-Triples - Bad - literal with missing language tag and direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] comment_following_triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] langtagged_string",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] lantag_with_subtag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_ascii_boundaries",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_2_dquotes",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_2_squotes",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_BACKSPACE",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_CARRIAGE_RETURN",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_CHARACTER_TABULATION",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_FORM_FEED",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_LINE_FEED",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_REVERSE_SOLIDUS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_REVERSE_SOLIDUS2",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_UTF8_boundaries",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_dquote",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_numeric_escape4",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_numeric_escape8",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] literal_with_squote",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] minimal_whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] nt-syntax-bad-uri-06",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] nt-syntax-bad-uri-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] nt-syntax-bad-uri-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/N_TRIPLES] nt-syntax-bad-uri-09",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] IRI-resolution-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] IRI-resolution-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] IRI-resolution-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] IRI-resolution-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] trig-graph-bad-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] trig-syntax-bad-list-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] trig-syntax-bad-list-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] trig-syntax-bad-list-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] trig-syntax-bad-list-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] IRI-resolution-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] IRI-resolution-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] IRI-resolution-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] IRI-resolution-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] comment_following_PNAME_NS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] comment_following_localName",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] number_sign_following_PNAME_NS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] number_sign_following_localName",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-struct-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-struct-11",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-uri-escape-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-uri-escape-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-uri-escape-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] turtle-syntax-bad-uri-escape-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads literal- Bad - undefined base direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads literal- Bad - upper case LTR",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads-12 - Blank node subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested object term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with bad language tag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with missing language tag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with missing language tag and direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples literal- Bad - undefined base direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples literal- Bad - upper case LTR",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Blank node subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested object term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] comment_following_triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] langtagged_string",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] lantag_with_subtag",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_ascii_boundaries",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_2_dquotes",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_2_squotes",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_BACKSPACE",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_CARRIAGE_RETURN",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_CHARACTER_TABULATION",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_FORM_FEED",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_LINE_FEED",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_REVERSE_SOLIDUS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_REVERSE_SOLIDUS2",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_UTF8_boundaries",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_dquote",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_numeric_escape4",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_numeric_escape8",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] literal_with_squote",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/N_TRIPLES] minimal_whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-n-triples/manifest"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] IRI-resolution-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] IRI-resolution-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] IRI-resolution-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] IRI-resolution-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-trig/manifest.ttl#"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation - nested",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation - predicate and object lists",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation example",
+   "count": 2,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation followed by predicate/object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form",
+   "count": 2,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with IRI reifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with alternating reifiers and annotation blocks",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with annotation block followed by reifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with explicit identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with multiple annotation blocks",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with multiple reifiers",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation object list",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation on triple with reified triple object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation on triple with reified triple subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation predicateObjecetList",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Annotation with reified triples",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Different annotations have different default identifiers",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Empty reifier with annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Empty reifier without annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Reifier with annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - Reifier without annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - blank node",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - blank node label",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - blank node labels",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - blank node object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - blank node subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - compound forms",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - nested quoted triple, object position",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - nested quoted triple, subject position",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - object reification",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - object reification with bnode identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - object reification with empty identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - object reification with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - reified triple outside triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - reified triple with IRI identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - reified triple with blank node identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - subject reification",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with bnode identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with empty identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - subject reified triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] TriG 1.2 - triple term object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-bnode-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-esc-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-esc-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-esc-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-esc-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-n3-extras-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-num-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-05",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-06",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-09",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-10",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] undefined base direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TRIG] upper case LTR",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] IRI-resolution-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] IRI-resolution-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] IRI-resolution-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] IRI-resolution-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Blank node object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested subject term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - triple term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - undefined base direction",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - upper case LTR",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - whitespace and terms",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - @version",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - @version in data",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - @version other version string",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation - nested",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation - predicate and object lists",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation example",
+   "count": 2,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation followed by predicate/object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form",
+   "count": 2,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with IRI refier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with alternating reifiers and annotation blocks",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with annotation block followed by reifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with explicit identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with multiple annotation blocks",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with multiple reifiers",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation object list",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation on triple with reified triple object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation on triple with reified triple subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation predicateObjecetList",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation with reified triples",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogate pair numeric escape sequence",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogate pair via numeric escape sequence",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - high-high",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone high surrogate",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone low surrogate",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - low-low",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - wrong order",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-t"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Different annotations have different default identifiers",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Empty reifier with annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Empty reifier without annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested object term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Reifier with annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - Reifier without annotation block",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION in data",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION other version string",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node label",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node labels",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node subject",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - compound forms",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - literals in object position",
+   "count": 2,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - many versions",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - mixed versions",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - nested reified triple, object position",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - nested reified triple, subject position",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with bnode identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with empty identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term, no whitespace",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple outside triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with IRI identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with blank node identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with keyword object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with literal object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with bnode identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with empty identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with identifier",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reified triple",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J emits a triple term in subject position, which Kastor's model disallows (h"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with keyword object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with literal object",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: known RDF4J limitation: RDF4J 5.3.1 Rio parser does not implement this RDF 1.2 syntax (https://w3c.githu"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] comment_following_PNAME_NS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] comment_following_localName",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] number_sign_following_PNAME_NS",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] number_sign_following_localName",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: test not approved: file:///D:/work/kastor/build/review/pinned-rdf-tests/rdf/rdf11/rdf-turtle/manifest.tt"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-bnode-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-num-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-01",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-02",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-03",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-04",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-05",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-06",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-07",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-08",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-09",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
+   "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-10",
+   "count": 1,
+   "reason": "org.opentest4j.TestAbortedException: Assumption failed: negative-syntax test parsed cleanly (parser is lenient): file:///D:/work/kastor/build/review/pinned-rdf-"
+  }
+ ]
+}
