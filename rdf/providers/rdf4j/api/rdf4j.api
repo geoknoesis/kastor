@@ -1,3 +1,11 @@
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jInterop {
+	public static final fun rdf4jResourceOf (Lcom/geoknoesis/kastor/rdf/RdfResource;)Lorg/eclipse/rdf4j/model/Resource;
+	public static final fun rdf4jStatementOf (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Lorg/eclipse/rdf4j/model/Statement;
+	public static final fun rdf4jValueOf (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lorg/eclipse/rdf4j/model/Value;
+	public static final fun rdfTermFromRdf4j (Lorg/eclipse/rdf4j/model/Value;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public static final fun rdfTripleFromRdf4j (Lorg/eclipse/rdf4j/model/Statement;)Lcom/geoknoesis/kastor/rdf/RdfTriple;
+}
+
 public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jProvider : com/geoknoesis/kastor/rdf/RdfProvider {
 	public fun <init> ()V
 	public fun createRepository (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfConfig;)Lcom/geoknoesis/kastor/rdf/RdfRepository;

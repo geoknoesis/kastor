@@ -16,5 +16,6 @@ public final class com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider
 	public fun getType ()Ljava/lang/String;
 	public fun getVersion ()Ljava/lang/String;
 	public fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public fun priority ()I
 }
 

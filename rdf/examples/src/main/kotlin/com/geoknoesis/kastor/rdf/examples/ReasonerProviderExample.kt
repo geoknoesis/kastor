@@ -89,8 +89,9 @@ class ReasonerProviderExample {
             try {
                 val customRule = CustomRule(
                     name = "sibling-rule",
-                    pattern = "(?x ex:hasParent ?y) (?z ex:hasParent ?y)",
-                    conclusion = "(?x ex:hasSibling ?z)",
+                    // Jena rule syntax: use full IRIs (rule prefixes are not taken from the graph).
+                    pattern = "(?x <http://example.org/hasParent> ?y) (?z <http://example.org/hasParent> ?y)",
+                    conclusion = "(?x <http://example.org/hasSibling> ?z)",
                     description = "If two people have the same parent, they are siblings"
                 )
                 

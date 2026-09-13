@@ -1,35 +1,54 @@
 package com.geoknoesis.kastor.rdf.jena.reasoning
 
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.jena.JenaBridge
+import com.geoknoesis.kastor.rdf.jena.rdfTermFromJena
 import com.geoknoesis.kastor.rdf.reasoning.*
-import org.apache.jena.reasoner.Reasoner
-import org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory
-import org.apache.jena.reasoner.rulesys.OWLMicroReasonerFactory
+import org.apache.jena.graph.Node
+import org.apache.jena.rdf.model.InfModel
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
-import org.apache.jena.rdf.model.Statement
-import com.geoknoesis.kastor.rdf.*
+import org.apache.jena.reasoner.Reasoner
+import org.apache.jena.reasoner.ReasonerRegistry as JenaReasonerRegistry
+import org.apache.jena.reasoner.ValidityReport
+import org.apache.jena.reasoner.rulesys.GenericRuleReasoner
+import org.apache.jena.reasoner.rulesys.Rule
 
+/**
+ * Apache Jena rule reasoners.
+ *
+ * | [ReasonerType] | Jena engine |
+ * |---|---|
+ * | [ReasonerType.RDFS] | `RDFSRuleReasoner` (full RDFS rule set) |
+ * | [ReasonerType.OWL_RL] | Jena's OWL forward/backward rule reasoner — a rule-based OWL fragment close to, but not a complete implementation of, OWL 2 RL |
+ * | [ReasonerType.CUSTOM] | `GenericRuleReasoner` over [ReasonerConfig.customRules] |
+ *
+ * Every other type (notably OWL_EL, OWL_QL, OWL_DL) is rejected: Jena has no reasoner for those profiles.
+ * Consistency is decided by Jena's `InfModel.validate()`.
+ */
 class JenaReasonerProvider : RdfReasonerProvider {
-    
+
     override fun getType(): String = "jena"
-    
+
     override val name: String = "Apache Jena Reasoner"
-    
-    override val version: String = "4.x"
-    
+
+    override val version: String = org.apache.jena.Jena.VERSION
+
+    /** Preferred over the dependency-free memory reasoner. */
+    override fun priority(): Int = 50
+
     override fun createReasoner(config: ReasonerConfig): RdfReasoner {
+        require(isSupported(config.reasonerType)) {
+            "Jena reasoner does not support ${config.reasonerType}; supported types: ${getSupportedTypes()}"
+        }
         return JenaReasoner(config)
     }
-    
+
     override fun getCapabilities(): ReasonerCapabilities {
         return ReasonerCapabilities(
-            supportedTypes = setOf(
-                ReasonerType.RDFS,
-                ReasonerType.OWL_EL,
-                ReasonerType.OWL_RL,
-                ReasonerType.CUSTOM
-            ),
-            supportsIncrementalReasoning = true,
+            supportedTypes = getSupportedTypes().toSet(),
+            // Each call builds a fresh inference model; there is no incremental maintenance API.
+            supportsIncrementalReasoning = false,
             supportsCustomRules = true,
             supportsExplanation = false,
             supportsConsistencyChecking = true,
@@ -37,292 +56,204 @@ class JenaReasonerProvider : RdfReasonerProvider {
             typicalPerformance = PerformanceProfile.MEDIUM
         )
     }
-    
-    override fun getSupportedTypes(): List<ReasonerType> {
-        return listOf(
-            ReasonerType.RDFS,
-            ReasonerType.OWL_EL,
-            ReasonerType.OWL_RL,
-            ReasonerType.CUSTOM
-        )
-    }
-    
+
+    override fun getSupportedTypes(): List<ReasonerType> =
+        listOf(ReasonerType.RDFS, ReasonerType.OWL_RL, ReasonerType.CUSTOM)
+
     override fun isSupported(type: ReasonerType): Boolean {
         return getSupportedTypes().contains(type)
     }
 }
 
+/**
+ * [RdfReasoner] backed by a Jena [Reasoner].
+ *
+ * For [ReasonerType.CUSTOM], each [CustomRule] becomes the Jena rule `[name: pattern -> conclusion]`,
+ * so `pattern` and `conclusion` use Jena rule syntax, e.g. `(?a <http://ex/p> ?b)`.
+ */
 class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
-    
-    private val reasoner: Reasoner = createReasoner()
-    
-    private fun createReasoner(): Reasoner {
-        return when (config.reasonerType) {
-            ReasonerType.RDFS -> RDFSRuleReasonerFactory().create(null)
-            ReasonerType.OWL_EL -> OWLMicroReasonerFactory().create(null)
-            ReasonerType.OWL_RL -> RDFSRuleReasonerFactory().create(null) // Use RDFS for now
-            ReasonerType.CUSTOM -> createCustomReasoner()
-            else -> throw IllegalArgumentException("Unsupported reasoner type: ${config.reasonerType}")
+
+    private val reasoner: Reasoner = when (config.reasonerType) {
+        ReasonerType.RDFS -> JenaReasonerRegistry.getRDFSReasoner()
+        ReasonerType.OWL_RL -> JenaReasonerRegistry.getOWLReasoner()
+        ReasonerType.CUSTOM -> createCustomReasoner()
+        else -> throw IllegalArgumentException(
+            "Jena reasoner does not support ${config.reasonerType}; supported types: RDFS, OWL_RL, CUSTOM",
+        )
+    }
+
+    private fun createCustomReasoner(): Reasoner {
+        require(config.customRules.isNotEmpty()) { "ReasonerType.CUSTOM requires at least one ReasonerConfig.customRules entry" }
+        val source = config.customRules.joinToString("\n") { rule -> "[${rule.name}: ${rule.pattern} -> ${rule.conclusion}]" }
+        val rules = try {
+            Rule.parseRules(source)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Invalid Jena rule syntax in custom rules: ${e.message}", e)
+        }
+        return GenericRuleReasoner(rules)
+    }
+
+    private fun <T> withInference(graph: RdfGraph, block: (Model, InfModel) -> T): T {
+        val base = JenaBridge.copyToJenaModel(graph)
+        val inf = ModelFactory.createInfModel(reasoner, base)
+        try {
+            return block(base, inf)
+        } finally {
+            inf.close()
+            base.close()
         }
     }
-    
-    private fun createCustomReasoner(): Reasoner {
-        // For now, just use RDFS reasoner as fallback
-        // In a full implementation, you would parse and create custom rules
-        return RDFSRuleReasonerFactory().create(null)
-    }
-    
+
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()
-        val jenaModel = convertToJenaModel(graph)
-        val infModel = ModelFactory.createInfModel(reasoner, jenaModel)
-        
-        // Extract inferred triples
-        val inferredTriples = extractInferredTriples(jenaModel, infModel)
-        
-        // Check consistency
-        val consistencyResult = checkConsistency()
-        
-        // Perform classification
-        val classificationResult = if (config.includeAxioms) performClassification(infModel) else null
-        
-        val reasoningTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
-        val statistics = ReasoningStatistics(
-            totalTriples = graph.getTriples().size,
-            inferredTriples = inferredTriples.size,
-            classesProcessed = countClasses(infModel),
-            propertiesProcessed = countProperties(infModel),
-            rulesApplied = mapOf("total" to inferredTriples.size),
-            memoryUsage = getCurrentMemoryUsage(),
-            cpuTime = reasoningTime
-        )
-        
-        return ReasoningResult(
-            originalGraph = graph,
-            inferredTriples = inferredTriples,
-            classification = classificationResult,
-            consistencyCheck = consistencyResult,
-            reasoningTime = reasoningTime,
-            statistics = statistics
-        )
-    }
-    
-    override fun isConsistent(graph: RdfGraph): Boolean {
-        return try {
-            val jenaModel = convertToJenaModel(graph)
-            ModelFactory.createInfModel(reasoner, jenaModel)
-            // Simple consistency check - if we can create the inference model, it's consistent
-            true
-        } catch (e: Exception) {
-            false
+        return withInference(graph) { base, infModel ->
+            val consistencyResult = consistencyOf(infModel.validate())
+            val inferredTriples = extractInferredTriples(base, infModel)
+            val classificationResult = if (config.includeAxioms) performClassification(infModel) else null
+            val reasoningTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
+            ReasoningResult(
+                originalGraph = graph,
+                inferredTriples = inferredTriples,
+                classification = classificationResult,
+                consistencyCheck = consistencyResult,
+                reasoningTime = reasoningTime,
+                statistics = ReasoningStatistics(
+                    totalTriples = Math.toIntExact(base.size()),
+                    inferredTriples = inferredTriples.size,
+                    classesProcessed = countTyped(infModel, RDFS_CLASS),
+                    propertiesProcessed = countTyped(infModel, RDF_PROPERTY),
+                    rulesApplied = mapOf("total" to inferredTriples.size),
+                    memoryUsage = Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() },
+                    cpuTime = reasoningTime
+                )
+            )
         }
     }
-    
-    override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> {
-        return reason(graph).inferredTriples
-    }
-    
-    override fun classify(graph: RdfGraph): ClassificationResult {
-        val jenaModel = convertToJenaModel(graph)
-        val infModel = ModelFactory.createInfModel(reasoner, jenaModel)
-        return performClassification(infModel)
-    }
-    
+
+    override fun isConsistent(graph: RdfGraph): Boolean = withInference(graph) { _, inf -> inf.validate().isValid }
+
+    override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> =
+        withInference(graph) { base, inf -> extractInferredTriples(base, inf) }
+
+    override fun classify(graph: RdfGraph): ClassificationResult = withInference(graph) { _, inf -> performClassification(inf) }
+
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()
-        
-        val violations = mutableListOf<ValidationViolation>()
-        val warnings = mutableListOf<String>()
-        
-        // Basic validation using consistency check
-        val consistencyResult = checkConsistency()
-        if (!consistencyResult.isConsistent) {
-            consistencyResult.inconsistencies.forEach { inconsistency ->
-                violations.add(
-                    ValidationViolation(
-                        constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
-                        message = inconsistency.description,
-                        severity = Severity.ERROR
-                    )
-                )
-            }
+        val consistency = withInference(graph) { _, inf -> consistencyOf(inf.validate()) }
+        val violations = consistency.inconsistencies.map { inconsistency ->
+            ValidationViolation(
+                constraint = inconsistency.type.name,
+                resource = inconsistency.affectedResources.firstOrNull() ?: Iri("urn:kastor:unknown"),
+                message = inconsistency.description,
+                severity = inconsistency.severity
+            )
         }
-        
-        val validationTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
         return ValidationReport(
             isValid = violations.isEmpty(),
             violations = violations,
-            warnings = warnings,
+            warnings = consistency.warnings,
             statistics = ValidationStatistics(
-                constraintsChecked = 10, // Jena provides more validation
+                constraintsChecked = 1,
                 violationsFound = violations.size,
-                warningsFound = warnings.size,
-                validationTime = validationTime
+                warningsFound = consistency.warnings.size,
+                validationTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
             )
         )
     }
-    
-    // Helper methods
-    private fun extractInferredTriples(originalModel: Model, infModel: Model): List<RdfTriple> {
-        val inferredTriples = mutableListOf<RdfTriple>()
-        val originalStmts = originalModel.listStatements().toSet()
-        
-        infModel.listStatements().forEach { stmt ->
-            if (!originalStmts.contains(stmt)) {
-                inferredTriples.add(convertFromJenaTriple(stmt))
-            }
-        }
-        
-        return inferredTriples
-    }
-    
-    private fun checkConsistency(): ConsistencyResult {
+
+    private fun consistencyOf(report: ValidityReport): ConsistencyResult {
         val inconsistencies = mutableListOf<Inconsistency>()
         val warnings = mutableListOf<String>()
-        
-        // Basic consistency check - Jena handles most consistency issues automatically
-        // More sophisticated checks could be added here
-        
-        return ConsistencyResult(
-            isConsistent = inconsistencies.isEmpty(),
-            inconsistencies = inconsistencies,
-            warnings = warnings
-        )
+        report.reports.forEachRemaining { r ->
+            val text = listOfNotNull(r.type, r.description).joinToString(": ")
+            if (r.isError) {
+                inconsistencies.add(Inconsistency(inconsistencyType(text), text, affected(r.extension), Severity.ERROR))
+            } else {
+                warnings.add(text)
+            }
+        }
+        return ConsistencyResult(isConsistent = report.isValid, inconsistencies = inconsistencies, warnings = warnings)
     }
-    
+
+    private fun inconsistencyType(text: String): InconsistencyType {
+        val t = text.lowercase()
+        return when {
+            "disjoint" in t -> InconsistencyType.DISJOINTNESS_VIOLATION
+            "functional" in t -> InconsistencyType.FUNCTIONAL_PROPERTY_VIOLATION
+            "cardinality" in t || "maxcard" in t -> InconsistencyType.CARDINALITY_VIOLATION
+            "range" in t || "domain" in t -> InconsistencyType.DOMAIN_RANGE_VIOLATION
+            else -> InconsistencyType.CLASS_CONFLICT
+        }
+    }
+
+    private fun affected(extension: Any?): List<RdfTerm> {
+        val scratch = ModelFactory.createDefaultModel()
+        return try {
+            fun convert(node: Node): RdfTerm? = runCatching { rdfTermFromJena(scratch.asRDFNode(node)) }.getOrNull()
+            when (extension) {
+                is Node -> listOfNotNull(convert(extension))
+                is org.apache.jena.graph.Triple -> listOfNotNull(convert(extension.subject), convert(extension.`object`))
+                else -> emptyList()
+            }
+        } finally {
+            scratch.close()
+        }
+    }
+
+    /** Statements in the inference closure that are not asserted and are representable as RDF 1.2 triples. */
+    private fun extractInferredTriples(base: Model, infModel: Model): List<RdfTriple> {
+        val asserted = base.graph
+        val iterator = infModel.graph.find()
+        try {
+            return iterator.asSequence()
+                .filter { (it.subject.isURI || it.subject.isBlank) && it.predicate.isURI && !asserted.contains(it) }
+                .map { triple ->
+                    RdfTriple(
+                        rdfTermFromJena(infModel.asRDFNode(triple.subject)) as RdfResource,
+                        Iri(triple.predicate.uri),
+                        rdfTermFromJena(infModel.asRDFNode(triple.`object`)),
+                    )
+                }
+                .toList()
+        } finally {
+            iterator.close()
+        }
+    }
+
     private fun performClassification(model: Model): ClassificationResult {
-        val classHierarchy = mutableMapOf<Iri, List<Iri>>()
-        val instanceClassifications = mutableMapOf<Iri, List<Iri>>()
-        val propertyHierarchy = mutableMapOf<Iri, List<Iri>>()
-        
-        // Extract class hierarchy
-        val subClassOf = model.createProperty("http://www.w3.org/2000/01/rdf-schema#subClassOf")
-        model.listResourcesWithProperty(subClassOf).forEach { cls ->
-            val subClasses = mutableListOf<Iri>()
-            cls.listProperties(subClassOf).forEach { stmt ->
-                subClasses.add(convertFromJenaIri(stmt.`object`.asResource().uri))
+        fun hierarchy(predicate: String): Map<Iri, List<Iri>> {
+            val result = linkedMapOf<Iri, MutableList<Iri>>()
+            val iterator = model.graph.find(Node.ANY, org.apache.jena.graph.NodeFactory.createURI(predicate), Node.ANY)
+            try {
+                iterator.forEachRemaining { t ->
+                    if (t.subject.isURI && t.`object`.isURI) result.getOrPut(Iri(t.subject.uri)) { mutableListOf() }.add(Iri(t.`object`.uri))
+                }
+            } finally {
+                iterator.close()
             }
-            classHierarchy[convertFromJenaIri(cls.uri)] = subClasses
+            return result
         }
-        
-        // Extract instance classifications
-        val type = model.createProperty("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        model.listResourcesWithProperty(type).forEach { instance ->
-            val types = mutableListOf<Iri>()
-            instance.listProperties(type).forEach { stmt ->
-                types.add(convertFromJenaIri(stmt.`object`.asResource().uri))
-            }
-            instanceClassifications[convertFromJenaIri(instance.uri)] = types
-        }
-        
-        // Extract property hierarchy
-        val subPropertyOf = model.createProperty("http://www.w3.org/2000/01/rdf-schema#subPropertyOf")
-        model.listResourcesWithProperty(subPropertyOf).forEach { prop ->
-            val superProperties = mutableListOf<Iri>()
-            prop.listProperties(subPropertyOf).forEach { stmt ->
-                superProperties.add(convertFromJenaIri(stmt.`object`.asResource().uri))
-            }
-            propertyHierarchy[convertFromJenaIri(prop.uri)] = superProperties
-        }
-        
         return ClassificationResult(
-            classHierarchy = classHierarchy,
-            instanceClassifications = instanceClassifications,
-            propertyHierarchy = propertyHierarchy
+            classHierarchy = hierarchy(SUB_CLASS_OF),
+            instanceClassifications = hierarchy(RDF_TYPE),
+            propertyHierarchy = hierarchy(SUB_PROPERTY_OF),
         )
     }
-    
-    private fun countClasses(model: Model): Int {
-        return model.listResourcesWithProperty(
-            model.createProperty("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-            model.createResource("http://www.w3.org/2000/01/rdf-schema#Class")
-        ).toList().size
-    }
-    
-    private fun countProperties(model: Model): Int {
-        return model.listResourcesWithProperty(
-            model.createProperty("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-            model.createResource("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")
-        ).toList().size
-    }
-    
-    private fun getCurrentMemoryUsage(): Long {
-        return Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
-    }
-    
-    // Conversion methods
-    private fun convertToJenaModel(graph: RdfGraph): Model {
-        val jenaModel = ModelFactory.createDefaultModel()
-        
-        graph.getTriples().forEach { triple ->
-            val subject = convertToJenaResource(triple.subject, jenaModel)
-            val predicate = jenaModel.createProperty(triple.predicate.value)
-            val obj = convertToJenaRDFNode(triple.obj, jenaModel)
-            
-            jenaModel.add(subject, predicate, obj)
+
+    private fun countTyped(model: Model, type: String): Int =
+        model.listResourcesWithProperty(model.createProperty(RDF_TYPE), model.createResource(type)).toList().size
+
+    private companion object {
+        init {
+            // Jena's reasoner registry must not be the first Jena class touched: without an explicit
+            // JenaSystem.init() its static initialisation cycles through NodeFactory and fails.
+            org.apache.jena.sys.JenaSystem.init()
         }
-        
-        return jenaModel
+
+        const val RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+        const val RDF_PROPERTY = "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
+        const val RDFS_CLASS = "http://www.w3.org/2000/01/rdf-schema#Class"
+        const val SUB_CLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf"
+        const val SUB_PROPERTY_OF = "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"
     }
-    
-    private fun convertToJenaResource(term: RdfTerm, jenaModel: Model): org.apache.jena.rdf.model.Resource {
-        return when (term) {
-            is Iri -> jenaModel.createResource(term.value)
-            is BlankNode -> jenaModel.createResource(org.apache.jena.rdf.model.AnonId(term.id))
-            else -> throw IllegalArgumentException("Cannot convert $term to Jena Resource")
-        }
-    }
-    
-    private fun convertToJenaRDFNode(term: RdfTerm, jenaModel: Model): org.apache.jena.rdf.model.RDFNode {
-        return when (term) {
-            is Iri -> jenaModel.createResource(term.value)
-            is BlankNode -> jenaModel.createResource(org.apache.jena.rdf.model.AnonId(term.id))
-            is Literal -> {
-                when (term) {
-                    is LangString -> jenaModel.createLiteral(term.lexical, term.lang)
-                    else -> jenaModel.createTypedLiteral(term.lexical, term.datatype.value)
-                }
-            }
-            else -> throw IllegalArgumentException("Cannot convert $term to Jena RDFNode")
-        }
-    }
-    
-    private fun convertFromJenaTriple(stmt: Statement): RdfTriple {
-        return RdfTriple(
-            subject = convertFromJenaResource(stmt.subject),
-            predicate = Iri(stmt.predicate.uri),
-            obj = convertFromJenaTerm(stmt.`object`)
-        )
-    }
-    
-    private fun convertFromJenaTerm(node: org.apache.jena.rdf.model.RDFNode): RdfTerm {
-        return when {
-            node.isURIResource -> Iri(node.asResource().uri)
-            node.isAnon -> bnode(node.asResource().id.toString())
-            node.isLiteral -> {
-                val literal = node.asLiteral()
-                if (literal.language.isNotEmpty()) {
-                    LangString(literal.string, literal.language)
-                } else if (literal.datatypeURI != null) {
-                    Literal(literal.string, Iri(literal.datatypeURI))
-                } else {
-                    Literal(literal.string, Iri("http://www.w3.org/2001/XMLSchema#string"))
-                }
-            }
-            else -> throw IllegalArgumentException("Cannot convert Jena node: $node")
-        }
-    }
-    
-    private fun convertFromJenaResource(resource: org.apache.jena.rdf.model.Resource): RdfResource {
-        return when {
-            resource.isURIResource -> Iri(resource.uri)
-            resource.isAnon -> bnode(resource.id.toString())
-            else -> throw IllegalArgumentException("Cannot convert Jena resource: $resource")
-        }
-    }
-    
-    private fun convertFromJenaIri(uri: String): Iri = Iri(uri)
 }

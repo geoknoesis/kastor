@@ -1,35 +1,48 @@
 package com.geoknoesis.kastor.rdf.rdf4j.reasoning
 
-import com.geoknoesis.kastor.rdf.reasoning.*
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.rdf4j.rdf4jStatementOf
+import com.geoknoesis.kastor.rdf.rdf4j.rdfTermFromRdf4j
+import com.geoknoesis.kastor.rdf.rdf4j.rdfTripleFromRdf4j
+import com.geoknoesis.kastor.rdf.reasoning.*
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Model
-import org.eclipse.rdf4j.model.Resource
-import org.eclipse.rdf4j.model.Value
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
-import org.eclipse.rdf4j.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.vocabulary.RDFS
 import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 
+/**
+ * Eclipse RDF4J reasoning: RDFS forward chaining via [SchemaCachingRDFSInferencer].
+ *
+ * RDF4J ships no OWL reasoner, so only [ReasonerType.RDFS] is supported; every other type is rejected
+ * (use the HermiT provider for OWL 2 DL, or the Jena provider for rule-based OWL).
+ */
 class Rdf4jReasonerProvider : RdfReasonerProvider {
-    
+
     override fun getType(): String = "rdf4j"
-    
+
     override val name: String = "Eclipse RDF4J Reasoner"
-    
-    override val version: String = "4.x"
-    
+
+    override val version: String =
+        SailRepository::class.java.`package`?.implementationVersion ?: "5.x"
+
+    /** Preferred over the memory fallback, below Jena (whose RDFS reasoner also validates datatypes). */
+    override fun priority(): Int = 40
+
     override fun createReasoner(config: ReasonerConfig): RdfReasoner {
+        require(isSupported(config.reasonerType)) {
+            "RDF4J reasoner only supports ReasonerType.RDFS, got ${config.reasonerType}"
+        }
         return Rdf4jReasoner(config)
     }
-    
+
     override fun getCapabilities(): ReasonerCapabilities {
         return ReasonerCapabilities(
-            supportedTypes = setOf(
-                ReasonerType.RDFS,
-                ReasonerType.OWL_EL
-            ),
+            supportedTypes = setOf(ReasonerType.RDFS),
             supportsIncrementalReasoning = false,
             supportsCustomRules = false,
             supportsExplanation = false,
@@ -38,54 +51,45 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
             typicalPerformance = PerformanceProfile.FAST
         )
     }
-    
-    override fun getSupportedTypes(): List<ReasonerType> {
-        return listOf(ReasonerType.RDFS, ReasonerType.OWL_EL)
-    }
-    
-    override fun isSupported(type: ReasonerType): Boolean {
-        return getSupportedTypes().contains(type)
-    }
+
+    override fun getSupportedTypes(): List<ReasonerType> = listOf(ReasonerType.RDFS)
+
+    override fun isSupported(type: ReasonerType): Boolean = type == ReasonerType.RDFS
 }
 
+/**
+ * RDFS reasoner materialising the closure with RDF4J's [SchemaCachingRDFSInferencer].
+ *
+ * Consistency: RDFS has no negation, so the only inconsistency is D-unsatisfiability — a literal whose
+ * lexical form is invalid for a built-in XSD datatype (checked with RDF4J's [XMLDatatypeUtil]).
+ */
 class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
-    
-    private val valueFactory = SimpleValueFactory.getInstance()
-    
+
+    init {
+        require(config.reasonerType == ReasonerType.RDFS) {
+            "RDF4J reasoner only supports ReasonerType.RDFS, got ${config.reasonerType}"
+        }
+    }
+
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()
-        
-        // Convert to RDF4J model
         val rdf4jModel = convertToRdf4jModel(graph)
-        
-        // Create inference model based on configuration
-        val infModel = when (config.reasonerType) {
-            ReasonerType.RDFS -> createRDFSInferenceModel(rdf4jModel)
-            ReasonerType.OWL_EL -> createOWLInferenceModel(rdf4jModel)
-            else -> throw IllegalArgumentException("Unsupported reasoner type: ${config.reasonerType}")
-        }
-        
-        // Extract inferred triples
-        val inferredTriples = extractInferredTriples(rdf4jModel, infModel)
-        
-        // Check consistency
-        val consistencyResult = checkConsistency(infModel)
-        
-        // Perform classification
+        val infModel = runRdfsInference(rdf4jModel)
+        val inferredTriples = infModel.filter { it !in rdf4jModel }.map(::rdfTripleFromRdf4j)
+        val consistencyResult = checkConsistency(rdf4jModel)
         val classificationResult = if (config.includeAxioms) performClassification(infModel) else null
-        
         val reasoningTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
+
         val statistics = ReasoningStatistics(
-            totalTriples = graph.getTriples().size,
+            totalTriples = rdf4jModel.size,
             inferredTriples = inferredTriples.size,
-            classesProcessed = countClasses(infModel),
-            propertiesProcessed = countProperties(infModel),
+            classesProcessed = infModel.filter(null, RDF.TYPE, RDFS.CLASS).size,
+            propertiesProcessed = infModel.filter(null, RDF.TYPE, RDF.PROPERTY).size,
             rulesApplied = mapOf("rdf4j" to inferredTriples.size),
-            memoryUsage = getCurrentMemoryUsage(),
+            memoryUsage = Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() },
             cpuTime = reasoningTime
         )
-        
+
         return ReasoningResult(
             originalGraph = graph,
             inferredTriples = inferredTriples,
@@ -95,79 +99,46 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             statistics = statistics
         )
     }
-    
-    override fun isConsistent(graph: RdfGraph): Boolean {
-        return try {
-            val rdf4jModel = convertToRdf4jModel(graph)
-            // Simple consistency check
-            createRDFSInferenceModel(rdf4jModel).size
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-    
+
+    override fun isConsistent(graph: RdfGraph): Boolean = checkConsistency(convertToRdf4jModel(graph)).isConsistent
+
     override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> {
-        return reason(graph).inferredTriples
+        val model = convertToRdf4jModel(graph)
+        return runRdfsInference(model).filter { it !in model }.map(::rdfTripleFromRdf4j)
     }
-    
-    override fun classify(graph: RdfGraph): ClassificationResult {
-        val rdf4jModel = convertToRdf4jModel(graph)
-        val infModel = createRDFSInferenceModel(rdf4jModel)
-        return performClassification(infModel)
-    }
-    
+
+    override fun classify(graph: RdfGraph): ClassificationResult =
+        performClassification(runRdfsInference(convertToRdf4jModel(graph)))
+
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()
-        
-        val violations = mutableListOf<ValidationViolation>()
-        val warnings = mutableListOf<String>()
-        
-        // Basic validation using consistency check
         val consistencyResult = checkConsistency(convertToRdf4jModel(graph))
-        if (!consistencyResult.isConsistent) {
-            consistencyResult.inconsistencies.forEach { inconsistency ->
-                violations.add(
-                    ValidationViolation(
-                        constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
-                        message = inconsistency.description,
-                        severity = Severity.ERROR
-                    )
-                )
-            }
+        val violations = consistencyResult.inconsistencies.map { inconsistency ->
+            ValidationViolation(
+                constraint = inconsistency.type.name,
+                resource = inconsistency.affectedResources.firstOrNull() ?: Iri("urn:kastor:unknown"),
+                message = inconsistency.description,
+                severity = inconsistency.severity
+            )
         }
-        
-        val validationTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
         return ValidationReport(
             isValid = violations.isEmpty(),
             violations = violations,
-            warnings = warnings,
+            warnings = consistencyResult.warnings,
             statistics = ValidationStatistics(
-                constraintsChecked = 8, // RDF4J provides basic validation
+                constraintsChecked = 1,
                 violationsFound = violations.size,
-                warningsFound = warnings.size,
-                validationTime = validationTime
+                warningsFound = consistencyResult.warnings.size,
+                validationTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
             )
         )
     }
-    
+
     /**
      * Materialize RDFS entailments by loading the data into a forward-chaining
      * [SchemaCachingRDFSInferencer]-backed store and reading back the closure
      * (base + inferred statements).
      */
-    private fun createRDFSInferenceModel(model: Model): Model = runRdfsInference(model)
-
-    /**
-     * RDF4J ships RDFS-level forward chaining only (no OWL reasoner). OWL_EL is
-     * therefore approximated by RDFS entailment, which covers the
-     * subClassOf/subPropertyOf/domain/range fragment shared with OWL. Callers
-     * needing full OWL semantics should use the HermiT-backed reasoner.
-     */
-    private fun createOWLInferenceModel(model: Model): Model = runRdfsInference(model)
-
     private fun runRdfsInference(model: Model): Model {
         val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
         repository.init()
@@ -176,8 +147,6 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 connection.begin()
                 connection.add(model)
                 connection.commit()
-                // includeInferred = true returns the asserted statements plus the
-                // inferred RDFS closure materialized by the inferencer.
                 val closure = LinkedHashModel()
                 connection.getStatements(null, null, null, true).use { statements ->
                     statements.forEach { closure.add(it) }
@@ -188,177 +157,41 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             repository.shutDown()
         }
     }
-    
-    private fun extractInferredTriples(originalModel: Model, infModel: Model): List<RdfTriple> {
-        val inferredTriples = mutableListOf<RdfTriple>()
-        val originalStatements = originalModel.toSet()
-        
-        infModel.forEach { statement ->
-            if (!originalStatements.contains(statement)) {
-                inferredTriples.add(convertFromRdf4jStatement(statement))
-            }
-        }
-        
-        return inferredTriples
-    }
-    
+
     private fun checkConsistency(model: Model): ConsistencyResult {
-        val inconsistencies = mutableListOf<Inconsistency>()
-        val warnings = mutableListOf<String>()
-        
-        // Basic consistency check - RDF4J handles most consistency issues automatically
-        // More sophisticated checks could be added here
-        model.size
-        
-        return ConsistencyResult(
-            isConsistent = inconsistencies.isEmpty(),
-            inconsistencies = inconsistencies,
-            warnings = warnings
-        )
+        val inconsistencies = model.mapNotNull { statement ->
+            val literal = statement.`object` as? org.eclipse.rdf4j.model.Literal ?: return@mapNotNull null
+            if (literal.language.isPresent) return@mapNotNull null
+            val datatype = literal.datatype
+            if (!XMLDatatypeUtil.isBuiltInDatatype(datatype) || XMLDatatypeUtil.isValidValue(literal.label, datatype)) {
+                return@mapNotNull null
+            }
+            Inconsistency(
+                type = InconsistencyType.DOMAIN_RANGE_VIOLATION,
+                description = "Ill-typed literal \"${literal.label}\" for datatype ${datatype.stringValue()}",
+                affectedResources = listOf(rdfTermFromRdf4j(statement.subject), rdfTermFromRdf4j(literal)),
+            )
+        }
+        return ConsistencyResult(isConsistent = inconsistencies.isEmpty(), inconsistencies = inconsistencies, warnings = emptyList())
     }
-    
+
     private fun performClassification(model: Model): ClassificationResult {
-        val classHierarchy = mutableMapOf<Iri, List<Iri>>()
-        val instanceClassifications = mutableMapOf<Iri, List<Iri>>()
-        val propertyHierarchy = mutableMapOf<Iri, List<Iri>>()
-        
-        // Extract class hierarchy
-        val subClassOf = valueFactory.createIRI("http://www.w3.org/2000/01/rdf-schema#subClassOf")
-        model.filter(null, subClassOf, null).forEach { statement ->
-            val subClass = statement.subject as? IRI
-            val superClass = statement.`object` as? IRI
-            if (subClass != null && superClass != null) {
-                val subClassIri = Iri(subClass.stringValue())
-                val superClassIri = Iri(superClass.stringValue())
-                classHierarchy[subClassIri] = classHierarchy.getOrDefault(subClassIri, emptyList()) + superClassIri
+        fun hierarchy(predicate: IRI): Map<Iri, List<Iri>> {
+            val result = linkedMapOf<Iri, MutableList<Iri>>()
+            model.filter(null, predicate, null).forEach { statement ->
+                val subject = statement.subject as? IRI ?: return@forEach
+                val obj = statement.`object` as? IRI ?: return@forEach
+                result.getOrPut(Iri(subject.stringValue())) { mutableListOf() }.add(Iri(obj.stringValue()))
             }
+            return result
         }
-        
-        // Extract instance classifications
-        val type = valueFactory.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        model.filter(null, type, null).forEach { statement ->
-            val instance = statement.subject as? IRI
-            val typeClass = statement.`object` as? IRI
-            if (instance != null && typeClass != null) {
-                val instanceIri = Iri(instance.stringValue())
-                val typeIri = Iri(typeClass.stringValue())
-                instanceClassifications[instanceIri] = instanceClassifications.getOrDefault(instanceIri, emptyList()) + typeIri
-            }
-        }
-        
-        // Extract property hierarchy
-        val subPropertyOf = valueFactory.createIRI("http://www.w3.org/2000/01/rdf-schema#subPropertyOf")
-        model.filter(null, subPropertyOf, null).forEach { statement ->
-            val subProperty = statement.subject as? IRI
-            val superProperty = statement.`object` as? IRI
-            if (subProperty != null && superProperty != null) {
-                val subPropertyIri = Iri(subProperty.stringValue())
-                val superPropertyIri = Iri(superProperty.stringValue())
-                propertyHierarchy[subPropertyIri] = propertyHierarchy.getOrDefault(subPropertyIri, emptyList()) + superPropertyIri
-            }
-        }
-        
         return ClassificationResult(
-            classHierarchy = classHierarchy,
-            instanceClassifications = instanceClassifications,
-            propertyHierarchy = propertyHierarchy
+            classHierarchy = hierarchy(RDFS.SUBCLASSOF),
+            instanceClassifications = hierarchy(RDF.TYPE),
+            propertyHierarchy = hierarchy(RDFS.SUBPROPERTYOF),
         )
     }
-    
-    private fun countClasses(model: Model): Int {
-        val type = valueFactory.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        val rdfsClass = valueFactory.createIRI("http://www.w3.org/2000/01/rdf-schema#Class")
-        return model.filter(null, type, rdfsClass).size
-    }
-    
-    private fun countProperties(model: Model): Int {
-        val type = valueFactory.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-        val rdfProperty = valueFactory.createIRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")
-        return model.filter(null, type, rdfProperty).size
-    }
-    
-    private fun getCurrentMemoryUsage(): Long {
-        return Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
-    }
-    
-    // Conversion methods
-    private fun convertToRdf4jModel(graph: RdfGraph): Model {
-        val model = LinkedHashModel()
-        
-        graph.getTriples().forEach { triple ->
-            val subject = convertToRdf4jResource(triple.subject)
-            val predicate = valueFactory.createIRI(triple.predicate.value)
-            val obj = convertToRdf4jValue(triple.obj)
-            
-            model.add(subject, predicate, obj)
-        }
-        
-        return model
-    }
-    
-    private fun convertToRdf4jResource(term: RdfTerm): Resource {
-        return when (term) {
-            is Iri -> valueFactory.createIRI(term.value)
-            is BlankNode -> valueFactory.createBNode(term.id)
-            else -> throw IllegalArgumentException("Cannot convert $term to RDF4J Resource")
-        }
-    }
-    
-    private fun convertToRdf4jValue(term: RdfTerm): Value {
-        return when (term) {
-            is Iri -> valueFactory.createIRI(term.value)
-            is BlankNode -> valueFactory.createBNode(term.id)
-            is Literal -> {
-                when (term) {
-                    is LangString -> valueFactory.createLiteral(term.lexical, term.lang)
-                    else -> {
-                        valueFactory.createLiteral(term.lexical, valueFactory.createIRI(term.datatype.value))
-                    }
-                }
-            }
-            else -> throw IllegalArgumentException("Cannot convert $term to RDF4J Value")
-        }
-    }
-    
-    private fun convertFromRdf4jStatement(statement: org.eclipse.rdf4j.model.Statement): RdfTriple {
-        return RdfTriple(
-            subject = convertFromRdf4jResource(statement.subject),
-            predicate = Iri(statement.predicate.stringValue()),
-            obj = convertFromRdf4jTerm(statement.`object`)
-        )
-    }
-    
-    private fun convertFromRdf4jResource(resource: Resource): RdfResource {
-        return when (resource) {
-            is IRI -> Iri(resource.stringValue())
-            is org.eclipse.rdf4j.model.BNode -> bnode(resource.id)
-            else -> throw IllegalArgumentException("Cannot convert RDF4J resource: $resource")
-        }
-    }
-    
-    private fun convertFromRdf4jTerm(term: Value): RdfTerm {
-        return when (term) {
-            is IRI -> Iri(term.stringValue())
-            is org.eclipse.rdf4j.model.BNode -> bnode(term.id)
-            is org.eclipse.rdf4j.model.Literal -> {
-                if (term.language.isPresent) {
-                    LangString(term.stringValue(), term.language.get())
-                } else if (term.datatype != null) {
-                    Literal(term.stringValue(), Iri(term.datatype.stringValue()))
-                } else {
-                    Literal(term.stringValue(), Iri("http://www.w3.org/2001/XMLSchema#string"))
-                }
-            }
-            else -> throw IllegalArgumentException("Cannot convert RDF4J term: $term")
-        }
-    }
+
+    private fun convertToRdf4jModel(graph: RdfGraph): Model =
+        LinkedHashModel().also { model -> graph.getTriples().forEach { model.add(rdf4jStatementOf(it)) } }
 }
-
-
-
-
-
-
-
-
-
