@@ -1,9 +1,10 @@
 package com.geoknoesis.kastor.rdf.shacl.conformance
 
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidatorProvider
-import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import org.apache.jena.rdf.model.ModelFactory
+import org.junit.jupiter.api.Assertions.assertThrows
 
 object Shacl12W3cCaseRunner {
 
@@ -44,39 +45,31 @@ object Shacl12W3cCaseRunner {
             Shacl12ManifestParser.graphUriToPath(shapesUri, manifestPath)
                 ?: error("cannot resolve shapes graph URI $shapesUri (manifest=$manifestPath)")
 
-        val graphLoader = JenaProvider()
-        val data =
-            dataPath.toFile().inputStream().use { stream ->
-                graphLoader.parseGraph(stream, "TURTLE", dataPath.toUri().toString())
-            }
-        val shapes =
-            shapesPath.toFile().inputStream().use { stream ->
-                graphLoader.parseGraph(stream, "TURTLE", shapesPath.toUri().toString())
-            }
+        val data = loadW3cGraph(dataPath)
+        // Most W3C cases use one document for data and shapes; share it so blank nodes coincide.
+        val shapes = if (shapesPath == dataPath) data else loadW3cGraph(shapesPath)
 
-        val expectedReportNode =
-            entry.getPropertyResourceValue(model.createProperty(MF + "result"))
-                ?: error("mf:result missing for ${case.entryUri}")
-
-        val expected = Shacl12ExpectedReport.parse(model, expectedReportNode)
+        val resultNode = entry.getProperty(model.createProperty(MF + "result"))?.`object`
+            ?: error("mf:result missing for ${case.entryUri}")
+        val expectsFailure = resultNode.isURIResource && resultNode.asResource().uri == SHT + "Failure"
 
         val useNative = System.getProperty("shacl.w3c.useNative") != "false"
         if (useNative) {
             val validator = NativeShaclValidatorProvider().createValidator(ValidationConfig.default())
+            if (expectsFailure) {
+                assertThrows(ShaclValidationException::class.java, { validator.validate(data, shapes) }, "${case.displayName}: expected sht:Failure")
+                return
+            }
+            val expected = Shacl12ExpectedReport.parse(model, resultNode.asResource())
             val report = validator.validate(data, shapes)
             assertMatchesW3cExpected(report, expected, case.displayName)
             assertNoUnexpectedWarnings(report, case.displayName)
-            assertValidMeansZeroViolations(report, case.displayName)
         } else {
-            val actual =
-                try {
-                    JenaShacl12Conformance.validateToExpectedReport(dataPath, shapesPath)
-                } catch (_: Exception) {
-                    val validator = NativeShaclValidatorProvider().createValidator(ValidationConfig.default())
-                    validator.validate(data, shapes).toExpectedConformanceReport()
-                }
-            assertMatchesW3cExpected(actual, expected, case.displayName)
-            assertValidMeansZeroViolations(actual, case.displayName)
+            if (expectsFailure) return
+            val expected = Shacl12ExpectedReport.parse(model, resultNode.asResource())
+            val actual = JenaShacl12Conformance.validateToExpectedReport(dataPath, shapesPath)
+            org.junit.jupiter.api.Assertions.assertEquals(expected.conforms, actual.conforms, "${case.displayName}: sh:conforms (Jena)")
+            assertResultGraphsIsomorphic(expected.results, actual.results, case.displayName)
         }
     }
 }

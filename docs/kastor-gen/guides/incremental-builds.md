@@ -4,278 +4,97 @@
 
 ## Overview
 
-Kastor Gen uses Kotlin Symbol Processing (KSP) for code generation. Understanding how incremental builds work is crucial for optimizing build performance and ensuring code is regenerated when needed.
+Kastor Gen can generate code in two ways, and they behave differently when ontology files change:
 
-## How Incremental Builds Work
+| | KSP processor (`@Rdf(shacl = …)`) | Gradle plugin (`com.geoknoesis.kastor.gen`) |
+|---|---|---|
+| Re-runs when the annotated Kotlin file changes | yes | n/a |
+| Re-runs when the SHACL / JSON-LD file changes | **no** (see below) | yes — the files are task inputs |
+| Build cache | via KSP/Kotlin compilation | task is `@CacheableTask` |
+| Configuration cache | — | compatible |
 
-### KSP Incremental Compilation
+## KSP processor
 
-KSP supports incremental compilation, which means:
+The processor registers its outputs as *aggregating* over the annotated source files, so KSP regenerates
+them whenever those Kotlin sources change.
 
-- **Only changed files are reprocessed**: If you modify one ontology file, only that file's generated code is regenerated
-- **Dependency tracking**: KSP tracks dependencies between source files and generated code
-- **Build cache**: Gradle caches compilation results for faster subsequent builds
+**Known limitation:** KSP cannot observe files under `src/main/resources`. Editing only
+`person-shape.ttl` or the JSON-LD context does **not** trigger regeneration. After editing an ontology
+resource, do one of:
 
-### Gradle Task Inputs and Outputs
+- touch (or edit) the Kotlin file that carries the `@Rdf(shacl = …)` / `@file:Rdf(shacl = …)` annotation;
+- run a clean build of the module (for example `./gradlew :my-module:clean :my-module:build`);
+- use the Gradle plugin instead, which tracks the ontology files as real inputs.
 
-Kastor Gen's `OntologyGenerationTask` is configured with the following inputs and outputs:
+Generation is all-or-nothing: all files for one annotation are generated in memory and checked for
+(case-insensitive) file-name collisions before anything is written. A Turtle syntax error or a name
+collision fails the build instead of leaving empty or partial output.
 
-#### Task Inputs
-
-| Input | Type | Description |
-|-------|------|-------------|
-| `shaclPath` | `@Input` | Path to SHACL shape file |
-| `contextPath` | `@Input` | Path to JSON-LD context file |
-| `interfacePackage` | `@Input @Optional` | Package for generated interfaces |
-| `wrapperPackage` | `@Input @Optional` | Package for generated wrappers |
-| `vocabularyPackage` | `@Input @Optional` | Package for generated vocabulary |
-| `generateInterfaces` | `@Input @Optional` | Whether to generate interfaces |
-| `generateWrappers` | `@Input @Optional` | Whether to generate wrappers |
-| `generateVocabulary` | `@Input @Optional` | Whether to generate vocabulary |
-| `vocabularyName` | `@Input @Optional` | Name of vocabulary class |
-| `vocabularyNamespace` | `@Input @Optional` | Namespace URI for vocabulary |
-| `vocabularyPrefix` | `@Input @Optional` | Prefix for vocabulary |
-
-#### Task Outputs
-
-| Output | Type | Description |
-|--------|------|-------------|
-| `outputDirectory` | `@OutputDirectory` | Directory where generated code is written |
-
-### Current Limitations
-
-**⚠️ Important**: The current task implementation uses `@Input` for file paths (strings) rather than `@InputFile` or `@InputFiles`. This means:
-
-- ✅ **Configuration changes** trigger regeneration (package names, generation flags)
-- ⚠️ **File content changes** may not always trigger regeneration (depends on Gradle's file tracking)
-
-**Best Practice**: Use `--rerun-tasks` or clean build if ontology files change but code isn't regenerated.
-
-## Configuring Incremental Builds
-
-### Automatic File Tracking
-
-To ensure ontology file changes trigger regeneration, configure task inputs explicitly:
+Relative ontology paths are resolved from the annotated file's source set first
+(`src/<set>/resources`, then `src/main/resources`, then the project directory), then from the
+directories listed in the KSP option `kastor.gen.resources`:
 
 ```kotlin
-kastorGen {
-    ontologies {
-        create("dcat") {
-            shaclPath.set("ontologies/dcat-us.shacl.ttl")
-            contextPath.set("ontologies/dcat-us.context.jsonld")
-            targetPackage.set("com.example.dcatus.generated")
-        }
-    }
-}
-
-// Explicitly configure task inputs for file tracking
-tasks.named("generateOntologyDcat") {
-    inputs.files(
-        file("ontologies/dcat-us.shacl.ttl"),
-        file("ontologies/dcat-us.context.jsonld")
-    )
-    outputs.dir("build/generated/sources/kastor-gen/main/kotlin")
-}
-```
-
-### Build Caching
-
-Enable build caching for faster builds:
-
-```kotlin
-tasks.named("generateOntologyDcat") {
-    outputs.cacheIf { true }
-}
-```
-
-**Benefits**:
-- Faster builds when inputs haven't changed
-- Shared cache across team members (with remote cache)
-- CI/CD performance improvements
-
-### Incremental Compilation
-
-KSP automatically handles incremental compilation:
-
-```kotlin
-// KSP configuration (usually in build.gradle.kts)
 ksp {
-    // Incremental compilation is enabled by default
-    // No additional configuration needed
+    arg("kastor.gen.resources", "${projectDir}/ontologies")
 }
 ```
 
-**How it works**:
-1. KSP tracks which source files are processed
-2. On subsequent builds, only changed files are reprocessed
-3. Generated code is updated incrementally
+## Gradle plugin task
 
-## Best Practices
+Each configured ontology gets an `OntologyGenerationTask` (`generateOntology<Name>`).
 
-### 1. Use Explicit File Inputs
+### Inputs and outputs
 
-Always configure file inputs explicitly:
+| Property | Annotation | Notes |
+|---|---|---|
+| `shaclFile` | `@InputFile`, `@PathSensitive(RELATIVE)` | resolved from `shaclPath` (project directory, then `src/main/resources`) |
+| `contextFile` | `@InputFile`, `@PathSensitive(RELATIVE)` | resolved from `contextPath` |
+| `interfacePackage`, `wrapperPackage`, `vocabularyPackage`, `dslPackage` | `@Input @Optional` | |
+| `generateInterfaces`, `generateWrappers`, `generateVocabulary`, `generateDsl` | `@Input @Optional` | |
+| `vocabularyName`, `vocabularyNamespace`, `vocabularyPrefix`, `dslName` | `@Input @Optional` | |
+| `outputDirectory` | `@OutputDirectory` | default `build/generated/sources/kastor-gen/<name>` |
+| `ontologyName`, `shaclPath`, `contextPath` | `@Internal` | used for resolution and diagnostics only |
 
-```kotlin
-tasks.named("generateOntologyDcat") {
-    inputs.files(
-        file("ontologies/dcat-us.shacl.ttl"),
-        file("ontologies/dcat-us.context.jsonld")
-    )
-}
-```
+Because the ontology **contents** are inputs, editing either file re-runs the task; no manual
+`inputs.files(...)` configuration is needed. The task is `@CacheableTask`, so its output can be restored
+from the local or remote build cache.
 
-### 2. Organize Ontology Files
+### Stale output
 
-Keep ontology files organized for easier tracking:
+The task writes a manifest (`.kastor-generated-files`) in its output directory. On each run it first
+generates everything in memory and fails — without touching the output directory — on parse errors, name
+collisions or invalid configuration. Only then does it delete the files recorded by the previous run and
+write the new ones. Renamed or removed shapes therefore never leave stale files behind, including
+case-only renames on case-insensitive file systems.
 
-```
-project/
-├── ontologies/
-│   ├── dcat-us/
-│   │   ├── shapes.ttl
-│   │   └── context.jsonld
-│   └── schema/
-│       ├── shapes.ttl
-│       └── context.jsonld
-└── build.gradle.kts
-```
+### Wiring
 
-### 3. Use Version Control
-
-Track ontology files in version control:
-
-```bash
-# .gitignore should NOT exclude ontology files
-# ontologies/**/*.ttl
-# ontologies/**/*.jsonld
-```
-
-### 4. Monitor Build Performance
-
-Check build performance with Gradle's build scan:
-
-```bash
-./gradlew generateOntology --scan
-```
-
-### 5. Clean Builds When Needed
-
-If incremental builds aren't working correctly:
-
-```bash
-# Clean and rebuild
-./gradlew clean generateOntology
-
-# Or force regeneration
-./gradlew generateOntology --rerun-tasks
-```
+The plugin adds each task's output directory to the `main` Kotlin source set (`jvmMain` for Kotlin
+Multiplatform projects), so compilation depends on generation automatically. No `sourceSets` or
+`dependsOn` configuration is required.
 
 ## Troubleshooting
 
-### Generated Code Not Updating
+**Generated code does not reflect an ontology edit (KSP).** Touch the annotated Kotlin file or clean the
+module; see the limitation above.
 
-**Symptom**: Changes to ontology files don't trigger code regeneration.
+**Generated code does not reflect an ontology edit (Gradle plugin).** Check that `shaclPath` /
+`contextPath` point at the file you edited (`./gradlew generateOntology<Name> --info` logs the resolved
+absolute paths).
 
-**Solutions**:
-1. **Explicit file inputs**: Add `inputs.files()` to task configuration
-2. **Clean build**: Run `./gradlew clean generateOntology`
-3. **Force rerun**: Use `./gradlew generateOntology --rerun-tasks`
+**Build fails with `name collisions`.** Two classes or properties map to the same Kotlin name. The message
+lists the IRIs; add distinct JSON-LD context terms (types) or `sh:name` values (properties).
 
-### Slow Builds
+**Forcing regeneration.**
 
-**Symptom**: Builds are slow even with incremental compilation.
-
-**Solutions**:
-1. **Enable build cache**: Add `outputs.cacheIf { true }`
-2. **Check file sizes**: Large ontology files slow generation
-3. **Use remote cache**: Configure Gradle remote cache for CI/CD
-
-### Stale Generated Code
-
-**Symptom**: Generated code doesn't match ontology files.
-
-**Solutions**:
-1. **Clean build**: `./gradlew clean`
-2. **Check file paths**: Verify ontology file paths are correct
-3. **Verify inputs**: Check that task inputs are configured correctly
-
-## KSP Incremental Compilation Details
-
-### How KSP Tracks Changes
-
-KSP tracks changes at multiple levels:
-
-1. **Source Files**: Which Kotlin source files are processed
-2. **Symbols**: Which symbols (classes, functions, properties) are accessed
-3. **Dependencies**: Dependencies between source files and generated code
-
-### Incremental Processing
-
-When a source file changes:
-
-1. KSP identifies which processors need to run
-2. Only affected processors are executed
-3. Only affected generated files are updated
-
-### Generated Code Location
-
-Generated code is placed in:
-
-```
-build/generated/sources/kastor-gen/main/kotlin/
-└── com/example/generated/
-    ├── Catalog.kt
-    ├── Dataset.kt
-    └── ...
-```
-
-**Note**: The exact location depends on your `targetPackage` configuration.
-
-## Advanced Configuration
-
-### Custom Input Tracking
-
-For complex scenarios, use custom input tracking:
-
-```kotlin
-tasks.named("generateOntologyDcat") {
-    inputs.property("ontologyVersion", "1.0.0")
-    inputs.files(
-        fileTree("ontologies/dcat-us") {
-            include("**/*.ttl")
-            include("**/*.jsonld")
-        }
-    )
-}
-```
-
-### Output Caching
-
-Configure output caching for better performance:
-
-```kotlin
-tasks.named("generateOntologyDcat") {
-    outputs.cacheIf { 
-        // Cache if ontology files haven't changed
-        inputs.files.every { it.exists() }
-    }
-}
-```
-
-### Parallel Execution
-
-Enable parallel task execution:
-
-```kotlin
-// gradle.properties
-org.gradle.parallel=true
-org.gradle.caching=true
+```bash
+./gradlew generateOntology --rerun-tasks
 ```
 
 ## Related Documentation
 
-- [Gradle Configuration](../tutorials/gradle-configuration.md) - Complete Gradle setup guide
-- [KSP Documentation](https://kotlinlang.org/docs/ksp-overview.html) - Official KSP documentation
-- [Gradle Build Cache](https://docs.gradle.org/current/userguide/build_cache.html) - Gradle build cache guide
-
+- [Gradle Plugin Reference](../reference/gradle-plugin.md)
+- [Gradle Configuration](../tutorials/gradle-configuration.md)
+- [KSP Documentation](https://kotlinlang.org/docs/ksp-overview.html)
+- [Gradle Build Cache](https://docs.gradle.org/current/userguide/build_cache.html)

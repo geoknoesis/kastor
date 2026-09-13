@@ -17,13 +17,13 @@ class WriteToGraphTest {
     @BeforeEach
     fun setUp() {
         // Clear registry before each test
-        OntoMapper.registry.clear()
+        OntoMapper.registeredTypes().forEach { OntoMapper.unregister(it) }
     }
 
     @Test
     fun `writeToGraph writes CBD closure to target graph`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -60,7 +60,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph follows blank nodes recursively`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -107,7 +107,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph uses rdf node as subject when subject not provided`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -142,7 +142,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph uses provided subject when specified`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -179,7 +179,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph works with blank node as subject`() {
         // Register factory with blank node
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -215,7 +215,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph does not follow IRI objects`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -257,7 +257,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph handles empty CBD closure`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> = emptyList()
@@ -286,7 +286,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph can write to existing graph`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -328,7 +328,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph prevents cycles with blank nodes`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -373,7 +373,7 @@ class WriteToGraphTest {
     @Test
     fun `writeToGraph works with multiple instances`() {
         // Register factory
-        OntoMapper.registry[TestPersonForWriteToGraph::class.java] = { handle ->
+        OntoMapper.register(TestPersonForWriteToGraph::class.java) { handle ->
             object : TestPersonForWriteToGraph, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {

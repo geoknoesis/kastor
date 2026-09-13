@@ -63,8 +63,7 @@ property("prop") {
     maxInclusive = 100.0
     minExclusive = 0.0
     maxExclusive = 100.0
-    totalDigits = 10
-    fractionDigits = 2
+    // totalDigits / fractionDigits are deprecated: not SHACL Core, not enforced by the native validator
 }
 ```
 
@@ -117,17 +116,23 @@ property("prop") {
 
 ```kotlin
 nodeShape("Shape") {
+    // Block forms create ONE operand: sh:and ( _:operand )
     and {
         property("prop1") { minCount = 1 }
         property("prop2") { minCount = 1 }
     }
-    or {
-        property("prop1") { minCount = 1 }
-        property("prop2") { minCount = 1 }
+    // Several operands: sh:or ( _:a _:b )
+    orShapes {
+        shape { property("prop1") { minCount = 1 } }
+        shape { property("prop2") { minCount = 1 } }
     }
-    xone {
-        property("prop1") { minCount = 1 }
-        property("prop2") { minCount = 1 }
+    xoneShapes {
+        shape { property("prop1") { minCount = 1 } }
+        shape { property("prop2") { minCount = 1 } }
+    }
+    andShapes {
+        shape("http://example.org/Shape1")
+        shape("http://example.org/Shape2")
     }
     not {
         property("prop") { minCount = 1 }
@@ -178,10 +183,12 @@ NodeKind.IRIOrLiteral
 ## Severity Levels
 
 ```kotlin
-Severity.Violation  // Default
+Severity.Violation  // Default (property shapes do not inherit the node shape's severity)
 Severity.Warning
 Severity.Info
 ```
+
+Any result, whatever its severity, makes `ValidationReport.isValid` (`sh:conforms`) false; use `hasViolations` to ignore Warning/Info.
 
 ## Prefixes
 

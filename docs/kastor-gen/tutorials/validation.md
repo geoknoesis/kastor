@@ -1,675 +1,204 @@
 # Validation with Kastor Gen
 
-This tutorial covers SHACL validation integration with Kastor Gen, including validation adapters, custom validation patterns, and best practices.
+This tutorial shows how to check RDF data against SHACL shapes when you work with Kastor Gen domain
+objects. The API is summarised in the [Validation API Reference](../reference/validation.md).
 
 ## Overview
 
-Kastor Gen provides built-in support for SHACL (Shapes Constraint Language) validation through a pluggable validation system. This allows you to validate RDF data against SHACL shapes while maintaining clean domain interfaces.
-
-## Validation Architecture
+- Validation is **explicit**: plain `materialize` never validates.
+- A `ValidationContext` performs the check. Kastor Gen ships two real SHACL engines:
+  `JenaValidation` (Apache Jena `ShaclValidator`) and `Rdf4jValidation` (RDF4J `ShaclSail`).
+- Shapes live in a **separate shapes graph** that you pass to the adapter once.
+- A validation call reports the results for **one focus node**.
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Domain Layer  │    │   Validation     │    │   SHACL Shapes  │
-│                 │    │                  │    │                 │
-│  Pure Interfaces│◄──►│  ValidationContext  │◄──►│  Jena/RDF4J     │
-│  RdfBacked      │    │  (explicit)     │   │  SHACL Engine   │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+ data graph ──┐
+              ├─► ValidationContext.validate(data, focus) ─► ValidationResult (Ok | Violations)
+ shapes ──────┘        (JenaValidation / Rdf4jValidation)
 ```
 
-## Validation Adapters
+## Step 1: Add an adapter
 
-Kastor Gen provides validation adapters for different RDF backends:
-
-### Jena Validation Adapter
+Inside the Kastor build:
 
 ```kotlin
-// Add dependency
-runtimeOnly(project(":kastor-gen:validation-jena"))
-
-class JenaValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        // SHACL validation using Jena
-    }
+dependencies {
+    implementation(project(":kastor-gen:runtime"))
+    implementation(project(":kastor-gen:validation-jena"))    // Jena engine (brings rdf:jena)
+    // implementation(project(":kastor-gen:validation-rdf4j")) // or the RDF4J engine
 }
 ```
 
-### RDF4J Validation Adapter
+Kastor Gen artifacts are not yet published; outside this repository use `publishToMavenLocal` or a
+composite build as described in [Getting Started](getting-started.md).
 
-```kotlin
-// Add dependency
-runtimeOnly(project(":rdf:rdf4j"))
-runtimeOnly(project(":kastor-gen:validation-rdf4j"))
-
-class Rdf4jValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        // SHACL validation using RDF4J
-    }
-}
-```
-
-## Basic Validation Usage
-
-### Materialization with Validation
-
-```kotlin
-val validation = JenaValidation()
-val person: Person = rdfRef.asValidatedType(validation)
-// Validates against SHACL shapes during materialization
-```
-
-### Manual Validation
-
-```kotlin
-val validation = JenaValidation()
-val person: Person = rdfRef.asType(validation)
-val rdfHandle = person.asRdf()
-
-try {
-    rdfHandle.validateOrThrow()
-    println("Validation passed")
-} catch (e: ValidationException) {
-    println("Validation failed: ${e.message}")
-}
-```
-
-### Validation Registry
-
-```kotlin
-// Check if validation is available
-val validation = JenaValidation()
-println("Validation available: ${validation != null}")
-
-// Use validation
-validation.validate(graph, focusNode).orThrow()
-```
-
-## SHACL Shapes
-
-### Creating SHACL Shapes
-
-Create SHACL shapes to define validation rules:
+## Step 2: Write shapes
 
 ```turtle
-# person-shape.ttl
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix dcterms: <http://purl.org/dc/terms/> .
+# src/main/resources/person-shape.ttl
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex:  <http://example.org/> .
 
-<http://example.org/PersonShape>
+ex:PersonShape
     a sh:NodeShape ;
-    sh:targetClass foaf:Person ;
+    sh:targetClass ex:Person ;
     sh:property [
-        sh:path foaf:name ;
+        sh:path ex:name ;
+        sh:datatype xsd:string ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:datatype xsd:string ;
+        sh:message "A person needs exactly one name" ;
     ] ;
     sh:property [
-        sh:path foaf:age ;
-        sh:minCount 0 ;
-        sh:maxCount 1 ;
+        sh:path ex:age ;
         sh:datatype xsd:integer ;
-        sh:minInclusive 0 ;
-        sh:maxInclusive 150 ;
-    ] ;
-    sh:property [
-        sh:path foaf:mbox ;
-        sh:minCount 0 ;
         sh:maxCount 1 ;
-        sh:datatype xsd:string ;
-        sh:pattern "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$" ;
+        sh:minInclusive 0 ;
     ] .
 ```
 
-### Loading SHACL Shapes
+The same file can drive code generation (`@file:Rdf(shacl = "person-shape.ttl")`) and runtime validation.
+
+## Step 3: Create the validation context
 
 ```kotlin
-class PersonValidation : ValidationContext {
-    private val shapesGraph: RdfGraph by lazy {
-        loadShapesFromResource("person-shape.ttl")
+import com.geoknoesis.kastor.gen.validation.jena.JenaValidation
+
+val shapesTtl = object {}.javaClass.getResource("/person-shape.ttl")!!.readText()
+val validation = JenaValidation.fromTurtle(shapesTtl)
+```
+
+Equivalent alternatives:
+
+```kotlin
+val shapes: RdfGraph = Rdf.parse(shapesTtl, "TURTLE")
+val jena = JenaValidation(shapes)
+
+val rdf4j = Rdf4jValidation(shapes)   // AutoCloseable: close() when done, or use { }
+```
+
+Create the context once and reuse it: shapes are parsed at construction.
+
+> The no-arg constructors `JenaValidation()` / `Rdf4jValidation()` read shapes from the *data* graph on
+> every call. If your data graph holds no shapes, every node validates as `Ok`.
+
+## Step 4: Validate while materializing
+
+```kotlin
+import com.geoknoesis.kastor.gen.runtime.*
+import com.geoknoesis.kastor.rdf.*
+
+val repo = Rdf.memory()
+val alice = Iri("http://example.org/alice")
+repo.add {
+    alice - RDF.type - Iri("http://example.org/Person")
+    alice - Iri("http://example.org/age") - 30
+    // no ex:name
+}
+
+try {
+    val person: Person = repo.defaultGraph.materializeValidated(alice, validation)
+} catch (e: ValidationException) {
+    e.violations.forEach { println("${it.path?.value}: ${it.message}") }
+    // http://example.org/name: A person needs exactly one name
+}
+```
+
+The object is built, then the focus node is validated; on violations a `ValidationException` is thrown
+carrying the structured `ShaclViolation`s. `RdfRef.asValidatedType(validation)` and
+`OntoMapper.materializeValidated(ref, type, validation)` behave the same.
+
+## Step 5: Validate later or without materializing
+
+An object created by `materializeValidated` keeps its context, so you can re-check it after changing the
+graph:
+
+```kotlin
+val handle = person.asRdf()
+if (handle.isValidationConfigured) {
+    handle.validateOrThrow()
+}
+```
+
+Objects created by plain `materialize` have no context (`isValidationConfigured == false`, and
+`validate()` throws `IllegalStateException`). Call the context directly instead:
+
+```kotlin
+when (val result = validation.validate(repo.defaultGraph, alice)) {
+    ValidationResult.Ok -> println("valid")
+    is ValidationResult.Violations -> result.items.forEach {
+        println("[${it.severity}] ${it.constraintIri.value} on ${it.path?.value}: ${it.message} (value ${it.actualValue})")
     }
-    
+}
+```
+
+## Focus-node scope
+
+Results are filtered to the focus node you pass. If `ex:alice ex:knows ex:bob` and `ex:bob` violates its
+own shape, validating `alice` does not report `bob`'s violation. Validate each node you need:
+
+```kotlin
+val people = listOf(alice, bob)
+val failures = people.associateWith { validation.validate(graph, it) }
+    .filterValues { it is ValidationResult.Violations }
+```
+
+## Adding business rules
+
+Wrap an engine adapter to add checks SHACL cannot express, returning the same result type:
+
+```kotlin
+class PersonRules(private val shacl: ValidationContext) : ValidationContext {
     override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        // Load and apply SHACL shapes
-        val validator = createValidationContext(shapesGraph)
-        val report = validator.validate(data, focus)
-        
-        if (!report.isValid) {
-            val errors = report.violations.joinToString("\n") { violation ->
-                "Validation error: ${violation.message}"
-            }
-            return ValidationResult.Violations(listOf(ShaclViolation(null, errors)))
+        val items = (shacl.validate(data, focus) as? ValidationResult.Violations)?.items.orEmpty().toMutableList()
+        val subject = focus as RdfResource
+        val emails = data.find(subject, Iri("http://example.org/email")).map { it.obj }
+        if (emails.size > 3) {
+            items += ShaclViolation(
+                focusNode = subject,
+                shapeIri = Iri("http://example.org/rules/PersonRules"),
+                constraintIri = Iri("http://example.org/rules/maxEmails"),
+                path = Iri("http://example.org/email"),
+                message = "At most three e-mail addresses",
+            )
         }
-        return ValidationResult.Ok
-    }
-    
-    private fun loadShapesFromResource(resourceName: String): RdfGraph {
-        val repo = Rdf.memory()
-        val inputStream = javaClass.getResourceAsStream(resourceName)
-        repo.load(inputStream, RdfFormat.TURTLE)
-        return repo.defaultGraph
+        return if (items.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(items)
     }
 }
+
+val validation = PersonRules(JenaValidation.fromTurtle(shapesTtl))
 ```
 
-## Custom Validation Patterns
-
-### Domain-Specific Validation
+## Testing
 
 ```kotlin
-class PersonDomainValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val triples = data.getTriples()
-        val focusTriples = triples.filter { it.subject == focus }
-        
-        // Check if it's a Person
-        val isPerson = focusTriples.any { 
-            it.predicate == RDF.type && it.obj == FOAF.Person 
-        }
-        
-        if (!isPerson) {
-            return // Not a person, skip validation
-        }
-        
-        // Validate Person-specific rules
-        validatePersonRules(focusTriples, focus)
-    }
-    
-    private fun validatePersonRules(triples: List<RdfTriple>, focus: RdfTerm) {
-        // Check required name property
-        val hasName = triples.any { it.predicate == FOAF.name }
-        if (!hasName) {
-            return ValidationResult.Violations(listOf(ShaclViolation(null, "Person must have a name property")))
-        }
-        
-        // Check age constraints
-        val ageTriples = triples.filter { it.predicate == FOAF.age }
-        ageTriples.forEach { triple ->
-            val age = (triple.obj as? Literal)?.lexical?.toIntOrNull()
-            if (age != null && (age < 0 || age > 150)) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Person age must be between 0 and 150")))
-            }
-        }
-        
-        // Check email format
-        val emailTriples = triples.filter { it.predicate == FOAF.mbox }
-        emailTriples.forEach { triple ->
-            val email = (triple.obj as? Literal)?.lexical
-            if (email != null && !isValidEmail(email)) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Invalid email format: $email")))
-            }
-        }
-    }
-    
-    private fun isValidEmail(email: String): Boolean {
-        return email.matches(Regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"))
-    }
-}
-```
+class PersonValidationTest {
+    private val validation = JenaValidation.fromTurtle(PERSON_SHAPES_TTL)
 
-### Business Rule Validation
-
-```kotlin
-class BusinessRuleValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val triples = data.getTriples()
-        val focusTriples = triples.filter { it.subject == focus }
-        
-        // Business rule: Employees must have an employer
-        val isEmployee = focusTriples.any { 
-            it.predicate == RDF.type && it.obj == Employee
-        }
-        
-        if (isEmployee) {
-            val hasEmployer = focusTriples.any { it.predicate == EMPLOYER }
-            if (!hasEmployer) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Employee must have an employer")))
-            }
-        }
-        
-        // Business rule: Products must have a price
-        val isProduct = focusTriples.any { 
-            it.predicate == RDF.type && it.obj == Product
-        }
-        
-        if (isProduct) {
-            val hasPrice = focusTriples.any { it.predicate == PRICE }
-            if (!hasPrice) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Product must have a price")))
-            }
-        }
-    }
-}
-```
-
-### Cross-Entity Validation
-
-```kotlin
-class CrossEntityValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val triples = data.getTriples()
-        
-        // Validate relationships
-        validateRelationships(triples, focus)
-        
-        // Validate consistency
-        validateConsistency(triples, focus)
-    }
-    
-    private fun validateRelationships(triples: List<RdfTriple>, focus: RdfTerm) {
-        // Check that all referenced entities exist
-        val referencedEntities = triples
-            .filter { it.subject == focus }
-            .mapNotNull { triple ->
-                when (triple.obj) {
-                    is Iri -> triple.obj
-                    else -> null
-                }
-            }
-        
-        referencedEntities.forEach { entityIri ->
-            val entityExists = triples.any { it.subject == entityIri }
-            if (!entityExists) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Referenced entity does not exist: $entityIri")))
-            }
-        }
-    }
-    
-    private fun validateConsistency(triples: List<RdfTriple>, focus: RdfTerm) {
-        // Check for circular references
-        val visited = mutableSetOf<RdfTerm>()
-        val visiting = mutableSetOf<RdfTerm>()
-        
-        fun hasCycle(node: RdfTerm): Boolean {
-            if (visiting.contains(node)) return true
-            if (visited.contains(node)) return false
-            
-            visiting.add(node)
-            
-            val outgoing = triples
-                .filter { it.subject == node }
-                .mapNotNull { it.obj as? RdfTerm }
-            
-            for (neighbor in outgoing) {
-                if (hasCycle(neighbor)) return true
-            }
-            
-            visiting.remove(node)
-            visited.add(node)
-            return false
-        }
-        
-        if (hasCycle(focus)) {
-            return ValidationResult.Violations(listOf(ShaclViolation(null, "Circular reference detected")))
-        }
-    }
-}
-```
-
-## Validation Configuration
-
-### Multiple Validation Ports
-
-```kotlin
-class CompositeValidation : ValidationContext {
-    private val validators = listOf(
-        PersonDomainValidation(),
-        BusinessRuleValidation(),
-        CrossEntityValidation()
-    )
-    
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val errors = mutableListOf<String>()
-        
-        validators.forEach { validator ->
-            try {
-                validator.validate(data, focus).orThrow()
-            } catch (e: ValidationException) {
-                errors.add(e.message ?: "Validation failed")
-            }
-        }
-        
-        if (errors.isNotEmpty()) {
-            return ValidationResult.Violations(listOf(ShaclViolation(null, "Multiple validation errors:\n${errors.joinToString("\n")}")))
-        }
-    }
-}
-
-// Register composite validation
-val validation = CompositeValidation()
-```
-
-### Conditional Validation
-
-```kotlin
-class ConditionalValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val triples = data.getTriples()
-        val focusTriples = triples.filter { it.subject == focus }
-        
-        // Only validate if entity is marked for validation
-        val shouldValidate = focusTriples.any { 
-            it.predicate == VALIDATION_FLAG && it.obj == Literal("true")
-        }
-        
-        if (!shouldValidate) {
-            return // Skip validation
-        }
-        
-        // Perform validation
-        validateEntity(focusTriples, focus)
-    }
-    
-    private fun validateEntity(triples: List<RdfTriple>, focus: RdfTerm) {
-        // Validation logic here
-    }
-}
-```
-
-## Error Handling and Reporting
-
-### Detailed Error Reporting
-
-```kotlin
-class DetailedValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        val errors = mutableListOf<ValidationError>()
-        
-        // Collect validation errors
-        collectErrors(data, focus, errors)
-        
-        if (errors.isNotEmpty()) {
-            val errorReport = createErrorReport(errors)
-            return ValidationResult.Violations(listOf(ShaclViolation(null, errorReport)))
-        }
-    }
-    
-    private fun collectErrors(
-        data: RdfGraph, 
-        focus: RdfTerm, 
-        errors: MutableList<ValidationError>
-    ) {
-        val triples = data.getTriples()
-        val focusTriples = triples.filter { it.subject == focus }
-        
-        // Check required properties
-        if (!focusTriples.any { it.predicate == FOAF.name }) {
-            errors.add(ValidationError(
-                severity = ValidationSeverity.ERROR,
-                message = "Required property 'name' is missing",
-                property = FOAF.name,
-                focus = focus
-            ))
-        }
-        
-        // Check property constraints
-        focusTriples
-            .filter { it.predicate == FOAF.age }
-            .forEach { triple ->
-                val age = (triple.obj as? Literal)?.lexical?.toIntOrNull()
-                if (age != null && age < 0) {
-                    errors.add(ValidationError(
-                        severity = ValidationSeverity.ERROR,
-                        message = "Age cannot be negative",
-                        property = FOAF.age,
-                        focus = focus,
-                        value = triple.obj
-                    ))
-                }
-            }
-    }
-    
-    private fun createErrorReport(errors: List<ValidationError>): String {
-        val errorCount = errors.count { it.severity == ValidationSeverity.ERROR }
-        val warningCount = errors.count { it.severity == ValidationSeverity.WARNING }
-        
-        return buildString {
-            appendLine("Validation Report")
-            appendLine("================")
-            appendLine("Errors: $errorCount, Warnings: $warningCount")
-            appendLine()
-            
-            errors.forEach { error ->
-                appendLine("${error.severity}: ${error.message}")
-                appendLine("  Property: ${error.property.value}")
-                appendLine("  Focus: ${error.focus}")
-                if (error.value != null) {
-                    appendLine("  Value: ${error.value}")
-                }
-                appendLine()
-            }
-        }
-    }
-}
-
-data class ValidationError(
-    val severity: ValidationSeverity,
-    val message: String,
-    val property: Iri,
-    val focus: RdfTerm,
-    val value: RdfTerm? = null
-)
-
-enum class ValidationSeverity {
-    ERROR, WARNING, INFO
-}
-```
-
-### Graceful Error Handling
-
-```kotlin
-class ValidationService {
-    fun validatePerson(person: Person): ValidationResult {
-        return try {
-            person.asRdf().validateOrThrow()
-            ValidationResult.Success()
-        } catch (e: ValidationException) {
-            ValidationResult.Error(e.message ?: "Validation failed")
-        } catch (e: Exception) {
-            ValidationResult.Error("Unexpected validation error: ${e.message}")
-        }
-    }
-    
-    fun validatePersonWithDetails(person: Person): DetailedValidationResult {
-        val rdfHandle = person.asRdf()
-        val errors = mutableListOf<String>()
-        val warnings = mutableListOf<String>()
-        
-        try {
-            rdfHandle.validateOrThrow()
-        } catch (e: ValidationException) {
-            errors.add(e.message ?: "Validation failed")
-        }
-        
-        // Additional domain-specific validation
-        if (person.name.isEmpty()) {
-            errors.add("Person name is required")
-        }
-        
-        if (person.age.firstOrNull()?.let { it < 0 || it > 150 } == true) {
-            warnings.add("Person age is outside typical range")
-        }
-        
-        return DetailedValidationResult(
-            isValid = errors.isEmpty(),
-            errors = errors,
-            warnings = warnings
-        )
-    }
-}
-
-sealed class ValidationResult {
-    object Success : ValidationResult()
-    data class Error(val message: String) : ValidationResult()
-}
-
-data class DetailedValidationResult(
-    val isValid: Boolean,
-    val errors: List<String>,
-    val warnings: List<String>
-)
-```
-
-## Performance Considerations
-
-### Lazy Validation
-
-```kotlin
-class LazyValidation : ValidationContext {
-    private val validationCache = mutableMapOf<RdfTerm, Boolean>()
-    
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        // Check cache first
-        if (validationCache.containsKey(focus)) {
-            if (!validationCache[focus]!!) {
-                return ValidationResult.Violations(listOf(ShaclViolation(null, "Cached validation failure")))
-            }
-            return
-        }
-        
-        // Perform validation
-        val isValid = performValidation(data, focus)
-        validationCache[focus] = isValid
-        
-        if (!isValid) {
-            return ValidationResult.Violations(listOf(ShaclViolation(null, "Validation failed")))
-        }
-    }
-    
-    private fun performValidation(data: RdfGraph, focus: RdfTerm): Boolean {
-        // Expensive validation logic
-        return true // Simplified
-    }
-}
-```
-
-### Batch Validation
-
-```kotlin
-class BatchValidation : ValidationContext {
-    override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-        // Collect all entities that need validation
-        val entitiesToValidate = collectEntities(data, focus)
-        
-        // Validate in batches
-        entitiesToValidate.chunked(100).forEach { batch ->
-            validateBatch(data, batch)
-        }
-    }
-    
-    private fun collectEntities(data: RdfGraph, focus: RdfTerm): List<RdfTerm> {
-        val triples = data.getTriples()
-        return triples
-            .filter { it.predicate == RDF.type }
-            .map { it.subject }
-            .distinct()
-    }
-    
-    private fun validateBatch(data: RdfGraph, batch: List<RdfTerm>) {
-        // Batch validation logic
-        batch.forEach { entity ->
-            // Validate individual entity
-        }
-    }
-}
-```
-
-## Testing Validation
-
-### Unit Testing
-
-```kotlin
-class ValidationTest {
     @Test
-    fun `validation passes for valid person`() {
-        val validation = PersonDomainValidation()
+    fun `person without a name is rejected`() {
         val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        
-        repo.add {
-            person - RDF.type - FOAF.Person
-            person - FOAF.name - "John Doe"
-            person - FOAF.age - 30
-        }
-        
-        assertDoesNotThrow {
-            validation.validate(repo.defaultGraph, person).orThrow()
-        }
-    }
-    
-    @Test
-    fun `validation fails for person without name`() {
-        val validation = PersonDomainValidation()
-        val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        
-        repo.add {
-            person - RDF.type - FOAF.Person
-            person - FOAF.age - 30
-        }
-        
-        assertThrows(ValidationException::class.java) {
-            validation.validate(repo.defaultGraph, person).orThrow()
-        }
+        val p = Iri("http://example.org/p")
+        repo.add { p - RDF.type - Iri("http://example.org/Person") }
+
+        val result = validation.validate(repo.defaultGraph, p)
+        assertTrue(result is ValidationResult.Violations)
     }
 }
 ```
 
-### Integration Testing
+## Good practice
 
-```kotlin
-class ValidationIntegrationTest {
-    @Test
-    fun `end-to-end validation works`() {
-        val repo = Rdf.memory()
-        val person = iri("http://example.org/person")
-        
-        repo.add {
-            person - RDF.type - FOAF.Person
-            person - FOAF.name - "John Doe"
-            person - FOAF.age - 30
-        }
-        
-        val personRef = RdfRef(person, repo.defaultGraph)
-        
-        // Materialize with validation
-        assertDoesNotThrow {
-            val validation = JenaValidation()
-            val personObj: Person = personRef.asValidatedType(validation)
-            assertEquals("John Doe", personObj.name.firstOrNull())
-        }
-    }
-}
-```
-
-## Best Practices
-
-### ✅ Do
-
-- Use SHACL shapes for structural validation
-- Implement custom validation for business rules
-- Provide detailed error messages
-- Cache validation results when appropriate
-- Validate in batches for performance
-- Handle validation errors gracefully
-- Test validation thoroughly
-
-### ❌ Don't
-
-- Ignore validation errors
-- Perform expensive validation synchronously
-- Mix validation logic with domain logic
-- Assume validation always passes
-- Skip validation in production
-- Use validation for business logic
+- Build the context once (per shapes file) and reuse it; `close()` `Rdf4jValidation` when finished.
+- Keep shapes in their own graph/resource instead of mixing them into the data.
+- Validate at trust boundaries (data loaded from outside), not on every property read.
+- Inspect `ShaclViolation.severity`: `Warning`/`Info` results are also reported as `Violations`; decide
+  whether your code should fail on them.
 
 ## Next Steps
 
-- **Check out [Advanced Usage](advanced-usage.md)** - Complex scenarios
-- **See [Practical Examples](../examples/README.md)** - Real-world use cases
-- **Review [API Reference](../reference/README.md)** - Complete API documentation
-- **Learn about [Best Practices](../best-practices.md)** - Guidelines for effective usage
-
-
-
+- [Validation API Reference](../reference/validation.md)
+- [Runtime API](../reference/runtime.md)
+- [Advanced Usage](advanced-usage.md)
+- [Best Practices](../best-practices.md)

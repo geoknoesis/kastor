@@ -153,10 +153,10 @@ val repo = RdfProviderRegistry.create(
 )
 ```
 
-## Fallback: Memory (`memory`)
+## Graph-only Memory (`memory`)
 
 ### `memory`
-**Description**: Simple in-memory repository (fallback when no provider is available)
+**Description**: Graph-only in-memory repository (RDF 1.2 terms; no parsing, serialization or SPARQL). It is never a silent fallback. It is used when selected explicitly, when it is the default provider, or when it is the only provider matching the requirements (its priority is −100).
 **Parameters**: None required
 **Example**:
 ```kotlin

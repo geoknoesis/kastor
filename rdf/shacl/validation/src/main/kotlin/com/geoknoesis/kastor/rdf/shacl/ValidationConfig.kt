@@ -39,7 +39,7 @@ data class ValidationConfig(
     /** When false (default P1a), triple terms inside `sh:in` / `sh:hasValue` cause compile failure. */
     val allowTripleTermsInShapeParameters: Boolean = false,
     /**
-     * Hard cap on **data graph + shapes graph** triple count (estimated via [RdfGraph.size]) before
+     * Hard cap on **data graph + shapes graph** triple count (estimated via `RdfGraph.size`) before
      * validation runs. Default [Long.MAX_VALUE] (no limit). Lower this for untrusted input (e.g. `500_000`)
      * to bound memory; enforced by the RDF4J bridge, native engine, and memory provider.
      */
@@ -79,8 +79,8 @@ data class ValidationConfig(
          * Create a configuration for large graphs.
          */
         fun forLargeGraphs(): ValidationConfig = ValidationConfig(
-            streamingMode = true,
-            parallelValidation = true,
+            streamingMode = false,
+            parallelValidation = false,
             batchSize = 5000,
             maxViolations = 10000
         )
@@ -112,7 +112,8 @@ data class ValidationConfig(
          * Create a configuration for memory-constrained environments.
          */
         fun forMemoryConstrained(): ValidationConfig = ValidationConfig(
-            streamingMode = true,
+            streamingMode = false,
+            maxCombinedGraphTriples = 100_000,
             batchSize = 100,
             maxViolations = 100
         )

@@ -12,28 +12,40 @@ import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGener
 import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.EnumGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.enums.ShaclEnumExtractor
 import com.geoknoesis.kastor.gen.processor.api.exceptions.FileGenerationException
+import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.google.devtools.ksp.processing.CodeGenerator
 import com.google.devtools.ksp.processing.Dependencies
 import com.google.devtools.ksp.processing.KSPLogger
+import com.google.devtools.ksp.symbol.KSFile
 import com.squareup.kotlinpoet.FileSpec
 import java.nio.charset.StandardCharsets
 
 /**
  * Coordinates code generation from ontology models.
+ *
+ * All files for one request are generated first, checked for (case-insensitive) file-name collisions, and
+ * only then written. Outputs are registered as *aggregating* over the annotated source files passed in
+ * `sources`, so KSP regenerates them whenever those sources change. KSP cannot observe SHACL / JSON-LD files
+ * under `src/main/resources`; after editing those, touch the annotated source or run a clean build (the
+ * `com.geoknoesis.kastor.gen` Gradle plugin tracks ontology files as real task inputs).
  */
-class GenerationCoordinator(
+public class GenerationCoordinator(
     private val logger: KSPLogger,
     private val codeGenerator: CodeGenerator
 ) {
     private val instanceDslGenerator = InstanceDslGenerator(logger)
-    
+
     /**
      * Generates interfaces and wrappers from ontology model.
+     *
+     * @throws InvalidConfigurationException when data classes would collide with interfaces (empty
+     *   [dataClassSuffix]) or when generated names collide
      */
-    fun generateFromOntology(
+    public fun generateFromOntology(
         model: OntologyModel,
         packageName: String,
         generateInterfaces: Boolean,
@@ -42,27 +54,37 @@ class GenerationCoordinator(
         validationAnnotations: ValidationAnnotations,
         externalValidatorClass: String?,
         generateDataClass: Boolean = false,
-        dataClassSuffix: String = "",
+        dataClassSuffix: String = DEFAULT_DATA_CLASS_SUFFIX,
         dataClassImplementsInterface: Boolean = false,
         nestedMode: NestedMode = NestedMode.INTERFACE,
         generateWriteSupport: Boolean = false,
+        sources: List<KSFile> = emptyList(),
     ) {
-        val enriched = ShaclEnumExtractor(logger).enrich(model)
-        EnumGenerator(logger)
-            .generateEnums(enriched, packageName)
-            .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+        if (generateDataClass && dataClassSuffix.isBlank() && (generateInterfaces || generateWrappers || dataClassImplementsInterface)) {
+            throw InvalidConfigurationException(
+                config = "dataClassSuffix",
+                reason = "must not be empty when data classes are generated together with interfaces/wrappers in package " +
+                    "'$packageName' (the data class and the interface would both be named after the shape); use e.g. " +
+                    "\"$DEFAULT_DATA_CLASS_SUFFIX\"",
+            )
+        }
+        if (dataClassImplementsInterface && !generateInterfaces) {
+            logger.warn("dataClassImplementsInterface = true but generateInterfaces = false; the interfaces must exist in '$packageName'")
+        }
 
-        val interfaceGenerator = InterfaceGenerator(logger, validationAnnotations)
-        val wrapperGenerator = OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
+        val enriched = ShaclEnumExtractor(logger).enrich(model)
+        GenerationNames.checkCollisions(enriched)
+        val files = mutableListOf<FileSpec>()
+        files += EnumGenerator(logger).generateEnums(enriched, packageName).values
 
         if (generateInterfaces) {
-            interfaceGenerator.generateInterfaces(enriched, packageName)
-                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+            files += InterfaceGenerator(logger, validationAnnotations)
+                .generateInterfaces(enriched, packageName, fallbackUnshapedToIri = true).values
         }
 
         if (generateWrappers) {
-            wrapperGenerator.generateWrappers(enriched, packageName)
-                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+            files += OntologyWrapperGenerator(logger, validationMode, externalValidatorClass)
+                .generateWrappers(enriched, packageName, fallbackUnshapedToIri = true).values
         }
 
         if (generateDataClass) {
@@ -86,41 +108,44 @@ class GenerationCoordinator(
                 nestedMode = nestedMode,
                 writerGenerator = writerGen,
             )
-            dcGenerator.generateDataClasses(enriched, packageName)
-                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
-            factoryGenerator.generateFactories(enriched, packageName)
-                .toSortedMap().forEach { (_, fileSpec) -> writeFile(fileSpec, packageName) }
+            files += dcGenerator.generateDataClasses(enriched, packageName, fallbackUnshapedToIri = true).values
+            files += factoryGenerator.generateFactories(enriched, packageName, fallbackUnshapedToIri = true).values
         }
+
+        GenerationNames.checkUniqueFiles(files)
+        files.sortedBy { it.name }.forEach { writeFile(it, sources) }
     }
-    
+
     /**
      * Generates instance DSL from ontology model.
      */
-    fun generateInstanceDsl(
+    public fun generateInstanceDsl(
         model: OntologyModel,
         dslName: String,
-        packageName: String
+        packageName: String,
+        sources: List<KSFile> = emptyList(),
     ) {
         logger.info("Processing instance DSL generation: $dslName")
-        
+
         val request = InstanceDslRequest(
             dslName = dslName,
             ontologyModel = model,
             packageName = packageName,
             options = DslGenerationOptions()
         )
-        
+
         val fileSpec = instanceDslGenerator.generate(request)
-        writeFile(fileSpec, packageName)
-        
-        logger.info("Generated instance DSL: ${dslName}Dsl.kt")
+        writeFile(fileSpec, sources)
+
+        logger.info("Generated instance DSL: ${fileSpec.name}.kt")
     }
-    
-    private fun writeFile(fileSpec: FileSpec, packageName: String) {
+
+    private fun writeFile(fileSpec: FileSpec, sources: List<KSFile>) {
+        val packageName = fileSpec.packageName
         val kspFileName = fileSpec.name.removeSuffix(".kt")
         try {
             codeGenerator.createNewFile(
-                dependencies = Dependencies(false),
+                dependencies = Dependencies(aggregating = true, *sources.distinct().toTypedArray()),
                 packageName = packageName,
                 fileName = kspFileName
             ).use { file ->
@@ -137,6 +162,9 @@ class GenerationCoordinator(
             )
         }
     }
+
+    public companion object {
+        /** Default suffix for generated data classes (`Person` → `PersonRecord`). */
+        public const val DEFAULT_DATA_CLASS_SUFFIX: String = "Record"
+    }
 }
-
-

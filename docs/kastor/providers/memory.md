@@ -2,12 +2,16 @@
 
 The Memory provider provides in-memory RDF storage, ideal for development, testing, and small to medium-sized datasets.
 
+> **`Rdf.memory()` is not this provider.** `Rdf.memory()` returns a SPARQL-capable in-memory Jena (or RDF4J) repository and throws if neither module is on the classpath. The `memory` provider described here is selected explicitly with `providerId = "memory"`. It stores RDF 1.2 terms, including triple terms, with serializable transactions, but it cannot parse, serialize or run SPARQL. It also has the lowest selection priority (−100).
+
 ## Features
 
 - **Fast Performance**: In-memory operations are extremely fast
 - **No Persistence**: Data is lost when the application exits
 - **Thread-Safe**: Concurrent access is supported
 - **Zero Configuration**: Works out of the box
+- **RDF 1.2 Terms**: Triple terms round-trip (`supportsTripleTerms = true`)
+- **Live Graph Handles**: `getGraph(name)` returns a handle that reflects later writes
 - **Memory Efficient**: Optimized for memory usage
 
 ## Quick Start
@@ -17,8 +21,14 @@ import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.RDF
 
-// Create a memory repository
+// In-memory repository with SPARQL (Jena or RDF4J)
 val repo = Rdf.memory()
+
+// The graph-only memory provider itself, selected explicitly (no SPARQL)
+val graphOnly = Rdf.repository {
+    providerId = "memory"
+    variantId = "memory"
+}
 
 // Add some data
 repo.add {

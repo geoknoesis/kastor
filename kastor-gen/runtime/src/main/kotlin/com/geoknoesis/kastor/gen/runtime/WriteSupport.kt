@@ -10,7 +10,7 @@ fun MutableRdfGraph.replaceValues(
     predicate: Iri,
     newTriples: Collection<RdfTriple>,
 ) {
-    val stale = getTriples().filter { it.subject == subject && it.predicate == predicate }
+    val stale = find(subject, predicate)
     if (stale.isNotEmpty()) removeTriples(stale)
     if (newTriples.isNotEmpty()) addTriples(newTriples)
 }
@@ -19,7 +19,7 @@ fun MutableRdfGraph.replaceResource(
     subject: RdfResource,
     triples: Collection<RdfTriple>,
 ) {
-    val stale = getTriples().filter { it.subject == subject }
+    val stale = find(subject)
     if (stale.isNotEmpty()) removeTriples(stale)
     if (triples.isNotEmpty()) addTriples(triples)
 }

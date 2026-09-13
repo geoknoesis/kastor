@@ -10,27 +10,72 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 
-internal class ShapeGraphIndex(triples: List<RdfTriple>) {
-    private val bySubject: Map<RdfResource, List<RdfTriple>> = triples.groupBy { it.subject }
-    private val allTriples: List<RdfTriple> = triples
+internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
+    /** All shapes-graph triples (retained for SHACL-SPARQL `$shapesGraph` access). */
+    val triples: List<RdfTriple> = triples
+    private val bySubject = HashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
+    private val byPredicateObject = HashMap<Iri, HashMap<RdfTerm, MutableList<RdfResource>>>()
+    private val reifiers = HashMap<RdfTriple, MutableList<RdfResource>>()
 
-    fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> =
-        bySubject[sub]?.filter { it.predicate == pred }?.map { it.obj } ?: emptyList()
+    init {
+        for (t in triples) {
+            budget.tick("shape indexing")
+            bySubject.getOrPut(t.subject) { LinkedHashMap() }.getOrPut(t.predicate) { ArrayList(1) }.add(t.obj)
+            byPredicateObject.getOrPut(t.predicate) { HashMap() }.getOrPut(t.obj) { ArrayList(1) }.add(t.subject)
+            if (t.predicate == RDF.reifies) {
+                (t.obj as? TripleTerm)?.let { reifiers.getOrPut(it.triple) { ArrayList(1) }.add(t.subject) }
+            }
+        }
+        budget.check("shape indexing")
+    }
+
+    fun objects(sub: RdfResource, pred: Iri): List<RdfTerm> = bySubject[sub]?.get(pred) ?: emptyList()
+
+    fun hasSubject(sub: RdfResource): Boolean = bySubject.containsKey(sub)
+
+    fun subjects(pred: Iri, obj: RdfTerm): List<RdfResource> = byPredicateObject[pred]?.get(obj) ?: emptyList()
 
     fun objectSingle(sub: RdfResource, pred: Iri): RdfTerm? = objects(sub, pred).singleOrNull()
 
-    /** Reifiers naming `claim` via `rdf:reifies` (Turtle 1.2 `- {| … |}` annotations). */
-    fun reifiersForClaim(claim: RdfTriple): List<RdfResource> =
-        allTriples.mapNotNull { t ->
-            if (t.predicate != RDF.reifies) return@mapNotNull null
-            val tt = t.obj as? TripleTerm ?: return@mapNotNull null
-            if (tt.triple == claim) t.subject else null
+    /** Reifiers naming `claim` via `rdf:reifies` (Turtle 1.2 `- {| … |}` annotations); indexed, O(1). */
+    fun reifiersForClaim(claim: RdfTriple): List<RdfResource> = reifiers[claim] ?: emptyList()
+
+    /** SHACL instance test in the shapes graph: `rdf:type/rdfs:subClassOf*` reaches [cls]. */
+    fun isInstanceOf(node: RdfResource, cls: Iri): Boolean {
+        val seen = HashSet<RdfTerm>()
+        val queue = ArrayDeque<RdfTerm>(objects(node, RDF.type))
+        while (queue.isNotEmpty()) {
+            val c = queue.removeFirst()
+            if (c == cls) return true
+            if (c is RdfResource && seen.add(c)) queue.addAll(objects(c, com.geoknoesis.kastor.rdf.vocab.RDFS.subClassOf))
         }
+        return false
+    }
+
+    /** Triples describing the blank-node structure reachable from [root] (e.g. a complex `sh:path`). */
+    fun blankNodeClosure(root: RdfTerm): List<RdfTriple> {
+        val out = mutableListOf<RdfTriple>()
+        val seen = HashSet<BlankNode>()
+        fun visit(term: RdfTerm) {
+            if (term !is BlankNode || !seen.add(term)) return
+            bySubject[term]?.forEach { (p, objs) ->
+                objs.forEach { o ->
+                    out.add(RdfTriple(term, p, o))
+                    visit(o)
+                }
+            }
+        }
+        visit(root)
+        return out
+    }
 
     fun parseRdfList(head: RdfTerm): List<RdfTerm> {
         val out = mutableListOf<RdfTerm>()
         var cur: RdfTerm? = head
+        val visited = mutableSetOf<RdfTerm>()
         while (cur != null) {
+            budget.check("shape collection")
+            if (!visited.add(cur)) throw ShapeCompileException("Cyclic RDF collection in shapes")
             when (cur) {
                 is Iri -> {
                     if (cur == RDF.nil) return out
@@ -63,25 +108,31 @@ internal sealed class ShaclPath {
 }
 
 internal object ShaclPathParser {
-    fun parse(term: RdfTerm, shapes: ShapeGraphIndex): ShaclPath =
-        when (term) {
+    fun parse(term: RdfTerm, shapes: ShapeGraphIndex): ShaclPath = parse(term, shapes, emptySet())
+
+    private fun parse(term: RdfTerm, shapes: ShapeGraphIndex, ancestors: Set<RdfTerm>): ShaclPath {
+        if (term in ancestors || ancestors.size >= 128) throw ShapeCompileException("Cyclic or excessively nested SHACL path")
+        val next = ancestors + term
+        return when (term) {
             is Iri -> ShaclPath.Predicate(term)
             is BlankNode ->
                 if (shapes.objectSingle(term, RDF.first) != null) {
-                    ShaclPath.Sequence(shapes.parseRdfList(term).map { parse(it, shapes) })
+                    ShaclPath.Sequence(shapes.parseRdfList(term).map { parse(it, shapes, next) })
                 } else {
-                    parseBlankPath(term, shapes)
+                    parseBlankPath(term, shapes, next)
                 }
             else -> throw ShapeCompileException("Unsupported SHACL path term: $term")
         }
 
-    private fun parseBlankPath(node: BlankNode, shapes: ShapeGraphIndex): ShaclPath {
-        val triples = shapes.objects(node, SHACL.alternativePath).map { ShaclPath.Alternative(parseList(it, shapes)) }
-            .plus(shapes.objects(node, SHACL.sequencePath).map { ShaclPath.Sequence(parseList(it, shapes)) })
-            .plus(shapes.objects(node, SHACL.inversePath).map { ShaclPath.Inverse(parse(it, shapes)) })
-            .plus(shapes.objects(node, SHACL.zeroOrMorePath).map { ShaclPath.ZeroOrMore(parse(it, shapes)) })
-            .plus(shapes.objects(node, SHACL.oneOrMorePath).map { ShaclPath.OneOrMore(parse(it, shapes)) })
-            .plus(shapes.objects(node, SHACL.zeroOrOnePath).map { ShaclPath.ZeroOrOne(parse(it, shapes)) })
+    }
+
+    private fun parseBlankPath(node: BlankNode, shapes: ShapeGraphIndex, next: Set<RdfTerm>): ShaclPath {
+        val triples = shapes.objects(node, SHACL.alternativePath).map { ShaclPath.Alternative(parseList(it, shapes, next)) }
+            .plus(shapes.objects(node, SHACL.sequencePath).map { ShaclPath.Sequence(parseList(it, shapes, next)) })
+            .plus(shapes.objects(node, SHACL.inversePath).map { ShaclPath.Inverse(parse(it, shapes, next)) })
+            .plus(shapes.objects(node, SHACL.zeroOrMorePath).map { ShaclPath.ZeroOrMore(parse(it, shapes, next)) })
+            .plus(shapes.objects(node, SHACL.oneOrMorePath).map { ShaclPath.OneOrMore(parse(it, shapes, next)) })
+            .plus(shapes.objects(node, SHACL.zeroOrOnePath).map { ShaclPath.ZeroOrOne(parse(it, shapes, next)) })
 
         if (triples.size != 1) {
             throw ShapeCompileException(
@@ -91,6 +142,6 @@ internal object ShaclPathParser {
         return triples.first()
     }
 
-    private fun parseList(head: RdfTerm, shapes: ShapeGraphIndex): List<ShaclPath> =
-        shapes.parseRdfList(head).map { parse(it, shapes) }
+    private fun parseList(head: RdfTerm, shapes: ShapeGraphIndex, next: Set<RdfTerm>): List<ShaclPath> =
+        shapes.parseRdfList(head).map { parse(it, shapes, next) }
 }

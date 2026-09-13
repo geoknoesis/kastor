@@ -7,12 +7,18 @@ plugins {
 }
 
 dependencies {
+  implementation(project(":tools:onto-quality-embed")) {
+    // These benchmarks use precomputed vectors, not native model inference.
+    exclude(group = "com.microsoft.onnxruntime")
+    exclude(group = "ai.djl.huggingface")
+    exclude(group = "ai.djl")
+  }
   implementation(project(":rdf:core"))
   implementation(project(":rdf:shacl-validation"))
   implementation(project(":rdf:rdf4j"))
   implementation(project(":rdf:jena"))
   implementation(libs.jena.shacl)
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+  implementation(libs.kotlinx.serialization.json)
 }
 
 sourceSets {

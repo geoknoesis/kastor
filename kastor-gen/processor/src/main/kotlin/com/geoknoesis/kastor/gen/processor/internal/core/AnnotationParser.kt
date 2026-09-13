@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.gen.processor.internal.core
 
+import com.geoknoesis.kastor.gen.annotations.Rdf
+
 import com.geoknoesis.kastor.gen.annotations.NestedMode
 import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
@@ -10,9 +12,9 @@ import com.google.devtools.ksp.symbol.*
 /**
  * Parses `@Rdf` annotations and extracts generation requests.
  */
-class AnnotationParser(private val logger: KSPLogger) {
+public class AnnotationParser(private val logger: KSPLogger) {
 
-  data class OntologyGenerationRequest(
+  public data class OntologyGenerationRequest(
     val shaclPath: String,
     val contextPath: String,
     val targetPackage: String,
@@ -22,13 +24,13 @@ class AnnotationParser(private val logger: KSPLogger) {
     val validationAnnotations: ValidationAnnotations,
     val externalValidatorClass: String?,
     val generateDataClass: Boolean = false,
-    val dataClassSuffix: String = "",
+    val dataClassSuffix: String = "Record",
     val dataClassImplementsInterface: Boolean = false,
     val nestedMode: NestedMode = NestedMode.INTERFACE,
     val generateWriteSupport: Boolean = false,
   )
 
-  data class InstanceDslGenerationRequest(
+  public data class InstanceDslGenerationRequest(
     val ontologyPath: String?,
     val shaclPath: String,
     val contextPath: String?,
@@ -43,7 +45,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     parseInstanceDslFromRdf(annotation, packageName)
 
   /** Ontology-driven interfaces/wrappers when [Rdf.shacl] is set and generation toggles allow it. */
-  fun parseOntologyFromRdf(annotation: KSAnnotation, defaultPackage: String): OntologyGenerationRequest? {
+  public fun parseOntologyFromRdf(annotation: KSAnnotation, defaultPackage: String): OntologyGenerationRequest? {
     if (annotation.shortName.asString() != "Rdf") return null
     val generateDsl = getAnnotationValue(annotation, "generateDsl") as? Boolean ?: false
     if (generateDsl) return null
@@ -62,7 +64,7 @@ class AnnotationParser(private val logger: KSPLogger) {
     val validationMode = parseValidationMode(getAnnotationValue(annotation, "validationMode"))
     val validationAnnotations = parseValidationAnnotations(getAnnotationValue(annotation, "validationAnnotations"))
     val externalValidatorClass = getAnnotationValue(annotation, "externalValidatorClass") as? String
-    val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: ""
+    val dataClassSuffix = getAnnotationValue(annotation, "dataClassSuffix") as? String ?: "Record"
     val dataClassImplementsInterface = getAnnotationValue(annotation, "dataClassImplementsInterface") as? Boolean ?: false
     val nestedMode = parseNestedMode(getAnnotationValue(annotation, "nestedMode"))
     val generateWriteSupport = getAnnotationValue(annotation, "generateWriteSupport") as? Boolean ?: false
@@ -85,7 +87,7 @@ class AnnotationParser(private val logger: KSPLogger) {
   }
 
   /** Instance DSL when [Rdf.generateDsl] is true with [Rdf.dslName] and [Rdf.shacl]. */
-  fun parseInstanceDslFromRdf(annotation: KSAnnotation, defaultPackage: String): InstanceDslGenerationRequest? {
+  public fun parseInstanceDslFromRdf(annotation: KSAnnotation, defaultPackage: String): InstanceDslGenerationRequest? {
     if (annotation.shortName.asString() != "Rdf") return null
     val generateDsl = getAnnotationValue(annotation, "generateDsl") as? Boolean ?: false
     if (!generateDsl) return null
@@ -110,8 +112,8 @@ class AnnotationParser(private val logger: KSPLogger) {
     )
   }
 
-  companion object {
-    const val RDF_ANNOTATION: String = RDF_ANNOTATION_FQN
+  public companion object {
+    public const val RDF_ANNOTATION: String = RDF_ANNOTATION_FQN
   }
 
   private fun nonBlank(s: String?): String? = s?.takeIf { it.isNotBlank() }
@@ -119,33 +121,28 @@ class AnnotationParser(private val logger: KSPLogger) {
   private fun getAnnotationValue(annotation: KSAnnotation, name: String): Any? =
     annotation.arguments.find { it.name?.asString() == name }?.value
 
-  private fun parseValidationMode(value: Any?): ValidationMode {
-    return when (value) {
-      is ValidationMode -> value
-      is KSType -> ValidationMode.valueOf(value.declaration.simpleName.asString())
-      is KSName -> ValidationMode.valueOf(value.asString())
-      is String -> ValidationMode.valueOf(value)
-      else -> ValidationMode.EMBEDDED
-    }
-  }
+  private fun parseValidationMode(value: Any?): ValidationMode = parseEnum(value, ValidationMode.EMBEDDED)
 
-  private fun parseValidationAnnotations(value: Any?): ValidationAnnotations {
-    return when (value) {
-      is ValidationAnnotations -> value
-      is KSType -> ValidationAnnotations.valueOf(value.declaration.simpleName.asString())
-      is KSName -> ValidationAnnotations.valueOf(value.asString())
-      is String -> ValidationAnnotations.valueOf(value)
-      else -> ValidationAnnotations.JAKARTA
-    }
-  }
+  private fun parseValidationAnnotations(value: Any?): ValidationAnnotations = parseEnum(value, ValidationAnnotations.JAKARTA)
 
-  private fun parseNestedMode(value: Any?): NestedMode {
-    return when (value) {
-      is NestedMode -> value
-      is KSType -> NestedMode.valueOf(value.declaration.simpleName.asString())
-      is KSName -> NestedMode.valueOf(value.asString())
-      is String -> NestedMode.valueOf(value)
-      else -> NestedMode.INTERFACE
+  private fun parseNestedMode(value: Any?): NestedMode = parseEnum(value, NestedMode.INTERFACE)
+
+  /**
+   * Enum annotation arguments arrive as a KSType (KSP1), an enum-entry KSClassDeclaration (KSP2), a KSName or
+   * a String depending on the KSP version; all are mapped by simple name. Unknown values are reported.
+   */
+  private inline fun <reified E : Enum<E>> parseEnum(value: Any?, default: E): E {
+    val name = when (value) {
+      null -> return default
+      is Enum<*> -> value.name
+      is KSType -> value.declaration.simpleName.asString()
+      is KSClassDeclaration -> value.simpleName.asString()
+      is KSName -> value.getShortName()
+      else -> value.toString().substringAfterLast('.')
+    }
+    return enumValues<E>().firstOrNull { it.name == name } ?: run {
+      logger.warn("Unknown ${E::class.simpleName} value '$value' in @Rdf; using $default")
+      default
     }
   }
 }

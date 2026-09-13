@@ -1,0 +1,86 @@
+public abstract interface class com/geoknoesis/kastor/rdf/SparqlAsk : com/geoknoesis/kastor/rdf/SparqlQuery {
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlAskQuery : com/geoknoesis/kastor/rdf/SparqlAsk {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlAskQuery;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getSparql ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/SparqlConstruct : com/geoknoesis/kastor/rdf/SparqlQuery {
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlConstructQuery : com/geoknoesis/kastor/rdf/SparqlConstruct {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlConstructQuery;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getSparql ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/SparqlDescribe : com/geoknoesis/kastor/rdf/SparqlQuery {
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlDescribeQuery : com/geoknoesis/kastor/rdf/SparqlDescribe {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlDescribeQuery;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getSparql ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/SparqlQuery {
+	public abstract fun getSparql ()Ljava/lang/String;
+}
+
+public abstract interface class com/geoknoesis/kastor/rdf/SparqlSelect : com/geoknoesis/kastor/rdf/SparqlQuery {
+}
+
+public final class com/geoknoesis/kastor/rdf/SparqlSelectQuery : com/geoknoesis/kastor/rdf/SparqlSelect {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/SparqlSelectQuery;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getSparql ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/UpdateQuery {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/UpdateQuery;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getSparql ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+

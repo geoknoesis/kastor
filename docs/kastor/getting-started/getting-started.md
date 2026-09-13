@@ -4,13 +4,15 @@
 
 > **Documentation mode: Tutorial** — learning-oriented. You follow steps toward a first working setup. For comparisons and philosophy without procedures, see **Explanation:** [Design Philosophy](../philosophy.md), [Benefits](benefits.md). For exact dependency coordinates and JVM rules, see **Reference:** [Installation](installation.md).
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ### Goal
 
 Run Kastor in a Gradle project and obtain an in-memory **repository** you can add triples to.
 
 ### Prerequisites
 
-- JDK **17**
+- JDK **21+**
 - **Gradle** with Kotlin DSL (see [Installation](installation.md) for detail)
 
 ### What you will do
@@ -108,11 +110,11 @@ Add module dependencies based on the provider you want to use. Published artifac
 Gradle Kotlin DSL:
 ```kotlin
 dependencies {
-  implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+  implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
   // Choose one or more providers
-  implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-  implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
-  implementation("com.geoknoesis.kastor:rdf-sparql:0.2.0")
+  implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+  implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
+  implementation("com.geoknoesis.kastor:rdf-sparql:0.3.0-SNAPSHOT")
 }
 ```
 

@@ -4,21 +4,29 @@ import com.geoknoesis.kastor.rdf.reasoning.*
 import com.geoknoesis.kastor.rdf.*
 
 /**
- * Default memory-based reasoner provider for basic RDFS reasoning.
- * This is a simple implementation that provides basic RDFS inference.
+ * Default memory-based reasoner provider for RDFS reasoning.
+ *
+ * It is a dependency-free fallback: when a backend-specific RDFS reasoner (Jena, RDF4J) is on the
+ * classpath the registry prefers that one (see [priority]).
  */
 class MemoryReasonerProvider : RdfReasonerProvider {
-    
+
     override fun getType(): String = "memory"
-    
+
     override val name: String = "Memory RDFS Reasoner"
-    
+
     override val version: String = "1.0.0"
-    
+
+    /** Lowest priority: only used when no backend-specific reasoner supports the requested type. */
+    override fun priority(): Int = -100
+
     override fun createReasoner(config: ReasonerConfig): RdfReasoner {
+        require(isSupported(config.reasonerType)) {
+            "MemoryReasonerProvider only supports ReasonerType.RDFS, got ${config.reasonerType}"
+        }
         return MemoryReasoner(config)
     }
-    
+
     override fun getCapabilities(): ReasonerCapabilities {
         return ReasonerCapabilities(
             supportedTypes = setOf(ReasonerType.RDFS),
@@ -30,341 +38,233 @@ class MemoryReasonerProvider : RdfReasonerProvider {
             typicalPerformance = PerformanceProfile.FAST
         )
     }
-    
+
     override fun getSupportedTypes(): List<ReasonerType> {
         return listOf(ReasonerType.RDFS)
     }
-    
+
     override fun isSupported(type: ReasonerType): Boolean {
         return type == ReasonerType.RDFS
     }
 }
 
 /**
- * Simple memory-based RDFS reasoner implementation.
+ * In-memory RDFS reasoner computing the fixpoint of the RDFS entailment rules
+ * [rdfs2](https://www.w3.org/TR/rdf11-mt/#patterns-of-rdfs-entailment-informative) (domain),
+ * rdfs3 (range), rdfs5 (subPropertyOf transitivity), rdfs7 (property inheritance), rdfs9 (type
+ * propagation along subClassOf) and rdfs11 (subClassOf transitivity).
+ *
+ * [ReasoningRule.RDFS_SUBCLASS] enables rdfs9 + rdfs11, [ReasoningRule.RDFS_SUBPROPERTY] rdfs5 + rdfs7,
+ * [ReasoningRule.RDFS_DOMAIN] rdfs2 and [ReasoningRule.RDFS_RANGE] rdfs3. Axiomatic triples are not generated.
+ *
+ * Consistency: plain RDFS has no negation, so the only detectable inconsistency is an ill-typed literal of
+ * a recognised XSD datatype (D-unsatisfiability); that is what [isConsistent] reports.
  */
 class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
-    
+
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()
-        
-        val inferredTriples = mutableListOf<RdfTriple>()
-        
-        // Basic RDFS reasoning rules
-        if (config.enabledRules.contains(ReasoningRule.RDFS_SUBCLASS)) {
-            inferredTriples.addAll(inferSubclassTransitivity(graph))
-        }
-        
-        if (config.enabledRules.contains(ReasoningRule.RDFS_SUBPROPERTY)) {
-            inferredTriples.addAll(inferSubpropertyTransitivity(graph))
-        }
-        
-        if (config.enabledRules.contains(ReasoningRule.RDFS_DOMAIN)) {
-            inferredTriples.addAll(inferDomainInference(graph))
-        }
-        
-        if (config.enabledRules.contains(ReasoningRule.RDFS_RANGE)) {
-            inferredTriples.addAll(inferRangeInference(graph))
-        }
-        
+        val asserted = graph.getTriples()
+        val closure = closure(asserted)
+        val assertedSet = asserted.toHashSet()
+        val inferredTriples = closure.filterNot { it in assertedSet }
+
         val reasoningTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
+
         val statistics = ReasoningStatistics(
-            totalTriples = graph.getTriples().size,
+            totalTriples = asserted.size,
             inferredTriples = inferredTriples.size,
-            classesProcessed = countClasses(graph),
-            propertiesProcessed = countProperties(graph),
+            classesProcessed = countType(closure, RDFS_CLASS),
+            propertiesProcessed = countType(closure, RDF_PROPERTY),
             rulesApplied = mapOf("rdfs" to inferredTriples.size),
             memoryUsage = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory(),
             cpuTime = reasoningTime
         )
-        
+
         return ReasoningResult(
             originalGraph = graph,
             inferredTriples = inferredTriples,
-            classification = if (config.includeAxioms) performClassification(graph) else null,
-            consistencyCheck = checkConsistency(graph),
+            classification = if (config.includeAxioms) performClassification(closure) else null,
+            consistencyCheck = checkConsistency(asserted),
             reasoningTime = reasoningTime,
             statistics = statistics
         )
     }
-    
+
     override fun isConsistent(graph: RdfGraph): Boolean {
-        return checkConsistency(graph).isConsistent
+        return checkConsistency(graph.getTriples()).isConsistent
     }
-    
+
     override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> {
         return reason(graph).inferredTriples
     }
-    
+
     override fun classify(graph: RdfGraph): ClassificationResult {
-        return performClassification(graph)
+        return performClassification(closure(graph.getTriples()))
     }
-    
+
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()
-        
+
         val violations = mutableListOf<ValidationViolation>()
-        val warnings = mutableListOf<String>()
-        
-        // Basic validation rules
-        val consistencyResult = checkConsistency(graph)
-        if (!consistencyResult.isConsistent) {
-            consistencyResult.inconsistencies.forEach { inconsistency ->
-                violations.add(
-                    ValidationViolation(
-                        constraint = inconsistency.type.name,
-                        resource = inconsistency.affectedResources.firstOrNull() ?: Iri("unknown"),
-                        message = inconsistency.description,
-                        severity = Severity.ERROR
-                    )
+        val consistencyResult = checkConsistency(graph.getTriples())
+        consistencyResult.inconsistencies.forEach { inconsistency ->
+            violations.add(
+                ValidationViolation(
+                    constraint = inconsistency.type.name,
+                    resource = inconsistency.affectedResources.firstOrNull() ?: Iri("urn:kastor:unknown"),
+                    message = inconsistency.description,
+                    severity = inconsistency.severity
                 )
-            }
+            )
         }
-        
+
         val validationTime = java.time.Duration.ofMillis(System.currentTimeMillis() - startTime)
-        
+
         return ValidationReport(
             isValid = violations.isEmpty(),
             violations = violations,
-            warnings = warnings,
+            warnings = consistencyResult.warnings,
             statistics = ValidationStatistics(
-                constraintsChecked = 5, // Basic RDFS constraints
+                constraintsChecked = 1,
                 violationsFound = violations.size,
-                warningsFound = warnings.size,
+                warningsFound = consistencyResult.warnings.size,
                 validationTime = validationTime
             )
         )
     }
-    
-    // RDFS reasoning implementations
-    private fun inferSubclassTransitivity(graph: RdfGraph): List<RdfTriple> {
-        val inferred = mutableListOf<RdfTriple>()
-        val triples = graph.getTriples()
-        
-        // Find all rdfs:subClassOf triples
-        val subclassTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#subClassOf" 
-        }
-        
-        // Apply transitivity: if A subClassOf B and B subClassOf C, then A subClassOf C
-        subclassTriples.forEach { triple1 ->
-            subclassTriples.forEach { triple2 ->
-                if (triple1.obj == triple2.subject) {
-                    val inferredTriple = RdfTriple(
-                        triple1.subject,
-                        Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf"),
-                        triple2.obj
-                    )
-                    if (!triples.contains(inferredTriple)) {
-                        inferred.add(inferredTriple)
+
+    /** Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order. */
+    internal fun closure(asserted: Collection<RdfTriple>): Set<RdfTriple> {
+        val rules = config.enabledRules
+        val subClass = ReasoningRule.RDFS_SUBCLASS in rules
+        val subProperty = ReasoningRule.RDFS_SUBPROPERTY in rules
+        val domain = ReasoningRule.RDFS_DOMAIN in rules
+        val range = ReasoningRule.RDFS_RANGE in rules
+        val all = LinkedHashSet(asserted)
+        while (true) {
+            val superClasses = index(all, SUB_CLASS_OF)
+            val superProperties = index(all, SUB_PROPERTY_OF)
+            val domains = index(all, DOMAIN)
+            val ranges = index(all, RANGE)
+            val added = LinkedHashSet<RdfTriple>()
+            fun emit(triple: RdfTriple) { if (triple !in all) added.add(triple) }
+            for (t in all) {
+                val obj = t.obj
+                when (t.predicate) {
+                    SUB_CLASS_OF -> if (subClass && obj is RdfResource) {
+                        superClasses[obj]?.forEach { emit(RdfTriple(t.subject, SUB_CLASS_OF, it)) } // rdfs11
+                    }
+                    SUB_PROPERTY_OF -> if (subProperty && obj is RdfResource) {
+                        superProperties[obj]?.forEach { emit(RdfTriple(t.subject, SUB_PROPERTY_OF, it)) } // rdfs5
+                    }
+                    TYPE -> if (subClass && obj is RdfResource) {
+                        superClasses[obj]?.forEach { emit(RdfTriple(t.subject, TYPE, it)) } // rdfs9
                     }
                 }
-            }
-        }
-        
-        return inferred
-    }
-    
-    private fun inferSubpropertyTransitivity(graph: RdfGraph): List<RdfTriple> {
-        val inferred = mutableListOf<RdfTriple>()
-        val triples = graph.getTriples()
-        
-        // Find all rdfs:subPropertyOf triples
-        val subpropertyTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#subPropertyOf" 
-        }
-        
-        // Apply transitivity: if A subPropertyOf B and B subPropertyOf C, then A subPropertyOf C
-        subpropertyTriples.forEach { triple1 ->
-            subpropertyTriples.forEach { triple2 ->
-                if (triple1.obj == triple2.subject) {
-                    val inferredTriple = RdfTriple(
-                        triple1.subject,
-                        Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf"),
-                        triple2.obj
-                    )
-                    if (!triples.contains(inferredTriple)) {
-                        inferred.add(inferredTriple)
-                    }
+                if (subProperty) {
+                    superProperties[t.predicate]?.forEach { q -> if (q is Iri) emit(RdfTriple(t.subject, q, obj)) } // rdfs7
+                }
+                if (domain) {
+                    domains[t.predicate]?.forEach { c -> emit(RdfTriple(t.subject, TYPE, c)) } // rdfs2
+                }
+                if (range && obj is RdfResource) {
+                    ranges[t.predicate]?.forEach { c -> emit(RdfTriple(obj, TYPE, c)) } // rdfs3
                 }
             }
+            if (added.isEmpty()) return all
+            all.addAll(added)
         }
-        
-        return inferred
     }
-    
-    private fun inferDomainInference(graph: RdfGraph): List<RdfTriple> {
-        val inferred = mutableListOf<RdfTriple>()
-        val triples = graph.getTriples()
-        
-        // Find all rdfs:domain triples
-        val domainTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#domain" 
-        }
-        
-        // Apply domain inference: if P has domain D and X has property P, then X is of type D
-        domainTriples.forEach { domainTriple ->
-            val property = domainTriple.subject
-            val domain = domainTriple.obj
-            
-            triples.forEach { triple ->
-                if (triple.predicate == property) {
-                    val typeTriple = RdfTriple(
-                        triple.subject,
-                        Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-                        domain
-                    )
-                    if (!triples.contains(typeTriple)) {
-                        inferred.add(typeTriple)
-                    }
-                }
-            }
-        }
-        
-        return inferred
-    }
-    
-    private fun inferRangeInference(graph: RdfGraph): List<RdfTriple> {
-        val inferred = mutableListOf<RdfTriple>()
-        val triples = graph.getTriples()
-        
-        // Find all rdfs:range triples
-        val rangeTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#range" 
-        }
-        
-        // Apply range inference: if P has range R and X has property P with value V, then V is of type R
-        rangeTriples.forEach { rangeTriple ->
-            val property = rangeTriple.subject
-            val range = rangeTriple.obj
-            
-            triples.forEach { triple ->
-                if (triple.predicate == property && triple.obj is Iri) {
-                    val objIri = triple.obj as Iri
-                    val typeTriple = RdfTriple(
-                        objIri,
-                        Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
-                        range
-                    )
-                    if (!triples.contains(typeTriple)) {
-                        inferred.add(typeTriple)
-                    }
-                }
-            }
-        }
-        
-        return inferred
-    }
-    
-    private fun performClassification(graph: RdfGraph): ClassificationResult {
-        val triples = graph.getTriples()
-        
+
+    private fun index(triples: Collection<RdfTriple>, predicate: Iri): Map<RdfTerm, List<RdfTerm>> =
+        triples.asSequence().filter { it.predicate == predicate }.groupBy({ it.subject }, { it.obj })
+
+    private fun performClassification(triples: Collection<RdfTriple>): ClassificationResult {
         val classHierarchy = mutableMapOf<Iri, List<Iri>>()
         val instanceClassifications = mutableMapOf<Iri, List<Iri>>()
         val propertyHierarchy = mutableMapOf<Iri, List<Iri>>()
-        
-        // Build class hierarchy
-        val subclassTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#subClassOf" 
-        }
-        subclassTriples.forEach { triple ->
-            val subClass = triple.subject as? Iri
-            val superClass = triple.obj as? Iri
-            if (subClass != null && superClass != null) {
-                classHierarchy[subClass] = classHierarchy.getOrDefault(subClass, emptyList()) + superClass
+
+        triples.forEach { triple ->
+            val subject = triple.subject as? Iri ?: return@forEach
+            val obj = triple.obj as? Iri ?: return@forEach
+            when (triple.predicate) {
+                SUB_CLASS_OF -> classHierarchy[subject] = classHierarchy.getOrDefault(subject, emptyList()) + obj
+                TYPE -> instanceClassifications[subject] = instanceClassifications.getOrDefault(subject, emptyList()) + obj
+                SUB_PROPERTY_OF -> propertyHierarchy[subject] = propertyHierarchy.getOrDefault(subject, emptyList()) + obj
             }
         }
-        
-        // Build instance classifications
-        val typeTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" 
-        }
-        typeTriples.forEach { triple ->
-            val instance = triple.subject as? Iri
-            val type = triple.obj as? Iri
-            if (instance != null && type != null) {
-                instanceClassifications[instance] = instanceClassifications.getOrDefault(instance, emptyList()) + type
-            }
-        }
-        
-        // Build property hierarchy
-        val subpropertyTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/2000/01/rdf-schema#subPropertyOf" 
-        }
-        subpropertyTriples.forEach { triple ->
-            val subProperty = triple.subject as? Iri
-            val superProperty = triple.obj as? Iri
-            if (subProperty != null && superProperty != null) {
-                propertyHierarchy[subProperty] = propertyHierarchy.getOrDefault(subProperty, emptyList()) + superProperty
-            }
-        }
-        
+
         return ClassificationResult(
             classHierarchy = classHierarchy,
             instanceClassifications = instanceClassifications,
             propertyHierarchy = propertyHierarchy
         )
     }
-    
-    private fun checkConsistency(graph: RdfGraph): ConsistencyResult {
-        val inconsistencies = mutableListOf<Inconsistency>()
-        val warnings = mutableListOf<String>()
-        
-        // Basic consistency checks
-        val triples = graph.getTriples()
-        
-        // Check for conflicting type assertions
-        val typeTriples = triples.filter { 
-            it.predicate.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" 
+
+    private fun checkConsistency(triples: Collection<RdfTriple>): ConsistencyResult {
+        val inconsistencies = triples.mapNotNull { triple ->
+            val literal = triple.obj as? Literal ?: return@mapNotNull null
+            if (literal is LangString || XsdLexicalForms.isWellTyped(literal.lexical, literal.datatype)) return@mapNotNull null
+            Inconsistency(
+                type = InconsistencyType.DOMAIN_RANGE_VIOLATION,
+                description = "Ill-typed literal \"${literal.lexical}\" for datatype ${literal.datatype.value}",
+                affectedResources = listOf(triple.subject, literal),
+            )
         }
-        
-        val typeMap = typeTriples.groupBy { it.subject }
-        typeMap.forEach { (subject, types) ->
-            if (types.size > 1) {
-                // Check if any types are disjoint (simplified check)
-                val typeValues = types.map { it.obj }.toSet()
-                if (typeValues.size != types.size) {
-                    inconsistencies.add(
-                        Inconsistency(
-                            type = InconsistencyType.CLASS_CONFLICT,
-                            description = "Multiple conflicting type assertions for resource",
-                            affectedResources = listOf(subject)
-                        )
-                    )
-                }
-            }
-        }
-        
         return ConsistencyResult(
             isConsistent = inconsistencies.isEmpty(),
             inconsistencies = inconsistencies,
-            warnings = warnings
+            warnings = emptyList()
         )
     }
-    
-    private fun countClasses(graph: RdfGraph): Int {
-        val triples = graph.getTriples()
-        return triples.filter { 
-            it.predicate.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
-            it.obj is Iri && (it.obj as Iri).value == "http://www.w3.org/2000/01/rdf-schema#Class"
-        }.size
-    }
-    
-    private fun countProperties(graph: RdfGraph): Int {
-        val triples = graph.getTriples()
-        return triples.filter { 
-            it.predicate.value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
-            it.obj is Iri && (it.obj as Iri).value == "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-        }.size
+
+    private fun countType(triples: Collection<RdfTriple>, type: Iri): Int =
+        triples.count { it.predicate == TYPE && it.obj == type }
+
+    private companion object {
+        val TYPE = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        val RDF_PROPERTY = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")
+        val RDFS_CLASS = Iri("http://www.w3.org/2000/01/rdf-schema#Class")
+        val SUB_CLASS_OF = Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf")
+        val SUB_PROPERTY_OF = Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf")
+        val DOMAIN = Iri("http://www.w3.org/2000/01/rdf-schema#domain")
+        val RANGE = Iri("http://www.w3.org/2000/01/rdf-schema#range")
     }
 }
 
+/** Lexical-space checks for the XSD datatypes the memory reasoner recognises. Unknown datatypes are accepted. */
+internal object XsdLexicalForms {
+    private const val XSD = "http://www.w3.org/2001/XMLSchema#"
+    private val integer = Regex("[+-]?[0-9]+")
+    private val decimal = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
+    private val floating = Regex("([+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?|[+-]?INF|NaN)")
 
+    fun isWellTyped(lexical: String, datatype: Iri): Boolean = when (datatype.value) {
+        "${XSD}boolean" -> lexical in setOf("true", "false", "1", "0")
+        "${XSD}integer", "${XSD}long", "${XSD}int", "${XSD}short", "${XSD}byte",
+        "${XSD}nonNegativeInteger", "${XSD}positiveInteger", "${XSD}nonPositiveInteger", "${XSD}negativeInteger" ->
+            integer.matches(lexical) && inRange(lexical, datatype.value.removePrefix(XSD))
+        "${XSD}decimal" -> decimal.matches(lexical)
+        "${XSD}double", "${XSD}float" -> floating.matches(lexical)
+        "${XSD}date" -> runCatching { java.time.format.DateTimeFormatter.ISO_DATE.parse(lexical) }.isSuccess
+        "${XSD}dateTime" -> runCatching { java.time.format.DateTimeFormatter.ISO_DATE_TIME.parse(lexical) }.isSuccess
+        else -> true
+    }
 
-
-
-
-
-
-
+    private fun inRange(lexical: String, type: String): Boolean {
+        val value = lexical.toBigInteger()
+        fun between(min: Long, max: Long) = value >= min.toBigInteger() && value <= max.toBigInteger()
+        return when (type) {
+            "long" -> between(Long.MIN_VALUE, Long.MAX_VALUE)
+            "int" -> between(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
+            "short" -> between(Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong())
+            "byte" -> between(Byte.MIN_VALUE.toLong(), Byte.MAX_VALUE.toLong())
+            "nonNegativeInteger" -> value.signum() >= 0
+            "positiveInteger" -> value.signum() > 0
+            "nonPositiveInteger" -> value.signum() <= 0
+            "negativeInteger" -> value.signum() < 0
+            else -> true
+        }
+    }
+}

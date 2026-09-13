@@ -12,11 +12,14 @@ defaults:
     values:
       layout: default
 
-# Files not published as Jekyll pages (SUMMARY is for GitBook tooling only)
+# Files not published as Jekyll pages: tooling, the legacy table of contents, and internal
+# review/planning material that is kept in the repository but is not user documentation.
 exclude:
   - Gemfile
   - Gemfile.lock
   - SUMMARY.md
+  - project/reviews/
+  - superpowers/
 
 # baseurl and url for https://<owner>.github.io/<repo>/ are appended in CI
 # (.github/workflows/pages.yml). For local preview, run from this directory:

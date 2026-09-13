@@ -10,8 +10,8 @@ Create an in-memory graph, run one **SPARQL** `SELECT`, and print a human-readab
 
 ### Prerequisites
 
-- JDK **17**, Gradle + Kotlin (see [Installation](../getting-started/installation.md))
-- Dependencies: `rdf-core` plus a provider such as `rdf-jena` or `rdf-rdf4j` at **`0.2.0`** (see [Getting Started](../getting-started/getting-started.md))
+- JDK **21+**, Gradle + Kotlin (see [Installation](../getting-started/installation.md))
+- Dependencies: `rdf-core` plus a provider such as `rdf-jena` or `rdf-rdf4j` at **`0.3.0-SNAPSHOT`** (see [Getting Started](../getting-started/getting-started.md))
 
 ## What you'll build
 

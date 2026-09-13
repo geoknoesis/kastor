@@ -1,16 +1,30 @@
 package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
+import org.apache.jena.irix.IRIxResolver
+import org.apache.jena.riot.Lang
+import org.apache.jena.riot.RDFLanguages
+import org.apache.jena.riot.RDFParser
+import org.apache.jena.riot.RDFParserBuilder
+import org.apache.jena.riot.RiotException
 
 /**
  * Jena provider implementation for the RDF API.
+ *
+ * **Parsing contract** (shared with the RDF4J provider):
+ * - Input streams are handed to the Jena parser directly (no intermediate String copy), so the
+ *   document's declared encoding (e.g. RDF/XML `encoding="ISO-8859-1"`) is honoured.
+ * - Without a base IRI, relative IRI references are a parse error (no implicit `file:` base).
+ * - [parseGraph] rejects quad formats (TriG, N-Quads) with [RdfFormatException]: parsing them as a
+ *   single graph would silently drop or merge named graphs. Use [parseDataset] instead.
+ * - Syntax errors surface as [RdfFormatException].
  */
 class JenaProvider : RdfProvider {
-    
+
     override val id: String = "jena"
     override val name: String = "Jena Repository"
-    override val version: String = "4.0.0"
-    
+    override val version: String = org.apache.jena.Jena.VERSION
+
     override fun variants(): List<RdfVariant> {
         return listOf(
             RdfVariant("memory", "In-memory store"),
@@ -19,7 +33,7 @@ class JenaProvider : RdfProvider {
             RdfVariant("tdb2-inference", "TDB2 store with inference")
         )
     }
-    
+
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         return when (variantId) {
             "memory" -> JenaRepository.MemoryRepository()
@@ -35,9 +49,124 @@ class JenaProvider : RdfProvider {
             else -> throw IllegalArgumentException("Unsupported Jena repository variant: $variantId")
         }
     }
-    
+
     override fun getCapabilities(variantId: String?): ProviderCapabilities {
-        val formats = listOf(
+        return ProviderCapabilities(
+            rdfVersion = "1.2",
+            supportsTripleTerms = true,
+            supportsInference = variantId?.endsWith("-inference") == true,
+            supportsTransactions = true,
+            supportsNamedGraphs = true,
+            supportsUpdates = true,
+            supportsRdfStar = true,
+            // Jena models rdf:dirLangString natively (NodeFactory.createLiteralDirLang).
+            supportsBaseDirection = true,
+            maxMemoryUsage = Long.MAX_VALUE,
+            sparqlVersion = "1.2",
+            supportsPropertyPaths = true,
+            supportsAggregation = true,
+            supportsSubSelect = true,
+            supportsVersionDeclaration = true,
+            // generateServiceDescription is not implemented by this provider.
+            supportsServiceDescription = false,
+            supportedInputFormats = JenaParsing.FORMATS,
+            supportedOutputFormats = JenaParsing.FORMATS // Jena supports same formats for input and output
+        )
+    }
+
+    /** Preferred over RDF4J (40) and the in-core memory store (-100) when several providers support a format. */
+    override val priority: Int = 50
+
+    override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
+        return JenaBridge.toString(graph, format, options)
+    }
+
+    override fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions): String {
+        // Get the underlying Jena Dataset if available
+        val jenaRepo = repository as? JenaRepository
+            ?: throw UnsupportedOperationException("JenaProvider can only serialize Jena repositories")
+        // Serialize the same view that graph reads expose (including inferences for inference variants).
+        return jenaRepo.withRead { JenaBridge.serializeDataset(jenaRepo.queryDataset(), format, options) }
+    }
+
+    override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph =
+        parseGraph(inputStream, format, null)
+
+    override fun parseGraph(
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+    ): MutableRdfGraph {
+        val lang = JenaParsing.graphLang(format)
+        val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
+        try {
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.graph(model.graph))) }
+        } catch (failure: Throwable) {
+            model.close()
+            throw failure
+        }
+        return JenaBridge.fromJenaModel(model)
+    }
+
+    /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer. */
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
+        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+            .use { it.toList().asSequence() }
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
+        val lang = JenaParsing.graphLang(format)
+        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, null)).asyncParseTriples()
+        return object : TripleStream {
+            private var closed = false
+            private val knownIris = HashSet<String>()
+            private val rows = Sequence {
+                object : Iterator<RdfTriple> {
+                    override fun hasNext(): Boolean {
+                        check(!closed) { "Triple stream is closed" }
+                        return JenaParsing.parseWithFormatErrors(format) { parser.hasNext() }
+                    }
+                    override fun next(): RdfTriple {
+                        check(!closed) { "Triple stream is closed" }
+                        return JenaTerms.fromJenaTriple(JenaParsing.parseWithFormatErrors(format) { parser.next().also { JenaParsing.validateTriple(it, knownIris) } })
+                    }
+                }
+            }.constrainOnce()
+            override fun iterator(): Iterator<RdfTriple> { check(!closed); return rows.iterator() }
+            override fun close() {
+                if (!closed) {
+                    closed = true
+                    try { inputStream.close() } finally { parser.close() }
+                }
+            }
+        }
+    }
+
+    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
+        val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
+            ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
+        val parsed = org.apache.jena.query.DatasetFactory.create()
+        try {
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
+            repository.transaction {
+                val jena = repository as? JenaRepository
+                if (jena != null) {
+                    val target = jena.getJenaDataset()
+                    target.defaultModel.add(parsed.defaultModel)
+                    parsed.listNames().forEachRemaining { target.getNamedModel(it).add(parsed.getNamedModel(it)) }
+                } else {
+                    editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
+                    parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
+                }
+            }
+        } finally { parsed.close() }
+    }
+    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) =
+        parseDataset(repository, inputStream, format, null)
+}
+
+/** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */
+internal object JenaParsing {
+        val FORMATS = listOf(
             "TURTLE", "TTL", "TURTLE-1.2", "TURTLESTAR",
             "JSON-LD", "JSONLD", "JSON-LD-1.2",
             "RDF/XML", "RDFXML", "XML",
@@ -45,205 +174,86 @@ class JenaProvider : RdfProvider {
             "TRIG", "TRI-G", "TRIG-1.2", "TRIGSTAR",
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2",
         )
-        return ProviderCapabilities(
-            rdfVersion = "1.2",
-            supportsTripleTerms = true,
-            supportsInference = true,
-            supportsTransactions = true,
-            supportsNamedGraphs = true,
-            supportsUpdates = true,
-            supportsRdfStar = true,
-            maxMemoryUsage = Long.MAX_VALUE,
-            sparqlVersion = "1.2",
-            supportsPropertyPaths = true,
-            supportsAggregation = true,
-            supportsSubSelect = true,
-            supportsVersionDeclaration = true,
-            supportsServiceDescription = true,
-            supportedInputFormats = formats,
-            supportedOutputFormats = formats // Jena supports same formats for input and output
-        )
-    }
-    
-    override fun supportsFormat(format: String): Boolean {
-        val normalized = format.uppercase().trim()
-        return normalized in listOf(
-            "TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", 
-            "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ"
-        )
-    }
-    
-    override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
-        return JenaBridge.toString(graph, format, options)
-    }
-    
-    override fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions): String {
-        // Get the underlying Jena Dataset if available
-        val jenaRepo = repository as? JenaRepository
-            ?: throw UnsupportedOperationException("JenaProvider can only serialize Jena repositories")
-        
-        val dataset = jenaRepo.getJenaDataset()
-        return JenaBridge.serializeDataset(dataset, format, options)
-    }
-    
-    override fun parseGraph(inputStream: java.io.InputStream, format: String): MutableRdfGraph {
-        val data = inputStream.readBytes().toString(Charsets.UTF_8)
-        return JenaBridge.fromString(data, format)
-    }
 
-    override fun parseGraph(
-        inputStream: java.io.InputStream,
-        format: String,
-        baseIri: String?,
-    ): MutableRdfGraph {
-        if (baseIri == null) return parseGraph(inputStream, format)
-        val data = inputStream.readBytes().toString(Charsets.UTF_8)
-        // Jena's Model.read uses an empty string as the default base; passing
-        // the manifest-supplied base lets relative IRIs resolve correctly.
-        val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
-        model.read(data.byteInputStream(), baseIri, JenaBridge.normalizeJenaLang(format))
-        return JenaBridge.fromJenaModel(model)
-    }
-
-    /**
-     * Truly streaming triple parse. Jena's [org.apache.jena.riot.system.AsyncParser]
-     * runs the parser on a background thread feeding a bounded queue, so triples are
-     * produced incrementally and memory stays roughly constant regardless of input size
-     * — unlike the default `parseStreaming`, which builds a full in-memory model first.
-     * Backs [com.geoknoesis.kastor.rdf.Rdf.parseStreaming] and `parseStreamingFlow`.
-     *
-     * The caller owns [inputStream]; consume the whole sequence so the backing parser
-     * thread terminates promptly.
-     */
-    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
-        val lang = org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
-        // A throwaway model is used only to view parsed graph Nodes as RDFNodes for
-        // JenaTerms conversion (datatype/lang/triple-term aware).
-        val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
-        return org.apache.jena.riot.system.AsyncParser
-            .asyncParseTriples(inputStream, lang, null)
-            .asSequence()
-            .map { triple ->
-                RdfTriple(
-                    JenaTerms.fromNode(model.asRDFNode(triple.subject)) as RdfResource,
-                    JenaTerms.fromNode(model.asRDFNode(triple.predicate)) as Iri,
-                    JenaTerms.fromNode(model.asRDFNode(triple.`object`)),
+        /** Resolves a graph (triple) format; quad formats are rejected instead of being silently flattened. */
+        fun graphLang(format: String): Lang {
+            val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
+                ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
+            if (lang == Lang.TRIG || lang == Lang.NQUADS) {
+                throw RdfFormatException.Generic(
+                    "Format '$format' is a quad (dataset) format; parsing it as a single graph would drop or merge " +
+                        "named graphs. Use parseDataset(...) instead.",
+                    RdfErrorCode.FORMAT_PARSE_ERROR,
                 )
             }
-    }
+            return lang
+        }
 
-    override fun parseDataset(
-        repository: RdfRepository,
-        inputStream: java.io.InputStream,
-        format: String,
-        baseIri: String?,
-    ) {
-        if (baseIri == null) {
-            parseDataset(repository, inputStream, format)
-            return
+        /**
+         * Builds a spec-strict parser with the shared base-IRI policy: without a base, relative IRIs are errors.
+         * (Jena's default non-strict mode accepts e.g. a missing final DOT or bare collections.)
+         */
+        fun parser(inputStream: java.io.InputStream, lang: Lang, baseIri: String?): RDFParserBuilder {
+            val builder = RDFParser.source(inputStream).lang(lang).strict(true)
+            return if (baseIri != null) builder.base(baseIri)
+            else builder.resolver(IRIxResolver.create().noBase().allowRelative(false).build())
         }
-        val data = inputStream.readBytes()
-        val parsedDataset = org.apache.jena.query.DatasetFactory.create()
-        org.apache.jena.riot.RDFParser
-            .source(data.inputStream())
-            .lang(org.apache.jena.riot.RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format)))
-            .base(baseIri)
-            .parse(parsedDataset)
-        copyDataset(parsedDataset, repository)
-    }
 
-    private fun copyDataset(parsedDataset: org.apache.jena.query.Dataset, repository: RdfRepository) {
-        val jenaRepo = repository as? JenaRepository
-        if (jenaRepo != null) {
-            val dataset = jenaRepo.getJenaDataset()
-            dataset.defaultModel.removeAll()
-            dataset.defaultModel.add(parsedDataset.defaultModel)
-            parsedDataset.listNames().asSequence().forEach { graphName: String ->
-                if (dataset.containsNamedModel(graphName)) {
-                    dataset.removeNamedModel(graphName)
-                }
-                dataset.addNamedModel(graphName, parsedDataset.getNamedModel(graphName))
-            }
-            return
+        /**
+         * Rejects terms that Jena's parser tolerates but that are not valid RDF (and cannot be represented
+         * by Kastor terms): IRIs Kastor's [Iri] rejects, malformed language tags, and `rdf:langString` /
+         * `rdf:dirLangString` literals without a language tag. Throws [RiotException].
+         */
+        fun validateTriple(triple: org.apache.jena.graph.Triple, knownIris: MutableSet<String>) {
+            validateNode(triple.subject, knownIris)
+            validateNode(triple.predicate, knownIris)
+            validateNode(triple.`object`, knownIris)
         }
-        parsedDataset.defaultModel.listStatements().asSequence().forEach { stmt ->
-            repository.editDefaultGraph().addTriple(
-                RdfTriple(
-                    JenaTerms.fromResource(stmt.subject),
-                    JenaTerms.fromProperty(stmt.predicate),
-                    JenaTerms.fromNode(stmt.`object`),
-                )
-            )
-        }
-        parsedDataset.listNames().asSequence().forEach { graphName ->
-            val namedModel = parsedDataset.getNamedModel(graphName)
-            val graphIri = Iri(graphName)
-            if (!repository.hasGraph(graphIri)) repository.createGraph(graphIri)
-            namedModel.listStatements().asSequence().forEach { stmt ->
-                repository.editGraph(graphIri).addTriple(
-                    RdfTriple(
-                        JenaTerms.fromResource(stmt.subject),
-                        JenaTerms.fromProperty(stmt.predicate),
-                        JenaTerms.fromNode(stmt.`object`),
-                    )
-                )
-            }
-        }
-    }
 
-    override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
-        // If it's a Jena repository, we can directly use the dataset
-        val jenaRepo = repository as? JenaRepository
-        if (jenaRepo != null) {
-            val dataset = jenaRepo.getJenaDataset()
-            val parsedDataset = JenaBridge.parseDatasetFromStream(inputStream, format)
-            
-            // Copy default graph
-            dataset.defaultModel.removeAll()
-            dataset.defaultModel.add(parsedDataset.defaultModel)
-            
-            // Copy named graphs
-            parsedDataset.listNames().asSequence().forEach { graphName: String ->
-                if (dataset.containsNamedModel(graphName)) {
-                    dataset.removeNamedModel(graphName)
-                }
-                dataset.addNamedModel(graphName, parsedDataset.getNamedModel(graphName))
-            }
-        } else {
-            // For non-Jena repositories, copy triples manually
-            val dataset = JenaBridge.parseDatasetFromStream(inputStream, format)
-            
-            // Copy default graph to repository
-            dataset.defaultModel.listStatements().asSequence().forEach { statement: org.apache.jena.rdf.model.Statement ->
-                val subject = JenaTerms.fromResource(statement.subject)
-                val predicate = JenaTerms.fromProperty(statement.predicate)
-                val obj = JenaTerms.fromNode(statement.`object`)
-                repository.editDefaultGraph().addTriple(RdfTriple(subject, predicate, obj))
-            }
-            
-            // Copy named graphs to repository
-            dataset.listNames().asSequence().forEach { graphName: String ->
-                val namedModel = dataset.getNamedModel(graphName)
-                val graphIri = Iri(graphName)
-                if (!repository.hasGraph(graphIri)) {
-                    repository.createGraph(graphIri)
-                }
-                namedModel.listStatements().asSequence().forEach { statement: org.apache.jena.rdf.model.Statement ->
-                    val subject = JenaTerms.fromResource(statement.subject)
-                    val predicate = JenaTerms.fromProperty(statement.predicate)
-                    val obj = JenaTerms.fromNode(statement.`object`)
-                    repository.editGraph(graphIri).addTriple(RdfTriple(subject, predicate, obj))
+        private fun validateNode(node: org.apache.jena.graph.Node, knownIris: MutableSet<String>) {
+            when {
+                node.isURI -> validateIri(node.uri, knownIris)
+                node.isTripleTerm -> validateTriple(node.triple, knownIris)
+                node.isLiteral -> {
+                    val language = node.literalLanguage
+                    LiteralValidation.problem(node.literalDatatypeURI, language, node.literalBaseDirection != null)
+                        ?.let { throw RiotException(it) }
+                    if (language.isNullOrEmpty()) node.literalDatatypeURI?.let { validateIri(it, knownIris) }
                 }
             }
         }
+
+        private fun validateIri(iri: String, knownIris: MutableSet<String>) {
+            if (iri in knownIris) return
+            try {
+                Iri(iri)
+            } catch (e: IllegalArgumentException) {
+                throw RiotException(e.message ?: "Invalid IRI: $iri")
+            }
+            if (knownIris.size > 100_000) knownIris.clear()
+            knownIris.add(iri)
+        }
+
+        /** Wraps a parser sink so every triple/quad is validated before it is stored. */
+        fun validating(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =
+            object : org.apache.jena.riot.system.StreamRDFWrapper(target) {
+                private val knownIris = HashSet<String>()
+                override fun triple(triple: org.apache.jena.graph.Triple) {
+                    validateTriple(triple, knownIris)
+                    super.triple(triple)
+                }
+                override fun quad(quad: org.apache.jena.sparql.core.Quad) {
+                    if (!quad.isDefaultGraph) validateNode(quad.graph, knownIris)
+                    validateTriple(quad.asTriple(), knownIris)
+                    super.quad(quad)
+                }
+            }
+
+        inline fun <T> parseWithFormatErrors(format: String, block: () -> T): T = try {
+            block()
+        } catch (e: RiotException) {
+            throw RdfFormatException.Generic("Failed to parse $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+        } catch (e: org.apache.jena.atlas.RuntimeIOException) {
+            throw RdfFormatException.Generic("Failed to read $format data: ${e.message}", RdfErrorCode.FORMAT_PARSE_ERROR, e)
+        }
     }
-}
-
-
-
-
-
-
-
-
-

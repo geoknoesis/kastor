@@ -4,6 +4,10 @@ plugins {
   id("maven-publish")
 }
 
+tasks.test {
+  systemProperty("kastor.soak.report", layout.buildDirectory.file("reports/native-soak.csv").get().asFile.absolutePath)
+}
+
 dependencies {
   api(project(":rdf:core"))
   api(project(":rdf:shacl-validation"))

@@ -27,6 +27,46 @@ Each metric is emitted with raw value, optional 1–5 score per the
 Duque-Ramos 2014 scoring scheme, and SKOS provenance to the OQuaRE
 concept.
 
+### Formulas
+
+Computed over the **asserted** graph after namespace exclusion. `C` =
+named classes; `Root` = classes without a named (non-cycle) superclass;
+`Sup_C` / `Sub_C` = direct named superclasses / subclasses;
+`|SubClassOf|` = Σ|Sup_C|; `P_C` = declared object/datatype properties
+*used* by C (`rdfs:domain C` or an `owl:Restriction` on C, each pair
+counted once); paths run root → leaf over the acyclic hierarchy (cycle
+participants are excluded and reported separately).
+
+| Metric | Formula |
+|--------|---------|
+| DITOnto | longest root-to-leaf path (edges) |
+| NACOnto | Σ\|Sup_leaf\| / \|leaves\| |
+| NOCOnto | Σ\|Sub_C\| / (\|C\| − \|Root\|) |
+| CBOOnto | Σ\|Sup_C\| / (\|C\| − \|Root\|) |
+| WMCOnto | Σ(\|P_C\| + \|Sub_C\|) / \|C\| |
+| RFCOnto | Σ(\|P_C\| + \|Sup_C\|) / (\|C\| − \|Root\|) |
+| NOMOnto | Σ\|P_C\| / \|C\| |
+| LCOMOnto | Σ length(path) / \|paths\| (mean root-to-leaf path length) |
+| RROnto | Σ\|P_C\| / (\|SubClassOf\| + Σ\|P_C\|) — rdf:type, annotation and import triples are not relationships |
+| INROnto | \|SubClassOf\| / \|C\| |
+| AROnto | datatype-property `rdfs:domain` assertions on named classes / \|C\| |
+| CROnto | distinct `rdf:type` assertions to named classes / \|C\| (instances per class) |
+| ANOnto | (rdfs:label + rdfs:comment + skos:definition values on classes) / \|C\| |
+| PROnto | declared object+datatype properties / (\|SubClassOf\| + that count) |
+| TMOnto | mean number of direct superclasses of classes with more than one direct superclass; 0 without multiple inheritance |
+
+Richness metrics are scored with the OQuaRE percentage bands (> 80 % → 5);
+per-class averages above 1 fall into the top band. Path counts and path
+lengths are computed with a memoized, iterative pass, so very deep
+(50k-class) or heavily tangled (2^40-path) hierarchies are handled
+without recursion or overflow.
+
+**Changed in this release** (previous values are not comparable):
+LCOMOnto was per-leaf max depth / paths; RROnto/INROnto counted every
+IRI-to-IRI triple as a relationship; NOC/CBO divided by `|C| − 1`;
+RFCOnto omitted superclasses; CROnto was the fraction of classes with
+instances; TMOnto was paths per leaf.
+
 ### SKOS extensions
 
 conceptCount, prefLabelCoverage, definitionCoverage, orphanConceptCount,

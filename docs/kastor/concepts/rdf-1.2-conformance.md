@@ -6,14 +6,14 @@ Default `./gradlew test` **does not** execute the heavy corpus (`:rdf:conformanc
 
 | Goal | Command |
 |------|---------|
-| **Quick regression check** (no submodule, small bundled fixture, both providers) | `./gradlew conformanceSmokeTest` |
-| **Full W3C matrix** (requires submodule checkout) | `git submodule update --init --recursive` then `./gradlew :rdf:conformance:test` |
+| **Quick regression check** (no external data, small bundled fixture, both providers) | `./gradlew conformanceSmokeTest` |
+| **Full W3C matrix** (requires fetched test data) | `python scripts/fetch-conformance-data.py` then `./gradlew :rdf:conformance:test` |
 
 The bundled fixture lives beside the harness ([`Rdf12ConformanceSmokeTest`](https://github.com/geoknoesis/kastor/blob/main/rdf/conformance/src/test/kotlin/com/geoknoesis/kastor/rdf/conformance/Rdf12ConformanceSmokeTest.kt)); it covers positive syntax, negative syntax, and one eval case.
 
 Maintenance automation also runs the full RDF corpus plus expanded SHACL checks on a schedule ([workflow](https://github.com/geoknoesis/kastor/blob/main/.github/workflows/conformance.yml)).
 
-For Gradle filtering or tooling: fixture-only tests use tag **`conformance-smoke`**; submodule-driven factories use **`w3c-rdf12-full`**.
+For Gradle filtering or tooling: fixture-only tests use tag **`conformance-smoke`**; corpus-driven factories use **`w3c-rdf12-full`**.
 
 ## What the W3C corpus covers
 
@@ -28,16 +28,27 @@ Each approved row under [`w3c/rdf-tests` RDF 12](https://github.com/w3c/rdf-test
 
 Each row runs against **both** providers, so reports show labels such as `[Jena/TURTLE] …` and `[RDF4J/TURTLE] …`. **SPARQL 1.2** and RDF dataset canonicalisation are **out of scope** for this harness.
 
+## Current results
+
+With the pinned corpus (approved rows only):
+
+| Provider | Executed | Skipped | Failed |
+|----------|----------|---------|--------|
+| Jena | 1038 | 32 (unapproved rows) | 0 |
+| RDF4J | 1038 | 187 (155 allowlisted upstream Rio gaps + 32 unapproved rows) | 0 |
+
+Known provider gaps are listed with a justification per row in `rdf/conformance/src/test/resources/conformance-allowlist.tsv`. Only listed tests may be skipped: an unlisted failure fails the build, and so does a listed test that starts passing.
+
 ## Enable the full suite locally
 
-The upstream trees live in a git submodule at `rdf/conformance/test-data/`.
+The upstream trees are not vendored. `scripts/fetch-conformance-data.py` clones the pinned W3C `rdf-tests` and `data-shapes` commits used by CI into the git-ignored locations (for RDF 1.2: `rdf/conformance/test-data/`).
 
 ```bash
-git submodule update --init --recursive
+python scripts/fetch-conformance-data.py
 ./gradlew :rdf:conformance:test
 ```
 
-If the submodule is missing, the harness still compiles; full-suite factories emit a **skipped** test with instructions instead of failing the build.
+If the test data has not been fetched, the harness still compiles; full-suite factories emit a **skipped** test with instructions instead of failing the build.
 
 `./gradlew check` does **not** run `:rdf:conformance` tests (see `:rdf:conformance/build.gradle.kts`). Use **`conformanceSmokeTest`** or **`:rdf:conformance:test`** explicitly.
 

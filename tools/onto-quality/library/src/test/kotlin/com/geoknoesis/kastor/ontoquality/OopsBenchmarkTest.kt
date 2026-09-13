@@ -163,14 +163,12 @@ class OopsBenchmarkTest {
             )
         assumeFalse(parsed.isEmpty(), "Semantic benchmark needs classpath fixtures.")
 
-        val enricher = SemanticEnricher.default()
         lateinit var enrichedDocs: List<ParsedFixture>
         val enrichmentNanos =
-            measureNanoTime {
-                enrichedDocs =
-                    parsed.map {
-                        ParsedFixture(it.resourcePath, enricher.enrich(it.graph))
-                    }
+            SemanticEnricher.default().use { enricher ->
+                measureNanoTime {
+                    enrichedDocs = parsed.map { ParsedFixture(it.resourcePath, enricher.enrich(it.graph)) }
+                }
             }
 
         val checker =

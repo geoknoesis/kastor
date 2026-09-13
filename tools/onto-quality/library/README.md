@@ -97,6 +97,8 @@ produced by the SHACL engine.
 
 If metrics computation fails, the checker logs the error and continues without rankings or the metrics “top findings” section. **`VirtualMachineError`** (and subclasses) are rethrown.
 
+With a reasoning profile (**`check(ontology, profile)`**, CLI **`--with-metrics --reasoner …`**), SHACL validation runs on the materialised graph but the **`MetricsProvider`** always receives the **asserted** ontology: reasoner closures (reflexive/transitive `rdfs:subClassOf`, `rdfs:Resource` typing) would otherwise turn every class into a cycle participant and make depth, coupling and importance meaningless.
+
 ## Reports, Markdown, and references
 
 ### Markdown
@@ -156,7 +158,9 @@ println(explained.describeMarkdown())
 
 Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or run **Ollama** locally for `LlmProvider.OLLAMA`.
 
-**CLI (`onto-quality-cli`):** enable **`--explain`** on **`check`** or **`pipeline`** when **`KASTOR_ONTO_QUALITY_LLM=true`**. Typical flags: **`--llm-provider`**, **`--llm-model`**, **`--llm-model-preset`**, **`--ollama-base`**, **`--explain-max`**, **`--explain-batch`**, **`--explain-min-severity`**, **`--explain-dry-run`**, **`--markdown-ascii`**. JSON output pairs **`findings`** with **`llmExplanations`**; each finding reference uses **`FindingRef`** (order-independent).
+**CLI (`onto-quality-cli`):** enable **`--explain`** on **`check`** or **`pipeline`** when **`KASTOR_ONTO_QUALITY_LLM=true`**. Typical flags: **`--llm-provider`**, **`--llm-model`**, **`--llm-model-preset`**, **`--ollama-base`**, **`--explain-max`**, **`--explain-batch`**, **`--explain-min-severity`**, **`--explain-dry-run`**, **`--markdown-ascii`**. Limits: **`--explain-max`** 1–500 (default 50), **`--explain-batch`** 1–100 (default 12). Reliability: **`--llm-timeout`** (seconds per request, 1–3600, default 60) and **`--llm-retries`** (0–10, default 2, exponential backoff). JSON output contains **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**; each finding reference uses **`FindingRef`** (order-independent).
+
+Failures are isolated per batch: explanations from successful batches are kept, and batches that time out, error after retries, or return unparseable/incomplete JSON are recorded in **`ExplainedQualityReport.failures`** (library) and reported on stderr (CLI). By default the CLI still exits normally; pass **`--fail-on-explain-error`** to exit with status **3**. Finding text is sent to the model as JSON-encoded data with an instruction to treat it as data, and LLM output is Markdown-escaped in reports (no links, images or raw HTML). **`LlmExplanationConfig.toString()`** redacts the API key; library users can set **`requestTimeout`**, **`maxRetries`** and **`retryBackoff`**.
 
 **Automated tests:** `./gradlew :tools:onto-quality-llm-koog:test` uses OpenAI when **`OPENAI_API_KEY`** is set; otherwise those cases are skipped. Set **`KASTOR_SKIP_OPENAI_LLM_TESTS=1`** to skip them even when a key is present.
 
@@ -173,7 +177,20 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 val report = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 ```
 
-**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `hermit`, default `none`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**).
+**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `hermit`, default `none`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
+
+## CLI: exit codes and input formats
+
+| Exit status | Meaning |
+|-------------|---------|
+| **0** | Success; no findings at or above **`--severity`** (default `violation`; `info` never fails). |
+| **1** | Findings reached **`--severity`**. Also used by Clikt for invalid command-line usage (unknown option, bad choice, out-of-range value). |
+| **2** | The input ontology could not be parsed in the selected RDF syntax. |
+| **3** | **`--fail-on-explain-error`** was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
+
+Options are validated before any work starts (no model download, no LLM call): **`--format`**, **`--severity`**, **`--catalog`**, **`--reasoner`**, LLM provider/preset choices, **`--threshold`** in [-1, 1], **`--explain-max`** 1–500, **`--explain-batch`** 1–100, **`--max-tokens`** ≥ 1.
+
+**Input formats:** `check`, `enrich`, `pipeline` and `metrics` pick the RDF syntax from the file extension — `.ttl` Turtle, `.owl` / `.rdf` / `.xml` RDF/XML, `.nt` N-Triples, `.jsonld` / `.json` JSON-LD; any other extension is read as Turtle. Override with **`--input-format turtle|rdfxml|ntriples|jsonld`** (e.g. a Turtle file named `.owl`).
 
 ## Semantic tier (embeddings)
 
@@ -195,11 +212,13 @@ Or as a single command:
 onto-qa pipeline my-ontology.ttl
 ```
 
+`pipeline` keeps the enriched graph in memory; nothing is written to disk unless **`--keep-intermediate`** is given, in which case the enriched Turtle is written to a temporary `onto-qa-*.enriched.ttl` file whose path is printed on stderr and which is not deleted. The embedding model is always closed before the exit status is reported, including on failure.
+
 On first run, the embedding model (~80–90 MB ONNX) is downloaded to `~/.kastor/onto-quality/models/` (override with `KASTOR_MODEL_CACHE` or `-Dkastor.onto-quality.model-cache=...`). Subsequent runs use the cache.
 
 ### Custom ONNX + tokenizer (domain / medical)
 
-Use **`--model custom`** with **`--onnx`**, **`--tokenizer`**, and **`--embedding-dim`** (hidden size of the last layer in the export). Optional **`--model-display-name`** and **`--tokenizer-note`** populate enrichment provenance. The ONNX I/O contract matches the bundled MiniLM runner (mean-pooled masked token vectors, then L2-normalized). Biomedical models (e.g. BioBERT / PubMedBERT exports) are typically used with a **higher** `--threshold` (see below).
+Use **`--model custom`** with **`--onnx`**, **`--tokenizer`**, and **`--embedding-dim`** (hidden size of the last layer in the export). Optional **`--model-display-name`** and **`--tokenizer-note`** populate enrichment provenance. The ONNX output is selected by name — `last_hidden_state` / `token_embeddings` (rank 3, mean-pooled over the attention mask) or `sentence_embedding` (rank 2, used as-is) — and its full shape is validated; vectors are L2-normalized. Tokenization ignores fixed padding in `tokenizer.json`: inputs are truncated to **`--max-tokens`** (default 512; at most 512 for the bundled MiniLM) and padded per batch only to the longest input. Biomedical models (e.g. BioBERT / PubMedBERT exports) are typically used with a **higher** `--threshold` (see below).
 
 Example:
 

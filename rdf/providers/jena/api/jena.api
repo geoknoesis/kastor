@@ -1,0 +1,129 @@
+public final class com/geoknoesis/kastor/rdf/jena/JenaBridge {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;
+	public final fun copyToJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
+	public final fun createEmptyGraph ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun createEmptyModel ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun createInferenceModel ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun createOwlInferenceModel ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromFile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static synthetic fun fromFile$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromJenaGraph (Lorg/apache/jena/graph/Graph;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromJenaModel (Lorg/apache/jena/rdf/model/Model;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromString (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static synthetic fun fromString$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromUrl (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static synthetic fun fromUrl$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun getJenaGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/graph/Graph;
+	public final fun getJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
+	public final fun isJenaBacked (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public final fun parseDatasetFromStream (Ljava/io/InputStream;Ljava/lang/String;)Lorg/apache/jena/query/Dataset;
+	public static synthetic fun parseDatasetFromStream$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/io/InputStream;Ljava/lang/String;ILjava/lang/Object;)Lorg/apache/jena/query/Dataset;
+	public final fun serializeDataset (Lorg/apache/jena/query/Dataset;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public static synthetic fun serializeDataset$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Lorg/apache/jena/query/Dataset;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun toJenaGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/graph/Graph;
+	public final fun toJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
+	public final fun toString (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public static synthetic fun toString$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;ILjava/lang/Object;)Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaBridgeDemoKt {
+	public static final fun basicConversionExample ()V
+	public static final fun extensionFunctionsExample ()V
+	public static final fun inferenceExample ()V
+	public static final fun loadingDataExample ()V
+	public static final fun main ()V
+	public static synthetic fun main ([Ljava/lang/String;)V
+	public static final fun roundTripExample ()V
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaBridgeKt {
+	public static final fun getJenaGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/graph/Graph;
+	public static final fun getJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
+	public static final fun isJenaBacked (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public static final fun serialize (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;)Ljava/lang/String;
+	public static synthetic fun serialize$default (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+	public static final fun toJenaGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/graph/Graph;
+	public static final fun toJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
+	public static final fun toKastorGraph (Lorg/apache/jena/graph/Graph;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static final fun toKastorGraph (Lorg/apache/jena/rdf/model/Model;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaProvider : com/geoknoesis/kastor/rdf/RdfProvider {
+	public fun <init> ()V
+	public fun createRepository (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfConfig;)Lcom/geoknoesis/kastor/rdf/RdfRepository;
+	public fun defaultVariantId ()Ljava/lang/String;
+	public fun generateServiceDescription (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;
+	public fun getDetailedCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
+	public fun getId ()Ljava/lang/String;
+	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
+	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
+	public fun getVersion ()Ljava/lang/String;
+	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
+	public fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Ljava/lang/String;)V
+	public fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Ljava/lang/String;Ljava/lang/String;)V
+	public fun parseGraph (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun parseGraph (Ljava/io/InputStream;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun parseStreaming (Ljava/io/InputStream;Ljava/lang/String;)Lkotlin/sequences/Sequence;
+	public fun serializeDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
+	public fun supportsVariant (Ljava/lang/String;)Z
+	public fun variants ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaRdfInteropKt {
+	public static final fun rdfTermFromJena (Lorg/apache/jena/rdf/model/RDFNode;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaRepository : com/geoknoesis/kastor/rdf/RdfRepository {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/jena/JenaRepository$Companion;
+	public fun ask (Lcom/geoknoesis/kastor/rdf/SparqlAsk;)Z
+	public fun clear ()Z
+	public fun close ()V
+	public fun construct (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;)Lkotlin/sequences/Sequence;
+	public fun createGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun describe (Lcom/geoknoesis/kastor/rdf/SparqlDescribe;)Lkotlin/sequences/Sequence;
+	public fun editDefaultGraph ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun editGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;
+	public fun getDefaultGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getDefaultGraphs ()Ljava/util/List;
+	public fun getGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getNamedGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getNamedGraphs ()Ljava/util/Map;
+	public fun graph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun hasGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun hasNamedGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun isClosed ()Z
+	public fun listGraphs ()Ljava/util/List;
+	public fun listNamedGraphs ()Ljava/util/List;
+	public fun readTransaction (Lkotlin/jvm/functions/Function1;)V
+	public fun removeGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun select (Lcom/geoknoesis/kastor/rdf/SparqlSelect;)Lcom/geoknoesis/kastor/rdf/SparqlQueryResult;
+	public fun transaction (Lkotlin/jvm/functions/Function1;)V
+	public fun update-asdzE4I (Ljava/lang/String;)V
+	public fun withConstructTriples (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public fun withSelectRows (Lcom/geoknoesis/kastor/rdf/SparqlSelect;Ljava/util/Map;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public fun withSelectRows (Lcom/geoknoesis/kastor/rdf/SparqlSelect;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaRepository$Companion {
+	public final fun MemoryRepository ()Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public final fun MemoryRepositoryWithInference ()Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public final fun Tdb2Repository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public final fun Tdb2RepositoryWithInference (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/JenaResultSet : com/geoknoesis/kastor/rdf/SparqlQueryResult {
+	public fun <init> (Ljava/util/List;)V
+	public fun asSequence ()Lkotlin/sequences/Sequence;
+	public fun count ()I
+	public fun first ()Lcom/geoknoesis/kastor/rdf/BindingSet;
+	public fun iterator ()Ljava/util/Iterator;
+	public fun toList ()Ljava/util/List;
+}
+

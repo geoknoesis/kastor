@@ -25,9 +25,8 @@ import com.geoknoesis.kastor.gen.processor.internal.utils.VocabularyMapper
  * @param propertyIri The IRI of the property to check
  * @return true if the shape contains a property with the given IRI
  *
- * @sample com.example.CheckPropertyInShape
  */
-operator fun ShaclShape.contains(propertyIri: String): Boolean {
+public operator fun ShaclShape.contains(propertyIri: String): Boolean {
     return properties.any { it.path == propertyIri }
 }
 
@@ -42,7 +41,7 @@ operator fun ShaclShape.contains(propertyIri: String): Boolean {
  * @param propertyIri The IRI of the property to retrieve
  * @return The property if found, null otherwise
  */
-operator fun ShaclShape.get(propertyIri: String): ShaclProperty? {
+public operator fun ShaclShape.get(propertyIri: String): ShaclProperty? {
     return properties.find { it.path == propertyIri }
 }
 
@@ -52,7 +51,7 @@ operator fun ShaclShape.get(propertyIri: String): ShaclProperty? {
  * @param datatype The datatype IRI to filter by
  * @return List of properties with the given datatype
  */
-fun ShaclShape.propertiesOfType(datatype: String): List<ShaclProperty> {
+public fun ShaclShape.propertiesOfType(datatype: String): List<ShaclProperty> {
     return properties.filter { it.datatype == datatype }
 }
 
@@ -62,7 +61,7 @@ fun ShaclShape.propertiesOfType(datatype: String): List<ShaclProperty> {
  * @param classIri The class IRI to find a shape for
  * @return The shape if found, null otherwise
  */
-fun OntologyModel.findShapeForClass(classIri: String): ShaclShape? {
+public fun OntologyModel.findShapeForClass(classIri: String): ShaclShape? {
     return shapes.find { it.targetClass == classIri }
 }
 
@@ -72,7 +71,7 @@ fun OntologyModel.findShapeForClass(classIri: String): ShaclShape? {
  * @param enabled Whether validation should be enabled
  * @return A new DslGenerationOptions with updated validation config
  */
-fun DslGenerationOptions.withValidation(enabled: Boolean): DslGenerationOptions {
+public fun DslGenerationOptions.withValidation(enabled: Boolean): DslGenerationOptions {
     return copy(validation = validation.copy(enabled = enabled))
 }
 
@@ -82,7 +81,7 @@ fun DslGenerationOptions.withValidation(enabled: Boolean): DslGenerationOptions 
  * @param supportLanguageTags Whether to support language tags
  * @return A new DslGenerationOptions with updated output config
  */
-fun DslGenerationOptions.withLanguageTags(supportLanguageTags: Boolean): DslGenerationOptions {
+public fun DslGenerationOptions.withLanguageTags(supportLanguageTags: Boolean): DslGenerationOptions {
     return copy(output = output.copy(supportLanguageTags = supportLanguageTags))
 }
 
@@ -92,7 +91,7 @@ fun DslGenerationOptions.withLanguageTags(supportLanguageTags: Boolean): DslGene
  * @param strategy The naming strategy to use
  * @return A new DslGenerationOptions with updated naming config
  */
-fun DslGenerationOptions.withNamingStrategy(strategy: NamingStrategy): DslGenerationOptions {
+public fun DslGenerationOptions.withNamingStrategy(strategy: NamingStrategy): DslGenerationOptions {
     return copy(naming = naming.copy(strategy = strategy))
 }
 
@@ -102,31 +101,31 @@ fun DslGenerationOptions.withNamingStrategy(strategy: NamingStrategy): DslGenera
  * @param defaultLanguage The default language tag to use
  * @return A new DslGenerationOptions with updated output config
  */
-fun DslGenerationOptions.withDefaultLanguage(defaultLanguage: String?): DslGenerationOptions {
+public fun DslGenerationOptions.withDefaultLanguage(defaultLanguage: String?): DslGenerationOptions {
     return copy(output = output.copy(defaultLanguage = defaultLanguage))
 }
 
 /**
  * Checks if a property is required (minCount >= 1).
  */
-fun ShaclProperty.isRequired(): Boolean = minCount != null && minCount >= 1
+public fun ShaclProperty.isRequired(): Boolean = minCount != null && minCount >= 1
 
 /**
  * Checks if a property accepts multiple values (maxCount > 1 or null).
  */
-fun ShaclProperty.isList(): Boolean = maxCount == null || maxCount > 1
+public fun ShaclProperty.isList(): Boolean = maxCount == null || maxCount > 1
 
 /**
  * Gets all required properties from a shape.
  */
-fun ShaclShape.requiredProperties(): List<ShaclProperty> {
+public fun ShaclShape.requiredProperties(): List<ShaclProperty> {
     return properties.filter { it.isRequired() }
 }
 
 /**
  * Gets all optional properties from a shape.
  */
-fun ShaclShape.optionalProperties(): List<ShaclProperty> {
+public fun ShaclShape.optionalProperties(): List<ShaclProperty> {
     return properties.filter { !it.isRequired() }
 }
 

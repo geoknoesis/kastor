@@ -1,0 +1,21 @@
+public final class com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasoner : com/geoknoesis/kastor/rdf/reasoning/RdfReasoner {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)V
+	public fun classify (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ClassificationResult;
+	public fun getInferredTriples (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/util/List;
+	public fun isConsistent (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public fun reason (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasoningResult;
+	public fun validateOntology (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/rdf/reasoning/ValidationReport;
+}
+
+public final class com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider : com/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider {
+	public fun <init> ()V
+	public fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities;
+	public fun getName ()Ljava/lang/String;
+	public fun getSupportedTypes ()Ljava/util/List;
+	public fun getType ()Ljava/lang/String;
+	public fun getVersion ()Ljava/lang/String;
+	public fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public fun priority ()I
+}
+

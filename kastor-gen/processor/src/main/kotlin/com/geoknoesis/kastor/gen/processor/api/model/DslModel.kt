@@ -15,9 +15,8 @@ import com.squareup.kotlinpoet.TypeName
  * @param properties List of properties that can be set in the builder
  * @param shapeIri Optional IRI of the associated SHACL shape
  *
- * @sample com.example.GenerateSkosDsl
  */
-data class ClassBuilderModel(
+public data class ClassBuilderModel(
     val className: String,            // e.g., "Concept", "ConceptScheme"
     val classIri: String,             // Full IRI
     val builderName: String,           // e.g., "concept", "conceptScheme"
@@ -40,7 +39,7 @@ data class ClassBuilderModel(
  * @param enumName Kotlin enum type name when this property is enum-typed (sh:in with enumName set)
  * @param enumMemberKind Whether enum members are IRIs or literal codes; non-null iff enumName is non-null
  */
-data class PropertyBuilderModel(
+public data class PropertyBuilderModel(
     val propertyName: String,         // Kotlin property name (camelCase)
     val propertyIri: String,          // Full IRI
     val kotlinType: TypeName,         // Kotlin type (e.g., String, List<String>, String?)
@@ -48,7 +47,9 @@ data class PropertyBuilderModel(
     val isList: Boolean,               // From sh:maxCount > 1 or null
     val constraints: PropertyConstraints,
     val enumName: String? = null,      // Kotlin enum type name, non-null when property is enum-typed
-    val enumMemberKind: EnumMemberKind? = null  // IRI vs LITERAL; non-null iff enumName != null
+    val enumMemberKind: EnumMemberKind? = null, // IRI vs LITERAL; non-null iff enumName != null
+    val datatype: String? = null,      // Declared sh:datatype; setters write literals with this datatype
+    val isIriValued: Boolean = false,  // sh:class / sh:nodeKind sh:IRI: setters take the IRI string and write an IRI
 )
 
 /**
@@ -71,10 +72,11 @@ data class PropertyBuilderModel(
  * @param qualifiedMinCount Qualified minimum count (sh:qualifiedMinCount)
  * @param qualifiedMaxCount Qualified maximum count (sh:qualifiedMaxCount)
  */
-data class PropertyConstraints(
+public data class PropertyConstraints(
     val minLength: Int? = null,
     val maxLength: Int? = null,
     val pattern: String? = null,
+    val patternFlags: String? = null,
     val minInclusive: Double? = null,
     val maxInclusive: Double? = null,
     val minExclusive: Double? = null,
@@ -86,15 +88,16 @@ data class PropertyConstraints(
     val qualifiedMinCount: Int? = null,
     val qualifiedMaxCount: Int? = null
 ) {
-    companion object {
+    public companion object {
         /**
          * Creates PropertyConstraints from a ShaclProperty.
          */
-        fun from(property: ShaclProperty): PropertyConstraints {
+        public fun from(property: ShaclProperty): PropertyConstraints {
             return PropertyConstraints(
                 minLength = property.minLength,
                 maxLength = property.maxLength,
                 pattern = property.pattern,
+                patternFlags = property.patternFlags,
                 minInclusive = property.minInclusive,
                 maxInclusive = property.maxInclusive,
                 minExclusive = property.minExclusive,
@@ -121,9 +124,8 @@ data class PropertyConstraints(
  * @param naming Naming configuration (strategy, property name usage)
  * @param output Output configuration (comments, language tags, etc.)
  *
- * @sample com.example.ConfigureDslGeneration
  */
-data class DslGenerationOptions(
+public data class DslGenerationOptions(
     val validation: ValidationConfig = ValidationConfig(),
     val naming: NamingConfig = NamingConfig(),
     val output: OutputConfig = OutputConfig()
@@ -136,7 +138,7 @@ data class DslGenerationOptions(
      * @param strict Whether to use strict validation
      * @param validateOnBuild Whether to validate when building instances
      */
-    data class ValidationConfig(
+    public data class ValidationConfig(
         val enabled: Boolean = true,
         val mode: ValidationMode = ValidationMode.EMBEDDED,
         val strict: Boolean = false,
@@ -149,7 +151,7 @@ data class DslGenerationOptions(
      * @param strategy Naming strategy (CAMEL_CASE, SNAKE_CASE, PASCAL_CASE)
      * @param usePropertyNames Whether to use property names from SHACL shapes
      */
-    data class NamingConfig(
+    public data class NamingConfig(
         val strategy: NamingStrategy = NamingStrategy.CAMEL_CASE,
         val usePropertyNames: Boolean = true
     )
@@ -162,7 +164,7 @@ data class DslGenerationOptions(
      * @param supportLanguageTags Whether to support language tags for string properties
      * @param defaultLanguage Default language tag to use (if null, no default)
      */
-    data class OutputConfig(
+    public data class OutputConfig(
         val includeComments: Boolean = true,
         val includeKdoc: Boolean = true,
         val supportLanguageTags: Boolean = true,
@@ -173,7 +175,7 @@ data class DslGenerationOptions(
 /**
  * Naming strategy for property and class names.
  */
-enum class NamingStrategy {
+public enum class NamingStrategy {
     CAMEL_CASE,
     SNAKE_CASE,
     PASCAL_CASE
@@ -182,7 +184,7 @@ enum class NamingStrategy {
 /**
  * What the DSL should return.
  */
-enum class ReturnType {
+public enum class ReturnType {
     GRAPH,          // Returns MutableRdfGraph
     RESOURCE,       // Returns RdfResource (last created)
     LIST,           // Returns List<RdfResource> (all created)
@@ -192,7 +194,7 @@ enum class ReturnType {
 /**
  * Model representing an ontology class extracted from OWL/RDFS.
  */
-data class OntologyClass(
+public data class OntologyClass(
     val classIri: String,
     val className: String,            // Local name
     val superClasses: List<String> = emptyList()  // rdfs:subClassOf
@@ -212,9 +214,8 @@ data class OntologyClass(
  *
  * @throws IllegalArgumentException if dslName or packageName are invalid
  *
- * @sample com.example.CreateDslRequest
  */
-data class InstanceDslRequest(
+public data class InstanceDslRequest(
     val dslName: String,
     val ontologyModel: OntologyModel,
     val packageName: String,

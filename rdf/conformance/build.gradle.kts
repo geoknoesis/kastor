@@ -19,6 +19,12 @@ dependencies {
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+tasks.named<Test>("test") {
+  val corpus = providers.gradleProperty("conformanceDataDir").orNull
+  corpus?.let { systemProperty("conformance.dataDir", it) }
+  inputs.files(fileTree(corpus ?: "test-data"))
+}
+
 // The full W3C corpus is large; it is not part of `check`. Use `conformanceSmokeTest`
 // for the bundled fixture, or `:rdf:conformance:test` after initializing the submodule.
 tasks.named("check") {

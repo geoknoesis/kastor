@@ -24,52 +24,28 @@ Kastor RDF provides a rich collection of examples that demonstrate:
 
 ## 🚀 Getting Started Examples
 
-### Configuration and Parameter Discovery
+### Configuration and Provider Discovery
 
-**File**: `ConfigVariantInfoTest.kt`, `EnhancedParameterInfoTest.kt`, `CompleteParameterSystemExample.kt`
-
-Demonstrates the enhanced configuration system with rich parameter metadata:
+Lists the registered providers with their variants and capabilities, then creates a repository from an explicit configuration:
 
 ```kotlin
-@Test
-fun `demonstrate enhanced parameter information`() {
-    // Get all available variants with detailed parameter info
-    val variants = RdfProviderRegistry.getAllConfigVariants()
-    variants.forEach { variant ->
-        println("${variant.type}: ${variant.description}")
-        variant.parameters.forEach { param ->
-            println("  ${param.name} (${param.type}): ${param.description}")
-            if (param.examples.isNotEmpty()) {
-                println("    Examples: ${param.examples.joinToString(", ")}")
-            }
-        }
+fun main() {
+    RdfProviderRegistry.getAllProviders().forEach { provider ->
+        println("${provider.id} (priority ${provider.priority}): ${provider.variants().map { it.id }}")
+        val caps = provider.getCapabilities(provider.defaultVariantId())
+        println("  RDF ${caps.rdfVersion}, SPARQL ${caps.sparqlVersion}, triple terms: ${caps.supportsTripleTerms}")
     }
-    
-    // Get parameter information for specific variant
-    val locationParam = RdfProviderRegistry.getParameterInfo("jena:tdb2", "location")
-    locationParam?.let { param ->
-        println("Parameter: ${param.name}")
-        println("Type: ${param.type}")
-        println("Description: ${param.description}")
-        println("Examples: ${param.examples.joinToString(", ")}")
+
+    // An explicit providerId/variantId is honoured exactly: a wrong provider or variant throws
+    val repo = try {
+        RdfProviderRegistry.create(
+            RdfConfig(providerId = "jena", variantId = "tdb2", options = mapOf("location" to "./data"))
+        )
+    } catch (e: IllegalArgumentException) {
+        println("Invalid configuration: ${e.message}")
+        null
     }
-    
-    // Validate configuration before creating repository
-    val requiredParams = RdfProviderRegistry.getRequiredParameters("sparql")
-    val config = RdfConfig(
-        providerId = "sparql",
-        variantId = "sparql",
-        options = mapOf("location" to "http://dbpedia.org/sparql")
-    )
-    val missingParams = requiredParams.filter { param -> 
-        !config.params.containsKey(param.name) 
-    }
-    
-    if (missingParams.isEmpty()) {
-        println("Configuration is valid")
-    } else {
-        println("Missing required parameters: ${missingParams.map { it.name }}")
-    }
+    repo?.close()
 }
 ```
 
@@ -193,17 +169,16 @@ Shows how to use the core API without vocabulary assumptions:
 ```kotlin
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.SCHEMA
+
+// Define your own vocabulary
+object PersonVocab {
+    val name = iri("http://example.org/person/name")
+    val age = iri("http://example.org/person/age")
+    val email = iri("http://example.org/person/email")
+}
 
 fun main() {
     val repo = Rdf.memory()
-    
-    // Define your own vocabulary
-    object PersonVocab {
-        val name = iri("http://example.org/person/name")
-        val age = iri("http://example.org/person/age")
-        val email = iri("http://example.org/person/email")
-    }
     
     repo.add {
         val person = iri("http://example.org/person/alice")
@@ -255,7 +230,7 @@ fun main() {
         person - FOAF.mbox - alt("alice@example.com", "alice@work.com")        // rdf:Alt
         
         // Mixed types work with all functions
-        person - DCTERMS.subject - values("Technology", "Programming", "RDF", 42, true)
+        person - DCTERMS.subject - values(string("Technology"), string("Programming"), string("RDF"), int(42), boolean(true))
         
         // Comparison with traditional syntax
         person - FOAF.member - arrayOf(org1, org2, org3)  // Individual triples
@@ -361,19 +336,11 @@ fun main() {
         println("People count in transaction: $count")
     }
     
-    // Operator overloads
-    val triple1 = alice -> (namePred to "Alice")
-    val triple2 = alice -> (agePred to 30)
-    repo.addTriples(listOf(triple1, triple2))
-    
-    // Convenience functions
-    val eve = resource("http://example.org/person/eve")
-    val eveName = string("Eve Anderson")
-    val eveAge = int(28)
-    
+    // Triples built directly
+    val eve = iri("http://example.org/person/eve")
     val eveTriples = listOf(
-        triple(eve, namePred, eveName),
-        triple(eve, agePred, eveAge)
+        RdfTriple(eve, namePred, string("Eve Anderson")),
+        RdfTriple(eve, agePred, int(28))
     )
     repo.addTriples(eveTriples)
     
@@ -455,18 +422,18 @@ fun main() {
 Demonstrates building a knowledge graph:
 
 ```kotlin
+// Define ontology
+object Ontology {
+    val Person = iri("http://example.org/ontology/Person")
+    val Company = iri("http://example.org/ontology/Company")
+    val name = iri("http://example.org/ontology/name")
+    val worksFor = iri("http://example.org/ontology/worksFor")
+    val founded = iri("http://example.org/ontology/founded")
+    val industry = iri("http://example.org/ontology/industry")
+}
+
 fun main() {
     val repo = Rdf.memory()
-    
-    // Define ontology
-    object Ontology {
-        val Person = iri("http://example.org/ontology/Person")
-        val Company = iri("http://example.org/ontology/Company")
-        val name = iri("http://example.org/ontology/name")
-        val worksFor = iri("http://example.org/ontology/worksFor")
-        val founded = iri("http://example.org/ontology/founded")
-        val industry = iri("http://example.org/ontology/industry")
-    }
     
     // Add knowledge graph data
     repo.add {
@@ -570,8 +537,8 @@ fun main() {
         
         // Schema.org data
         val techCorp = iri("http://example.org/company/techcorp")
-        alice[SCHEMA.jobTitle] = "Software Engineer"
-        alice[SCHEMA.worksFor] = techCorp
+        alice[iri("http://schema.org/jobTitle")] = "Software Engineer"
+        alice[iri("http://schema.org/worksFor")] = techCorp
         
         // Friend relationships
         val bob = iri("http://example.org/person/bob")

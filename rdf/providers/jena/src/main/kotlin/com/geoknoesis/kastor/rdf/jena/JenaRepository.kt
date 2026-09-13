@@ -1,364 +1,229 @@
 package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
-import org.apache.jena.rdf.model.Model
-import org.apache.jena.rdf.model.ModelFactory
-import org.apache.jena.query.QueryFactory
-import org.apache.jena.query.QueryExecutionFactory
 import org.apache.jena.query.Dataset
 import org.apache.jena.query.DatasetFactory
-import org.apache.jena.tdb2.TDB2Factory
-import org.apache.jena.rdf.model.Statement
-import org.apache.jena.rdf.model.RDFNode
-import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.Property
-import org.apache.jena.rdf.model.Literal
+import org.apache.jena.query.QueryExecution
+import org.apache.jena.query.QueryExecutionFactory
+import org.apache.jena.query.QueryFactory
 import org.apache.jena.query.ReadWrite
+import org.apache.jena.rdf.model.InfModel
+import org.apache.jena.rdf.model.Model
+import org.apache.jena.rdf.model.ModelFactory
+import org.apache.jena.tdb2.TDB2Factory
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
- * Jena-based implementation of [RdfRepository].
- * 
- * **Note on Backend Types:**
- * This implementation uses Jena's `Dataset` type internally. This is an implementation detail
- * and does not leak into the public API. All public methods return Kastor types only.
- * 
- * @param dataset Jena Dataset instance (internal implementation detail)
+ * Transactional Jena store. Inference is a read view and never replaces asserted data.
+ *
+ * **Inference views** (`*-inference` variants) are RDFS inference models built once per graph and
+ * cached until the next committed write, instead of per query. Jena inference graphs are not safe
+ * for concurrent use, so reads on an inference repository are serialized by a repository lock
+ * (plain repositories keep fully concurrent reads).
+ *
+ * **Query errors:** failures while preparing or evaluating a query surface as [RdfQueryException];
+ * exceptions thrown by a caller-supplied `consume` lambda propagate unchanged.
  */
 class JenaRepository private constructor(
-    private val dataset: Dataset
+    private val dataset: Dataset,
+    internal val inference: Boolean = false,
+    private val variantId: String = if (inference) "memory-inference" else "memory",
 ) : RdfRepository {
+    private val closed = AtomicBoolean(false)
 
-    @Volatile
-    private var closed: Boolean = false
-    
     companion object {
-        fun MemoryRepository(): JenaRepository {
-            val dataset = DatasetFactory.create()
-            return JenaRepository(dataset)
+        fun MemoryRepository(): JenaRepository = JenaRepository(DatasetFactory.createTxnMem())
+        fun MemoryRepositoryWithInference(): JenaRepository = JenaRepository(DatasetFactory.createTxnMem(), true)
+        fun Tdb2Repository(location: String): JenaRepository =
+            JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), false, "tdb2")
+        fun Tdb2RepositoryWithInference(location: String): JenaRepository =
+            JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference")
+
+        private const val DEFAULT_GRAPH_KEY = ""
+    }
+
+    /** Bumped around every committed write; cached inference models from older generations are stale. */
+    private val generation = AtomicLong()
+    private class CachedInference(val generation: Long, val model: InfModel)
+    private val inferenceCache = ConcurrentHashMap<String, CachedInference>()
+    private val inferenceLock = ReentrantLock()
+
+    internal fun <T> withRead(block: () -> T): T =
+        if (inference) inferenceLock.withLock { inTransaction(ReadWrite.READ, block) }
+        else inTransaction(ReadWrite.READ, block)
+
+    internal fun <T> withWrite(block: () -> T): T = inTransaction(ReadWrite.WRITE, block)
+
+    private fun <T> inTransaction(mode: ReadWrite, block: () -> T): T {
+        check(!closed.get()) { "Repository is closed" }
+        if (dataset.isInTransaction) {
+            check(mode != ReadWrite.WRITE || dataset.transactionMode() == ReadWrite.WRITE) { "Cannot write inside a read transaction" }
+            return block()
         }
-        
-        fun MemoryRepositoryWithInference(): JenaRepository {
-            val dataset = DatasetFactory.create()
-            val defaultModel = ModelFactory.createRDFSModel(dataset.defaultModel)
-            dataset.defaultModel.removeAll()
-            dataset.defaultModel.add(defaultModel)
-            return JenaRepository(dataset)
-        }
-        
-        fun Tdb2Repository(location: String): JenaRepository {
-            val dataset = TDB2Factory.connectDataset(Paths.get(location).toFile().absolutePath)
-            return JenaRepository(dataset)
-        }
-        
-        fun Tdb2RepositoryWithInference(location: String): JenaRepository {
-            val dataset = TDB2Factory.connectDataset(Paths.get(location).toFile().absolutePath)
-            // TDB2 requires writes to occur inside a transaction. Reset the default
-            // model and replace it with an RDFS-inferred view of itself.
-            dataset.begin(ReadWrite.WRITE)
-            try {
-                val defaultModel = ModelFactory.createRDFSModel(dataset.defaultModel)
-                dataset.defaultModel.removeAll()
-                dataset.defaultModel.add(defaultModel)
+        dataset.begin(mode)
+        try {
+            val result = block()
+            if (mode == ReadWrite.WRITE) {
+                // Invalidate before and after the commit: a reader that builds an inference
+                // model in between may still see the pre-commit snapshot.
+                invalidateInference()
                 dataset.commit()
-            } catch (e: Exception) {
-                dataset.abort()
-                throw e
-            } finally {
-                dataset.end()
+                invalidateInference()
             }
-            return JenaRepository(dataset)
-        }
-    }
-    
-    override val defaultGraph: RdfGraph = JenaGraph(dataset.defaultModel)
-    
-    override fun getGraph(name: Iri): RdfGraph {
-        return JenaGraph(dataset.getNamedModel(name.value))
-    }
-    
-    override fun hasGraph(name: Iri): Boolean {
-        return dataset.containsNamedModel(name.value)
-    }
-    
-    override fun listGraphs(): List<Iri> {
-        return dataset.listNames().asSequence().map { Iri(it) }.toList()
-    }
-    
-    override fun createGraph(name: Iri): RdfGraph {
-        val model = dataset.getNamedModel(name.value)
-        return JenaGraph(model)
-    }
-    
-    override fun removeGraph(name: Iri): Boolean {
-        return if (dataset.containsNamedModel(name.value)) {
-            dataset.removeNamedModel(name.value)
-            true
-        } else {
-            false
-        }
-    }
-
-    override fun editDefaultGraph(): MutableRdfGraph {
-        return defaultGraph as MutableRdfGraph
-    }
-
-    override fun editGraph(name: Iri): MutableRdfGraph {
-        return getGraph(name) as MutableRdfGraph
-    }
-    
-    override fun select(query: SparqlSelect): SparqlQueryResult {
-        val startTime = System.currentTimeMillis()
-        val jenaQuery = try {
-            QueryFactory.create(query.sparql)
-        } catch (e: Exception) {
-            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to parse: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to parse SPARQL query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-        val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        try {
-            val jenaResultSet = exec.execSelect()
-            val rows = mutableListOf<BindingSet>()
-            while (jenaResultSet.hasNext()) {
-                val jenaBinding = jenaResultSet.next()
-                val values = mutableMapOf<String, RdfTerm>()
-                jenaBinding.varNames().asSequence().forEach { name ->
-                    val term = jenaBinding.get(name)?.let { convertNode(it) }
-                    if (term != null) {
-                        values[name] = term
-                    }
-                }
-                rows.add(MapBindingSet(values))
-            }
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("SELECT", query.sparql, null, executionTime, rows.size)
-            return JenaResultSet(rows)
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        } finally {
-            exec.close()
-        }
-    }
-    
-    override fun ask(query: SparqlAsk): Boolean {
-        val startTime = System.currentTimeMillis()
-        val jenaQuery = try {
-            QueryFactory.create(query.sparql)
-        } catch (e: Exception) {
-            RdfDebug.logQueryError("ASK", query.sparql, "Failed to parse: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to parse SPARQL ASK query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-        val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        try {
-            val result = exec.execAsk()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("ASK", query.sparql, null, executionTime, if (result) 1 else 0)
             return result
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("ASK", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL ASK query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        } finally {
-            exec.close()
-        }
-    }
-    
-    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
-        val startTime = System.currentTimeMillis()
-        val jenaQuery = try {
-            QueryFactory.create(query.sparql)
-        } catch (e: Exception) {
-            RdfDebug.logQueryError("CONSTRUCT", query.sparql, "Failed to parse: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to parse SPARQL CONSTRUCT query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-        val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        try {
-            val resultModel = exec.execConstruct()
-            val triples = resultModel.listStatements().asSequence().map { statement ->
-                RdfTriple(
-                    convertResource(statement.subject),
-                    Iri(statement.predicate.uri),
-                    convertNode(statement.`object`)
-                )
-            }.toList()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("CONSTRUCT", query.sparql, null, executionTime, triples.size)
-            return triples.asSequence()
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("CONSTRUCT", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL CONSTRUCT query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        } finally {
-            exec.close()
-        }
-    }
-    
-    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
-        val startTime = System.currentTimeMillis()
-        val jenaQuery = try {
-            QueryFactory.create(query.sparql)
-        } catch (e: Exception) {
-            RdfDebug.logQueryError("DESCRIBE", query.sparql, "Failed to parse: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to parse SPARQL DESCRIBE query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-        val exec = QueryExecutionFactory.create(jenaQuery, dataset)
-        try {
-            val resultModel = exec.execDescribe()
-            val triples = resultModel.listStatements().asSequence().map { statement ->
-                RdfTriple(
-                    convertResource(statement.subject),
-                    Iri(statement.predicate.uri),
-                    convertNode(statement.`object`)
-                )
-            }.toList()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("DESCRIBE", query.sparql, null, executionTime, triples.size)
-            return triples.asSequence()
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("DESCRIBE", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL DESCRIBE query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        } finally {
-            exec.close()
-        }
-    }
-    
-    override fun update(query: UpdateQuery) {
-        val startTime = System.currentTimeMillis()
-        try {
-            val jenaUpdate = org.apache.jena.update.UpdateFactory.create(query.sparql)
-            // UpdateExecutionFactory.create returns a legacy UpdateProcessor, which is
-            // not AutoCloseable and executes synchronously — there is no cursor/handle
-            // to release after execute() (unlike QueryExecution on the read paths).
-            val exec = org.apache.jena.update.UpdateExecutionFactory.create(jenaUpdate, dataset)
-            exec.execute()
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL UPDATE: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
-        }
-    }
-    
-    override fun transaction(operations: RdfRepository.() -> Unit) {
-        dataset.begin(ReadWrite.WRITE)
-        try {
-            operations.invoke(this)
-            dataset.commit()
-        } catch (e: Exception) {
-            dataset.abort()
+        } catch (e: Throwable) {
+            if (mode == ReadWrite.WRITE) dataset.abort()
             throw e
-        } finally {
-            dataset.end()
+        } finally { dataset.end() }
+    }
+
+    private fun invalidateInference() {
+        if (!inference) return
+        generation.incrementAndGet()
+        inferenceCache.clear()
+    }
+
+    /**
+     * Read view of [model] (identified by [graphKey]). Must be called inside a transaction.
+     * Inference views are cached per graph until the next committed write; inside a write
+     * transaction a fresh, uncached view is built so uncommitted changes are visible.
+     */
+    internal fun readModel(graphKey: String, model: Model): Model {
+        if (!inference) return model
+        if (dataset.transactionMode() == ReadWrite.WRITE) return ModelFactory.createRDFSModel(model)
+        val current = generation.get()
+        inferenceCache[graphKey]?.takeIf { it.generation == current }?.let { return it.model }
+        return ModelFactory.createRDFSModel(model).also { inferenceCache[graphKey] = CachedInference(current, it) }
+    }
+
+    /** Dataset used for queries and dataset serialization: the store, or its inference view. Call inside a transaction. */
+    internal fun queryDataset(): Dataset {
+        if (!inference) return dataset
+        // Facade models borrow the store; closing them would close the borrowed models.
+        return DatasetFactory.create(readModel(DEFAULT_GRAPH_KEY, dataset.defaultModel)).also { view ->
+            dataset.listNames().forEachRemaining { view.addNamedModel(it, readModel(it, dataset.getNamedModel(it))) }
         }
     }
-    
-    override fun readTransaction(operations: RdfRepository.() -> Unit) {
-        dataset.begin(ReadWrite.READ)
-        try {
-            operations.invoke(this)
-            dataset.commit()
-        } catch (e: Exception) {
-            dataset.abort()
-            throw e
-        } finally {
-            dataset.end()
+
+    private val defaultGraphView by lazy { JenaGraph(dataset.defaultModel, this, DEFAULT_GRAPH_KEY) }
+    override val defaultGraph: RdfGraph get() = withRead { defaultGraphView }
+    override fun getGraph(name: Iri): RdfGraph = withRead { JenaGraph(dataset.getNamedModel(name.value), this, name.value) }
+    override fun hasGraph(name: Iri): Boolean = withRead { !dataset.getNamedModel(name.value).isEmpty }
+    override fun listGraphs(): List<Iri> = withRead { dataset.listNames().asSequence().map(::Iri).toList() }
+    override fun createGraph(name: Iri): RdfGraph = getGraph(name)
+    override fun removeGraph(name: Iri): Boolean = withWrite {
+        val existed = dataset.containsNamedModel(name.value)
+        dataset.removeNamedModel(name.value)
+        existed
+    }
+    override fun editDefaultGraph(): MutableRdfGraph = defaultGraph as MutableRdfGraph
+    override fun editGraph(name: Iri): MutableRdfGraph = getGraph(name) as MutableRdfGraph
+
+    override fun select(query: SparqlSelect): SparqlQueryResult = withSelectRows(query) { JenaResultSet(it.toList()) }
+
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withRead {
+        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
+        exec.use { consumeRows(it, query.sparql, consume) }
+    }
+
+    override fun ask(query: SparqlAsk): Boolean = withRead {
+        queryOperation(query.sparql) {
+            QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()).use { it.execAsk() }
         }
     }
-    
-    override fun clear(): Boolean {
+
+    override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
+        consume: (Sequence<BindingSet>) -> T): T = withRead {
+        val exec = queryOperation(query.sparql) {
+            val initial = org.apache.jena.query.QuerySolutionMap()
+            bindings.forEach { (name, term) -> initial.add(name, ModelFactory.createDefaultModel().asRDFNode(JenaTerms.toJenaNode(term))) }
+            QueryExecution.dataset(queryDataset()).query(query.sparql).substitution(initial)
+                .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
+        }
+        exec.use { consumeRows(it, query.sparql, consume) }
+    }
+
+    private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T {
+        val results = queryOperation(sparql) { exec.execSelect() }
+        val rows = results.asSequence().map { row ->
+            MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
+        }
+        return consume(rows.guardedBy(sparql))
+    }
+
+    override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withRead {
+        val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
+        exec.use {
+            val triples = queryOperation(query.sparql) { it.execConstructTriples() }
+            consume(triples.asSequence().map(JenaTerms::fromJenaTriple).guardedBy(query.sparql))
+        }
+    }
+
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> = withConstructTriples(query) { it.toList().asSequence() }
+
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> = withRead {
+        queryOperation(query.sparql) {
+            QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()).use { exec ->
+                val model = exec.execDescribe()
+                try { JenaGraph(model).getTriples().asSequence() } finally { model.close() }
+            }
+        }
+    }
+
+    override fun update(query: UpdateQuery): Unit = withWrite {
+        queryOperation(query.sparql) { org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset) }
+    }
+
+    override fun transaction(operations: RdfRepository.() -> Unit): Unit = withWrite { operations(this) }
+    override fun readTransaction(operations: RdfRepository.() -> Unit): Unit = withRead { operations(this) }
+
+    override fun clear(): Boolean = withWrite {
+        val hadData = !dataset.isEmpty
         dataset.defaultModel.removeAll()
-        dataset.listNames().asSequence().forEach { name ->
-            dataset.removeNamedModel(name)
-        }
-        return true
+        dataset.listNames().asSequence().toList().forEach { dataset.removeNamedModel(it) }
+        hadData
     }
-    
-    override fun isClosed(): Boolean = closed
-    
-    override fun getCapabilities(): ProviderCapabilities {
-        return ProviderCapabilities(
-            supportsInference = true,
-            supportsTransactions = true,
-            supportsNamedGraphs = true,
-            supportsUpdates = true,
-            supportsRdfStar = true,
-            maxMemoryUsage = Long.MAX_VALUE
-        )
-    }
-    
+
+    override fun isClosed(): Boolean = closed.get()
+
     override fun close() {
-        if (!closed) {
-            closed = true
+        check(!dataset.isInTransaction) { "Cannot close inside a transaction" }
+        if (closed.compareAndSet(false, true)) {
+            inferenceCache.clear()
             dataset.close()
         }
     }
-    
-    /**
-     * Internal method to access the underlying Jena Dataset.
-     * Used by JenaProvider for dataset serialization/parsing.
-     */
+
+    override fun getCapabilities(): ProviderCapabilities = JenaProvider().getCapabilities(variantId)
+
     internal fun getJenaDataset(): Dataset = dataset
-    
-    private fun convertResource(resource: Resource): RdfResource {
-        return if (resource.isAnon) {
-            BlankNode(resource.id.toString())
-        } else {
-            Iri(resource.uri)
-        }
+
+    /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
+    private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
+        operation()
+    } catch (e: RdfException) {
+        throw e
+    } catch (e: Exception) {
+        throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query, cause = e)
     }
-    
-    // Delegate to the shared JenaTerms.fromNode so SPARQL results preserve the same
-    // fidelity as graph reads: base direction on language literals, triple terms
-    // (RDF 1.2), and canonical typed-literal mapping. The previous local conversion
-    // dropped direction and could not represent triple-term values.
-    private fun convertNode(node: RDFNode): RdfTerm = JenaTerms.fromNode(node)
+
+    /**
+     * Wraps engine failures raised while *iterating* results (e.g. timeouts, evaluation errors) as
+     * [RdfQueryException], while exceptions thrown by the consumer's own code are left untouched.
+     */
+    private fun <T> Sequence<T>.guardedBy(query: String): Sequence<T> {
+        val source = this
+        return Sequence {
+            val iterator = queryOperation(query) { source.iterator() }
+            object : Iterator<T> {
+                override fun hasNext(): Boolean = queryOperation(query) { iterator.hasNext() }
+                override fun next(): T = queryOperation(query) { iterator.next() }
+            }
+        }.constrainOnce()
+    }
 }
-
-
-
-
-
-
-
-
-

@@ -51,22 +51,21 @@ val query = select("name", "age") {
     version("1.2")  // Explicit SPARQL 1.2 declaration
     prefix("foaf", FOAF.namespace)
     where {
-        pattern(var_("person"), FOAF.name, var_("name"))
-        pattern(var_("person"), FOAF.age, var_("age"))
+        triple(var_("person"), FOAF.name, var_("name"))
+        triple(var_("person"), FOAF.age, var_("age"))
     }
 }
 ```
 
 This generates:
 ```sparql
-VERSION 1.2
-
+VERSION "1.2"
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
 SELECT ?name ?age
 WHERE {
-  ?person foaf:name ?name .
-  ?person foaf:age ?age .
+  ?person <http://xmlns.com/foaf/0.1/name> ?name .
+  ?person <http://xmlns.com/foaf/0.1/age> ?age .
 }
 ```
 
@@ -96,11 +95,13 @@ val query = select("name", "type") {
     addCommonPrefixes("foaf", "rdf", "rdfs")  // Common vocabularies
     prefix("ex", "http://example.org/")       // Custom prefix
     where {
-        `var`("person") has FOAF.name with `var`("name")
-        `var`("person") has RDF.type with `var`("type")
+        triple(`var`("person"), FOAF.name, `var`("name"))
+        triple(`var`("person"), RDF.type, `var`("type"))
     }
 }
 ```
+
+The renderer emits the `PREFIX` declarations (in the order they were added) but always writes IRIs in full, for example `?person <http://xmlns.com/foaf/0.1/name> ?name .`. The generated query is therefore equivalent to the hand-written one above, not textually identical.
 
 ### RDF Triples
 
@@ -108,7 +109,7 @@ RDF data consists of triples: (Subject, Predicate, Object)
 
 ```kotlin
 // Using Kastor QueryTerms API
-val triple = TriplePattern(
+val triple = TriplePatternAst(
     subject = iri("http://example.org/person/1"),
     predicate = iri("http://example.org/name"),
     obj = string("John Doe")
@@ -126,8 +127,8 @@ val nameVar = `var`("name")
 val ageVar = `var`("age")
 
 // Use in patterns
-personVar has namePred with nameVar
-personVar has agePred with ageVar
+triple(personVar, namePred, nameVar)
+triple(personVar, agePred, ageVar)
 ```
 
 ## Query Structure
@@ -139,8 +140,8 @@ The most common type of SPARQL query that returns variable bindings.
 ```kotlin
 val query = select("name", "age") {
     where {
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(personVar, namePred, nameVar)
+        triple(personVar, agePred, ageVar)
     }
 }
 ```
@@ -180,14 +181,14 @@ val ageVar = sparqlVar("age")
 
 ```kotlin
 // Direct construction
-val pattern = TriplePattern(
+val pattern = TriplePatternAst(
     subject = personVar,
     predicate = namePred,
     obj = nameVar
 )
 
 // DSL syntax (recommended)
-personVar has namePred with nameVar
+triple(personVar, namePred, nameVar)
 ```
 
 ### Pattern Types
@@ -203,12 +204,12 @@ personVar has namePred with nameVar
 
 ```kotlin
 // Simple pattern
-personVar has namePred with nameVar
+triple(personVar, namePred, nameVar)
 
 // Multiple patterns
-personVar has namePred with nameVar
-personVar has agePred with ageVar
-personVar has emailPred with emailVar
+triple(personVar, namePred, nameVar)
+triple(personVar, agePred, ageVar)
+triple(personVar, emailPred, emailVar)
 ```
 
 ### Complex Patterns
@@ -219,7 +220,7 @@ Match patterns if possible, but don't fail if they don't match.
 
 ```kotlin
 optional {
-    personVar has emailPred with `var`("email")
+    triple(personVar, emailPred, `var`("email"))
 }
 ```
 
@@ -229,10 +230,10 @@ Match either of two patterns.
 
 ```kotlin
 union {
-    personVar has emailPred with `var`("contact")
+    triple(personVar, emailPred, `var`("contact"))
 }
 union {
-    personVar has iri("http://example.org/phone") with `var`("contact")
+    triple(personVar, iri("http://example.org/phone"), `var`("contact"))
 }
 ```
 
@@ -242,7 +243,7 @@ Exclude solutions that match a pattern.
 
 ```kotlin
 minus {
-    personVar has iri("http://example.org/deleted") with string("true")
+    triple(personVar, iri("http://example.org/deleted"), string("true"))
 }
 ```
 
@@ -260,7 +261,7 @@ Restrict patterns to a specific named graph.
 
 ```kotlin
 graph(`var`("graph")) {
-    personVar has namePred with nameVar
+    triple(personVar, namePred, nameVar)
 }
 ```
 
@@ -273,11 +274,11 @@ graph(`var`("graph")) {
 filter(ageVar gt 18)
 filter(ageVar lte 65)
 filter(nameVar eq "John")
-filter(nameVar ne string("Jane"))
+filter(nameVar ne "Jane")
 
 // Logical operators
-filter(ageVar gt 18 and ageVar lt 65)
-filter(nameVar eq "John" or nameVar eq "Jane")
+filter((ageVar gt 18) and (ageVar lt 65))
+filter((nameVar eq "John") or (nameVar eq "Jane"))
 filter(not(ageVar lt 18))
 ```
 
@@ -285,13 +286,12 @@ filter(not(ageVar lt 18))
 
 ```kotlin
 // String functions
-filter(nameVar like "John*")
 filter(regex(nameVar, "John.*"))
-filter(strlen(nameVar) gt 5)
+filter(strlen(nameVar.expr()) gt TermExpressionAst(5.toLiteral()))
 
 // Type checking
-filter(isIRI(personVar))
-filter(isLiteral(nameVar))
+filter(isIRI(personVar.expr()))
+filter(isLiteral(nameVar.expr()))
 filter(bound(emailVar))
 ```
 
@@ -301,25 +301,26 @@ filter(bound(emailVar))
 
 ```kotlin
 // In BIND expressions
-bind(`var`("upperName"), ucase(nameVar))
-bind(`var`("nameLength"), strlen(nameVar))
-bind(`var`("fullName"), concat(nameVar, string(" "), `var`("lastName")))
+bind(`var`("upperName"), ucase(nameVar.expr()))
+bind(`var`("nameLength"), strlen(nameVar.expr()))
+bind(`var`("fullName"), concat(nameVar.expr(), TermExpressionAst(string(" ")), `var`("lastName").expr()))
 ```
 
 ### Numeric Functions
 
+The DSL has no helpers for `ABS`, `ROUND`, `CEIL` or `FLOOR`; write those in a SPARQL string, or combine expressions with the arithmetic operators `plus`, `minus`, `times` and `div`:
+
 ```kotlin
-bind(`var`("absAge"), abs(ageVar))
-bind(`var`("roundedAge"), round(ageVar))
-bind(`var`("ceilingAge"), ceil(ageVar))
+bind(`var`("ageNextYear"), ageVar.expr() plus TermExpressionAst(1.toLiteral()))
 ```
 
 ### Date/Time Functions
 
+The DSL has no `YEAR`/`MONTH`/`DAY` helpers. It provides `now()`, `timezone(expr)`, `tz(expr)` and the XSD casts `dateTime(expr)`, `date(expr)` and `time(expr)`:
+
 ```kotlin
-bind(`var`("birthYear"), year(birthDateVar))
-bind(`var`("birthMonth"), month(birthDateVar))
-bind(`var`("birthDay"), day(birthDateVar))
+bind(`var`("birthDay"), date(birthDateVar.expr()))
+bind(`var`("birthTz"), tz(birthDateVar.expr()))
 ```
 
 ### SPARQL 1.2 Enhanced Functions
@@ -330,55 +331,60 @@ SPARQL 1.2 introduces many new built-in functions:
 ```kotlin
 val query = select {
     version("1.2")
-    expression(replaceAll(var_("text"), "old", "new"), "replaced")
-    expression(encodeForUri(var_("text")), "encoded")
-    expression(decodeForUri(var_("text")), "decoded")
-    expression(contains(var_("text"), "substring"), "hasSubstring")
-    expression(startsWith(var_("text"), "prefix"), "hasPrefix")
-    expression(endsWith(var_("text"), "suffix"), "hasSuffix")
+    expression(replace(var_("text").expr(), "old", "new"), "replaced")   // REPLACE
+    expression(encodeForUri(var_("text").expr()), "encoded")             // ENCODE_FOR_URI
+    expression(contains(var_("text").expr(), "substring"), "hasSubstring")
+    expression(startsWith(var_("text").expr(), "prefix"), "hasPrefix")   // STRSTARTS
+    expression(endsWith(var_("text").expr(), "suffix"), "hasSuffix")     // STRENDS
     where {
-        pattern(var_("s"), iri("ex:text"), var_("text"))
+        triple(var_("s"), iri("ex:text"), var_("text"))
     }
 }
 ```
+
+`replaceAll(...)` is a deprecated alias that also renders `REPLACE` (SPARQL `REPLACE` already replaces every match). `decodeForUri(...)` is deprecated with level ERROR: SPARQL has no `DECODE_FOR_URI` function.
 
 #### Enhanced Numeric Functions
 ```kotlin
 val query = select {
     version("1.2")
-    expression(rand(), "randomValue")
-    expression(random(), "randomValue2")
-    expression(now(), "currentTime")
-    expression(timezone(), "timezone")
+    expression(rand(), "randomValue")                 // RAND()
+    expression(now(), "currentTime")                  // NOW()
+    expression(timezone(var_("when").expr()), "timezone")    // TIMEZONE(?when)
+    expression(dateTime(var_("text").expr()), "asDateTime")  // xsd:dateTime(?text) cast; also date(...), time(...)
     where {
-        pattern(var_("s"), iri("ex:value"), var_("value"))
+        triple(var_("s"), iri("ex:value"), var_("value"))
     }
 }
 ```
 
+`random()` and the zero-argument `timezone()` are deprecated with level ERROR because standard SPARQL has no equivalent: use `rand()` and `timezone(expr)`.
+
 #### Literal Base Direction Functions
 ```kotlin
-val query = select(SparqlSelectQuery("text"))) {
+val query = select("text") {
     version("1.2")
     where {
-        pattern(var_("s"), iri("ex:text"), var_("text"))
-        filter(hasLang(var_("text"), "en"))
-        filter(hasLangdir(var_("text"), "rtl"))
+        triple(var_("s"), iri("ex:text"), var_("text"))
+        filter(hasLang(var_("text").expr(), "en"))
+        filter(hasLangdir(var_("text").expr(), "rtl"))
     }
 }
 ```
+
+The one-argument forms `hasLang(x)` / `hasLangdir(x)` render the SPARQL 1.2 built-ins `hasLANG(?x)` / `hasLANGDIR(?x)`. The two-argument forms are portable shortcuts: `hasLang(x, "en")` renders `LANGMATCHES(LANG(?x), "en")` and `hasLangdir(x, "rtl")` renders `LANGDIR(?x) = "rtl"` (only `ltr` and `rtl` are accepted).
 
 #### RDF-star Functions
 ```kotlin
 val query = select {
     version("1.2")
     expression(triple(var_("s"), var_("p"), var_("o")), "tripleTerm")
-    expression(subject(var_("triple")), "subj")
-    expression(predicate(var_("triple")), "pred")
-    expression(`object`(var_("triple")), "obj")
+    expression(subject(var_("triple").expr()), "subj")
+    expression(predicate(var_("triple").expr()), "pred")
+    expression(`object`(var_("triple").expr()), "obj")
     where {
-        pattern(var_("s"), var_("p"), var_("o"))
-        filter(isTriple(var_("triple")))
+        triple(var_("s"), var_("p"), var_("o"))
+        filter(isTriple(var_("triple").expr()))
     }
 }
 ```
@@ -389,28 +395,31 @@ val query = select {
 
 ```kotlin
 // In SELECT
-select("avgAge", "maxAge", "count") {
+select {
+    aggregate(AggregateFunction.AVG, ageVar.expr(), "avgAge")
+    aggregate(AggregateFunction.MAX, ageVar.expr(), "maxAge")
+    expression(countAll(), "count")
     where {
-        personVar has agePred with ageVar
+        triple(personVar, agePred, ageVar)
     }
-    groupBy()
 }
 
-// In HAVING
+// In HAVING (renders HAVING (COUNT(?age) > "10"^^<http://www.w3.org/2001/XMLSchema#integer>))
 having {
-    filter(count(ageVar) gt 10)
+    filter(count(ageVar.expr()) gt TermExpressionAst(10.toLiteral()))
 }
 ```
 
 ### Available Aggregates
 
 - `count()`: Count results
-- `countDistinct()`: Count unique values
+- `countAll()`: `COUNT(*)` (`countAll(distinct = true)` for `COUNT(DISTINCT *)`)
+- `count(expr, distinct = true)`: Count unique values
 - `sum()`: Sum of values
 - `avg()`: Average of values
 - `min()`: Minimum value
 - `max()`: Maximum value
-- `groupConcat()`: Concatenate values
+- `groupConcat()`: Concatenate values; `groupConcat(expr, separator)` renders `GROUP_CONCAT(?x ; SEPARATOR="...")`
 
 ## SubSelect
 
@@ -420,11 +429,9 @@ SubSelect allows using a SELECT query as part of a larger query.
 
 ```kotlin
 subSelect {
-    select(SparqlSelectQuery("avgAge"))) {
-        where {
-            personVar has agePred with `var`("age")
-        }
-        groupBy()
+    expression(avg(`var`("age").expr()), "avgAge")
+    where {
+        triple(personVar, agePred, `var`("age"))
     }
 }
 ```
@@ -448,58 +455,62 @@ RDF-star allows using triples as subjects or objects:
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.RDF
 
-val query = select(SparqlSelectQuery("confidence"))) {
+val query = select("person", "name") {
     version("1.2")
     prefix("foaf", FOAF.namespace)
     prefix("ex", "http://example.org/")
     where {
-        // Quoted triple pattern
+        // Reified-triple pattern: matches any reifier of the triple
         quotedTriple(var_("person"), FOAF.name, var_("name"))
-        
-        // Use quoted triple in patterns
-        pattern(quotedTriple(var_("person"), FOAF.name, var_("name")), 
-                iri("ex:confidence"), var_("confidence"))
     }
 }
 ```
 
 This generates:
 ```sparql
-VERSION 1.2
-
+VERSION "1.2"
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 PREFIX ex: <http://example.org/>
 
-SELECT ?confidence
+SELECT ?person ?name
 WHERE {
-  << ?person foaf:name ?name >> ex:confidence ?confidence .
+  << ?person <http://xmlns.com/foaf/0.1/name> ?name >> .
 }
 ```
 
-### SPARQL 1.2 RDF-star Functions
+`quotedTriple(...)` renders the SPARQL 1.2 reified triple `<< s p o >>`. A bare triple term `<<( s p o )>>` is not a valid standalone graph pattern and is rejected by the renderer; to bind the reifier, use `ReifierPatternAst`, which renders `?r <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( s p o )>> .` (`rdf:reifies` is always written as a full IRI).
 
-SPARQL 1.2 introduces new functions for working with triple terms:
+### Binding the Reifier
+
+`quotedTriple(...)` matches any reifier. To bind the reifier and read its annotations, build the query from AST nodes (`where { }` has no helper for this):
 
 ```kotlin
-val query = select {
-    version("1.2")
-    expression(triple(var_("s"), var_("p"), var_("o")), "tripleTerm")
-    expression(subject(var_("triple")), "subj")
-    expression(predicate(var_("triple")), "pred")
-    expression(`object`(var_("triple")), "obj")
-    where {
-        pattern(var_("s"), var_("p"), var_("o"))
-        pattern(var_("triple"), RDF.type, RDF.Statement)
-        filter(isTriple(var_("triple")))
-    }
-}
+import com.geoknoesis.kastor.rdf.sparql.*
+
+val person = var_("person")
+val name = var_("name")
+val statement = var_("statement")
+val confidence = var_("confidence")
+
+val query = SelectQueryAst(
+    selectItems = listOf(VariableSelectItemAst(person), VariableSelectItemAst(confidence)),
+    version = "1.2",
+    where = GroupPatternAst(listOf(
+        ReifierPatternAst(statement, TripleTermPatternAst(person, FOAF.name, name)),
+        TriplePatternAst(statement, iri("http://example.org/confidence"), confidence),
+    )),
+).toSparqlSelect()
 ```
 
-### DSL Syntax
+This generates (layout may differ slightly):
+```sparql
+VERSION "1.2"
 
-```kotlin
-// Using DSL for quoted triples
-var_("statement") quoted iri("http://example.org/confidence") with var_("confidence")
+SELECT ?person ?confidence
+WHERE {
+  ?statement <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?person <http://xmlns.com/foaf/0.1/name> ?name )>> .
+  ?statement <http://example.org/confidence> ?confidence .
+}
 ```
 
 ### Use Cases
@@ -535,28 +546,24 @@ var_("statement") quoted iri("http://example.org/confidence") with var_("confide
 ## Complete Example
 
 ```kotlin
-val complexQuery = select("name", "email", "age", "confidence") {
+val complexQuery = select("name", "email", "age") {
     where {
         // Basic patterns
-        personVar has namePred with nameVar
-        personVar has agePred with ageVar
+        triple(personVar, namePred, nameVar)
+        triple(personVar, agePred, ageVar)
         
         // Optional email
         optional {
-            personVar has emailPred with `var`("email")
-            filter(`var`("email") ne string(""))
+            triple(personVar, emailPred, `var`("email"))
+            filter(`var`("email") ne "")
         }
         
-        // RDF-star confidence
-        `var`("statement") quoted iri("http://example.org/confidence") with `var`("confidence")
-        `var`("statement") quoted iri("http://example.org/subject") with personVar
         
         // Values constraint
         values(nameVar, string("John"), string("Jane"))
         
         // Filters
         filter(ageVar gt 18)
-        filter(`var`("confidence") gt 0.8)
     }
     orderBy(ageVar, OrderDirection.DESC)
     limit(10)

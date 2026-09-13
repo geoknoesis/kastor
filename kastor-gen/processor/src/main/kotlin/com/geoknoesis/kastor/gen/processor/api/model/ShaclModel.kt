@@ -12,12 +12,13 @@ import com.geoknoesis.kastor.rdf.Iri as RdfIri
  * @param targetClass The IRI of the target class this shape applies to
  * @param properties List of property constraints defined in this shape
  *
- * @sample com.example.CreateShaclShape
  */
-data class ShaclShape(
+public data class ShaclShape(
     val shapeIri: String,
     val targetClass: String,
-    val properties: List<ShaclProperty>
+    val properties: List<ShaclProperty>,
+    /** Target classes of shapes this shape inherits from (via `sh:node` on the node shape or `rdfs:subClassOf`). */
+    val parentClasses: List<String> = emptyList(),
 )
 
 /**
@@ -47,7 +48,7 @@ data class ShaclShape(
  * @param qualifiedMinCount Qualified minimum count (sh:qualifiedMinCount)
  * @param qualifiedMaxCount Qualified maximum count (sh:qualifiedMaxCount)
  */
-data class ShaclProperty(
+public data class ShaclProperty(
     val path: String,
     val name: String,
     val description: String,
@@ -59,6 +60,8 @@ data class ShaclProperty(
     val minLength: Int? = null,
     val maxLength: Int? = null,
     val pattern: String? = null,
+    /** `sh:flags` for [pattern] (e.g. "i"). */
+    val patternFlags: String? = null,
     // Numeric constraints
     val minInclusive: Double? = null,
     val maxInclusive: Double? = null,
@@ -88,7 +91,7 @@ data class ShaclProperty(
  * @param typeMappings Map of type names to their IRIs
  * @param propertyMappings Map of property names to their definitions
  */
-data class JsonLdContext(
+public data class JsonLdContext(
     val prefixes: Map<String, String>,
     val baseIri: RdfIri? = null,
     val vocabIri: RdfIri? = null,
@@ -99,23 +102,23 @@ data class JsonLdContext(
 /**
  * Model representing a JSON-LD property definition.
  */
-data class JsonLdProperty(
+public data class JsonLdProperty(
     val id: RdfIri,
     val type: JsonLdType?,
     val container: JsonLdContainer? = null
 )
 
-sealed interface JsonLdType {
-    data object Id : JsonLdType
-    data class Iri(val iri: RdfIri) : JsonLdType
+public sealed interface JsonLdType {
+    public data object Id : JsonLdType
+    public data class Iri(val iri: RdfIri) : JsonLdType
 }
 
-sealed interface JsonLdContainer {
-    data object List : JsonLdContainer
-    data object Set : JsonLdContainer
-    data object Index : JsonLdContainer
-    data object Language : JsonLdContainer
-    data class Unknown(val value: String) : JsonLdContainer
+public sealed interface JsonLdContainer {
+    public data object List : JsonLdContainer
+    public data object Set : JsonLdContainer
+    public data object Index : JsonLdContainer
+    public data object Language : JsonLdContainer
+    public data class Unknown(val value: String) : JsonLdContainer
 }
 
 /**
@@ -129,9 +132,8 @@ sealed interface JsonLdContainer {
  * @param context JSON-LD context providing type and property mappings
  * @param enums List of generated enum types derived from sh:in constraints
  *
- * @sample com.example.CreateOntologyModel
  */
-data class OntologyModel(
+public data class OntologyModel(
     val shapes: List<ShaclShape>,
     val context: JsonLdContext,
     val enums: List<EnumModel> = emptyList(),

@@ -1,6 +1,6 @@
 # Advanced topics
 
-> **Version:** Kastor RDF SDK `0.2.0` · Kotlin `2.x` · Java `17+`
+> **Version:** Kastor RDF SDK `0.3.0-SNAPSHOT` · Kotlin `2.4.20` · Java `21+`
 
 This section covers performance, serialization formats, and other topics for experienced Kastor users.
 

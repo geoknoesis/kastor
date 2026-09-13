@@ -50,11 +50,9 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
  */
 class OwlDsl {
     private val graphDsl = GraphDsl()
-    private var bnodeCounter = 0
-    
-    private fun nextBnode(prefix: String = "b"): BlankNode {
-        return bnode("${prefix}${++bnodeCounter}")
-    }
+
+    // Shared, collision-free labels: see DslBlankNodes.
+    private fun nextBnode(prefix: String = "b"): BlankNode = DslBlankNodes.next(prefix)
     
     /**
      * Configure prefix mappings for QName resolution.

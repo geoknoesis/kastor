@@ -1,0 +1,549 @@
+public final class com/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution {
+	public fun <init> (JJJJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun copy (JJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;JJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getElevenToTwenty ()J
+	public final fun getOverTwenty ()J
+	public final fun getSixToTen ()J
+	public final fun getTwoToFive ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution {
+	public fun <init> (JJJJJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun copy (JJJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;JJJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOverFifty ()J
+	public final fun getSingleChild ()J
+	public final fun getSixToTwenty ()J
+	public final fun getTwentyOneToFifty ()J
+	public final fun getTwoToFive ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/FanOutEntry {
+	public fun <init> (Ljava/lang/String;I)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutEntry;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutEntry;Ljava/lang/String;IILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDirectChildCount ()I
+	public final fun getParent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection {
+	public fun <init> (JJJJJJJJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun component6 ()J
+	public final fun component7 ()J
+	public final fun component8 ()J
+	public final fun copy (JJJJJJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;JJJJJJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBlankNodeSubjectCount ()J
+	public final fun getDistinctClassesUsed ()J
+	public final fun getDistinctObjectCount ()J
+	public final fun getDistinctPredicateCount ()J
+	public final fun getDistinctSubjectCount ()J
+	public final fun getIriObjectCount ()J
+	public final fun getLiteralObjectCount ()J
+	public final fun getTripleCount ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics {
+	public fun <init> (ILjava/util/List;JJLjava/util/List;ZLjava/util/Map;)V
+	public synthetic fun <init> (ILjava/util/List;JJLjava/util/List;ZLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()Z
+	public final fun component7 ()Ljava/util/Map;
+	public final fun copy (ILjava/util/List;JJLjava/util/List;ZLjava/util/Map;)Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;ILjava/util/List;JJLjava/util/List;ZLjava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassesAtMaxDepth ()J
+	public final fun getCycleParticipants ()Ljava/util/List;
+	public final fun getCyclesDetected ()J
+	public final fun getDeepestChainExample ()Ljava/util/List;
+	public final fun getDepthByClass ()Ljava/util/Map;
+	public final fun getDepthCapHit ()Z
+	public final fun getMaxDepthFound ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights$Companion;
+	public fun <init> (DDDD)V
+	public final fun component1 ()D
+	public final fun component2 ()D
+	public final fun component3 ()D
+	public final fun component4 ()D
+	public final fun copy (DDDD)Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;DDDDILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFanOutWeight ()D
+	public final fun getIncomingPropertiesWeight ()D
+	public final fun getLabelPresenceWeight ()D
+	public final fun getShallowDepthWeight ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights$Companion {
+	public final fun default ()Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics {
+	public fun <init> (JLjava/util/List;JJ)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun copy (JLjava/util/List;JJ)Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;JLjava/util/List;JJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getImportStatements ()J
+	public final fun getImportedIris ()Ljava/util/List;
+	public final fun getUnversionedImports ()J
+	public final fun getVersionedImports ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/KastorMetricsVocab {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/metrics/KastorMetricsVocab;
+	public static final field NS Ljava/lang/String;
+	public static final field OQUARE_NS Ljava/lang/String;
+	public static final field annotationRichness Ljava/lang/String;
+	public static final field attributeRichness Ljava/lang/String;
+	public static final field classRichness Ljava/lang/String;
+	public static final field conceptCount Ljava/lang/String;
+	public static final field couplingBetweenObjects Ljava/lang/String;
+	public static final field definitionCoverage Ljava/lang/String;
+	public static final field depthOfInheritanceTree Ljava/lang/String;
+	public static final field inheritanceRichness Ljava/lang/String;
+	public static final field lackOfCohesionInMethods Ljava/lang/String;
+	public static final field maxSiblingCohortSize Ljava/lang/String;
+	public static final field numberOfAncestorClasses Ljava/lang/String;
+	public static final field numberOfChildren Ljava/lang/String;
+	public static final field numberOfProperties Ljava/lang/String;
+	public static final field oquareANOnto Ljava/lang/String;
+	public static final field oquareAROnto Ljava/lang/String;
+	public static final field oquareCBOOnto Ljava/lang/String;
+	public static final field oquareCROnto Ljava/lang/String;
+	public static final field oquareDITOnto Ljava/lang/String;
+	public static final field oquareINROnto Ljava/lang/String;
+	public static final field oquareLCOMOnto Ljava/lang/String;
+	public static final field oquareNACOnto Ljava/lang/String;
+	public static final field oquareNOCOnto Ljava/lang/String;
+	public static final field oquareNOMOnto Ljava/lang/String;
+	public static final field oquarePROnto Ljava/lang/String;
+	public static final field oquareRFCOnto Ljava/lang/String;
+	public static final field oquareRROnto Ljava/lang/String;
+	public static final field oquareScoring Ljava/lang/String;
+	public static final field oquareTMOnto Ljava/lang/String;
+	public static final field oquareWMCOnto Ljava/lang/String;
+	public static final field orphanConceptCount Ljava/lang/String;
+	public static final field prefLabelCoverage Ljava/lang/String;
+	public static final field propertiesRichness Ljava/lang/String;
+	public static final field relationshipRichness Ljava/lang/String;
+	public static final field responseForClass Ljava/lang/String;
+	public static final field siblingCohortCount Ljava/lang/String;
+	public static final field tangledness Ljava/lang/String;
+	public static final field weightedMethodCount Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/MetricValue {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;DLjava/lang/Integer;ZLjava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()D
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;DLjava/lang/Integer;ZLjava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Ljava/lang/String;Ljava/lang/String;DLjava/lang/Integer;ZLjava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComputable ()Z
+	public final fun getMetricIri ()Ljava/lang/String;
+	public final fun getNotes ()Ljava/lang/String;
+	public final fun getOquareName ()Ljava/lang/String;
+	public final fun getRawValue ()D
+	public final fun getScore ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/MetricsConfig {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig$Companion;
+	public fun <init> ()V
+	public fun <init> (ZZIIZLjava/util/Set;ZZ)V
+	public synthetic fun <init> (ZZIIZLjava/util/Set;ZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/util/Set;
+	public final fun component7 ()Z
+	public final fun component8 ()Z
+	public final fun copy (ZZIIZLjava/util/Set;ZZ)Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;ZZIIZLjava/util/Set;ZZILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEmitOQuaREScores ()Z
+	public final fun getExcludedNamespaces ()Ljava/util/Set;
+	public final fun getIncludePerParentBreakdowns ()Z
+	public final fun getIncludeSubPropertyMetrics ()Z
+	public final fun getMaxDepthCap ()I
+	public final fun getTopNHotSpots ()I
+	public final fun getUnboundedFanOutBreakdown ()Z
+	public final fun getUseInferredGraph ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/MetricsConfig$Companion {
+	public final fun default ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;
+	public final fun getDEFAULT_EXCLUDED_NAMESPACES ()Ljava/util/Set;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/OntologyHeader {
+	public fun <init> (Ljava/lang/String;ZZZZZ)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun copy (Ljava/lang/String;ZZZZZ)Lcom/geoknoesis/kastor/ontoquality/metrics/OntologyHeader;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/OntologyHeader;Ljava/lang/String;ZZZZZILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OntologyHeader;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHasComment ()Z
+	public final fun getHasCreator ()Z
+	public final fun getHasLabel ()Z
+	public final fun getHasLicense ()Z
+	public final fun getHasVersionIri ()Z
+	public final fun getOntologyIri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/OquareMetrics {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component10 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component11 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component12 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component13 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component14 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component15 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component2 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component4 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component5 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component6 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component7 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component8 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component9 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;)Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnnotationRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getAttributeRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getClassRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getCouplingBetweenObjects ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getDepthOfInheritanceTree ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getInheritanceRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getLackOfCohesionInMethods ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getNumberOfAncestorClasses ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getNumberOfChildren ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getNumberOfProperties ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getPropertiesRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getRelationshipRichness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getResponseForClass ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getTangledness ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getWeightedMethodCount ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public fun hashCode ()I
+	public final fun toList ()Ljava/util/List;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts {
+	public fun <init> (JJJJJJJJJJ)V
+	public final fun component1 ()J
+	public final fun component10 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun component6 ()J
+	public final fun component7 ()J
+	public final fun component8 ()J
+	public final fun component9 ()J
+	public final fun copy (JJJJJJJJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;JJJJJJJJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOwlAnnotationProperties ()J
+	public final fun getOwlClasses ()J
+	public final fun getOwlDatatypeProperties ()J
+	public final fun getOwlNamedIndividuals ()J
+	public final fun getOwlObjectProperties ()J
+	public final fun getOwlOntologies ()J
+	public final fun getOwlRestrictions ()J
+	public final fun getRdfsClasses ()J
+	public final fun getTotalNamedClasses ()J
+	public final fun getTotalProperties ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/OwlExtensions {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;Ljava/util/List;Ljava/util/Set;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;Ljava/util/List;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;
+	public final fun component2 ()Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;
+	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/Set;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;Ljava/util/List;Ljava/util/Set;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;Ljava/util/List;Ljava/util/Set;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassHierarchyDepth ()Lcom/geoknoesis/kastor/ontoquality/metrics/HierarchyDepthMetrics;
+	public final fun getImports ()Lcom/geoknoesis/kastor/ontoquality/metrics/ImportsMetrics;
+	public final fun getIntegrationNamedClasses ()Ljava/util/Set;
+	public final fun getOntologyHeaders ()Ljava/util/List;
+	public final fun getSubClassFanOut ()Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;
+	public final fun component2 ()Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;
+	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEntityCounts ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlEntityCounts;
+	public final fun getExtensions ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlExtensions;
+	public final fun getOquare ()Lcom/geoknoesis/kastor/ontoquality/metrics/OquareMetrics;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges {
+	public fun <init> (JJJJJJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun component6 ()J
+	public final fun copy (JJJJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;JJJJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBroadMatch ()J
+	public final fun getCloseMatch ()J
+	public final fun getExactMatch ()J
+	public final fun getNarrowMatch ()J
+	public final fun getRelatedMatch ()J
+	public final fun getTotalMappings ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JJJLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;Ljava/util/Map;Ljava/util/Map;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component10 ()Ljava/util/Map;
+	public final fun component11 ()Ljava/util/Map;
+	public final fun component12 ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component6 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component7 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component8 ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;
+	public final fun component9 ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JJJLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;Ljava/util/Map;Ljava/util/Map;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JJJLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;Ljava/util/Map;Ljava/util/Map;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCollectionCount ()J
+	public final fun getConceptCount ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getConceptSchemeCount ()J
+	public final fun getDefinitionCoverage ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getMappingEdgeCounts ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMappingEdges;
+	public final fun getOrderedCollectionCount ()J
+	public final fun getOrphanConceptCount ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getPrefLabelCoverage ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getPrefLabelsPerLanguage ()Ljava/util/Map;
+	public final fun getSchemesByConceptCount ()Ljava/util/Map;
+	public final fun getSiblingCohorts ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;
+	public final fun getStructuralEdgeCounts ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohort {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;J)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()J
+	public final fun copy (Ljava/lang/String;Ljava/util/List;J)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohort;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohort;Ljava/lang/String;Ljava/util/List;JILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohort;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getParent ()Ljava/lang/String;
+	public final fun getRelatedEdgesAmongSiblings ()J
+	public final fun getSiblings ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts {
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Ljava/util/List;Ljava/util/List;JLcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component2 ()J
+	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/List;
+	public final fun component6 ()J
+	public final fun component7 ()Lcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Ljava/util/List;Ljava/util/List;JLcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;JLcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;Ljava/util/List;Ljava/util/List;JLcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosSiblingCohorts;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCohortCount ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getCohortSizeDistribution ()Lcom/geoknoesis/kastor/ontoquality/metrics/CohortSizeDistribution;
+	public final fun getCohorts ()Ljava/util/List;
+	public final fun getMaxCohortParents ()Ljava/util/List;
+	public final fun getMaxCohortSize ()Lcom/geoknoesis/kastor/ontoquality/metrics/MetricValue;
+	public final fun getRelatedEdgesWithinCohorts ()J
+	public final fun getTotalSiblingPairs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges {
+	public fun <init> (JJJJJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun component5 ()J
+	public final fun copy (JJJJJ)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;JJJJJILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosStructuralEdges;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBroaderEdges ()J
+	public final fun getBroaderTransitiveEdges ()J
+	public final fun getNarrowerEdges ()J
+	public final fun getNarrowerTransitiveEdges ()J
+	public final fun getRelatedEdges ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics {
+	public fun <init> (JJILjava/util/List;DDLjava/util/List;Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;Ljava/util/Map;Ljava/util/Map;)V
+	public synthetic fun <init> (JJILjava/util/List;DDLjava/util/List;Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component10 ()Ljava/util/Map;
+	public final fun component2 ()J
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()D
+	public final fun component6 ()D
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;
+	public final fun component9 ()Ljava/util/Map;
+	public final fun copy (JJILjava/util/List;DDLjava/util/List;Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;Ljava/util/Map;Ljava/util/Map;)Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;JJILjava/util/List;DDLjava/util/List;Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;Ljava/util/Map;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SubClassFanOutMetrics;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFanOutDistribution ()Lcom/geoknoesis/kastor/ontoquality/metrics/FanOutDistribution;
+	public final fun getFullFanOutMap ()Ljava/util/Map;
+	public final fun getFullSubClassChildrenOf ()Ljava/util/Map;
+	public final fun getMaxFanOut ()I
+	public final fun getMaxFanOutParents ()Ljava/util/List;
+	public final fun getMeanFanOut ()D
+	public final fun getMedianFanOut ()D
+	public final fun getParentsWithChildren ()J
+	public final fun getTopNByFanOut ()Ljava/util/List;
+	public final fun getTotalDirectEdges ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/VocabularyMetrics {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetrics;
+	public final fun compute (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
+	public static synthetic fun compute$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetrics;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
+	public final fun computeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;
+	public final fun computeOwl (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public static synthetic fun computeOwl$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetrics;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public final fun computeSkos (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+	public static synthetic fun computeSkos$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetrics;Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport$Companion;
+	public static final field MODULE_VERSION Ljava/lang/String;
+	public static final field OQUARE_VERSION Ljava/lang/String;
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;)V
+	public final fun component1 ()Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;
+	public final fun component2 ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/time/Instant;
+	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
+	public final fun describeMarkdown ()Ljava/lang/String;
+	public final fun describeText ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getComputedAt ()Ljava/time/Instant;
+	public final fun getGraph ()Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;
+	public final fun getModuleVersion ()Ljava/lang/String;
+	public final fun getOquareVersion ()Ljava/lang/String;
+	public final fun getOwl ()Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;
+	public final fun getSkos ()Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;
+	public fun hashCode ()I
+	public final fun toJson ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+	public final fun toTurtle ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport$Companion {
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/integration/KastorMetricsProvider : com/geoknoesis/kastor/ontoquality/integration/MetricsProvider {
+	public fun <init> ()V
+	public fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsConfig;Lcom/geoknoesis/kastor/ontoquality/metrics/ImportanceWeights;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compute (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;
+}
+

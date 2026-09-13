@@ -6,12 +6,9 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 
 /**
- * Manual DCAT-US 3.0 Example demonstrating how OntoMapper would work.
- * 
- * This example shows what the generated code would look like and how
- * it would integrate with Kastor's RDF API. In a working OntoMapper
- * system, these classes would be automatically generated from the
- * DCAT-US 3.0 SHACL shapes.
+ * Hand-written DCAT-US 3.0 domain classes (no code generation).
+ *
+ * For interfaces and wrappers generated from the DCAT-US 3.0 SHACL shapes see DCAT_US_Generated_Example.kt.
  */
 class DCAT_US_Manual_Example {
     

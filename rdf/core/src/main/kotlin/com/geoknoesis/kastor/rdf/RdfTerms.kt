@@ -154,79 +154,101 @@ value class Iri(val value: String) : RdfResource {
 }
 
 /**
- * Validates an IRI according to RFC 3987.
- * 
- * **Note:** This implementation performs basic validation suitable for most use cases.
- * For full RFC 3987 compliance with all edge cases, consider using a dedicated IRI library.
- * 
- * **Current validation checks:**
- * - Non-empty string
- * - Has scheme (e.g., "http:", "https:", "urn:")
- * - Scheme is valid (letters, digits, +, -, .)
- * - Absolute URI (not relative)
- * - Allows Unicode characters (IRIs are a superset of URIs)
- * 
- * **Limitations:**
- * - Does not validate full IRI syntax (authority, path, query, fragment components)
- * - Does not validate percent-encoding
- * - Does not validate internationalized domain names (IDN)
- * 
- * For production use with strict IRI validation requirements, consider:
- * - Apache Commons Validator
- * - Java's `java.net.URI` (for ASCII-only IRIs)
- * - Dedicated IRI validation libraries
- * 
- * @param value The IRI string to validate
- * @return true if the IRI appears valid, false otherwise
+ * Validates an absolute IRI with an allocation-free, single-pass scanner modelled on RFC 3987.
+ *
+ * **Checks:**
+ * - `scheme ":"` prefix with an ASCII scheme (`ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`) and a
+ *   non-empty remainder (relative references are rejected)
+ * - No whitespace, control characters, or the RFC 3987-excluded delimiters `< > " { } | \ ^ ``
+ *   (these enable SPARQL/Turtle injection when an IRI is interpolated into `<...>`)
+ * - Percent-encodings are `%` followed by two hex digits; at most one `#`
+ * - When an authority (`//...`) is present: an optional userinfo, a host that is either a closed
+ *   IP literal (`[...]`) or a reg-name without brackets, and an all-digit port
+ *
+ * Non-ASCII characters are accepted anywhere after the scheme (IRIs are a superset of URIs); IDN
+ * and IP-address semantics are not validated. Square brackets are tolerated outside the authority
+ * for compatibility with real-world data.
  */
-private val IRI_FORBIDDEN_CHARS = setOf('<', '>', '"', '{', '}', '|', '\\', '^', '`')
-
 private fun isValidIri(value: String): Boolean {
-    if (value.isEmpty()) return false
-
-    // RFC 3987 excludes spaces, control characters, and the delimiters below from IRIs. Reject them up front:
-    // java.net.URI throws on exactly these, falling through to the Unicode-tolerant structural check, which
-    // would otherwise accept malformed values (e.g. SPARQL/Turtle-injection payloads inside <...>).
-    if (value.any { it.isWhitespace() || it.isISOControl() || it in IRI_FORBIDDEN_CHARS }) return false
-
-    // Try to parse as URI first (for ASCII IRIs)
-    try {
-        val uri = java.net.URI(value)
-        // Basic validation: must have a scheme
-        if (uri.scheme == null) return false
-        // Reject relative URIs (they're not valid IRIs)
-        if (!uri.isAbsolute) return false
-    } catch (e: java.net.URISyntaxException) {
-        // If URI parsing fails, check if it's a valid IRI with Unicode
-        // IRIs allow Unicode, so we do a more lenient check
-        if (!hasValidIriStructure(value)) return false
+    val length = value.length
+    if (length == 0 || !value[0].isAsciiLetter()) return false
+    var i = 1
+    while (i < length) {
+        val c = value[i]
+        if (c == ':') break
+        if (!(c.isAsciiLetter() || c in '0'..'9' || c == '+' || c == '-' || c == '.')) return false
+        i++
     }
-    
+    if (i >= length - 1) return false // no scheme separator, or nothing after it
+    var pos = i + 1
+    if (pos + 1 < length && value[pos] == '/' && value[pos + 1] == '/') {
+        pos = scanAuthority(value, pos + 2)
+        if (pos < 0) return false
+    }
+    var sawFragment = false
+    while (pos < length) {
+        val c = value[pos]
+        when {
+            c.isForbiddenIriChar() -> return false
+            c == '%' -> {
+                if (pos + 2 >= length || !value[pos + 1].isHexDigit() || !value[pos + 2].isHexDigit()) return false
+                pos += 2
+            }
+            c == '#' -> {
+                if (sawFragment) return false
+                sawFragment = true
+            }
+        }
+        pos++
+    }
     return true
 }
 
-/**
- * Checks if a string has valid IRI structure (scheme:path).
- * More lenient than URI validation to allow Unicode characters.
- */
-private fun hasValidIriStructure(value: String): Boolean {
-    // Must contain a colon (for scheme:path structure)
-    val colonIndex = value.indexOf(':')
-    if (colonIndex <= 0) return false
-    
-    // Scheme must be non-empty and start with a letter
-    val scheme = value.substring(0, colonIndex)
-    if (scheme.isEmpty() || !scheme[0].isLetter()) return false
-    
-    // Scheme can contain letters, digits, +, -, .
-    if (!scheme.all { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }) {
-        return false
+/** Scans `[userinfo "@"] host [":" port]` starting at [start]; returns the end index or -1 if malformed. */
+private fun scanAuthority(value: String, start: Int): Int {
+    var end = start
+    while (end < value.length && value[end] != '/' && value[end] != '?' && value[end] != '#') end++
+    var hostStart = start
+    for (k in start until end) if (value[k] == '@') hostStart = k + 1
+    for (k in start until hostStart) {
+        val c = value[k]
+        if (c == '[' || c == ']' || c.isForbiddenIriChar()) return -1
+        if (c == '%' && !validPercent(value, k, hostStart)) return -1
     }
-    
-    // After colon, there should be something (even if just //)
-    if (colonIndex >= value.length - 1) return false
-    
-    return true
+    var k = hostStart
+    if (k < end && value[k] == '[') {
+        val close = value.indexOf(']', k + 1)
+        if (close < 0 || close >= end || close == k + 1) return -1
+        for (j in k + 1 until close) {
+            val c = value[j]
+            if (!(c.isAsciiLetter() || c in '0'..'9' || c in ":.-_~!$&'()*+,;=")) return -1
+        }
+        k = close + 1
+    } else {
+        while (k < end && value[k] != ':') {
+            val c = value[k]
+            if (c == '[' || c == ']' || c.isForbiddenIriChar()) return -1
+            if (c == '%' && !validPercent(value, k, end)) return -1
+            k++
+        }
+    }
+    if (k < end) {
+        if (value[k] != ':') return -1
+        for (j in k + 1 until end) if (value[j] !in '0'..'9') return -1
+    }
+    return end
+}
+
+private fun validPercent(value: String, index: Int, limit: Int): Boolean =
+    index + 2 < limit && value[index + 1].isHexDigit() && value[index + 2].isHexDigit()
+
+private fun Char.isAsciiLetter(): Boolean = this in 'a'..'z' || this in 'A'..'Z'
+
+private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+
+private fun Char.isForbiddenIriChar(): Boolean = when (this) {
+    '<', '>', '"', '{', '}', '|', '\\', '^', '`' -> true
+    else -> isWhitespace() || isISOControl()
 }
 
 /**
@@ -297,21 +319,23 @@ sealed interface Literal : RdfTerm {
          * Creates a literal from a lexical value and a datatype IRI.
          * This is the recommended factory for creating any literal.
          *
-         * For boolean datatypes, this method validates the lexical form and returns
-         * the appropriate singleton ([TrueLiteral] or [FalseLiteral]) when possible.
-         * Invalid boolean forms will throw an exception.
+         * The lexical form is always preserved: RDF terms with different lexical forms are
+         * different terms even when they denote the same value, and ill-typed literals are
+         * legal RDF. For `xsd:boolean` the singletons [TrueLiteral] / [FalseLiteral] are
+         * returned only for the exact lexical forms `"true"` / `"false"`; use
+         * [booleanValue] to interpret `"1"` / `"0"`.
          *
          * ## Examples
          * ```kotlin
          * // Plain string literals (default)
          * Literal("Hello, World!")  // "Hello, World!"^^xsd:string
          * Literal("John Doe")       // "John Doe"^^xsd:string
-         * 
+         *
          * // Boolean literals
          * Literal("true", XSD.boolean)  // Returns TrueLiteral
-         * Literal("1", XSD.boolean)     // Returns TrueLiteral
+         * Literal("1", XSD.boolean)     // "1"^^xsd:boolean (TypedLiteral)
          * Literal("false", XSD.boolean) // Returns FalseLiteral
-         * Literal("maybe", XSD.boolean) // Throws IllegalArgumentException
+         * Literal("maybe", XSD.boolean) // "maybe"^^xsd:boolean (ill-typed, still a valid RDF term)
          * 
          * // Typed literals
          * Literal("42", XSD.integer)      // "42"^^xsd:integer
@@ -321,22 +345,16 @@ sealed interface Literal : RdfTerm {
          * @param lexical The string representation of the value
          * @param datatype The IRI identifying the data type (defaults to xsd:string)
          * @return A new [Literal] with the specified datatype
-         * @throws IllegalArgumentException if the lexical form is invalid for the datatype
          * @see [TypedLiteral]
          * @see [TrueLiteral]
          * @see [FalseLiteral]
          */
         operator fun invoke(lexical: String, datatype: Iri = XSD.string): Literal {
-            return when (datatype) {
-                XSD.boolean -> when (lexical) {
-                    "true", "1" -> TrueLiteral
-                    "false", "0" -> FalseLiteral
-                    else -> throw IllegalArgumentException(
-                        "Lexical value '$lexical' is not valid for xsd:boolean. Use 'true', 'false', '1', or '0'."
-                    )
-                }
-                else -> TypedLiteral(lexical, datatype)
+            if (datatype == XSD.boolean) {
+                if (lexical == "true") return TrueLiteral
+                if (lexical == "false") return FalseLiteral
             }
+            return TypedLiteral(lexical, datatype)
         }
 
         /**
@@ -376,20 +394,21 @@ sealed interface Literal : RdfTerm {
          */
         operator fun invoke(value: Int): Literal = Literal(value.toString(), XSD.integer)
         operator fun invoke(value: Long): Literal = Literal(value.toString(), XSD.integer)
-        operator fun invoke(value: Double): Literal = Literal(value.toString(), XSD.double)
-        operator fun invoke(value: Float): Literal = Literal(value.toString(), XSD.float)
+        operator fun invoke(value: Double): Literal = value.toLiteral()
+        operator fun invoke(value: Float): Literal = value.toLiteral()
         operator fun invoke(value: Boolean): Literal = if (value) TrueLiteral else FalseLiteral
         operator fun invoke(value: BigDecimal): Literal = Literal(value.stripTrailingZeros().toPlainString(), XSD.decimal)
         operator fun invoke(value: BigInteger): Literal = Literal(value.toString(), XSD.integer)
-        operator fun invoke(value: LocalDate): Literal = Literal(value.toString(), XSD.date)
-        operator fun invoke(value: LocalTime): Literal = Literal(value.toString(), XSD.time)
-        operator fun invoke(value: LocalDateTime): Literal = Literal(value.toString(), XSD.dateTime)
+        operator fun invoke(value: LocalDate): Literal = value.toLiteral()
+        operator fun invoke(value: LocalTime): Literal = value.toLiteral()
+        operator fun invoke(value: LocalDateTime): Literal = value.toLiteral()
         // OffsetDateTime always carries a zone offset, so xsd:dateTimeStamp (which
         // mandates a timezone) is the precise type, consistent with Instant below.
-        operator fun invoke(value: OffsetDateTime): Literal = Literal(value.toString(), XSD.dateTimeStamp)
-        operator fun invoke(value: Instant): Literal = Literal(value.toString(), XSD.dateTimeStamp)
-        operator fun invoke(value: Year): Literal = Literal(value.toString(), XSD.gYear)
-        operator fun invoke(value: YearMonth): Literal = Literal(value.toString(), XSD.gYearMonth)
+        operator fun invoke(value: OffsetDateTime): Literal =
+            Literal(xsdYearFix(value.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)), XSD.dateTimeStamp)
+        operator fun invoke(value: Instant): Literal = value.toLiteral()
+        operator fun invoke(value: Year): Literal = value.toLiteral()
+        operator fun invoke(value: YearMonth): Literal = value.toLiteral()
         operator fun invoke(value: ByteArray): Literal = Literal(Base64.getEncoder().encodeToString(value), XSD.base64Binary)
 
         /**
@@ -474,25 +493,87 @@ enum class Direction(val token: String) {
  * val spanish = lang("Hola", "es")                              // "Hola"@es
  * ```
  *
+ * Language tags must match the BCP 47 shape used by Turtle/SPARQL
+ * (`[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*`) and are normalised to lower case, since
+ * RDF compares language tags case-insensitively.
+ *
  * @property lexical The string content of the literal
- * @property lang The language tag (e.g., "en", "fr", "de")
+ * @property lang The language tag, normalised to lower case (e.g., "en", "en-us")
  * @property direction Optional base direction (RDF 1.2). null means the
  *   literal is a plain `rdf:langString`.
+ * @throws IllegalArgumentException if [lang] is not a well-formed language tag
  * @see [Literal]
  * @see [RDF.langString]
  * @see [RDF.dirLangString]
  */
-data class LangString(
+class LangString(
     override val lexical: String,
-    val lang: String,
+    lang: String,
     val direction: Direction? = null,
 ) : Literal {
+    val lang: String = normalizeLanguageTag(lang)
+
     override val datatype: Iri
         get() = if (direction == null) RDF.langString else RDF.dirLangString
 
+    operator fun component1(): String = lexical
+    operator fun component2(): String = lang
+    operator fun component3(): Direction? = direction
+
+    fun copy(lexical: String = this.lexical, lang: String = this.lang, direction: Direction? = this.direction): LangString =
+        LangString(lexical, lang, direction)
+
+    override fun equals(other: Any?): Boolean =
+        other is LangString && lexical == other.lexical && lang == other.lang && direction == other.direction
+
+    override fun hashCode(): Int = (lexical.hashCode() * 31 + lang.hashCode()) * 31 + (direction?.hashCode() ?: 0)
+
     override fun toString(): String = when (direction) {
-        null -> "\"$lexical\"@$lang"
-        else -> "\"$lexical\"@$lang--${direction.token}"
+        null -> "\"${escapeLiteralLexical(lexical)}\"@$lang"
+        else -> "\"${escapeLiteralLexical(lexical)}\"@$lang--${direction.token}"
+    }
+}
+
+/**
+ * Validates a language tag against the Turtle/SPARQL `LANGTAG` shape and returns it in lower case.
+ *
+ * @throws IllegalArgumentException if the tag is empty or malformed
+ */
+fun normalizeLanguageTag(tag: String): String {
+    var segment = 0
+    var first = true
+    for (c in tag) {
+        if (c == '-') {
+            require(segment > 0) { "Invalid language tag: '$tag'" }
+            segment = 0
+            first = false
+            continue
+        }
+        val ok = c in 'a'..'z' || c in 'A'..'Z' || (!first && c in '0'..'9')
+        require(ok && ++segment <= 8) { "Invalid language tag: '$tag'" }
+    }
+    require(segment > 0) { "Invalid language tag: '$tag'" }
+    return tag.lowercase(java.util.Locale.ROOT)
+}
+
+/** Escapes a lexical form for use inside a double-quoted N-Triples/Turtle/SPARQL string. */
+internal fun escapeLiteralLexical(value: String): String {
+    if (value.none { it == '"' || it == '\\' || it == '\n' || it == '\r' || it == '\t' || it == '\b' || it == '' }) {
+        return value
+    }
+    return buildString(value.length + 8) {
+        for (c in value) {
+            when (c) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '' -> append("\\f")
+                else -> append(c)
+            }
+        }
     }
 }
 
@@ -526,7 +607,29 @@ data class LangString(
  * @see [Literal]
  */
 data class TypedLiteral(override val lexical: String, override val datatype: Iri) : Literal {
-    override fun toString(): String = "\"$lexical\"^^${datatype}"
+    // Equal to TrueLiteral/FalseLiteral for "true"/"false"^^xsd:boolean, so equality does not depend on
+    // which constructor produced the term.
+    override fun equals(other: Any?): Boolean = datatypedLiteralEquals(this, other)
+    override fun hashCode(): Int = datatypedLiteralHash(lexical, datatype)
+    override fun toString(): String = "\"${escapeLiteralLexical(lexical)}\"^^${datatype}"
+}
+
+private fun datatypedLiteralEquals(self: Literal, other: Any?): Boolean =
+    other is Literal && other !is LangString && self.lexical == other.lexical && self.datatype == other.datatype
+
+private fun datatypedLiteralHash(lexical: String, datatype: Iri): Int = lexical.hashCode() * 31 + datatype.hashCode()
+
+/**
+ * Interprets an `xsd:boolean` literal's value: `"true"`/`"1"` -> true, `"false"`/`"0"` -> false.
+ * Returns null for other datatypes and for ill-typed lexical forms.
+ */
+fun Literal.booleanValue(): Boolean? {
+    if (datatype != XSD.boolean) return null
+    return when (lexical) {
+        "true", "1" -> true
+        "false", "0" -> false
+        else -> null
+    }
 }
 
 /**
@@ -550,9 +653,11 @@ data class TypedLiteral(override val lexical: String, override val datatype: Iri
  * @see [Literal]
  * @see [XSD.boolean]
  */
-data object TrueLiteral : Literal {
+object TrueLiteral : Literal {
     override val lexical: String = "true"
     override val datatype: Iri = XSD.boolean
+    override fun equals(other: Any?): Boolean = datatypedLiteralEquals(this, other)
+    override fun hashCode(): Int = datatypedLiteralHash(lexical, datatype)
     override fun toString(): String = "\"true\"^^${XSD.boolean}"
 }
 
@@ -577,9 +682,11 @@ data object TrueLiteral : Literal {
  * @see [Literal]
  * @see [XSD.boolean]
  */
-data object FalseLiteral : Literal {
+object FalseLiteral : Literal {
     override val lexical: String = "false"
     override val datatype: Iri = XSD.boolean
+    override fun equals(other: Any?): Boolean = datatypedLiteralEquals(this, other)
+    override fun hashCode(): Int = datatypedLiteralHash(lexical, datatype)
     override fun toString(): String = "\"false\"^^${XSD.boolean}"
 }
 
@@ -835,18 +942,45 @@ fun Boolean.toLiteral(): Literal = if (this) TrueLiteral else FalseLiteral
 // Essential numeric extensions
 fun Int.toLiteral(): Literal = Literal(this.toString(), XSD.integer)
 fun Long.toLiteral(): Literal = Literal(this.toString(), XSD.integer)
-fun Double.toLiteral(): Literal = Literal(this.toString(), XSD.double)
-fun Float.toLiteral(): Literal = Literal(this.toString(), XSD.float)
+fun Double.toLiteral(): Literal = Literal(
+    when {
+        isNaN() -> "NaN"
+        this == Double.POSITIVE_INFINITY -> "INF"
+        this == Double.NEGATIVE_INFINITY -> "-INF"
+        else -> toString()
+    },
+    XSD.double,
+)
+fun Float.toLiteral(): Literal = Literal(
+    when {
+        isNaN() -> "NaN"
+        this == Float.POSITIVE_INFINITY -> "INF"
+        this == Float.NEGATIVE_INFINITY -> "-INF"
+        else -> toString()
+    },
+    XSD.float,
+)
 fun BigDecimal.toLiteral(): Literal = Literal(this.stripTrailingZeros().toPlainString(), XSD.decimal)
 fun BigInteger.toLiteral(): Literal = Literal(this.toString(), XSD.integer)
 
-// Essential date/time extensions
-fun LocalDate.toLiteral(): Literal = Literal(this.toString(), XSD.date)
-fun LocalTime.toLiteral(): Literal = Literal(this.toString(), XSD.time)
-fun LocalDateTime.toLiteral(): Literal = Literal(this.toString(), XSD.dateTime)
-fun Instant.toLiteral(): Literal = Literal(this.toString(), XSD.dateTimeStamp)
-fun Year.toLiteral(): Literal = Literal(this.toString(), XSD.gYear)
-fun YearMonth.toLiteral(): Literal = Literal(this.toString(), XSD.gYearMonth)
+// Essential date/time extensions. java.time's toString() omits zero seconds ("10:15"), pads years
+// only to 4 digits for LocalDate/YearMonth, and prefixes years > 9999 with '+'; none of which are
+// valid XSD lexical forms, so explicit ISO formatters are used.
+fun LocalDate.toLiteral(): Literal =
+    Literal(xsdYearFix(format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)), XSD.date)
+fun LocalTime.toLiteral(): Literal = Literal(format(java.time.format.DateTimeFormatter.ISO_LOCAL_TIME), XSD.time)
+fun LocalDateTime.toLiteral(): Literal =
+    Literal(xsdYearFix(format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)), XSD.dateTime)
+fun Instant.toLiteral(): Literal = Literal(xsdYearFix(toString()), XSD.dateTimeStamp)
+fun Year.toLiteral(): Literal = Literal(xsdYear(value), XSD.gYear)
+fun YearMonth.toLiteral(): Literal =
+    Literal("${xsdYear(year)}-${monthValue.toString().padStart(2, '0')}", XSD.gYearMonth)
+
+private fun xsdYear(year: Int): String =
+    if (year < 0) "-" + (-year).toString().padStart(4, '0') else year.toString().padStart(4, '0')
+
+/** XSD year lexical forms never carry a leading '+', which ISO formatters emit for years above 9999. */
+internal fun xsdYearFix(isoText: String): String = if (isoText.startsWith('+')) isoText.substring(1) else isoText
 
 // Essential binary extension
 fun ByteArray.toLiteral(): Literal = Literal(Base64.getEncoder().encodeToString(this), XSD.base64Binary)
@@ -918,6 +1052,13 @@ typealias BNode = BlankNode
  * managing triples within a graph.
  */
 interface RdfGraph {
+    /** Match a pattern. Indexed providers override this to avoid scanning the graph. */
+    fun find(subject: RdfResource? = null, predicate: Iri? = null, obj: RdfTerm? = null): List<RdfTriple> =
+        getTriplesSequence().filter {
+            (subject == null || it.subject == subject) && (predicate == null || it.predicate == predicate) &&
+                (obj == null || it.obj == obj)
+        }.toList()
+
     /**
      * Checks if a triple exists in the graph.
      * 
@@ -970,6 +1111,9 @@ interface RdfGraph {
  * 
  * Provides both read and write operations for RDF graphs.
  */
+/** Batch size of the default streaming `addTriples`/`removeTriples` overloads of [MutableRdfGraph]. */
+internal const val STREAMING_WRITE_BATCH_SIZE: Int = 10_000
+
 interface MutableRdfGraph : RdfGraph {
     /**
      * Adds a single triple to the graph.
@@ -1002,6 +1146,42 @@ interface MutableRdfGraph : RdfGraph {
      * @return true if any triples were removed
      */
     fun removeTriples(triples: Collection<RdfTriple>): Boolean
+
+    /**
+     * Adds triples from an [Iterable] that need not be a [Collection].
+     *
+     * Collections are delegated to the `Collection` overload; other iterables are streamed like a
+     * [Sequence]. Transactional providers override this to write in a single transaction.
+     */
+    fun addTriples(triples: Iterable<RdfTriple>) {
+        if (triples is Collection<RdfTriple>) addTriples(triples) else addTriples(triples.asSequence())
+    }
+
+    /**
+     * Adds triples from a [Sequence] while streaming: the sequence is consumed once and never fully
+     * materialised. The default writes bounded batches through the `Collection` overload; transactional
+     * providers (Jena, RDF4J) override it to stream into a single transaction.
+     */
+    fun addTriples(triples: Sequence<RdfTriple>) {
+        triples.chunked(STREAMING_WRITE_BATCH_SIZE).forEach { batch -> addTriples(batch) }
+    }
+
+    /**
+     * Removes triples from an [Iterable]; delegation as for the `Iterable` [addTriples] overload.
+     * @return true if any triples were removed
+     */
+    fun removeTriples(triples: Iterable<RdfTriple>): Boolean =
+        if (triples is Collection<RdfTriple>) removeTriples(triples) else removeTriples(triples.asSequence())
+
+    /**
+     * Removes triples from a [Sequence] while streaming (bounded batches by default).
+     * @return true if any triples were removed
+     */
+    fun removeTriples(triples: Sequence<RdfTriple>): Boolean {
+        var changed = false
+        triples.chunked(STREAMING_WRITE_BATCH_SIZE).forEach { batch -> if (removeTriples(batch)) changed = true }
+        return changed
+    }
 
     /**
      * Clear all triples from this graph.

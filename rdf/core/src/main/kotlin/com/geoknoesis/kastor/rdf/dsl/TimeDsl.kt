@@ -10,11 +10,11 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
  * [OWL-Time](https://www.w3.org/TR/owl-time/) temporal relation helpers.
  */
 fun TripleDsl.time(block: TimeTripleBuilder.() -> Unit) {
-    TimeTripleBuilder(triples).apply(block)
+    TimeTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.time(block: TimeTripleBuilder.() -> Unit) {
-    TimeTripleBuilder(triples).apply(block)
+    TimeTripleBuilder(tripleSink).apply(block)
 }
 
 class TimeTripleBuilder(private val out: MutableList<RdfTriple>) {

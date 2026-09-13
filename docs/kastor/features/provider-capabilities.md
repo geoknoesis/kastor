@@ -250,9 +250,11 @@ allCapabilities.forEach { (providerType, capabilities) ->
 ### Feature-Specific Discovery
 
 ```kotlin
-// Check if any provider supports a specific SPARQL feature
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
+// supportedSparqlFeatures keys are provider-defined: only the SPARQL provider reports any
+// ("RDF-star", "Federation", "Updates", ...). Compare all providers with capability flags instead.
+val flags = RdfProviderRegistry.discoverAllCapabilities().values.map { it.basic }
+val hasRdfStarSupport = flags.any { it.supportsRdfStar }
+val hasFederationSupport = flags.any { it.supportsFederation }
 
 // Check inference support via capabilities
 val hasInferenceSupport = RdfProviderRegistry
@@ -268,12 +270,12 @@ println("Inference support available: $hasInferenceSupport")
 ### Provider-Specific Feature Checking
 
 ```kotlin
-// Check specific provider capabilities
-val provider = RdfProviderRegistry.getProvider("memory")
-if (provider != null) {
-val supportsFeature = RdfProviderRegistry.supportsFeature("memory", "RDF-star")
-    println("Memory provider supports RDF-star: $supportsFeature")
-}
+// Only the SPARQL provider reports named features; the others expose capability flags only
+val sparqlSupportsUpdates = RdfProviderRegistry.supportsFeature("sparql", "Updates")
+println("SPARQL provider supports updates: $sparqlSupportsUpdates")
+
+val memory = RdfProviderRegistry.getProvider("memory")
+println("Memory provider stores triple terms: ${memory?.getCapabilities()?.supportsTripleTerms}")
 ```
 
 ### Supported Features by Provider
@@ -286,7 +288,7 @@ supportedFeatures.forEach { (providerType, features) ->
 }
 
 // Example output:
-// sparql-endpoint: [RDF-star, Property Paths, Aggregation, Federation, ...]
+// sparql: [Property Paths, Aggregation, Subqueries, Named Graphs, Updates]  (no RDF-star, federation or transactions)
 ```
 
 ## 📋 Provider Statistics
@@ -300,11 +302,9 @@ statistics.forEach { (category, count) ->
     println("$category: $count providers")
 }
 
-// Example output:
+// Example output with memory, jena, rdf4j and sparql on the classpath:
 // RDF_STORE: 3 providers
 // SPARQL_ENDPOINT: 1 providers
-// REASONER: 1 providers
-// SHACL_VALIDATOR: 1 providers
 ```
 
 ### Capability Statistics
@@ -327,7 +327,8 @@ println("Inference providers: $inferenceProviders")
 ### Getting Detailed Capabilities
 
 ```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
+// The SPARQL provider is the only bundled provider that reports supportedSparqlFeatures
+val provider = RdfProviderRegistry.getProvider("sparql") ?: error("rdf-sparql is not on the classpath")
 val detailedCapabilities = provider.getDetailedCapabilities()
 
 println("Provider Category: ${detailedCapabilities.providerCategory}")
@@ -377,7 +378,7 @@ featureMap.forEach { (feature, supported) ->
 
 ```kotlin
 // Always check capabilities before using features
-val provider = RdfProviderRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("jena") ?: error("rdf-jena is not on the classpath")
 val capabilities = provider.getCapabilities()
 
 if (capabilities.supportsRdfStar) {
@@ -402,7 +403,7 @@ if (capabilities.supportsRdfStar) {
 
 ```kotlin
 // Select provider based on required capabilities
-fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfApiProvider? {
+fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfProvider? {
     val allProviders = RdfProviderRegistry.getAllProviders()
     
     return allProviders.find { provider ->
@@ -419,7 +420,7 @@ fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfAp
 
 ```kotlin
 // Provide fallbacks for unsupported features
-fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
+fun executeQuery(query: String, provider: RdfProvider): SparqlQueryResult {
     val capabilities = provider.getCapabilities(provider.defaultVariantId())
     
     return try {
@@ -477,7 +478,7 @@ fun providerCapabilitiesExample() {
         println("Custom Functions: ${detailedCapabilities.customExtensionFunctions.size}")
         
         // Generate service description
-        val serviceUri = "http://example.org/$type"
+        val serviceUri = "http://example.org/${provider.id}"
         val description = provider.generateServiceDescription(serviceUri)
         if (description != null) {
             println("Service Description: ${description.getTriples().size} triples")
@@ -505,9 +506,10 @@ fun providerCapabilitiesExample() {
     }
     
     // Feature availability
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
-val hasInferenceSupport = RdfProviderRegistry.hasProviderWithFeature("Inference")
+    val allFlags = allCapabilities.values.map { it.basic }
+    val hasRdfStarSupport = allFlags.any { it.supportsRdfStar }
+    val hasFederationSupport = allFlags.any { it.supportsFederation }
+    val hasInferenceSupport = allFlags.any { it.supportsInference }
     
     println("Feature availability:")
     println("  RDF-star: $hasRdfStarSupport")

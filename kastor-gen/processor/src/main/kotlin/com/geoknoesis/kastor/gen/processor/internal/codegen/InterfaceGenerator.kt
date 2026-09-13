@@ -5,55 +5,55 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
-import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
-import com.squareup.kotlinpoet.KModifier.*
 
 /**
  * Generator for Kotlin domain interfaces from SHACL shapes using KotlinPoet.
  * Creates pure domain interfaces with no RDF dependencies.
  */
-class InterfaceGenerator(
+public class InterfaceGenerator(
     private val logger: KSPLogger,
     private val validationAnnotations: ValidationAnnotations = ValidationAnnotations.JAKARTA
 ) {
 
     /**
      * Generates Kotlin interface code from SHACL shapes.
-     * 
+     *
      * @param ontologyModel The combined SHACL + JSON-LD model
      * @param packageName The target package name
-     * @return Map of interface names to generated FileSpec
-     */
-    /**
      * @param fallbackUnshapedToIri when true, object properties whose `sh:class` target has no shape in
      *   [ontologyModel] fall back to the IRI (String) instead of a dangling reference. Requires the model
-     *   to contain ALL shapes (the Gradle task passes the full model); leave false for partial models.
+     *   to contain ALL shapes (the Gradle task and KSP processor pass the full model); leave false for partial models.
+     * @return Map of interface names to generated FileSpec
+     * @throws com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException when two shapes or
+     *   two properties of a shape map to the same Kotlin name
      */
-    fun generateInterfaces(
+    public fun generateInterfaces(
         ontologyModel: OntologyModel,
         packageName: String,
         fallbackUnshapedToIri: Boolean = false,
     ): Map<String, FileSpec> {
-        val interfaces = mutableMapOf<String, FileSpec>()
+        GenerationNames.checkCollisions(ontologyModel)
+        val interfaces = sortedMapOf<String, FileSpec>()
 
-        // The set of interface names that WILL be generated — used to fall back to IRI (String) for any
-        // sh:class target that has no shape of its own. Null = do not filter (legacy / partial models).
-        val knownTypes: Set<String>? =
-            if (fallbackUnshapedToIri) ontologyModel.shapes.map { NamingUtils.extractInterfaceName(it.targetClass) }.toSet()
-            else null
+        val knownTypes: Set<String>? = if (fallbackUnshapedToIri) GenerationNames.knownTypes(ontologyModel) else null
+        val parents = GenerationNames.superTypes(ontologyModel)
 
         // Sort shapes by targetClass IRI to ensure deterministic output
         ontologyModel.shapes
             .sortedBy { it.targetClass }
             .forEach { shape ->
-                val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
-                val fileSpec = generateInterface(shape, ontologyModel.context, packageName, knownTypes)
-                interfaces[interfaceName] = fileSpec
-
+                val interfaceName = NamingUtils.domainName(shape.targetClass, ontologyModel.context)
+                interfaces[interfaceName] = generateInterface(
+                    shape, ontologyModel.context, packageName, knownTypes,
+                    parents[shape.targetClass].orEmpty(), GenerationNames.inheritedPaths(shape, parents),
+                )
                 logger.info("Generated interface: $interfaceName")
             }
 
@@ -65,38 +65,41 @@ class InterfaceGenerator(
         context: JsonLdContext,
         packageName: String,
         knownTypes: Set<String>?,
+        superTypes: List<ShaclShape>,
+        inherited: Set<String>,
     ): FileSpec {
-        val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
-        
+        val interfaceName = NamingUtils.domainName(shape.targetClass, context)
+
         val fileBuilder = FileSpec.builder(packageName, interfaceName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated from SHACL shape: %L", shape.shapeIri)
-        
-        // Add imports
-        fileBuilder.addImport("com.geoknoesis.kastor.gen.annotations", "Rdf")
-        if (validationAnnotations != ValidationAnnotations.NONE) {
-            fileBuilder.addImport("${validationPackage()}.constraints", "NotNull", "NotEmpty", "Size", "Min", "Max", "Pattern", "NotBlank")
-        }
-        
-        // Build interface
+
         val interfaceBuilder = TypeSpec.interfaceBuilder(interfaceName)
             .addKdoc(
-                "Domain interface for %L\nPure domain interface with no RDF dependencies.\nGenerated from SHACL shape: %L",
-                shape.targetClass, shape.shapeIri
+                "%L",
+                kdocText(
+                    "Domain interface for ${shape.targetClass}\nPure domain interface with no RDF dependencies.\n" +
+                        "Generated from SHACL shape: ${shape.shapeIri}"
+                )
             )
             .addAnnotation(
                 AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "Rdf"))
                     .addMember("iri = %S", shape.targetClass)
                     .build()
             )
-        
+        superTypes.forEach { parent ->
+            interfaceBuilder.addSuperinterface(ClassName(packageName, NamingUtils.domainName(parent.targetClass, context)))
+        }
+
         // Generate properties - sort by path IRI to ensure deterministic output
         shape.properties
             .sortedBy { it.path }
             .forEach { property ->
-                interfaceBuilder.addProperty(generateProperty(property, context, packageName, knownTypes))
+                interfaceBuilder.addProperty(
+                    generateProperty(property, context, packageName, knownTypes, override = property.path in inherited)
+                )
             }
-        
+
         fileBuilder.addType(interfaceBuilder.build())
         return fileBuilder.build()
     }
@@ -106,10 +109,11 @@ class InterfaceGenerator(
         context: JsonLdContext,
         packageName: String,
         knownTypes: Set<String>?,
+        override: Boolean,
     ): PropertySpec {
         val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = packageName, knownTypes = knownTypes)
-        val propertyName = NamingUtils.toValidKotlinIdentifier(property.name)
-        
+        val propertyName = NamingUtils.propertyName(property)
+
         val kdoc = buildString {
             append(property.description)
             append("\nPath: ${property.path}")
@@ -120,20 +124,21 @@ class InterfaceGenerator(
                 append("\nMax count: ${property.maxCount}")
             }
         }
-        
+
         val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
-            .addKdoc(kdoc)
+            .addKdoc("%L", kdocText(kdoc))
             .addAnnotation(
                 AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "Rdf"))
                     .addMember("iri = %S", property.path)
                     .build()
             )
-        
+        if (override) propertyBuilder.addModifiers(KModifier.OVERRIDE)
+
         // Add validation annotations
         validationAnnotationsForProperty(property).forEach { annotationSpec ->
             propertyBuilder.addAnnotation(annotationSpec)
         }
-        
+
         return propertyBuilder.build()
     }
 
@@ -141,7 +146,7 @@ class InterfaceGenerator(
     private fun validationAnnotationsForProperty(property: ShaclProperty): List<AnnotationSpec> {
         if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
         val annotations = mutableListOf<AnnotationSpec>()
-        val isList = property.maxCount == null || property.maxCount > 1
+        val isList = Cardinality.isList(property)
         val min = property.minCount
         val max = property.maxCount
 
@@ -182,4 +187,3 @@ class InterfaceGenerator(
     }
 
 }
-

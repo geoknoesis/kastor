@@ -2,17 +2,24 @@ package com.geoknoesis.kastor.rdf
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.channels.trySendBlocking
 import java.io.InputStream
 
 /**
- * Lazily emits triples from [Rdf.parseStreaming] inside a [Flow], so downstream operators
+ * Lazily emits triples from a scoped parser inside a [Flow], so downstream operators
  * (for example `buffer` / `map` on the Flow) can apply backpressure.
  *
- * The caller remains responsible for closing [inputStream] when the flow is no longer consumed
- * (typically `inputStream.use { collect … }` at the call site).
+ * Collection owns and closes [inputStream]. If collection never starts, the caller still owns it.
  */
-fun Rdf.parseStreamingFlow(inputStream: InputStream, format: RdfFormat): Flow<RdfTriple> = flow {
-    parseStreaming(inputStream, format.formatName).forEach { emit(it) }
+fun Rdf.parseStreamingFlow(inputStream: InputStream, format: RdfFormat): Flow<RdfTriple> = channelFlow {
+    runInterruptible(Dispatchers.IO) {
+        openTripleStream(inputStream, format).use { rows ->
+            rows.forEach { trySendBlocking(it).getOrThrow() }
+        }
+    }
 }
 
 fun Rdf.parseStreamingFlow(inputStream: InputStream, format: String = "TURTLE"): Flow<RdfTriple> =

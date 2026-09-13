@@ -181,12 +181,9 @@ class CustomMaterializationService {
             context = context
         )
         
-        // Get factory from registry
-        val factory = OntoMapper.registry[type]
-            ?: error("No wrapper factory registered for ${type.name}")
-        
-        // Materialize with custom handle
-        return factory(handle) as T
+        // The factory registry is private: materialize through OntoMapper and
+        // use the handle for context-specific checks around it.
+        return OntoMapper.materialize(ref, type)
     }
 }
 
@@ -457,11 +454,7 @@ class CachingMaterializationService {
         val cacheKey = CacheKey(ref.node, ref.graph, type)
         
         return materializationCache.get(cacheKey) {
-            val factory = OntoMapper.registry[type]
-                ?: error("No wrapper factory registered for ${type.name}")
-            
-            val handle = CachingRdfHandle(ref.node, ref.graph)
-            factory(handle) as T
+            OntoMapper.materialize(ref, type)
         } as T
     }
     

@@ -47,6 +47,40 @@ class OntoQualityReasoningTest {
     }
 
     @Test
+    fun owlMicroMaterialisesSmallOntologyWithoutThrowing() {
+        val turtle =
+            """
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+            @prefix owl:  <http://www.w3.org/2002/07/owl#> .
+            @prefix ex:   <http://example.org/ns#> .
+
+            ex:A a owl:Class ; rdfs:subClassOf ex:B .
+            ex:B a owl:Class .
+            ex:p a owl:ObjectProperty ; owl:inverseOf ex:q .
+            ex:i rdf:type ex:A ; ex:p ex:j .
+            """.trimIndent()
+
+        val base = Rdf.parse(turtle, RdfFormat.TURTLE)
+        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_MICRO))
+        // OWL_MICRO binds to Jena's ReasonerType.OWL_RL rule reasoner; it must not throw.
+        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_MICRO)
+
+        val type = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        val ns = "http://example.org/ns#"
+        val triples = expanded.getTriples()
+        assertTrue(triples.containsAll(base.getTriples()), "Asserted triples must be kept")
+        assertTrue(
+            RdfTriple(Iri(ns + "i"), type, Iri(ns + "B")) in triples,
+            "Expected OWL_MICRO to entail ex:i a ex:B; triples: $triples",
+        )
+        assertTrue(
+            RdfTriple(Iri(ns + "j"), Iri(ns + "q"), Iri(ns + "i")) in triples,
+            "Expected OWL_MICRO to entail ex:j ex:q ex:i via owl:inverseOf; triples: $triples",
+        )
+    }
+
+    @Test
     fun hermitExpandsInstanceTypeAlongSubClass() {
         val turtle =
             """

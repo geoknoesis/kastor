@@ -1,0 +1,101 @@
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jInterop {
+	public static final fun rdf4jResourceOf (Lcom/geoknoesis/kastor/rdf/RdfResource;)Lorg/eclipse/rdf4j/model/Resource;
+	public static final fun rdf4jStatementOf (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Lorg/eclipse/rdf4j/model/Statement;
+	public static final fun rdf4jValueOf (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lorg/eclipse/rdf4j/model/Value;
+	public static final fun rdfTermFromRdf4j (Lorg/eclipse/rdf4j/model/Value;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
+	public static final fun rdfTripleFromRdf4j (Lorg/eclipse/rdf4j/model/Statement;)Lcom/geoknoesis/kastor/rdf/RdfTriple;
+}
+
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jProvider : com/geoknoesis/kastor/rdf/RdfProvider {
+	public fun <init> ()V
+	public fun createRepository (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfConfig;)Lcom/geoknoesis/kastor/rdf/RdfRepository;
+	public fun defaultVariantId ()Ljava/lang/String;
+	public fun generateServiceDescription (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;
+	public fun getDetailedCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
+	public fun getId ()Ljava/lang/String;
+	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
+	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
+	public fun getVersion ()Ljava/lang/String;
+	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
+	public fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Ljava/lang/String;)V
+	public fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Ljava/lang/String;Ljava/lang/String;)V
+	public fun parseGraph (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun parseGraph (Ljava/io/InputStream;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun parseStreaming (Ljava/io/InputStream;Ljava/lang/String;)Lkotlin/sequences/Sequence;
+	public fun serializeDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
+	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
+	public fun supportsVariant (Ljava/lang/String;)Z
+	public fun variants ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoesis/kastor/rdf/RdfRepository {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository$Companion;
+	public fun <init> (Lorg/eclipse/rdf4j/repository/Repository;Z)V
+	public synthetic fun <init> (Lorg/eclipse/rdf4j/repository/Repository;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun ask (Lcom/geoknoesis/kastor/rdf/SparqlAsk;)Z
+	public fun clear ()Z
+	public fun close ()V
+	public fun construct (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;)Lkotlin/sequences/Sequence;
+	public fun createGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun describe (Lcom/geoknoesis/kastor/rdf/SparqlDescribe;)Lkotlin/sequences/Sequence;
+	public fun editDefaultGraph ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun editGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;
+	public fun getDefaultGraph ()Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getDefaultGraphs ()Ljava/util/List;
+	public fun getGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getNamedGraph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun getNamedGraphs ()Ljava/util/Map;
+	public fun graph-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfGraph;
+	public fun hasGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun hasNamedGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun isClosed ()Z
+	public fun listGraphs ()Ljava/util/List;
+	public fun listNamedGraphs ()Ljava/util/List;
+	public fun readTransaction (Lkotlin/jvm/functions/Function1;)V
+	public fun removeGraph-J_zqV-w (Ljava/lang/String;)Z
+	public fun select (Lcom/geoknoesis/kastor/rdf/SparqlSelect;)Lcom/geoknoesis/kastor/rdf/SparqlQueryResult;
+	public fun transaction (Lkotlin/jvm/functions/Function1;)V
+	public fun update-asdzE4I (Ljava/lang/String;)V
+	public fun withConstructTriples (Lcom/geoknoesis/kastor/rdf/SparqlConstruct;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public fun withSelectRows (Lcom/geoknoesis/kastor/rdf/SparqlSelect;Ljava/util/Map;Ljava/time/Duration;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+	public fun withSelectRows (Lcom/geoknoesis/kastor/rdf/SparqlSelect;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository$Companion {
+	public final fun MemoryRdfsRepository ()Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun MemoryRepository ()Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun MemoryShaclRepository ()Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun MemoryStarRepository ()Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun NativeRdfsRepository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun NativeRepository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun NativeShaclRepository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+	public final fun NativeStarRepository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository;
+}
+
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jResultSet : com/geoknoesis/kastor/rdf/SparqlQueryResult {
+	public fun <init> (Ljava/util/List;)V
+	public fun asSequence ()Lkotlin/sequences/Sequence;
+	public fun count ()I
+	public fun first ()Lcom/geoknoesis/kastor/rdf/BindingSet;
+	public fun iterator ()Ljava/util/Iterator;
+	public fun toList ()Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/rdf/rdf4j/shacl/Rdf4jShaclValidatorProvider : com/geoknoesis/kastor/rdf/shacl/ShaclValidatorProvider {
+	public fun <init> ()V
+	public fun createValidator (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;)Lcom/geoknoesis/kastor/rdf/shacl/ShaclValidator;
+	public fun getCapabilities ()Lcom/geoknoesis/kastor/rdf/shacl/ValidatorCapabilities;
+	public fun getName ()Ljava/lang/String;
+	public fun getSupportedProfiles ()Ljava/util/List;
+	public fun getType ()Ljava/lang/String;
+	public fun getVersion ()Ljava/lang/String;
+	public fun isSupported (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;)Z
+	public fun priority ()I
+}
+

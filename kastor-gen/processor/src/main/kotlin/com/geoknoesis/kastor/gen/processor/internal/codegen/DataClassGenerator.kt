@@ -6,9 +6,11 @@ import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
-import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.DATA
@@ -25,7 +27,7 @@ import com.squareup.kotlinpoet.KModifier.DATA
  * A companion [DataClassFactoryGenerator] produces a separate factory file
  * that performs the eager RDF load and registers the factory in OntoMapper.
  */
-class DataClassGenerator(
+public class DataClassGenerator(
     private val logger: KSPLogger,
     private val suffix: String,
     private val nestedMode: NestedMode,
@@ -33,26 +35,35 @@ class DataClassGenerator(
     private val validationAnnotations: ValidationAnnotations,
 ) {
 
-    fun generateDataClasses(model: OntologyModel, packageName: String): Map<String, FileSpec> =
-        model.shapes
+    /**
+     * @param fallbackUnshapedToIri when true, `sh:class` targets without a shape in [model] are typed as IRI strings
+     */
+    public fun generateDataClasses(model: OntologyModel, packageName: String, fallbackUnshapedToIri: Boolean = false): Map<String, FileSpec> {
+        GenerationNames.checkCollisions(model)
+        val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
+        val supers = GenerationNames.superTypes(model)
+        return model.shapes
             .sortedBy { it.targetClass }
-            .associate { shape ->
-                val name = dataClassName(shape.targetClass)
-                name to generateDataClass(shape, model.context, packageName)
+            .associateTo(sortedMapOf()) { shape ->
+                val name = dataClassName(shape.targetClass, model.context)
+                name to generateDataClass(shape, GenerationNames.effectiveProperties(shape, supers), model.context, packageName, knownTypes)
             }
+    }
 
-    internal fun dataClassName(classIri: String): String =
-        NamingUtils.extractInterfaceName(classIri) + suffix
+    internal fun dataClassName(classIri: String, context: JsonLdContext): String =
+        NamingUtils.domainName(classIri, context) + suffix
 
     // ── Per-shape generation ──────────────────────────────────────────────────
 
     private fun generateDataClass(
         shape: ShaclShape,
+        properties: List<ShaclProperty>,
         context: JsonLdContext,
         packageName: String,
+        knownTypes: Set<String>?,
     ): FileSpec {
-        val className = dataClassName(shape.targetClass)
-        val interfaceName = NamingUtils.extractInterfaceName(shape.targetClass)
+        val className = dataClassName(shape.targetClass, context)
+        val interfaceName = NamingUtils.domainName(shape.targetClass, context)
 
         val file = FileSpec.builder(packageName, className)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
@@ -66,10 +77,12 @@ class DataClassGenerator(
         val classBuilder = TypeSpec.classBuilder(className)
             .addModifiers(DATA)
             .addKdoc(
-                "Immutable data-class snapshot for [%L].\n" +
-                "All fields are loaded eagerly from the RDF graph by the companion factory.\n" +
-                "Generated from SHACL shape: %L",
-                interfaceName, shape.shapeIri,
+                "%L",
+                kdocText(
+                    "Immutable data-class snapshot for [$interfaceName].\n" +
+                        "All fields are loaded eagerly from the RDF graph by the companion factory.\n" +
+                        "Generated from SHACL shape: ${shape.shapeIri}"
+                ),
             )
 
         if (implementsInterface) {
@@ -81,8 +94,8 @@ class DataClassGenerator(
             ClassName("com.geoknoesis.kastor.gen.runtime", "RdfProjection")
         )
 
-        shape.properties.sortedBy { it.path }.forEach { property ->
-            val (param, prop) = buildConstructorParam(property, context)
+        properties.forEach { property ->
+            val (param, prop) = buildConstructorParam(property, context, packageName, knownTypes)
             constructor.addParameter(param)
             classBuilder.addProperty(prop)
         }
@@ -98,23 +111,22 @@ class DataClassGenerator(
     private fun buildConstructorParam(
         property: ShaclProperty,
         context: JsonLdContext,
+        packageName: String,
+        knownTypes: Set<String>?,
     ): Pair<ParameterSpec, PropertySpec> {
-        val name = NamingUtils.toValidKotlinIdentifier(property.name)
-        val type = TypeMapper.toKotlinType(property, context, nestedMode, suffix)
-
-        val isList     = property.maxCount == null || property.maxCount > 1
-        val isRequired = !isList && property.minCount != null && property.minCount > 0
+        val name = NamingUtils.propertyName(property)
+        val type = TypeMapper.toKotlinType(property, context, nestedMode, suffix, objectPackage = packageName, knownTypes = knownTypes)
 
         val paramBuilder = ParameterSpec.builder(name, type)
-        if (isList)          paramBuilder.defaultValue("emptyList()")
-        else if (!isRequired) paramBuilder.defaultValue("null")
+        if (Cardinality.isList(property)) paramBuilder.defaultValue("emptyList()")
+        else if (!Cardinality.isRequiredSingle(property)) paramBuilder.defaultValue("null")
 
         // Validation annotations on the constructor parameter (field target)
         validationAnnotationsForProperty(property).forEach { paramBuilder.addAnnotation(it) }
 
         val propBuilder = PropertySpec.builder(name, type)
-            .initializer(name)
-            .addKdoc("%L\nPath: %L", property.description, property.path)
+            .initializer("%N", name)
+            .addKdoc("%L", kdocText("${property.description}\nPath: ${property.path}"))
 
         if (implementsInterface) propBuilder.addModifiers(KModifier.OVERRIDE)
 
@@ -127,7 +139,7 @@ class DataClassGenerator(
         if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
 
         val annotations = mutableListOf<AnnotationSpec>()
-        val isList = property.maxCount == null || property.maxCount > 1
+        val isList = Cardinality.isList(property)
         val min = property.minCount
         val max = property.maxCount
 

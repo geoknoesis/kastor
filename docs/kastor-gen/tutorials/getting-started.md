@@ -8,49 +8,68 @@ This tutorial will walk you through creating your first Kastor Gen application s
 
 ## Prerequisites
 
-- Kotlin 1.9.24+
-- JDK 17+
+- JDK 21+
+- Kotlin 2.4 and KSP 2.3 (the Kastor build uses Kotlin 2.4.20 and KSP 2.3.12)
 - Basic understanding of Kotlin
 - Familiarity with RDF concepts (helpful but not required)
 
+> **Fastest start:** clone the [Kastor repository](https://github.com/geoknoesis/kastor) and run
+> `./gradlew :examples:hello-codegen:run`. That module generates a `Person` interface and wrapper from
+> `person-shape.ttl` with the KSP processor and materializes RDF data with it.
+> `./gradlew :examples:dcat-us:runGeneratedExample` does the same for the DCAT-US 3.0 shapes.
+
 ## Step 1: Project Setup
 
-### Add Dependencies
+Kastor Gen artifacts are **not yet published** to a public repository. Use one of:
 
-Add Kastor Gen dependencies to your `build.gradle.kts`:
+- **A module inside the Kastor build** (what the examples do), with project dependencies:
 
-```kotlin
-plugins {
-    kotlin("jvm") version "1.9.24"
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20"
-}
+  ```kotlin
+  plugins {
+      id("org.jetbrains.kotlin.jvm")
+      id("com.google.devtools.ksp")
+  }
 
-dependencies {
-    implementation(project(":kastor-gen:runtime"))
-    ksp(project(":kastor-gen:processor"))
-    
-    // Choose your RDF backend
-    runtimeOnly(project(":rdf:jena"))
-    
-    // Optional: Add validation support
-    runtimeOnly(project(":kastor-gen:validation-jena"))
-    
-    // Standard Kotlin dependencies
-    implementation("org.slf4j:slf4j-api:2.0.9")
-    runtimeOnly("ch.qos.logback:logback-classic:1.4.11")
-}
-```
+  dependencies {
+      implementation(project(":kastor-gen:runtime"))
+      ksp(project(":kastor-gen:processor"))
 
-### Configure KSP
+      // An RDF provider, e.g. for Rdf.memory()
+      implementation(project(":rdf:jena"))
 
-Add KSP configuration to your `build.gradle.kts`:
+      // Optional: SHACL validation
+      implementation(project(":kastor-gen:validation-jena"))
+  }
+  ```
 
-```kotlin
-ksp {
-    arg("kastor.gen.package", "com.example.mydomain")
-    arg("kastor.gen.generate.registry", "true")
-}
-```
+- **Your own project via Maven Local.** In a Kastor checkout run
+
+  ```bash
+  ./gradlew publishToMavenLocal
+  ```
+
+  then add `mavenLocal()` to your repositories and use the published coordinates with the Kastor build's
+  project version:
+
+  ```kotlin
+  plugins {
+      kotlin("jvm") version "2.4.20"
+      id("com.google.devtools.ksp") version "2.3.12"
+  }
+
+  repositories {
+      mavenLocal()
+      mavenCentral()
+  }
+
+  dependencies {
+      implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+      ksp("com.geoknoesis.kastor:kastor-gen-processor:0.3.0-SNAPSHOT")
+  }
+  ```
+
+The processor needs no KSP arguments. The only option it reads is `kastor.gen.resources` (extra directories
+for ontology files, see the [annotations reference](../reference/annotations.md#resolving-shacl-context-and-ontologypath)).
 
 ## Step 2: Create Your First Domain Interface
 
@@ -187,7 +206,7 @@ fun main() {
     // ... (previous code)
     
     // Materialize with validation
-    val validation = JenaValidation()
+    val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
     val alice: Person = aliceRef.asValidatedType(validation)
     println("Validation passed!")
     

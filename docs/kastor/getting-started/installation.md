@@ -2,6 +2,8 @@
 
 {% include version-banner.md %}
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 This guide will walk you through installing and setting up Kastor RDF in your Kotlin project.
 
 ## 📋 Table of Contents
@@ -20,8 +22,8 @@ Before installing Kastor RDF, ensure you have:
 
 ### Required Software
 
-- **Kotlin 1.9+** - [Download from kotlinlang.org](https://kotlinlang.org/docs/command-line.html)
-- **Java 17+** - [Download from oracle.com](https://www.oracle.com/java/technologies/downloads/) or [OpenJDK](https://adoptium.net/)
+- **Kotlin 2.4.20+** (Kastor is compiled with Kotlin 2.4.20; older compilers cannot read its metadata) - [Download from kotlinlang.org](https://kotlinlang.org/docs/command-line.html)
+- **Java 21+** - [Download from oracle.com](https://www.oracle.com/java/technologies/downloads/) or [OpenJDK](https://adoptium.net/)
 - **Build System** - Gradle (recommended) or Maven
 
 ### Optional Software
@@ -50,21 +52,21 @@ Add the following to your `build.gradle.kts`:
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
 }
 
 dependencies {
     // Core API (pulls rdf-sparql-contract for SparqlSelectQuery / UpdateQuery markers)
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     
     // Choose your backend (or both)
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")    // Apache Jena backend
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")   // Eclipse RDF4J backend
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")    // Apache Jena backend
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")   // Eclipse RDF4J backend
 
     // Optional: Kotlin SPARQL query DSL — omit if you only pass string SPARQL
-    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
-    // Optional: Kotlin SHACL shapes DSL (shacl {}) — pulls sparql-lang transitively
-    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+    // implementation("com.geoknoesis.kastor:rdf-sparql-lang:0.3.0-SNAPSHOT")
+    // Optional: Kotlin SHACL shapes DSL (shacl {}) — pulls rdf-sparql-lang transitively
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.3.0-SNAPSHOT")
 }
 
 repositories {
@@ -99,7 +101,7 @@ fun main() {
 ```kotlin
 // build.gradle.kts
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
     application
 }
 
@@ -112,16 +114,16 @@ repositories {
 
 dependencies {
     // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     
     // Backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
 
     // SPARQL query DSL — uncomment if you use select {} / com.geoknoesis.kastor.rdf.sparql.*
-    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
-    // SHACL shapes DSL (shacl {}, Rdf.shacl) — pulls sparql-lang transitively
-    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+    // implementation("com.geoknoesis.kastor:rdf-sparql-lang:0.3.0-SNAPSHOT")
+    // SHACL shapes DSL (shacl {}, Rdf.shacl) — pulls rdf-sparql-lang transitively
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.3.0-SNAPSHOT")
     
     // Testing
     testImplementation(kotlin("test"))
@@ -141,9 +143,9 @@ tasks.test {
 ```kotlin
 // build.gradle.kts
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
     application
-    kotlin("plugin.serialization") version "1.9.0"
+    kotlin("plugin.serialization") version "2.4.20"
 }
 
 group = "com.example"
@@ -157,14 +159,14 @@ repositories {
 
 dependencies {
     // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     
     // Backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
 
-    // implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
-    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+    // implementation("com.geoknoesis.kastor:rdf-sparql-lang:0.3.0-SNAPSHOT")
+    // implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.3.0-SNAPSHOT")
 
     // Additional dependencies
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.0")
@@ -186,13 +188,13 @@ tasks.test {
 
 // Kotlin configuration
 kotlin {
-    jvmToolchain(11)
+    jvmToolchain(21)
 }
 
 // Java configuration
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(11))
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 ```
@@ -215,9 +217,9 @@ java {
     <version>1.0.0</version>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <kotlin.version>1.9.0</kotlin.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <kotlin.version>2.4.20</kotlin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -226,21 +228,21 @@ java {
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-core</artifactId>
-            <version>0.2.0</version>
+            <version>0.3.0-SNAPSHOT</version>
         </dependency>
         
         <!-- Jena Backend -->
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-jena</artifactId>
-            <version>0.2.0</version>
+            <version>0.3.0-SNAPSHOT</version>
         </dependency>
         
         <!-- RDF4J Backend -->
         <dependency>
             <groupId>com.geoknoesis.kastor</groupId>
             <artifactId>rdf-rdf4j</artifactId>
-            <version>0.2.0</version>
+            <version>0.3.0-SNAPSHOT</version>
         </dependency>
         
         <!-- Testing -->
@@ -373,7 +375,7 @@ Kastor RDF supports multiple backends. Choose based on your needs:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -389,7 +391,7 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -405,8 +407,8 @@ You can include both backends and choose at runtime:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -574,7 +576,7 @@ repositories {
 
 // Check version compatibility
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     // Ensure all modules use same version
 }
 ```
@@ -587,12 +589,12 @@ dependencies {
 ```kotlin
 // Use consistent Kotlin version
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
 }
 
 dependencies {
     // Ensure all Kotlin dependencies use same version
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.20")
 }
 ```
 
@@ -605,14 +607,14 @@ dependencies {
 // Set Java toolchain
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(11))
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 
 // Or in Maven
 <properties>
-    <maven.compiler.source>11</maven.compiler.source>
-    <maven.compiler.target>11</maven.compiler.target>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
 </properties>
 ```
 

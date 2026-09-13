@@ -167,7 +167,7 @@ class OopsCalibrationTest {
 
             val ontology =
                 url!!.openStream().use { Rdf.parseFromInputStream(it, RdfFormat.TURTLE) }
-            val enriched = SemanticEnricher.default().enrich(ontology)
+            val enriched = SemanticEnricher.default().use { it.enrich(ontology) }
 
             val checker =
                 QualityChecker.builder(validator)

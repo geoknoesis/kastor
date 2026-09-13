@@ -170,7 +170,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(catalogWrapper.contains("Catalog") && catalogWrapper.contains("RdfBacked"))
         assertTrue(catalogWrapper.contains("override val title: String by lazy {"))
         assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogWrapper.contains("OntoMapper.registry[Catalog::class.java]"))
+        assertTrue(catalogWrapper.contains("OntoMapper.register(Catalog::class.java)"))
 
         // Verify Dataset interface
         val datasetInterface = java.io.StringWriter().also { interfaces["Dataset"]!!.writeTo(it) }.toString()
@@ -186,7 +186,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(datasetWrapper.contains("Dataset") && datasetWrapper.contains("RdfBacked"))
         assertTrue(datasetWrapper.contains("override val title: String by lazy {"))
         assertTrue(datasetWrapper.contains("override val distribution: List<Distribution> by lazy {"))
-        assertTrue(datasetWrapper.contains("OntoMapper.registry[Dataset::class.java]"))
+        assertTrue(datasetWrapper.contains("OntoMapper.register(Dataset::class.java)"))
     }
 
     @Test
@@ -277,8 +277,8 @@ class OntologyProcessorIntegrationTest {
         val interfaces = interfaceGenerator.generateInterfaces(ontologyModel, "com.example.test")
         val wrappers = wrapperGenerator.generateWrappers(ontologyModel, "com.example.test")
 
-        val complexInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        val complexWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
+        val complexInterface = java.io.StringWriter().also { interfaces["ComplexTest"]!!.writeTo(it) }.toString()
+        val complexWrapper = java.io.StringWriter().also { wrappers["ComplexTestWrapper"]!!.writeTo(it) }.toString()
 
         // Verify interface types
         assertTrue(complexInterface.contains("val title: String"))
@@ -297,10 +297,10 @@ class OntologyProcessorIntegrationTest {
         // Verify type conversions
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.double(it) }.firstOrNull()"))
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
-        assertTrue(complexWrapper.contains(".lexical.toBooleanStrict()"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull()"))
+        assertTrue(complexWrapper.contains("XsdLiterals.boolean("))
+        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.int(it) }.firstOrNull()"))
     }
 
     @Test
@@ -371,8 +371,8 @@ class OntologyProcessorIntegrationTest {
         val interfaces = interfaceGenerator.generateInterfaces(ontologyModel, "com.example.test")
         val wrappers = wrapperGenerator.generateWrappers(ontologyModel, "com.example.test")
 
-        val resourceInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        val resourceWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
+        val resourceInterface = java.io.StringWriter().also { interfaces["ResourceTest"]!!.writeTo(it) }.toString()
+        val resourceWrapper = java.io.StringWriter().also { wrappers["ResourceTestWrapper"]!!.writeTo(it) }.toString()
 
         // Verify interface object properties
         assertTrue(resourceInterface.contains("val publisher: Agent?"))
@@ -421,21 +421,21 @@ class OntologyProcessorIntegrationTest {
         assertEquals(1, interfaces.size)
         assertEquals(1, wrappers.size)
 
-        val emptyInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        val emptyWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
+        val emptyInterface = java.io.StringWriter().also { interfaces["Empty"]!!.writeTo(it) }.toString()
+        val emptyWrapper = java.io.StringWriter().also { wrappers["EmptyWrapper"]!!.writeTo(it) }.toString()
 
         // Verify empty interface
-        assertTrue(emptyInterface.contains("interface Catalog"))
+        assertTrue(emptyInterface.contains("interface Empty"))
         assertFalse(emptyInterface.contains("@get:Rdf"))
 
         // Verify empty wrapper
-        assertTrue(emptyWrapper.contains("internal class CatalogWrapper"))
-        assertTrue(emptyWrapper.contains("Catalog") && emptyWrapper.contains("RdfBacked"))
+        assertTrue(emptyWrapper.contains("internal class EmptyWrapper"))
+        assertTrue(emptyWrapper.contains("Empty") && emptyWrapper.contains("RdfBacked"))
         assertTrue(emptyWrapper.contains("private val known: Set<Iri>"))
         assertTrue(emptyWrapper.contains("setOf"))
         assertTrue(emptyWrapper.contains(")"))
         assertTrue(emptyWrapper.contains("companion object {"))
-        assertTrue(emptyWrapper.contains("OntoMapper.registry[Catalog::class.java]"))
+        assertTrue(emptyWrapper.contains("OntoMapper.register(Empty::class.java)"))
     }
 
     @Test
@@ -474,14 +474,14 @@ class OntologyProcessorIntegrationTest {
         assertEquals(1, interfaces.size)
         assertEquals(1, wrappers.size)
 
-        val malformedInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        val malformedWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
+        val malformedInterface = java.io.StringWriter().also { interfaces["Malformed"]!!.writeTo(it) }.toString()
+        val malformedWrapper = java.io.StringWriter().also { wrappers["MalformedWrapper"]!!.writeTo(it) }.toString()
 
         // Should generate empty interface and wrapper (no properties due to malformed SHACL)
-        assertTrue(malformedInterface.contains("interface Catalog"))
+        assertTrue(malformedInterface.contains("interface Malformed"))
         assertFalse(malformedInterface.contains("@get:Rdf"))
 
-        assertTrue(malformedWrapper.contains("internal class CatalogWrapper"))
+        assertTrue(malformedWrapper.contains("internal class MalformedWrapper"))
         assertTrue(malformedWrapper.contains("private val known: Set<Iri>"))
         assertTrue(malformedWrapper.contains("setOf"))
         assertTrue(malformedWrapper.contains(")"))
@@ -533,13 +533,13 @@ class OntologyProcessorIntegrationTest {
         assertEquals(1, interfaces.size)
         assertEquals(1, wrappers.size)
 
-        val streamInterface = java.io.StringWriter().also { interfaces["Catalog"]!!.writeTo(it) }.toString()
-        val streamWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
+        val streamInterface = java.io.StringWriter().also { interfaces["StreamTest"]!!.writeTo(it) }.toString()
+        val streamWrapper = java.io.StringWriter().also { wrappers["StreamTestWrapper"]!!.writeTo(it) }.toString()
 
-        assertTrue(streamInterface.contains("interface Catalog {"))
+        assertTrue(streamInterface.contains("interface StreamTest {"))
         assertTrue(streamInterface.contains("val title: List<String>"))
 
-        assertTrue(streamWrapper.contains("internal class CatalogWrapper"))
+        assertTrue(streamWrapper.contains("internal class StreamTestWrapper"))
         assertTrue(streamWrapper.contains("override val title: List<String> by lazy {"))
     }
 }

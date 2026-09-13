@@ -4,22 +4,19 @@ Use transactions to group writes and ensure consistency.
 
 ### Common pattern
 ```kotlin
-repo.beginTransaction()
-try {
-  repo.update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }")))
-  repo.commit()
-} catch (t: Throwable) {
-  repo.rollback()
-  throw t
-} finally {
-  repo.end()
+repo.transaction {
+  update(UpdateQuery("INSERT DATA { <urn:s> <urn:p> 'o' }"))
+  addTriple(iri("urn:s"), iri("urn:p2"), string("o2"))
+}   // committed when the block returns; rolled back if it throws
+
+repo.readTransaction {
+  val rows = select(SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }"))
 }
 ```
 
 ### Provider behavior
-- **Jena**: If you omit an explicit transaction, the repository opens short-lived read/write transactions around operations. For batching, wrap writes in an explicit transaction.
-- **RDF4J**: If not inside `beginTransaction()`, operations run in auto-commit. Inside a transaction you control commit/rollback/end.
-- **SPARQL (remote)**: Transactions are no-ops. Updates are sent as standalone HTTP requests.
+- **Jena / RDF4J**: Outside `transaction { }`, each write runs in its own short transaction. Batch calls (`addTriples`, `removeTriples`) use one transaction, but many per-triple writes cost one transaction each, so batch them or wrap them in `transaction { }`.
+- **SPARQL (remote)**: Not supported. `transaction { }` and `readTransaction { }` throw `UnsupportedOperationException`, and each update is a standalone HTTP request.
 
 
 

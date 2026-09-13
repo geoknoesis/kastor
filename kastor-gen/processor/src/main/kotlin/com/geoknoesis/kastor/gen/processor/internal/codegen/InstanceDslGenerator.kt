@@ -1,22 +1,27 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
+import com.geoknoesis.kastor.gen.processor.api.exceptions.MissingShapeException
+import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
+
 import com.geoknoesis.kastor.gen.processor.api.model.ClassBuilderModel
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.api.model.OntologyClass
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.PropertyBuilderModel
 import com.geoknoesis.kastor.gen.processor.api.model.PropertyConstraints
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
+import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
 import com.geoknoesis.kastor.gen.processor.api.extensions.collectRequiredImports
-import com.geoknoesis.kastor.gen.processor.api.extensions.groupByTargetClass
 import com.geoknoesis.kastor.gen.processor.internal.utils.VocabularyMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
@@ -26,7 +31,7 @@ import com.squareup.kotlinpoet.CodeBlock
  * Generator for instance DSL builders from ontology classes and SHACL shapes.
  * Creates type-safe DSL builders for creating RDF instances using KotlinPoet.
  */
-class InstanceDslGenerator(
+public class InstanceDslGenerator(
     private val logger: KSPLogger
 ) {
     private val propertyMethodGenerator = PropertyMethodGenerator(logger)
@@ -43,16 +48,16 @@ class InstanceDslGenerator(
      * @param request Generation request containing ontology model, options, and target package
      * @return Generated FileSpec representing the DSL file
      * @throws MissingShapeException if a required SHACL shape is missing
-     * @throws InvalidConfigurationException if configuration is invalid
+     * @throws InvalidConfigurationException if configuration is invalid (including name collisions)
      *
-     * @sample com.example.GenerateSkosDsl
      */
-    fun generate(request: InstanceDslRequest): FileSpec {
+    public fun generate(request: InstanceDslRequest): FileSpec {
         logger.info("Generating DSL '${request.dslName}' for ${request.ontologyModel.shapes.size} shapes")
-        
+        GenerationNames.checkCollisions(request.ontologyModel)
+
         val classBuilders = buildClassBuilders(request.ontologyModel, request.options)
         val requiredImports = classBuilders.collectRequiredImports()
-        
+
         return generateDslFile(
             request.dslName,
             classBuilders,
@@ -61,87 +66,31 @@ class InstanceDslGenerator(
             request.options
         )
     }
-    
-/**
-     * Builds ClassBuilderModel instances from ontology model.
+
+    /**
+     * Builds ClassBuilderModel instances from ontology model (one per shape, sorted by class IRI).
      */
     private fun buildClassBuilders(
         model: OntologyModel,
         options: DslGenerationOptions
     ): List<ClassBuilderModel> {
-        val shapeMap = model.shapes.groupByTargetClass()
-        val classes = extractClasses(model)
-        val classIris = classes.map { it.classIri }.toSet()
         val enumsByName = model.enums.associateBy { it.name }
-
-        val fromClasses = classes.mapNotNull { ontologyClass ->
-            shapeMap[ontologyClass.classIri]?.let { shape ->
-                buildClassBuilder(ontologyClass, shape, model.context, options, enumsByName)
-            } ?: run {
-                logger.warn("No SHACL shape found for class: ${ontologyClass.classIri}")
-                null
-            }
-        }
-
-        // Sort shapes by targetClass IRI for deterministic output
-        val fromShapes = model.shapes
+        val supers = GenerationNames.superTypes(model)
+        val knownTypes = GenerationNames.knownTypes(model)
+        return model.shapes
             .sortedBy { it.targetClass }
-            .filter { it.targetClass !in classIris }
-            .map { buildClassBuilderFromShape(it, model.context, options, enumsByName) }
-
-        // Sort final result by classIri for deterministic output
-        return (fromClasses + fromShapes).sortedBy { it.classIri }
-    }
-
-    private fun extractClasses(model: OntologyModel): List<OntologyClass> {
-        // Extract classes from shapes if no explicit ontology classes provided
-        // This is a fallback - in practice, classes should come from the ontology
-        return model.shapes.map { shape ->
-            OntologyClass(
-                classIri = shape.targetClass,
-                className = VocabularyMapper.extractLocalName(shape.targetClass)
-            )
-        }
-    }
-
-    private fun buildClassBuilder(
-        ontologyClass: OntologyClass,
-        shape: ShaclShape,
-        context: JsonLdContext,
-        options: DslGenerationOptions,
-        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>
-    ): ClassBuilderModel {
-        // Sort properties by path IRI for deterministic output
-        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options, enumsByName)
-        val builderName = NamingUtils.toCamelCase(ontologyClass.className)
-
-        return ClassBuilderModel(
-            className = ontologyClass.className,
-            classIri = ontologyClass.classIri,
-            builderName = builderName,
-            properties = properties,
-            shapeIri = shape.shapeIri
-        )
-    }
-
-    private fun buildClassBuilderFromShape(
-        shape: ShaclShape,
-        context: JsonLdContext,
-        options: DslGenerationOptions,
-        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>
-    ): ClassBuilderModel {
-        val className = VocabularyMapper.extractLocalName(shape.targetClass)
-        val builderName = NamingUtils.toCamelCase(className)
-        // Sort properties by path IRI for deterministic output
-        val properties = buildPropertyBuilders(shape.properties.sortedBy { it.path }, context, options, enumsByName)
-
-        return ClassBuilderModel(
-            className = className,
-            classIri = shape.targetClass,
-            builderName = builderName,
-            properties = properties,
-            shapeIri = shape.shapeIri
-        )
+            .map { shape ->
+                val className = NamingUtils.domainName(shape.targetClass, model.context)
+                ClassBuilderModel(
+                    className = className,
+                    classIri = shape.targetClass,
+                    builderName = NamingUtils.toMemberIdentifier(className),
+                    properties = buildPropertyBuilders(
+                        GenerationNames.effectiveProperties(shape, supers), model.context, options, enumsByName, knownTypes,
+                    ),
+                    shapeIri = shape.shapeIri
+                )
+            }
     }
 
     /**
@@ -150,14 +99,12 @@ class InstanceDslGenerator(
     private fun buildPropertyBuilders(
         properties: List<ShaclProperty>,
         context: JsonLdContext,
-        @Suppress("UNUSED_PARAMETER") options: DslGenerationOptions,
-        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel> = emptyMap()
+        options: DslGenerationOptions,
+        enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>,
+        knownTypes: Set<String>,
     ): List<PropertyBuilderModel> {
         return properties.map { property ->
             val kotlinType = TypeMapper.toKotlinType(property, context)
-            val propertyName = determinePropertyName(property, options)
-            val isRequired = (property.minCount ?: 0) >= 1
-            val isList = property.maxCount == null || property.maxCount > 1
             val enumModel = property.enumName?.let { enumName ->
                 val found = enumsByName[enumName]
                 if (found == null) {
@@ -165,29 +112,30 @@ class InstanceDslGenerator(
                 }
                 found
             }
+            val kind = TypeMapper.valueKind(property, context, knownTypes)
 
             PropertyBuilderModel(
-                propertyName = propertyName,
+                propertyName = determinePropertyName(property, options),
                 propertyIri = property.path,
                 kotlinType = kotlinType,
-                isRequired = isRequired,
-                isList = isList,
+                isRequired = Cardinality.isRequired(property),
+                isList = Cardinality.isList(property),
                 constraints = PropertyConstraints.from(property),
-                enumName = property.enumName,
-                enumMemberKind = enumModel?.memberKind
+                enumName = enumModel?.name,
+                enumMemberKind = enumModel?.memberKind,
+                datatype = if (kind == ValueKind.LITERAL || kind == ValueKind.ENUM) property.datatype else null,
+                isIriValued = kind == ValueKind.IRI || kind == ValueKind.OBJECT,
             )
         }
     }
-    
+
     private fun determinePropertyName(
         property: ShaclProperty,
         options: DslGenerationOptions
     ): String {
         return when {
-            options.naming.usePropertyNames && property.name.isNotEmpty() -> 
-                NamingUtils.toCamelCase(property.name)
-            else -> 
-                NamingUtils.toCamelCase(VocabularyMapper.extractLocalName(property.path))
+            options.naming.usePropertyNames && property.name.isNotEmpty() -> NamingUtils.propertyName(property)
+            else -> NamingUtils.toMemberIdentifier(VocabularyMapper.extractLocalName(property.path))
         }
     }
 
@@ -201,27 +149,28 @@ class InstanceDslGenerator(
         requiredImports: Set<String>,
         options: DslGenerationOptions
     ): FileSpec {
-        val dslClassName = "${dslName.replaceFirstChar { it.uppercaseChar() }}Dsl"
-        
-        val fileBuilder = FileSpec.builder(packageName, "${dslClassName}")
+        val dslClassName = "${NamingUtils.toTypeIdentifier(dslName)}Dsl"
+        val dslFunctionName = NamingUtils.toMemberIdentifier(dslName)
+
+        val fileBuilder = FileSpec.builder(packageName, dslClassName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
             .addFileComment("Generated DSL for instance creation")
-        
+
         // Add imports
-        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "RdfResource", "MutableRdfGraph", "Iri", "Literal", "Triple")
+        fileBuilder.addImport(CodegenConstants.RDF_PACKAGE, "RdfResource", "MutableRdfGraph", "Iri", "Literal", "RdfTriple")
         fileBuilder.addImport(CodegenConstants.RDF_PROVIDER_PACKAGE, "MemoryGraph")
         fileBuilder.addImport(CodegenConstants.VOCAB_PACKAGE, "RDF", "XSD")
         fileBuilder.addImport(CodegenConstants.RUNTIME_PACKAGE, "ValidationException")
-        
+
         // Add vocabulary imports
         requiredImports.forEach { importPackage ->
             val vocabName = importPackage.substringAfterLast(".")
             fileBuilder.addImport(importPackage, vocabName)
         }
-        
+
         // Generate top-level DSL function
-        val dslFunction = FunSpec.builder(dslName)
-            .addKdoc("DSL for creating %L instances.\nGenerated from ontology and SHACL shapes.", dslName.uppercase())
+        val dslFunction = FunSpec.builder(dslFunctionName)
+            .addKdoc("%L", kdocText("DSL for creating ${dslName.uppercase()} instances.\nGenerated from ontology and SHACL shapes."))
             .addParameter("configure", LambdaTypeName.get(
                 receiver = ClassName(packageName, dslClassName),
                 returnType = Unit::class.asTypeName()
@@ -229,15 +178,26 @@ class InstanceDslGenerator(
             .returns(ClassName(packageName, dslClassName))
             .addStatement("return %T().apply(configure)", ClassName(packageName, dslClassName))
             .build()
-        
+
         fileBuilder.addFunction(dslFunction)
+        // MutableRdfGraph only exposes addTriple(RdfTriple); setters use this private 3-argument helper.
+        fileBuilder.addFunction(
+            FunSpec.builder("addTriple")
+                .addModifiers(PRIVATE)
+                .receiver(ClassName(CodegenConstants.RDF_PACKAGE, "MutableRdfGraph"))
+                .addParameter("subject", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
+                .addParameter("predicate", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
+                .addParameter("obj", ClassName(CodegenConstants.RDF_PACKAGE, "RdfTerm"))
+                .addStatement("addTriple(%T(subject, predicate, obj))", ClassName(CodegenConstants.RDF_PACKAGE, "RdfTriple"))
+                .build()
+        )
         fileBuilder.addType(generateMainDslClass(dslClassName, classBuilders, packageName, options))
-        
+
         // Generate builder classes
         classBuilders.forEach { classBuilder ->
             fileBuilder.addType(generateBuilderClass(classBuilder, packageName, options))
         }
-        
+
         return fileBuilder.build()
     }
 
@@ -252,7 +212,7 @@ class InstanceDslGenerator(
     ): TypeSpec {
         val classBuilder = TypeSpec.classBuilder(dslClassName)
             .addModifiers(PUBLIC)
-        
+
         // Add properties
         classBuilder.addProperty(
             PropertySpec.builder("graph", ClassName(CodegenConstants.RDF_PROVIDER_PACKAGE, "MemoryGraph"))
@@ -260,7 +220,7 @@ class InstanceDslGenerator(
                 .initializer("MemoryGraph()")
                 .build()
         )
-        
+
         val rdfResourceType = ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource")
         val listType = KotlinPoetUtils.mutableListOf(rdfResourceType)
         classBuilder.addProperty(
@@ -269,12 +229,12 @@ class InstanceDslGenerator(
                 .initializer("mutableListOf<%T>()", rdfResourceType)
                 .build()
         )
-        
+
         // Add builder methods for each class
         classBuilders.forEach { classBuilderModel ->
             classBuilder.addFunction(generateBuilderMethod(classBuilderModel, packageName, options))
         }
-        
+
         // Add build method
         classBuilder.addFunction(
             FunSpec.builder("build")
@@ -283,7 +243,7 @@ class InstanceDslGenerator(
                 .addStatement("return %L", "graph")
                 .build()
         )
-        
+
         // Add instances method
         val returnListType = KotlinPoetUtils.listOf(rdfResourceType)
         classBuilder.addFunction(
@@ -293,7 +253,7 @@ class InstanceDslGenerator(
                 .addStatement("return %L.toList()", "instances")
                 .build()
         )
-        
+
         return classBuilder.build()
     }
 
@@ -307,30 +267,35 @@ class InstanceDslGenerator(
     ): FunSpec {
         val builderClassName = "${classBuilder.className}Builder"
         val classIriCodeBlock = CodegenConstants.iriConstant(classBuilder.classIri)
-        
+
         val functionBuilder = FunSpec.builder(classBuilder.builderName)
-            .addKdoc("Create a %L instance.\n\n@param iri The IRI of the %L\n@param configure Builder configuration\n@return The created %L resource",
-                classBuilder.className, classBuilder.className.lowercase(), classBuilder.className.lowercase())
+            .addKdoc(
+                "%L",
+                kdocText(
+                    "Create a ${classBuilder.className} instance.\n\n@param iri The IRI of the ${classBuilder.className.lowercase()}\n" +
+                        "@param configure Builder configuration\n@return The created ${classBuilder.className.lowercase()} resource"
+                )
+            )
             .addParameter("iri", String::class)
             .addParameter("configure", LambdaTypeName.get(
                 receiver = ClassName(packageName, builderClassName),
                 returnType = Unit::class.asTypeName()
             ))
             .returns(ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
-        
+
         functionBuilder.addStatement("val resource = %T(iri)", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
-        functionBuilder.addStatement("graph.addTriple(resource, %T.type, %L)", 
+        functionBuilder.addStatement("graph.addTriple(resource, %T.type, %L)",
             ClassName(CodegenConstants.VOCAB_PACKAGE, "RDF"), classIriCodeBlock)
         functionBuilder.addStatement("val builder = %T(resource, graph)", ClassName(packageName, builderClassName))
         functionBuilder.addStatement("builder.configure()")
-        
+
         if (options.validation.enabled) {
             functionBuilder.addStatement("builder.validate()")
         }
-        
+
         functionBuilder.addStatement("instances.add(resource)")
         functionBuilder.addStatement("return resource")
-        
+
         return functionBuilder.build()
     }
 
@@ -345,7 +310,7 @@ class InstanceDslGenerator(
         val builderClassName = "${classBuilder.className}Builder"
         val classBuilderSpec = TypeSpec.classBuilder(builderClassName)
             .addModifiers(PUBLIC)
-            .addKdoc("Builder for %L instances.", classBuilder.className)
+            .addKdoc("%L", kdocText("Builder for ${classBuilder.className} instances."))
             .primaryConstructor(
                 FunSpec.constructorBuilder()
                     .addParameter("resource", ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
@@ -364,7 +329,7 @@ class InstanceDslGenerator(
                     .initializer("graph")
                     .build()
             )
-        
+
         // Generate property methods - sort by propertyIri for deterministic output
         classBuilder.properties
             .sortedBy { it.propertyIri }
@@ -373,17 +338,14 @@ class InstanceDslGenerator(
                 propertyMethodGenerator.generatePropertyMethods(property, options)
             )
         }
-        
+
         // Generate validation method
         if (options.validation.enabled) {
             classBuilderSpec.addFunction(
                 validationCodeGenerator.generateValidationMethod(classBuilder)
             )
         }
-        
+
         return classBuilderSpec.build()
     }
 }
-
-// Extension function moved to CollectionExtensions.kt
-

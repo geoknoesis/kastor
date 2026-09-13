@@ -1,18 +1,26 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.ValidationContext
+import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
+import com.geoknoesis.kastor.gen.runtime.ValidationContext
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TripleTerm
+import com.geoknoesis.kastor.rdf.TypedLiteral
+import org.eclipse.rdf4j.model.BNode
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Model
 import org.eclipse.rdf4j.model.Resource
+import org.eclipse.rdf4j.model.Statement
+import org.eclipse.rdf4j.model.Triple
 import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
@@ -23,230 +31,238 @@ import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
+import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
+import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
 /**
- * RDF4J-based SHACL validation adapter.
- * Bridges Kastor RdfGraph to RDF4J Model for SHACL validation.
+ * RDF4J-based SHACL validation adapter backed by [ShaclSail].
+ *
+ * Shapes can be supplied in two ways:
+ * - **Separate shapes graph** (recommended): `Rdf4jValidation(shapesGraph)` or [fromTurtle]. The
+ *   shapes are converted once and loaded into the [RDF4J.SHACL_SHAPE_GRAPH] context of a single
+ *   in-memory [ShaclSail] repository that is reused across calls. Each [validate] call adds the
+ *   data in a transaction, runs validation via `prepare()`, and always rolls back, so no data is
+ *   retained between calls. Calls are serialized on that repository; call [close] to release it.
+ * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): a short-lived
+ *   repository is built per call because the shapes can differ from call to call. If the data graph
+ *   declares no shapes the result is [ValidationResult.Ok].
+ *
+ * The data graph is always converted to RDF4J statements: ShaclSail validates data held in its own
+ * store, so the Kastor graph cannot be validated in place even when it is RDF4J-backed.
+ *
+ * [validate] returns the `sh:ValidationResult`s whose `sh:focusNode` is the requested node. Engine
+ * failures other than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
+ *
+ * Term conversion is exact (IRIs, blank node ids, language tags, datatypes). RDF4J 5.x has no
+ * literal base-direction support, so the direction of an RDF 1.2 directional language string is
+ * dropped (the language tag is kept).
  */
-class Rdf4jValidation : ValidationContext {
-  
-  companion object {
-    private const val ERROR_CONVERT_RESOURCE = "Cannot convert %s to RDF4J Resource"
-    private const val ERROR_CONVERT_VALUE = "Cannot convert %s to RDF4J Value"
+class Rdf4jValidation private constructor(
+  private val fixedShapes: List<Statement>?,
+) : ValidationContext, AutoCloseable {
+
+  /** Validates against SHACL shapes found in the data graph passed to [validate]. */
+  constructor() : this(null as List<Statement>?)
+
+  /** Validates against the SHACL shapes in [shapes] (converted once at construction). */
+  constructor(shapes: RdfGraph) : this(toStatements(shapes))
+
+  private val lock = Any()
+  private var sharedRepository: SailRepository? = null
+  private var closed = false
+  private val fixedShapesModel: Model? by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    fixedShapes?.let { LinkedHashModel(it) }
   }
-  
-  private val valueFactory = SimpleValueFactory.getInstance()
-  
 
-  
-  /**
-   * Validates the focus node against SHACL shapes.
-   *
-   * This implementation performs basic SHACL validation using RDF4J's capabilities.
-   * For production use, configure proper SHACL shapes and validation rules.
-   */
-  override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
-    val rdf4jModel = try {
-      convertToRdf4jModel(data)
-    } catch (e: IllegalArgumentException) {
-      // Be lenient on literal edge cases (e.g., language-tagged values in simple shapes).
-      return ValidationResult.Ok
-    }
-    if (!rdf4jModel.contains(null, RDF.TYPE, SHACL.NODE_SHAPE)) {
-      return ValidationResult.Ok
+  companion object {
+    private val vf = SimpleValueFactory.getInstance()
+    private val TARGET_PREDICATES: Set<IRI> =
+      setOf(SHACL.TARGET_CLASS, SHACL.TARGET_NODE, SHACL.TARGET_SUBJECTS_OF, SHACL.TARGET_OBJECTS_OF)
+    private const val MAX_SHAPE_ANCESTOR_DEPTH = 16
+
+    /** Creates a validator from SHACL shapes written in Turtle. */
+    @JvmStatic
+    fun fromTurtle(shapesTurtle: String): Rdf4jValidation = Rdf4jValidation(Rdf.parse(shapesTurtle, "TURTLE"))
+
+    private fun toStatements(graph: RdfGraph): List<Statement> =
+      graph.getTriples().map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
+
+    private fun toResource(term: RdfTerm): Resource = when (term) {
+      is Iri -> vf.createIRI(term.value)
+      is BlankNode -> vf.createBNode(term.id.removePrefix("_:"))
+      else -> throw IllegalArgumentException("Expected an IRI or blank node, got: $term")
     }
 
-    val shapesModel = extractShapesModel(rdf4jModel)
-    if (shapesModel.isEmpty()) {
-      return ValidationResult.Ok
-    }
-    val focusResource = try {
-      convertToRdf4jResource(focus)
-    } catch (e: IllegalArgumentException) {
-      return ValidationResult.Ok
-    }
-    val focusNodes = mutableSetOf<Resource>(focusResource)
-    rdf4jModel.filter(focusResource, null, null).forEach { statement ->
-      val obj = statement.`object`
-      if (obj is Resource) {
-        focusNodes.add(obj)
-      }
+    private fun toValue(term: RdfTerm): Value = when (term) {
+      is Iri, is BlankNode -> toResource(term)
+      // RDF4J 5.x cannot carry a base direction; keep the language tag.
+      is LangString -> vf.createLiteral(term.lexical, term.lang)
+      is Literal -> vf.createLiteral(term.lexical, vf.createIRI(term.datatype.value))
+      is TripleTerm -> vf.createTriple(toResource(term.triple.subject), vf.createIRI(term.triple.predicate.value), toValue(term.triple.obj))
+      else -> throw IllegalArgumentException("Cannot convert $term to an RDF4J value")
     }
 
-    val dataModel = LinkedHashModel().apply {
-      rdf4jModel.forEach { statement ->
-        if (shapesModel.contains(statement)) return@forEach
-        if (focusNodes.contains(statement.subject) || statement.`object` == focusResource) {
-          add(statement)
+    private fun toTerm(value: Value): RdfTerm = when (value) {
+      is IRI -> Iri(value.stringValue())
+      is BNode -> BlankNode(value.id)
+      is Rdf4jLiteral -> {
+        val lang = value.language.orElse(null)
+        if (lang != null) {
+          LangString(value.label, lang)
+        } else {
+          val datatype = Iri(value.datatype.stringValue())
+          runCatching { Literal(value.label, datatype) }.getOrElse { TypedLiteral(value.label, datatype) }
         }
       }
+      is Triple -> TripleTerm(RdfTriple(toTerm(value.subject) as RdfResource, Iri(value.predicate.stringValue()), toTerm(value.`object`)))
+      else -> throw IllegalStateException("Unsupported RDF4J value in SHACL report: $value")
     }
 
-    return try {
-      val sail = ShaclSail(MemoryStore())
+    private fun newRepository(shapes: Collection<Statement>): SailRepository {
+      val sail = ShaclSail(MemoryStore()).apply {
+        // Report every result rather than the engine's default per-constraint cap.
+        validationResultsLimitTotal = -1
+        validationResultsLimitPerConstraint = -1
+      }
       val repository = SailRepository(sail)
       repository.init()
-
-      repository.connection.use { connection ->
-        connection.begin()
-        connection.add(shapesModel, RDF4J.SHACL_SHAPE_GRAPH)
-        connection.commit()
-
-        connection.begin()
-        connection.add(dataModel)
-        connection.commit()
+      try {
+        repository.connection.use { connection ->
+          connection.begin()
+          connection.add(shapes, RDF4J.SHACL_SHAPE_GRAPH)
+          connection.commit()
+        }
+      } catch (e: Exception) {
+        runCatching { repository.shutDown() }
+        throw e
       }
-
-      ValidationResult.Ok
-    } catch (e: ShaclSailValidationException) {
-      val violations = listOf(
-        ShaclViolation(
-          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
-          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.NodeShape,
-          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.minCount,
-          message = "Name is required"
-        )
-      )
-      ValidationResult.Violations(violations)
-    } catch (e: Exception) {
-      ValidationResult.Violations(listOf(
-        ShaclViolation(
-          focusNode = focus as? RdfResource ?: Iri.of("http://example.org/unknown"),
-          shapeIri = com.geoknoesis.kastor.rdf.vocab.SHACL.Shape,
-          constraintIri = com.geoknoesis.kastor.rdf.vocab.SHACL.ConstraintComponent,
-          message = "Name is required"
-        )
-      ))
+      return repository
     }
   }
-  
-  private fun convertToRdf4jModel(kastorGraph: RdfGraph): Model {
-    val model = LinkedHashModel()
-    
-    // Convert Kastor triples to RDF4J statements
-    kastorGraph.getTriples().forEach { triple ->
-      val subject = convertToRdf4jResource(triple.subject)
-      val predicate = convertToRdf4jIri(triple.predicate)
-      val obj = convertToRdf4jValue(triple.obj)
-      
-      model.add(subject, predicate, obj)
+
+  override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+    if (focus !is Iri && focus !is BlankNode) {
+      throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
     }
-    
-    return model
+    val focusValue = toResource(focus)
+    val dataStatements = toStatements(data)
+
+    val shapes = fixedShapes
+    if (shapes == null) {
+      if (!declaresShapes(dataStatements)) return ValidationResult.Ok
+      val repository = newRepository(dataStatements)
+      try {
+        return validateIn(repository, dataStatements, focusValue) { LinkedHashModel(dataStatements) }
+      } finally {
+        repository.shutDown()
+      }
+    }
+
+    synchronized(lock) {
+      check(!closed) { "Rdf4jValidation has been closed" }
+      val repository = sharedRepository ?: newRepository(shapes).also { sharedRepository = it }
+      return validateIn(repository, dataStatements, focusValue) { fixedShapesModel!! }
+    }
   }
 
-  private fun extractShapesModel(model: Model): Model {
-    val shapesModel = LinkedHashModel()
-    val shapeNodes = model.filter(null, RDF.TYPE, SHACL.NODE_SHAPE).subjects().toMutableSet()
+  /** Releases the reusable ShaclSail repository (only created when shapes were supplied). */
+  override fun close() {
+    synchronized(lock) {
+      closed = true
+      sharedRepository?.shutDown()
+      sharedRepository = null
+    }
+  }
 
-    var added = true
-    while (added) {
-      added = false
-      model.forEach { statement ->
-        if (shapeNodes.contains(statement.subject)) {
-          shapesModel.add(statement)
-          val obj = statement.`object`
-          if (obj is Resource && shapeNodes.add(obj)) {
-            added = true
-          }
+  private fun declaresShapes(statements: List<Statement>): Boolean = statements.any { st ->
+    st.predicate in TARGET_PREDICATES ||
+      (st.predicate == RDF.TYPE && (st.`object` == SHACL.NODE_SHAPE || st.`object` == SHACL.PROPERTY_SHAPE))
+  }
+
+  private fun validateIn(
+    repository: SailRepository,
+    data: List<Statement>,
+    focus: Resource,
+    shapesModel: () -> Model,
+  ): ValidationResult {
+    repository.connection.use { connection ->
+      connection.begin()
+      try {
+        connection.add(data)
+        connection.prepare()
+        return ValidationResult.Ok
+      } catch (e: Exception) {
+        val validationFailure = generateSequence<Throwable>(e) { it.cause }
+          .firstOrNull { it is ShaclSailValidationException } as ShaclSailValidationException?
+          ?: throw e
+        return toResult(validationFailure.validationReportAsModel(), focus, shapesModel())
+      } finally {
+        if (connection.isActive) connection.rollback()
+      }
+    }
+  }
+
+  private fun toResult(report: Model, focus: Resource, shapes: Model): ValidationResult {
+    val items = report.filter(null, SHACL.RESULT, null).objects()
+      .filterIsInstance<Resource>()
+      .filter { first(report, it, SHACL.FOCUS_NODE) == focus }
+      .map { toViolation(report, it, shapes) }
+    return if (items.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(items)
+  }
+
+  private fun toViolation(report: Model, result: Resource, shapes: Model): ShaclViolation {
+    val source = first(report, result, SHACL.SOURCE_SHAPE) as? Resource
+    val component = first(report, result, SHACL.SOURCE_CONSTRAINT_COMPONENT) as? IRI
+    val shapeMessage = source?.let { first(shapes, it, SHACL.MESSAGE) as? Rdf4jLiteral }?.label
+    val resultMessage = (first(report, result, SHACL.RESULT_MESSAGE) as? Rdf4jLiteral)?.label
+    val message = shapeMessage
+      ?: resultMessage?.takeIf { it.isNotBlank() }
+      ?: "SHACL constraint ${component?.localName ?: "violation"} failed"
+
+    return ShaclViolation(
+      focusNode = toTerm(first(report, result, SHACL.FOCUS_NODE)!!) as RdfResource,
+      shapeIri = source?.let { resolveShapeIri(shapes, it) } ?: KSHACL.Shape,
+      constraintIri = component?.let { Iri(it.stringValue()) } ?: KSHACL.ConstraintComponent,
+      path = (first(report, result, SHACL.RESULT_PATH) as? IRI)?.let { Iri(it.stringValue()) },
+      actualValue = first(report, result, SHACL.VALUE)?.let(::toTerm),
+      expectedValue = if (source != null && component != null) parameterValue(shapes, source, component) else null,
+      message = message,
+      severity = when (first(report, result, SHACL.RESULT_SEVERITY)) {
+        SHACL.WARNING -> ShaclSeverity.Warning
+        SHACL.INFO -> ShaclSeverity.Info
+        else -> ShaclSeverity.Violation
+      },
+    )
+  }
+
+  private fun first(model: Model, subject: Resource, predicate: IRI): Value? =
+    model.filter(subject, predicate, null).objects().firstOrNull()
+
+  /** Returns [shape] if it is an IRI, otherwise the nearest IRI-named shape that references it. */
+  private fun resolveShapeIri(shapes: Model, shape: Resource): Iri? {
+    if (shape is IRI) return Iri(shape.stringValue())
+    val seen = HashSet<Resource>()
+    var frontier = listOf(shape)
+    repeat(MAX_SHAPE_ANCESTOR_DEPTH) {
+      val next = ArrayList<Resource>()
+      for (node in frontier) {
+        if (!seen.add(node)) continue
+        for (subject in shapes.filter(null, null, node).subjects()) {
+          if (subject is IRI) return Iri(subject.stringValue())
+          next.add(subject)
         }
       }
+      if (next.isEmpty()) return null
+      frontier = next
     }
-
-    return shapesModel
-  }
-  
-  private fun convertToRdf4jResource(term: RdfTerm): Resource {
-    return when (term) {
-      is Iri -> try {
-        valueFactory.createIRI(term.value)
-      } catch (e: IllegalArgumentException) {
-        // Handle malformed IRIs gracefully - create a URI with the original value
-        // This maintains compatibility with existing tests
-        valueFactory.createIRI("http://example.org/malformed/${term.value}")
-      }
-      is BlankNode -> valueFactory.createBNode(term.id)
-      else -> throw IllegalArgumentException(ERROR_CONVERT_RESOURCE.format(term))
-    }
-  }
-  
-  private fun convertToRdf4jIri(iri: Iri): IRI {
-    return try {
-      valueFactory.createIRI(iri.value)
-    } catch (e: IllegalArgumentException) {
-      // Handle malformed IRIs gracefully - create a URI with the original value
-      // This maintains compatibility with existing tests
-      valueFactory.createIRI("http://example.org/malformed/${iri.value}")
-    }
-  }
-  
-  private fun convertToRdf4jValue(term: RdfTerm): Value {
-    return when (term) {
-      is Iri -> try {
-        valueFactory.createIRI(term.value)
-      } catch (e: IllegalArgumentException) {
-        // Handle malformed IRIs gracefully - create a URI with the original value
-        // This maintains compatibility with existing tests
-        valueFactory.createIRI("http://example.org/malformed/${term.value}")
-      }
-      is BlankNode -> valueFactory.createBNode(term.id)
-      is Literal -> {
-        when (term) {
-          is LangString -> {
-            // RDF 1.2: a directional language string round-trips with its
-            // datatype set to rdf:dirLangString so SHACL constraints over the
-            // directional datatype validate correctly. Plain language strings
-            // continue to be created as language-tagged plain literals.
-            val direction = term.direction
-            if (direction != null) {
-              valueFactory.createLiteral(
-                "${term.lexical}@${term.lang}--${direction.token}",
-                valueFactory.createIRI(term.datatype.value),
-              )
-            } else {
-              // Treat language-tagged literals as plain strings for validation tolerance.
-              valueFactory.createLiteral(term.lexical)
-            }
-          }
-          else -> {
-            val datatypeValue = when (term.datatype.value) {
-              "http://www.w3.org/2001/XMLSchema#integer" -> "http://www.w3.org/2001/XMLSchema#int"
-              else -> term.datatype.value
-            }
-            valueFactory.createLiteral(term.lexical, valueFactory.createIRI(datatypeValue))
-          }
-        }
-      }
-      else -> throw IllegalArgumentException(ERROR_CONVERT_VALUE.format(term))
-    }
+    return null
   }
 
-  private fun extractMissingMessages(shapesModel: Model, dataModel: Model, focus: Resource): List<String> {
-    val messages = mutableListOf<String>()
-    val propertyShapes = shapesModel.filter(null, SHACL.PATH, null).subjects()
-    propertyShapes.forEach { shape ->
-      val path = shapesModel.filter(shape, SHACL.PATH, null).objects().firstOrNull() as? IRI ?: return@forEach
-      val minCount = shapesModel.filter(shape, SHACL.MIN_COUNT, null).objects().firstOrNull()
-      val minCountValue = (minCount as? org.eclipse.rdf4j.model.Literal)?.intValue() ?: 0
-      if (minCountValue > 0 && !dataModel.contains(focus, path, null)) {
-        val message = shapesModel.filter(shape, SHACL.MESSAGE, null).objects().firstOrNull()?.stringValue()
-          ?: "Name is required"
-        messages.add(message)
-      }
-    }
-    return messages
+  /** e.g. sh:DatatypeConstraintComponent -> the shape's sh:datatype value (non-list values only). */
+  private fun parameterValue(shapes: Model, shape: Resource, component: IRI): RdfTerm? {
+    val local = component.localName.removeSuffix("ConstraintComponent")
+    if (local.isEmpty() || local == component.localName) return null
+    val parameter = vf.createIRI(SHACL.NAMESPACE, local.replaceFirstChar { it.lowercaseChar() })
+    return first(shapes, shape, parameter)?.takeUnless { it is BNode }?.let(::toTerm)
   }
 }
-
-/**
- * Exception thrown when SHACL validation fails.
- */
-
-
-
-
-
-
-
-
-

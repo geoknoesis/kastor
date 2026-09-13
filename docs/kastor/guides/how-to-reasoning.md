@@ -12,9 +12,9 @@ Given an asserted graph, obtain **inferred triples** under **RDFS** (or another 
 
 ```kotlin
 dependencies {
-    implementation(platform("com.geoknoesis.kastor:kastor-bom:0.2.0"))
+    implementation(platform("com.geoknoesis.kastor:kastor-bom:0.3.0-SNAPSHOT"))
     implementation("com.geoknoesis.kastor:rdf-core")
-    implementation("com.geoknoesis.kastor:reasoning")
+    implementation("com.geoknoesis.kastor:rdf-reasoning")
 }
 ```
 
@@ -23,8 +23,8 @@ The **`reasoning`** artifact gives you **`RdfReasoning`**, **`ReasonerType`**, a
 If you use **Jena** or **RDF4J** on the classpath and want their **`RdfReasonerProvider`** implementations (SPI discovery or direct **`JenaReasonerProvider`** / **`Rdf4jReasonerProvider`** types), add:
 
 ```kotlin
-    implementation("com.geoknoesis.kastor:jena-reasoning")   // optional, with jena store jar
-    implementation("com.geoknoesis.kastor:rdf4j-reasoning") // optional, with rdf4j store jar
+    implementation("com.geoknoesis.kastor:rdf-jena-reasoning")   // optional, with jena store jar
+    implementation("com.geoknoesis.kastor:rdf-rdf4j-reasoning") // optional, with rdf4j store jar
 ```
 
 These are **not** transitive from **`jena`** / **`rdf4j`** alone—see [Repository architecture — Dependency profiles](../concepts/architecture.md#dependency-profiles-gradle).

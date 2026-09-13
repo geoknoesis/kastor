@@ -45,7 +45,7 @@ Extend usage of [ReasonerType](../../../rdf/reasoning/facade/src/main/kotlin/com
 - Prefer **`ReasonerType.HERMIT`** for HermiT-specific configuration and documentation.
 - Optionally treat **`ReasonerType.OWL_DL`** as “default DL engine” with `ReasonerConfig.parameters["engine"] = "hermit"` if Pellet or others are added later.
 
-`HermitReasonerProvider.isSupported` should return **`HERMIT`** (and **`OWL_DL`** only if explicitly documented as an alias).
+`HermitReasonerProvider.isSupported` returns true for **`HERMIT`** and **`OWL_DL`** (HermiT serves OWL 2 DL). `ReasonerConfig.forType` maps both to DL-friendly defaults (`hermit()` / `owlDl()`: `streamingMode = false`, 10-minute timeout). The provider's `priority()` is 100, so it wins over Jena (50), RDF4J (40) and memory (−100) when present. The reasoning deadline is enforced by a watchdog that calls `interrupt()` on the HermiT reasoner.
 
 ### 3.3 Configuration (`ReasonerConfig`)
 

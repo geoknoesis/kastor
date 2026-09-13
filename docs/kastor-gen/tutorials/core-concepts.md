@@ -166,9 +166,7 @@ Wrapper factories are registered automatically during KSP compilation:
 // Generated registration code
 companion object {
     init {
-        OntoMapper.registry[Person::class.java] = { handle -> 
-            PersonWrapper(handle) 
-        }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
     }
 }
 ```
@@ -266,7 +264,7 @@ try {
 
 ```kotlin
 try {
-    val validation = JenaValidation()
+    val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
     val person: Person = rdfRef.asValidatedType(validation)
 } catch (e: ValidationException) {
     // SHACL validation failed
@@ -337,7 +335,7 @@ val name = person.name.first()  // May throw exception
 
 ```kotlin
 // ✅ Good - Validate when needed
-val validation = JenaValidation()
+val validation = JenaValidation.fromTurtle(shapesTtl) // shapesTtl: your SHACL shapes as Turtle text
 val person: Person = rdfRef.asValidatedType(validation)
 
 // Or validate manually

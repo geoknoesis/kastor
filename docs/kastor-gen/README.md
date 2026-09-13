@@ -55,7 +55,7 @@ Kastor Gen generates type-safe interfaces automatically:
 flowchart LR
   Ontology["SHACL + JSON-LD"] --> KSP["KSP processor"]
   KSP --> Dom["Domain interfaces"]
-  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.registry"]
+  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.register"]
   KSP --> DC["Data classes (eager)\n+ Factory objects"]
   Graph["RdfGraph / RdfRepository"] --> Mat["materialize / asType"]
   Wrap --> Mat
@@ -218,11 +218,33 @@ Both modes register in `OntoMapper` so **`graph.materialize<CatalogRecord>(node)
 
 ### 1. Add Dependencies
 
+> Kastor Gen is **not yet published** to Maven Central or the Gradle Plugin Portal. Requires JDK 21+.
+
+Inside the Kastor build (or a composite build that includes it):
+
 ```kotlin
-dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
+plugins {
+    id("org.jetbrains.kotlin.jvm")
+    id("com.google.devtools.ksp")
 }
+
+dependencies {
+    implementation(project(":kastor-gen:runtime"))
+    ksp(project(":kastor-gen:processor"))
+}
+```
+
+From another project, first run
+`./gradlew :rdf:core:publishToMavenLocal :kastor-gen:runtime:publishToMavenLocal :kastor-gen:processor:publishToMavenLocal`
+in a Kastor checkout, add `mavenLocal()` to your repositories, and depend on
+`com.geoknoesis.kastor:kastor-gen-runtime` / `ksp("com.geoknoesis.kastor:kastor-gen-processor")` with the
+Kastor build's project version. See [Getting Started](tutorials/getting-started.md).
+
+Try the working examples in the repository:
+
+```bash
+./gradlew :examples:hello-codegen:run
+./gradlew :examples:dcat-us:runGeneratedExample
 ```
 
 ### 2. Define Domain Interface

@@ -2,51 +2,92 @@ package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.XSD
-import com.geoknoesis.kastor.rdf.LangString
-import com.geoknoesis.kastor.rdf.TypedLiteral
-import com.geoknoesis.kastor.rdf.TrueLiteral
-import com.geoknoesis.kastor.rdf.FalseLiteral
-import java.net.URL
+import java.io.FilterInputStream
+import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.URL
+import java.time.Duration
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
-// Bound network waits so a slow/hostile endpoint cannot pin a thread indefinitely.
-private const val CONNECT_TIMEOUT_MS = 30_000
-private const val READ_TIMEOUT_MS = 60_000
+private const val RESULTS_JSON = "application/sparql-results+json"
+private const val FORM_ENCODED = "application/x-www-form-urlencoded"
+private const val MAX_ERROR_BODY_BYTES = 4096
 
-class SparqlRepository(private val endpoint: String) : RdfRepository {
-    
+/** Disconnects requests that outlive their overall deadline. Daemon thread; cancelled tasks are purged. */
+private val DEADLINE_WATCHDOG = ScheduledThreadPoolExecutor(1) { runnable ->
+    Thread(runnable, "kastor-sparql-deadline").apply { isDaemon = true }
+}.apply { removeOnCancelPolicy = true }
+
+/**
+ * [RdfRepository] over a remote SPARQL 1.1 Protocol endpoint.
+ *
+ * - SELECT/ASK results are read as `application/sparql-results+json`. [select] buffers all rows and
+ *   is capped by [SparqlEndpointConfig.maxResponseBytes]; [withSelectRows] streams rows to the
+ *   consumer and is capped by [SparqlEndpointConfig.maxStreamedResponseBytes] (unbounded by default).
+ * - Each request has a connect timeout, a per-read timeout and an overall deadline
+ *   ([SparqlEndpointConfig.requestTimeout]) enforced by a watchdog that disconnects the request.
+ * - Connections are not force-closed, so the JDK keep-alive pool reuses them.
+ * - Exceptions thrown by a [withSelectRows] consumer propagate unchanged; transport, HTTP and
+ *   result-format failures surface as [RdfQueryException] (HTTP error bodies are included).
+ * - No transactions; CONSTRUCT/DESCRIBE are unsupported (this module has no RDF parser).
+ */
+class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
+
+    constructor(
+        endpoint: String,
+        maxResponseBytes: Long = SparqlEndpointConfig.DEFAULT_MAX_RESPONSE_BYTES,
+        connectTimeoutMillis: Int = SparqlEndpointConfig.DEFAULT_CONNECT_TIMEOUT_MILLIS,
+        readTimeoutMillis: Int = SparqlEndpointConfig.DEFAULT_READ_TIMEOUT_MILLIS,
+    ) : this(
+        SparqlEndpointConfig(
+            endpoint = endpoint,
+            maxResponseBytes = maxResponseBytes,
+            connectTimeout = Duration.ofMillis(connectTimeoutMillis.toLong()),
+            readTimeout = Duration.ofMillis(readTimeoutMillis.toLong()),
+        )
+    )
+
+    @Volatile private var closed = false
+    private val queryTarget = HttpTarget.parse(config.endpoint)
+    private val updateTarget = config.updateEndpoint?.let(HttpTarget::parse) ?: queryTarget
+    private val configuredAuthorization =
+        config.username?.let { HttpTarget.basicAuthorization(it, config.password.orEmpty()) }
+
     override val defaultGraph: RdfGraph = SparqlGraph(this)
-    
+
     override fun getGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
-    
+
     override fun hasGraph(name: Iri): Boolean {
-        val query = SparqlAskQuery("ASK { GRAPH <${name.value}> { ?s ?p ?o } }")
+        val query = SparqlAskQuery("ASK { GRAPH ${SparqlTermFormat.iriRef(name.value)} { ?s ?p ?o } }")
         return ask(query)
     }
-    
+
     override fun listGraphs(): List<Iri> {
         val query = SparqlSelectQuery("SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }")
         val result = select(query)
-        return result.mapNotNull { binding -> 
-            binding.get("g")?.let { term -> 
-                if (term is Iri) term else null 
+        return result.mapNotNull { binding ->
+            binding.get("g")?.let { term ->
+                if (term is Iri) term else null
             }
         }
     }
-    
+
     override fun createGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
-    
+
     override fun removeGraph(name: Iri): Boolean {
-        val updateQuery = UpdateQuery("DROP GRAPH <${name.value}>")
+        val existed = hasGraph(name)
+        val updateQuery = UpdateQuery("DROP SILENT GRAPH ${SparqlTermFormat.iriRef(name.value)}")
         update(updateQuery)
-        return true
+        return existed
     }
 
     override fun editDefaultGraph(): MutableRdfGraph {
@@ -56,31 +97,64 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
     override fun editGraph(name: Iri): MutableRdfGraph {
         return getGraph(name) as MutableRdfGraph
     }
-    
-    override fun select(query: SparqlSelect): SparqlQueryResult {
+
+    override fun select(query: SparqlSelect): SparqlQueryResult =
+        selectRows(query.sparql, config.maxResponseBytes, config.requestTimeout) { ListSparqlQueryResult(it.toList()) }
+
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
+        selectRows(query.sparql, config.maxStreamedResponseBytes, config.requestTimeout, consume)
+
+    /**
+     * Streams rows with [bindings] applied and [timeout] as the overall request deadline.
+     *
+     * SPARQL 1.1 Protocol has no initial-bindings parameter, so the bindings are sent as a trailing
+     * `VALUES` block, i.e. joined with the query's solutions. Queries that already end with a
+     * `VALUES` clause cannot take additional bindings.
+     */
+    override fun <T> withSelectRows(
+        query: SparqlSelect,
+        bindings: Map<String, RdfTerm>,
+        timeout: Duration,
+        consume: (Sequence<BindingSet>) -> T,
+    ): T {
+        require(!timeout.isNegative && !timeout.isZero) { "timeout must be positive" }
+        val sparql = if (bindings.isEmpty()) {
+            query.sparql
+        } else {
+            val names = bindings.keys.joinToString(" ") { "?${SparqlTermFormat.varName(it)}" }
+            val values = bindings.values.joinToString(" ") { term ->
+                SparqlTermFormat.term(term) { throw IllegalArgumentException("Blank nodes cannot be used as query bindings") }
+            }
+            "${query.sparql.trimEnd()}\nVALUES ($names) { ($values) }\n"
+        }
+        return selectRows(sparql, config.maxStreamedResponseBytes, timeout, consume)
+    }
+
+    private fun <T> selectRows(sparql: String, byteLimit: Long?, timeout: Duration?, consume: (Sequence<BindingSet>) -> T): T {
         val startTime = System.currentTimeMillis()
+        var rows = 0
         try {
-            val response = executeQuery(query.sparql)
-            val rows = SparqlJsonResults.parseSelect(response)
-            val resultSet = ListSparqlQueryResult(rows)
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryTrace("SELECT", query.sparql, null, executionTime, rows.size)
-            return resultSet
-        } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
-            RdfDebug.logQueryError("SELECT", query.sparql, "Failed to execute: ${e.message}")
-            throw RdfQueryException(
-                message = "Failed to execute SPARQL query: ${e.message}",
-                query = query.sparql,
-                cause = e
-            )
+            val result = exchange(sparql, update = false, byteLimit = byteLimit, timeout = timeout) { input ->
+                val sequence = JsonBindingRows(input).rows()
+                    .map(SparqlJsonResults::row)
+                    .guarded(sparql)
+                    .onEach { rows++ }
+                consume(sequence)
+            }
+            RdfDebug.logQueryTrace("SELECT", sparql, null, System.currentTimeMillis() - startTime, rows)
+            return result
+        } catch (e: RdfQueryException) {
+            RdfDebug.logQueryError("SELECT", sparql, "Failed to execute: ${e.message}")
+            throw e
         }
     }
-    
+
     override fun ask(query: SparqlAsk): Boolean {
         val startTime = System.currentTimeMillis()
         try {
-            val response = executeQuery(query.sparql)
+            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeout = config.requestTimeout) { input ->
+                readResponse(query.sparql) { input.reader(Charsets.UTF_8).readText() }
+            }
             // Parse the SPARQL Results JSON `{ "boolean": true }` form; fall back to
             // the plain-text `true`/`false` some endpoints return.
             val result = SparqlJsonResults.parseAsk(response)
@@ -88,8 +162,8 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
             RdfDebug.logQueryTrace("ASK", query.sparql, null, executionTime, if (result) 1 else 0)
             return result
         } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryError("ASK", query.sparql, "Failed to execute: ${e.message}")
+            if (e is RdfQueryException) throw e
             throw RdfQueryException(
                 message = "Failed to execute SPARQL ASK query: ${e.message}",
                 query = query.sparql,
@@ -97,13 +171,12 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
             )
         }
     }
-    
+
     /**
      * CONSTRUCT/DESCRIBE return an RDF graph serialization (Turtle/N-Triples/…),
-     * which requires an RDF parser. This endpoint adapter lives in `:rdf:core`,
-     * which intentionally has no parser, so we fail loudly rather than silently
-     * returning an empty graph (which previously masked the gap). Run
-     * CONSTRUCT/DESCRIBE through a provider-backed repository (Jena/RDF4J) instead.
+     * which requires an RDF parser. This endpoint adapter intentionally has no
+     * parser, so we fail loudly rather than silently returning an empty graph.
+     * Run CONSTRUCT/DESCRIBE through a provider-backed repository (Jena/RDF4J) instead.
      */
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> =
         throw UnsupportedOperationException(
@@ -116,16 +189,18 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
             "DESCRIBE over a remote SPARQL endpoint is not supported by the core-only HTTP adapter; " +
                 "use a Jena/RDF4J-backed repository to parse the returned RDF graph."
         )
-    
+
     override fun update(query: UpdateQuery) {
         val startTime = System.currentTimeMillis()
         try {
-            executeUpdate(query.sparql)
+            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeout = config.requestTimeout) { input ->
+                readResponse(query.sparql) { input.readAllBytes() }
+            }
             val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryTrace("UPDATE", query.sparql, null, executionTime, null)
         } catch (e: Exception) {
-            val executionTime = System.currentTimeMillis() - startTime
             RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
+            if (e is RdfQueryException) throw e
             throw RdfQueryException(
                 message = "Failed to execute SPARQL UPDATE: ${e.message}",
                 query = query.sparql,
@@ -133,325 +208,288 @@ class SparqlRepository(private val endpoint: String) : RdfRepository {
             )
         }
     }
-    
+
     override fun transaction(operations: RdfRepository.() -> Unit) {
-        // SPARQL endpoints typically don't support transactions
-        operations()
+        throw UnsupportedOperationException("The HTTP endpoint does not provide atomic transactions")
     }
-    
+
     override fun readTransaction(operations: RdfRepository.() -> Unit) {
-        // SPARQL endpoints typically don't support transactions
-        operations()
+        throw UnsupportedOperationException("The HTTP endpoint does not provide atomic transactions")
     }
-    
+
     override fun clear(): Boolean {
-        val updateQuery = UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }")
+        val existed = ask(SparqlAskQuery("ASK { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }"))
+        val updateQuery = UpdateQuery("CLEAR ALL")
         update(updateQuery)
-        return true
+        return existed
     }
-    
-    override fun isClosed(): Boolean = false
-    
-    override fun getCapabilities(): ProviderCapabilities {
-        return ProviderCapabilities(
-            supportsInference = false,
-            supportsTransactions = false,
-            supportsNamedGraphs = true,
-            supportsUpdates = true,
-            supportsRdfStar = true, // SPARQL 1.2 supports RDF-star
-            maxMemoryUsage = Long.MAX_VALUE
-        )
-    }
-    
+
+    override fun isClosed(): Boolean = closed
+
+    /** What this adapter supports; identical to [SparqlProvider.getCapabilities]. */
+    override fun getCapabilities(): ProviderCapabilities = SPARQL_ENDPOINT_CAPABILITIES
+
     override fun close() {
-        // Nothing to close for HTTP connections
+        closed = true
     }
-    
-    private fun executeQuery(sparql: String): String {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/sparql-query")
-            setRequestProperty("Accept", "application/sparql-results+json")
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            doOutput = true
-        }
-        try {
-            connection.outputStream.use { it.write(sparql.toByteArray(Charsets.UTF_8)) }
-            val status = connection.responseCode
-            if (status !in 200..299) {
-                val error = connection.errorStream?.use { it.reader(Charsets.UTF_8).readText() }.orEmpty()
-                throw RdfQueryException(
-                    message = "SPARQL endpoint returned HTTP $status: ${error.take(500)}",
-                    query = sparql,
-                )
-            }
-            return connection.inputStream.use { it.reader(Charsets.UTF_8).readText() }
-        } finally {
-            connection.disconnect()
+
+    // ------------------------------------------------------------------------ HTTP
+
+    private class Request(val url: URL, val contentType: String?, val body: ByteArray?)
+
+    private fun request(sparql: String, update: Boolean): Request {
+        val target = if (update) updateTarget else queryTarget
+        return if (update) when (config.updateMethod) {
+            SparqlUpdateMethod.POST -> Request(target.url, "application/sparql-update", sparql.toByteArray(Charsets.UTF_8))
+            SparqlUpdateMethod.POST_FORM -> Request(target.url, FORM_ENCODED, "update=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
+        } else when (config.queryMethod) {
+            SparqlQueryMethod.POST -> Request(target.url, "application/sparql-query", sparql.toByteArray(Charsets.UTF_8))
+            SparqlQueryMethod.POST_FORM -> Request(target.url, FORM_ENCODED, "query=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
+            SparqlQueryMethod.GET -> Request(target.withParameter("query", sparql), null, null)
         }
     }
 
-    private fun executeUpdate(sparql: String) {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Content-Type", "application/sparql-update")
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            doOutput = true
+    /**
+     * Perform one request and hand the (bounded) response body to [handle]. Exceptions thrown by
+     * [handle] propagate unchanged; [RdfQueryException]s raised after the deadline fired are
+     * reported as a deadline failure.
+     */
+    private fun <T> exchange(
+        sparql: String,
+        update: Boolean,
+        byteLimit: Long?,
+        timeout: Duration?,
+        handle: (InputStream) -> T,
+    ): T {
+        check(!closed) { "Repository is closed" }
+        val target = if (update) updateTarget else queryTarget
+        val request = request(sparql, update)
+        val connection = (request.url.openConnection() as HttpURLConnection).apply {
+            requestMethod = if (request.body == null) "GET" else "POST"
+            connectTimeout = config.connectTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            readTimeout = config.readTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            useCaches = false
+            if (!update) setRequestProperty("Accept", RESULTS_JSON)
+            request.contentType?.let { setRequestProperty("Content-Type", it) }
+            config.headers.forEach { (name, value) -> setRequestProperty(name, value) }
+            (configuredAuthorization ?: target.userInfoAuthorization)?.let { setRequestProperty("Authorization", it) }
+            doOutput = request.body != null
+        }
+        val timedOut = AtomicBoolean(false)
+        val watchdog = timeout?.let { limit ->
+            DEADLINE_WATCHDOG.schedule({
+                timedOut.set(true)
+                connection.disconnect()
+            }, limit.toMillis(), TimeUnit.MILLISECONDS)
         }
         try {
-            connection.outputStream.use { it.write(sparql.toByteArray(Charsets.UTF_8)) }
-            val status = connection.responseCode
+            val status = try {
+                request.body?.let { body -> connection.outputStream.use { it.write(body) } }
+                connection.responseCode
+            } catch (e: IOException) {
+                connection.disconnect()
+                throw RdfQueryException("SPARQL request failed: ${e.message}", query = sparql, cause = e)
+            }
             if (status !in 200..299) {
-                val error = connection.errorStream?.use { it.reader(Charsets.UTF_8).readText() }.orEmpty()
+                val detail = readErrorBody(connection)
                 throw RdfQueryException(
-                    message = "SPARQL endpoint returned HTTP $status: ${error.take(500)}",
+                    "SPARQL endpoint returned HTTP $status${if (detail.isEmpty()) "" else ": $detail"}",
                     query = sparql,
                 )
             }
+            val input = try {
+                connection.inputStream
+            } catch (e: IOException) {
+                connection.disconnect()
+                throw RdfQueryException("SPARQL response failed: ${e.message}", query = sparql, cause = e)
+            }
+            return input.use { raw -> handle(if (byteLimit == null) raw else BoundedInputStream(raw, byteLimit)) }
+        } catch (e: RdfQueryException) {
+            if (timedOut.get()) {
+                throw RdfQueryException("SPARQL request exceeded its ${timeout?.toMillis()} ms deadline", query = sparql, cause = e)
+            }
+            throw e
         } finally {
-            connection.disconnect()
+            watchdog?.cancel(false)
         }
+    }
+
+    private fun readErrorBody(connection: HttpURLConnection): String = try {
+        connection.errorStream?.use { String(it.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8) }.orEmpty().trim()
+    } catch (_: IOException) {
+        ""
+    }
+
+    /** Run an internal response reader, reporting I/O and format problems as [RdfQueryException]. */
+    private inline fun <R> readResponse(sparql: String, read: () -> R): R = try {
+        read()
+    } catch (e: RdfQueryException) {
+        throw e
+    } catch (e: Exception) {
+        throw RdfQueryException("Failed to read SPARQL response: ${e.message}", query = sparql, cause = e)
+    }
+
+    /**
+     * Wrap failures while producing rows (I/O, size cap, malformed JSON) as [RdfQueryException],
+     * without touching exceptions thrown by the code consuming the rows.
+     */
+    private fun <R> Sequence<R>.guarded(sparql: String): Sequence<R> {
+        val source = this
+        return Sequence {
+            val iterator = source.iterator()
+            object : Iterator<R> {
+                override fun hasNext(): Boolean = readResponse(sparql) { iterator.hasNext() }
+                override fun next(): R = readResponse(sparql) { iterator.next() }
+            }
+        }
+    }
+
+    private class BoundedInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
+        private var count = 0L
+
+        private fun counted(n: Long): Long {
+            if (n > 0) {
+                count += n
+                if (count > limit) throw IOException("SPARQL response exceeds $limit bytes")
+            }
+            return n
+        }
+
+        override fun read(): Int {
+            val b = `in`.read()
+            if (b >= 0) counted(1)
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int = counted(`in`.read(b, off, len).toLong()).toInt()
+
+        override fun skip(n: Long): Long = counted(`in`.skip(n))
     }
 }
 
+/**
+ * Graph view over a [SparqlRepository] (or any [SparqlMutable]).
+ *
+ * ## Blank nodes
+ * Blank-node labels in SPARQL Update are scoped to a single request, so:
+ * - [addTriple]/[addTriples] accept blank nodes. A call containing blank nodes is sent as one
+ *   request (never split into batches) and its labels are re-issued, so every call creates fresh
+ *   blank nodes on the endpoint. Endpoint-assigned identifiers read back from results (for example
+ *   Virtuoso's `nodeID://b1`) can therefore be copied into another graph.
+ * - [hasTriple], [find], [removeTriple] and [removeTriples] cannot address an existing blank node
+ *   by label and throw [IllegalArgumentException]; use an explicit `DELETE WHERE` pattern instead.
+ */
 class SparqlGraph(
     private val repository: SparqlMutable,
     private val graphName: Iri? = null
 ) : MutableRdfGraph, SourceTrackedGraph {
-    
-    override val sourceRepository: RdfRepository? 
+
+    override val sourceRepository: RdfRepository?
         get() = repository as? RdfRepository
     override val sourceGraphName: Iri? = graphName
-    
+
+    private val batchSize: Int
+        get() = (repository as? SparqlRepository)?.config?.insertBatchSize ?: SparqlEndpointConfig.DEFAULT_INSERT_BATCH_SIZE
+
+    private fun pattern(body: String): String =
+        if (graphName == null) body else "GRAPH ${SparqlTermFormat.iriRef(graphName.value)} { $body }"
+    private fun hasBlank(t: RdfTriple): Boolean = t.subject is BlankNode || t.obj is BlankNode
+    private fun rendered(t: RdfTriple, blankNode: (BlankNode) -> String): String =
+        "${SparqlTermFormat.term(t.subject, blankNode)} ${SparqlTermFormat.iriRef(t.predicate.value)} ${SparqlTermFormat.term(t.obj, blankNode)} ."
+
+    /** Same as `addTriples(listOf(triple))`. */
     override fun addTriple(triple: RdfTriple) {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val update = """
-            INSERT DATA {
-                $graphClause {
-                    ${formatSubject(triple.subject)} ${formatPredicate(triple.predicate)} ${formatObject(triple.obj)}
-                }
-            }
-        """.trimIndent()
-        repository.update(UpdateQuery(update))
-    }
-    
-    override fun addTriples(triples: Collection<RdfTriple>) {
-        if (triples.isEmpty()) return
-        
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val triplesClause = triples.joinToString(" .\n                    ") { triple ->
-            "${formatSubject(triple.subject)} ${formatPredicate(triple.predicate)} ${formatObject(triple.obj)}"
-        }
-        
-        val update = """
-            INSERT DATA {
-                $graphClause {
-                    $triplesClause .
-                }
-            }
-        """.trimIndent()
-        repository.update(UpdateQuery(update))
-    }
-    
-    override fun removeTriple(triple: RdfTriple): Boolean {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val update = """
-            DELETE DATA {
-                $graphClause {
-                    ${formatSubject(triple.subject)} ${formatPredicate(triple.predicate)} ${formatObject(triple.obj)}
-                }
-            }
-        """.trimIndent()
-        repository.update(UpdateQuery(update))
-        return true
-    }
-    
-    override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
-        if (triples.isEmpty()) return true
-        
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val triplesClause = triples.joinToString(" .\n                    ") { triple ->
-            "${formatSubject(triple.subject)} ${formatPredicate(triple.predicate)} ${formatObject(triple.obj)}"
-        }
-        
-        val update = """
-            DELETE DATA {
-                $graphClause {
-                    $triplesClause .
-                }
-            }
-        """.trimIndent()
-        repository.update(UpdateQuery(update))
-        return true
-    }
-    
-    override fun hasTriple(triple: RdfTriple): Boolean {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val query = """
-            ASK {
-                $graphClause {
-                    ${formatSubject(triple.subject)} ${formatPredicate(triple.predicate)} ${formatObject(triple.obj)}
-                }
-            }
-        """.trimIndent()
-        return repository.ask(SparqlAskQuery(query))
-    }
-    
-    override fun getTriples(): List<RdfTriple> {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        
-        val query = """
-            SELECT ?s ?p ?o WHERE {
-                $graphClause {
-                    ?s ?p ?o .
-                }
-            }
-        """.trimIndent()
-        
-        val result = repository.select(SparqlSelectQuery(query))
-        return result.map { binding ->
-            RdfTriple(
-                binding.get("s") as RdfResource,
-                binding.get("p") as Iri,
-                binding.get("o") as RdfTerm
-            )
-        }
-    }
-    
-    fun getTriples(subject: RdfResource? = null, predicate: Iri? = null, obj: RdfTerm? = null): List<RdfTriple> {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val subjectClause = subject?.let { formatSubject(it) } ?: "?s"
-        val predicateClause = predicate?.let { formatPredicate(it) } ?: "?p"
-        val objectClause = obj?.let { formatObject(it) } ?: "?o"
-        
-        val query = """
-            SELECT ?s ?p ?o WHERE {
-                $graphClause {
-                    $subjectClause $predicateClause $objectClause .
-                }
-            }
-        """.trimIndent()
-        
-        val result = repository.select(SparqlSelectQuery(query))
-        return result.map { binding ->
-            RdfTriple(
-                binding.get("s") as RdfResource,
-                binding.get("p") as Iri,
-                binding.get("o") as RdfTerm
-            )
-        }
-    }
-    
-    override fun clear(): Boolean {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val update = """
-            DELETE {
-                $graphClause { ?s ?p ?o }
-            } WHERE {
-                $graphClause { ?s ?p ?o }
-            }
-        """.trimIndent()
-        repository.update(UpdateQuery(update))
-        return true
-    }
-    
-    override fun size(): Int {
-        val graphClause = if (graphName != null) "GRAPH <${graphName.value}>" else ""
-        val query = """
-            SELECT (COUNT(*) AS ?count) WHERE {
-                $graphClause { ?s ?p ?o }
-            }
-        """.trimIndent()
-        
-        val result = repository.select(SparqlSelectQuery(query))
-        return result.firstOrNull()?.get("count")?.let { term ->
-            if (term is Literal) term.lexical.toIntOrNull() ?: 0 else 0
-        } ?: 0
-    }
-    
-    private fun formatSubject(subject: RdfResource): String = when (subject) {
-        is Iri -> iriRef(subject.value)
-        is BlankNode -> bnodeLabel(subject.id)
-    }
-
-    private fun formatPredicate(predicate: Iri): String = iriRef(predicate.value)
-
-    private fun formatObject(obj: RdfTerm): String {
-        return when (obj) {
-            is Iri -> iriRef(obj.value)
-            is Literal -> {
-                when (obj) {
-                    is LangString -> "\"${escapeLiteral(obj.lexical)}\"@${langTag(obj.lang)}"
-                    is TypedLiteral -> {
-                        if (obj.datatype != XSD.string) {
-                            "\"${escapeLiteral(obj.lexical)}\"^^${iriRef(obj.datatype.value)}"
-                        } else {
-                            "\"${escapeLiteral(obj.lexical)}\""
-                        }
-                    }
-                    is TrueLiteral -> "\"true\"^^${iriRef(XSD.boolean.value)}"
-                    is FalseLiteral -> "\"false\"^^${iriRef(XSD.boolean.value)}"
-                }
-            }
-            is BlankNode -> bnodeLabel(obj.id)
-            is TripleTerm -> "<<${formatSubject(obj.triple.subject)} ${formatPredicate(obj.triple.predicate)} ${formatObject(obj.triple.obj)}>>"
-            else -> throw IllegalArgumentException("Unsupported RDF term type for SPARQL formatting: ${obj.javaClass.simpleName}")
-        }
-    }
-
-    /** Render an IRI as a SPARQL IRIREF, rejecting characters that would break out of `<...>`. */
-    private fun iriRef(value: String): String {
-        require(value.none { it.isWhitespace() || it in ILLEGAL_IRI_CHARS }) {
-            "IRI contains characters illegal in a SPARQL IRIREF: '$value'"
-        }
-        return "<$value>"
+        addTriples(listOf(triple))
     }
 
     /**
-     * Validate a language tag before interpolating it into a SPARQL string. A valid
-     * BCP-47 tag only contains letters, digits and hyphens, so this both enforces
-     * well-formedness and prevents a tag from a hostile endpoint breaking out of the
-     * literal (e.g. `en" . DROP ...`).
+     * `INSERT DATA`. Triples without blank nodes are sent in batches of
+     * [SparqlEndpointConfig.insertBatchSize]; see the class documentation for blank nodes.
      */
-    private fun langTag(lang: String): String {
-        require(SAFE_LANG_TAG.matches(lang)) { "Invalid language tag for SPARQL: '$lang'" }
-        return lang
-    }
-
-    /** Validate a blank-node label so it cannot inject SPARQL (no whitespace, braces, dots-as-terminators). */
-    private fun bnodeLabel(id: String): String {
-        require(SAFE_BNODE_LABEL.matches(id)) { "Unsafe blank node label for SPARQL: '$id'" }
-        return "_:$id"
-    }
-
-    /** Escape a string literal's lexical form for inclusion inside `"..."` per Turtle/SPARQL rules. */
-    private fun escapeLiteral(lexical: String): String = buildString(lexical.length) {
-        for (c in lexical) when (c) {
-            '\\' -> append("\\\\")
-            '"' -> append("\\\"")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            else -> append(c)
+    override fun addTriples(triples: Collection<RdfTriple>) {
+        if (triples.isEmpty()) return
+        if (triples.any(::hasBlank)) {
+            val labels = HashMap<String, String>()
+            insertData(triples) { node -> "_:" + labels.getOrPut(node.id) { "b${labels.size}" } }
+        } else {
+            triples.chunked(batchSize).forEach { batch -> insertData(batch, ::rejectBlankNode) }
         }
     }
 
-    private companion object {
-        private val ILLEGAL_IRI_CHARS = setOf('<', '>', '"', '{', '}', '|', '^', '`', '\\')
-        private val SAFE_LANG_TAG = Regex("[A-Za-z]+(?:-[A-Za-z0-9]+)*")
-        // Start with letter/digit/underscore, end with letter/digit/underscore/hyphen
-        // (not a dot, which SPARQL would read as a statement terminator).
-        private val SAFE_BNODE_LABEL = Regex("[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?")
+    private fun insertData(triples: Collection<RdfTriple>, blankNode: (BlankNode) -> String) {
+        val body = triples.joinToString("\n") { rendered(it, blankNode) }
+        repository.update(UpdateQuery("INSERT DATA { ${pattern(body)} }"))
     }
+
+    override fun removeTriple(triple: RdfTriple): Boolean = removeTriples(listOf(triple))
+
+    /**
+     * `DELETE DATA` in batches of [SparqlEndpointConfig.insertBatchSize]. Returns `true` if at least
+     * one triple existed before deletion; this is determined with a single `ASK ... VALUES` per batch
+     * (skipped once a match is known) rather than one request per triple. The check and the delete
+     * are separate requests, so concurrent writers can race with them.
+     */
+    override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
+        if (triples.isEmpty()) return false
+        var existed = false
+        triples.chunked(batchSize).forEach { batch ->
+            val body = batch.joinToString("\n") { rendered(it, ::rejectBlankNode) }
+            if (!existed) existed = anyExists(batch)
+            repository.update(UpdateQuery("DELETE DATA { ${pattern(body)} }"))
+        }
+        return existed
+    }
+
+    private fun anyExists(batch: List<RdfTriple>): Boolean {
+        val rows = batch.joinToString(" ") { t ->
+            "(${SparqlTermFormat.term(t.subject, ::rejectBlankNode)} ${SparqlTermFormat.iriRef(t.predicate.value)} " +
+                "${SparqlTermFormat.term(t.obj, ::rejectBlankNode)})"
+        }
+        return repository.ask(SparqlAskQuery("ASK { VALUES (?s ?p ?o) { $rows } ${pattern("?s ?p ?o")} }"))
+    }
+
+    override fun hasTriple(triple: RdfTriple): Boolean {
+        val body = "${SparqlTermFormat.term(triple.subject, ::rejectBlankNode)} ${SparqlTermFormat.iriRef(triple.predicate.value)} " +
+            SparqlTermFormat.term(triple.obj, ::rejectBlankNode)
+        return repository.ask(SparqlAskQuery("ASK { ${pattern(body)} }"))
+    }
+
+    override fun getTriples(): List<RdfTriple> = find()
+    fun getTriples(subject: RdfResource? = null, predicate: Iri? = null, obj: RdfTerm? = null): List<RdfTriple> = find(subject, predicate, obj)
+    override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
+        val body = "${subject?.let { SparqlTermFormat.term(it, ::rejectBlankNode) } ?: "?s"} " +
+            "${predicate?.let { SparqlTermFormat.iriRef(it.value) } ?: "?p"} " +
+            "${obj?.let { SparqlTermFormat.term(it, ::rejectBlankNode) } ?: "?o"} ."
+        val result = repository.select(SparqlSelectQuery("SELECT * WHERE { ${pattern(body)} }"))
+        return result.map { row -> RdfTriple(subject ?: row.get("s") as RdfResource,
+            predicate ?: row.get("p") as Iri, obj ?: row.get("o") as RdfTerm) }
+    }
+
+    override fun clear(): Boolean {
+        val existed = repository.ask(SparqlAskQuery("ASK { ${pattern("?s ?p ?o")} }"))
+        repository.update(UpdateQuery(if (graphName == null) "CLEAR DEFAULT" else "CLEAR SILENT GRAPH ${SparqlTermFormat.iriRef(graphName.value)}"))
+        return existed
+    }
+
+    override fun size(): Int {
+        val query = "SELECT (COUNT(*) AS ?count) WHERE { ${pattern("?s ?p ?o")} }"
+        val result = repository.select(SparqlSelectQuery(query))
+        return result.firstOrNull()?.get("count")?.let { term ->
+            if (term is Literal) Math.toIntExact(term.lexical.toLong()) else 0
+        } ?: 0
+    }
+
+    private fun rejectBlankNode(node: BlankNode): String = throw IllegalArgumentException(
+        "Blank node '${node.id}' cannot be addressed over SPARQL: blank-node labels are scoped to one request " +
+            "and endpoint-assigned identifiers are not valid query constants; use an explicit DELETE WHERE pattern instead"
+    )
 }
 
 /**
  * Parser for the SPARQL 1.1 Query Results JSON Format (application/sparql-results+json).
  */
 private object SparqlJsonResults {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json { ignoreUnknownKeys = true; isLenient = false }
 
     fun parseAsk(response: String): Boolean {
         val trimmed = response.trim()
@@ -463,43 +501,26 @@ private object SparqlJsonResults {
             ?: error("SPARQL ASK response missing 'boolean' field")
     }
 
-    fun parseSelect(response: String): List<BindingSet> {
-        val root = json.parseToJsonElement(response).jsonObject
-        val bindingsArray = root["results"]?.jsonObject?.get("bindings")?.jsonArray ?: return emptyList()
-        return bindingsArray.map { row ->
-            val values = LinkedHashMap<String, RdfTerm>()
-            row.jsonObject.forEach { (variable, binding) ->
-                termFromBinding(binding.jsonObject)?.let { values[variable] = it }
-            }
-            MapBindingSet(values)
-        }
-    }
+    fun row(row: JsonObject): BindingSet = MapBindingSet(row.mapValues { (_, value) -> termFromBinding(value.jsonObject) })
 
-    private fun termFromBinding(binding: JsonObject): RdfTerm? {
-        val type = binding["type"]?.jsonPrimitive?.contentOrNull ?: return null
-        val value = binding["value"]?.jsonPrimitive?.contentOrNull ?: return null
+    private fun termFromBinding(binding: JsonObject): RdfTerm {
+        val type = binding["type"]?.jsonPrimitive?.contentOrNull ?: error("SPARQL binding missing required field")
+        val value = binding["value"]?.jsonPrimitive?.contentOrNull ?: error("SPARQL binding missing required field")
         return when (type) {
             "uri" -> Iri(value)
+            // Kept verbatim (e.g. Virtuoso `nodeID://b1`); see SparqlGraph for what can be done with it.
             "bnode" -> BlankNode(value)
             "literal", "typed-literal" -> {
+                require(binding["its:dir"] == null && binding["direction"] == null) { "Directional result literals are unsupported" }
                 val lang = binding["xml:lang"]?.jsonPrimitive?.contentOrNull
                 val datatype = binding["datatype"]?.jsonPrimitive?.contentOrNull
                 when {
-                    lang != null -> LangString(value, lang)
+                    !lang.isNullOrEmpty() -> LangString(value, lang)
                     datatype != null -> Literal(value, Iri(datatype))
                     else -> Literal(value, XSD.string)
                 }
             }
-            else -> null
+            else -> error("Unsupported SPARQL result binding type: $type")
         }
     }
 }
-
-
-
-
-
-
-
-
-

@@ -15,9 +15,13 @@ object RdfGraphSnapshots {
     private const val DEFAULT_SNIPPET_LINES = 64
 
     fun sortedNtriplesLines(graph: RdfGraph): List<String> {
-        val model = JenaBridge.toJenaModel(graph)
+        val model = JenaBridge.copyToJenaModel(graph)
         val sw = StringWriter()
-        RDFDataMgr.write(sw, model, Lang.NTRIPLES)
+        try {
+            RDFDataMgr.write(sw, model, Lang.NTRIPLES)
+        } finally {
+            model.close()
+        }
         return sw.toString()
             .lineSequence()
             .map { it.trim() }

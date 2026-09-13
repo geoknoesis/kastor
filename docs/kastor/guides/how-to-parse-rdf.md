@@ -63,6 +63,16 @@ val future = Rdf.parseFromUrlAsync(
 val remoteGraphAsync = future.get() // or attach callbacks
 ```
 
+URL loading is restricted by `UrlLoadOptions`. By default only `http` and `https` URLs are accepted, and response bodies larger than 64 MiB fail with `RdfInputTooLargeException`. Pass options to change this:
+
+```kotlin
+val local = Rdf.parseFromUrl(
+    "file:///data/big.ttl",
+    format = "TURTLE",
+    options = UrlLoadOptions(allowedSchemes = setOf("file"), maxBytes = 512L * 1024 * 1024)
+)
+```
+
 ### Step 4: Add parsed graph to a repository
 
 ```kotlin

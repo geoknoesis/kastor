@@ -31,7 +31,6 @@ class Rdf4jVariantsTest {
   }
 
   @Test
-  @org.junit.jupiter.api.Disabled("RDF4J native persistence needs investigation")
   fun `rdf4j native persists data at location`() {
     val dir = Files.createTempDirectory("rdf4j-native-test").toFile()
     dir.deleteOnExit()
@@ -41,10 +40,12 @@ class Rdf4jVariantsTest {
     val p = Iri("urn:native:p")
     val o = Literal("persist")
     repo1.editDefaultGraph().addTriple(RdfTriple(s, p, o))
+    repo1.close()
 
     val repo2 = Rdf4jRepository.NativeRepository(dir.absolutePath)
     val ask = repo2.ask(SparqlAskQuery("ASK { <urn:native:s> <urn:native:p> 'persist' }"))
     assertTrue(ask)
+    repo2.close()
   }
 
   @Test

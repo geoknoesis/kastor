@@ -1,47 +1,89 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
-import com.geoknoesis.kastor.rdf.Dataset
+import com.geoknoesis.kastor.rdf.BindingSet
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfProviderException
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
+import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
+import java.time.Duration
 
+/**
+ * Executes SHACL-SPARQL constraint queries.
+ *
+ * The native engine has no SPARQL processor of its own: it needs a SPARQL-capable Kastor provider with an
+ * in-memory variant (`rdf-jena` or `rdf-rdf4j`) **at runtime**. Queries run with the **data graph** as default
+ * graph. When a query references `$shapesGraph`, the shapes graph is loaded as the named graph
+ * [SHAPES_GRAPH_IRI] and `$shapesGraph` is pre-bound to that IRI (so `GRAPH $shapesGraph { … }` works).
+ * `$this` and `$currentShape` are pre-bound through the provider's initial-binding support.
+ */
 internal object SparqlConstraintEvaluator {
 
-    private val shaclThisMarker = Regex(Regex.escape("\$this") + "\\b")
+    val SHAPES_GRAPH_IRI = Iri("urn:x-kastor:shacl:shapesGraph")
+
+    private const val MISSING_ENGINE =
+        "SHACL-SPARQL constraints (sh:sparql) require a SPARQL-capable RDF provider at runtime. " +
+            "Add 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' to the runtime classpath."
+
+    /** Whether a SPARQL engine usable for SHACL-SPARQL is registered on the classpath. */
+    fun engineAvailable(): Boolean =
+        try {
+            RdfProviderRegistry.supportsVariant("jena", "memory") || RdfProviderRegistry.supportsVariant("rdf4j", "memory")
+        } catch (_: Exception) {
+            false
+        }
+
+    /** Default repository factory: an in-memory repository of a SPARQL-capable provider. */
+    val defaultRepositoryFactory: () -> RdfRepository = { Rdf.memory() }
 
     /**
-     * SHACL SPARQL constraints use `sh:select`; non-empty result set indicates a violation.
- * When [focusNode] is an [Iri], occurrences of `$this` are rewritten to that IRI term
- * (SHACL-AF style pre-binding). Other focus kinds are left unbound.
+     * One provider repository per validation run, initialized only if a SPARQL constraint is evaluated.
+     * [repositoryFactory] is an internal seam (tests simulate a classpath without a SPARQL provider).
      */
-    fun selectReturnsRows(query: String, mergedDefaultGraph: RdfGraph, focusNode: RdfTerm? = null): Boolean {
-        val bound = bindThis(query, focusNode)
-        val ds = Dataset { defaultGraph(mergedDefaultGraph) }
-        return try {
-            ds.use { it.select(SparqlSelectQuery(bound)).iterator().hasNext() }
-        } catch (e: Exception) {
-            throw ShaclValidationException(
-                "SPARQL SELECT constraint failed: ${e.message}. Add :rdf:jena or :rdf:rdf4j so Rdf.memory() and Dataset queries work.",
-                e,
-            )
+    class Session(
+        dataGraph: RdfGraph,
+        shapesTriples: List<RdfTriple> = emptyList(),
+        repositoryFactory: () -> RdfRepository = defaultRepositoryFactory,
+    ) : AutoCloseable {
+        private val repo: RdfRepository =
+            try {
+                repositoryFactory()
+            } catch (e: RdfProviderException) {
+                throw ShaclValidationException(MISSING_ENGINE, e)
+            }
+
+        init {
+            try {
+                repo.transaction {
+                    editDefaultGraph().addTriples(dataGraph.getTriples())
+                    if (shapesTriples.isNotEmpty()) editGraph(SHAPES_GRAPH_IRI).addTriples(shapesTriples)
+                }
+            } catch (e: Throwable) {
+                repo.close()
+                throw e
+            }
         }
+
+        fun select(query: String, bindings: Map<String, RdfTerm>, timeout: Duration): List<BindingSet> =
+            try {
+                repo.withSelectRows(SparqlSelectQuery(query), bindings, timeout) { it.toList() }
+            } catch (e: ShaclValidationException) {
+                throw e
+            } catch (e: Exception) {
+                throw ShaclValidationException("SPARQL constraint failed: ${e.message}", e)
+            }
+
+        fun selectReturnsRows(query: String, focus: RdfTerm?, timeout: Duration): Boolean =
+            select(query, if (focus == null) emptyMap() else mapOf("this" to focus), timeout).isNotEmpty()
+
+        override fun close() = repo.close()
     }
 
-    internal fun bindThis(query: String, focus: RdfTerm?): String {
-        val iri = focus as? Iri ?: return query
-        val term = "<${iri.value}>"
-        // Pre-bind $this only within the query body (from the first '{' onward), never in the
-        // SELECT projection. Substituting it in the projection would produce illegal SPARQL such as
-        // `SELECT <iri> WHERE ...`, which is exactly what broke the standard SHACL idiom
-        // `SELECT $this WHERE { ... }`. Replacing $this with the focus term inside the body is the
-        // SHACL-AF pre-binding semantics; the (now unused) projection variable is left in place and
-        // simply projects unbound, which is legal and sufficient for the rows/no-rows check.
-        val bodyStart = query.indexOf('{')
-        if (bodyStart < 0) return shaclThisMarker.replace(query, term)
-        val head = query.substring(0, bodyStart)
-        val body = query.substring(bodyStart)
-        return head + shaclThisMarker.replace(body, term)
-    }
+    fun selectReturnsRows(query: String, dataGraph: RdfGraph, focusNode: RdfTerm? = null): Boolean =
+        Session(dataGraph).use { it.selectReturnsRows(query, focusNode, Duration.ofMinutes(5)) }
 }

@@ -1,64 +1,46 @@
 package com.geoknoesis.kastor.ontoquality.metrics.compute
 
-import kotlin.math.min
-
+/** Iterative Kosaraju SCC traversal; deep taxonomies do not consume the JVM call stack. */
 internal object CycleDetector {
+    /** A strongly connected component; [cyclic] when it has more than one member or a self-loop. */
+    data class Component(val members: Set<String>, val cyclic: Boolean)
+
+    fun cycleParticipants(nodes: Collection<String>, successors: Map<String, Set<String>>): Set<String> =
+        stronglyConnectedComponents(nodes, successors).filter { it.cyclic }.flatMapTo(mutableSetOf()) { it.members }
+
     /**
-     * Tarjan SCC over directed edges [successors]: node -> successor IRIs.
-     * Cycle participants: non-trivial SCCs (size > 1) or single-node SCC with a self-loop.
+     * Strongly connected components of the graph restricted to [nodes], in **topological order** of the
+     * condensation: for every edge `u -> v` between different components, `u`'s component precedes `v`'s.
      */
-    fun cycleParticipants(nodes: Collection<String>, successors: Map<String, Set<String>>): Set<String> {
-        val nodeSet = nodes.toSet()
-        val adj = successors.mapValues { (_, v) -> v.filter { it in nodeSet }.toSet() }
-
-        var indexCounter = 0
-        val index = mutableMapOf<String, Int>()
-        val lowlink = mutableMapOf<String, Int>()
-        val stack = ArrayDeque<String>()
-        val onStack = mutableSetOf<String>()
-        val sccs = mutableListOf<Set<String>>()
-
-        fun strongConnect(v: String) {
-            index[v] = indexCounter
-            lowlink[v] = indexCounter
-            indexCounter++
-            stack.addLast(v)
-            onStack.add(v)
-            for (w in adj[v].orEmpty()) {
-                when {
-                    w !in index -> {
-                        strongConnect(w)
-                        lowlink[v] = min(lowlink[v]!!, lowlink[w]!!)
-                    }
-                    w in onStack -> lowlink[v] = min(lowlink[v]!!, index[w]!!)
-                }
-            }
-            if (lowlink[v] == index[v]) {
-                val comp = mutableSetOf<String>()
-                while (true) {
-                    val w = stack.removeLast()
-                    onStack.remove(w)
-                    comp.add(w)
-                    if (w == v) break
-                }
-                sccs.add(comp)
+    fun stronglyConnectedComponents(nodes: Collection<String>, successors: Map<String, Set<String>>): List<Component> {
+        val allowed = nodes.toSet()
+        val adjacency = allowed.associateWith { successors[it].orEmpty().filter(allowed::contains) }
+        val reverse = mutableMapOf<String, MutableList<String>>()
+        adjacency.forEach { (s, targets) -> targets.forEach { reverse.getOrPut(it) { mutableListOf() }.add(s) } }
+        val seen = mutableSetOf<String>()
+        val finish = mutableListOf<String>()
+        for (start in allowed) {
+            if (!seen.add(start)) continue
+            val stack = ArrayDeque<Pair<String, Iterator<String>>>()
+            stack.addLast(start to adjacency.getValue(start).iterator())
+            while (stack.isNotEmpty()) {
+                val (node, edges) = stack.last()
+                if (!edges.hasNext()) { finish.add(node); stack.removeLast() }
+                else { val next = edges.next(); if (seen.add(next)) stack.addLast(next to adjacency.getValue(next).iterator()) }
             }
         }
-
-        for (n in nodeSet) {
-            if (n !in index) strongConnect(n)
-        }
-
-        val bad = mutableSetOf<String>()
-        for (comp in sccs) {
-            when {
-                comp.size > 1 -> bad.addAll(comp)
-                comp.size == 1 -> {
-                    val only = comp.single()
-                    if (only in adj[only].orEmpty()) bad.add(only)
-                }
+        seen.clear()
+        val result = mutableListOf<Component>()
+        for (start in finish.asReversed()) {
+            if (!seen.add(start)) continue
+            val component = mutableSetOf<String>()
+            val stack = ArrayDeque<String>(); stack.addLast(start)
+            while (stack.isNotEmpty()) {
+                val node = stack.removeLast(); component.add(node)
+                reverse[node].orEmpty().forEach { if (seen.add(it)) stack.addLast(it) }
             }
+            result.add(Component(component, component.size > 1 || start in adjacency.getValue(start)))
         }
-        return bad
+        return result
     }
 }

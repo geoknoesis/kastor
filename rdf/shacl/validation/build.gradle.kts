@@ -16,9 +16,13 @@ dependencies {
 }
 
 tasks.withType<Test>().configureEach {
-    // Forward CLI `-Dshacl.w3c.useNative=...` into forked test JVMs (not forwarded by default).
-    System.getProperty("shacl.w3c.useNative")?.let { value ->
-        systemProperty("shacl.w3c.useNative", value)
+    // CLI system properties are not automatically forwarded to forked test JVMs.
+    listOf("shacl.w3c.useNative", "shacl.w3c.manifest").forEach { name ->
+        providers.systemProperty(name).orNull?.let { systemProperty(name, it) }
+    }
+    inputs.files(fileTree("test-data/w3c-shacl12"))
+    providers.systemProperty("shacl.w3c.manifest").orNull?.let {
+        inputs.files(fileTree(file(it).parentFile))
     }
 }
 
@@ -30,7 +34,7 @@ publishing {
             artifact(tasks.named("javadocJar"))
 
             groupId = project.group.toString()
-            artifactId = project.name
+            artifactId = "rdf-shacl-validation"
             version = project.version.toString()
         }
     }

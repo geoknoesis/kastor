@@ -1,26 +1,43 @@
 [versions]
-kotlin = "2.3.21"
+kotlin = "2.4.20"
 coroutines = "1.10.2"
-ksp = "2.3.7"
+ksp = "2.3.12"
 junit = "5.13.4"
 junitPlatform = "1.13.4"
 slf4j = "2.0.17"
-jena = "6.1.0"
-httpclient5 = "5.5"
+jena = "6.2.0"
+httpclient5 = "5.6.4"
 rdf4j = "5.3.1"
 onnxruntime = "1.18.0"
-djlTokenizers = "0.28.0"
+djlTokenizers = "0.31.1"
 jmhGradle = "0.7.2"
 jmh = "1.37"
 koog = "0.8.0"
 kotlinxSerializationJson = "1.8.1"
-assertj = "3.27.3"
+assertj = "3.27.7"
 dependencyAnalysis = "3.12.0"
 kotlinpoet = "2.2.0"
 clikt = "5.0.1"
 owlapi = "4.5.29"
 hermit = "1.4.5.519"
-gradleToolingApi = "8.0"
+jackson = "2.22.2"
+jacksonAnnotations = "2.22"
+jsoup = "1.23.2"
+commonsLang3 = "3.20.0"
+dokka = "2.2.0"
+# Build-internal alignment platforms and security floors (applied through the non-published
+# :build-platform project; never exported to consumers).
+nettyBom = "4.2.18.Final"
+opentelemetryBom = "1.66.0"
+guava = "33.7.1-jre"
+commonsBeanutils = "1.11.0"
+httpcore5 = "5.4.3"
+httpclient4 = "4.5.14"
+mime4j = "0.8.15"
+libthrift = "0.24.0"
+lz4Java = "1.11.3"
+# Gradle Plugin Portal publication for kastor-gen/gradle-plugin (not yet applied).
+pluginPublish = "2.2.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -66,7 +83,20 @@ kotlinpoet-ksp = { module = "com.squareup:kotlinpoet-ksp", version.ref = "kotlin
 clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
 owlapi-distribution = { module = "net.sourceforge.owlapi:owlapi-distribution", version.ref = "owlapi" }
 hermit = { module = "net.sourceforge.owlapi:org.semanticweb.hermit", version.ref = "hermit" }
-gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "gradleToolingApi" }
+
+jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }
+netty-bom = { module = "io.netty:netty-bom", version.ref = "nettyBom" }
+opentelemetry-bom = { module = "io.opentelemetry:opentelemetry-bom", version.ref = "opentelemetryBom" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+commons-beanutils = { module = "commons-beanutils:commons-beanutils", version.ref = "commonsBeanutils" }
+httpcore5 = { module = "org.apache.httpcomponents.core5:httpcore5", version.ref = "httpcore5" }
+httpcore5-h2 = { module = "org.apache.httpcomponents.core5:httpcore5-h2", version.ref = "httpcore5" }
+httpclient4 = { module = "org.apache.httpcomponents:httpclient", version.ref = "httpclient4" }
+apache-mime4j-core = { module = "org.apache.james:apache-mime4j-core", version.ref = "mime4j" }
+libthrift = { module = "org.apache.thrift:libthrift", version.ref = "libthrift" }
+lz4-java = { module = "at.yawk.lz4:lz4-java", version.ref = "lz4Java" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
@@ -74,4 +104,5 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmhGradle" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
-
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+plugin-publish = { id = "com.gradle.plugin-publish", version.ref = "pluginPublish" }

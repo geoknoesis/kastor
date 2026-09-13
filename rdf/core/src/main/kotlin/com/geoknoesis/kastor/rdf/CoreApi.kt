@@ -10,7 +10,7 @@ import java.io.Closeable
  * 
  * **Relationship with other interfaces:**
  * - [SparqlQueryable] provides read-only query operations
- * - [SparqlMutable] extends [SparqlQueryable] and adds [update] for mutations
+ * - [SparqlMutable] extends [SparqlQueryable] and adds `update` for mutations
  * - [Dataset] extends [SparqlQueryable] and represents a SPARQL dataset (read-only, multiple graphs)
  * - [RdfRepository] extends [Dataset] and [SparqlMutable] for full repository capabilities
  * 
@@ -25,6 +25,16 @@ interface SparqlQueryable : Closeable {
     fun graph(name: Iri): RdfGraph
 
     fun select(query: SparqlSelect): SparqlQueryResult
+    /** Consume rows inside their resource scope; do not retain the sequence. */
+    fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
+        consume(select(query).asSequence())
+    /** Execute with real initial bindings and a provider-enforced query timeout. */
+    fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
+        consume: (Sequence<BindingSet>) -> T): T =
+        throw UnsupportedOperationException("This provider does not support bound, timed queries")
+    /** Consume graph results inside their resource scope; do not retain the sequence. */
+    fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T =
+        consume(construct(query))
     fun ask(query: SparqlAsk): Boolean
     fun construct(query: SparqlConstruct): Sequence<RdfTriple>
     fun describe(query: SparqlDescribe): Sequence<RdfTriple>
@@ -37,7 +47,7 @@ interface SparqlQueryable : Closeable {
  * This interface separates read-only query operations from mutable update operations,
  * following the Interface Segregation Principle.
  * 
- * **Note:** The concrete class [com.geoknoesis.kastor.rdf.sparql.SparqlRepository] in the
+ * **Note:** The concrete class `com.geoknoesis.kastor.rdf.sparql.SparqlRepository` in the
  * `rdf/sparql` package represents a remote SPARQL endpoint implementation.
  */
 interface SparqlMutable : SparqlQueryable {

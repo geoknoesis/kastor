@@ -9,14 +9,14 @@ class Rdf4jProvider : RdfProvider {
     
     override val id: String = "rdf4j"
     override val name: String = "RDF4J Repository"
-    override val version: String = "4.0.0"
+    override val version: String = org.eclipse.rdf4j.model.impl.SimpleValueFactory::class.java.`package`.implementationVersion ?: "unknown"
     
     override fun variants(): List<RdfVariant> {
         return listOf(
             RdfVariant("memory", "In-memory store"),
             RdfVariant("native", "Native persistent store"),
-            RdfVariant("memory-star", "In-memory store with RDF-star"),
-            RdfVariant("native-star", "Native store with RDF-star"),
+            RdfVariant("memory-star", "Alias of memory (RDF-star triple terms are enabled on every RDF4J store)"),
+            RdfVariant("native-star", "Alias of native (RDF-star triple terms are enabled on every RDF4J store)"),
             RdfVariant("memory-rdfs", "In-memory store with RDFS inference"),
             RdfVariant("native-rdfs", "Native store with RDFS inference"),
             RdfVariant("memory-shacl", "In-memory store with SHACL"),
@@ -51,14 +51,7 @@ class Rdf4jProvider : RdfProvider {
     }
     
     override fun getCapabilities(variantId: String?): ProviderCapabilities {
-        val formats = listOf(
-            "TURTLE", "TTL", "TURTLE-1.2", "TURTLESTAR",
-            "JSON-LD", "JSONLD", "JSON-LD-1.2",
-            "RDF/XML", "RDFXML", "XML",
-            "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2",
-            "TRIG", "TRI-G", "TRIG-1.2", "TRIGSTAR",
-            "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2",
-        )
+        val formats = Rdf4jFormatSupport.ADVERTISED_FORMATS
 
         // Variant-specific capability flags. The plain `memory`/`native` variants
         // do not perform inference and have no SHACL validation; the dedicated
@@ -72,7 +65,8 @@ class Rdf4jProvider : RdfProvider {
         val supportsRdfStar = true
 
         return ProviderCapabilities(
-            rdfVersion = "1.2",
+            // Rio has partial RDF 1.2 term support; it does not implement the full 1.2 syntax suite.
+            rdfVersion = "1.1",
             supportsTripleTerms = true,
             supportsInference = supportsInference,
             supportsTransactions = true,
@@ -80,25 +74,23 @@ class Rdf4jProvider : RdfProvider {
             supportsUpdates = true,
             supportsRdfStar = supportsRdfStar,
             supportsShacl = supportsShacl,
+            // No native base direction: Kastor encodes it into the language tag as "lang--dir".
+            supportsBaseDirection = false,
             maxMemoryUsage = Long.MAX_VALUE,
-            sparqlVersion = "1.2",
+            sparqlVersion = "1.1",
             supportsPropertyPaths = true,
             supportsAggregation = true,
             supportsSubSelect = true,
-            supportsVersionDeclaration = true,
-            supportsServiceDescription = true,
+            supportsVersionDeclaration = false,
+            // generateServiceDescription is not implemented by this provider.
+            supportsServiceDescription = false,
             supportedInputFormats = formats,
             supportedOutputFormats = formats // RDF4J supports same formats for input and output
         )
     }
     
-    override fun supportsFormat(format: String): Boolean {
-        val normalized = format.uppercase().trim()
-        return normalized in listOf(
-            "TURTLE", "TTL", "JSON-LD", "JSONLD", "RDF/XML", "RDFXML", "XML", 
-            "N-TRIPLES", "NT", "NTRIPLES", "TRIG", "TRI-G", "N-QUADS", "NQUADS", "NQ"
-        )
-    }
+    /** Ranked below Jena (50) and above the in-core memory store (-100) for format-based selection. */
+    override val priority: Int = 40
     
     override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
         return Rdf4jFormatSupport.serializeGraph(graph, format, options)
@@ -119,6 +111,15 @@ class Rdf4jProvider : RdfProvider {
     ): MutableRdfGraph =
         if (baseIri == null) Rdf4jFormatSupport.parseGraph(inputStream, format)
         else Rdf4jFormatSupport.parseGraph(inputStream, format, baseIri)
+
+    /** Streaming parse: Rio runs on a background thread and hands triples over through a bounded queue. */
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream =
+        Rdf4jFormatSupport.openTripleStream(inputStream, format)
+
+    /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer thread. */
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
+        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+            .use { it.toList().asSequence() }
 
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {
         Rdf4jFormatSupport.parseDataset(repository, inputStream, format)

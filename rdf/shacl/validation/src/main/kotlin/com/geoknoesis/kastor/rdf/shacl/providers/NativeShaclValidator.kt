@@ -3,10 +3,8 @@ package com.geoknoesis.kastor.rdf.shacl.providers
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Dataset
 import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.FalseLiteral
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
-import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
@@ -17,7 +15,6 @@ import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.SHACL
-import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ShapesGraphNotFoundException
@@ -32,6 +29,7 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.ValidationWarning
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import java.time.Duration
+import com.geoknoesis.kastor.rdf.shacl.native.ValidationBudget
 import com.geoknoesis.kastor.rdf.shacl.native.ClosedMode
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledNodeShape
 import com.geoknoesis.kastor.rdf.shacl.native.CompiledPropertyShape
@@ -45,13 +43,11 @@ import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.graphFromTriples
 import com.geoknoesis.kastor.rdf.shacl.native.literalLess
 import com.geoknoesis.kastor.rdf.shacl.native.literalLessOrEqual
-import com.geoknoesis.kastor.rdf.shacl.native.typedLiteralLexicallyValidForShaclDatatype
-import com.geoknoesis.kastor.rdf.shacl.native.mergeGraphs
+import com.geoknoesis.kastor.rdf.shacl.native.literalLexicallyValid
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesGraphTriplesCollector
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesStructuralDigest
-import com.geoknoesis.kastor.rdf.shacl.native.ShapeGraphIndex
 import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.isLexicallyTrue
 import com.geoknoesis.kastor.rdf.shacl.native.constraintStub
@@ -61,23 +57,114 @@ import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMaxInclusive
 import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMinExclusive
 import com.geoknoesis.kastor.rdf.shacl.native.satisfiesMinInclusive
 import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermEquals
+import com.geoknoesis.kastor.rdf.shacl.native.shaclRdfTermFingerprint
 import com.geoknoesis.kastor.rdf.shacl.native.distinctShaclTerms
 
 /**
  * Kastor native SHACL Core validator (compile → plan → execute → report).
+ *
+ * Semantics notes:
+ * - A report conforms (`isValid`) only when it has no result of severity sh:Violation, sh:Warning, sh:Info or a
+ *   custom severity; SHACL 1.2 sh:Debug / sh:Trace results do not affect conformance.
+ * - Value nodes are sets; nested shape checks (`sh:node`, logical constraints, qualified shapes, `sh:shape`,
+ *   `sh:someValue`, `sh:memberShape`, `sh:reifierShape`, `sh:targetWhere`) are conformance checks memoized per
+ *   (value node, shape) within a run and short-circuit on the first result.
+ * - Recursion is detected on (focus node, shape) pairs. SHACL leaves recursive shapes undefined; a pair that is
+ *   re-entered while being checked is assumed to conform, so finite acyclic data chains validate normally.
  */
-internal class NativeShaclValidator(private val config: ValidationConfig) : ShaclValidator {
+internal class NativeShaclValidator(
+    private val config: ValidationConfig,
+    private val sparqlRepositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository = SparqlConstraintEvaluator.defaultRepositoryFactory,
+) : ShaclValidator, com.geoknoesis.kastor.rdf.shacl.ShapeCacheControl {
 
     private companion object {
         val singleLineBreakRegex = Regex("[\\f\\r\\n\\u000B]")
+        const val DIGEST_MEMO_CAPACITY = 8
+        val messagePlaceholder = Regex("\\{[?$]([A-Za-z_][A-Za-z0-9_]*)\\}")
     }
 
-    private data class ValidationContext(
+    private val compileCache = NativeCompileCache()
+
+    /**
+     * Structural digests of recently validated shapes snapshots (finding: avoid re-sorting and re-hashing an
+     * unchanged shapes graph on every run). The RdfGraph API exposes no modification counter, so entries are keyed
+     * by the **content** of the merged triple snapshot: a hit requires element-wise equality with a stored copy
+     * (O(n) `equals`, no canonicalization/sort/SHA-256). Any mutation of the shapes graph changes the snapshot and
+     * therefore misses — a stale digest can never be reused. Snapshots whose triple order differs simply miss.
+     * Bounded to [DIGEST_MEMO_CAPACITY] entries (each retains a copy of the triple list, not the graph).
+     */
+    private val digestMemo = object : LinkedHashMap<List<RdfTriple>, String>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<List<RdfTriple>, String>?): Boolean = size > DIGEST_MEMO_CAPACITY
+    }
+    @Volatile internal var digestMemoHits = 0L
+        private set
+
+    private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
+        synchronized(digestMemo) {
+            digestMemo[triples]?.let { digestMemoHits++; return it }
+        }
+        val digest = ShapesStructuralDigest.digest(triples, config, budget)
+        synchronized(digestMemo) { digestMemo[ArrayList(triples)] = digest }
+        return digest
+    }
+    override val cacheStatistics get() = compileCache.statistics()
+    override fun clearCache() = compileCache.clear()
+    init {
+        require(!config.parallelValidation) { "Native parallel validation is unsupported" }
+        require(!config.streamingMode) { "Native streaming validation is unsupported" }
+        require(config.maxViolations > 0 && !config.timeout.isNegative && !config.timeout.isZero)
+    }
+
+    /** `sh:resultPath` information for results of one property shape. */
+    private class ReportPath(val terms: List<RdfTerm>?, val node: RdfTerm?, val triples: List<RdfTriple>, val predicate: Iri?)
+
+    /** Source shape, severity, messages and path shared by the results of one shape. */
+    private class ResultTemplate(
+        val shape: RdfResource,
+        val severity: ViolationSeverity,
+        val severityCustomIri: Iri?,
+        val messages: List<Literal>,
+        val path: ReportPath?,
+    )
+
+    private data class DepthState(val depth: Int, val conformsOnly: Boolean) {
+        fun nested() = DepthState(depth + 1, true)
+    }
+
+    /** Evaluates a CharSequence for regex matching while consulting the deadline every 1024 character reads. */
+    private class DeadlineCharSequence(private val value: String, private val budget: ValidationBudget) : CharSequence {
+        private var reads = 0
+        override val length: Int get() = value.length
+        override fun get(index: Int): Char {
+            if ((++reads and 1023) == 0) budget.check("pattern matching")
+            return value[index]
+        }
+        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
+            DeadlineCharSequence(value.substring(startIndex, endIndex), budget)
+        override fun toString(): String = value
+    }
+
+    private class ValidationContext(
         val compiled: CompiledShapeGraph,
         val data: DataGraphIndex,
-        val mergedDataAndShapes: RdfGraph,
-        val shapesIndex: ShapeGraphIndex,
-    )
+        val budget: ValidationBudget,
+        private val repositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository,
+    ) : AutoCloseable {
+        val conformsMemo = HashMap<Pair<String, RdfResource>, Boolean>()
+        val inProgress = HashSet<Pair<String, RdfResource>>()
+        var recursionAssumptions = 0L
+        val reportPaths = HashMap<RdfResource, ReportPath>()
+        private val session = lazy {
+            SparqlConstraintEvaluator.Session(data.graph, if (compiled.sparqlUsesShapesGraph) compiled.index.triples else emptyList(), repositoryFactory)
+        }
+        fun checkDeadline() {
+            budget.check()
+        }
+        fun select(query: String, bindings: Map<String, RdfTerm>) =
+            session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
+        fun text(value: String): CharSequence = DeadlineCharSequence(value, budget)
+        override fun close() { if (session.isInitialized()) session.value.close() }
+    }
 
     override fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport =
         runValidation(graph, shapes, config.dataset.validationDataset)
@@ -85,7 +172,9 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     override fun validateDataset(dataset: Dataset, shapes: RdfGraph?): ValidationReport =
         runValidation(dataset.defaultGraph, shapes ?: Rdf.graph { }, dataset)
 
-    private fun runValidation(graph: RdfGraph, shapes: RdfGraph, datasetForDiscovery: Dataset?): ValidationReport {
+    private fun runValidation(graph: RdfGraph, shapes: RdfGraph, datasetForDiscovery: Dataset?, focusOnly: RdfResource? = null): ValidationReport {
+        val budget = ValidationBudget(config.timeout)
+        budget.check("admission")
         val start = System.currentTimeMillis()
         val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
         if (combinedEstimate > config.maxCombinedGraphTriples) {
@@ -95,89 +184,95 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         }
         val mergedShapesTriples =
             try {
-                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery)
+                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery, budget)
             } catch (e: ShapesGraphNotFoundException) {
                 throw ShaclValidationException(e.message ?: "Referenced shapes graph not found", e)
             }
         val digest =
             try {
-                ShapesStructuralDigest.digest(mergedShapesTriples, config)
+                digestOf(mergedShapesTriples, budget)
             } catch (e: ShapeCompileException) {
                 throw ShaclValidationException("SHACL shapes digest failed: ${e.message}", e)
             }
-        config.cache.shapesGraphVersion?.let { NativeCompileCache.assertTagOrRecord(it, digest) }
+        config.cache.shapesGraphVersion?.let { compileCache.assertTagOrRecord(it, digest, budget) }
         val cacheKey = ShapesStructuralDigest.compileCacheKey(digest, config)
-        val compiled =
-            NativeCompileCache.getCompiled(cacheKey)
-                ?: try {
-                    ShapesCompiler.compile(mergedShapesTriples, config).also { NativeCompileCache.putCompiled(cacheKey, it) }
-                } catch (e: ShapeCompileException) {
-                    throw ShaclValidationException("SHACL shape graph compile failed: ${e.message}", e)
-                }
-        val shapesGraph = graphFromTriples(mergedShapesTriples)
-        val mergedForSparql = mergeGraphs(graph, shapesGraph)
-        val shapesIndex = ShapeGraphIndex(mergedShapesTriples)
-        val ctx = ValidationContext(compiled, DataGraphIndex(graph), mergedForSparql, shapesIndex)
-
-        val violations = mutableListOf<ValidationViolation>()
-        val warnings = mutableListOf<ValidationWarning>()
-        var hitViolationCap = false
-
-        for (shape in compiled.orderedNodeShapes) {
-            if (shape.uniqueValuesForProps.isNotEmpty()) {
-                violations.addAll(validateUniqueValuesForShape(shape, ctx))
-                if (violations.size >= config.maxViolations) {
-                    hitViolationCap = true
-                    break
-                }
-            }
-            val focusNodes = computeFocusNodes(shape, ctx)
-            for (focus in focusNodes) {
-                violations.addAll(
-                    validateNodeShape(focus, shape, ctx, DepthState(0, emptyList())),
-                )
-                if (violations.size >= config.maxViolations) {
-                    hitViolationCap = true
-                    break
-                }
-            }
-            if (hitViolationCap) break
+        if (graph.size().toLong() + mergedShapesTriples.size > config.maxCombinedGraphTriples) {
+            throw ShaclValidationException("Expanded data and shapes exceed maxCombinedGraphTriples")
         }
+        val compiled = try {
+            compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
+        } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
+        ValidationContext(compiled, DataGraphIndex(graph, budget), budget, sparqlRepositoryFactory).use { ctx ->
+            ctx.checkDeadline()
 
-        val cap = config.maxViolations.coerceAtLeast(1)
-        val violationsTruncated = hitViolationCap || violations.size > cap
-        val cappedViolations = violations.take(cap)
+            val violations = mutableListOf<ValidationViolation>()
+            val warnings = mutableListOf<ValidationWarning>()
+            var totalResults = 0L
+            // SHACL 1.2: sh:Debug and sh:Trace results do not affect conformance (default sh:conformanceDisallows).
+            var blockingResults = 0L
+            fun blocking(severity: ViolationSeverity) = severity != ViolationSeverity.DEBUG && severity != ViolationSeverity.TRACE
+            var validatedConstraintSlots = 0L
+            fun record(results: List<ValidationViolation>) {
+                totalResults += results.size
+                blockingResults += results.count { blocking(it.severity) }
+                for (result in results) {
+                    if (violations.size >= config.maxViolations) break
+                    violations.add(result)
+                }
+            }
 
-        val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
-        val validatedConstraintSlots = countConstraintEvaluationSlots(compiled, ctx)
-        val statistics = buildStatistics(graph, shapesGraph, cappedViolations, warnings, compiled, validatedConstraintSlots)
+            for (shape in compiled.orderedNodeShapes) {
+                ctx.checkDeadline()
+                val allFocusNodes = computeFocusNodes(shape, ctx)
+                if (shape.uniqueValuesForProps.isNotEmpty()) {
+                    val (rows, count) = validateUniqueValuesForShape(shape, allFocusNodes, focusOnly, ctx, config.maxViolations - violations.size)
+                    violations.addAll(rows)
+                    totalResults += count
+                    if (blocking(shape.severity)) blockingResults += count
+                }
+                val focusNodes = if (focusOnly == null) allFocusNodes else allFocusNodes.filter { it == focusOnly }
+                validatedConstraintSlots += countConstraintEvaluationSlots(shape, focusNodes.size)
+                for (focus in focusNodes) {
+                    ctx.checkDeadline()
+                    record(validateFocus(focus, shape, ctx))
+                }
+            }
+            val violationsTruncated = totalResults > violations.size
+            val slots = validatedConstraintSlots.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
-        return ValidationReport(
-            isValid = cappedViolations.none {
-                it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR
-            },
-            violations = cappedViolations,
-            warnings = warnings,
-            statistics = statistics,
-            validationTime = elapsed,
-            validatedResources = graph.getTriples().map { it.subject }.distinct().size,
-            validatedConstraints = validatedConstraintSlots.coerceAtLeast(cappedViolations.size),
-            shapeViolations = cappedViolations.groupBy { it.shapeUri ?: "unknown" },
-            constraintViolations = cappedViolations.groupBy { it.constraint.constraintType.name },
-            violationsTruncated = violationsTruncated,
-        )
+            val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
+            val statistics = buildStatistics(ctx.data.distinctResourceSubjects().size, violations, warnings, compiled, slots)
+
+            return ValidationReport(
+                // SHACL: sh:conforms is false as soon as a result has a conformance-disallowed severity
+                // (sh:Violation, sh:Warning, sh:Info and custom severities; not the SHACL 1.2 sh:Debug / sh:Trace).
+                isValid = blockingResults == 0L,
+                violations = violations,
+                warnings = warnings,
+                statistics = statistics,
+                validationTime = elapsed,
+                validatedResources = if (focusOnly == null) ctx.data.distinctResourceSubjects().size else 1,
+                validatedConstraints = slots.coerceAtLeast(violations.size),
+                shapeViolations = violations.groupBy { it.shapeUri ?: "unknown" },
+                constraintViolations = violations.groupBy { it.constraint.constraintType.name },
+                violationsTruncated = violationsTruncated,
+            )
+        }
     }
 
     private fun prepareMergedShapesTriples(
         data: RdfGraph,
         shapesArg: RdfGraph,
         datasetForDiscovery: Dataset?,
+        budget: ValidationBudget,
     ): List<RdfTriple> {
         val aux = config.dataset.auxiliaryGraphs
+        val auxiliarySize = aux.values.fold(0L) { n, g -> budget.check("auxiliary admission"); Math.addExact(n, g.size().toLong()) }
+        if (auxiliarySize > config.maxCombinedGraphTriples) throw ShaclValidationException("Auxiliary shapes exceed maxCombinedGraphTriples")
         val ds = datasetForDiscovery ?: config.dataset.validationDataset
         val primary: List<RdfTriple> =
             when (val name = config.dataset.shapesGraphNamedGraph) {
-                null -> shapesArg.getTriples()
+                null -> budget.snapshot(shapesArg, "primary shapes")
                 else -> {
                     val g =
                         ds?.getNamedGraph(name)
@@ -185,41 +280,31 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                             ?: throw ShapesGraphNotFoundException(
                                 "dataset.shapesGraphNamedGraph <$name> not found in validationDataset or auxiliaryGraphs",
                             )
-                    g.getTriples()
+                    budget.snapshot(g, "named shapes")
                 }
             }
-        val expanded = OwlImportsExpander.expand(graphFromTriples(primary), config.imports, aux)
+        val resolveImports = config.imports.resolveOwlImports
+        val expanded =
+            if (resolveImports) {
+                budget.snapshot(
+                    OwlImportsExpander.expand(graphFromTriples(primary, budget), config.imports, aux, config.maxCombinedGraphTriples, budget),
+                    "expanded shapes",
+                )
+            } else {
+                primary
+            }
         val extra =
             if (config.dataset.discoverShapesGraphFromData) {
-                ShapesGraphTriplesCollector.collectFromData(data, ds, aux)
+                ShapesGraphTriplesCollector.collectFromData(data, ds, aux, config.maxCombinedGraphTriples, budget)
             } else {
                 emptyList()
             }
-        return (expanded.getTriples() + extra).distinct()
-    }
-
-    private fun multisetTermsEqual(a: List<RdfTerm>, b: List<RdfTerm>): Boolean {
-        if (a.size != b.size) return false
-        val rest = b.toMutableList()
-        for (x in a) {
-            val i = rest.indexOfFirst { shaclRdfTermEquals(it, x) }
-            if (i < 0) return false
-            rest.removeAt(i)
-        }
-        return true
-    }
-
-    /** Symmetric multiset difference: unmatched terms from [left] ∪ leftovers of [right] after greedy pairing. */
-    private fun multisetUnmatchedTerms(left: List<RdfTerm>, right: List<RdfTerm>): List<RdfTerm> {
-        val rest = right.toMutableList()
-        val out = mutableListOf<RdfTerm>()
-        for (x in left) {
-            val i = rest.indexOfFirst { shaclRdfTermEquals(it, x) }
-            if (i >= 0) rest.removeAt(i)
-            else out.add(x)
-        }
-        out.addAll(rest)
-        return out
+        // Fast path: a single graph snapshot is already duplicate-free, so no merge copy is needed.
+        if (extra.isEmpty()) return expanded
+        val unique = linkedSetOf<RdfTriple>()
+        for (t in expanded) { budget.tick("shape merge"); unique.add(t) }
+        for (t in extra) { budget.tick("shape merge"); unique.add(t) }
+        return unique.toList()
     }
 
     override fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport {
@@ -232,15 +317,8 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         return validate(graph, Rdf.graph { })
     }
 
-    override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport {
-        val triples = graph.getTriples().filter { it.subject == resource || it.obj == resource }
-        val filtered = Rdf.graph {
-            triples.forEach { t ->
-                t.subject - t.predicate - t.obj
-            }
-        }
-        return validate(filtered, shapes)
-    }
+    override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport =
+        runValidation(graph, shapes, config.dataset.validationDataset, resource)
 
     override fun validateConstraints(graph: RdfGraph, constraints: List<com.geoknoesis.kastor.rdf.shacl.ShaclConstraint>): ValidationReport {
         if (constraints.isNotEmpty()) {
@@ -256,13 +334,6 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     override fun getValidationStatistics(graph: RdfGraph, shapes: RdfGraph): ValidationStatistics =
         validate(graph, shapes).statistics
 
-    private data class DepthState(val depth: Int, val stack: List<RdfResource>) {
-        fun push(shapeNode: RdfResource): DepthState? {
-            if (shapeNode in stack) return null
-            return DepthState(depth + 1, stack + shapeNode)
-        }
-    }
-
     private fun computeFocusNodes(shape: CompiledNodeShape, ctx: ValidationContext): List<RdfTerm> {
         val data = ctx.data
         val out = linkedSetOf<RdfTerm>()
@@ -276,10 +347,9 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         if (shapeIri != null) {
             data.subjectsWith(SHACL.shape, shapeIri).forEach { out.add(it) }
         }
-        val twBase = DepthState(0, emptyList())
-        for (tw in shape.targetWhereCompiled) {
-            for (cand in targetWhereCandidateResources(tw, data)) {
-                if (validateNodeShape(cand, tw, ctx, twBase).isEmpty()) {
+        for (tw in shape.targetWhereRefs) {
+            for (cand in targetWhereCandidateResources(tw, ctx)) {
+                if (conformsTo(cand, tw, ctx, DepthState(0, true))) {
                     out.add(cand)
                 }
             }
@@ -287,33 +357,74 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         return out.toList()
     }
 
-    private fun targetWhereCandidateResources(tw: CompiledNodeShape, data: DataGraphIndex): List<RdfResource> {
-        val cls = tw.nodeConstraints.firstNotNullOfOrNull { c -> (c as? PropertyConstraint.Class)?.iri }
+    private fun targetWhereCandidateResources(tw: RdfResource, ctx: ValidationContext): List<RdfResource> {
+        val cls = ctx.compiled.referencedNodeShapes[tw]?.nodeConstraints?.firstNotNullOfOrNull { c -> (c as? PropertyConstraint.Class)?.iri }
         return if (cls != null) {
-            data.instancesMatchingTargetClass(cls).distinct().toList()
+            ctx.data.instancesMatchingTargetClass(cls).toList()
         } else {
-            data.distinctResourceSubjects().toList()
+            ctx.data.distinctResourceSubjects().toList()
         }
     }
 
     /** Approximates constraint checks: focus count × (property constraints + logical + node refs + optional closed). */
-    private fun countConstraintEvaluationSlots(compiled: CompiledShapeGraph, ctx: ValidationContext): Int {
-        var total = 0
-        for (shape in compiled.orderedNodeShapes) {
-            val f = computeFocusNodes(shape, ctx).size
-            if (f == 0) continue
-            val perFocus =
-                shape.nodeConstraints.size +
-                    shape.propertyShapes.sumOf { it.constraints.size + it.logicalParts.size } +
-                    shape.logicalParts.size +
-                    shape.nodeRefs.size +
-                    shape.nodeByExpressionRefs.size +
-                    if (config.validateClosedShapes && shape.closed != ClosedMode.NONE) 1 else 0
-            var slots = f * perFocus
-            if (shape.uniqueValuesForProps.isNotEmpty() && f > 0) slots += 1
-            total += slots
+    private fun countConstraintEvaluationSlots(shape: CompiledNodeShape, focusCount: Int): Long {
+        if (focusCount == 0) return 0
+        val perFocus = shape.nodeConstraints.size.toLong() +
+            shape.propertyShapes.sumOf { it.constraints.size.toLong() + it.logicalParts.size } +
+            shape.logicalParts.size + shape.nodeRefs.size + shape.nodeByExpressionRefs.size +
+            if (config.validateClosedShapes && shape.closed != ClosedMode.NONE) 1 else 0
+        var slots = focusCount * perFocus
+        if (shape.uniqueValuesForProps.isNotEmpty()) slots += 1
+        return slots
+    }
+
+    private fun validateFocus(focus: RdfTerm, shape: CompiledNodeShape, ctx: ValidationContext): List<ValidationViolation> {
+        val key = shaclRdfTermFingerprint(focus) to shape.shapeNode
+        val added = ctx.inProgress.add(key)
+        try {
+            return validateNodeShape(focus, shape, ctx, DepthState(0, false))
+        } finally {
+            if (added) ctx.inProgress.remove(key)
         }
-        return total
+    }
+
+    /**
+     * Whether [value] conforms to the shape [ref] (no validation results of any severity). Deactivated and
+     * constraint-free shapes are conformed to by every node.
+     */
+    private fun conformsTo(value: RdfTerm, ref: RdfResource, ctx: ValidationContext, state: DepthState): Boolean {
+        ctx.checkDeadline()
+        val propertyShape = ctx.compiled.referencedPropertyShapes[ref]
+        val nodeShape = if (propertyShape == null) ctx.compiled.referencedNodeShapes[ref] else null
+        if (propertyShape == null && nodeShape == null) return true
+        if (propertyShape?.deactivated == true || nodeShape?.deactivated == true) return true
+        val key = shaclRdfTermFingerprint(value) to ref
+        ctx.conformsMemo[key]?.let { return it }
+        if (!ctx.inProgress.add(key)) {
+            ctx.recursionAssumptions++
+            return true
+        }
+        val next = state.nested()
+        if (next.depth > config.maxRecursionDepth) {
+            ctx.inProgress.remove(key)
+            throw ShaclValidationException(
+                "SHACL shape nesting exceeded ValidationConfig.maxRecursionDepth=${config.maxRecursionDepth} at shape ${ref.displayId()}",
+            )
+        }
+        val assumptionsBefore = ctx.recursionAssumptions
+        val ok =
+            try {
+                if (propertyShape != null) {
+                    validatePropertyShape(value, propertyShape, ctx, next).isEmpty()
+                } else {
+                    validateNodeShape(value, nodeShape!!, ctx, next).isEmpty()
+                }
+            } finally {
+                ctx.inProgress.remove(key)
+            }
+        // Results that relied on a recursion assumption are not cached: they depend on the call stack.
+        if (ctx.recursionAssumptions == assumptionsBefore) ctx.conformsMemo[key] = ok
+        return ok
     }
 
     private fun validateNodeShape(
@@ -322,157 +433,48 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         ctx: ValidationContext,
         state: DepthState,
     ): List<ValidationViolation> {
+        ctx.checkDeadline()
+        if (shape.deactivated) return emptyList()
         val vs = mutableListOf<ValidationViolation>()
-        val compiled = ctx.compiled
-
-        if (state.depth > config.maxRecursionDepth) {
-            vs.add(
-                violation(
-                    focus = focus,
-                    shape = shape.shapeNode,
-                    severity = ViolationSeverity.VIOLATION,
-                    severityCustomIri = null,
-                    constraint = constraintStub(ConstraintType.NODE),
-                    message = "Exceeded SHACL recursion guard maxRecursionDepth=${config.maxRecursionDepth} at shape ${shape.shapeNode.displayId()}",
-                    pathTerms = null,
-                ),
-            )
-            return vs
-        }
+        fun done() = state.conformsOnly && vs.isNotEmpty()
+        val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
 
         for (nr in shape.nodeRefs) {
-            val nested =
-                compiled.shapesByNode[nr]
-                    ?: ShapesCompiler.tryCompileInlineNodeShape(nr, ctx.shapesIndex, config)
-            if (nested == null) {
-                vs.add(
-                    violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = shape.severity,
-                        severityCustomIri = shape.severityCustomIri,
-                        constraint = constraintStub(ConstraintType.NODE),
-                        message = "sh:node references undefined NodeShape $nr",
-                        pathTerms = null,
-                    ),
-                )
-                continue
-            }
-            val st = state.push(nested.shapeNode)
-            if (st == null) {
-                vs.add(
-                    violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = ViolationSeverity.VIOLATION,
-                        severityCustomIri = null,
-                        constraint = constraintStub(ConstraintType.NODE),
-                        message = "Shape dependency cycle detected involving ${nested.shapeNode.displayId()}",
-                        pathTerms = null,
-                    ),
-                )
-                continue
-            }
-            val nestedVs = validateNodeShape(focus, nested, ctx, st)
-            if (nestedVs.isNotEmpty()) {
-                vs.add(
-                    violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = shape.severity,
-                        severityCustomIri = shape.severityCustomIri,
-                        constraint = constraintStub(ConstraintType.NODE),
-                        message = "sh:node constraint failed",
-                        pathTerms = null,
-                        value = focus,
-                    ),
-                )
+            if (!conformsTo(focus, nr, ctx, state)) {
+                vs.add(violation(focus, tpl, constraintStub(ConstraintType.NODE), "sh:node constraint failed for ${nr.displayId()}", value = focus))
+                if (done()) return vs
             }
         }
 
         for (exprRef in shape.nodeByExpressionRefs) {
-            val nested =
-                compiled.shapesByNode[exprRef]
-                    ?: ShapesCompiler.tryCompileInlineNodeShape(exprRef, ctx.shapesIndex, config)
-            if (nested == null) {
+            if (!conformsTo(focus, exprRef, ctx, state)) {
                 vs.add(
                     violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = shape.severity,
-                        severityCustomIri = shape.severityCustomIri,
-                        constraint = constraintStub(ConstraintType.NODE_BY_EXPRESSION),
-                        message = "sh:nodeByExpression references missing shape $exprRef",
-                        pathTerms = null,
+                        focus, tpl, constraintStub(ConstraintType.NODE_BY_EXPRESSION),
+                        "sh:nodeByExpression constraint failed", value = focus, sourceConstraint = exprRef,
                     ),
                 )
-                continue
-            }
-            val st = state.push(nested.shapeNode)
-            if (st == null) {
-                vs.add(
-                    violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = ViolationSeverity.VIOLATION,
-                        severityCustomIri = null,
-                        constraint = constraintStub(ConstraintType.NODE_BY_EXPRESSION),
-                        message = "Shape dependency cycle detected involving ${nested.shapeNode.displayId()}",
-                        pathTerms = null,
-                    ),
-                )
-                continue
-            }
-            val nestedVs = validateNodeShape(focus, nested, ctx, st)
-            if (nestedVs.isNotEmpty()) {
-                vs.add(
-                    violation(
-                        focus = focus,
-                        shape = shape.shapeNode,
-                        severity = shape.severity,
-                        severityCustomIri = shape.severityCustomIri,
-                        constraint = constraintStub(ConstraintType.NODE_BY_EXPRESSION),
-                        message = "sh:nodeByExpression constraint failed",
-                        pathTerms = null,
-                        value = focus,
-                    ),
-                )
+                if (done()) return vs
             }
         }
 
-        val siblingQualifiedShapes =
-            shape.propertyShapes.flatMap { ps ->
-                ps.constraints.filterIsInstance<PropertyConstraint.Qualified>().map { it.shape }
-            }.distinct()
-
         if (shape.nodeConstraints.isNotEmpty()) {
-            vs.addAll(
-                evaluateConstraintsForValues(
-                    focus = focus,
-                    violationShape = shape.shapeNode,
-                    severity = shape.severity,
-                    severityCustomIri = shape.severityCustomIri,
-                    pathTerms = null,
-                    pathPredicate = null,
-                    values = listOf(focus),
-                    constraints = shape.nodeConstraints,
-                    ctx = ctx,
-                    state = state,
-                    siblingQualifiedShapes = siblingQualifiedShapes,
-                ),
-            )
+            vs.addAll(evaluateConstraintsForValues(focus, tpl, listOf(focus), shape.nodeConstraints, ctx, state, shape.shapeNode, null))
+            if (done()) return vs
         }
 
         for (ps in shape.propertyShapes) {
-            vs.addAll(validatePropertyShape(focus, ps, ctx, state, siblingQualifiedShapes))
+            vs.addAll(validatePropertyShape(focus, ps, ctx, state))
+            if (done()) return vs
         }
 
         for (part in shape.logicalParts) {
-            vs.addAll(evalLogical(focus, focus, shape.shapeNode, shape.severity, shape.severityCustomIri, part, ctx, state, null))
+            vs.addAll(evalLogical(focus, focus, tpl, part, ctx, state))
+            if (done()) return vs
         }
 
         if (config.validateClosedShapes && shape.closed != ClosedMode.NONE && focus is RdfResource) {
-            vs.addAll(validateClosed(focus, shape, ctx))
+            vs.addAll(validateClosed(focus, shape, tpl, ctx))
         }
 
         return vs
@@ -481,162 +483,84 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
     private fun evalLogical(
         reportFocus: RdfTerm,
         logicalTarget: RdfTerm,
-        violationShape: RdfResource,
-        severity: ViolationSeverity,
-        severityCustomIri: Iri?,
+        tpl: ResultTemplate,
         part: NodeLogicalPart,
         ctx: ValidationContext,
         state: DepthState,
-        logicalPathTerms: List<RdfTerm>?,
     ): List<ValidationViolation> {
-        val compiled = ctx.compiled
-        fun conforms(ref: RdfResource): Boolean {
-            val idx = ctx.shapesIndex
-            if (idx.objects(ref, SHACL.deactivated).any { isLexicallyTrue(it) }) return true
-            compiled.shapesByNode[ref]?.let { nested ->
-                val st = state.push(nested.shapeNode) ?: return false
-                return validateNodeShape(logicalTarget, nested, ctx, st).isEmpty()
-            }
-            ShapesCompiler.tryCompilePropertyShape(ref, idx, config)?.let { ps ->
-                val sibs = ps.constraints.filterIsInstance<PropertyConstraint.Qualified>().map { it.shape }.distinct()
-                return validatePropertyShape(logicalTarget, ps, ctx, state, sibs).isEmpty()
-            }
-            ShapesCompiler.tryCompileInlineNodeShape(ref, idx, config)?.let { nested ->
-                val st = state.push(nested.shapeNode) ?: return false
-                return validateNodeShape(logicalTarget, nested, ctx, st).isEmpty()
-            }
-            return false
-        }
+        fun conforms(ref: RdfResource) = conformsTo(logicalTarget, ref, ctx, state)
         return when (part) {
             is NodeLogicalPart.And -> {
-                val fails = part.operands.filter { !conforms(it) }
-                if (fails.isNotEmpty()) {
-                    listOf(
-                        violation(
-                            reportFocus,
-                            violationShape,
-                            severity,
-                            severityCustomIri,
-                            constraintStub(ConstraintType.AND),
-                            "sh:and failed for operands ${fails.map { it.displayId() }}",
-                            logicalPathTerms,
-                        ),
-                    )
+                val failing = part.operands.firstOrNull { !conforms(it) }
+                if (failing != null) {
+                    listOf(violation(reportFocus, tpl, constraintStub(ConstraintType.AND, tpl.path?.predicate),
+                        "sh:and failed: value does not conform to ${failing.displayId()}", value = logicalTarget))
                 } else emptyList()
             }
-            is NodeLogicalPart.Or -> {
-                val ok = part.operands.any { conforms(it) }
-                if (!ok) {
-                    listOf(
-                        violation(
-                            reportFocus,
-                            violationShape,
-                            severity,
-                            severityCustomIri,
-                            constraintStub(ConstraintType.OR),
-                            "sh:or requires at least one matching shape",
-                            logicalPathTerms,
-                            value = logicalTarget,
-                        ),
-                    )
+            is NodeLogicalPart.Or ->
+                if (part.operands.none { conforms(it) }) {
+                    listOf(violation(reportFocus, tpl, constraintStub(ConstraintType.OR, tpl.path?.predicate),
+                        "sh:or requires at least one matching shape", value = logicalTarget))
                 } else emptyList()
-            }
             is NodeLogicalPart.Xone -> {
-                val matches = part.operands.count { conforms(it) }
+                var matches = 0
+                for (op in part.operands) {
+                    if (conforms(op)) matches++
+                    if (matches > 1) break
+                }
                 if (matches != 1) {
-                    listOf(
-                        violation(
-                            reportFocus,
-                            violationShape,
-                            severity,
-                            severityCustomIri,
-                            constraintStub(ConstraintType.XONE),
-                            "sh:xone requires exactly one matching shape (found $matches)",
-                            logicalPathTerms,
-                        ),
-                    )
+                    listOf(violation(reportFocus, tpl, constraintStub(ConstraintType.XONE, tpl.path?.predicate),
+                        "sh:xone requires exactly one matching shape (found ${if (matches > 1) "more than one" else "none"})", value = logicalTarget))
                 } else emptyList()
             }
-            is NodeLogicalPart.Not -> {
+            is NodeLogicalPart.Not ->
                 if (conforms(part.operand)) {
-                    listOf(
-                        violation(
-                            reportFocus,
-                            violationShape,
-                            severity,
-                            severityCustomIri,
-                            constraintStub(ConstraintType.NOT),
-                            "sh:not violated: nested shape matched",
-                            logicalPathTerms,
-                        ),
-                    )
+                    listOf(violation(reportFocus, tpl, constraintStub(ConstraintType.NOT, tpl.path?.predicate),
+                        "sh:not violated: value conforms to ${part.operand.displayId()}", value = logicalTarget))
                 } else emptyList()
-            }
         }
     }
 
-    private fun validateClosed(focus: RdfResource, shape: CompiledNodeShape, ctx: ValidationContext): List<ValidationViolation> {
+    private fun validateClosed(focus: RdfResource, shape: CompiledNodeShape, tpl: ResultTemplate, ctx: ValidationContext): List<ValidationViolation> {
         val allowed = mutableSetOf<Iri>()
         allowed.addAll(shape.ignoredProperties)
         if (shape.closed == ClosedMode.BY_TYPES || RDF.type in shape.ignoredProperties) {
             allowed.add(RDF.type)
         }
         when (shape.closed) {
-            ClosedMode.TRUE -> {
-                for (ps in shape.propertyShapes) {
-                    forwardPathPredicates(ps.path).forEach { allowed.add(it) }
-                }
-            }
-            ClosedMode.BY_TYPES -> {
-                allowed.addAll(collectClosedByTypesProperties(focus, ctx))
-            }
+            // SHACL §4.8.1: only IRIs used directly as sh:path of the shape's sh:property values are allowed.
+            ClosedMode.TRUE -> shape.propertyShapes.forEach { ps -> directPredicate(ps.path)?.let { allowed.add(it) } }
+            ClosedMode.BY_TYPES -> allowed.addAll(collectClosedByTypesProperties(focus, ctx))
             ClosedMode.NONE -> Unit
         }
         val violations = mutableListOf<ValidationViolation>()
         val data = ctx.data
         for (p in data.predicatesFor(focus)) {
-            if (p !in allowed) {
-                val witness = data.objects(focus, p).firstOrNull()
+            if (p in allowed) continue
+            val path = ReportPath(listOf(p), null, emptyList(), p)
+            for (o in data.objects(focus, p)) {
                 violations.add(
-                    violation(
-                        focus,
-                        shape.shapeNode,
-                        shape.severity,
-                        shape.severityCustomIri,
-                        constraintStub(ConstraintType.CLOSED, p),
-                        "Closed shape disallows predicate $p",
-                        listOf(p),
-                        value = witness,
-                    ),
+                    violation(focus, tpl, constraintStub(ConstraintType.CLOSED, p), "Closed shape disallows predicate $p", value = o, path = path),
                 )
             }
         }
         return violations
     }
 
-    private fun forwardPathPredicates(path: ShaclPath): Set<Iri> =
-        when (path) {
-            is ShaclPath.Predicate -> setOf(path.iri)
-            is ShaclPath.Inverse -> emptySet()
-            is ShaclPath.Sequence -> path.segments.flatMap { forwardPathPredicates(it) }.toSet()
-            is ShaclPath.Alternative -> path.options.flatMap { forwardPathPredicates(it) }.toSet()
-            is ShaclPath.ZeroOrMore -> forwardPathPredicates(path.child)
-            is ShaclPath.OneOrMore -> forwardPathPredicates(path.child)
-            is ShaclPath.ZeroOrOne -> forwardPathPredicates(path.child)
-        }
+    private fun directPredicate(path: ShaclPath): Iri? = (path as? ShaclPath.Predicate)?.iri
 
     /** SHACL 1.2 `sh:closed sh:ByTypes` property collection (shapes graph walk). */
     private fun collectClosedByTypesProperties(focus: RdfResource, ctx: ValidationContext): Set<Iri> {
         val out = mutableSetOf<Iri>()
         val compiled = ctx.compiled
-        val shapesIdx = ctx.shapesIndex
+        val shapesIdx = compiled.index
         val visited = mutableSetOf<RdfResource>()
 
         fun collectFromShapeNode(shapeNode: RdfResource) {
             if (!visited.add(shapeNode)) return
             val cn = compiled.shapesByNode[shapeNode] ?: return
             for (ps in cn.propertyShapes) {
-                forwardPathPredicates(ps.path).forEach { out.add(it) }
+                directPredicate(ps.path)?.let { out.add(it) }
             }
         }
 
@@ -669,1013 +593,246 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         return out
     }
 
-    private fun validateUniqueValuesForShape(shape: CompiledNodeShape, ctx: ValidationContext): List<ValidationViolation> {
+    /**
+     * `sh:uniqueValuesFor`: hash-groups targets by their composite key (multisets of values per property). Returns
+     * at most [capacity] result rows plus the total number of results (so truncation and conformance stay exact).
+     */
+    private fun validateUniqueValuesForShape(
+        shape: CompiledNodeShape,
+        focusNodes: List<RdfTerm>,
+        focusOnly: RdfResource?,
+        ctx: ValidationContext,
+        capacity: Int,
+    ): Pair<List<ValidationViolation>, Long> {
         val props = shape.uniqueValuesForProps
-        if (props.isEmpty()) return emptyList()
-        val data = ctx.data
-        val targets = computeFocusNodes(shape, ctx).filterIsInstance<RdfResource>()
-        if (targets.size < 2) return emptyList()
-
-        fun projectionKey(node: RdfResource): List<List<RdfTerm>> =
-            props.map { p -> data.objects(node, p) }
-
-        fun skip(node: RdfResource): Boolean = props.all { data.objects(node, it).isEmpty() }
-
-        fun projectionsMatch(a: RdfResource, b: RdfResource): Boolean {
-            val ka = projectionKey(a)
-            val kb = projectionKey(b)
-            if (ka.size != kb.size) return false
-            for (i in ka.indices) {
-                if (!multisetTermsEqual(ka[i], kb[i])) return false
-            }
-            return true
-        }
-
-        val clusters = mutableListOf<MutableList<RdfResource>>()
+        val targets = focusNodes.filterIsInstance<RdfResource>()
+        if (targets.size < 2) return emptyList<ValidationViolation>() to 0L
+        val groups = LinkedHashMap<List<List<String>>, MutableList<RdfResource>>()
         for (t in targets) {
-            if (skip(t)) continue
-            val found =
-                clusters.firstOrNull { c ->
-                    projectionsMatch(t, c.first())
-                }
-            if (found != null) {
-                found.add(t)
-            } else {
-                clusters.add(mutableListOf(t))
-            }
+            ctx.budget.tick("uniqueValuesFor")
+            val key = props.map { p -> ctx.data.objects(t, p).map { shaclRdfTermFingerprint(it) }.sorted() }
+            if (key.all { it.isEmpty() }) continue
+            groups.getOrPut(key) { mutableListOf() }.add(t)
         }
-
-        val vs = mutableListOf<ValidationViolation>()
-        for (nodes in clusters) {
+        val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
+        val rows = mutableListOf<ValidationViolation>()
+        var count = 0L
+        for (nodes in groups.values) {
             if (nodes.size < 2) continue
             for (a in nodes) {
+                if (focusOnly != null && a != focusOnly) continue
                 for (b in nodes) {
                     if (a == b) continue
-                    vs.add(
-                        violation(
-                            a,
-                            shape.shapeNode,
-                            shape.severity,
-                            shape.severityCustomIri,
-                            constraintStub(ConstraintType.UNIQUE_VALUES_FOR),
-                            "sh:uniqueValuesFor duplicate composite key",
-                            pathTerms = null,
-                            value = b,
-                        ),
-                    )
+                    count++
+                    if (rows.size < capacity) {
+                        rows.add(violation(a, tpl, constraintStub(ConstraintType.UNIQUE_VALUES_FOR), "sh:uniqueValuesFor duplicate composite key", value = b))
+                    }
                 }
             }
         }
-        return vs
+        return rows to count
     }
 
     private fun evaluateConstraintsForValues(
         focus: RdfTerm,
-        violationShape: RdfResource,
-        severity: ViolationSeverity,
-        severityCustomIri: Iri? = null,
-        pathTerms: List<RdfTerm>?,
-        pathPredicate: Iri?,
+        tpl: ResultTemplate,
         values: List<RdfTerm>,
         constraints: List<PropertyConstraint>,
         ctx: ValidationContext,
         state: DepthState,
-        siblingQualifiedShapes: List<RdfResource>,
+        currentShape: RdfResource,
+        path: ShaclPath?,
     ): List<ValidationViolation> {
-        val compiled = ctx.compiled
         val data = ctx.data
         val vs = mutableListOf<ValidationViolation>()
+        val pathPredicate = tpl.path?.predicate
+
+        fun add(
+            type: ConstraintType,
+            message: String,
+            value: RdfTerm? = null,
+            params: Map<String, Any> = emptyMap(),
+            severity: ViolationSeverity = tpl.severity,
+            severityIri: Iri? = tpl.severityCustomIri,
+            messages: List<Literal> = tpl.messages,
+        ) {
+            vs.add(violation(focus, tpl, constraintStub(type, pathPredicate, params), message, value, severity, severityIri, messages))
+        }
+
+        fun fingerprints(terms: List<RdfTerm>): Set<String> = terms.mapTo(HashSet()) { shaclRdfTermFingerprint(it) }
 
         for (c in constraints) {
+            if (state.conformsOnly && vs.isNotEmpty()) return vs
             when (c) {
-                is PropertyConstraint.MinCount -> {
-                    // Cardinality counts distinct RDF terms under native SHACL term equality (see distinctShaclTerms), not raw multiset size.
-                    val card = distinctShaclTerms(values).size
-                    if (card < c.n) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.MIN_COUNT, pathPredicate, mapOf("min" to c.n, "actual" to card)),
-                                "Minimum cardinality $c.n required, found $card",
-                                pathTerms,
-                                value = values.firstOrNull(),
-                            ),
-                        )
-                    }
-                }
-                is PropertyConstraint.MaxCount -> {
-                    // Same distinct-value cardinality as minCount.
-                    val card = distinctShaclTerms(values).size
-                    if (card > c.n) {
-                        val witness =
-                            distinctShaclTerms(values).getOrNull(c.n)
-                                ?: values.getOrNull(c.n)
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.MAX_COUNT, pathPredicate, mapOf("max" to c.n, "actual" to card)),
-                                "Maximum cardinality $c.n allowed, found $card",
-                                pathTerms,
-                                value = witness,
-                            ),
-                        )
-                    }
-                }
+                // Cardinality results carry no sh:value (SHACL §4.2.1 / §4.2.2).
+                is PropertyConstraint.MinCount ->
+                    if (values.size < c.n) add(ConstraintType.MIN_COUNT, "Minimum cardinality ${c.n} required, found ${values.size}", params = mapOf("min" to c.n, "actual" to values.size))
+                is PropertyConstraint.MaxCount ->
+                    if (values.size > c.n) add(ConstraintType.MAX_COUNT, "Maximum cardinality ${c.n} allowed, found ${values.size}", params = mapOf("max" to c.n, "actual" to values.size))
                 is PropertyConstraint.Datatype ->
                     values.forEach { v ->
-                        val useSeverity = c.severityOverride ?: severity
                         if (!literalMatchesShaclDatatypes(v, c.allowed)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    useSeverity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.DATATYPE, pathPredicate),
-                                    "Value $v does not match allowed datatype(s) ${c.allowed.joinToString { it.value }}",
-                                    pathTerms,
-                                    value = v,
-                                ),
+                            add(
+                                ConstraintType.DATATYPE,
+                                "Value $v does not match allowed datatype(s) ${c.allowed.joinToString { it.value }}",
+                                v,
+                                severity = c.severityOverride ?: tpl.severity,
+                                severityIri = if (c.severityOverride != null) null else tpl.severityCustomIri,
+                                messages = c.messages.ifEmpty { tpl.messages },
                             )
                         }
                     }
                 is PropertyConstraint.Class ->
                     values.forEach { v ->
-                        val ok =
-                            v is RdfResource &&
-                                data.typesOf(v).any { t -> c.iri in data.superclassCone(t) }
-                        if (!ok) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.CLASS, pathPredicate),
-                                    "Expected rdf:type (subclass of) ${c.iri.value} for value $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        val ok = v is RdfResource && data.typesOf(v).any { t -> c.iri in data.superclassCone(t) }
+                        if (!ok) add(ConstraintType.CLASS, "Expected rdf:type (subclass of) ${c.iri.value} for value $v", v)
                     }
                 is PropertyConstraint.ClassAnyOf ->
                     values.forEach { v ->
-                        val ok =
-                            v is RdfResource &&
-                                c.options.any { req ->
-                                    data.typesOf(v).any { t -> req in data.superclassCone(t) }
-                                }
-                        if (!ok) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.CLASS, pathPredicate),
-                                    "Expected rdf:type matching one of ${c.options.joinToString { it.value }} for value $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        val ok = v is RdfResource && c.options.any { req -> data.typesOf(v).any { t -> req in data.superclassCone(t) } }
+                        if (!ok) add(ConstraintType.CLASS, "Expected rdf:type matching one of ${c.options.joinToString { it.value }} for value $v", v)
                     }
                 is PropertyConstraint.NodeKind ->
-                    // One violation per distinct value after SHACL-term dedup (multiset duplicates ignored).
-                    distinctShaclTerms(values).forEach { v ->
-                        if (!c.kinds.any { matchesNodeKind(v, it) }) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.NODE_KIND, pathPredicate),
-                                    "Node kind ${c.kinds.joinToString { it.value }} required for $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                    values.forEach { v ->
+                        if (!c.kinds.any { matchesNodeKind(v, it) }) add(ConstraintType.NODE_KIND, "Node kind ${c.kinds.joinToString { it.value }} required for $v", v)
                     }
-                is PropertyConstraint.Pattern -> {
-                    val rx = compileRegex(c.pattern, c.flags)
+                is PropertyConstraint.Pattern ->
                     values.forEach { v ->
                         val lex = literalLexicalString(v)
-                        if (lex == null || !rx.containsMatchIn(lex)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.PATTERN, pathPredicate),
-                                    "Pattern violation for value $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (lex == null || !c.regex.containsMatchIn(ctx.text(lex))) add(ConstraintType.PATTERN, "Pattern ${c.pattern} violated for value $v", v)
                     }
-                }
                 is PropertyConstraint.MinLength ->
                     values.forEach { v ->
                         val lex = literalLexicalString(v)
-                        if (lex == null || lex.length < c.n) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MIN_LENGTH, pathPredicate),
-                                    "minLength ${c.n} violated for $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (lex == null || lex.codePointCount(0, lex.length) < c.n) add(ConstraintType.MIN_LENGTH, "minLength ${c.n} violated for $v", v)
                     }
                 is PropertyConstraint.MaxLength ->
                     values.forEach { v ->
                         val lex = literalLexicalString(v)
-                        if (lex == null || lex.length > c.n) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MAX_LENGTH, pathPredicate),
-                                    "maxLength ${c.n} violated for $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (lex == null || lex.codePointCount(0, lex.length) > c.n) add(ConstraintType.MAX_LENGTH, "maxLength ${c.n} violated for $v", v)
                     }
                 is PropertyConstraint.In ->
                     values.forEach { v ->
-                        if (!c.allowed.any { shaclRdfTermEquals(it, v) }) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.IN, pathPredicate),
-                                    "Value $v not in sh:in",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (!c.allowed.any { shaclRdfTermEquals(it, v) }) add(ConstraintType.IN, "Value $v not in sh:in", v)
                     }
-                is PropertyConstraint.HasValue -> {
-                    val ok = values.any { shaclRdfTermEquals(it, c.value) }
-                    if (!ok) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.HAS_VALUE, pathPredicate),
-                                "sh:hasValue missing ${c.value}",
-                                pathTerms,
-                                value = values.firstOrNull(),
-                            ),
-                        )
-                    }
-                }
+                is PropertyConstraint.HasValue ->
+                    if (values.none { shaclRdfTermEquals(it, c.value) }) add(ConstraintType.HAS_VALUE, "sh:hasValue missing ${c.value}")
                 is PropertyConstraint.LanguageIn ->
                     values.forEach { v ->
                         val lang = (v as? LangString)?.lang?.takeIf { it.isNotEmpty() }
-                        val ok =
-                            lang != null &&
-                                c.langs.any { allowed ->
-                                    languageTagMatchesLanguageRange(lang, allowed)
-                                }
-                        if (!ok) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.LANGUAGE_IN, pathPredicate),
-                                    "languageIn violated for $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        val ok = lang != null && c.langs.any { allowed -> languageTagMatchesLanguageRange(lang, allowed) }
+                        if (!ok) add(ConstraintType.LANGUAGE_IN, "languageIn violated for $v", v)
                     }
-                is PropertyConstraint.UniqueLang -> {
+                is PropertyConstraint.UniqueLang ->
                     if (c.enabled) {
-                        val langKeys =
-                            values.mapNotNull { v ->
-                                when (v) {
-                                    is LangString ->
-                                        "${v.lang.lowercase()}\u0000${v.direction?.token ?: ""}"
-                                    else -> null
-                                }
-                            }
-                        val duplicatedLanguages =
-                            langKeys.groupingBy { it }.eachCount().filter { it.value > 1 }.keys
-                        for (_dup in duplicatedLanguages) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.UNIQUE_LANG, pathPredicate),
-                                    "sh:uniqueLang violated",
-                                    pathTerms,
-                                ),
-                            )
-                        }
+                        val duplicated = values.mapNotNull { v -> (v as? LangString)?.let { "${it.lang.lowercase()} ${it.direction?.token ?: ""}" } }
+                            .groupingBy { it }.eachCount().filter { it.value > 1 }.keys
+                        duplicated.forEach { _ -> add(ConstraintType.UNIQUE_LANG, "sh:uniqueLang violated") }
                     }
-                }
                 is PropertyConstraint.EqualsPath -> {
-                    val otherVals = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    if (!multisetTermsEqual(values, otherVals)) {
-                        for (witness in multisetUnmatchedTerms(values, otherVals)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.EQUALS, pathPredicate),
-                                    "sh:equals multiset mismatch between path and referenced path",
-                                    pathTerms,
-                                    value = witness,
-                                ),
-                            )
-                        }
-                    }
+                    val other = distinctShaclTerms(PathEvaluator.evaluate(focus, c.otherPath, data))
+                    val otherKeys = fingerprints(other)
+                    val valueKeys = fingerprints(values)
+                    values.filter { shaclRdfTermFingerprint(it) !in otherKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: value $it is missing from the referenced path", it) }
+                    other.filter { shaclRdfTermFingerprint(it) !in valueKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: referenced value $it is missing from the path", it) }
                 }
                 is PropertyConstraint.DisjointPath -> {
-                    val otherVals = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    val offending = values.firstOrNull { v -> otherVals.any { o -> shaclRdfTermEquals(v, o) } }
-                    if (offending != null) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.DISJOINT, pathPredicate),
-                                "sh:disjoint violated: paths share a value",
-                                pathTerms,
-                                value = offending,
-                            ),
-                        )
-                    }
+                    val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
+                    values.filter { shaclRdfTermFingerprint(it) in otherKeys }.forEach { add(ConstraintType.DISJOINT, "sh:disjoint violated: $it is shared with the referenced path", it) }
                 }
                 is PropertyConstraint.LessThanPath -> {
-                    val otherVals = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    values.forEach { v ->
-                        otherVals.forEach { w ->
-                            if (!literalLess(v, w)) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.LESS_THAN, pathPredicate),
-                                        "sh:lessThan violated comparing $v and $w",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            }
-                        }
-                    }
+                    val other = distinctShaclTerms(PathEvaluator.evaluate(focus, c.otherPath, data))
+                    values.forEach { v -> other.forEach { w -> if (!literalLess(v, w)) add(ConstraintType.LESS_THAN, "sh:lessThan violated comparing $v and $w", v) } }
                 }
                 is PropertyConstraint.LessThanOrEqualsPath -> {
-                    val otherVals = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    values.forEach { v ->
-                        otherVals.forEach { w ->
-                            if (!literalLessOrEqual(v, w)) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.LESS_THAN_OR_EQUALS, pathPredicate),
-                                        "sh:lessThanOrEquals violated comparing $v and $w",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            }
-                        }
-                    }
+                    val other = distinctShaclTerms(PathEvaluator.evaluate(focus, c.otherPath, data))
+                    values.forEach { v -> other.forEach { w -> if (!literalLessOrEqual(v, w)) add(ConstraintType.LESS_THAN_OR_EQUALS, "sh:lessThanOrEquals violated comparing $v and $w", v) } }
                 }
                 is PropertyConstraint.MinInclusive ->
-                    values.forEach { v ->
-                        if (!satisfiesMinInclusive(v, c.bound)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MIN_INCLUSIVE, pathPredicate),
-                                    "minInclusive violated for $v vs bound ${c.bound}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
-                    }
+                    values.forEach { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
                 is PropertyConstraint.MaxInclusive ->
-                    values.forEach { v ->
-                        if (!satisfiesMaxInclusive(v, c.bound)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MAX_INCLUSIVE, pathPredicate),
-                                    "maxInclusive violated for $v vs bound ${c.bound}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
-                    }
+                    values.forEach { v -> if (!satisfiesMaxInclusive(v, c.bound)) add(ConstraintType.MAX_INCLUSIVE, "maxInclusive violated for $v vs bound ${c.bound}", v) }
                 is PropertyConstraint.MinExclusive ->
-                    values.forEach { v ->
-                        if (!satisfiesMinExclusive(v, c.bound)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MIN_EXCLUSIVE, pathPredicate),
-                                    "minExclusive violated for $v vs bound ${c.bound}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
-                    }
+                    values.forEach { v -> if (!satisfiesMinExclusive(v, c.bound)) add(ConstraintType.MIN_EXCLUSIVE, "minExclusive violated for $v vs bound ${c.bound}", v) }
                 is PropertyConstraint.MaxExclusive ->
-                    values.forEach { v ->
-                        if (!satisfiesMaxExclusive(v, c.bound)) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MAX_EXCLUSIVE, pathPredicate),
-                                    "maxExclusive violated for $v vs bound ${c.bound}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
-                    }
+                    values.forEach { v -> if (!satisfiesMaxExclusive(v, c.bound)) add(ConstraintType.MAX_EXCLUSIVE, "maxExclusive violated for $v vs bound ${c.bound}", v) }
                 is PropertyConstraint.Qualified -> {
-                    val nested =
-                        compiled.shapesByNode[c.shape]
-                            ?: ShapesCompiler.tryCompileInlineNodeShape(c.shape, ctx.shapesIndex, config)
-                    if (nested == null) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.QUALIFIED_VALUE_SHAPE, pathPredicate),
-                                "Undefined qualifiedValueShape ${c.shape.displayId()}",
-                                pathTerms,
-                            ),
-                        )
-                    } else {
-                        val conforming =
-                            values.filterIsInstance<RdfResource>().filter { v ->
-                                val st = state.push(nested.shapeNode) ?: return@filter false
-                                validateNodeShape(v, nested, ctx, st).isEmpty()
-                            }
-                        val count = conforming.size
-                        val minOk = c.min == null || count >= c.min!!
-                        val maxOk = c.max == null || count <= c.max!!
-                        if (!minOk) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.QUALIFIED_MIN_COUNT, pathPredicate, mapOf("min" to (c.min ?: 0), "actual" to count)),
-                                    "qualifiedMinCount violated (required ${c.min}, found $count)",
-                                    pathTerms,
-                                ),
-                            )
-                        }
-                        if (!maxOk) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.QUALIFIED_MAX_COUNT, pathPredicate, mapOf("max" to (c.max ?: 0), "actual" to count)),
-                                    "qualifiedMaxCount violated (max ${c.max}, found $count)",
-                                    pathTerms,
-                                ),
-                            )
-                        }
-                        if (c.disjoint && c.min != null) {
-                            val others = siblingQualifiedShapes.filter { it != c.shape }
-                            for (v in conforming) {
-                                siblingShapes@
-                                for (oref in others) {
-                                    val otherShape =
-                                        compiled.shapesByNode[oref]
-                                            ?: ShapesCompiler.tryCompileInlineNodeShape(oref, ctx.shapesIndex, config)
-                                            ?: continue
-                                    val st2 = state.push(otherShape.shapeNode) ?: continue
-                                    if (validateNodeShape(v, otherShape, ctx, st2).isEmpty()) {
-                                        vs.add(
-                                            violation(
-                                                focus,
-                                                violationShape,
-                                                severity,
-                                                severityCustomIri,
-                                                constraintStub(ConstraintType.QUALIFIED_MIN_COUNT, pathPredicate),
-                                                "qualifiedValueShapesDisjoint violated: value conforms to another sibling qualified shape",
-                                                pathTerms,
-                                                value = v,
-                                            ),
-                                        )
-                                        break@siblingShapes
-                                    }
-                                }
-                            }
-                        }
+                    // SHACL §4.7.3: with sh:qualifiedValueShapesDisjoint, values conforming to a sibling shape don't count.
+                    val count = values.count { v ->
+                        conformsTo(v, c.shape, ctx, state) && (!c.disjoint || c.siblings.none { s -> conformsTo(v, s, ctx, state) })
+                    }
+                    if (c.min != null && count < c.min) {
+                        add(ConstraintType.QUALIFIED_MIN_COUNT, "qualifiedMinCount violated (required ${c.min}, found $count)", params = mapOf("min" to c.min, "actual" to count))
+                    }
+                    if (c.max != null && count > c.max) {
+                        add(ConstraintType.QUALIFIED_MAX_COUNT, "qualifiedMaxCount violated (max ${c.max}, found $count)", params = mapOf("max" to c.max, "actual" to count))
                     }
                 }
-                is PropertyConstraint.MinListLength -> {
+                is PropertyConstraint.MinListLength ->
                     values.forEach { v ->
                         val members = data.expandDataList(v)
-                        if (members == null || members.size < c.n) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MIN_LIST_LENGTH, pathPredicate),
-                                    "sh:minListLength requires at least ${c.n} list members",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (members == null || members.size < c.n) add(ConstraintType.MIN_LIST_LENGTH, "sh:minListLength requires at least ${c.n} list members", v)
                     }
-                }
-                is PropertyConstraint.MaxListLength -> {
+                is PropertyConstraint.MaxListLength ->
                     values.forEach { v ->
                         val members = data.expandDataList(v)
-                        if (members == null || members.size > c.n) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MAX_LIST_LENGTH, pathPredicate),
-                                    "sh:maxListLength allows at most ${c.n} list members",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (members == null || members.size > c.n) add(ConstraintType.MAX_LIST_LENGTH, "sh:maxListLength allows at most ${c.n} list members", v)
                     }
-                }
-                is PropertyConstraint.MemberShape -> {
-                    val nested = compiled.shapesByNode[c.nestedShape]
+                is PropertyConstraint.MemberShape ->
                     values.forEach { v ->
                         val members = data.expandDataList(v)
-                        if (members == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MEMBER_SHAPE, pathPredicate),
-                                    "Value is not a valid SHACL RDF list",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        if (nested == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MEMBER_SHAPE, pathPredicate),
-                                    "Undefined memberShape ${c.nestedShape.displayId()}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        var okAll = true
-                        for (m in members) {
-                            if (m !is RdfResource) {
-                                okAll = false
-                                break
-                            }
-                            val st = state.push(nested.shapeNode)
-                            if (st == null || validateNodeShape(m, nested, ctx, st).isNotEmpty()) {
-                                okAll = false
-                                break
-                            }
-                        }
-                        if (!okAll) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.MEMBER_SHAPE, pathPredicate),
-                                    "sh:memberShape violated for list value",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
+                        when {
+                            members == null -> add(ConstraintType.MEMBER_SHAPE, "Value is not a valid SHACL RDF list", v)
+                            members.any { m -> !conformsTo(m, c.nestedShape, ctx, state) } ->
+                                add(ConstraintType.MEMBER_SHAPE, "sh:memberShape violated for list value", v)
                         }
                     }
-                }
-                is PropertyConstraint.UniqueMembers -> {
-                    if (!c.enabled) Unit
-                    else {
+                is PropertyConstraint.UniqueMembers ->
+                    if (c.enabled) {
                         values.forEach { v ->
                             val members = data.expandDataList(v)
                             if (members == null) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.UNIQUE_MEMBERS, pathPredicate),
-                                        "Value is not a valid SHACL RDF list",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            } else {
-                                val seen = mutableListOf<RdfTerm>()
-                                var dup = false
-                                for (m in members) {
-                                    if (seen.any { shaclRdfTermEquals(it, m) }) {
-                                        dup = true
-                                        break
-                                    }
-                                    seen.add(m)
-                                }
-                                if (dup) {
-                                    vs.add(
-                                        violation(
-                                            focus,
-                                            violationShape,
-                                            severity,
-                                            severityCustomIri,
-                                            constraintStub(ConstraintType.UNIQUE_MEMBERS, pathPredicate),
-                                            "sh:uniqueMembers violated",
-                                            pathTerms,
-                                            value = v,
-                                        ),
-                                    )
-                                }
+                                add(ConstraintType.UNIQUE_MEMBERS, "Value is not a valid SHACL RDF list", v)
+                            } else if (distinctShaclTerms(members).size != members.size) {
+                                add(ConstraintType.UNIQUE_MEMBERS, "sh:uniqueMembers violated", v)
                             }
                         }
                     }
-                }
                 is PropertyConstraint.SubsetOfPath -> {
-                    val otherVals = PathEvaluator.evaluate(focus, c.otherPath, data)
+                    val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
                     values.forEach { v ->
-                        if (!otherVals.any { shaclRdfTermEquals(it, v) }) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.SUBSET_OF, pathPredicate),
-                                    "sh:subsetOf violated: value not reachable via referenced path",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (shaclRdfTermFingerprint(v) !in otherKeys) add(ConstraintType.SUBSET_OF, "sh:subsetOf violated: value not reachable via referenced path", v)
                     }
                 }
-                is PropertyConstraint.SingleLine -> {
+                is PropertyConstraint.SingleLine ->
                     if (c.enabled) {
-                        val rx = singleLineBreakRegex
                         values.forEach { v ->
                             val lex = literalLexicalString(v)
-                            if (lex != null && rx.containsMatchIn(lex)) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.SINGLE_LINE, pathPredicate),
-                                        "sh:singleLine violated",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            }
+                            if (lex != null && singleLineBreakRegex.containsMatchIn(lex)) add(ConstraintType.SINGLE_LINE, "sh:singleLine violated", v)
                         }
                     }
-                }
-                is PropertyConstraint.SomeValue -> {
-                    val nested =
-                        compiled.shapesByNode[c.nestedShape]
-                            ?: ShapesCompiler.tryCompileInlineNodeShape(c.nestedShape, ctx.shapesIndex, config)
-                    if (nested == null) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.SOME_VALUE, pathPredicate),
-                                "Undefined sh:someValue shape ${c.nestedShape.displayId()}",
-                                pathTerms,
-                            ),
-                        )
-                    } else {
-                        val anyOk =
-                            values.filterIsInstance<RdfResource>().any { v ->
-                                val st = state.push(nested.shapeNode) ?: return@any false
-                                validateNodeShape(v, nested, ctx, st).isEmpty()
-                            }
-                        if (!anyOk) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.SOME_VALUE, pathPredicate),
-                                    "sh:someValue requires at least one conforming value",
-                                    pathTerms,
-                                    value = values.firstOrNull(),
-                                ),
-                            )
-                        }
+                is PropertyConstraint.SomeValue ->
+                    if (values.none { conformsTo(it, c.nestedShape, ctx, state) }) {
+                        add(ConstraintType.SOME_VALUE, "sh:someValue requires at least one conforming value")
                     }
-                }
-                is PropertyConstraint.RootClass -> {
+                is PropertyConstraint.RootClass ->
                     values.forEach { v ->
                         val cls = v as? Iri
                         if (cls == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.ROOT_CLASS, pathPredicate),
-                                    "sh:rootClass expects an IRI class value",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        } else {
-                            val cone = data.superclassCone(cls)
-                            val ok = c.roots.any { it in cone }
-                            if (!ok) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.ROOT_CLASS, pathPredicate),
-                                        "sh:rootClass violated for $cls",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            }
+                            add(ConstraintType.ROOT_CLASS, "sh:rootClass expects an IRI class value", v)
+                        } else if (c.roots.none { it in data.superclassCone(cls) }) {
+                            add(ConstraintType.ROOT_CLASS, "sh:rootClass violated for $cls", v)
                         }
                     }
-                }
                 is PropertyConstraint.Shape ->
                     values.forEach { v ->
-                        if (v !is RdfResource) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.SHAPE, pathPredicate),
-                                    "sh:shape requires resource value, got $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        val nestedNs =
-                            compiled.shapesByNode[c.nestedShape]
-                                ?: ShapesCompiler.tryCompileInlineNodeShape(c.nestedShape, ctx.shapesIndex, config)
-                        if (nestedNs != null) {
-                            val st = state.push(nestedNs.shapeNode)
-                            if (st == null) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.SHAPE, pathPredicate),
-                                        "Shape dependency cycle detected at nested shape ${nestedNs.shapeNode.displayId()}",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                                return@forEach
-                            }
-                            val nestedVs = validateNodeShape(v, nestedNs, ctx, st)
-                            if (nestedVs.isNotEmpty()) {
-                                vs.add(
-                                    violation(
-                                        focus,
-                                        violationShape,
-                                        severity,
-                                        severityCustomIri,
-                                        constraintStub(ConstraintType.SHAPE, pathPredicate),
-                                        "sh:shape constraint failed",
-                                        pathTerms,
-                                        value = v,
-                                    ),
-                                )
-                            }
-                            return@forEach
-                        }
-                        val nestedPs = ShapesCompiler.tryCompilePropertyShape(c.nestedShape, ctx.shapesIndex, config)
-                        if (nestedPs == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.SHAPE, pathPredicate),
-                                    "Undefined nested shape ${c.nestedShape.displayId()}",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        val sibs =
-                            nestedPs.constraints.filterIsInstance<PropertyConstraint.Qualified>().map { it.shape }.distinct()
-                        val nestedVs = validatePropertyShape(v, nestedPs, ctx, state, sibs)
-                        if (nestedVs.isNotEmpty()) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.SHAPE, pathPredicate),
-                                    "sh:shape constraint failed",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (!conformsTo(v, c.nestedShape, ctx, state)) add(ConstraintType.SHAPE, "sh:shape constraint failed for ${c.nestedShape.displayId()}", v)
                     }
-                is PropertyConstraint.Sparql -> {
-                    val raw = ctx.shapesIndex.objects(c.constraintNode, SHACL.select).singleOrNull()
-                    val queryText = (raw as? Literal)?.lexical
-                    if (queryText.isNullOrBlank()) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.SPARQL_CONSTRAINT, pathPredicate),
-                                "sh:sparql missing a single sh:select literal",
-                                pathTerms,
-                            ),
-                        )
-                    } else if (SparqlConstraintEvaluator.selectReturnsRows(queryText, ctx.mergedDataAndShapes, focus)) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.SPARQL_CONSTRAINT, pathPredicate),
-                                "SPARQL constraint SELECT returned bindings",
-                                pathTerms,
-                            ),
-                        )
-                    }
-                }
                 is PropertyConstraint.Node ->
                     values.forEach { v ->
-                        if (v !is RdfResource) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.NODE, pathPredicate),
-                                    "sh:node requires resource value, got $v",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        val nested =
-                            compiled.shapesByNode[c.nestedShape]
-                                ?: ShapesCompiler.tryCompileInlineNodeShape(c.nestedShape, ctx.shapesIndex, config)
-                        if (nested == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.NODE, pathPredicate),
-                                    "Undefined nested NodeShape ${c.nestedShape.displayId()}",
-                                    pathTerms,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        val st = state.push(nested.shapeNode)
-                        if (st == null) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.NODE, pathPredicate),
-                                    "Shape dependency cycle detected at nested shape ${nested.shapeNode.displayId()}",
-                                    pathTerms,
-                                ),
-                            )
-                            return@forEach
-                        }
-                        val nestedVs = validateNodeShape(v, nested, ctx, st)
-                        if (nestedVs.isNotEmpty()) {
-                            vs.add(
-                                violation(
-                                    focus,
-                                    violationShape,
-                                    severity,
-                                    severityCustomIri,
-                                    constraintStub(ConstraintType.NODE, pathPredicate),
-                                    "sh:node constraint failed",
-                                    pathTerms,
-                                    value = v,
-                                ),
-                            )
-                        }
+                        if (!conformsTo(v, c.nestedShape, ctx, state)) add(ConstraintType.NODE, "sh:node constraint failed for ${c.nestedShape.displayId()}", v)
                     }
+                is PropertyConstraint.Sparql -> vs.addAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path))
                 is PropertyConstraint.ReifierShape,
                 is PropertyConstraint.ReificationRequired,
                 -> Unit
@@ -1684,37 +841,90 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         return vs
     }
 
+    /** SHACL-SPARQL: one result per solution; `?value`, `?path`, `?message` and `?failure` are honoured. */
+    private fun evaluateSparql(
+        focus: RdfTerm,
+        tpl: ResultTemplate,
+        c: PropertyConstraint.Sparql,
+        ctx: ValidationContext,
+        currentShape: RdfResource,
+        path: ShaclPath?,
+    ): List<ValidationViolation> {
+        val bindings = LinkedHashMap<String, RdfTerm>()
+        bindings["this"] = focus
+        if ("currentShape" in c.preBound) bindings["currentShape"] = currentShape
+        if ("shapesGraph" in c.preBound) bindings["shapesGraph"] = SparqlConstraintEvaluator.SHAPES_GRAPH_IRI
+        val out = mutableListOf<ValidationViolation>()
+        for (row in ctx.select(c.query, bindings)) {
+            val failure = row.get("failure")
+            if (failure != null && isLexicallyTrue(failure)) {
+                throw ShaclValidationException("SPARQL constraint ${c.constraintNode.displayId()} reported ?failure for focus node $focus")
+            }
+            val value = row.get("value") ?: if (path == null) focus else null
+            val rowPath = (row.get("path") as? Iri)?.let { ReportPath(listOf(it), null, emptyList(), it) } ?: tpl.path
+            fun substitute(lit: Literal): Literal {
+                val text = messagePlaceholder.replace(lit.lexical) { m ->
+                    val term = row.get(m.groupValues[1]) ?: bindings[m.groupValues[1]]
+                    term?.let { displayTerm(it) } ?: m.value
+                }
+                return if (lit is LangString) lit.copy(lexical = text) else TypedLiteral(text, lit.datatype)
+            }
+            val messages =
+                c.messages.ifEmpty { listOfNotNull(row.get("message") as? Literal) }.ifEmpty { tpl.messages }.map { substitute(it) }
+            out.add(
+                violation(
+                    focus = focus,
+                    tpl = tpl,
+                    constraint = constraintStub(ConstraintType.SPARQL_CONSTRAINT, rowPath?.predicate),
+                    message = "SPARQL constraint ${c.constraintNode.displayId()} returned a solution",
+                    value = value,
+                    severity = c.severity ?: tpl.severity,
+                    severityIri = if (c.severity != null) c.severityCustomIri else tpl.severityCustomIri,
+                    messages = messages,
+                    sourceConstraint = c.constraintNode,
+                    path = rowPath,
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun displayTerm(term: RdfTerm): String =
+        when (term) {
+            is Literal -> term.lexical
+            is Iri -> term.value
+            is BlankNode -> "_:${term.id}"
+            else -> term.toString()
+        }
+
+    private fun reportPath(ps: CompiledPropertyShape, ctx: ValidationContext): ReportPath =
+        ctx.reportPaths.getOrPut(ps.shapeNode) {
+            ReportPath(pathToTerms(ps.path), ps.pathNode.takeIf { it is BlankNode }, ps.pathTriples, (ps.path as? ShaclPath.Predicate)?.iri)
+        }
+
     private fun validatePropertyShape(
         focus: RdfTerm,
         ps: CompiledPropertyShape,
         ctx: ValidationContext,
         state: DepthState,
-        siblingQualifiedShapes: List<RdfResource>,
     ): List<ValidationViolation> {
-        val values = PathEvaluator.evaluate(focus, ps.path, ctx.data)
-        val vs =
-            evaluateConstraintsForValues(
-                focus = focus,
-                violationShape = ps.shapeNode,
-                severity = ps.severity,
-                severityCustomIri = ps.severityCustomIri,
-                pathTerms = pathToTerms(ps.path),
-                pathPredicate = simplePathPredicate(ps.path),
-                values = values,
-                constraints = ps.constraints,
-                ctx = ctx,
-                state = state,
-                siblingQualifiedShapes = siblingQualifiedShapes,
-            ).toMutableList()
+        if (ps.deactivated) return emptyList()
+        // Value nodes are a set (SHACL §2.3.2): alternative / zero-or-one paths may otherwise yield duplicates.
+        val values = distinctShaclTerms(PathEvaluator.evaluate(focus, ps.path, ctx.data))
+        val tpl = ResultTemplate(ps.shapeNode, ps.severity, ps.severityCustomIri, ps.messages, reportPath(ps, ctx))
+        val vs = evaluateConstraintsForValues(focus, tpl, values, ps.constraints, ctx, state, ps.shapeNode, ps.path).toMutableList()
+        fun done() = state.conformsOnly && vs.isNotEmpty()
+        if (done()) return vs
         for (part in ps.logicalParts) {
             for (v in values) {
-                vs.addAll(evalLogical(focus, v, ps.shapeNode, ps.severity, ps.severityCustomIri, part, ctx, state, pathToTerms(ps.path)))
+                vs.addAll(evalLogical(focus, v, tpl, part, ctx, state))
+                if (done()) return vs
             }
         }
         for (nested in ps.nestedPropertyShapes) {
             for (v in values) {
-                val vr = v as? RdfResource ?: continue
-                vs.addAll(validatePropertyShape(vr, nested, ctx, state, siblingQualifiedShapes))
+                vs.addAll(validatePropertyShape(v, nested, ctx, state))
+                if (done()) return vs
             }
         }
         if (focus is RdfResource &&
@@ -1723,11 +933,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
             vs.addAll(
                 validateReifierPropertyConstraints(
                     focus = focus,
-                    violationShape = ps.shapeNode,
-                    severity = ps.severity,
-                    severityCustomIri = ps.severityCustomIri,
-                    pathTerms = pathToTerms(ps.path),
-                    pathPredicate = simplePathPredicate(ps.path),
+                    tpl = tpl,
                     claims = tripleClaimsMatchingSimplePath(focus, ps.path, ctx.data),
                     constraints = ps.constraints,
                     ctx = ctx,
@@ -1747,102 +953,32 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
 
     private fun validateReifierPropertyConstraints(
         focus: RdfResource,
-        violationShape: RdfResource,
-        severity: ViolationSeverity,
-        severityCustomIri: Iri?,
-        pathTerms: List<RdfTerm>?,
-        pathPredicate: Iri?,
+        tpl: ResultTemplate,
         claims: List<RdfTriple>,
         constraints: List<PropertyConstraint>,
         ctx: ValidationContext,
         state: DepthState,
     ): List<ValidationViolation> {
+        ctx.checkDeadline()
         val vs = mutableListOf<ValidationViolation>()
-        val shapeRef = constraints.filterIsInstance<PropertyConstraint.ReifierShape>().singleOrNull()
-        val reifReq = constraints.filterIsInstance<PropertyConstraint.ReificationRequired>().singleOrNull()?.required == true
-        val compiledNested =
-            shapeRef?.let { sr ->
-                ctx.compiled.shapesByNode[sr.nestedShape]
-                    ?: ShapesCompiler.tryCompileInlineNodeShape(sr.nestedShape, ctx.shapesIndex, config)
-            }
-        if (shapeRef != null && compiledNested == null) {
-            return listOf(
-                violation(
-                    focus,
-                    violationShape,
-                    severity,
-                    severityCustomIri,
-                    constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate),
-                    "Undefined reifier shape ${shapeRef.nestedShape.displayId()}",
-                    pathTerms,
-                ),
-            )
-        }
+        val shapeRefs = constraints.filterIsInstance<PropertyConstraint.ReifierShape>().map { it.nestedShape }
+        val reifReq = constraints.filterIsInstance<PropertyConstraint.ReificationRequired>().any { it.required }
+        val pathPredicate = tpl.path?.predicate
         for (claim in claims) {
             val reifiers = ctx.data.reifiersForClaim(claim)
-            val nested = compiledNested
             if (reifiers.isEmpty()) {
                 when {
-                    nested != null ->
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate),
-                                "sh:reifierShape: no reifier for triple $claim",
-                                pathTerms,
-                                value = claim.obj,
-                            ),
-                        )
+                    shapeRefs.isNotEmpty() ->
+                        vs.add(violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reifierShape: no reifier for triple $claim", value = claim.obj))
                     reifReq ->
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.REIFICATION_REQUIRED, pathPredicate),
-                                "sh:reificationRequired: missing reifier for triple $claim",
-                                pathTerms,
-                                value = claim.obj,
-                            ),
-                        )
+                        vs.add(violation(focus, tpl, constraintStub(ConstraintType.REIFICATION_REQUIRED, pathPredicate), "sh:reificationRequired: missing reifier for triple $claim", value = claim.obj))
                 }
                 continue
             }
-            if (nested != null) {
+            for (ref in shapeRefs) {
                 for (r in reifiers) {
-                    val st = state.push(nested.shapeNode)
-                    if (st == null) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate),
-                                "Shape dependency cycle detected at reifier shape ${nested.shapeNode.displayId()}",
-                                pathTerms,
-                                value = r,
-                            ),
-                        )
-                        continue
-                    }
-                    if (validateNodeShape(r, nested, ctx, st).isNotEmpty()) {
-                        vs.add(
-                            violation(
-                                focus,
-                                violationShape,
-                                severity,
-                                severityCustomIri,
-                                constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate),
-                                "sh:reifierShape constraint failed",
-                                pathTerms,
-                                value = r,
-                            ),
-                        )
+                    if (!conformsTo(r, ref, ctx, state)) {
+                        vs.add(violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reifierShape constraint failed for reifier $r", value = claim.obj))
                     }
                 }
             }
@@ -1865,34 +1001,38 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
 
     private fun violation(
         focus: RdfTerm,
-        shape: RdfResource,
-        severity: ViolationSeverity,
-        severityCustomIri: Iri? = null,
+        tpl: ResultTemplate,
         constraint: ShaclConstraint,
         message: String,
-        pathTerms: List<RdfTerm>?,
         value: RdfTerm? = null,
+        severity: ViolationSeverity = tpl.severity,
+        severityIri: Iri? = tpl.severityCustomIri,
+        messages: List<Literal> = tpl.messages,
+        sourceConstraint: RdfTerm? = null,
+        path: ReportPath? = tpl.path,
     ): ValidationViolation =
         ValidationViolation(
             severity = severity,
             constraint = constraint,
             focusNode = focus,
-            message = message,
-            path = pathTerms,
-            shapeUri = shape.displayId(),
+            message = messages.firstOrNull()?.lexical ?: message,
+            path = path?.terms,
+            shapeUri = tpl.shape.displayId(),
             value = value,
-            resultSeverityIri = severityCustomIri?.value,
+            resultSeverityIri = severityIri?.value,
+            resultPathNode = path?.node,
+            resultPathTriples = path?.triples ?: emptyList(),
+            resultMessages = messages,
+            sourceConstraint = sourceConstraint,
         )
 
     private fun buildStatistics(
-        graph: RdfGraph,
-        shapes: RdfGraph,
+        totalResources: Int,
         violations: List<ValidationViolation>,
         warnings: List<ValidationWarning>,
         compiled: CompiledShapeGraph,
         validatedConstraintSlots: Int,
     ): ValidationStatistics {
-        val triples = graph.getTriples()
         val constraintsByType = violations.groupingBy { it.constraint.constraintType }.eachCount()
         val violationsByType = constraintsByType
         val warningsByType = warnings.mapNotNull { it.constraint?.constraintType }.groupingBy { it }.eachCount()
@@ -1903,7 +1043,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
                     ns.propertyShapes.sumOf { ps -> ps.constraints.size + ps.logicalParts.size }
             }
         return ValidationStatistics(
-            totalResources = triples.map { it.subject }.distinct().size,
+            totalResources = totalResources,
             validatedResources = violations.map { it.focusNode }.distinct().size,
             totalConstraints = propConstraints,
             validatedConstraints = validatedConstraintSlots.coerceAtLeast(violations.size),
@@ -1921,36 +1061,19 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         else -> toString()
     }
 
-    private fun simplePathPredicate(path: ShaclPath): Iri? = when (path) {
-        is ShaclPath.Predicate -> path.iri
-        else -> null
-    }
-
     private fun pathToTerms(path: ShaclPath): List<RdfTerm>? =
         when (path) {
             is ShaclPath.Predicate -> listOf(path.iri)
-            is ShaclPath.Sequence -> {
-                val iris =
-                    path.segments.map { seg ->
-                        (seg as? ShaclPath.Predicate)?.iri ?: return null
-                    }
-                iris
-            }
+            is ShaclPath.Sequence -> path.segments.map { seg -> (seg as? ShaclPath.Predicate)?.iri ?: return null }
             else -> null
         }
 
-    private fun literalMatchesShaclDatatypes(term: RdfTerm, allowed: List<Iri>): Boolean {
-        val set = allowed.toSet()
-        return when (term) {
-            is LangString -> term.datatype in set
-            is TrueLiteral,
-            is FalseLiteral,
-            -> XSD.boolean in set
-            is TypedLiteral ->
-                term.datatype in set && typedLiteralLexicallyValidForShaclDatatype(term)
+    private fun literalMatchesShaclDatatypes(term: RdfTerm, allowed: List<Iri>): Boolean =
+        when (term) {
+            is LangString -> term.datatype in allowed
+            is Literal -> term.datatype in allowed && literalLexicallyValid(term)
             else -> false
         }
-    }
 
     private fun matchesNodeKind(term: RdfTerm, kind: Iri): Boolean =
         when (kind) {
@@ -1963,17 +1086,4 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
             SHACL.TripleTerm -> term is TripleTerm
             else -> false
         }
-
-    private fun compileRegex(pattern: String, flags: String?): Regex {
-        val opts = mutableSetOf<RegexOption>()
-        flags?.forEach { c ->
-            when (c.lowercaseChar()) {
-                'i' -> opts.add(RegexOption.IGNORE_CASE)
-                'm' -> opts.add(RegexOption.MULTILINE)
-                's' -> opts.add(RegexOption.DOT_MATCHES_ALL)
-                else -> {}
-            }
-        }
-        return if (opts.isEmpty()) Regex(pattern) else Regex(pattern, opts)
-    }
 }

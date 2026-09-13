@@ -11,98 +11,106 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
 
 /**
  * Lightweight validation-session index over a data graph (architecture §9.3).
+ *
+ * Built in a single pass: subject → predicate → objects (O(1) `objects(s, p)`), predicate → triples
+ * (target subjects/objects of), (predicate, object) → subjects (inverse paths, class instances), plus
+ * `rdf:type` and `rdfs:subClassOf` edges. Deadline checks are amortized via [ValidationBudget.tick].
  */
-internal class DataGraphIndex(graph: RdfGraph) {
+internal class DataGraphIndex(graph: RdfGraph, private val budget: ValidationBudget = ValidationBudget.NONE) {
 
-    private val triples: List<RdfTriple> = graph.getTriples()
+    /** Source graph (used for SHACL-SPARQL sessions, which query the data graph only). */
+    val graph: RdfGraph = graph
 
-    private val bySubject: Map<RdfResource, List<RdfTriple>> = triples.groupBy { it.subject }
-
-    fun distinctResourceSubjects(): Set<RdfResource> = bySubject.keys.toSet()
-
-    private val byPredicateObject: Map<Pair<Iri, RdfTerm>, MutableSet<RdfResource>> = run {
-        val m = mutableMapOf<Pair<Iri, RdfTerm>, MutableSet<RdfResource>>()
-        for (t in triples) {
-            m.getOrPut(t.predicate to t.obj) { mutableSetOf() }.add(t.subject)
-        }
-        m
-    }
-
-    private val typesByInstance: Map<RdfResource, Set<Iri>> = run {
-        val m = mutableMapOf<RdfResource, MutableSet<Iri>>()
-        for (t in triples) {
-            if (t.predicate == RDF.type && t.obj is Iri) {
-                m.getOrPut(t.subject) { mutableSetOf() }.add(t.obj as Iri)
-            }
-        }
-        m.mapValues { it.value.toSet() }
-    }
-
+    private val bySubject = LinkedHashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
+    private val byPredicate = HashMap<Iri, MutableList<RdfTriple>>()
+    private val byPredicateObject = HashMap<Pair<Iri, RdfTerm>, LinkedHashSet<RdfResource>>()
+    private val typesByInstance = HashMap<RdfResource, LinkedHashSet<Iri>>()
     /** Direct `rdfs:subClassOf` edges: subclass → superclasses. */
-    private val directSuperClasses: Map<Iri, Set<Iri>> = run {
-        val m = mutableMapOf<Iri, MutableSet<Iri>>()
-        for (t in triples) {
+    private val directSuperClasses = HashMap<Iri, LinkedHashSet<Iri>>()
+    private val directSubClasses = HashMap<Iri, LinkedHashSet<Iri>>()
+
+    init {
+        for (t in budget.snapshot(graph, "data snapshot")) {
+            budget.tick("data indexing")
+            bySubject.getOrPut(t.subject) { LinkedHashMap() }.getOrPut(t.predicate) { ArrayList(1) }.add(t.obj)
+            byPredicate.getOrPut(t.predicate) { ArrayList() }.add(t)
+            byPredicateObject.getOrPut(t.predicate to t.obj) { LinkedHashSet() }.add(t.subject)
+            if (t.predicate == RDF.type && t.obj is Iri) {
+                typesByInstance.getOrPut(t.subject) { LinkedHashSet() }.add(t.obj as Iri)
+            }
             if (t.predicate == RDFS.subClassOf && t.subject is Iri && t.obj is Iri) {
-                m.getOrPut(t.subject as Iri) { mutableSetOf() }.add(t.obj as Iri)
+                directSuperClasses.getOrPut(t.subject as Iri) { LinkedHashSet() }.add(t.obj as Iri)
+                directSubClasses.getOrPut(t.obj as Iri) { LinkedHashSet() }.add(t.subject as Iri)
             }
         }
-        m.mapValues { it.value.toSet() }
+        budget.check("data indexing")
+    }
+
+    fun distinctResourceSubjects(): Set<RdfResource> = bySubject.keys
+
+    // Session-local and bounded: large class hierarchies cannot retain every transitive closure.
+    private val superclassCache = object : LinkedHashMap<Iri, Set<Iri>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Iri, Set<Iri>>): Boolean = size > 128
     }
 
     fun objects(subject: RdfResource, predicate: Iri): List<RdfTerm> =
-        bySubject[subject]?.filter { it.predicate == predicate }?.map { it.obj } ?: emptyList()
+        bySubject[subject]?.get(predicate) ?: emptyList()
 
     fun predicatesFor(subject: RdfResource): Set<Iri> =
-        bySubject[subject]?.map { it.predicate }?.toSet() ?: emptySet()
+        bySubject[subject]?.keys ?: emptySet()
 
     fun subjectsWith(predicate: Iri, obj: RdfTerm): Set<RdfResource> =
         byPredicateObject[predicate to obj] ?: emptySet()
 
     /** Reifiers naming [claim] via `rdf:reifies` (RDF 1.2 triple terms). */
     fun reifiersForClaim(claim: RdfTriple): List<RdfResource> =
-        triples.mapNotNull { t ->
-            if (t.predicate != RDF.reifies) return@mapNotNull null
-            val tt = t.obj as? TripleTerm ?: return@mapNotNull null
-            if (tt.triple == claim) t.subject else null
-        }
+        subjectsWith(RDF.reifies, TripleTerm(claim)).toList()
 
     fun typesOf(resource: RdfResource): Set<Iri> = typesByInstance[resource] ?: emptySet()
 
     fun allInstancesOf(clazz: Iri): Sequence<RdfResource> =
-        triples.asSequence()
-            .filter { it.predicate == RDF.type && it.obj == clazz }
-            .map { it.subject }
+        subjectsWith(RDF.type, clazz).asSequence().onEach { budget.tick() }
 
     /**
      * Types reachable from [clazz] by walking `rdfs:subClassOf` outward (includes [clazz]).
      * Used so `sh:targetClass` matches instances of subclasses.
      */
     fun superclassCone(clazz: Iri): Set<Iri> {
-        val seen = mutableSetOf<Iri>()
+        budget.tick("class traversal")
+        superclassCache[clazz]?.let { return it }
+        val seen = LinkedHashSet<Iri>()
         val dq = ArrayDeque<Iri>()
         dq.add(clazz)
         while (dq.isNotEmpty()) {
+            budget.tick("class traversal")
             val c = dq.removeFirst()
             if (!seen.add(c)) continue
             directSuperClasses[c]?.forEach { dq.add(it) }
         }
+        superclassCache[clazz] = seen
         return seen
     }
 
     /** Instances whose asserted `rdf:type` is [targetClass] or a subclass of it. */
     fun instancesMatchingTargetClass(targetClass: Iri): Sequence<RdfResource> =
-        triples.asSequence()
-            .filter { it.predicate == RDF.type && it.obj is Iri }
-            .filter { (_, _, obj) -> targetClass in superclassCone(obj as Iri) }
-            .map { it.subject }
-            .filterIsInstance<RdfResource>()
-            .distinct()
+        sequence {
+            val pending = ArrayDeque<Iri>()
+            val visited = mutableSetOf<Iri>()
+            pending.add(targetClass)
+            while (pending.isNotEmpty()) {
+                budget.tick("target class traversal")
+                val clazz = pending.removeFirst()
+                if (!visited.add(clazz)) continue
+                yieldAll(allInstancesOf(clazz))
+                directSubClasses[clazz]?.forEach { pending.add(it) }
+            }
+        }.distinct()
 
     fun subjectsWithPredicate(predicate: Iri): Sequence<RdfResource> =
-        triples.asSequence().filter { it.predicate == predicate }.map { it.subject }.distinct()
+        (byPredicate[predicate] ?: emptyList<RdfTriple>()).asSequence().onEach { budget.tick() }.map { it.subject }.distinct()
 
     fun objectsWithPredicate(predicate: Iri): Sequence<RdfTerm> =
-        triples.asSequence().filter { it.predicate == predicate }.map { it.obj }.distinct()
+        (byPredicate[predicate] ?: emptyList<RdfTriple>()).asSequence().onEach { budget.tick() }.map { it.obj }.distinct()
 
     /**
      * Expands a well-formed RDF list head in the **data** graph. Returns `null` if [head] is not a valid list cell chain.
@@ -115,6 +123,7 @@ internal class DataGraphIndex(graph: RdfGraph) {
         var cur: RdfTerm? = head
         val visited = mutableSetOf<RdfResource>()
         while (cur != null && cur != RDF.nil) {
+            budget.tick("data collection")
             val cell = cur as? RdfResource ?: return null
             if (!visited.add(cell)) return null
             val firsts = objects(cell, RDF.first)

@@ -128,8 +128,8 @@ Rdf.memory().use { repo ->
 
 // Transaction with automatic commit/rollback
 repo.transaction {
-    addTriple(person has name with "Alice")
-    addTriple(person has age with 30)
+    addTriple(person, name, string("Alice"))
+    addTriple(person, age, 30.toLiteral())
     // Automatically committed if successful, rolled back if exception
 }
 ```
@@ -147,7 +147,7 @@ Works with multiple RDF backends seamlessly
 
 ```kotlin
 // Provider-agnostic creation
-val repo = Rdf.memory() // Uses default provider
+val repo = Rdf.memory() // In-memory Jena (or RDF4J) repository
 
 // Explicit provider selection
 val jenaRepo = Rdf.repository {

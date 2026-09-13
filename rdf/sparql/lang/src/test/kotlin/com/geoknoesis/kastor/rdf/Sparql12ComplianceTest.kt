@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import com.geoknoesis.kastor.rdf.sparql.assertParsesQuery
 
 /**
  * Tests for SPARQL 1.2 compliance in the QueryTerms DSL.
@@ -27,8 +28,9 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
-        assertTrue(queryString.contains("VERSION 1.2"))
+        val queryString = assertParsesQuery(query.sparql)
+        // SPARQL 1.2: the version specifier is a string literal.
+        assertTrue(queryString.contains("VERSION \"1.2\""))
         assertTrue(queryString.contains("PREFIX foaf: <http://xmlns.com/foaf/0.1/>"))
         assertTrue(queryString.contains("SELECT ?name"))
     }
@@ -42,11 +44,12 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
-        // RDF 1.2 uses parenthesised triple-term syntax.
+        val queryString = assertParsesQuery(query.sparql)
+        // A standalone pattern must be a SPARQL 1.2 reified-triple block; a bare
+        // triple term <<( ... )>> is only legal in object position.
         assertTrue(
-            queryString.contains("<<( ?subject ?predicate ?object )>>"),
-            "Expected RDF 1.2 triple-term syntax in: $queryString",
+            queryString.contains("<< ?subject ?predicate ?object >> ."),
+            "Expected SPARQL 1.2 reified-triple syntax in: $queryString",
         )
     }
 
@@ -60,7 +63,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("TRIPLE(?s, ?p, ?o) AS ?tripleTerm"))
     }
 
@@ -74,7 +77,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("FILTER(isTRIPLE(?s))"))
     }
 
@@ -88,7 +91,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("SUBJECT(?triple) AS ?subj"))
     }
 
@@ -102,7 +105,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("PREDICATE(?triple) AS ?pred"))
     }
 
@@ -116,7 +119,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("OBJECT(?triple) AS ?obj"))
     }
 
@@ -130,7 +133,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("LANGDIR(?text) AS ?direction"))
     }
 
@@ -140,12 +143,15 @@ class Sparql12ComplianceTest {
             version("1.2")
             where {
                 triple(`var`("s"), Iri("http://example.org/text"), `var`("text"))
+                filter(hasLang(`var`("text").expr()))
                 filter(hasLang(`var`("text").expr(), "en"))
             }
         }
 
-        val queryString = query.sparql
-        assertTrue(queryString.contains("hasLANG(?text"))
+        val queryString = assertParsesQuery(query.sparql)
+        // SPARQL 1.2 hasLANG is single-argument; the tag match uses LANGMATCHES.
+        assertTrue(queryString.contains("FILTER(hasLANG(?text))"))
+        assertTrue(queryString.contains("FILTER(LANGMATCHES(LANG(?text), \"en\"^^"))
     }
 
     @Test
@@ -154,12 +160,14 @@ class Sparql12ComplianceTest {
             version("1.2")
             where {
                 triple(`var`("s"), Iri("http://example.org/text"), `var`("text"))
+                filter(hasLangdir(`var`("text").expr()))
                 filter(hasLangdir(`var`("text").expr(), "rtl"))
             }
         }
 
-        val queryString = query.sparql
-        assertTrue(queryString.contains("hasLANGDIR(?text"))
+        val queryString = assertParsesQuery(query.sparql)
+        assertTrue(queryString.contains("FILTER(hasLANGDIR(?text))"))
+        assertTrue(queryString.contains("FILTER(LANGDIR(?text) = \"rtl\"^^"))
     }
 
     @Test
@@ -172,7 +180,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("STRLANGDIR(?text"))
     }
 
@@ -180,18 +188,16 @@ class Sparql12ComplianceTest {
     fun `test enhanced string functions`() {
         val query = select {
             version("1.2")
-            expression(replaceAll(`var`("text").expr(), "old", "new"), "replaced")
+            expression(replace(`var`("text").expr(), "old", "new"), "replaced")
             expression(encodeForUri(`var`("text").expr()), "encoded")
-            expression(decodeForUri(`var`("text").expr()), "decoded")
             where {
                 triple(`var`("s"), Iri("http://example.org/text"), `var`("text"))
             }
         }
 
-        val queryString = query.sparql
-        assertTrue(queryString.contains("REPLACE_ALL(?text"))
+        val queryString = assertParsesQuery(query.sparql)
+        assertTrue(queryString.contains("REPLACE(?text"))
         assertTrue(queryString.contains("ENCODE_FOR_URI(?text) AS ?encoded"))
-        assertTrue(queryString.contains("DECODE_FOR_URI(?text) AS ?decoded"))
     }
 
     @Test
@@ -199,19 +205,17 @@ class Sparql12ComplianceTest {
         val query = select {
             version("1.2")
             expression(rand(), "randomValue")
-            expression(random(), "randomValue2")
             expression(now(), "currentTime")
-            expression(timezone(), "timezone")
+            expression(timezone(`var`("value").expr()), "timezone")
             where {
                 triple(`var`("s"), Iri("http://example.org/value"), `var`("value"))
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("RAND() AS ?randomValue"))
-        assertTrue(queryString.contains("RANDOM() AS ?randomValue2"))
         assertTrue(queryString.contains("NOW() AS ?currentTime"))
-        assertTrue(queryString.contains("TIMEZONE() AS ?timezone"))
+        assertTrue(queryString.contains("TIMEZONE(?value) AS ?timezone"))
     }
 
     @Test
@@ -227,10 +231,11 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
-        assertTrue(queryString.contains("DATETIME(?dateTime) AS ?dt"))
-        assertTrue(queryString.contains("DATE(?dateTime) AS ?d"))
-        assertTrue(queryString.contains("TIME(?dateTime) AS ?t"))
+        val queryString = assertParsesQuery(query.sparql)
+        // Non-standard DATETIME/DATE/TIME are rendered as XSD casts.
+        assertTrue(queryString.contains("<http://www.w3.org/2001/XMLSchema#dateTime>(?dateTime) AS ?dt"))
+        assertTrue(queryString.contains("<http://www.w3.org/2001/XMLSchema#date>(?dateTime) AS ?d"))
+        assertTrue(queryString.contains("<http://www.w3.org/2001/XMLSchema#time>(?dateTime) AS ?t"))
         assertTrue(queryString.contains("TZ(?dateTime) AS ?tz"))
     }
 
@@ -261,10 +266,10 @@ class Sparql12ComplianceTest {
             limit(10)
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         
         // Check VERSION declaration
-        assertTrue(queryString.contains("VERSION 1.2"))
+        assertTrue(queryString.contains("VERSION \"1.2\""))
         
         // Check prefix declarations
         assertTrue(queryString.contains("PREFIX foaf: <http://xmlns.com/foaf/0.1/>"))
@@ -273,13 +278,13 @@ class Sparql12ComplianceTest {
         // Check SELECT clause
         assertTrue(queryString.contains("SELECT ?person ?confidence"))
         
-        // Check WHERE clause with RDF 1.2 triple-term syntax
+        // Check WHERE clause with SPARQL 1.2 reified-triple syntax
         assertTrue(
-            queryString.contains("<<( ?person <http://xmlns.com/foaf/0.1/name> ?name )>>"),
-            "Expected RDF 1.2 triple-term syntax in: $queryString",
+            queryString.contains("<< ?person <http://xmlns.com/foaf/0.1/name> ?name >> ."),
+            "Expected SPARQL 1.2 reified-triple syntax in: $queryString",
         )
         assertTrue(queryString.contains("TRIPLE(?person, <http://xmlns.com/foaf/0.1/name>, ?name) AS ?tripleTerm"))
-        assertTrue(queryString.contains("hasLANG(?name"))
+        assertTrue(queryString.contains("LANGMATCHES(LANG(?name)"))
         assertTrue(queryString.contains("isTRIPLE(?tripleTerm)"))
         
         // Check ORDER BY and LIMIT
@@ -300,7 +305,7 @@ class Sparql12ComplianceTest {
             }
         }
 
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("http://xmlns.com/foaf/0.1/knows"))
         assertTrue(queryString.contains("http://xmlns.com/foaf/0.1/friend"))
     }
@@ -332,10 +337,10 @@ class Sparql12ComplianceTest {
                 quotedTriple(`var`("s"), `var`("p"), `var`("o"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(
-            queryString.contains("<<( ?s ?p ?o )>>"),
-            "Expected RDF 1.2 triple-term syntax in: $queryString",
+            queryString.contains("<< ?s ?p ?o >> ."),
+            "Expected SPARQL 1.2 reified-triple syntax in: $queryString",
         )
     }
 
@@ -346,7 +351,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).oneOrMore(), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("SELECT"))
         assertTrue(queryString.contains("?person"))
         assertTrue(queryString.contains("?friend"))
@@ -360,7 +365,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).zeroOrMore(), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>*"))
     }
 
@@ -371,7 +376,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).zeroOrOne(), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>?"))
     }
 
@@ -382,7 +387,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).alternative(path(Iri("http://xmlns.com/foaf/0.1/friendOf"))), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>|<http://xmlns.com/foaf/0.1/friendOf>"))
     }
 
@@ -393,19 +398,21 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).sequence(path(Iri("http://xmlns.com/foaf/0.1/friendOf"))), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>/<http://xmlns.com/foaf/0.1/friendOf>"))
     }
 
     @Test
     fun `test property paths - range`() {
-        val query = select {
-            where {
-                propertyPath(`var`("person"), path(FOAF.knows).between(2, 4), `var`("friend"))
+        // {n,m} repetition is not part of SPARQL 1.1/1.2 and is rejected rather than
+        // emitted as syntax standard endpoints cannot parse.
+        assertThrows(IllegalArgumentException::class.java) {
+            select {
+                where {
+                    propertyPath(`var`("person"), path(FOAF.knows).between(2, 4), `var`("friend"))
+                }
             }
         }
-        val queryString = query.sparql
-        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>{2,4}"))
     }
 
     @Test
@@ -415,7 +422,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).negation(), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("!<http://xmlns.com/foaf/0.1/knows>"))
     }
 
@@ -426,7 +433,7 @@ class Sparql12ComplianceTest {
                 propertyPath(`var`("person"), path(FOAF.knows).inverse(), `var`("friend"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("^<http://xmlns.com/foaf/0.1/knows>"))
     }
 
@@ -439,8 +446,9 @@ class Sparql12ComplianceTest {
                     `var`("friend"))
             }
         }
-        val queryString = query.sparql
-        assertTrue(queryString.contains("<http://xmlns.com/foaf/0.1/knows>|^<http://xmlns.com/foaf/0.1/friendOf>+"))
+        val queryString = assertParsesQuery(query.sparql)
+        // The repetition applies to the whole alternative, so it must be bracketed.
+        assertTrue(queryString.contains("(<http://xmlns.com/foaf/0.1/knows>|^<http://xmlns.com/foaf/0.1/friendOf>)+"))
     }
 
     @Test
@@ -460,12 +468,12 @@ class Sparql12ComplianceTest {
             }
             orderBy(`var`("employeeCount").expr(), OrderDirection.DESC)
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("COUNT(?employee)"))
         assertTrue(queryString.contains("AVG(?salary)"))
         assertTrue(queryString.contains("GROUP BY ?department"))
-        assertTrue(queryString.contains("HAVING"))
-        assertTrue(queryString.contains("COUNT(?employee) >"))
+        // HAVING takes bracketed constraints, not FILTER(...).
+        assertTrue(queryString.contains("HAVING (COUNT(?employee) >"))
         // SPARQL 1.1 grammar requires DESC to wrap the expression: `DESC(?x)`, not `?x DESC`.
         assertTrue(queryString.contains("ORDER BY DESC(?employeeCount)"))
     }
@@ -485,7 +493,7 @@ class Sparql12ComplianceTest {
                 triple(`var`("item"), Iri("http://example.org/hasName"), `var`("name"))
             }
         }
-        val queryString = query.sparql
+        val queryString = assertParsesQuery(query.sparql)
         assertTrue(queryString.contains("COUNT(?item)"))
         assertTrue(queryString.contains("COUNT(DISTINCT ?item)"))
         assertTrue(queryString.contains("SUM(?value)"))
@@ -505,8 +513,8 @@ class Sparql12ComplianceTest {
                 filter(`var`("name") eq "John")
             }
         }
-        val queryString = query.sparql
-        
+        val queryString = assertParsesQuery(query.sparql)
+
         // Verify that string literals are typed as xsd:string
         assertTrue(queryString.contains("\"John\"^^<http://www.w3.org/2001/XMLSchema#string>"))
         
@@ -518,8 +526,8 @@ class Sparql12ComplianceTest {
                 filter(`var`("age") eq 25)
             }
         }
-        val queryString2 = query2.sparql
-        
+        val queryString2 = assertParsesQuery(query2.sparql)
+
         // Verify that integer literals are typed as xsd:integer
         assertTrue(queryString2.contains("\"25\"^^<http://www.w3.org/2001/XMLSchema#integer>"))
         
@@ -531,8 +539,8 @@ class Sparql12ComplianceTest {
                 filter(`var`("label") eq Literal("Hello", "en"))
             }
         }
-        val queryString3 = query3.sparql
-        
+        val queryString3 = assertParsesQuery(query3.sparql)
+
         // Verify that language-tagged literals use @ syntax
         assertTrue(queryString3.contains("\"Hello\"@en"))
     }
@@ -547,8 +555,8 @@ class Sparql12ComplianceTest {
                 filter(`var`("text") eq "Hello \u0041\u0042\u0043") // ABC in Unicode escapes
             }
         }
-        val queryString = query.sparql
-        
+        val queryString = assertParsesQuery(query.sparql)
+
         // Verify that Unicode escape sequences are properly handled
         assertTrue(queryString.contains("Hello ABC"))
         
@@ -560,8 +568,8 @@ class Sparql12ComplianceTest {
                 filter(`var`("unicode") eq "Unicode: \u03B1\u03B2\u03B3") // Greek letters
             }
         }
-        val queryString2 = query2.sparql
-        
+        val queryString2 = assertParsesQuery(query2.sparql)
+
         // Verify that Unicode characters are preserved
         assertTrue(queryString2.contains("Unicode: αβγ"))
         
@@ -573,11 +581,12 @@ class Sparql12ComplianceTest {
                 filter(`var`("special") eq "Special: \"quotes\" 'apostrophes' \\backslashes\\")
             }
         }
-        val queryString3 = query3.sparql
-        
+        val queryString3 = assertParsesQuery(query3.sparql)
+
         // Verify that special characters are properly escaped in SPARQL
-        assertTrue(queryString3.contains("\"quotes\""))
-        assertTrue(queryString3.contains("\\backslashes\\"))
+        assertTrue(queryString3.contains("\\\"quotes\\\""))
+        assertTrue(queryString3.contains("\\\\backslashes\\\\"))
+        assertFalse(queryString3.contains(" \"quotes\" "))
     }
 
     @Test
@@ -600,8 +609,8 @@ class Sparql12ComplianceTest {
                 filter(isNumeric(`var`("number").expr()))
             }
         }
-        val queryString = query.sparql
-        
+        val queryString = assertParsesQuery(query.sparql)
+
         // Verify boolean literal handling
         assertTrue(queryString.contains("\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"))
         assertTrue(queryString.contains("\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>"))
@@ -619,7 +628,7 @@ class Sparql12ComplianceTest {
                 bind(`var`("result"), if_(`var`("value") gt 10, string("high").expr(), string("low").expr()))
             }
         }
-        val queryString2 = query2.sparql
+        val queryString2 = assertParsesQuery(query2.sparql)
         assertTrue(queryString2.contains("IF(?value > \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>, \"high\"^^<http://www.w3.org/2001/XMLSchema#string>, \"low\"^^<http://www.w3.org/2001/XMLSchema#string>) AS ?result"))
     }
 }

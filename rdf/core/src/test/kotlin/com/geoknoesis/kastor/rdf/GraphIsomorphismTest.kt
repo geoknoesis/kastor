@@ -111,7 +111,7 @@ class GraphIsomorphismTest {
         repo2.addTriple(RdfTriple(person2, friendPred, bnode2a))
         repo2.addTriple(RdfTriple(bnode2a, namePred, string("Hank")))
         
-        assertTrue(repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph), "Complex graphs with blank nodes should be isomorphic")
+        assertFalse(repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph), "Different fixed IRIs must not be renamed by isomorphism")
         
         repo1.close()
         repo2.close()
@@ -162,11 +162,9 @@ class GraphIsomorphismTest {
         
         repo2.addTriple(triple)
         
-        // Note: This depends on whether the graph implementation allows duplicates
-        // If duplicates are allowed, they should be considered in isomorphism
-        val isIsomorphic = repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph)
-        // The result depends on implementation, but the test should not crash
-        assertNotNull(isIsomorphic, "Isomorphism check should complete without error")
+        // RDF graphs are sets: adding the same triple twice leaves one triple, so the graphs are equal.
+        assertEquals(1, repo1.defaultGraph.size())
+        assertTrue(repo1.defaultGraph.isIsomorphicTo(repo2.defaultGraph))
         
         repo1.close()
         repo2.close()

@@ -21,11 +21,11 @@ import com.geoknoesis.kastor.rdf.vocab.RO
  * ```
  */
 fun TripleDsl.bfo(block: BfoTripleBuilder.() -> Unit) {
-    BfoTripleBuilder(triples).apply(block)
+    BfoTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.bfo(block: BfoTripleBuilder.() -> Unit) {
-    BfoTripleBuilder(triples).apply(block)
+    BfoTripleBuilder(tripleSink).apply(block)
 }
 
 /**

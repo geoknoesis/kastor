@@ -1,24 +1,88 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
-import java.util.concurrent.ConcurrentHashMap
 import com.geoknoesis.kastor.rdf.shacl.StaleShapesGraphTagException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
-internal object NativeCompileCache {
-    private val compiled = ConcurrentHashMap<String, CompiledShapeGraph>()
-    private val tagToDigest = ConcurrentHashMap<String, String>()
+/**
+ * Bounded cache owned by one validator; version tags cannot collide across callers.
+ *
+ * Compilation runs **outside** the cache lock: each key maps to a future completed by the first caller, while
+ * concurrent callers for the same key wait on that future within their own [ValidationBudget]. Different keys
+ * compile in parallel. A failed or cancelled compilation is removed so the next caller retries.
+ */
+internal class NativeCompileCache(private val capacity: Int = 64) {
+    private val lock = Any()
+    private var hits = 0L
+    private var misses = 0L
+    private var evictions = 0L
+    init { require(capacity > 0) }
+    private val compiled = LinkedHashMap<String, CompletableFuture<CompiledShapeGraph>>(16, 0.75f, true)
+    private val tags = object : LinkedHashMap<String, String>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > capacity
+    }
 
-    fun assertTagOrRecord(tag: String, digest: String) {
-        val existing = tagToDigest.putIfAbsent(tag, digest)
-        if (existing != null && existing != digest) {
-            throw StaleShapesGraphTagException(
-                "Compile-cache tag '$tag' was bound to digest $existing but shapes graph now hashes to $digest",
-            )
+    fun assertTagOrRecord(tag: String, digest: String, budget: ValidationBudget = ValidationBudget.NONE) {
+        budget.check("shape cache")
+        synchronized(lock) {
+            val existing = tags[tag]
+            if (existing != null && existing != digest) throw StaleShapesGraphTagException("Shapes tag '$tag' changed within this validator")
+            tags[tag] = digest
         }
     }
 
-    fun getCompiled(cacheKey: String): CompiledShapeGraph? = compiled[cacheKey]
-
-    fun putCompiled(cacheKey: String, graph: CompiledShapeGraph) {
-        compiled[cacheKey] = graph
+    fun getOrCompile(key: String, budget: ValidationBudget = ValidationBudget.NONE, compile: () -> CompiledShapeGraph): CompiledShapeGraph {
+        while (true) {
+            budget.check("shape cache")
+            var owner = false
+            val future = synchronized(lock) {
+                val existing = compiled[key]
+                if (existing != null) {
+                    hits++
+                    existing
+                } else {
+                    misses++
+                    val created = CompletableFuture<CompiledShapeGraph>()
+                    compiled[key] = created
+                    if (compiled.size > capacity) {
+                        val eldest = compiled.keys.first()
+                        compiled.remove(eldest)
+                        evictions++
+                    }
+                    owner = true
+                    created
+                }
+            }
+            if (owner) {
+                try {
+                    val value = compile()
+                    future.complete(value)
+                    return value
+                } catch (t: Throwable) {
+                    synchronized(lock) { if (compiled[key] === future) compiled.remove(key) }
+                    future.completeExceptionally(t)
+                    throw t
+                }
+            }
+            try {
+                return future.get(budget.remainingNanos(), TimeUnit.NANOSECONDS)
+            } catch (_: TimeoutException) {
+                budget.check("shape cache wait")
+            } catch (_: ExecutionException) {
+                // The owning caller failed (e.g. its own deadline); retry, possibly becoming the owner.
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                budget.check("shape cache wait")
+                throw e
+            }
+        }
     }
+
+    fun statistics() = synchronized(lock) {
+        com.geoknoesis.kastor.rdf.shacl.ShapeCacheStatistics(compiled.size, tags.size, hits, misses, evictions)
+    }
+
+    fun clear() = synchronized(lock) { compiled.clear(); tags.clear(); hits = 0; misses = 0; evictions = 0 }
 }

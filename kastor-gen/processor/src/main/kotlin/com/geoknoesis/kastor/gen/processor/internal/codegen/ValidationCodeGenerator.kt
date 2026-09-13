@@ -1,171 +1,126 @@
 package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.processor.api.model.ClassBuilderModel
-import com.geoknoesis.kastor.gen.processor.internal.utils.VocabularyMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
+import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
-import com.squareup.kotlinpoet.CodeBlock
 
 /**
  * Generator for validation methods in builder classes using KotlinPoet.
+ *
+ * Every ontology-derived value (IRIs, patterns, `sh:in` members, names in messages) is passed as a
+ * KotlinPoet argument (`%S`, `%N`) so quotes, `$` and `%` can never break or inject into generated code.
  */
 internal class ValidationCodeGenerator(
     private val logger: KSPLogger
 ) {
+
+    private val literalClass = ClassName(CodegenConstants.RDF_PACKAGE, "Literal")
 
     /**
      * Generates a validate() method for a builder class.
      */
     fun generateValidationMethod(classBuilder: ClassBuilderModel): FunSpec {
         val functionBuilder = FunSpec.builder("validate")
-            .addKdoc("Validate the %L against SHACL constraints.", classBuilder.className.lowercase())
+            .addKdoc("%L", kdocText("Validate the ${classBuilder.className.lowercase()} against SHACL constraints."))
             .addStatement("val violations = mutableListOf<%T>()", String::class)
-        
+
         // Check required properties - sort by propertyIri for deterministic output
         classBuilder.properties
             .sortedBy { it.propertyIri }
             .forEach { property ->
-            if (property.isRequired) {
-                val propertyIriConstant = VocabularyMapper.getVocabularyConstant(property.propertyIri)
-                    ?: "Iri(\"${property.propertyIri}\")"
-                val propertyIriCodeBlock = CodeBlock.of("%L", propertyIriConstant)
-                
-                functionBuilder.addCode("\n")
-                functionBuilder.addStatement("// Check required %L", property.propertyName)
-                functionBuilder.addStatement("val %LCount = graph.getTriples(resource, %L, null).size",
-                    property.propertyName, propertyIriCodeBlock)
-                functionBuilder.addStatement("if (%LCount < 1) {", property.propertyName)
-                functionBuilder.addStatement("    violations.add(\"%L is required (minCount=1)\")", property.propertyName)
-                functionBuilder.addStatement("}")
+                if (property.isRequired) {
+                    val iri = CodegenConstants.iriConstant(property.propertyIri)
+                    functionBuilder.addComment("Check required %L", property.propertyName)
+                    val count = "${property.propertyName}Count"
+                    functionBuilder.addStatement("val %N = graph.find(resource, %L).size", count, iri)
+                    functionBuilder.beginControlFlow("if (%N < 1)", count)
+                    functionBuilder.addStatement("violations.add(%S)", "${property.propertyName} is required (minCount=1)")
+                    functionBuilder.endControlFlow()
+                }
             }
-        }
-        
+
         // Check value constraints on existing values - sort by propertyIri for deterministic output
         classBuilder.properties
             .sortedBy { it.propertyIri }
             .forEach { property ->
-            val propertyIriConstant = VocabularyMapper.getVocabularyConstant(property.propertyIri)
-                ?: "Iri(\"${property.propertyIri}\")"
-            val propertyIriCodeBlock = CodeBlock.of("%L", propertyIriConstant)
-            
-            val hasConstraints = property.constraints.minLength != null ||
-                    property.constraints.maxLength != null ||
-                    property.constraints.pattern != null ||
-                    property.constraints.inValues != null
-            
-            if (hasConstraints) {
-                functionBuilder.addCode("\n")
-                functionBuilder.addStatement("// Validate %L constraints", property.propertyName)
-                functionBuilder.addStatement("graph.getTriples(resource, %L, null).forEach { triple ->", propertyIriCodeBlock)
-                functionBuilder.addStatement("    val literal = triple.obj as? %T", 
-                    ClassName("com.geoknoesis.kastor.rdf", "Literal"))
-                functionBuilder.addStatement("    if (literal != null) {")
-                functionBuilder.addStatement("        val value = literal.lexical")
-                
-                // MinLength
-                if (property.constraints.minLength != null) {
-                    functionBuilder.addStatement("        if (value.length < %L) {", property.constraints.minLength)
-                    functionBuilder.addStatement("            violations.add(\"%L must have minLength >= %L\")",
-                        property.propertyName, property.constraints.minLength)
-                    functionBuilder.addStatement("        }")
+                val iri = CodegenConstants.iriConstant(property.propertyIri)
+                val c = property.constraints
+                val name = property.propertyName
+
+                val hasConstraints = c.minLength != null || c.maxLength != null || c.pattern != null ||
+                    !c.inValues.isNullOrEmpty()
+
+                if (hasConstraints) {
+                    functionBuilder.addComment("Validate %L constraints", name)
+                    functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
+                    functionBuilder.addStatement("val literal = triple.obj as? %T", literalClass)
+                    functionBuilder.beginControlFlow("if (literal != null)")
+                    functionBuilder.addStatement("val value = literal.lexical")
+                    c.minLength?.let {
+                        functionBuilder.beginControlFlow("if (value.length < %L)", it)
+                        functionBuilder.addStatement("violations.add(%S)", "$name must have minLength >= $it")
+                        functionBuilder.endControlFlow()
+                    }
+                    c.maxLength?.let {
+                        functionBuilder.beginControlFlow("if (value.length > %L)", it)
+                        functionBuilder.addStatement("violations.add(%S)", "$name must have maxLength <= $it")
+                        functionBuilder.endControlFlow()
+                    }
+                    c.pattern?.let {
+                        functionBuilder.beginControlFlow("if (!%L.containsMatchIn(value))", regexCode(it, c.patternFlags))
+                        functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $it")
+                        functionBuilder.endControlFlow()
+                    }
+                    c.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
+                        functionBuilder.beginControlFlow(
+                            "if (value !in listOf(%L))", values.map { CodeBlock.of("%S", it) }.joinToCode(", ")
+                        )
+                        functionBuilder.addStatement("violations.add(%S)", "$name must be one of: ${values.joinToString()}")
+                        functionBuilder.endControlFlow()
+                    }
+                    functionBuilder.endControlFlow()
+                    functionBuilder.endControlFlow()
                 }
-                
-                // MaxLength
-                if (property.constraints.maxLength != null) {
-                    functionBuilder.addStatement("        if (value.length > %L) {", property.constraints.maxLength)
-                    functionBuilder.addStatement("            violations.add(\"%L must have maxLength <= %L\")",
-                        property.propertyName, property.constraints.maxLength)
-                    functionBuilder.addStatement("        }")
+
+                val hasNumericConstraints = c.minInclusive != null || c.maxInclusive != null ||
+                    c.minExclusive != null || c.maxExclusive != null
+
+                if (hasNumericConstraints) {
+                    functionBuilder.addComment("Validate %L numeric constraints", name)
+                    functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
+                    functionBuilder.addStatement("val literal = triple.obj as? %T", literalClass)
+                    functionBuilder.addStatement("val value = literal?.lexical?.trim()?.toDoubleOrNull()")
+                    functionBuilder.beginControlFlow("if (value != null)")
+                    fun bound(bound: Double?, op: String, text: String) {
+                        if (bound == null) return
+                        functionBuilder.beginControlFlow("if (value %L %L)", op, bound)
+                        functionBuilder.addStatement("violations.add(%S)", "$name must be $text $bound")
+                        functionBuilder.endControlFlow()
+                    }
+                    bound(c.minInclusive, "<", ">=")
+                    bound(c.maxInclusive, ">", "<=")
+                    bound(c.minExclusive, "<=", ">")
+                    bound(c.maxExclusive, ">=", "<")
+                    functionBuilder.endControlFlow()
+                    functionBuilder.endControlFlow()
                 }
-                
-                // Pattern
-                if (property.constraints.pattern != null) {
-                    functionBuilder.addStatement("        if (!%T(%S).containsMatchIn(value)) {",
-                        Regex::class, property.constraints.pattern)
-                    functionBuilder.addStatement("            violations.add(\"%L must match pattern: %S\")",
-                        property.propertyName, property.constraints.pattern)
-                    functionBuilder.addStatement("        }")
-                }
-                
-                // In constraint
-                if (property.constraints.inValues != null && property.constraints.inValues.isNotEmpty()) {
-                    val valuesList = property.constraints.inValues.joinToString(", ") { "\"$it\"" }
-                    functionBuilder.addStatement("        if (value !in listOf($valuesList)) {")
-                    functionBuilder.addStatement("            violations.add(\"%L must be one of: %S\")",
-                        property.propertyName, property.constraints.inValues.joinToString())
-                    functionBuilder.addStatement("        }")
-                }
-                
-                functionBuilder.addStatement("    }")
-                functionBuilder.addStatement("}")
             }
-            
-            // Numeric constraints
-            val hasNumericConstraints = property.constraints.minInclusive != null ||
-                    property.constraints.maxInclusive != null ||
-                    property.constraints.minExclusive != null ||
-                    property.constraints.maxExclusive != null
-            
-            if (hasNumericConstraints) {
-                functionBuilder.addCode("\n")
-                functionBuilder.addStatement("// Validate %L numeric constraints", property.propertyName)
-                functionBuilder.addStatement("graph.getTriples(resource, %L, null).forEach { triple ->", propertyIriCodeBlock)
-                functionBuilder.addStatement("    val literal = triple.obj as? %T",
-                    ClassName("com.geoknoesis.kastor.rdf", "Literal"))
-                functionBuilder.addStatement("    if (literal != null) {")
-                functionBuilder.addStatement("        val value = literal.lexical.toDoubleOrNull()")
-                functionBuilder.addStatement("        if (value != null) {")
-                
-                if (property.constraints.minInclusive != null) {
-                    functionBuilder.addStatement("            if (value < %L) {", property.constraints.minInclusive)
-                    functionBuilder.addStatement("                violations.add(\"%L must be >= %L\")",
-                        property.propertyName, property.constraints.minInclusive)
-                    functionBuilder.addStatement("            }")
-                }
-                if (property.constraints.maxInclusive != null) {
-                    functionBuilder.addStatement("            if (value > %L) {", property.constraints.maxInclusive)
-                    functionBuilder.addStatement("                violations.add(\"%L must be <= %L\")",
-                        property.propertyName, property.constraints.maxInclusive)
-                    functionBuilder.addStatement("            }")
-                }
-                if (property.constraints.minExclusive != null) {
-                    functionBuilder.addStatement("            if (value <= %L) {", property.constraints.minExclusive)
-                    functionBuilder.addStatement("                violations.add(\"%L must be > %L\")",
-                        property.propertyName, property.constraints.minExclusive)
-                    functionBuilder.addStatement("            }")
-                }
-                if (property.constraints.maxExclusive != null) {
-                    functionBuilder.addStatement("            if (value >= %L) {", property.constraints.maxExclusive)
-                    functionBuilder.addStatement("                violations.add(\"%L must be < %L\")",
-                        property.propertyName, property.constraints.maxExclusive)
-                    functionBuilder.addStatement("            }")
-                }
-                
-                functionBuilder.addStatement("        }")
-                functionBuilder.addStatement("    }")
-                functionBuilder.addStatement("}")
-            }
-        }
-        
-        // Check maxCount constraints
-        // Note: maxCount validation would go here if needed
-        // Currently maxCount is enforced by the type system (List vs single value)
-        
-        functionBuilder.addCode("\n")
-        functionBuilder.addStatement("if (violations.isNotEmpty()) {")
-        // `violations` is a List<String>. The runtime ValidationException's second
-        // parameter is List<ShaclViolation> (defaulted to emptyList), so we pass only
-        // the message — folding the violation strings into it — instead of the old
-        // two-arg call, which passed List<String> where List<ShaclViolation> was
-        // expected and would not compile in generated code.
+
+        functionBuilder.beginControlFlow("if (violations.isNotEmpty())")
+        // `violations` is a List<String>; the runtime ValidationException takes the message (and optional
+        // structured violations), so the strings are folded into the message.
         functionBuilder.addStatement(
-            "    throw %T(\"%L \${resource} validation failed: \${violations.joinToString(\", \")}\")",
-            ClassName("com.geoknoesis.kastor.gen.runtime", "ValidationException"),
-            classBuilder.className,
+            "throw %T(%S + resource + %S + violations.joinToString(%S))",
+            ClassName(CodegenConstants.RUNTIME_PACKAGE, "ValidationException"),
+            "${classBuilder.className} ",
+            " validation failed: ",
+            ", ",
         )
-        functionBuilder.addStatement("}")
-        
+        functionBuilder.endControlFlow()
+
         return functionBuilder.build()
     }
 }
-

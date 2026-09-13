@@ -13,7 +13,7 @@ import com.google.devtools.ksp.validate
 /**
  * KSP processor for generating RDF-backed domain object wrappers from `@Rdf` interfaces.
  */
-class OntoMapperProcessor(
+public class OntoMapperProcessor(
   private val codeGenerator: CodeGenerator,
   private val logger: KSPLogger,
   private val options: Map<String, String>,
@@ -24,7 +24,7 @@ class OntoMapperProcessor(
 
   override fun process(resolver: Resolver): List<KSAnnotated> {
     logger.info("OntoMapper processor starting…")
-    val symbols = resolver.getSymbolsWithAnnotation(RDF_ANNOTATION_FQN)
+    val symbols = resolver.getSymbolsWithAnnotation(RDF_ANNOTATION_FQN).toList()
 
     logger.info("Found ${symbols.iterator().asSequence().count()} symbols with @Rdf")
 
@@ -36,13 +36,20 @@ class OntoMapperProcessor(
     val classModels = mutableListOf<ClassModel>()
 
     symbols.forEach { symbol ->
-      if (symbol !is KSClassDeclaration) {
+      if (!symbol.validate() || symbol !is KSClassDeclaration) {
         return@forEach
       }
       val rdfAnn = symbol.annotations.find { it.shortName.asString() == "Rdf" } ?: return@forEach
       val iriRaw = rdfAnn.arguments.find { it.name?.asString() == "iri" }?.value as? String ?: ""
       val shaclRaw = rdfAnn.arguments.find { it.name?.asString() == "shacl" }?.value as? String ?: ""
       if (iriRaw.isBlank() || shaclRaw.isNotBlank()) {
+        return@forEach
+      }
+      // Interfaces generated from SHACL by OntologyProcessor also carry @Rdf(iri) and come with their own
+      // wrapper; generating a second one would fail with FileAlreadyExistsException in the next round.
+      val qualified = symbol.qualifiedName?.asString()
+      if (qualified != null && resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualified + "Wrapper")) != null) {
+        logger.info("Skipping $qualified: a wrapper already exists")
         return@forEach
       }
 
@@ -55,7 +62,8 @@ class OntoMapperProcessor(
       }
     }
 
-    classModels.forEach { generateWrapper(it) }
+    val sources = resolver.getAllFiles().toList().toTypedArray()
+    classModels.forEach { generateWrapper(it, sources) }
 
     return symbols.filterNot { it.validate() }.toList()
   }
@@ -121,7 +129,6 @@ class OntoMapperProcessor(
     if (qualifiedName in processedClasses) {
       return null
     }
-    processedClasses.add(qualifiedName)
 
     val properties = mutableListOf<PropertyModel>()
     classDecl.getAllProperties().forEach { property ->
@@ -230,10 +237,10 @@ class OntoMapperProcessor(
     )
   }
 
-  private fun generateWrapper(classModel: ClassModel) {
+  private fun generateWrapper(classModel: ClassModel, sources: Array<KSFile>) {
     val fileSpec = wrapperGenerator.generateWrapper(classModel)
     val file = codeGenerator.createNewFile(
-      dependencies = Dependencies(false),
+      dependencies = Dependencies(true, *sources),
       packageName = classModel.packageName,
       fileName = fileSpec.name.removeSuffix(".kt"),
     )
@@ -242,6 +249,7 @@ class OntoMapperProcessor(
     fileSpec.writeTo(writer)
     writer.close()
     file.close()
+    processedClasses.add(classModel.qualifiedName)
   }
 
   private fun normalizeKotlinType(typeName: String?): String {
@@ -256,7 +264,7 @@ class OntoMapperProcessor(
   }
 }
 
-class OntoMapperProcessorProvider : SymbolProcessorProvider {
+public class OntoMapperProcessorProvider : SymbolProcessorProvider {
   override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
     OntoMapperProcessor(
       codeGenerator = environment.codeGenerator,

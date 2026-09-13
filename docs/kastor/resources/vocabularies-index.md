@@ -329,13 +329,13 @@ This page provides a comprehensive index of all available vocabulary terms organ
 ```kotlin
 import com.geoknoesis.kastor.rdf.vocab.Vocabularies.*
 
-// Get all FOAF terms
-val foafTerms = getTermsByPrefix("foaf")
-println("FOAF has ${foafTerms?.size} terms")
+// Find a vocabulary by prefix
+val foaf = findByPrefix("foaf")
+println("FOAF namespace: ${foaf?.namespace}")
 
-// Get all OWL terms
-val owlTerms = getTermsByPrefix("owl")
-println("OWL has ${owlTerms?.size} terms")
+// Which vocabulary does a term belong to?
+val owl = findVocabularyForTerm(iri("http://www.w3.org/2002/07/owl#Class"))
+println("OWL prefix: ${owl?.prefix}")
 ```
 
 ### Discovering Term Properties

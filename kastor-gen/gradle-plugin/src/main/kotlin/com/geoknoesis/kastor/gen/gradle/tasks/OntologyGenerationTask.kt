@@ -1,210 +1,147 @@
 package com.geoknoesis.kastor.gen.gradle.tasks
 
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
+import com.geoknoesis.kastor.gen.gradle.GradleKspLogger
+import com.geoknoesis.kastor.gen.gradle.VocabularyGenerator
+import com.geoknoesis.kastor.gen.processor.api.exceptions.GenerationException
+import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
+import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
+import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
+import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.OntologyWrapperGenerator
-import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
-import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
-import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
-import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
-import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
 import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
-import com.geoknoesis.kastor.gen.gradle.VocabularyGenerator
-import com.google.devtools.ksp.processing.KSPLogger
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
+import com.squareup.kotlinpoet.CodeBlock
 import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.TypeSpec
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
 import java.io.File
-import java.io.FileInputStream
-import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 
 /**
  * Gradle task for generating domain interfaces and wrappers from SHACL and JSON-LD context files.
+ *
+ * Defaults: [wrapperPackage] and [vocabularyPackage] default to [interfacePackage] (which is required),
+ * [dslPackage] to `<interfacePackage>.dsl`, [generateInterfaces]/[generateWrappers] to true,
+ * [generateVocabulary] to true exactly when vocabulary name, namespace and prefix are all set, and
+ * [generateDsl] to false. The DSL name defaults to the JSON-LD context file name converted to an identifier.
+ *
+ * The task is all-or-nothing: every file is generated in memory first; parse errors, name collisions or
+ * invalid configuration fail the task *before* the output directory is touched. Only then are the files
+ * written by the previous run (recorded in a manifest) deleted and the new ones written, so renames —
+ * including case-only renames on case-insensitive file systems — never leave stale or missing files.
  */
 @CacheableTask
 abstract class OntologyGenerationTask : DefaultTask() {
-    
-    @get:Input
+
+    /** Name of the ontology configuration (used in diagnostics). */
+    @get:Internal
+    abstract val ontologyName: Property<String>
+
+    @get:Internal
     abstract val shaclPath: Property<String>
-    
-    @get:Input
+
+    @get:Internal
     abstract val contextPath: Property<String>
-    
-    
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    open val shaclFile: RegularFileProperty = project.objects.fileProperty()
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    open val contextFile: RegularFileProperty = project.objects.fileProperty()
+
+    // Preserve the legacy getters while keeping execution independent of Project.
+    @get:Internal
+    val shaclInput: File get() = shaclFile.get().asFile
+    @get:Internal
+    val contextInput: File get() = contextFile.get().asFile
+
+    init {
+        val root = project.layout.projectDirectory.asFile
+        shaclFile.convention(project.layout.file(shaclPath.map { resolveOntologyInput(root, it) }))
+        contextFile.convention(project.layout.file(contextPath.map { resolveOntologyInput(root, it) }))
+    }
+
     @get:Input
     @get:Optional
     abstract val interfacePackage: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val wrapperPackage: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val vocabularyPackage: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val generateInterfaces: Property<Boolean>
-    
+
     @get:Input
     @get:Optional
     abstract val generateWrappers: Property<Boolean>
-    
+
     @get:Input
     @get:Optional
     abstract val generateVocabulary: Property<Boolean>
-    
+
     @get:Input
     @get:Optional
     abstract val vocabularyName: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val vocabularyNamespace: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val vocabularyPrefix: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val generateDsl: Property<Boolean>
-    
+
     @get:Input
     @get:Optional
     abstract val dslPackage: Property<String>
-    
+
     @get:Input
     @get:Optional
     abstract val dslName: Property<String>
-    
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
-    
-    private val shaclParser = ShaclParser(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val contextParser = JsonLdContextParser(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val interfaceGenerator = InterfaceGenerator(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    }, ValidationAnnotations.NONE)
-    
-    private val wrapperGenerator = OntologyWrapperGenerator(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val vocabularyGenerator = VocabularyGenerator(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
-    private val dslGenerator = InstanceDslGenerator(object : KSPLogger {
-        override fun logging(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun info(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.info(message)
-        }
-        override fun warn(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.warn(message)
-        }
-        override fun error(message: String, symbol: com.google.devtools.ksp.symbol.KSNode?) {
-            logger.error(message)
-        }
-        override fun exception(e: Throwable) {
-            logger.error("Exception occurred", e)
-        }
-    })
-    
+
     @TaskAction
     fun generateOntology() {
-        logger.info("Starting ontology generation...")
-        
-        val shaclFile = resolveFile(shaclPath.get())
-        val contextFile = resolveFile(contextPath.get())
-        val basePackage = interfacePackage.getOrElse("com.example.generated")
-        val actualInterfacePackage = interfacePackage.getOrElse(basePackage)
-        val wrapperPackage = wrapperPackage.getOrElse(basePackage)
-        val vocabularyPackage = vocabularyPackage.getOrElse(basePackage)
+        val label = ontologyName.getOrElse(name)
+        fun fail(message: String, cause: Throwable? = null): Nothing =
+            throw GradleException("kastorGen ontology '$label': $message", cause)
+
+        val shaclFile = this.shaclFile.get().asFile
+        val contextFile = this.contextFile.get().asFile
+        val kspLogger = GradleKspLogger(logger)
+        fun failOnRecordedErrors() {
+            if (kspLogger.errors.isNotEmpty()) fail("generation reported errors:\n  " + kspLogger.errors.joinToString("\n  "))
+        }
+
+        val interfacePackage = interfacePackage.orNull?.takeIf { it.isNotBlank() }
+            ?: fail("interfacePackage must be set")
+        val wrapperPackage = wrapperPackage.orNull?.takeIf { it.isNotBlank() } ?: interfacePackage
+        val vocabularyPackage = vocabularyPackage.orNull?.takeIf { it.isNotBlank() } ?: interfacePackage
+        val dslPackage = dslPackage.orNull?.takeIf { it.isNotBlank() } ?: "$interfacePackage.dsl"
         val generateInterfaces = generateInterfaces.getOrElse(true)
         val generateWrappers = generateWrappers.getOrElse(true)
         val vocabularyName = vocabularyName.getOrElse("")
@@ -215,165 +152,142 @@ abstract class OntologyGenerationTask : DefaultTask() {
             vocabularyName.isNotBlank() && vocabularyNamespace.isNotBlank() && vocabularyPrefix.isNotBlank()
         )
         val generateDsl = generateDsl.getOrElse(false)
-        val dslPackage = dslPackage.getOrElse(basePackage + ".dsl")
-        val dslName = dslName.getOrElse("")
-        
+
+        listOf("interfacePackage" to interfacePackage, "wrapperPackage" to wrapperPackage).forEach { (key, value) ->
+            validatePackage(key, value)?.let { fail(it) }
+        }
+        if (generateVocabulary) validatePackage("vocabularyPackage", vocabularyPackage)?.let { fail(it) }
+        if (generateDsl) validatePackage("dslPackage", dslPackage)?.let { fail(it) }
+
         logger.info("SHACL file: ${shaclFile.absolutePath}")
         logger.info("Context file: ${contextFile.absolutePath}")
-        logger.info("Base package: $basePackage")
-        logger.info("Interface package: $actualInterfacePackage")
-        logger.info("Wrapper package: $wrapperPackage")
-        logger.info("Vocabulary package: $vocabularyPackage")
-        logger.info("Generate interfaces: $generateInterfaces")
-        logger.info("Generate wrappers: $generateWrappers")
-        logger.info("Generate vocabulary: $generateVocabulary")
-        logger.info("Generate DSL: $generateDsl")
-        if (generateVocabulary) {
-            logger.info("Vocabulary name: $vocabularyName")
-            logger.info("Vocabulary namespace: $vocabularyNamespace")
-            logger.info("Vocabulary prefix: $vocabularyPrefix")
-        }
-        if (generateDsl) {
-            logger.info("DSL package: $dslPackage")
-            logger.info("DSL name: ${if (dslName.isBlank()) "(auto)" else dslName}")
-        }
-        
+        logger.info("Interface package: $interfacePackage, wrapper package: $wrapperPackage")
+
         // Parse SHACL and JSON-LD context
-        val shaclShapes = shaclParser.parseShacl(FileInputStream(shaclFile))
-        val jsonLdContext = contextParser.parseContext(FileInputStream(contextFile))
-        
+        val shaclShapes = try {
+            shaclFile.inputStream().use(ShaclParser(kspLogger)::parseShacl)
+        } catch (e: Exception) {
+            fail("cannot read SHACL file ${shaclFile.path}: ${e.message}", e)
+        }
+        val jsonLdContext = try {
+            contextFile.inputStream().use(JsonLdContextParser(kspLogger)::parseContext)
+        } catch (e: Exception) {
+            fail("cannot read JSON-LD context ${contextFile.path}: ${e.message}", e)
+        }
+        failOnRecordedErrors()
         logger.info("Parsed ${shaclShapes.size} SHACL shapes")
-        
-        // Create output directories
-        val outputDir = outputDirectory.get().asFile
-        
+
         // Generate against the FULL model once, so cross-type references resolve and unshaped sh:class
-        // targets fall back to IRI (String) correctly. (Previously each shape was generated in isolation,
-        // which made every object property an IRI string because no other type was "known".)
+        // targets fall back to IRI (String) correctly.
         val fullModel = OntologyModel(shaclShapes, jsonLdContext)
-        val allInterfaces = if (generateInterfaces) interfaceGenerator.generateInterfaces(fullModel, actualInterfacePackage, fallbackUnshapedToIri = true) else emptyMap()
-        val allWrappers = if (generateWrappers) wrapperGenerator.generateWrappers(fullModel, wrapperPackage) else emptyMap()
-
-        // Write interfaces and wrappers for each shape
-        shaclShapes.forEach { shape ->
-            val className = jsonLdContext.typeMappings[shape.targetClass]
-                ?: shape.targetClass.substringAfterLast('#').substringAfterLast('/')
-
-            logger.info("Generating code for class: $className")
-
+        val files = mutableListOf<FileSpec>()
+        try {
             if (generateInterfaces) {
-                val interfaceDir = File(outputDir, actualInterfacePackage.replace('.', '/'))
-                interfaceDir.mkdirs()
-                allInterfaces[className]?.let { spec ->
-                    File(interfaceDir, "$className.kt").bufferedWriter(StandardCharsets.UTF_8).use { spec.writeTo(it) }
-                    logger.info("Generated interface: $className")
-                }
+                files += InterfaceGenerator(kspLogger, ValidationAnnotations.NONE)
+                    .generateInterfaces(fullModel, interfacePackage, fallbackUnshapedToIri = true).values
             }
-
             if (generateWrappers) {
-                val wrapperDir = File(outputDir, wrapperPackage.replace('.', '/'))
-                wrapperDir.mkdirs()
-                allWrappers["${className}Wrapper"]?.let { spec ->
-                    File(wrapperDir, "${className}Wrapper.kt").bufferedWriter(StandardCharsets.UTF_8).use { spec.writeTo(it) }
-                    logger.info("Generated wrapper: ${className}Wrapper")
+                val wrappers = OntologyWrapperGenerator(kspLogger)
+                    .generateWrappers(fullModel, wrapperPackage, interfacePackage, fallbackUnshapedToIri = true)
+                files += wrappers.values
+                if (wrapperPackage != interfacePackage) {
+                    // OntoMapper looks for <Interface>Wrapper / <Interface>Factory next to the interface; this stub
+                    // loads the wrapper from its own package so it registers itself.
+                    wrappers.keys.forEach { wrapper ->
+                        val factoryName = wrapper.removeSuffix("Wrapper") + "Factory"
+                        files += FileSpec.builder(interfacePackage, factoryName)
+                            .addFileComment("GENERATED FILE - DO NOT EDIT")
+                            .addType(
+                                TypeSpec.objectBuilder(factoryName)
+                                    .addModifiers(KModifier.INTERNAL)
+                                    .addInitializerBlock(
+                                        CodeBlock.builder().addStatement("Class.forName(%S)", "$wrapperPackage.$wrapper").build()
+                                    )
+                                    .build()
+                            )
+                            .build()
+                    }
                 }
             }
+            if (generateVocabulary) {
+                if (vocabularyName.isBlank()) fail("vocabularyName is required when generateVocabulary is true")
+                if (vocabularyNamespace.isBlank()) fail("vocabularyNamespace is required when generateVocabulary is true")
+                if (vocabularyPrefix.isBlank()) fail("vocabularyPrefix is required when generateVocabulary is true")
+                files += VocabularyGenerator(kspLogger).generateVocabularyFile(
+                    shaclShapes, jsonLdContext, vocabularyName, vocabularyNamespace, vocabularyPrefix, vocabularyPackage,
+                )
+            }
+            if (generateDsl) {
+                val actualDslName = dslName.orNull?.takeIf { it.isNotBlank() }
+                    ?.also { if (!it.matches(DSL_NAME)) fail("dslName '$it' must match ${DSL_NAME.pattern}") }
+                    ?: deriveDslName(contextFile.nameWithoutExtension)
+                files += InstanceDslGenerator(kspLogger).generate(
+                    InstanceDslRequest(
+                        dslName = actualDslName,
+                        ontologyModel = fullModel,
+                        packageName = dslPackage,
+                        options = DslGenerationOptions(),
+                    )
+                )
+            }
+            GenerationNames.checkUniqueFiles(files)
+        } catch (e: GenerationException) {
+            fail(e.message ?: e.toString(), e)
+        } catch (e: IllegalArgumentException) {
+            fail(e.message ?: e.toString(), e)
+        } catch (e: IllegalStateException) {
+            fail(e.message ?: e.toString(), e)
         }
-        
-        // Generate vocabulary file if requested
-        if (generateVocabulary) {
-            // Validate vocabulary metadata
-            if (vocabularyName.isBlank()) {
-                throw IllegalStateException("vocabularyName is required when generateVocabulary is true")
+        failOnRecordedErrors()
+
+        // Replace the previous run's output: delete what it wrote BEFORE writing, so a case-only rename
+        // (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file systems.
+        val outputDir = outputDirectory.get().asFile
+        val root = outputDir.toPath().toAbsolutePath().normalize()
+        val manifest = File(outputDir, MANIFEST)
+        if (manifest.exists()) {
+            manifest.readLines().filter { it.isNotBlank() }.forEach { relative ->
+                val previous = root.resolve(relative).normalize()
+                if (!previous.startsWith(root)) fail("generated-files manifest escapes the output directory: $relative")
+                Files.deleteIfExists(previous)
             }
-            if (vocabularyNamespace.isBlank()) {
-                throw IllegalStateException("vocabularyNamespace is required when generateVocabulary is true")
-            }
-            if (vocabularyPrefix.isBlank()) {
-                throw IllegalStateException("vocabularyPrefix is required when generateVocabulary is true")
-            }
-            
-            val vocabularyDir = File(outputDir, vocabularyPackage.replace('.', '/'))
-            vocabularyDir.mkdirs()
-            val vocabularyCode = vocabularyGenerator.generateVocabulary(
-                shaclFile,
-                contextFile,
-                vocabularyName,
-                vocabularyNamespace,
-                vocabularyPrefix,
-                vocabularyPackage
-            )
-            val vocabularyFile = File(vocabularyDir, "${vocabularyName}.kt")
-            vocabularyFile.writeText(vocabularyCode)
-            logger.info("Generated vocabulary: ${vocabularyFile.absolutePath}")
         }
-        
-        // Generate DSL if requested
-        if (generateDsl) {
-            val dslDir = File(outputDir, dslPackage.replace('.', '/'))
-            dslDir.mkdirs()
-            
-            // Determine DSL name - use provided name or derive from ontology
-            val actualDslName = if (dslName.isNotBlank()) {
-                dslName
-            } else {
-                // Derive from context file name or use default
-                val contextFileName = contextFile.nameWithoutExtension
-                contextFileName.replace("-", "").replace("_", "").lowercase()
-            }
-            
-            // Create ontology model from all shapes
-            val ontologyModel = OntologyModel(shaclShapes, jsonLdContext)
-            
-            // Generate DSL
-            val dslRequest = InstanceDslRequest(
-                dslName = actualDslName,
-                ontologyModel = ontologyModel,
-                packageName = dslPackage,
-                options = DslGenerationOptions()
-            )
-            
-            val dslFileSpec = dslGenerator.generate(dslRequest)
-            val dslFile = File(dslDir, "${actualDslName.replaceFirstChar { it.uppercaseChar() }}Dsl.kt")
-            dslFile.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                dslFileSpec.writeTo(writer)
-            }
-            logger.info("Generated DSL: ${dslFile.absolutePath}")
+        outputDir.mkdirs()
+        val generated = files.map { spec ->
+            spec.writeTo(outputDir)
+            spec.packageName.replace('.', '/') + "/" + spec.name + ".kt"
         }
-        
-        logger.info("Ontology generation completed successfully")
+        manifest.writeText(generated.sorted().joinToString("\n"))
+        logger.info("Ontology generation completed: ${generated.size} files")
     }
-    
-    private fun resolveFile(path: String): File {
-        val file = File(path)
-        if (file.exists()) {
-            return file
+
+    private companion object {
+        const val MANIFEST = ".kastor-generated-files"
+        val DSL_NAME = Regex("[a-zA-Z][a-zA-Z0-9]*")
+        val PACKAGE_SEGMENT = Regex("[A-Za-z_][A-Za-z0-9_]*")
+
+        fun validatePackage(key: String, value: String): String? {
+            val bad = value.split('.').filter { !it.matches(PACKAGE_SEGMENT) || GenerationNames.isKeyword(it) }
+            return if (bad.isEmpty()) null
+            else "$key '$value' is not a valid Kotlin package name (invalid segment(s): ${bad.joinToString { "'$it'" }})"
         }
-        
-        // Try relative to project directory
-        val projectFile = File(project.projectDir, path)
-        if (projectFile.exists()) {
-            return projectFile
+
+        /** `dcat-us_3.0_context` -> `dcatUs30Context`. */
+        fun deriveDslName(fileName: String): String {
+            val identifier = GenerationNames.memberIdentifier(fileName).filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+            return when {
+                identifier.isEmpty() -> "ontology"
+                identifier.first().isLetter() -> identifier
+                else -> "dsl$identifier"
+            }
         }
-        
-        // Try in resources
-        val resourceFile = File(project.projectDir, "src/main/resources/$path")
-        if (resourceFile.exists()) {
-            return resourceFile
-        }
-        
-        throw IllegalArgumentException("File not found: $path (tried: $file, $projectFile, $resourceFile)")
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
+private fun resolveOntologyInput(root: File, path: String): File {
+    require(path.isNotBlank()) { "Ontology input path must not be blank" }
+    val requested = File(path)
+    if (requested.isAbsolute) return requested
+    val projectFile = File(root, path)
+    return if (projectFile.exists()) projectFile else File(root, "src/main/resources/$path")
+}

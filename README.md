@@ -18,6 +18,8 @@ Contributors: [repository architecture](docs/kastor/concepts/architecture.md) (G
 
 > 💝 **Support Kastor**: If this project helps you, consider [sponsoring](https://github.com/sponsors/geoknoesis) to ensure continued maintenance and feature development. Organizations using Kastor in production can contact us for enterprise support and custom adaptations.
 
+See [release contracts and verification](docs/reference/release-contract.md) for tested capabilities, resource ownership, generated snapshots, and experimental limitations.
+
 ## Why Kastor (in one sentence)
 Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces with a side-channel back to RDF, plus a vocabulary-agnostic DSL that keeps RDF explicit without forcing RDF types into your business code.
 
@@ -55,7 +57,7 @@ Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces 
 
 ### What Kastor Adds
 
-🎨 **Natural language DSL**: `person has name with "Alice"` instead of verbose Model API calls  
+🎨 **Natural language DSL**: `person has FOAF.name with "Alice"` instead of verbose Model API calls  
 🔒 **Type-safe SPARQL**: Compile-time validated queries with Kotlin-idiomatic builders  
 🚀 **Kotlin idioms**: Extension functions, sealed classes, null safety, coroutines  
 🔄 **Provider-agnostic**: Switch between Jena, RDF4J, Memory, or SPARQL endpoints without changing your code  
@@ -95,12 +97,8 @@ import org.eclipse.rdf4j.repository.Repository
 // Your existing RDF4J repository
 val rdf4jRepo: Repository = // ... your existing setup
 
-// Use it through Kastor's unified API
-val repo = Rdf.repository {
-    providerId = "rdf4j"
-    variantId = "native"
-    // Uses your existing RDF4J configuration
-}
+// Wrap the initialized repository. Closing the adapter also shuts down rdf4jRepo.
+val repo = com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository(rdf4jRepo)
 
 // Now write cleaner Kotlin code
 repo.add {
@@ -124,7 +122,7 @@ val jenaRepo = Rdf.repository {
 Use the [**kastor-bom**](bom/build.gradle.kts) when you want every published module pinned to one version. When trimming the classpath:
 
 - **Store only:** `implementation("com.geoknoesis.kastor:rdf-core")` plus **`rdf-jena`** or **`rdf-rdf4j`** (Maven artifact IDs).
-- **Reasoning SPI (`RdfReasoning`, `ReasonerRegistry`):** add `reasoning` and the adapter-specific **`jena-reasoning`** and/or **`rdf4j-reasoning`** artifacts (they are no longer pulled in transitively by the store adapters).
+- **Reasoning SPI (`RdfReasoning`, `ReasonerRegistry`):** add `rdf-reasoning` and the adapter-specific **`rdf-jena-reasoning`** and/or **`rdf-rdf4j-reasoning`** artifacts (they are no longer pulled in transitively by the store adapters).
 
 See [Repository architecture — Dependency profiles](docs/kastor/concepts/architecture.md#dependency-profiles-gradle) for the full table.
 
@@ -136,16 +134,16 @@ Kastor provides a **dual-layer architecture** that serves both RDF experts and a
 - **Native RDF Operations**: Full control over triples, graphs, and SPARQL queries
 - **Multiple Backends**: Jena, RDF4J, Memory, and SPARQL endpoint support
 - **Advanced Features**: Reasoning, SHACL validation, transactions, and RDF graph testing (`rdf-testkit`, `rdf-cli`; see [Testing RDF graphs](docs/kastor/guides/how-to-test-rdf-graphs.md))
-- **RDF-star Support**: Metadata about statements and nested triple expressions
+- **RDF 1.2 triple terms**: statement metadata via `rdf:reifies` and triple terms (Jena and RDF4J providers)
 
 ### 🚀 **For Application Developers**  
-- **Natural Language DSL**: Write RDF like natural language (`person is "foaf:Person"`)
+- **Natural Language DSL**: Write RDF like natural language (``person `is` FOAF.Person``)
 - **Type-Safe Domain Objects**: Pure Kotlin interfaces with compile-time validation
 - **Code Generation**: Generate domain models from ontologies (SHACL + JSON-LD)
 - **Zero RDF Dependencies**: Domain objects have no RDF library dependencies
 
 ### 🏗️ **Enterprise Ready**
-- **ACID Transactions**: Full transaction support across all backends
+- **Transactions**: Local memory, Jena, and RDF4J rollback; HTTP endpoints expose individual operations
 - **Performance Optimized**: Streaming, parallel processing, and memory management
 - **Production Backends**: Jena TDB2 and RDF4J Native Store support
 - **Validation & Reasoning**: Built-in SHACL validation and OWL/RDFS reasoning
@@ -190,7 +188,7 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 > [migration guide](docs/kastor/guides/migrating-to-rdf-1.2.md) for upgrading
 > from 0.1.x.
 
-**Conformance**: Kastor includes a W3C RDF 1.2 syntax harness in `:rdf:conformance` (Turtle 1.2, TriG 1.2, N-Triples 1.2, N-Quads 1.2) for **Jena** and **RDF4J**. Use `./gradlew conformanceSmokeTest` for a fast bundled check; initialise `rdf/conformance/test-data/` and run `./gradlew :rdf:conformance:test` for the full upstream corpus. Details:
+**Conformance**: Kastor includes a W3C RDF 1.2 syntax harness in `:rdf:conformance` (Turtle 1.2, TriG 1.2, N-Triples 1.2, N-Quads 1.2) for **Jena** and **RDF4J**. Use `./gradlew conformanceSmokeTest` for a fast bundled check; run `python scripts/fetch-conformance-data.py` (pinned W3C corpora) and then `./gradlew :rdf:conformance:test` for the full upstream corpus. Details:
 [docs/kastor/concepts/rdf-1.2-conformance.md](docs/kastor/concepts/rdf-1.2-conformance.md).
 
 ### 📊 **RDF Core Framework**
@@ -198,15 +196,15 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **📈 Graph Operations**: Advanced triple storage, retrieval, manipulation, and graph algorithms
 - **🔍 SPARQL Integration**: Full SPARQL 1.1 support with type-safe query builders
 - **💾 Serialization**: Complete RDF format support (Turtle, RDF/XML, JSON-LD, N-Triples, N-Quads)
-- **🔒 ACID Transactions**: Production-grade transaction support with rollback capabilities
+- **🔒 ACID Transactions**: Local provider rollback with provider-specific guarantees
 - **🧮 Graph testing**: Module **`rdf-testkit`** — RDF-isomorphic assertions and golden Turtle checks; **`rdf-cli`** — `parse`, `to-turtle`, and `diff` from the command line ([guide](docs/kastor/guides/how-to-test-rdf-graphs.md))
-- **🎨 Natural Language DSL**: Intuitive syntax (`person is "foaf:Person"`, `person has name with "Alice"`)
+- **🎨 Natural Language DSL**: Intuitive syntax (``person `is` FOAF.Person``, `person has FOAF.name with "Alice"`)
 
 ### 🧠 **Advanced Semantic Features**
 - **🔬 Reasoning Engine**: RDFS, OWL-EL, OWL-RL, and OWL-DL inference capabilities
 - **✅ SHACL Validation**: Comprehensive data validation with detailed constraint checking
-- **⭐ RDF-star Support**: Metadata about statements and nested triple expressions
-- **🔗 Smart QName Detection**: Automatic resolution of qualified names to IRIs
+- **⭐ RDF 1.2 Triple Terms**: `reifies(...)` DSL for statement metadata (replaces the RDF-star model of 0.1.x)
+- **🔗 QName helpers**: `qname("foaf:name")` resolves declared and built-in prefixes to IRIs
 - **📚 Built-in Vocabularies**: Pre-configured prefixes for RDF, RDFS, OWL, SHACL, and XSD
 
 ### 🏷️ **Kastor Gen - Code Generation**
@@ -218,17 +216,14 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 - **📋 Ontology Sources**: Generate from SHACL shapes, JSON-LD contexts, and RDFS/OWL ontologies
 
 **Key Benefits:**
-- ✅ **90% less manual code** - 2 minutes vs 1-2 hours per class
-- ✅ **100% consistency** - Code always matches ontology
-- ✅ **Zero sync errors** - Automatic updates when ontology changes
-- ✅ **Compile-time safety** - Type validation from SHACL constraints
+- ✅ **Generated, not hand-written** — interfaces and wrappers are regenerated from the shapes on every build
+- ✅ **Stays in sync** — regeneration removes obsolete files listed in each ontology's manifest
+- ✅ **Compile-time safety** — property types derived from SHACL constraints
 
-### 🏢 **Enterprise Features**
-- **🌐 Multi-Repository Setup**: Manage multiple RDF stores and federated queries
-- **📊 Performance Monitoring**: Built-in metrics and performance optimization tools
-- **🔧 Pluggable Architecture**: Extensible provider system for custom backends
-- **📱 Reactive Streams**: Support for streaming and reactive programming patterns
-- **🔐 Security**: Authentication and authorization for SPARQL endpoints
+### 🏢 **Integration Features**
+- **🌐 Multiple repositories**: create and combine Memory, Jena (TDB2), RDF4J (Native Store) and HTTP SPARQL repositories via `Rdf.repository { }`
+- **🔧 Pluggable Architecture**: provider SPI for custom backends
+- **📱 Scoped streaming**: `withSelectRows`, `withConstructTriples` and `Rdf.openTripleStream` release backend resources deterministically ([release contract](docs/reference/release-contract.md))
 
 ## Quick Start
 
@@ -237,49 +232,46 @@ Kastor honors Castor's legacy while embracing the future of semantic technologie
 ### Basic RDF Operations
 
 ```kotlin
-// Create a repository
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
+// Create a repository (needs rdf-jena or rdf-rdf4j on the classpath)
 val repo = Rdf.memory()
 
-// Add RDF data using QNames
 repo.add {
     prefixes {
-        "foaf" to "http://xmlns.com/foaf/0.1/"
-        "rdf" to "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        put("ex", "http://example.org/")
     }
-    
-    val person = iri("http://example.org/person")
-    
-    // Turtle-style "a" alias for rdf:type
-    person["a"] = "foaf:Person"
-    person - a - "foaf:Agent"      // Without quotes
-    person - "a" - "foaf:Agent"    // With quotes
-    
-    // Natural language "is" alias for rdf:type
-    person `is` "foaf:Agent"
-    
-    // Smart QName detection in object position
-    person - "foaf:knows" - "foaf:Person"        // QName with declared prefix → IRI
-    person - "foaf:name" - "Alice"               // String without colon → string literal
-    person - "foaf:homepage" - "http://example.org"  // Full IRI → IRI
-    
-    // Traditional syntax (still works)
-    person - "foaf:name" - "John Doe"
-    person - "foaf:age" - 30
+
+    val alice = qname("ex:alice")               // QName → <http://example.org/alice>
+    val bob = iri("http://example.org/bob")
+
+    alice - RDF.type - FOAF.Person              // minus-operator form
+    bob `is` FOAF.Person                        // natural-language alias for rdf:type
+    alice - FOAF.name - "Alice"                 // strings become xsd:string literals
+    alice has FOAF.age with 30                  // has/with form; Int becomes xsd:integer
+    alice[FOAF.knows] = bob                     // bracket form
 }
 
-// Query the data
-val results = repo.query("""
-    SELECT ?name ?age WHERE {
-        ?person a <http://xmlns.com/foaf/0.1/Person> ;
-                <http://xmlns.com/foaf/0.1/name> ?name ;
-                <http://xmlns.com/foaf/0.1/age> ?age .
-    }
-""")
+// Query with a SPARQL string
+val results = repo.select(SparqlSelectQuery("""
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    SELECT ?name WHERE { ?person a foaf:Person ; foaf:name ?name }
+"""))
+results.forEach { row -> println(row.get("name")) }
 ```
 
 ### Domain Object Mapping
 
+Requires `kastor-gen-runtime` and the KSP processor (`kastor-gen-processor`) to generate the implementation.
+
 ```kotlin
+import com.geoknoesis.kastor.gen.annotations.Rdf   // the annotation (not the Rdf factory object)
+import com.geoknoesis.kastor.gen.runtime.materialize
+import com.geoknoesis.kastor.gen.runtime.materializeIn
+import com.geoknoesis.kastor.rdf.iri
+
 // Define domain interface
 @Rdf(iri = "http://xmlns.com/foaf/0.1/Person")
 interface Person {
@@ -299,160 +291,107 @@ val person: Person = repo.materialize(iri("http://example.org/person"))
 println("Name: ${person.name}, Age: ${person.age}")
 ```
 
-## Smart QName Detection
+## Prefixes and QNames
 
-Kastor automatically detects and resolves QNames in object position, making the DSL more intuitive:
+String **objects** are always literals, and IRIs are explicit. Use `qname(...)` to expand a prefixed name with declared or built-in prefixes, and `iri(...)` for full IRIs:
 
 ```kotlin
 repo.add {
-    // Built-in prefixes: rdf, rdfs, owl, sh, xsd (no need to declare!)
+    // Built-in prefixes need no declaration: rdf, rdfs, owl, sh, xsd, obo,
+    // skos, prov, dcat, dcterms, void, geo, time
     prefixes {
-        put("foaf", "http://xmlns.com/foaf/0.1/")
+        put("foaf", "http://xmlns.com/foaf/0.1/")     // declare (or override) prefixes
     }
-    
+    prefix("ex", "http://example.org/")               // single-prefix form
+
+    val person = qname("ex:person")
+
+    person - RDF.type - qname("foaf:Person")          // → <http://xmlns.com/foaf/0.1/Person>
+    person - qname("rdfs:label") - "Person"           // predicate from a built-in prefix
+    person - qname("foaf:homepage") - iri("http://example.org/profile")
+}
+```
+
+### Explicit literals
+
+```kotlin
+repo.add {
     val person = iri("http://example.org/person")
-    
-    // ✅ Smart: QName with declared prefix → IRI
-    person - "foaf:knows" - "foaf:Person"        // → <http://xmlns.com/foaf/0.1/Person>
-    person - "rdfs:subClassOf" - "foaf:Agent"    // → <http://xmlns.com/foaf/0.1/Agent>
-    
-    // ✅ Smart: Full IRI → IRI
-    person - "foaf:homepage" - "http://example.org/profile"  // → <http://example.org/profile>
-    
-    // ✅ Smart: String without colon → string literal
-    person - "foaf:name" - "Alice"               // → "Alice"^^xsd:string
-    person - "foaf:age" - 30                     // → "30"^^xsd:integer
-    
-    // ✅ Smart: Undeclared prefix → string literal (safe fallback)
-    person - "foaf:note" - "unknown:Person"      // → "unknown:Person"^^xsd:string
-    
-    // ✅ Special case: rdf:type always resolves QNames
-    person["a"] = "foaf:Person"                  // → <http://xmlns.com/foaf/0.1/Person>
-    person `is` "foaf:Agent"                     // → <http://xmlns.com/foaf/0.1/Agent>
+
+    person - FOAF.name - string("foaf:Person")                // "foaf:Person"^^xsd:string (never an IRI)
+    person - FOAF.name - lang("Alice", "en")                  // "Alice"@en
+    person - FOAF.name - lang("مرحبا", "ar", Direction.RTL)   // RDF 1.2 directional string
+    person - FOAF.age - lit("30", XSD.integer)                // "30"^^xsd:integer
 }
 ```
 
-### Explicit Control
-
-When you need explicit control, use the dedicated functions:
-
-```kotlin
-// Explicit QName resolution
-person - "foaf:knows" - qname("foaf:Person")    // → <http://xmlns.com/foaf/0.1/Person>
-
-// Explicit string literal
-person - "foaf:name" - literal("foaf:Person")   // → "foaf:Person"^^xsd:string
-
-// Explicit IRI
-person - "foaf:homepage" - iri("http://example.org")  // → <http://example.org>
-
-// Language-tagged literals
-person - "foaf:name" - lang("Alice", "en")      // → "Alice"@en
-
-// Typed literals
-person - "foaf:age" - typed("30", XSD.integer)  // → "30"^^xsd:integer
-```
-
-## Built-in Prefixes
-
-Kastor comes with built-in prefixes for the most common vocabularies, so you don't need to declare them:
-
-```kotlin
-repo.add {
-    // ✅ Built-in prefixes available immediately:
-    // rdf:   → http://www.w3.org/1999/02/22-rdf-syntax-ns#
-    // rdfs:  → http://www.w3.org/2000/01/rdf-schema#
-    // owl:   → http://www.w3.org/2002/07/owl#
-    // sh:    → http://www.w3.org/ns/shacl#
-    // xsd:   → http://www.w3.org/2001/XMLSchema#
-    
-    val person = iri("http://example.org/person")
-    
-    // Use built-in prefixes directly - no declaration needed!
-    person["rdf:type"] = "rdfs:Class"              // → <http://www.w3.org/2000/01/rdf-schema#Class>
-    person - "rdfs:label" - "Person Class"         // → "Person Class"^^xsd:string
-    person - "owl:sameAs" - "http://example.org/person2"  // → <http://example.org/person2>
-    person - "sh:targetClass" - "rdfs:Class"       // → <http://www.w3.org/2000/01/rdf-schema#Class>
-    
-    // Mix with custom prefixes
-    prefixes {
-        put("foaf", "http://xmlns.com/foaf/0.1/")
-    }
-    person - "foaf:name" - "Alice"                 // Custom prefix
-    person - "rdfs:comment" - "A person"           // Built-in prefix
-}
-```
-
-### Override Built-in Prefixes
-
-You can override built-in prefixes if needed:
-
-```kotlin
-repo.add {
-    prefixes {
-        put("rdf", "http://example.org/custom-rdf#")  // Override built-in rdf prefix
-        put("foaf", "http://xmlns.com/foaf/0.1/")     // Custom prefix
-    }
-    
-    val resource = iri("http://example.org/resource")
-    resource["rdf:type"] = "rdf:CustomType"  // Uses custom namespace
-}
-```
+The Kotlin samples in this README are compiled by the build; see [`examples/hello-world/src/main/kotlin/ReadmeSnippets.kt`](examples/hello-world/src/main/kotlin/ReadmeSnippets.kt).
 
 ## Installation
+
+> **Not yet on Maven Central.** Kastor artifacts have not been published yet. Build from source and install into your local Maven repository with `./gradlew publishToMavenLocal`, then add `mavenLocal()` to your repositories. You can also include the Kastor checkout as a composite build (`includeBuild("../kastor")`). The version (`0.3.0-SNAPSHOT`) is defined once in [`gradle.properties`](gradle.properties). Requires **JDK 21+** and Kotlin 2.4.
 
 ### Gradle (Kotlin DSL)
 
 ```kotlin
 dependencies {
-    // Kastor RDF Core (transitive: rdf-sparql-contract for query markers)
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-    
-    // Kastor Gen
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
-    
-    // Optional: Specific backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    // Align all Kastor modules
+    implementation(platform("com.geoknoesis.kastor:kastor-bom:0.3.0-SNAPSHOT"))
 
-    // Kotlin SPARQL query DSL / sparql package / flows — optional
-    implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
-    // SHACL shapes DSL (shacl {}, Rdf.shacl) — optional; pulls sparql-lang transitively
-    implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+    // Kastor RDF Core (transitive: rdf-sparql-contract for query markers)
+    implementation("com.geoknoesis.kastor:rdf-core")
+
+    // Backends (at least one for SPARQL)
+    implementation("com.geoknoesis.kastor:rdf-jena")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j")
+
+    // Kastor Gen
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.3.0-SNAPSHOT")
+
+    // Optional: Kotlin SPARQL query DSL / sparql package / flows
+    implementation("com.geoknoesis.kastor:rdf-sparql-lang")
+    // Optional: SHACL shapes DSL (shacl {}, Rdf.shacl); pulls rdf-sparql-lang transitively
+    implementation("com.geoknoesis.kastor:rdf-shacl-dsl")
+    // Optional: SHACL validation, reasoning
+    implementation("com.geoknoesis.kastor:rdf-shacl-validation")
+    implementation("com.geoknoesis.kastor:rdf-reasoning")
 }
 ```
 
 ### Maven
 
 ```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>com.geoknoesis.kastor</groupId>
+            <artifactId>kastor-bom</artifactId>
+            <version>0.3.0-SNAPSHOT</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+
 <dependencies>
-    <!-- Kastor RDF Core -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
         <artifactId>rdf-core</artifactId>
-        <version>0.2.0</version>
     </dependency>
-
     <!-- Kotlin SPARQL query DSL (optional) -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
-        <artifactId>sparql-lang</artifactId>
-        <version>0.2.0</version>
+        <artifactId>rdf-sparql-lang</artifactId>
     </dependency>
-
-    <!-- Kotlin SHACL shapes DSL shacl {} / Rdf.shacl (optional; transitive sparql-lang) -->
+    <!-- Kotlin SHACL shapes DSL (optional; transitive rdf-sparql-lang) -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
         <artifactId>rdf-shacl-dsl</artifactId>
-        <version>0.2.0</version>
     </dependency>
-    
-    <!-- Kastor Gen -->
     <dependency>
         <groupId>com.geoknoesis.kastor</groupId>
         <artifactId>kastor-gen-runtime</artifactId>
-        <version>0.2.0</version>
     </dependency>
 </dependencies>
 ```
@@ -464,13 +403,15 @@ dependencies {
 - **[Getting Started Guide](docs/kastor/getting-started/README.md)** - Quick start tutorial
 - **[API Reference](docs/kastor/api/)** - Detailed API documentation
 
-## 🎯 Real-World Applications
+## 🎯 Example Application Areas
+
+Kastor is designed for (though not yet proven in) domains such as:
 
 ### 📊 **Data Governance & Catalogs**
 - **Government Data Portals**: DCAT-compliant data catalogs with automatic validation
 - **Enterprise Data Lakes**: Semantic metadata management for large-scale data integration
 - **Data Quality Assurance**: SHACL-based validation ensuring data consistency and compliance
-- **Data Lineage Tracking**: RDF-star enabled provenance and metadata management
+- **Data Lineage Tracking**: PROV-O provenance with RDF 1.2 reifiers for statement-level metadata
 
 ### 🏢 **Knowledge Management**
 - **Enterprise Knowledge Graphs**: Comprehensive knowledge representation with reasoning
@@ -534,7 +475,7 @@ Kastor's architecture is designed around **separation of concerns** and **plugga
 - **Type Safety**: Compile-time validation prevents runtime errors
 - **Performance**: Optimized for both memory usage and query speed
 - **Extensibility**: Pluggable providers for custom backends and features
-- **Standards Compliance**: Full support for RDF 1.1, SPARQL 1.1, SHACL, and JSON-LD
+- **Standards Track**: RDF 1.2 data model, SPARQL 1.1/1.2 via providers, and native SHACL 1.2 validation (see [conformance](docs/kastor/concepts/rdf-1.2-conformance.md))
 - **Developer Experience**: Natural language DSL and comprehensive tooling
 
 ## Development
@@ -544,14 +485,18 @@ Kastor's architecture is designed around **separation of concerns** and **plugga
 ```bash
 git clone https://github.com/geoknoesis/kastor.git
 cd kastor
-./gradlew build
+./gradlew assemble
+./gradlew publishToMavenLocal   # optional: consume 0.3.0-SNAPSHOT from mavenLocal()
 ```
 
 ### Running Tests
 
 ```bash
-./gradlew test
+./gradlew check -x :rdf:conformance:test
+./gradlew conformanceSmokeTest
 ```
+
+Requires JDK 21+. See [CONTRIBUTING](CONTRIBUTING.md) for the full W3C conformance suites, memory settings, and the release process.
 
 ## About
 

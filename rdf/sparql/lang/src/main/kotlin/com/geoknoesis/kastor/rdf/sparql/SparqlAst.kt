@@ -45,7 +45,12 @@ data class SelectQueryAst(
     val offset: Int? = null,
     val distinct: Boolean = false,
     val reduced: Boolean = false
-) : SparqlQueryAst
+) : SparqlQueryAst {
+    init {
+        require(limit == null || limit >= 0) { "LIMIT must not be negative: $limit" }
+        require(offset == null || offset >= 0) { "OFFSET must not be negative: $offset" }
+    }
+}
 
 /**
  * ASK query AST.
@@ -175,11 +180,19 @@ data class ServicePatternAst(
 
 /**
  * VALUES clause: VALUES ?var { value1 value2 ... }
+ *
+ * Each row must have one entry per variable. A `null` entry renders as `UNDEF`.
  */
 data class ValuesPatternAst(
     val variables: List<Var>,
-    val values: List<List<RdfTerm>>
-) : GraphPatternAst
+    val values: List<List<RdfTerm?>>
+) : GraphPatternAst {
+    init {
+        require(values.all { it.size == variables.size }) {
+            "Every VALUES row must have exactly ${variables.size} entries"
+        }
+    }
+}
 
 /**
  * Property path pattern: subject path object
@@ -195,7 +208,7 @@ data class PropertyPathPatternAst(
  *
  * Triple terms in RDF 1.2 are object-position only. This AST node is consumed
  * by [TripleTermObjectPatternAst] and [ReifierPatternAst] which place it in a
- * legal position.
+ * legal position; the renderer rejects it when used as a standalone pattern.
  */
 data class TripleTermPatternAst(
     val subject: RdfTerm,
@@ -214,7 +227,8 @@ data class TripleTermObjectPatternAst(
 ) : GraphPatternAst
 
 /**
- * RDF 1.2 reifier pattern: `subject rdf:reifies <<( s p o )>>`.
+ * RDF 1.2 reifier pattern: `subject rdf:reifies <<( s p o )>>` (rendered with the
+ * full `rdf:reifies` IRI, so no prefix declaration is needed).
  *
  * `subject` is the reifier (an IRI, blank node, or variable) and the triple
  * term is the triple it names. Other graph patterns can attach metadata to the
@@ -227,8 +241,9 @@ data class ReifierPatternAst(
 
 /**
  * Legacy RDF-star quoted triple pattern: `<< subject predicate object >>`.
- * Renders as the RDF 1.2 form `<<( s p o )>>` for compatibility, but new code
- * should use [TripleTermPatternAst].
+ * Renders as the SPARQL 1.2 reified-triple block `<< s p o >> .`, which matches
+ * any reifier of the triple. New code should use [ReifierPatternAst] or
+ * [TripleTermObjectPatternAst].
  */
 @Deprecated(
     message = "Use TripleTermPatternAst (RDF 1.2). The renderer still emits valid RDF 1.2 syntax.",
@@ -334,6 +349,9 @@ data class SequencePathAst(
 
 /**
  * Range: path{n}, path{n,}, path{,m}, path{n,m}
+ *
+ * Not part of SPARQL 1.1/1.2 (it was dropped from the final grammar); the
+ * renderer rejects it.
  */
 data class RangePathAst(
     val path: PropertyPathAst,
@@ -414,12 +432,21 @@ data class ConditionalExpressionAst(
 
 /**
  * Aggregate function: COUNT(?var), SUM(?var), etc.
+ *
+ * A `null` [expression] renders `*` and is only valid for `COUNT`. [separator]
+ * renders `; SEPARATOR="..."` and is only valid for `GROUP_CONCAT`.
  */
 data class AggregateExpressionAst(
     val function: AggregateFunction,
-    val expression: ExpressionAst,
-    val distinct: Boolean = false
-) : ExpressionAst
+    val expression: ExpressionAst?,
+    val distinct: Boolean = false,
+    val separator: String? = null
+) : ExpressionAst {
+    init {
+        require(expression != null || function == AggregateFunction.COUNT) { "Only COUNT accepts '*'" }
+        require(separator == null || function == AggregateFunction.GROUP_CONCAT) { "SEPARATOR is only valid for GROUP_CONCAT" }
+    }
+}
 
 enum class AggregateFunction(val functionName: String) {
     COUNT("COUNT"),
@@ -468,7 +495,20 @@ enum class OrderDirection {
 // ============================================================================
 
 /**
+ * A `GRAPH <g> { triples }` block inside INSERT DATA / DELETE DATA or a
+ * DELETE/INSERT template. In DATA blocks [graph] must be an IRI; in templates it
+ * may also be a variable.
+ */
+data class QuadBlockAst(
+    val graph: RdfTerm,
+    val triples: List<TriplePatternAst>
+)
+
+/**
  * Base interface for SPARQL UPDATE operations.
+ *
+ * [using], [usingNamed] and [with] are only meaningful for [ModifyOperationAst];
+ * every other operation rejects them at construction.
  */
 sealed interface UpdateOperationAst {
     val using: List<Iri>
@@ -483,8 +523,12 @@ data class InsertDataOperationAst(
     val data: List<TriplePatternAst>,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
-    override val with: Iri? = null
-) : UpdateOperationAst
+    override val with: Iri? = null,
+    /** Named-graph data: `GRAPH <g> { ... }` blocks. */
+    val graphData: List<QuadBlockAst> = emptyList()
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * DELETE DATA operation.
@@ -493,8 +537,12 @@ data class DeleteDataOperationAst(
     val data: List<TriplePatternAst>,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
-    override val with: Iri? = null
-) : UpdateOperationAst
+    override val with: Iri? = null,
+    /** Named-graph data: `GRAPH <g> { ... }` blocks. */
+    val graphData: List<QuadBlockAst> = emptyList()
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * DELETE/INSERT operation (MODIFY).
@@ -502,10 +550,15 @@ data class DeleteDataOperationAst(
 data class ModifyOperationAst(
     val delete: List<TriplePatternAst> = emptyList(),
     val insert: List<TriplePatternAst> = emptyList(),
+    /** WHERE clause; `null` renders `WHERE {}`. */
     val where: GraphPatternAst? = null,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
-    override val with: Iri? = null
+    override val with: Iri? = null,
+    /** `GRAPH ?g { ... }` blocks of the DELETE template. */
+    val deleteGraphs: List<QuadBlockAst> = emptyList(),
+    /** `GRAPH ?g { ... }` blocks of the INSERT template. */
+    val insertGraphs: List<QuadBlockAst> = emptyList()
 ) : UpdateOperationAst
 
 /**
@@ -516,7 +569,9 @@ data class DeleteWhereOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * LOAD operation.
@@ -528,7 +583,9 @@ data class LoadOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * CLEAR operation.
@@ -539,7 +596,9 @@ data class ClearOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * CREATE operation.
@@ -550,7 +609,9 @@ data class CreateOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * DROP operation.
@@ -561,7 +622,9 @@ data class DropOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * COPY operation.
@@ -573,7 +636,9 @@ data class CopyOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * MOVE operation.
@@ -585,7 +650,9 @@ data class MoveOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * ADD operation.
@@ -597,7 +664,9 @@ data class AddOperationAst(
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
-) : UpdateOperationAst
+) : UpdateOperationAst {
+    init { requireNoDatasetClauses(using, usingNamed, with) }
+}
 
 /**
  * Complete UPDATE request (can contain multiple operations).
@@ -608,3 +677,8 @@ data class UpdateRequestAst(
     val operations: List<UpdateOperationAst>
 )
 
+private fun requireNoDatasetClauses(using: List<Iri>, usingNamed: List<Iri>, with: Iri?) {
+    require(using.isEmpty() && usingNamed.isEmpty() && with == null) {
+        "USING/USING NAMED/WITH are only valid on DELETE/INSERT ... WHERE operations"
+    }
+}

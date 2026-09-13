@@ -2,9 +2,11 @@ package com.geoknoesis.kastor.ontoquality.metrics.integration
 
 import com.geoknoesis.kastor.ontoquality.metrics.ImportanceWeights
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
+import com.geoknoesis.kastor.ontoquality.metrics.compute.CycleDetector
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.vocab.RDFS
+import java.util.BitSet
 import kotlin.math.ln
 
 internal data class ImportanceComputation(
@@ -15,6 +17,9 @@ internal data class ImportanceComputation(
 /**
  * Compute a per-class importance score in [0.0, 1.0] from structural signals
  * (subclass fan-out, incoming domain/range references, hierarchy depth, labels).
+ *
+ * Cost: one pass over the graph for label/domain/range signals plus one bottom-up pass over the
+ * SCC-condensed subclass hierarchy for transitive descendant counts.
  */
 internal fun computeImportance(
     ontology: RdfGraph,
@@ -28,9 +33,10 @@ internal fun computeImportance(
         return ImportanceComputation(emptyMap(), emptyMap())
     }
 
-    val incoming = countIncomingDomainRange(ontology, entities)
-    val labels = entities.filter { hasLabel(ontology, it) }.toSet()
-    val descendantCounts = entities.associateWith { countTransitiveDescendants(it, children) }
+    val signals = scanGraphSignals(ontology, entities)
+    val incoming = signals.incomingDomainRange
+    val labels = signals.labelled
+    val descendantCounts = countTransitiveDescendants(entities, children)
     val directCounts = entities.associateWith { fan.fullFanOutMap[it] ?: 0 }
     val depthBy = report.owl.extensions.classHierarchyDepth.depthByClass
 
@@ -82,39 +88,75 @@ internal fun computeImportance(
     return ImportanceComputation(importance = rawImportance, hints = hints)
 }
 
-private fun countTransitiveDescendants(root: String, children: Map<String, Set<String>>): Int {
-    val seen = mutableSetOf<String>()
-    val stack = ArrayDeque<String>()
-    for (c in children[root].orEmpty()) {
-        stack.add(c)
-    }
-    while (stack.isNotEmpty()) {
-        val n = stack.removeLast()
-        if (!seen.add(n)) continue
-        for (ch in children[n].orEmpty()) {
-            stack.add(ch)
-        }
-    }
-    return seen.size
-}
+private class GraphSignals(
+    val incomingDomainRange: Map<String, Int>,
+    val labelled: Set<String>,
+)
 
-private fun countIncomingDomainRange(graph: RdfGraph, entities: Set<String>): Map<String, Int> {
-    val dom = RDFS.domain.value
-    val rng = RDFS.range.value
-    val counts = entities.associateWith { 0 }.toMutableMap()
+/** Single pass: rdfs:domain / rdfs:range references to entities and entities carrying an rdfs:label. */
+private fun scanGraphSignals(graph: RdfGraph, entities: Set<String>): GraphSignals {
+    val counts = entities.associateWithTo(HashMap()) { 0 }
+    val labelled = HashSet<String>()
     for (t in graph.getTriplesSequence()) {
-        val pred = t.predicate.value
-        if (pred != dom && pred != rng) continue
-        val obj = (t.obj as? Iri)?.value ?: continue
-        if (obj in entities) {
-            counts[obj] = counts.getValue(obj) + 1
+        when (t.predicate) {
+            RDFS.domain, RDFS.range -> {
+                val obj = (t.obj as? Iri)?.value ?: continue
+                if (obj in entities) counts[obj] = counts.getValue(obj) + 1
+            }
+            RDFS.label -> {
+                val subj = (t.subject as? Iri)?.value ?: continue
+                if (subj in entities) labelled.add(subj)
+            }
+            else -> Unit
         }
     }
-    return counts
+    return GraphSignals(counts, labelled)
 }
 
-private fun hasLabel(graph: RdfGraph, iri: String): Boolean {
-    val subj = Iri(iri)
-    val lab = RDFS.label
-    return graph.getTriplesSequence().any { it.subject == subj && it.predicate == lab }
+/**
+ * Number of distinct classes reachable through one or more subclass edges from each entity (a class in a
+ * cycle reaches itself). Computed bottom-up over the strongly connected component condensation: each
+ * component's descendant set is the union of its child components' members and descendants. Descendant
+ * bitsets are released once every parent component has consumed them.
+ */
+internal fun countTransitiveDescendants(entities: Set<String>, children: Map<String, Set<String>>): Map<String, Int> {
+    val nodes = LinkedHashSet<String>(entities)
+    children.forEach { (parent, ch) -> nodes.add(parent); nodes.addAll(ch) }
+    val components = CycleDetector.stronglyConnectedComponents(nodes, children)
+    val componentOf = HashMap<String, Int>(nodes.size * 2)
+    components.forEachIndexed { index, component -> component.members.forEach { componentOf[it] = index } }
+    val nodeIndex = HashMap<String, Int>(nodes.size * 2)
+    nodes.forEachIndexed { index, node -> nodeIndex[node] = index }
+
+    val childComponents = Array(components.size) { IntArray(0) }
+    val pendingParents = IntArray(components.size)
+    components.forEachIndexed { index, component ->
+        val targets = HashSet<Int>()
+        for (member in component.members) {
+            for (child in children[member].orEmpty()) {
+                val target = componentOf.getValue(child)
+                if (target != index) targets.add(target)
+            }
+        }
+        childComponents[index] = targets.toIntArray()
+        targets.forEach { pendingParents[it]++ }
+    }
+
+    val descendants = arrayOfNulls<BitSet>(components.size)
+    val result = HashMap<String, Int>(entities.size * 2)
+    // Components are in topological order (parents before children): walk backwards so children come first.
+    for (index in components.indices.reversed()) {
+        val component = components[index]
+        val bits = BitSet()
+        for (child in childComponents[index]) {
+            components[child].members.forEach { bits.set(nodeIndex.getValue(it)) }
+            descendants[child]?.let(bits::or)
+            if (--pendingParents[child] == 0) descendants[child] = null
+        }
+        if (component.cyclic) component.members.forEach { bits.set(nodeIndex.getValue(it)) }
+        val count = bits.cardinality()
+        component.members.forEach { if (it in entities) result[it] = count }
+        if (pendingParents[index] > 0) descendants[index] = bits
+    }
+    return result
 }

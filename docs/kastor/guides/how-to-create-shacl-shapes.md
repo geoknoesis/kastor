@@ -10,8 +10,8 @@
 
 ## Prerequisites
 
-- **`rdf-core`** plus **`rdf-shacl-dsl`** (`com.geoknoesis.kastor:rdf-shacl-dsl`) — the **`shacl { }`** / **`Rdf.shacl`** DSL lives there (**`api`** **`sparql-lang`** for embedded SPARQL constraints), not in **`rdf-core`** alone.
-- Add **`shacl-validation`** when you call **`ShaclValidation.validator()`** (coordinates **`com.geoknoesis.kastor:shacl-validation:0.2.0`**, aligned with your BOM).
+- **`rdf-core`** plus **`rdf-shacl-dsl`** (`com.geoknoesis.kastor:rdf-shacl-dsl`) — the **`shacl { }`** / **`Rdf.shacl`** DSL lives there (**`api`** **`rdf-sparql-lang`** for embedded SPARQL constraints), not in **`rdf-core`** alone.
+- Add **`rdf-shacl-validation`** when you call **`ShaclValidation.validator()`** (coordinates **`com.geoknoesis.kastor:rdf-shacl-validation:0.3.0-SNAPSHOT`**, aligned with your BOM).
 
 ## Steps
 
@@ -160,12 +160,12 @@ if (!report.isValid) {
 
 ## Validation
 
-Expect **`report.isValid == false`** when mandatory properties are missing and **`true`** once the data graph satisfies every declared constraint.
+Expect **`report.isValid == false`** when mandatory properties are missing and **`true`** once the data graph satisfies every declared constraint. `isValid` follows `sh:conforms`, so results with Warning or Info severity also make it `false`; use **`report.hasViolations`** if only Violation-level results should count.
 
 ## Troubleshooting
 
 - **DSL vs manual RDF:** Prefer **`shacl { }`** for readability; drop to triple builders only when the DSL lacks a niche constraint—see **Reference:** [SHACL DSL Guide](../api/shacl-dsl-guide.md).
-- **Validator dependency:** Runtime validation requires the **`shacl-validation`** artifact on the classpath ([How to Validate with SHACL](how-to-validate-shacl.md)).
+- **Validator dependency:** Runtime validation requires the **`rdf-shacl-validation`** artifact on the classpath ([How to Validate with SHACL](how-to-validate-shacl.md)).
 
 ## Related
 

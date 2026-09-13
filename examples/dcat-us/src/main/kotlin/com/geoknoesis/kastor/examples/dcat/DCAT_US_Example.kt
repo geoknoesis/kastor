@@ -238,9 +238,9 @@ fun main() {
     
     println("\n=== Basic example completed successfully! ===")
     println("\nNext steps:")
-    println("1. See DCAT_US_Manual_Example.kt for a demonstration of what OntoMapper would generate")
-    println("2. Run './gradlew :examples:dcat-us:runManualExample' to see the manual example")
-    println("3. The OntoMapper infrastructure exists but needs completion for automatic code generation")
+    println("1. See DCAT_US_Generated_Example.kt: interfaces and wrappers generated from the DCAT-US SHACL shapes")
+    println("2. Run './gradlew :examples:dcat-us:runGeneratedExample' to materialize generated types")
+    println("3. DCAT_US_Manual_Example.kt shows hand-written domain classes for comparison")
 }
 
 

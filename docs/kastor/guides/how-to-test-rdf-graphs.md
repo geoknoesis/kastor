@@ -19,12 +19,12 @@
 
 ```kotlin
 dependencies {
-    testImplementation("com.geoknoesis.kastor:rdf-testkit:0.2.0")
-    testImplementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    testImplementation("com.geoknoesis.kastor:rdf-testkit:0.3.0-SNAPSHOT")
+    testImplementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
 }
 ```
 
-When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating `0.2.0`.
+When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating the version.
 
 ## Steps
 
@@ -88,7 +88,7 @@ Run via Gradle:
 | **`to-turtle`** | Parse with inferred or explicit format, print **Turtle** to stdout |
 | **`diff`** | **Isomorphism** check between two files; exit code **2** if they differ structurally |
 
-Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.jsonld` → JSON-LD, and so on). A third argument overrides the format for **`diff`** (both files use the same override).
+Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error, **2** diff mismatch.
 
 > The CLI does not execute arbitrary Kotlin DSL scripts; build graphs in tests or apps, then **`to-turtle`** or **`diff`** serialized files.
 

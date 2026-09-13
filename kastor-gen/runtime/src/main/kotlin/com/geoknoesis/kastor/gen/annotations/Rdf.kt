@@ -50,7 +50,7 @@ annotation class Rdf(
   /** Generate an immutable data-class snapshot alongside (or instead of) interfaces + wrappers. */
   val generateDataClass: Boolean = false,
   /** Suffix appended to the shape name for the generated data class (e.g. "Record" → PersonRecord). */
-  val dataClassSuffix: String = "",
+  val dataClassSuffix: String = "Record",
   /** When true the data class implements the corresponding generated interface. */
   val dataClassImplementsInterface: Boolean = false,
   /** Controls how sh:class object properties are typed in the generated data class. */

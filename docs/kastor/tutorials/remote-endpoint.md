@@ -10,8 +10,8 @@ Configure the **`rdf-sparql`** provider, run one **`ASK`** query, and optionally
 
 ### Prerequisites
 
-- JDK **17**+, Gradle + Kotlin (see [Installation](../getting-started/installation.md))
-- Dependencies at **`0.2.0`**: `rdf-core` plus **`rdf-sparql`** (declared explicitly or via the [Kastor BOM](../getting-started/installation.md)). The SPARQL provider is registered via Java **`ServiceLoader`** from the `rdf-sparql` artifact.
+- JDK **21**+, Gradle + Kotlin (see [Installation](../getting-started/installation.md))
+- Dependencies at **`0.3.0-SNAPSHOT`**: `rdf-core` plus **`rdf-sparql`** (declared explicitly or via the [Kastor BOM](../getting-started/installation.md)). The SPARQL provider is registered via Java **`ServiceLoader`** from the `rdf-sparql` artifact.
 - A reachable SPARQL **1.1** or **1.2** HTTP endpoint (for example [Apache Jena Fuseki](https://jena.apache.org/documentation/fuseki2/)) that accepts:
   - **`POST`** with `Content-Type: application/sparql-query` for queries, and
   - **`POST`** with `Content-Type: application/sparql-update` for updates  

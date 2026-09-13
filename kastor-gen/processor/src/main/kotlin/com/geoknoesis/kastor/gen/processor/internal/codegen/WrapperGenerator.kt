@@ -73,7 +73,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       )
       .addInitializerBlock(
         CodeBlock.of(
-          "OntoMapper.registry[%T::class.java] = { handle -> %T(handle) }",
+          "OntoMapper.register(%T::class.java) { handle -> %T(handle) }",
           domainInterface,
           ClassName(classModel.packageName, wrapperName),
         ),
@@ -158,7 +158,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       "String" -> ".map { it.lexical }.firstOrNull() ?: \"\""
       "Int" -> ".mapNotNull { it.lexical.toIntOrNull() }.firstOrNull() ?: 0"
       "Double" -> ".mapNotNull { it.lexical.toDoubleOrNull() }.firstOrNull() ?: 0.0"
-      "Boolean" -> ".mapNotNull { it.lexical.toBooleanStrictOrNull() }.firstOrNull() ?: false"
+      "Boolean" -> ".mapNotNull { com.geoknoesis.kastor.gen.runtime.XsdLiterals.boolean(it) }.firstOrNull() ?: false"
       else -> ".map { it.lexical }.firstOrNull() ?: \"\""
     }
     return CodeBlock.builder()

@@ -80,7 +80,7 @@ fun RdfRepository.serializeDataset(format: RdfFormat, options: SerializationOpti
     
     // Try to find a provider that supports this format
     for (provider in providers) {
-        if (provider.supportsFormat(format.formatName)) {
+        if (provider.supportsOutputFormat(format.formatName)) {
             try {
                 return provider.serializeDataset(this, format.formatName, options)
             } catch (e: UnsupportedOperationException) {

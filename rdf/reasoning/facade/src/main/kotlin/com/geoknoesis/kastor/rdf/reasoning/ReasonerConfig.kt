@@ -14,7 +14,8 @@ data class ReasonerConfig(
     val parameters: Map<String, Any> = emptyMap(),
     
     // Large-scale reasoning options
-    val streamingMode: Boolean = true,
+    /** Defaults to false for whole-ontology DL reasoners ([ReasonerType.HERMIT], [ReasonerType.OWL_DL]) that cannot stream. */
+    val streamingMode: Boolean = reasonerType != ReasonerType.HERMIT && reasonerType != ReasonerType.OWL_DL,
     val batchSize: Long = 10_000L,
     val maxMemoryUsage: Long = 1024L * 1024L * 1024L, // 1GB
     val enableIncrementalReasoning: Boolean = false,
@@ -43,12 +44,21 @@ data class ReasonerConfig(
         
         fun owlDl(): ReasonerConfig = ReasonerConfig(
             reasonerType = ReasonerType.OWL_DL,
+            streamingMode = false,
             timeout = Duration.ofMinutes(10)
         )
+
+        /** Recommended configuration for [type]; used by `RdfReasoning.reasoner(type)`. */
+        fun forType(type: ReasonerType): ReasonerConfig = when (type) {
+            ReasonerType.HERMIT -> hermit()
+            ReasonerType.OWL_DL -> owlDl()
+            else -> ReasonerConfig(reasonerType = type)
+        }
 
         fun hermit(): ReasonerConfig =
             ReasonerConfig(
                 reasonerType = ReasonerType.HERMIT,
+                streamingMode = false,
                 timeout = Duration.ofMinutes(10),
             )
         

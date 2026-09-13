@@ -53,8 +53,8 @@ class IntegrationTest {
     @Test
     fun `end-to-end materialization with nested objects works`() {
         // Register wrapper factories (simulating KSP-generated registry entries)
-        OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
-        OntoMapper.registry[Organization::class.java] = { handle -> OrganizationWrapper(handle) }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Organization::class.java) { handle -> OrganizationWrapper(handle) }
 
         val repo = Rdf.memory()
         val person1 = Iri("http://example.org/person1")
@@ -122,7 +122,7 @@ class IntegrationTest {
             }
         }
 
-        OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -154,7 +154,7 @@ class IntegrationTest {
 
     @Test
     fun `property bag integration with materialization works`() {
-        OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -191,7 +191,7 @@ class IntegrationTest {
     @Test
     fun `cross-module compatibility works`() {
         // Test that the API works from different modules
-        OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -224,16 +224,15 @@ class IntegrationTest {
         val person = Iri("http://example.org/person")
         val personRef = RdfRef(person, repo.defaultGraph)
 
-        // Clear registry to test unregistered type
-        val originalRegistry = OntoMapper.registry.toMap()
-        OntoMapper.registry.clear()
+        // Unregister to test unregistered type
+        val wasRegistered = OntoMapper.unregister(Person::class.java)
 
         assertThrows(IllegalStateException::class.java) {
             personRef.asType<Person>()
         }
 
         // Restore registry
-        OntoMapper.registry.putAll(originalRegistry)
+        if (wasRegistered) OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
 
         // Test invalid asRdf() call
         val regularObject = object {}

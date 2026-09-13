@@ -72,9 +72,41 @@ if (!report.isValid) {
 }
 ```
 
+### Conformance semantics
+
+- `report.isValid` mirrors SHACL `sh:conforms`: it is `false` if **any** validation result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists. SHACL 1.2 `sh:Debug` / `sh:Trace` results do not affect conformance.
+- `report.hasViolations` is the severity-filtered check (Violation/Error only). Use it when warnings should not fail a build.
+- Property shapes default to `sh:Violation`; they do not inherit a node shape's severity.
+- Deactivated shapes and shapes without constraints accept every node. Literal value nodes can conform to nested shapes (`sh:node`, `sh:and`/`sh:or`/`sh:xone`/`sh:not`, qualified value shapes).
+- Repeatable parameters (`sh:pattern`, `sh:hasValue`, bounds, …) produce one constraint per value. Repeating a single-valued parameter (`sh:minCount`, `sh:flags`, `sh:in`, …) is a shape compilation error. `sh:pattern` is compiled once, at shape compile time, and supports the flags `i`, `m`, `s`, `x` and `q`.
+- Classes that are also shapes act as implicit class targets. Value comparisons (`sh:lessThan`, bounds, …) follow the SPARQL operator mapping for datatypes, and literals are checked for XSD lexical validity.
+
+### Report contents
+
+`ValidationViolation` carries the full result path (`resultPathNode`, plus `resultPathTriples` for blank-node paths), the shape's `sh:message` values with language tags (`resultMessages`) and `sourceConstraint` (for example, the SHACL-SPARQL constraint node). `toShaclValidationReportRdf()` emits `sh:resultPath`, `sh:resultMessage` and `sh:sourceConstraint`, emits `sh:value` only for components that define it, and emits one `sh:closed` result per offending triple.
+
+### SHACL-SPARQL
+
+`sh:sparql` constraints need a SPARQL engine **at runtime**: add `rdf-jena` or `rdf-rdf4j`. Without one, validation fails with a `ShaclValidationException` naming those modules, and the native provider's capability flags report SHACL-SPARQL as unsupported. Queries:
+
+- run over the **data graph**;
+- honour `sh:prefixes`/`sh:declare`, `$PATH`, `sh:deactivated` and message templates;
+- pre-bind `$this`, `$currentShape` and `$shapesGraph`;
+- produce one result per solution row.
+
+SPARQL-based constraint components and SHACL 1.2 node expressions are not supported.
+
+### W3C conformance
+
+The native engine runs the W3C SHACL 1.2 test suite: 163 cases, 154 pass. The 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions) are listed with justifications in `W3cKnownDeviations`; see the [module README](../../../rdf/shacl/validation/README.md).
+
+### RDF4J validator
+
+With `providerId = "rdf4j"`, `isValid` comes from the engine's `sh:conforms`, read before any `maxViolations` cap is applied. `validateResource` validates the whole graph and then keeps only the results for the requested focus node.
+
 > **Tip**: Use the [SHACL DSL](../api/shacl-dsl-guide.md) to create shapes graphs more easily. The DSL supports all SHACL 1.2 features including:
 > - **SHACL 1.2 Core**: `targetWhere` with node expressions, `shape` targets, `singleLine` constraint, `reifierShape` and `reificationRequired` for RDF-star
-> - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT and ASK queries
+> - **SHACL 1.2 SPARQL Extensions**: SPARQL-based constraints using SELECT queries (`sparqlAsk` was removed: SHACL-SPARQL constraints cannot use ASK)
 >
 > See [How to Create SHACL Shapes](../guides/how-to-create-shacl-shapes.md) for examples. For **bundled ontology-quality shapes**, the `onto-qa` CLI, and the optional embedding tier, see [How to Check Ontology Quality](../guides/how-to-ontology-quality.md).
 

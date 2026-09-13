@@ -72,18 +72,14 @@ interface Resource {
   fun <T : Any> asValidated(iface: KClass<T>, validation: ValidationContext): T =
     ResourceViews.createValidatedView(iface, ResourceContext(uri, access), validation)
 
-  /** All predicates for this subject; scans the graph (consider caching for large graphs). */
+  /** All predicates for this subject, using the backend pattern index. */
   fun predicates(): Set<Iri> =
-    graph.getTriples()
-      .asSequence()
-      .filter { it.subject == uri }
+    graph.find(uri).asSequence()
       .map { it.predicate }
       .toSet()
 
   fun values(pred: Iri): List<RdfTerm> =
-    graph.getTriples()
-      .asSequence()
-      .filter { it.subject == uri && it.predicate == pred }
+    graph.find(uri, pred).asSequence()
       .map { it.obj }
       .toList()
 
@@ -97,9 +93,7 @@ interface Resource {
     values(pred).mapNotNull { it as? Iri }
 
   fun properties(): Map<Iri, List<RdfTerm>> =
-    graph.getTriples()
-      .asSequence()
-      .filter { it.subject == uri }
+    graph.find(uri).asSequence()
       .groupBy({ it.predicate }, { it.obj })
 
   fun setLiteral(pred: Iri, value: Literal) = setValues(pred, listOf(value))
@@ -124,9 +118,7 @@ interface Resource {
   }
 
   fun clear(pred: Iri): Boolean {
-    val toRemove = graph.getTriples()
-      .asSequence()
-      .filter { it.subject == uri && it.predicate == pred }
+    val toRemove = graph.find(uri, pred).asSequence()
       .toList()
     if (toRemove.isEmpty()) return false
     editor.removeTriples(toRemove)

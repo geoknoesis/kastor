@@ -2,16 +2,19 @@ pluginManagement {
   repositories {
     gradlePluginPortal()
     mavenCentral()
-    mavenLocal()  // For local plugin development
   }
 }
 dependencyResolutionManagement {
-  repositories { mavenCentral(); mavenLocal() }
+  // All repositories are declared here; a project-level `repositories {}` block fails the build.
+  // mavenLocal() is deliberately absent: it is unverified, machine-specific state.
+  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+  repositories { mavenCentral() }
   // Gradle will automatically pick up gradle/libs.versions.toml as the default 'libs' catalog
 }
 rootProject.name = "kastor"
 include(
   "bom",
+  "build-platform",
   ":rdf:core", ":rdf:sparql-contract", ":rdf:sparql-lang", ":rdf:shacl-dsl", ":rdf:jena", ":rdf:jena-reasoning", ":rdf:rdf4j", ":rdf:rdf4j-reasoning", ":rdf:sparql", ":rdf:reasoning", ":rdf:reasoning-hermit", ":rdf:shacl-validation", ":rdf:testkit", ":rdf:cli", ":rdf:examples",
   ":rdf:conformance",
   ":kastor-gen:runtime", ":kastor-gen:processor", ":kastor-gen:gradle-plugin", ":kastor-gen:validation-jena", ":kastor-gen:validation-rdf4j",
@@ -29,6 +32,7 @@ include(
 )
 
 // Physical grouping under domain folders; Gradle project paths (:rdf:*, :tools:*, …) are unchanged.
+project(":build-platform").projectDir = file("gradle/build-platform")
 project(":rdf:sparql-contract").projectDir = file("rdf/sparql/contract")
 project(":rdf:sparql-lang").projectDir = file("rdf/sparql/lang")
 project(":rdf:sparql").projectDir = file("rdf/sparql/endpoint")

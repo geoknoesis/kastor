@@ -93,6 +93,7 @@ class ShaclDslTest {
     }
     
     @Test
+    @Suppress("DEPRECATION")
     fun `test numeric constraints`() {
         val shapesGraph = shacl {
             nodeShape("http://example.org/PriceShape") {
@@ -751,6 +752,7 @@ class ShaclDslTest {
     }
     
     @Test
+    @Suppress("DEPRECATION")
     fun `test all numeric constraint combinations`() {
         val shapesGraph = shacl {
             nodeShape("http://example.org/NumericShape") {
@@ -814,8 +816,10 @@ class ShaclDslTest {
         }
         
         val triples = shapesGraph.getTriples().toList()
+        // sh:ignoredProperties takes a single RDF list
         val ignored = triples.filter { it.predicate == SHACL.ignoredProperties }
-        assertEquals(3, ignored.size)
+        assertEquals(1, ignored.size)
+        assertEquals(3, triples.count { it.predicate == RDF.first })
     }
     
     @Test
@@ -957,7 +961,7 @@ class ShaclDslTest {
     }
     
     @Test
-    fun `test SHACL 12 explicit shape target`() {
+    fun `test SHACL 12 sh shape constraint`() {
         val shapesGraph = shacl {
             prefixes {
                 put("ex", "http://example.org/")
@@ -1085,29 +1089,25 @@ class ShaclDslTest {
     }
     
     @Test
-    fun `test SHACL 12 SPARQL constraint with ASK query`() {
-        val shapesGraph = shacl {
-            prefixes {
-                put("ex", "http://example.org/")
-            }
-            nodeShape("ex:Shape") {
-                sparqlAsk(configureQuery = {
-                    where {
-                        triple(`var`("this"), Iri("ex:valid"), true.toLiteral())
-                    }
-                }, configureConstraint = {
-                    message("Resource must be valid")
-                })
+    @Suppress("DEPRECATION_ERROR")
+    fun `test SHACL-SPARQL constraint rejects ASK query`() {
+        // sh:ask is not valid on sh:SPARQLConstraint (only sh:select is), so sparqlAsk refuses.
+        assertThrows(IllegalArgumentException::class.java) {
+            shacl {
+                prefixes {
+                    put("ex", "http://example.org/")
+                }
+                nodeShape("ex:Shape") {
+                    sparqlAsk(configureQuery = {
+                        where {
+                            triple(`var`("this"), Iri("ex:valid"), true.toLiteral())
+                        }
+                    }, configureConstraint = {
+                        message("Resource must be valid")
+                    })
+                }
             }
         }
-        
-        val triples = shapesGraph.getTriples().toList()
-        assertTrue(triples.any {
-            it.predicate == SHACL.sparql
-        })
-        assertTrue(triples.any {
-            it.predicate == SHACL.ask
-        })
     }
     
     @Test
