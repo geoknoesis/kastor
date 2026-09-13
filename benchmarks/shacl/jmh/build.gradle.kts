@@ -18,7 +18,7 @@ dependencies {
   implementation(project(":rdf:rdf4j"))
   implementation(project(":rdf:jena"))
   implementation(libs.jena.shacl)
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+  implementation(libs.kotlinx.serialization.json)
 }
 
 sourceSets {
