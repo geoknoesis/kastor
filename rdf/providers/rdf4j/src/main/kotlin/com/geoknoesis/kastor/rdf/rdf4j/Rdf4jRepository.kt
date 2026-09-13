@@ -191,31 +191,64 @@ class Rdf4jRepository(
     
     override fun select(query: SparqlSelect): SparqlQueryResult = withSelectRows(query) { Rdf4jResultSet(it.toList()) }
 
+    /**
+     * Streams SELECT rows to [consume]. Failures while preparing or evaluating the query (including
+     * while iterating rows) surface as [RdfQueryException]; exceptions thrown by [consume] itself
+     * propagate unchanged.
+     */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        try {
-            conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).evaluate().use { result ->
-                consume(result.iterator().asSequence().map { row -> MapBindingSet(row.bindingNames.associateWith {
-                    Rdf4jTerms.fromRdf4jValue(row.getValue(it))
-                }) })
-            }
-        } catch (e: Exception) { throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query.sparql, cause = e) }
+        val result = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).evaluate() }
+        result.use { consume(it.rows(query.sparql)) }
     }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
-        conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).evaluate().use { result ->
-            consume(result.iterator().asSequence().map { RdfTriple(Rdf4jTerms.fromRdf4jResource(it.subject),
-                Rdf4jTerms.fromRdf4jIri(it.predicate), Rdf4jTerms.fromRdf4jValue(it.`object`)) })
+        val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).evaluate() }
+        result.use {
+            consume(it.iterator().asSequence().map { statement -> RdfTriple(Rdf4jTerms.fromRdf4jResource(statement.subject),
+                Rdf4jTerms.fromRdf4jIri(statement.predicate), Rdf4jTerms.fromRdf4jValue(statement.`object`)) }.guardedBy(query.sparql))
         }
     }
 
+    /**
+     * Timed SELECT. RDF4J's `maxExecutionTime` has whole-second granularity, so [timeout] is rounded
+     * **up** to the next second (minimum 1 s): a query is never cut off earlier than requested, but may
+     * run up to one second longer.
+     */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
-        bindings.forEach { (name, term) -> prepared.setBinding(name, Rdf4jTerms.toRdf4jValue(term)) }
-        prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
-        prepared.evaluate().use { result -> consume(result.iterator().asSequence().map { row ->
-            MapBindingSet(row.bindingNames.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) })
-        }) }
+        val result = queryOperation(query.sparql) {
+            val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
+            bindings.forEach { (name, term) -> prepared.setBinding(name, Rdf4jTerms.toRdf4jValue(term)) }
+            prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+            prepared.evaluate()
+        }
+        result.use { consume(it.rows(query.sparql)) }
+    }
+
+    private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String): Sequence<BindingSet> =
+        iterator().asSequence().map { row ->
+            MapBindingSet(row.bindingNames.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
+        }.guardedBy(sparql)
+
+    /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
+    private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
+        operation()
+    } catch (e: RdfException) {
+        throw e
+    } catch (e: Exception) {
+        throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query, cause = e)
+    }
+
+    /** Engine failures raised while iterating results become [RdfQueryException]; consumer code is not wrapped. */
+    private fun <T> Sequence<T>.guardedBy(query: String): Sequence<T> {
+        val source = this
+        return Sequence {
+            val iterator = queryOperation(query) { source.iterator() }
+            object : Iterator<T> {
+                override fun hasNext(): Boolean = queryOperation(query) { iterator.hasNext() }
+                override fun next(): T = queryOperation(query) { iterator.next() }
+            }
+        }.constrainOnce()
     }
 
     override fun ask(query: SparqlAsk): Boolean = withConnection { conn ->

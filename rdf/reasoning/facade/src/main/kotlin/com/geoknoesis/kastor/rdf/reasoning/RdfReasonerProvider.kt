@@ -40,6 +40,13 @@ interface RdfReasonerProvider {
      * Check if a reasoner type is supported.
      */
     fun isSupported(type: ReasonerType): Boolean
+
+    /**
+     * Selection priority used by [ReasonerRegistry] when several providers support the requested
+     * [ReasonerType]: the highest priority wins, ties are broken by [getType]. Backend-specific
+     * reasoners should rank above the dependency-free memory fallback. Default: 0.
+     */
+    fun priority(): Int = 0
 }
 
 /**

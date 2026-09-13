@@ -4,40 +4,51 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Registry for RDF reasoner providers.
+ *
+ * Provider selection is deterministic: among the providers supporting a [ReasonerType], the one with
+ * the highest [RdfReasonerProvider.priority] wins (ties broken by [RdfReasonerProvider.getType]).
  */
 object ReasonerRegistry {
-    
+
     private val providers = ConcurrentHashMap<String, RdfReasonerProvider>()
-    
+
+    private val selectionOrder =
+        compareByDescending<RdfReasonerProvider> { it.priority() }.thenBy { it.getType() }
+
     init {
         // Auto-discover providers using ServiceLoader
         discoverProviders()
     }
-    
+
     /**
      * Register a reasoner provider.
      */
     fun register(provider: RdfReasonerProvider) {
         providers[provider.getType()] = provider
     }
-    
+
+    /** Removes a provider by type (test support). */
+    internal fun unregister(type: String) {
+        providers.remove(type)
+    }
+
     /**
      * Create a reasoner with the given configuration.
      */
     fun createReasoner(config: ReasonerConfig): RdfReasoner {
         val provider = findProviderForType(config.reasonerType)
             ?: throw IllegalArgumentException("No provider found for reasoner type: ${config.reasonerType}")
-        
+
         return provider.createReasoner(config)
     }
-    
+
     /**
-     * Create a reasoner by type with default configuration.
+     * Create a reasoner by type with that type's recommended configuration ([ReasonerConfig.forType]).
      */
     fun createReasoner(type: ReasonerType): RdfReasoner {
-        return createReasoner(ReasonerConfig(reasonerType = type))
+        return createReasoner(ReasonerConfig.forType(type))
     }
-    
+
     /**
      * Discover available reasoner providers.
      */
@@ -46,40 +57,32 @@ object ReasonerRegistry {
         serviceLoader.forEach { provider ->
             register(provider)
         }
-        return providers.values.toList()
+        return getProviders()
     }
-    
+
     /**
-     * Get all registered providers.
+     * Get all registered providers, in selection order (highest priority first).
      */
     fun getProviders(): List<RdfReasonerProvider> {
-        return providers.values.toList()
+        return providers.values.sortedWith(selectionOrder)
     }
-    
+
     /**
      * Get supported reasoner types.
      */
     fun getSupportedTypes(): List<ReasonerType> {
-        return providers.values.flatMap { it.getSupportedTypes() }.distinct()
+        return getProviders().flatMap { it.getSupportedTypes() }.distinct()
     }
-    
+
     /**
      * Check if a reasoner type is supported.
      */
     fun isSupported(type: ReasonerType): Boolean {
         return providers.values.any { it.isSupported(type) }
     }
-    
-    private fun findProviderForType(type: ReasonerType): RdfReasonerProvider? {
-        return providers.values.find { it.isSupported(type) }
+
+    /** The provider that [createReasoner] uses for [type], or null. */
+    fun findProviderForType(type: ReasonerType): RdfReasonerProvider? {
+        return getProviders().firstOrNull { it.isSupported(type) }
     }
 }
-
-
-
-
-
-
-
-
-

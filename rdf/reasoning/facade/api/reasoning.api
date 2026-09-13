@@ -125,6 +125,11 @@ public abstract interface class com/geoknoesis/kastor/rdf/reasoning/RdfReasonerP
 	public abstract fun getType ()Ljava/lang/String;
 	public abstract fun getVersion ()Ljava/lang/String;
 	public abstract fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public fun priority ()I
+}
+
+public final class com/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider$DefaultImpls {
+	public static fun priority (Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider;)I
 }
 
 public final class com/geoknoesis/kastor/rdf/reasoning/RdfReasoning {
@@ -201,6 +206,7 @@ public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig$Companion 
 	public final fun default ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
 	public final fun forLargeGraphs ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
 	public final fun forMemoryConstrained ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
+	public final fun forType (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
 	public final fun hermit ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
 	public final fun owlDl ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
 	public final fun owlEl ()Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;
@@ -212,6 +218,7 @@ public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerRegistry {
 	public final fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerConfig;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
 	public final fun createReasoner (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasoner;
 	public final fun discoverProviders ()Ljava/util/List;
+	public final fun findProviderForType (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Lcom/geoknoesis/kastor/rdf/reasoning/RdfReasonerProvider;
 	public final fun getProviders ()Ljava/util/List;
 	public final fun getSupportedTypes ()Ljava/util/List;
 	public final fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
@@ -378,5 +385,6 @@ public final class com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasonerP
 	public fun getType ()Ljava/lang/String;
 	public fun getVersion ()Ljava/lang/String;
 	public fun isSupported (Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;)Z
+	public fun priority ()I
 }
 

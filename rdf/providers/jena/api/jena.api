@@ -1,5 +1,6 @@
 public final class com/geoknoesis/kastor/rdf/jena/JenaBridge {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;
+	public final fun copyToJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
 	public final fun createEmptyGraph ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun createEmptyModel ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun createInferenceModel ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;

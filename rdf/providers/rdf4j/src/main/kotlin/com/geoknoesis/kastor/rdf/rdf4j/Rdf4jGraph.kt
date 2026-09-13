@@ -10,6 +10,11 @@ import com.geoknoesis.kastor.rdf.*
  * thread's transaction connection inside a `transaction { }` block and otherwise uses a
  * fresh per-operation connection. This keeps graph access thread-safe.
  *
+ * **Write cost:** outside a `transaction { }`, every [addTriple]/[removeTriple] call borrows a connection
+ * and runs its own begin/commit (and, on a SHACL store, its own validation). [addTriples] and
+ * [removeTriples] use a single connection and a single transaction for the whole batch; prefer them
+ * (or an explicit `transaction { }`) for bulk changes.
+ *
  * @param context the named-graph context, or null for the default graph.
  */
 internal class Rdf4jGraph(
