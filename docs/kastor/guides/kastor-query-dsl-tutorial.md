@@ -199,7 +199,7 @@ println(query.sparql)
 **What this does**:
 - `select(SparqlSelectQuery("name")))` - We want to find names
 - `where { ... }` - Here are the conditions
-- `personVar has namePred with nameVar` - Find people who have names
+- `triple(personVar, namePred, nameVar)` - Find people who have names
 
 **Generated SPARQL**:
 ```sparql
@@ -559,31 +559,39 @@ WHERE {
 
 ### 17. Statement-level Information
 
-RDF-star lets you attach information to statements themselves. Let's find statements with confidence scores:
+RDF 1.2 attaches information to a statement through a **reifier**: `?statement rdf:reifies <<( subject predicate object )>>`. Let's find name statements with confidence scores above 0.8.
+
+The `where { }` builder has no helper for a bound reifier, so build this query from the AST types in `com.geoknoesis.kastor.rdf.sparql` and convert it with `toSparqlSelect()`:
 
 ```kotlin
-val query = select("statement", "confidence") {
-    where {
-        `var`("statement") quoted iri("http://example.org/confidence") with `var`("confidence")
-        `var`("statement") quoted iri("http://example.org/subject") with personVar
-        `var`("statement") quoted iri("http://example.org/predicate") with namePred
-        `var`("statement") quoted iri("http://example.org/object") with nameVar
-        filter(`var`("confidence") gt 0.8)
-    }
-}
+import com.geoknoesis.kastor.rdf.sparql.*
 
-println(query)
+val statementVar = `var`("statement")
+val confidenceVar = `var`("confidence")
+
+val query = SelectQueryAst(
+    selectItems = listOf(VariableSelectItemAst(statementVar), VariableSelectItemAst(confidenceVar)),
+    where = GroupPatternAst(listOf(
+        ReifierPatternAst(statementVar, TripleTermPatternAst(personVar, namePred, nameVar)),
+        TriplePatternAst(statementVar, iri("http://example.org/confidence"), confidenceVar),
+        FilterPatternAst(confidenceVar gt 0.8),
+    )),
+).toSparqlSelect()
+
+println(query.sparql)
 ```
 
-**Generated SPARQL**:
+**Generated SPARQL** (layout may differ slightly):
 ```sparql
 SELECT ?statement ?confidence
 WHERE {
-  ?statement << ?person <http://example.org/name> ?name >> .
+  ?statement <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?person <http://example.org/name> ?name )>> .
   ?statement <http://example.org/confidence> ?confidence .
-  FILTER(?confidence > 0.8)
+  FILTER(?confidence > "0.8"^^<http://www.w3.org/2001/XMLSchema#double>)
 }
 ```
+
+If you don't need the reifier itself, `quotedTriple(personVar, namePred, nameVar)` inside `where { }` renders the reified-triple pattern `<< ?person <http://example.org/name> ?name >> .`, which matches any reifier of the triple.
 
 **In plain English**: "Find statements about people's names that have high confidence scores (over 0.8)"
 
