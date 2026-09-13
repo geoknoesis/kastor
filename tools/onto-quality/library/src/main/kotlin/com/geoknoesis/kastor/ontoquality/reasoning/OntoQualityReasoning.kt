@@ -32,8 +32,8 @@ enum class OntoQualityReasoningProfile {
     RDFS,
 
     /**
-     * OWL “Micro” / lightweight OWL (Jena `ReasonerType.OWL_EL` binding).
-     * Not full OWL 2 DL; suitable for simple ontologies.
+     * Lightweight rule-based OWL via Jena's OWL rule reasoner (`ReasonerType.OWL_RL` binding).
+     * Close to, but not a complete implementation of, OWL 2 RL; not OWL 2 DL.
      */
     OWL_MICRO,
 
@@ -47,7 +47,7 @@ internal fun OntoQualityReasoningProfile.toReasonerConfigOrNull(): ReasonerConfi
         OntoQualityReasoningProfile.RDFS -> ReasonerConfig.rdfs()
         OntoQualityReasoningProfile.OWL_MICRO ->
             ReasonerConfig(
-                reasonerType = ReasonerType.OWL_EL,
+                reasonerType = ReasonerType.OWL_RL,
             )
         OntoQualityReasoningProfile.HERMIT -> ReasonerConfig.hermit()
     }
