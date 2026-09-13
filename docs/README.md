@@ -172,7 +172,7 @@ Kastor Framework
 ### **Examples and Samples**
 - [Kastor Examples](kastor/examples/README.md) - Complete working examples
 - [Kastor Gen Examples](kastor-gen/examples/README.md) - Code generation samples
-- [Sample Applications](../samples/) - Full application examples
+- [Example Gradle Modules](../examples/) - Runnable example projects (`hello-world`, `hello-codegen`, `dcat-us`, …)
 
 ### **Troubleshooting**
 - [FAQ](kastor/guides/faq.md) - Frequently asked questions
