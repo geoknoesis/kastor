@@ -73,7 +73,7 @@ fun RdfGraph.serialize(format: RdfFormat, options: SerializationOptions = Serial
     
     // Try to find a provider that supports this format
     for (provider in providers) {
-        if (provider.supportsFormat(format.formatName)) {
+        if (provider.supportsOutputFormat(format.formatName)) {
             try {
                 return provider.serializeGraph(this, format.formatName, options)
             } catch (e: UnsupportedOperationException) {

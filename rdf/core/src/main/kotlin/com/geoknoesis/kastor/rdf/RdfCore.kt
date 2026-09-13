@@ -68,6 +68,24 @@ private fun extractParseErrorContext(
     )
 }
 
+private fun providerConsumedInput(provider: RdfProvider, format: RdfFormat, cause: Throwable) =
+    RdfFormatException.Generic(
+        "Provider '${provider.id}' consumed the input before declining ${format.formatName}; no other provider can be tried",
+        RdfErrorCode.FORMAT_UNSUPPORTED,
+        cause,
+    )
+
+/** Matches [format] (name or alias, case-insensitive) against a provider's declared format list. */
+private fun formatListContains(formats: List<String>, format: String): Boolean {
+    if (formats.isEmpty()) return false
+    val normalized = format.uppercase().trim()
+    val canonical = RdfFormat.fromString(normalized)?.formatName?.uppercase()
+    return formats.any { declared ->
+        val upper = declared.uppercase()
+        upper == normalized || (canonical != null && upper == canonical)
+    }
+}
+
 private val XSD_DOUBLE_NUMBER = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?")
 
 /** Parses the `xsd:double` lexical space; returns null for anything outside it. */
@@ -352,15 +370,20 @@ object Rdf {
      * 
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
+     * @throws RdfInputTooLargeException if the body exceeds [UrlLoadOptions.maxBytes]
      * @throws java.io.IOException if network access fails
      */
-    fun parseFromUrl(url: String, format: String = "TURTLE"): MutableRdfGraph {
-        val connection = java.net.URL(url).openConnection()
-        connection.connectTimeout = 30000 // 30 seconds
-        connection.readTimeout = 30000
-        return connection.getInputStream().use { stream -> parseFromInputStream(stream, format) }
+    fun parseFromUrl(
+        url: String,
+        format: String = "TURTLE",
+        options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
+    ): MutableRdfGraph {
+        val connection = openRdfUrl(url, options)
+        return boundedUrlStream(connection, options).use { stream -> parseFromInputStream(stream, format) }
     }
     
     /**
@@ -372,8 +395,8 @@ object Rdf {
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws java.io.IOException if network access fails
      */
-    fun parseFromUrl(url: String, format: RdfFormat): MutableRdfGraph {
-        return parseFromUrl(url, format.formatName)
+    fun parseFromUrl(url: String, format: RdfFormat, options: UrlLoadOptions = UrlLoadOptions.DEFAULT): MutableRdfGraph {
+        return parseFromUrl(url, format.formatName, options)
     }
 
     /**
@@ -384,12 +407,15 @@ object Rdf {
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
      * @param executor Executor used for the blocking operation
-     * @return A future with the parsed graph
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
+     * @return A future with the parsed graph; it completes exceptionally with [IllegalArgumentException]
+     *   for a disallowed scheme and [RdfInputTooLargeException] for an oversized body
      */
     fun parseFromUrlAsync(
         url: String,
         format: String = "TURTLE",
-        executor: Executor = urlIoExecutor
+        executor: Executor = urlIoExecutor,
+        options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
     ): CompletableFuture<MutableRdfGraph> {
         val active = java.util.concurrent.atomic.AtomicReference<java.net.URLConnection?>()
         val input = java.util.concurrent.atomic.AtomicReference<java.io.InputStream?>()
@@ -406,10 +432,9 @@ object Rdf {
         try { executor.execute {
             if (!result.isCancelled) {
                 try {
-                    val connection = java.net.URL(url).openConnection()
+                    val connection = openRdfUrl(url, options)
                     active.set(connection)
-                    connection.connectTimeout = 30_000; connection.readTimeout = 30_000
-                    if (!result.isCancelled) connection.getInputStream().use { stream ->
+                    if (!result.isCancelled) boundedUrlStream(connection, options).use { stream ->
                         input.set(stream)
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format))
                     }
@@ -431,9 +456,10 @@ object Rdf {
     fun parseFromUrlAsync(
         url: String,
         format: RdfFormat,
-        executor: Executor = urlIoExecutor
+        executor: Executor = urlIoExecutor,
+        options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
     ): CompletableFuture<MutableRdfGraph> {
-        return parseFromUrlAsync(url, format.formatName, executor)
+        return parseFromUrlAsync(url, format.formatName, executor, options)
     }
     
     /**
@@ -449,13 +475,14 @@ object Rdf {
     fun parseFromInputStream(inputStream: InputStream, format: String): MutableRdfGraph {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         val providers = RdfProviderRegistry.discoverProviders()
-        
-        // Try to find a provider that supports this format
-        for (provider in providers) {
-            if (provider.supportsFormat(formatEnum.formatName)) {
+        val candidates = providers.filter { it.supportsInputFormat(formatEnum.formatName) }
+
+        if (candidates.isNotEmpty()) {
+            // Read the stream exactly once: every candidate gets the full input, and the bytes
+            // give parse errors a source snippet.
+            val data = inputStream.readBytes()
+            for (provider in candidates) {
                 try {
-                    // Read stream into byte array to allow multiple attempts if needed
-                    val data = inputStream.readBytes()
                     return provider.parseGraph(data.inputStream(), formatEnum.formatName)
                 } catch (e: UnsupportedOperationException) {
                     // Provider doesn't actually support it, try next
@@ -465,12 +492,12 @@ object Rdf {
                     throw e
                 } catch (e: Exception) {
                     // Extract parsing error context with line/column information
-                    val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
+                    val parseError = extractParseErrorContext(e, formatEnum.formatName, data)
                     throw RdfFormatException.ParseError(parseError)
                 }
             }
         }
-        
+
         throw RdfFormatException.UnsupportedFormat(
             formatEnum.formatName,
             providers.flatMap { it.getCapabilities().supportedInputFormats }.distinct()
@@ -508,20 +535,22 @@ object Rdf {
     fun parseStreaming(inputStream: InputStream, format: String): Sequence<RdfTriple> {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         val providers = RdfProviderRegistry.discoverProviders()
-        
-        // Try to find a provider that supports this format
+        // Streaming must not buffer the input, so a declining provider may only be skipped if it
+        // has not consumed anything.
+        val input = CountingInputStream(inputStream)
+
         for (provider in providers) {
-            if (provider.supportsFormat(formatEnum.formatName)) {
+            if (provider.supportsInputFormat(formatEnum.formatName)) {
                 try {
-                    return provider.parseStreaming(inputStream, formatEnum.formatName)
+                    return provider.parseStreaming(input, formatEnum.formatName)
                 } catch (e: UnsupportedOperationException) {
-                    // Provider doesn't actually support it, try next
+                    if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                     continue
                 } catch (e: RdfFormatException) {
                     // Format error, rethrow
                     throw e
                 } catch (e: Exception) {
-                    // Extract parsing error context
+                    e.inputLimitCause()?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
                     throw RdfFormatException.ParseError(parseError)
                 }
@@ -633,20 +662,30 @@ object Rdf {
      * 
      * @param url The URL to load RDF dataset data from
      * @param format The RDF quad format (default: "TRIG")
+     * @param options Scheme allowlist, body size limit and timeouts (default: http/https only, 64 MiB)
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
+     * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
+     * @throws RdfInputTooLargeException if the body exceeds [UrlLoadOptions.maxBytes]
      * @throws java.io.IOException if network access fails
      */
-    fun parseDatasetFromUrl(url: String, format: String = "TRIG"): Dataset {
+    fun parseDatasetFromUrl(
+        url: String,
+        format: String = "TRIG",
+        options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
+    ): Dataset {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         if (!RdfFormat.isQuadFormat(formatEnum)) {
             throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromUrl() for graph formats, or use TRIG or N-QUADS for datasets.")
         }
-        val connection = java.net.URL(url).openConnection()
-        connection.connectTimeout = 30000 // 30 seconds
-        connection.readTimeout = 30000
+        val connection = openRdfUrl(url, options)
         val repo = memory()
-        connection.getInputStream().use { stream -> parseDataset(repo, stream, format) }
+        try {
+            boundedUrlStream(connection, options).use { stream -> parseDataset(repo, stream, format) }
+        } catch (e: Throwable) {
+            repo.close()
+            throw e
+        }
         return repo
     }
     
@@ -658,8 +697,8 @@ object Rdf {
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
      */
-    fun parseDatasetFromUrl(url: String, format: RdfFormat): Dataset {
-        return parseDatasetFromUrl(url, format.formatName)
+    fun parseDatasetFromUrl(url: String, format: RdfFormat, options: UrlLoadOptions = UrlLoadOptions.DEFAULT): Dataset {
+        return parseDatasetFromUrl(url, format.formatName, options)
     }
     
     /**
@@ -679,21 +718,23 @@ object Rdf {
             throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromInputStream() for graph formats, or use TRIG or N-QUADS for datasets.")
         }
         val providers = RdfProviderRegistry.discoverProviders()
-        
-        // Try to find a provider that supports this format
+        // Datasets can be large and are streamed into the repository, so the input is not buffered;
+        // a declining provider may only be skipped if it has not consumed anything.
+        val input = CountingInputStream(inputStream)
+
         for (provider in providers) {
-            if (provider.supportsFormat(formatEnum.formatName)) {
+            if (provider.supportsInputFormat(formatEnum.formatName)) {
                 try {
-                    provider.parseDataset(repository, inputStream, formatEnum.formatName)
+                    provider.parseDataset(repository, input, formatEnum.formatName)
                     return
                 } catch (e: UnsupportedOperationException) {
-                    // Provider doesn't actually support it, try next
+                    if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                     continue
                 } catch (e: RdfFormatException) {
                     // Format error, rethrow
                     throw e
                 } catch (e: Exception) {
-                    // Extract parsing error context with line/column information
+                    e.inputLimitCause()?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
                     throw RdfFormatException.ParseError(parseError)
                 }
@@ -1327,6 +1368,13 @@ interface RdfProvider {
      * Get the provider version.
      */
     val version: String get() = "unspecified"
+
+    /**
+     * Selection priority. Registries order providers by descending priority, then by
+     * registration order; parsing and serialization use the first provider that supports the
+     * format. Bundled SPARQL-capable providers use 0; the graph-only memory provider uses -100.
+     */
+    val priority: Int get() = 0
     
     /**
      * Create a repository with the given configuration.
@@ -1383,35 +1431,40 @@ interface RdfProvider {
     // === FORMAT SUPPORT (Optional) ===
     
     /**
-     * Check if this provider supports a specific RDF format for serialization/parsing.
-     * 
-     * Default implementation checks against [ProviderCapabilities.supportedOutputFormats]
-     * (for serialization) or [ProviderCapabilities.supportedInputFormats] (for parsing),
-     * and common format names.
-     * 
-     * @param format The RDF format (can be a string or RdfFormat enum value)
-     * @return true if the format is supported, false otherwise
+     * Check if this provider can **parse** a format (name or alias, case-insensitive).
+     *
+     * Default implementation checks [ProviderCapabilities.supportedInputFormats]; if a provider
+     * declares no input formats at all, its output formats are assumed to be parseable too.
+     * Parsing entry points ([Rdf.parse], [Rdf.parseStreaming], [Rdf.parseDataset],
+     * [Rdf.openTripleStream]) select providers with this method.
      */
-    fun supportsFormat(format: String): Boolean {
-        val normalized = format.uppercase().trim()
+    fun supportsInputFormat(format: String): Boolean {
         val capabilities = getCapabilities()
-        
-        // Check output formats first (for serialization), then input formats (for parsing)
-        val supportedFormats = if (capabilities.supportedOutputFormats.isNotEmpty()) {
-            capabilities.supportedOutputFormats
-        } else {
-            capabilities.supportedInputFormats
-        }
-        
-        // Check explicit format support
-        if (normalized in supportedFormats.map { it.uppercase() }) {
-            return true
-        }
-        
-        // Check common format aliases
-        val formatEnum = RdfFormat.fromString(normalized)
-        return formatEnum != null && formatEnum.formatName in supportedFormats.map { it.uppercase() }
+        return formatListContains(capabilities.supportedInputFormats.ifEmpty { capabilities.supportedOutputFormats }, format)
     }
+
+    /**
+     * Check if this provider can **serialize** a format (name or alias, case-insensitive).
+     *
+     * Default implementation checks [ProviderCapabilities.supportedOutputFormats]; if a provider
+     * declares no output formats at all, its input formats are assumed to be writable too.
+     * Serialization entry points select providers with this method.
+     */
+    fun supportsOutputFormat(format: String): Boolean {
+        val capabilities = getCapabilities()
+        return formatListContains(capabilities.supportedOutputFormats.ifEmpty { capabilities.supportedInputFormats }, format)
+    }
+
+    /**
+     * Check if this provider supports a format for parsing **or** serialization.
+     *
+     * Core selects parsers with [supportsInputFormat] and serializers with [supportsOutputFormat];
+     * this method is kept for callers that do not care about the direction.
+     *
+     * @param format The RDF format (can be a string or RdfFormat enum value)
+     * @return true if the format is supported in either direction, false otherwise
+     */
+    fun supportsFormat(format: String): Boolean = supportsInputFormat(format) || supportsOutputFormat(format)
     
     /**
      * Serialize a graph to the specified format.

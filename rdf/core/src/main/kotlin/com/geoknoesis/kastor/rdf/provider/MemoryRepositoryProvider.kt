@@ -27,6 +27,9 @@ class MemoryRepositoryProvider : RdfProvider {
     override val name: String = "Memory Repository"
     
     override val version: String = "1.0.0"
+
+    /** Graph-only (no parsing, serialization or SPARQL): try every other provider first. */
+    override val priority: Int = -100
     
     override fun variants(): List<RdfVariant> {
         return listOf(RdfVariant("memory", "In-memory store"))
