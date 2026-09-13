@@ -52,11 +52,14 @@ class DatasetImplTest {
     @Test
     fun `dataset rewrites queries with FROM clauses when graphs share repository`() {
         val repo = CapturingRepository()
+        val firstDefaultGraphName = Iri("http://example.org/first-default")
         val extraDefaultGraphName = Iri("http://example.org/extra-default")
         val namedGraphName = Iri("http://example.org/named-graph")
 
+        // Every default graph must be a named graph of the repository: the store's own default graph
+        // cannot be named in FROM, so mixing it in forces materialization (see DatasetQueryRewriteTest).
         val dataset = Dataset {
-            defaultGraph(repo)
+            defaultGraph(repo.getGraph(firstDefaultGraphName).asGraphRef(repo, firstDefaultGraphName))
             defaultGraph(repo.getGraph(extraDefaultGraphName).asGraphRef(repo, extraDefaultGraphName))
             namedGraph(namedGraphName, repo, namedGraphName)
         }

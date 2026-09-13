@@ -26,11 +26,11 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
  * ```
  */
 fun TripleDsl.prov(block: ProvTripleBuilder.() -> Unit) {
-    ProvTripleBuilder(triples).apply(block)
+    ProvTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.prov(block: ProvTripleBuilder.() -> Unit) {
-    ProvTripleBuilder(triples).apply(block)
+    ProvTripleBuilder(tripleSink).apply(block)
 }
 
 /**

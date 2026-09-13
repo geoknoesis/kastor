@@ -217,17 +217,19 @@ class RdfTermsTest {
         val trueLit1 = Literal("true", XSD.boolean)
         assertSame(TrueLiteral, trueLit1, "Literal('true', XSD.boolean) should return TrueLiteral")
         
-        // Test "1" lexical form
+        // "1" is a distinct RDF term from "true": the lexical form is preserved
         val trueLit2 = Literal("1", XSD.boolean)
-        assertSame(TrueLiteral, trueLit2, "Literal('1', XSD.boolean) should return TrueLiteral")
-        
+        assertEquals(TypedLiteral("1", XSD.boolean), trueLit2, "Literal('1', XSD.boolean) keeps its lexical form")
+        assertEquals(true, trueLit2.booleanValue())
+
         // Test "false" lexical form
         val falseLit1 = Literal("false", XSD.boolean)
         assertSame(FalseLiteral, falseLit1, "Literal('false', XSD.boolean) should return FalseLiteral")
-        
-        // Test "0" lexical form
+
+        // "0" is a distinct RDF term from "false"
         val falseLit2 = Literal("0", XSD.boolean)
-        assertSame(FalseLiteral, falseLit2, "Literal('0', XSD.boolean) should return FalseLiteral")
+        assertEquals(TypedLiteral("0", XSD.boolean), falseLit2, "Literal('0', XSD.boolean) keeps its lexical form")
+        assertEquals(false, falseLit2.booleanValue())
         
         // Test boolean extension function
         val trueLit3 = true.toLiteral()
@@ -245,30 +247,12 @@ class RdfTermsTest {
     }
     
     @Test
-    fun `boolean literal creation with invalid lexical forms throws exception`() {
-        // Test invalid boolean lexical forms
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("maybe", XSD.boolean)
-        }
-        
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("yes", XSD.boolean)
-        }
-        
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("no", XSD.boolean)
-        }
-        
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("2", XSD.boolean)
-        }
-        
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("True", XSD.boolean)  // Case sensitive
-        }
-        
-        assertThrows(IllegalArgumentException::class.java) {
-            Literal("FALSE", XSD.boolean)  // Case sensitive
+    fun `ill-typed boolean lexical forms are preserved rather than rejected`() {
+        // RDF permits ill-typed literals; they are kept verbatim and have no boolean value.
+        for (lexical in listOf("maybe", "yes", "no", "2", "True", "FALSE")) {
+            val literal = Literal(lexical, XSD.boolean)
+            assertEquals(TypedLiteral(lexical, XSD.boolean), literal)
+            assertEquals(null, literal.booleanValue(), "'$lexical' has no xsd:boolean value")
         }
     }
     

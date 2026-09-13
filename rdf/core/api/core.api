@@ -576,21 +576,23 @@ public final class com/geoknoesis/kastor/rdf/Rdf {
 	public final fun parseDatasetFromFile (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/Dataset;
 	public final fun parseDatasetFromFile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Dataset;
 	public static synthetic fun parseDatasetFromFile$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
-	public final fun parseDatasetFromUrl (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/Dataset;
-	public final fun parseDatasetFromUrl (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Dataset;
-	public static synthetic fun parseDatasetFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public final fun parseDatasetFromUrl (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public final fun parseDatasetFromUrl (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public static synthetic fun parseDatasetFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
+	public static synthetic fun parseDatasetFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Dataset;
 	public final fun parseFromFile (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parseFromFile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public static synthetic fun parseFromFile$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parseFromInputStream (Ljava/io/InputStream;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parseFromInputStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
-	public final fun parseFromUrl (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
-	public final fun parseFromUrl (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
-	public static synthetic fun parseFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
-	public final fun parseFromUrlAsync (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;
-	public final fun parseFromUrlAsync (Ljava/lang/String;Ljava/lang/String;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;
-	public static synthetic fun parseFromUrlAsync$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/util/concurrent/Executor;ILjava/lang/Object;)Ljava/util/concurrent/CompletableFuture;
-	public static synthetic fun parseFromUrlAsync$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;Ljava/util/concurrent/Executor;ILjava/lang/Object;)Ljava/util/concurrent/CompletableFuture;
+	public final fun parseFromUrl (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun parseFromUrl (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static synthetic fun parseFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public static synthetic fun parseFromUrl$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun parseFromUrlAsync (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/util/concurrent/Executor;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Ljava/util/concurrent/CompletableFuture;
+	public final fun parseFromUrlAsync (Ljava/lang/String;Ljava/lang/String;Ljava/util/concurrent/Executor;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;)Ljava/util/concurrent/CompletableFuture;
+	public static synthetic fun parseFromUrlAsync$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/util/concurrent/Executor;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Ljava/util/concurrent/CompletableFuture;
+	public static synthetic fun parseFromUrlAsync$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;Ljava/util/concurrent/Executor;Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;ILjava/lang/Object;)Ljava/util/concurrent/CompletableFuture;
 	public final fun parseStreaming (Ljava/io/InputStream;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lkotlin/sequences/Sequence;
 	public final fun parseStreaming (Ljava/io/InputStream;Ljava/lang/String;)Lkotlin/sequences/Sequence;
 	public final fun persistent (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/RdfRepository;
@@ -837,6 +839,11 @@ public final class com/geoknoesis/kastor/rdf/RdfInferenceException : com/geoknoe
 	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfErrorCode;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 }
 
+public final class com/geoknoesis/kastor/rdf/RdfInputTooLargeException : java/io/IOException {
+	public fun <init> (J)V
+	public final fun getLimitBytes ()J
+}
+
 public abstract interface class com/geoknoesis/kastor/rdf/RdfProvider {
 	public abstract fun createRepository (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfConfig;)Lcom/geoknoesis/kastor/rdf/RdfRepository;
 	public fun defaultVariantId ()Ljava/lang/String;
@@ -848,6 +855,7 @@ public abstract interface class com/geoknoesis/kastor/rdf/RdfProvider {
 	public static synthetic fun getDetailedCapabilities$default (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public abstract fun getId ()Ljava/lang/String;
 	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
 	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
 	public fun getVersion ()Ljava/lang/String;
 	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
@@ -861,6 +869,8 @@ public abstract interface class com/geoknoesis/kastor/rdf/RdfProvider {
 	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public static synthetic fun serializeGraph$default (Lcom/geoknoesis/kastor/rdf/RdfProvider;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;ILjava/lang/Object;)Ljava/lang/String;
 	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
 	public fun supportsVariant (Ljava/lang/String;)Z
 	public fun variants ()Ljava/util/List;
 }
@@ -874,6 +884,7 @@ public final class com/geoknoesis/kastor/rdf/RdfProvider$DefaultImpls {
 	public static fun getDetailedCapabilities (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public static synthetic fun getDetailedCapabilities$default (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public static fun getName (Lcom/geoknoesis/kastor/rdf/RdfProvider;)Ljava/lang/String;
+	public static fun getPriority (Lcom/geoknoesis/kastor/rdf/RdfProvider;)I
 	public static fun getProviderCategory (Lcom/geoknoesis/kastor/rdf/RdfProvider;)Lcom/geoknoesis/kastor/rdf/ProviderCategory;
 	public static fun getVersion (Lcom/geoknoesis/kastor/rdf/RdfProvider;)Ljava/lang/String;
 	public static fun openTripleStream (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
@@ -887,6 +898,8 @@ public final class com/geoknoesis/kastor/rdf/RdfProvider$DefaultImpls {
 	public static fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfProvider;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public static synthetic fun serializeGraph$default (Lcom/geoknoesis/kastor/rdf/RdfProvider;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;ILjava/lang/Object;)Ljava/lang/String;
 	public static fun supportsFormat (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;)Z
+	public static fun supportsInputFormat (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;)Z
+	public static fun supportsOutputFormat (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;)Z
 	public static fun supportsVariant (Lcom/geoknoesis/kastor/rdf/RdfProvider;Ljava/lang/String;)Z
 	public static fun variants (Lcom/geoknoesis/kastor/rdf/RdfProvider;)Ljava/util/List;
 }
@@ -1017,6 +1030,7 @@ public abstract interface class com/geoknoesis/kastor/rdf/RdfTerm {
 public final class com/geoknoesis/kastor/rdf/RdfTerms {
 	public static final fun bnode (Ljava/lang/String;)Ljava/lang/String;
 	public static final fun boolean (Z)Lcom/geoknoesis/kastor/rdf/Literal;
+	public static final fun booleanValue (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Boolean;
 	public static final fun decimal (D)Lcom/geoknoesis/kastor/rdf/Literal;
 	public static final fun decimal (F)Lcom/geoknoesis/kastor/rdf/Literal;
 	public static final fun decimal (Ljava/math/BigDecimal;)Lcom/geoknoesis/kastor/rdf/Literal;
@@ -1026,6 +1040,7 @@ public final class com/geoknoesis/kastor/rdf/RdfTerms {
 	public static final fun lang (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/Direction;)Lcom/geoknoesis/kastor/rdf/Literal;
 	public static final fun lit-AqFvXrU (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
 	public static synthetic fun lit-AqFvXrU$default (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/Literal;
+	public static final fun normalizeLanguageTag (Ljava/lang/String;)Ljava/lang/String;
 	public static final fun quoted (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Lcom/geoknoesis/kastor/rdf/TripleTerm;
 	public static final fun string (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
 	public static final fun toIri (Ljava/lang/String;)Ljava/lang/String;
@@ -1281,6 +1296,31 @@ public final class com/geoknoesis/kastor/rdf/TypedLiteral : com/geoknoesis/kasto
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/UrlLoadOptions {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/UrlLoadOptions$Companion;
+	public static final field DEFAULT Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
+	public static final field DEFAULT_MAX_BYTES J
+	public fun <init> ()V
+	public fun <init> (Ljava/util/Set;JII)V
+	public synthetic fun <init> (Ljava/util/Set;JIIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/Set;
+	public final fun component2 ()J
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (Ljava/util/Set;JII)Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;Ljava/util/Set;JIIILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/UrlLoadOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAllowedSchemes ()Ljava/util/Set;
+	public final fun getConnectTimeoutMillis ()I
+	public final fun getMaxBytes ()J
+	public final fun getReadTimeoutMillis ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/UrlLoadOptions$Companion {
+}
+
 public final class com/geoknoesis/kastor/rdf/Var : com/geoknoesis/kastor/rdf/RdfTerm {
 	public fun <init> (Ljava/lang/String;)V
 	public final fun component1 ()Ljava/lang/String;
@@ -1415,70 +1455,9 @@ public final class com/geoknoesis/kastor/rdf/dsl/GeoTripleBuilder {
 	public final fun sfWithin (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfResource;)V
 }
 
-public final class com/geoknoesis/kastor/rdf/dsl/GraphDsl {
+public final class com/geoknoesis/kastor/rdf/dsl/GraphDsl : com/geoknoesis/kastor/rdf/dsl/TripleBuilderDsl {
 	public fun <init> ()V
-	public final fun addTriples (Ljava/util/Collection;)V
 	public final fun build ()Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
-	public final fun getTriples ()Ljava/util/List;
-	public final fun has-AqFvXrU (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;
-	public final fun is (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfResource;)V
-	public final fun lang (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
-	public final fun lang (Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/Direction;)Lcom/geoknoesis/kastor/rdf/Literal;
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;D)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;F)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;I)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;J)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/dsl/MultipleIndividualValues;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/dsl/RdfAltValues;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/dsl/RdfBagValues;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/dsl/RdfListValues;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/dsl/RdfSeqValues;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/lang/String;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lkotlin/Pair;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lkotlin/Triple;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Z)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/Boolean;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/Double;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/Float;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/Integer;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/Long;)V
-	public final fun minus (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;[Ljava/lang/String;)V
-	public final fun minus-AqFvXrU (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;
-	public final fun minusBooleanList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusDoubleList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusFloatList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusIntList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusLongList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusStringList (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/util/List;)V
-	public final fun minusStringPair (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lkotlin/Pair;)V
-	public final fun minusStringTriple (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lkotlin/Triple;)V
-	public final fun prefix (Ljava/lang/String;Ljava/lang/String;)V
-	public final fun prefixes (Lkotlin/jvm/functions/Function1;)V
-	public final fun qname-XER-m2Y (Ljava/lang/String;)Ljava/lang/String;
-	public final fun reifies (Lcom/geoknoesis/kastor/rdf/RdfTriple;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public static synthetic fun reifies$default (Lcom/geoknoesis/kastor/rdf/dsl/GraphDsl;Lcom/geoknoesis/kastor/rdf/RdfTriple;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public final fun reifies-nlRosR0 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public static synthetic fun reifies-nlRosR0$default (Lcom/geoknoesis/kastor/rdf/dsl/GraphDsl;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;D)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;F)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;I)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;J)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfResource;)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Ljava/lang/String;)V
-	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Z)V
-	public final fun triple-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;D)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;F)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;I)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;J)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/RdfResource;)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/lang/String;)V
-	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Z)V
 }
 
 public final class com/geoknoesis/kastor/rdf/dsl/MultipleIndividualValues {
@@ -1860,8 +1839,7 @@ public final class com/geoknoesis/kastor/rdf/dsl/TimeTripleBuilder {
 	public final fun unitType (Lcom/geoknoesis/kastor/rdf/RdfResource;Lcom/geoknoesis/kastor/rdf/RdfResource;)V
 }
 
-public final class com/geoknoesis/kastor/rdf/dsl/TripleDsl {
-	public fun <init> ()V
+public abstract class com/geoknoesis/kastor/rdf/dsl/TripleBuilderDsl {
 	public final fun addTriples (Ljava/util/Collection;)V
 	public final fun getTriples ()Ljava/util/List;
 	public final fun has-AqFvXrU (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;
@@ -1903,9 +1881,9 @@ public final class com/geoknoesis/kastor/rdf/dsl/TripleDsl {
 	public final fun prefixes (Lkotlin/jvm/functions/Function1;)V
 	public final fun qname-XER-m2Y (Ljava/lang/String;)Ljava/lang/String;
 	public final fun reifies (Lcom/geoknoesis/kastor/rdf/RdfTriple;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public static synthetic fun reifies$default (Lcom/geoknoesis/kastor/rdf/dsl/TripleDsl;Lcom/geoknoesis/kastor/rdf/RdfTriple;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public static synthetic fun reifies$default (Lcom/geoknoesis/kastor/rdf/dsl/TripleBuilderDsl;Lcom/geoknoesis/kastor/rdf/RdfTriple;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
 	public final fun reifies-nlRosR0 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;)Lcom/geoknoesis/kastor/rdf/RdfResource;
-	public static synthetic fun reifies-nlRosR0$default (Lcom/geoknoesis/kastor/rdf/dsl/TripleDsl;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
+	public static synthetic fun reifies-nlRosR0$default (Lcom/geoknoesis/kastor/rdf/dsl/TripleBuilderDsl;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lcom/geoknoesis/kastor/rdf/RdfResource;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/RdfResource;
 	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;D)V
 	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;F)V
 	public final fun set-1dbSRP8 (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;I)V
@@ -1923,6 +1901,10 @@ public final class com/geoknoesis/kastor/rdf/dsl/TripleDsl {
 	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
 	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Ljava/lang/String;)V
 	public final fun with (Lcom/geoknoesis/kastor/rdf/dsl/SubjectPredicateChain;Z)V
+}
+
+public final class com/geoknoesis/kastor/rdf/dsl/TripleDsl : com/geoknoesis/kastor/rdf/dsl/TripleBuilderDsl {
+	public fun <init> ()V
 }
 
 public final class com/geoknoesis/kastor/rdf/dsl/TripleDslKt {
@@ -2000,9 +1982,7 @@ public final class com/geoknoesis/kastor/rdf/provider/EmptySparqlQueryResult : c
 }
 
 public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoesis/kastor/rdf/MutableRdfGraph {
-	public fun <init> ()V
-	public fun <init> (Ljava/util/Collection;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;)V
-	public synthetic fun <init> (Ljava/util/Collection;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/util/Collection;)V
 	public fun addTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)V
 	public fun addTriples (Ljava/util/Collection;)V
 	public fun clear ()Z
@@ -2056,6 +2036,7 @@ public final class com/geoknoesis/kastor/rdf/provider/MemoryRepositoryProvider :
 	public fun getDetailedCapabilities (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/DetailedProviderCapabilities;
 	public fun getId ()Ljava/lang/String;
 	public fun getName ()Ljava/lang/String;
+	public fun getPriority ()I
 	public fun getProviderCategory ()Lcom/geoknoesis/kastor/rdf/ProviderCategory;
 	public fun getVersion ()Ljava/lang/String;
 	public fun openTripleStream (Ljava/io/InputStream;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/TripleStream;
@@ -2067,6 +2048,8 @@ public final class com/geoknoesis/kastor/rdf/provider/MemoryRepositoryProvider :
 	public fun serializeDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun serializeGraph (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public fun supportsFormat (Ljava/lang/String;)Z
+	public fun supportsInputFormat (Ljava/lang/String;)Z
+	public fun supportsOutputFormat (Ljava/lang/String;)Z
 	public fun supportsVariant (Ljava/lang/String;)Z
 	public fun variants ()Ljava/util/List;
 }
@@ -2838,8 +2821,6 @@ public final class com/geoknoesis/kastor/rdf/vocab/Vocabularies {
 	public final fun findVocabularyForTerm-J_zqV-w (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/vocab/Vocabulary;
 	public final fun getAll ()Ljava/util/List;
 	public final fun getLocalName-J_zqV-w (Ljava/lang/String;)Ljava/lang/String;
-	public final fun getTermsByNamespace (Ljava/lang/String;)Ljava/util/Map;
-	public final fun getTermsByPrefix (Ljava/lang/String;)Ljava/util/Map;
 	public final fun isKnownTerm-J_zqV-w (Ljava/lang/String;)Z
 }
 

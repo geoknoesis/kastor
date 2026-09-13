@@ -13,11 +13,11 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
  * Dublin Core Terms helpers for [TripleDsl] and [GraphDsl] (see [DCTERMS]).
  */
 fun TripleDsl.dcterms(block: DctermsTripleBuilder.() -> Unit) {
-    DctermsTripleBuilder(triples).apply(block)
+    DctermsTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.dcterms(block: DctermsTripleBuilder.() -> Unit) {
-    DctermsTripleBuilder(triples).apply(block)
+    DctermsTripleBuilder(tripleSink).apply(block)
 }
 
 class DctermsTripleBuilder(private val out: MutableList<RdfTriple>) {

@@ -94,10 +94,6 @@ object VocabularyExample {
         // Find vocabulary by prefix
         val foafVocab = Vocabularies.findByPrefix("foaf")
         println("Found FOAF vocabulary: ${foafVocab?.namespace}")
-        
-        // Get all terms from a vocabulary
-        val foafTerms = Vocabularies.getTermsByPrefix("foaf")
-        println("FOAF vocabulary has ${foafTerms?.size} terms")
     }
     
     /**

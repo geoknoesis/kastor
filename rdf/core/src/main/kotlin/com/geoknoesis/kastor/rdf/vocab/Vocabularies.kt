@@ -50,26 +50,6 @@ object Vocabularies {
     fun isKnownTerm(term: Iri): Boolean {
         return findVocabularyForTerm(term) != null
     }
-    
-    /**
-     * Get all terms from a specific vocabulary by prefix.
-     * Note: This is a simplified implementation that returns null.
-     * For full reflection-based implementation, additional setup is required.
-     */
-    @Suppress("UNUSED_PARAMETER")
-    fun getTermsByPrefix(prefix: String): Map<String, Iri>? {
-        // Simplified implementation - returns null for now
-        // In a full implementation, this would use reflection to get all properties
-        return null
-    }
-    
-    /**
-     * Get all terms from a specific vocabulary by namespace.
-     */
-    fun getTermsByNamespace(namespace: String): Map<String, Iri>? {
-        val vocab = findByNamespace(namespace) ?: return null
-        return getTermsByPrefix(vocab.prefix)
-    }
 }
 
 
