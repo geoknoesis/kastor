@@ -11,9 +11,11 @@ This page is a **single-sheet sampler**: add one Gradle block, then skim the sec
 
 For a slower, step-by-step path, use [Getting Started](getting-started.md) and [Quick Start](quick-start.md).
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ## Prerequisites
 
-- **JDK 17**
+- **JDK 21+**
 - A Kotlin **JVM** Gradle module (`kotlin("jvm")`)
 
 ## Dependencies
@@ -22,8 +24,8 @@ Minimal set for **repository + DSL + SPARQL** (pick **one** backend; both is fin
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")   // or rdf-rdf4j:0.2.0
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")   // or rdf-rdf4j:0.3.0-SNAPSHOT
 }
 ```
 
@@ -31,17 +33,17 @@ Add these **only when** you use the matching section later on:
 
 ```kotlin
     // Kotlin SPARQL DSL — section 3 (select {})
-    implementation("com.geoknoesis.kastor:sparql-lang:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-sparql-lang:0.3.0-SNAPSHOT")
 
     // Ontology quality — section 7 (bundled SHACL catalogues; transitive SHACL + Jena stack)
-    implementation("com.geoknoesis.kastor:onto-quality:0.2.0")
+    implementation("com.geoknoesis.kastor:onto-quality:0.3.0-SNAPSHOT")
 ```
 
 Add these **only if** you follow the [SHACL](#shacl-12-validation-native) section:
 
 ```kotlin
-    implementation("com.geoknoesis.kastor:rdf-shacl-validation:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-shacl-validation:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-shacl-dsl:0.3.0-SNAPSHOT")
 ```
 
 **Kastor Gen** uses the **Gradle plugin** (and usually **`kastor-gen-runtime`** in `dependencies`)—see [§6](#6-kastor-gen-ontology--kotlin).
@@ -118,7 +120,7 @@ rows.forEach { println(it.getString("name")) }
 
 ### Kotlin SPARQL DSL (`select { }`)
 
-Add **`sparql-lang`**. The DSL builds a **`SparqlSelect`** that **`repo.select`** accepts—same execution path as a string query.
+Add **`rdf-sparql-lang`**. The DSL builds a **`SparqlSelect`** that **`repo.select`** accepts—same execution path as a string query.
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
@@ -195,14 +197,14 @@ pluginManagement {
 ```kotlin
 // build.gradle.kts
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
+    id("org.jetbrains.kotlin.jvm") version "2.4.20"
+    id("com.geoknoesis.kastor.gen") version "0.3.0-SNAPSHOT"
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
 }
 
 kastorGen {
@@ -223,15 +225,15 @@ Point **`shaclPath`** / **`contextPath`** at real files (see [Ontology generatio
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "2.3.21"
-    id("com.google.devtools.ksp") version "2.3.7"
+    kotlin("jvm") version "2.4.20"
+    id("com.google.devtools.ksp") version "2.3.12"
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -253,7 +255,7 @@ Tutorials: [Kastor Gen README](../../kastor-gen/README.md) · [Getting started](
 
 **Ontology quality** runs **bundled SHACL catalogues** (OWL profile, SKOS, data quality, RDF 1.2-aware bundles, modern-engineering checks, …) and returns a structured **`QualityReport`**—broader than instance-only SHACL, aimed at **vocabulary and catalogue hygiene**.
 
-Add **`com.geoknoesis.kastor:onto-quality:0.2.0`** (see [dependencies](#dependencies) above). It brings a validator-facing stack transitively; keep **`rdf-jena`** or **`rdf-rdf4j`** aligned with the rest of your app when you mix APIs.
+Add **`com.geoknoesis.kastor:onto-quality:0.3.0-SNAPSHOT`** (see [dependencies](#dependencies) above). It brings a validator-facing stack transitively; keep **`rdf-jena`** or **`rdf-rdf4j`** aligned with the rest of your app when you mix APIs.
 
 ### Kotlin: parse Turtle, run default checker
 
@@ -309,7 +311,7 @@ Reasoning-aware runs (`--reasoner rdfs`, `hermit`, …) are covered in the guide
 
 ## Complete listing (one `main`)
 
-Use Gradle dependencies for **`rdf-core`**, **`rdf-jena`** (or RDF4J), **`sparql-lang`**, and **`rdf-shacl-validation`** + **`rdf-shacl-dsl`** when you want the SHACL block. **`onto-quality`** is separate—see [§7](#7-ontology-quality-onto-quality).
+Use Gradle dependencies for **`rdf-core`**, **`rdf-jena`** (or RDF4J), **`rdf-sparql-lang`**, and **`rdf-shacl-validation`** + **`rdf-shacl-dsl`** when you want the SHACL block. **`onto-quality`** is separate—see [§7](#7-ontology-quality-onto-quality).
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
@@ -340,7 +342,7 @@ fun main() {
     )
     names.forEach { println("String SPARQL: ${it.getString("name")}") }
 
-    // --- SPARQL (Kotlin DSL — needs sparql-lang) ---
+    // --- SPARQL (Kotlin DSL — needs rdf-sparql-lang) ---
     val dslQuery = select("name") {
         version("1.2")
         prefix("foaf", FOAF.namespace)

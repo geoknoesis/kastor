@@ -251,7 +251,7 @@ These are subject to change without notice and are not part of the public API co
 ## Version Compatibility
 
 - Kotlin: 1.9.24+
-- JDK: 17+
+- JDK: 21+
 - KSP: 1.9.24-1.0.20+
 
 ## See Also

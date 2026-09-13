@@ -88,12 +88,12 @@ Typical combinations (coordinates use the Kastor BOM or matching versions):
 |------|---------------------------|
 | **Minimal store + Kastor API** | `rdf:core` + `rdf:jena` *or* `rdf:rdf4j` |
 | **+ SPARQL query DSL / `select {}`** | add **`rdf:sparql-lang`** (**`api`** **`rdf:core`**). |
-| **+ SHACL shapes DSL (`shacl {}`, `Rdf.shacl`)** | add **`rdf:shacl-dsl`** (Maven **`rdf-shacl-dsl`**); **`api`** **`sparql-lang`** for embedded SPARQL constraints — you usually **do not** add **`sparql-lang`** separately. |
+| **+ SHACL shapes DSL (`shacl {}`, `Rdf.shacl`)** | add **`rdf:shacl-dsl`** (Maven **`rdf-shacl-dsl`**); **`api`** **`rdf-sparql-lang`** for embedded SPARQL constraints — you usually **do not** add **`rdf-sparql-lang`** separately. |
 | **+ SHACL validation APIs** | add `rdf:shacl-validation` (often already transitive from RDF4J adapter when using SHACL sails) |
 | **+ Reasoning facade (`RdfReasoning`, SPI)** | add `rdf:reasoning` + **`rdf:jena-reasoning`** and/or **`rdf:rdf4j-reasoning`** |
-| **Batteries included** | use **`kastor-bom`** — pins **`jena-reasoning`** and **`rdf4j-reasoning`** alongside core adapters |
+| **Batteries included** | use **`kastor-bom`** — pins **`rdf-jena-reasoning`** and **`rdf-rdf4j-reasoning`** alongside core adapters |
 
-**Migration note:** releases after this split no longer pull **`rdf:reasoning`** transitively through **`rdf:jena`** or **`rdf:rdf4j`**. Applications that called **`JenaReasonerProvider`** or relied on SPI discovery of Jena/RDF4J reasoners must add **`com.geoknoesis.kastor:jena-reasoning`** / **`com.geoknoesis.kastor:rdf4j-reasoning`** explicitly (or stay on the BOM).
+**Migration note:** releases after this split no longer pull **`rdf:reasoning`** transitively through **`rdf:jena`** or **`rdf:rdf4j`**. Applications that called **`JenaReasonerProvider`** or relied on SPI discovery of Jena/RDF4J reasoners must add **`com.geoknoesis.kastor:rdf-jena-reasoning`** / **`com.geoknoesis.kastor:rdf-rdf4j-reasoning`** explicitly (or stay on the BOM).
 
 ## Modularity roadmap (`rdf:core`)
 
@@ -122,15 +122,15 @@ The root build applies the [**Dependency Analysis Gradle plugin**](https://githu
 | **`bom`** | Maven BOM — pins compatible versions for published artifacts. |
 | **`rdf:sparql-contract`** | Tiny API: SPARQL query marker types (`SparqlSelectQuery`, `UpdateQuery`, …). Maven **`artifactId`**: **`rdf-sparql-contract`**. |
 | **`rdf:core`** | Portable RDF API, graph/RDF DSL, providers SPI; **`api`** **`:rdf:sparql-contract`**; no Jena/RDF4J in **`api`**. Maven **`artifactId`**: **`rdf-core`**. |
-| **`rdf:sparql-lang`** | SPARQL AST/renderer/`select {}` DSL, binding flows; **`api`** **`:rdf:core`**. Maven **`artifactId`**: **`sparql-lang`**. |
+| **`rdf:sparql-lang`** | SPARQL AST/renderer/`select {}` DSL, binding flows; **`api`** **`:rdf:core`**. Maven **`artifactId`**: **`rdf-sparql-lang`**. |
 | **`rdf:shacl-dsl`** | SHACL shapes DSL (**`shacl {}`**, **`Rdf.shacl`**); **`api`** **`:rdf:core`**, **`api`** **`:rdf:sparql-lang`**. Maven **`artifactId`**: **`rdf-shacl-dsl`**. |
 | **`rdf:jena`**, **`rdf:rdf4j`** | Backend adapters and repositories (no **`rdf:reasoning`** transitively). Maven **`artifactId`**: **`rdf-jena`**, **`rdf-rdf4j`**. |
 | **`rdf:jena-reasoning`**, **`rdf:rdf4j-reasoning`** | Optional **`RdfReasonerProvider`** implementations (SPI + direct types). |
 | **`rdf:sparql`** | SPARQL execution against endpoints / repositories. Maven **`artifactId`**: **`rdf-sparql`**. |
 | **`rdf:reasoning`**, **`rdf:reasoning-hermit`** | Materialization and OWL DL checks used before validation in advanced flows. |
-| **`rdf:shacl-validation`** | SHACL engine integration (including native validator paths). Maven **`artifactId`**: **`shacl-validation`**. |
+| **`rdf:shacl-validation`** | SHACL engine integration (including native validator paths). Maven **`artifactId`**: **`rdf-shacl-validation`**. |
 | **`rdf:testkit`** | Test helpers (e.g. isomorphism, golden Turtle). |
-| **`rdf:conformance`** | W3C RDF 1.2 syntax harness (Jena + RDF4J); optional submodule for full corpus. |
+| **`rdf:conformance`** | W3C RDF 1.2 syntax harness (Jena + RDF4J); full corpus fetched via `scripts/fetch-conformance-data.py`. |
 | **`rdf:cli`** | Small command-line utilities around Kastor RDF. |
 | **`kastor-gen:*`** | KSP processors, runtime support, Gradle plugin, validation bridges. |
 | **`tools:onto-quality*`** | Ontology quality SHACL catalogues, metrics, embeddings, LLM explanations, CLI. |
@@ -164,5 +164,5 @@ Kotlin **package names** under adapters do **not** use a `providers` segment (fo
 
 ## See also
 
-- [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md) — full build, CI, and submodule notes.
+- [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md) — full build, CI, and conformance-data notes.
 - [**RDF 1.2 conformance testing**](rdf-1.2-conformance.md) — harness layout and commands.

@@ -10,7 +10,7 @@ Use the **Jena** engine behind Kastor’s portable surface: create a repo, add t
 
 ### Prerequisites
 
-- `rdf-core` + **`rdf-jena`** on the classpath (`0.2.0` with other Kastor artifacts).
+- `rdf-core` + **`rdf-jena`** on the classpath (same version as other Kastor artifacts).
 
 ### Step 1: Create a Jena repository
 

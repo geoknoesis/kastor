@@ -4,13 +4,15 @@
 
 > **Documentation mode: Tutorial** — extended hands-on path after [Getting Started](getting-started.md). For task-only workflows (parse file, validate SHACL, …), use **How-to:** [Guides](../guides/README.md).
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ## Goal
 
 Build a small runnable example: repository → triples → optional SPARQL-shaped exploration — with **verification** at each stage.
 
 ## Prerequisites
 
-- **JDK 17** (matches Kastor’s Gradle toolchain)
+- **JDK 21+** (matches Kastor’s Gradle toolchain)
 - **Gradle** with Kotlin
 - Optional: skim [RDF Fundamentals](../concepts/rdf-fundamentals.md) (**Explanation**) if RDF is new
 
@@ -23,11 +25,11 @@ Add the following to your `build.gradle.kts`:
 ```kotlin
 dependencies {
     // Core API
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     
     // Choose your backend (or both)
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")    // Apache Jena backend
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")   // Eclipse RDF4J backend
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")    // Apache Jena backend
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")   // Eclipse RDF4J backend
 }
 
 repositories {

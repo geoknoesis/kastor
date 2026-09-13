@@ -77,7 +77,7 @@ Staged-publication verification rejects blank required metadata, missing primary
 | Compatibility | 24 local ABI dumps compared; nine conservative flags reviewed against JVM bytecode; no supported member removal found in those flags |
 | Documentation and whitespace | Final signed build reported zero unresolved documentation links; whitespace check passed |
 
-Detailed logs and JSON evidence are retained in `build/review/`; performance data is retained in [the performance report](docs/kastor/performance/README.md). Test totals include multiple task suites and are not unique coverage guarantees. Skipped tests remain exclusions; the individual inventory is `build/review/clean-windows-skips.json`, alongside the [provider capability contract](docs/kastor/features/provider-capabilities.md). OSV and pattern scans have their stated detection scope.
+Detailed logs and JSON evidence are retained in `build/review/`; performance data is retained in [the performance report](../../../docs/kastor/performance/README.md). Test totals include multiple task suites and are not unique coverage guarantees. Skipped tests remain exclusions; the individual inventory is `build/review/clean-windows-skips.json`, alongside the [provider capability contract](../../../docs/kastor/features/provider-capabilities.md). OSV and pattern scans have their stated detection scope.
 
 ## Remaining release gates and limitations
 
@@ -88,4 +88,4 @@ Closed applicability question: the maintainer confirmed on 13 September that the
 
 Cooperative cancellation cannot preempt arbitrary blocking provider calls. Exact high-dimensional similarity remains worst-case quadratic, particularly for dense output. Local benchmark confidence intervals are wide and host load changed between runs; the measurements do not establish production SLOs. The bounded native soak is not a production endurance test. Some legacy deprecation/cast warnings remain, although processor explicit-API and unresolved documentation-link warnings were addressed.
 
-The complete implementation mapping is in [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md), with [compatibility evidence](docs/kastor/compatibility-review.md) and [release acceptance conditions](docs/kastor/release-acceptance.md).
+The complete implementation mapping is in [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md), with [compatibility evidence](../../../docs/kastor/compatibility-review.md) and [release acceptance conditions](../../../docs/kastor/release-acceptance.md).

@@ -33,6 +33,8 @@ The Kastor Gen Gradle plugin provides a declarative way to generate domain inter
 
 ## Plugin Setup
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ### 1. Apply the Plugin
 
 Add the Kastor Gen plugin to your `build.gradle.kts`:
@@ -40,7 +42,7 @@ Add the Kastor Gen plugin to your `build.gradle.kts`:
 ```kotlin
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
+    id("com.geoknoesis.kastor.gen") version "0.3.0-SNAPSHOT"
 }
 ```
 
@@ -50,12 +52,12 @@ Include the required runtime dependencies:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
     
     // Optional: Specific backends
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-rdf4j:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -601,8 +603,8 @@ kastorGen {
 ```kotlin
 // Use version catalogs for dependency management
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
 }
 ```
 

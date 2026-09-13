@@ -17,13 +17,13 @@ Add the modules you need:
 
 | Goal | Gradle dependency |
 |------|-------------------|
-| Quality API + bundled Turtle shapes | `implementation("com.geoknoesis.kastor:onto-quality:0.2.0")` |
-| Embedding / `SemanticEnricher` | `implementation("com.geoknoesis.kastor:onto-quality-embed:0.2.0")` |
-| LLM explanations (Koog) | `implementation("com.geoknoesis.kastor:onto-quality-llm-koog:0.2.0")` |
+| Quality API + bundled Turtle shapes | `implementation("com.geoknoesis.kastor:onto-quality:0.3.0-SNAPSHOT")` |
+| Embedding / `SemanticEnricher` | `implementation("com.geoknoesis.kastor:onto-quality-embed:0.3.0-SNAPSHOT")` |
+| LLM explanations (Koog) | `implementation("com.geoknoesis.kastor:onto-quality-llm-koog:0.3.0-SNAPSHOT")` |
 
 You also need an RDF provider used elsewhere in your project (for example **`rdf-jena`**) so `Rdf.parse` / file IO works the same way as in [How to Validate with SHACL](how-to-validate-shacl.md).
 
-When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating `0.2.0`.
+When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating the version.
 
 ## Steps
 

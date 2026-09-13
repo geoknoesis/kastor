@@ -7,6 +7,59 @@ version while we are in 0.x.
 
 ## [Unreleased]
 
+Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been published yet.
+
+### Breaking changes (Maven `artifactId`s)
+
+Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*` scheme used by every other RDF module. Gradle project paths are unchanged:
+
+| Gradle project | Old `artifactId` | New `artifactId` |
+|---|---|---|
+| `:rdf:sparql-lang` | `sparql-lang` | `rdf-sparql-lang` |
+| `:rdf:reasoning` | `reasoning` | `rdf-reasoning` |
+| `:rdf:reasoning-hermit` | `reasoning-hermit` | `rdf-reasoning-hermit` |
+| `:rdf:jena-reasoning` | `jena-reasoning` | `rdf-jena-reasoning` |
+| `:rdf:rdf4j-reasoning` | `rdf4j-reasoning` | `rdf-rdf4j-reasoning` |
+| `:rdf:shacl-validation` | `shacl-validation` | `rdf-shacl-validation` |
+
+### Breaking changes (BOM)
+
+- **`kastor-bom` now constrains Kastor modules only.** It no longer imports `jackson-bom`, `netty-bom` or `opentelemetry-bom`, and no longer publishes security version floors (Guava, commons-beanutils, HttpComponents, apache-mime4j, libthrift, jsoup, commons-lang3, lz4-java). Previously every Kastor module forced these onto consumers through its published metadata; for example, Netty 4.1 users were upgraded to 4.2. The build still applies them internally through the non-published `gradle/build-platform`. Declare your own floors if you relied on them ([release contract](docs/reference/release-contract.md)).
+- **`kastor-bom` now includes the ontology-quality artifacts:** `onto-quality`, `onto-quality-metrics`, `onto-quality-embed`, `onto-quality-llm-koog`, `onto-quality-cli`. `:bom:verifyBomCoverage` fails the build when a published module is missing.
+
+### Changed (toolchain and build)
+
+- Kotlin 2.3.21 → **2.4.20** and KSP → **2.3.12**. Consumers need a compatible Kotlin compiler.
+- Apache Jena 6.1.0 → **6.2.0**.
+- Dependency locking for every configuration (`gradle.lockfile`, `settings-gradle.lockfile`) and SHA-256 dependency verification (`gradle/verification-metadata.xml`). `./gradlew resolveAndLockAll --write-locks` refreshes locks.
+- Kotlin ABI validation (`checkKotlinAbi`, baselines under `*/api/`) and Dokka HTML documentation jars for published modules.
+- The version is defined once in `gradle.properties`; release tags use `vX.Y.Z`.
+- Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` was removed from the build.
+- Test JVMs are capped (`kastor.test.maxHeap`, default `1g`; `kastor.test.maxParallelForks`, default `1`), and per-module JaCoCo line-coverage floors are enforced by `check`.
+- Publishing: `centralBundle` builds a signed Maven Central Portal bundle and refuses unsigned or `-SNAPSHOT` releases. The tag-triggered `publish.yml` uploads it after release readiness passes.
+- CI: actions pinned to commit SHAs, least-privilege `permissions`, a macOS job, executed-test floors plus a committed skip allowlist, the pinned conformance corpora fetched by `scripts/fetch-conformance-data.py` (the unused git submodule declaration was removed), and PR dependency audits scoped to newly introduced coordinates.
+
+### Changed
+
+- `rdf:jena`: truly streaming triple parsing via Jena `AsyncParser`.
+- `rdf:rdf4j`: thread-safe per-operation connections and streaming serialization.
+
+### Fixed (audit remediation)
+
+<!-- Coordinator: fill in at integration from the remediation branches (rdf/core, providers, sparql,
+     shacl, kastor-gen, tools). Refine breaking changes above if any branch changes public API. -->
+- _Placeholder — rdf-core fixes_
+- _Placeholder — provider (Jena / RDF4J) fixes_
+- _Placeholder — SPARQL fixes_
+- _Placeholder — SHACL fixes_
+- _Placeholder — kastor-gen fixes_
+- _Placeholder — onto-quality tools fixes_
+- Build, CI and documentation: README samples now match the current DSL and are compiled via `examples/hello-world`. Install docs require JDK 21, show `0.3.0-SNAPSHOT` and state that artifacts are not yet published.
+
+## [0.2.1] - 2026-06-27
+
+Tagged as `0.2.1` (without the `v` prefix used by other tags).
+
 ### Added
 
 - **`kastor-gen`: Write-path support (`generateWriteSupport`).** `@Rdf` now accepts
@@ -31,12 +84,23 @@ version while we are in 0.x.
   distinguishes snapshot instances from live `RdfBacked` wrappers at the type level.
   `OntoMapper` now auto-discovers `*Factory` classes alongside `*Wrapper` classes on first use.
 
+- **`kastor-gen`: SHACL-native enum generation.** `sh:in` value sets produce sealed `Known`/`Unknown` enum types. Wrappers read them via `from()`, the instance DSL has type-safe setters, and data classes support them for reads and writes.
+- **`rdf4j-reasoning`:** materializes real RDFS inference.
+
+### Fixed
+
+- **Security:** `rdf-core` IRI validation rejects RFC 3987-illegal characters (an injection vector into serialized output). Residual SPARQL-injection paths were closed in the SPARQL endpoint adapter and the `sparql-lang` renderer, and the HTTP client was hardened.
+- `sparql-lang` emits grammar-valid `ORDER BY`. SHACL `sh:select` no longer lets `$this` pre-binding clobber the projection.
+- `rdf:jena` preserves language direction and triple terms in SPARQL results. `rdf:rdf4j` scopes graph operations to their context, closes cursors, and deduplicates/rolls back dataset IO.
+- `rdf-core`: graph-isomorphism fidelity, datatype handling, thread safety and lazy-sequence lifetime.
+- `kastor-gen`: generated `validate()` compiles (keyword escaping, `sh:in` escaping, IRI-typed values). `sh:pattern` uses SPARQL `REGEX` find semantics. Bootstrap-classloader types materialize. The Gradle plugin generates interfaces without validation annotations.
+
 ### Changed (build)
 
 - Gradle wrapper upgraded from 8.13 to 9.5.1.
-- Apache Jena upgraded from 5.6.0 to 6.1.0.
-- `rdf/providers/jena`: `jena-libs`, `jena-arq`, `jena-tdb2` promoted from `implementation`
-  to `api` so downstream consumers can resolve Jena types without an extra explicit dependency.
+- Apache Jena upgraded from 5.6.0 to 6.1.0. `rdf/providers/jena` promotes `jena-libs`, `jena-arq` and `jena-tdb2` from `implementation` to `api`, so consumers can resolve Jena types without an extra dependency.
+- The whole build (toolchain and daemon) runs on **JDK 21** (was 17); JDK auto-download is disabled.
+- RDF4J upstream RDF 1.2 gaps are reported as skipped conformance tests instead of failures.
 
 ## [0.2.0] - 2026-05-17
 
@@ -56,7 +120,7 @@ version while we are in 0.x.
 
 ### Breaking changes (Maven `artifactId`s)
 
-Published artifacts now use **`artifactId`** names that match the documentation (**`rdf-core`**, **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**, **`rdf-sparql-contract`**, **`rdf-shacl-dsl`**, **`kastor-gen-runtime`**, **`kastor-gen-processor`**, …) instead of bare Gradle **`project.name`** values (**`core`**, **`jena`**, **`runtime`**, …). Update Maven POMs or external Gradle builds that pinned the old IDs. **`:rdf:rdf4j`** and **`:rdf:sparql`** now declare **`maven-publish`** so they publish under **`rdf-rdf4j`** and **`rdf-sparql`** respectively.
+Published artifacts now use **`artifactId`** names that match the documentation (**`rdf-core`**, **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**, **`rdf-sparql-contract`**, **`rdf-shacl-dsl`**, **`kastor-gen-runtime`**, **`kastor-gen-processor`**, …) instead of bare Gradle **`project.name`** values (**`core`**, **`jena`**, **`runtime`**, …). *(Six modules — `sparql-lang`, `reasoning`, `reasoning-hermit`, `jena-reasoning`, `rdf4j-reasoning`, `shacl-validation` — kept bare names in 0.2.x; they are renamed to `rdf-*` in the next release. See [Unreleased].)* Update Maven POMs or external Gradle builds that pinned the old IDs. **`:rdf:rdf4j`** and **`:rdf:sparql`** now declare **`maven-publish`** so they publish under **`rdf-rdf4j`** and **`rdf-sparql`** respectively.
 
 ### Breaking changes (adapter classpath)
 
@@ -131,3 +195,7 @@ before upgrading.
 ## [0.1.0]
 
 Initial release.
+
+[Unreleased]: https://github.com/geoknoesis/kastor/compare/0.2.1...HEAD
+[0.2.1]: https://github.com/geoknoesis/kastor/compare/v0.2.0...0.2.1
+[0.2.0]: https://github.com/geoknoesis/kastor/releases/tag/v0.2.0

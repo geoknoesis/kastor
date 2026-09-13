@@ -13,7 +13,7 @@
 ## Prerequisites
 
 - **`rdf-core`** on the classpath (**`SparqlSelectQuery`** and related marker types come transitively via **`rdf-sparql-contract`** when you use published Maven coordinates).
-- Any **`import com.geoknoesis.kastor.rdf.sparql.*`** (`getAs`, **`asFlow`**, etc.) requires **`sparql-lang`** (`com.geoknoesis.kastor:sparql-lang`). **`sparql-lang`** brings **kotlinx-coroutines** for **`Flow`** helpers it exposes.
+- Any **`import com.geoknoesis.kastor.rdf.sparql.*`** (`getAs`, **`asFlow`**, etc.) requires **`rdf-sparql-lang`** (`com.geoknoesis.kastor:rdf-sparql-lang`). **`rdf-sparql-lang`** brings **kotlinx-coroutines** for **`Flow`** helpers it exposes.
 
 ## Steps
 

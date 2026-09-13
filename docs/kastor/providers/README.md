@@ -70,7 +70,7 @@ val repo = RdfProviderRegistry.create(
 | **Transactions** | ✅ | ✅ | ✅ | ❌ |
 | **Inference** | ✅ | ✅ | ✅ | ✅ |
 | **SHACL Validation** | ✅ | ✅ | ✅ | ❌ |
-| **RDF-star Support** | ✅ | ✅ | ✅ | ❌ |
+| **RDF 1.2 Triple Terms** | ✅ | ✅ | ✅ | ❌ |
 | **Federation** | ❌ | ❌ | ❌ | ✅ |
 | **Persistence** | ❌ | ✅ | ✅ | ✅ |
 

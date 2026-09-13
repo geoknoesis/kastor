@@ -19,12 +19,12 @@
 
 ```kotlin
 dependencies {
-    testImplementation("com.geoknoesis.kastor:rdf-testkit:0.2.0")
-    testImplementation("com.geoknoesis.kastor:rdf-jena:0.2.0")
+    testImplementation("com.geoknoesis.kastor:rdf-testkit:0.3.0-SNAPSHOT")
+    testImplementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT")
 }
 ```
 
-When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating `0.2.0`.
+When you use the [Kastor BOM](../getting-started/installation.md), align versions via the BOM instead of repeating the version.
 
 ## Steps
 
