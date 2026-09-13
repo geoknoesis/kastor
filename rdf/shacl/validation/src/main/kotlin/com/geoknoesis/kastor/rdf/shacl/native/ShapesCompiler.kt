@@ -187,10 +187,6 @@ internal object ShapesCompiler {
         NODE_SCALAR,
     }
 
-    private val SH_DECLARE = Iri(SHACL.namespace + "declare")
-    private val SH_PREFIX = Iri(SHACL.namespace + "prefix")
-    private val SH_NAMESPACE = Iri(SHACL.namespace + "namespace")
-
     fun compile(shapesTriples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget = ValidationBudget.NONE): CompiledShapeGraph {
         val index = ShapeGraphIndex(shapesTriples, budget)
         val nodeShapeSubjects = findNodeShapes(index, budget)
@@ -705,11 +701,11 @@ internal object ShapesCompiler {
         while (queue.isNotEmpty()) {
             val holder = queue.removeFirst()
             if (holder !is RdfResource || !visited.add(holder)) continue
-            for (decl in index.objects(holder, SH_DECLARE)) {
+            for (decl in index.objects(holder, SHACL.declare)) {
                 val d = decl as? RdfResource ?: throw ShapeCompileException("sh:declare value must be a resource: $decl")
-                val prefix = (index.objectSingle(d, SH_PREFIX) as? Literal)?.lexical
+                val prefix = (index.objectSingle(d, SHACL.prefixProperty) as? Literal)?.lexical
                     ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:prefix literal")
-                val namespace = (index.objectSingle(d, SH_NAMESPACE) as? Literal)?.lexical
+                val namespace = (index.objectSingle(d, SHACL.namespaceProperty) as? Literal)?.lexical
                     ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:namespace literal")
                 val existing = out.putIfAbsent(prefix, namespace)
                 if (existing != null && existing != namespace) {

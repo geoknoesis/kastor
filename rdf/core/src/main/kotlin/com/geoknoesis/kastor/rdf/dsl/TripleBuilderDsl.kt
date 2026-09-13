@@ -408,6 +408,15 @@ abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> internal constructor() 
         collected.addAll(newTriples)
     }
 
+    /**
+     * Remove one previously collected occurrence of [triple] from the DSL.
+     *
+     * Intended for DSL extensions that replace values they emitted earlier.
+     *
+     * @return `true` if an occurrence was removed
+     */
+    fun removeTriple(triple: RdfTriple): Boolean = collected.remove(triple)
+
     // === RDF 1.2 LANGUAGE / DIRECTION HELPERS ===
 
     /**

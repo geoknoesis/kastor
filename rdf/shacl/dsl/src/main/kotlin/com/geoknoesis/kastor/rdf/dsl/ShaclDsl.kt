@@ -103,10 +103,6 @@ class ShaclDsl {
 // Shared emission helpers
 // ---------------------------------------------------------------------------------------------
 
-private val SH_DECLARE = Iri("http://www.w3.org/ns/shacl#declare")
-private val SH_PREFIX = Iri("http://www.w3.org/ns/shacl#prefix")
-private val SH_NAMESPACE = Iri("http://www.w3.org/ns/shacl#namespace")
-
 /**
  * Emits a well-formed RDF list (`rdf:first` / `rdf:rest` chain terminated by `rdf:nil`)
  * and returns its head together with the triples that were added.
@@ -129,7 +125,7 @@ private fun GraphDsl.emitRdfList(
             added += RdfTriple(current, RDF.rest, RDF.nil)
         }
     }
-    triples.addAll(added)
+    addTriples(added)
     return head to added
 }
 
@@ -163,7 +159,7 @@ private class SingleValueSlots(
         clear(predicate)
         if (value == null || obj == null) return
         val t = RdfTriple(subject, predicate, obj)
-        graphDsl.triples.add(t)
+        graphDsl.triple(t.subject, t.predicate, t.obj)
         entries[predicate] = Entry(value, listOf(t))
     }
 
@@ -172,12 +168,12 @@ private class SingleValueSlots(
         if (value == null || items == null) return
         val (head, listTriples) = graphDsl.emitRdfList(items, nextBnode)
         val t = RdfTriple(subject, predicate, head)
-        graphDsl.triples.add(t)
+        graphDsl.triple(t.subject, t.predicate, t.obj)
         entries[predicate] = Entry(value, listTriples + t)
     }
 
     private fun clear(predicate: Iri) {
-        entries.remove(predicate)?.triples?.forEach { graphDsl.triples.remove(it) }
+        entries.remove(predicate)?.triples?.forEach { graphDsl.removeTriple(it) }
     }
 }
 
@@ -1176,9 +1172,9 @@ class SparqlConstraintDsl(
         graphDsl.triple(sparqlConstraint, SHACL.prefixes, declarations)
         prefixMap.forEach { (prefix, namespace) ->
             val decl = nextBnode("declare")
-            graphDsl.triple(declarations, SH_DECLARE, decl)
-            graphDsl.triple(decl, SH_PREFIX, string(prefix))
-            graphDsl.triple(decl, SH_NAMESPACE, Literal(namespace, XSD.anyURI))
+            graphDsl.triple(declarations, SHACL.declare, decl)
+            graphDsl.triple(decl, SHACL.prefixProperty, string(prefix))
+            graphDsl.triple(decl, SHACL.namespaceProperty, Literal(namespace, XSD.anyURI))
         }
     }
 

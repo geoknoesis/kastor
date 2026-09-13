@@ -149,6 +149,18 @@ object SHACL : Vocabulary {
     val select: Iri by lazy { term("select") }
     val ask: Iri by lazy { term("ask") }
     val prefixes: Iri by lazy { term("prefixes") }
+    /** `sh:declare` — links a `sh:prefixes` holder to a prefix declaration node. */
+    val declare: Iri by lazy { term("declare") }
+    /**
+     * `sh:prefix` — the prefix of a prefix declaration.
+     * Named `prefixProperty` because [prefix] is the vocabulary's own prefix string.
+     */
+    val prefixProperty: Iri by lazy { term("prefix") }
+    /**
+     * `sh:namespace` — the namespace IRI (as `xsd:anyURI` literal) of a prefix declaration.
+     * Named `namespaceProperty` because [namespace] is the vocabulary's own namespace string.
+     */
+    val namespaceProperty: Iri by lazy { term("namespace") }
     @get:JvmName("parameterProperty")
     val parameter: Iri by lazy { term("parameter") }
     val labelTemplate: Iri by lazy { term("labelTemplate") }
