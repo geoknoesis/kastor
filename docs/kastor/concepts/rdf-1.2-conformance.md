@@ -28,6 +28,17 @@ Each approved row under [`w3c/rdf-tests` RDF 12](https://github.com/w3c/rdf-test
 
 Each row runs against **both** providers, so reports show labels such as `[Jena/TURTLE] …` and `[RDF4J/TURTLE] …`. **SPARQL 1.2** and RDF dataset canonicalisation are **out of scope** for this harness.
 
+## Current results
+
+With the pinned corpus (approved rows only):
+
+| Provider | Executed | Skipped | Failed |
+|----------|----------|---------|--------|
+| Jena | 1038 | 32 (unapproved rows) | 0 |
+| RDF4J | 1038 | 187 (155 allowlisted upstream Rio gaps + 32 unapproved rows) | 0 |
+
+Known provider gaps are listed with a justification per row in `rdf/conformance/src/test/resources/conformance-allowlist.tsv`. Only listed tests may be skipped: an unlisted failure fails the build, and so does a listed test that starts passing.
+
 ## Enable the full suite locally
 
 The upstream trees are not vendored. `scripts/fetch-conformance-data.py` clones the pinned W3C `rdf-tests` and `data-shapes` commits used by CI into the git-ignored locations (for RDF 1.2: `rdf/conformance/test-data/`).

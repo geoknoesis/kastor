@@ -22,6 +22,19 @@ The Kastor RDF framework now includes a comprehensive reasoning system that prov
 - **OWL-DL** - Full OWL 2 DL reasoning
 - **Custom** - Custom rule-based reasoning
 
+Which types are actually served depends on the providers on the classpath:
+
+| Provider | Supported `ReasonerType`s | Notes |
+|----------|---------------------------|-------|
+| Memory (built in) | `RDFS` | RDFS rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9 and rdfs11 applied to a fixpoint; no axiomatic triples |
+| Jena (`rdf-jena-reasoning`) | `RDFS`, `OWL_RL`, `CUSTOM` | `OWL_RL` uses Jena's OWL rule reasoner, which is close to but not a complete OWL 2 RL implementation; `CUSTOM` requires at least one `customRules` entry; `OWL_EL`, `OWL_QL`, `OWL_DL` are rejected |
+| RDF4J (`rdf-rdf4j-reasoning`) | `RDFS` | RDF4J ships no OWL reasoner |
+| HermiT (`rdf-reasoning-hermit`) | `HERMIT`, `OWL_DL` | OWL 2 DL; defaults to `streamingMode = false`; the timeout is enforced by a watchdog that interrupts the reasoner |
+
+Consistency results come from the engine's own checks rather than being assumed.
+
+**Provider selection is deterministic.** When several providers support a type, the one with the highest `priority()` wins: HermiT 100, Jena 50, RDF4J 40, memory −100. `RdfReasoning.reasoner(type)` uses `ReasonerConfig.forType(type)`, which picks the recommended settings for that type (for example, `hermit()` / `owlDl()` for `HERMIT` / `OWL_DL`).
+
 ## 📦 **Module Structure**
 
 ```
@@ -131,8 +144,11 @@ val defaultConfig = ReasonerConfig.default()
 // RDFS-specific configuration
 val rdfsConfig = ReasonerConfig.rdfs()
 
-// OWL-EL configuration
+// OWL-EL configuration (no bundled provider serves OWL_EL; Jena rejects it)
 val owlElConfig = ReasonerConfig.owlEl()
+
+// Recommended configuration for a type (used by RdfReasoning.reasoner(type))
+val dlConfig = ReasonerConfig.forType(ReasonerType.OWL_DL)
 
 // Large graph configuration
 val largeGraphConfig = ReasonerConfig.forLargeGraphs()

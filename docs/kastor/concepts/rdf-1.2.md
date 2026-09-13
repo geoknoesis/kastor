@@ -113,6 +113,9 @@ The bundled in-memory provider remains an RDF 1.1 graph store; for full RDF 1.2
 serialization, parsing, and SPARQL, use `:rdf:jena` or `:rdf:rdf4j`. RDF4J
 versions older than 5.2 may surface RDF 1.2 features through the legacy
 RDF-star APIs - the `Rdf4jTerms` bridge handles the fallback automatically.
+RDF4J 5.3.1 has no base-direction API. Kastor therefore stores `"x"@ar--rtl`
+inside RDF4J under the language tag `ar--rtl` and restores the direction when
+reading, which means SPARQL `LANG()` evaluated by RDF4J returns `ar--rtl`.
 
 ## See also
 

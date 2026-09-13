@@ -24,13 +24,14 @@ This document describes how **RDF reasoning** is exposed in Kastor and how **ont
 
 ### Providers shipped in this repo
 
-- **Memory** ([MemoryReasonerProvider](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasonerProvider.kt)): lightweight **RDFS** subset (e.g. transitivity on `rdfs:subClassOf`, domain/range). Useful for tests and fast smoke checks; **not** a full RDFS or OWL implementation.
-- **Jena** ([JenaReasonerProvider](../../../rdf/providers/jena-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider.kt)): **RDFS**, **OWL “Micro”** (exposed as [ReasonerType.OWL_EL](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig.kt) in config), **OWL_RL** placeholder, **CUSTOM** rules. This is the **reference implementation** for realistic entailment when Jena is on the classpath.
-- **RDF4J** ([Rdf4jReasonerProvider](../../../rdf/providers/rdf4j-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/reasoning/Rdf4jReasonerProvider.kt)): optional alternative backend.
+- **Memory** ([MemoryReasonerProvider](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasonerProvider.kt)): **RDFS** rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9 and rdfs11 applied to a fixpoint (no axiomatic triples). Useful for tests and fast smoke checks; **not** full RDFS entailment or OWL.
+- **Jena** ([JenaReasonerProvider](../../../rdf/providers/jena-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider.kt)): **RDFS**, **OWL_RL** (Jena's OWL rule reasoner — close to, but not a complete implementation of, OWL 2 RL) and **CUSTOM** rules (requires `customRules`). `OWL_EL`, `OWL_QL` and `OWL_DL` are rejected. This is the **reference implementation** for realistic rule-based entailment when Jena is on the classpath.
+- **RDF4J** ([Rdf4jReasonerProvider](../../../rdf/providers/rdf4j-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/reasoning/Rdf4jReasonerProvider.kt)): **RDFS** only.
+- **HermiT** (`:rdf:reasoning-hermit`): **HERMIT** and **OWL_DL** (OWL 2 DL).
 
 ### Choosing a backend
 
-At runtime, `ReasonerRegistry.createReasoner(config)` picks **one** registered provider that declares support for the requested [ReasonerType](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig.kt). When **several** providers support the same type, selection is **not** guaranteed to be stable; callers that need **deterministic semantics** should **instantiate a concrete provider** (as onto-quality does for v0.4; see Part 2).
+At runtime, `ReasonerRegistry.createReasoner(config)` picks **one** registered provider that declares support for the requested [ReasonerType](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/ReasonerConfig.kt). When **several** providers support the same type, the highest `RdfReasonerProvider.priority()` wins (HermiT 100, Jena 50, RDF4J 40, memory −100), so selection is deterministic for a given classpath. Callers that need specific semantics regardless of the classpath should still **instantiate a concrete provider** (as onto-quality does for v0.4; see Part 2).
 
 ### Relation to SHACL validation
 
@@ -73,7 +74,7 @@ On **`check`** and **`pipeline`**:
 
 - `--reasoner none` (default) — no expansion.
 - `--reasoner rdfs` — RDFS materialization before SHACL.
-- `--reasoner owl-micro` — Jena OWL Micro (`ReasonerType.OWL_EL` binding).
+- `--reasoner owl-micro` — Jena OWL rule reasoner (`ReasonerType.OWL_RL` binding; not complete OWL 2 RL).
 - `--reasoner hermit` — HermiT-backed OWL 2 DL materialization (requires `:rdf:reasoning-hermit`); inconsistent ontologies fail quality checks via merged **K07** rows when pitfall metadata is present (included in **`QualityChecker.default()`** / CLI `--catalog all`).
 
 When a non-`none` profile is selected, the CLI logs the active reasoning profile name.
