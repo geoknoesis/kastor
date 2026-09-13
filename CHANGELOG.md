@@ -46,16 +46,29 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
 
 ### Fixed (audit remediation)
 
-<!-- rdf-core and kastor-gen entries pending -->
+<!-- kastor-gen entries pending -->
 
 #### Security
 
+- `rdf-core`: `Rdf.parseFromUrl`, `parseFromUrlAsync` and `parseDatasetFromUrl` load only `http`/`https` URLs by default (other schemes such as `file:` or `jar:` must be allowed through `UrlLoadOptions.allowedSchemes`) and cap response bodies at 64 MiB (`UrlLoadOptions.maxBytes`), failing with `RdfInputTooLargeException`.
 - `rdf-sparql-lang`: literals are always escaped when rendered (query injection fix). Variable names, aliases, prefixes, function names and `VERSION` values are validated against the SPARQL grammar.
 - `rdf-sparql`: only `http`/`https` endpoint URLs are accepted, and credentials are never printed by `SparqlEndpointConfig.toString()`.
 - `onto-quality-llm-koog`: ontology and finding text is sent to the model as escaped JSON data, and LLM output is Markdown-escaped in reports (no links, images or raw HTML).
 
 #### Breaking changes
 
+- **`rdf-core`:**
+  - `Rdf.parseFromUrl*` gained a trailing `options: UrlLoadOptions` parameter (source-compatible, binary-incompatible).
+  - `LangString`, `TrueLiteral` and `FalseLiteral` are no longer data classes (`LangString` keeps `copy` and `componentN`).
+  - `MemoryGraph`'s lock-sharing constructor is internal.
+  - Language tags are validated and normalised to lower case (`normalizeLanguageTag`).
+  - Boolean literals preserve their lexical form: only `"true"`/`"false"` map to `TrueLiteral`/`FalseLiteral`; use `Literal.booleanValue()` to interpret `"1"`/`"0"`.
+  - Temporal `toLiteral()` always includes seconds (`"10:15:00"`).
+  - DSL blank-node labels are opaque (`b_<run>_<n>`) and unique across DSL calls; the DSL `triples` property is read-only.
+  - The `memory` provider reports RDF 1.2 with triple terms.
+  - Provider selection orders by `RdfProvider.priority` (memory −100, RDF4J 40, Jena 50). An explicit `providerId` whose provider, variant or requirements do not match throws `IllegalArgumentException` instead of falling back.
+  - `Vocabularies.getTermsByPrefix` / `getTermsByNamespace` were removed.
+  - `MemoryRepository.getGraph` returns a live graph handle.
 - **`rdf-sparql-lang` AST:**
   - `AggregateExpressionAst.expression` is nullable (`COUNT(*)`) and gains `separator`.
   - `InsertDataOperationAst` / `DeleteDataOperationAst` gain `graphData`.
@@ -88,6 +101,15 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
 
 #### Fixed
 
+- **rdf-core:**
+  - Blank-node label collisions between separate DSL calls.
+  - `FROM`/`FROM NAMED` placement when querying datasets, so queries mixing the default graph and named graphs return correct results.
+  - A parse fallback that silently produced an empty graph.
+  - Orphaned named-graph handles in the memory repository.
+  - Literal lexical fidelity.
+  - Graph isomorphism on long RDF lists.
+  - `equivalentTo` for language-tagged literals.
+  - Quadratic CBD closure computation.
 - **SPARQL DSL:**
   - `LOAD <src> INTO GRAPH <g>` renders correctly.
   - `graph(g) { }` is supported in `INSERT DATA`, `DELETE DATA` and update templates.
@@ -143,6 +165,11 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
 
 #### Added
 
+- `rdf-core`:
+  - `UrlLoadOptions` and `RdfInputTooLargeException`.
+  - `RdfProvider.priority`, `RdfProvider.supportsInputFormat` and `supportsOutputFormat`.
+  - `Literal.booleanValue()` and `normalizeLanguageTag`.
+  - `TripleBuilderDsl`, the shared base of `GraphDsl` and `TripleDsl`.
 - `rdf-sparql-lang`: `countAll()`, `groupConcat(expr, separator)` and `UNDEF` in `VALUES`.
 - `rdf-sparql`:
   - `SparqlEndpointConfig` with custom headers, HTTP Basic auth (also from URL credentials), `GET` / form `POST` queries and a separate update URL.
