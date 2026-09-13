@@ -171,8 +171,8 @@ val isKnown = isKnownTerm(someIri)
 // Find vocabulary by prefix
 val foafVocab = findByPrefix("foaf")
 
-// Get all terms from a vocabulary
-val foafTerms = getTermsByPrefix("foaf")
+// Check whether an IRI belongs to a vocabulary
+val inFoaf = foafVocab?.contains(someIri)
 ```
 
 ## Detailed Usage Examples
@@ -416,16 +416,6 @@ object Vocabularies {
      * Check if a term belongs to any of the known vocabularies.
      */
     fun isKnownTerm(term: Iri): Boolean
-    
-    /**
-     * Get all terms from a specific vocabulary by prefix.
-     */
-    fun getTermsByPrefix(prefix: String): Map<String, Iri>?
-    
-    /**
-     * Get all terms from a specific vocabulary by namespace.
-     */
-    fun getTermsByNamespace(namespace: String): Map<String, Iri>?
 }
 ```
 
@@ -517,9 +507,9 @@ println("Loaded vocabularies: ${Vocabularies.all.map { it.prefix }}")
 val term = FOAF.name
 println("Term belongs to: ${Vocabularies.findVocabularyForTerm(term)?.prefix}")
 
-// List all terms in a vocabulary
-val foafTerms = Vocabularies.getTermsByPrefix("foaf")
-println("FOAF terms: ${foafTerms?.keys}")
+// Find a vocabulary by prefix or namespace
+val foaf = Vocabularies.findByPrefix("foaf")
+println("FOAF namespace: ${foaf?.namespace}")
 ```
 
 ## Migration Guide

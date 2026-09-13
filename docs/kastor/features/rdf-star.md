@@ -20,7 +20,7 @@ Support in Kastor includes:
 - **Query DSL**: `quotedTriple(...)` reified-triple patterns and `ReifierPatternAst` for bound reifiers (see [SPARQL fundamentals](../concepts/sparql-fundamentals.md))
 - **Provider capabilities**: `supportsTripleTerms` and `rdfVersion` on `ProviderCapabilities`
 
-Triple terms need an RDF 1.2 store: use the `jena` or `rdf4j` providers. The built-in `memory` provider is an RDF 1.1 graph store (`supportsTripleTerms = false`).
+All bundled stores hold triple terms (`supportsTripleTerms = true`): `jena`, `rdf4j` and the graph-only `memory` provider. Querying them with SPARQL needs `jena` or `rdf4j`, because the `memory` provider has no SPARQL engine.
 
 ## 🚀 Key Concepts
 
@@ -286,7 +286,7 @@ repo.add {
 
 ## 🎨 Best Practices
 
-1. **Choose an RDF 1.2 provider.** Check `supportsTripleTerms` and use `jena` or `rdf4j` for triple terms; the `memory` provider stores RDF 1.1 graphs only.
+1. **Choose a provider with SPARQL.** All bundled stores hold triple terms, but querying them needs `jena` or `rdf4j`; the `memory` provider is graph-only.
 2. **Assert explicitly.** A reifier does not assert its triple. Add the triple separately when it should be part of the data.
 3. **Use consistent metadata properties.** Attach all annotations of one statement to the same reifier, and prefer well-known vocabularies (for example PROV-O or Dublin Core terms).
 4. **Keep triple terms in object position.** RDF 1.2 forbids triple terms as subjects; use a reifier instead. See the [migration guide](../guides/migrating-to-rdf-1.2.md).

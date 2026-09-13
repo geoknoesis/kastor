@@ -147,7 +147,7 @@ Works with multiple RDF backends seamlessly
 
 ```kotlin
 // Provider-agnostic creation
-val repo = Rdf.memory() // Uses default provider
+val repo = Rdf.memory() // In-memory Jena (or RDF4J) repository
 
 // Explicit provider selection
 val jenaRepo = Rdf.repository {

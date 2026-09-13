@@ -105,12 +105,13 @@ provider.getCapabilities("memory").rdfVersion          // "1.2"
 provider.getCapabilities("memory").supportsTripleTerms // true
 
 val mem = MemoryRepositoryProvider()
-mem.getCapabilities("memory").rdfVersion               // "1.1"
-mem.getCapabilities("memory").supportsTripleTerms      // false
+mem.getCapabilities("memory").rdfVersion               // "1.2"
+mem.getCapabilities("memory").supportsTripleTerms      // true
 ```
 
-The bundled in-memory provider remains an RDF 1.1 graph store; for full RDF 1.2
-serialization, parsing, and SPARQL, use `:rdf:jena` or `:rdf:rdf4j`. RDF4J
+The bundled in-memory provider (`providerId = "memory"`) stores RDF 1.2 terms, including
+triple terms, but is graph-only: for parsing, serialization and SPARQL, use `:rdf:jena`
+or `:rdf:rdf4j`. RDF4J
 versions older than 5.2 may surface RDF 1.2 features through the legacy
 RDF-star APIs - the `Rdf4jTerms` bridge handles the fallback automatically.
 RDF4J 5.3.1 has no base-direction API. Kastor therefore stores `"x"@ar--rtl`

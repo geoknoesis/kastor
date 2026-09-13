@@ -25,9 +25,16 @@ Kastor uses a pluggable provider architecture that allows you to choose the best
 
 ## 🚀 Quick Provider Selection
 
+How a provider is chosen:
+
+- `Rdf.memory()` returns Jena's in-memory store when `rdf-jena` is on the classpath, otherwise RDF4J's, and throws `RdfProviderException` if neither is present. It never falls back to the graph-only `memory` provider.
+- `Rdf.repository { providerId = ...; variantId = ... }` uses exactly that provider and variant. An unknown provider, an unsupported variant or unmet `requirements` throw `IllegalArgumentException` instead of silently selecting another provider.
+- A configuration with `requirements` but no `providerId` picks the matching provider with the highest `RdfProvider.priority` (Jena 50, RDF4J 40, memory −100).
+- A configuration with neither uses the default provider (`memory` unless changed with `Rdf.setDefaultProvider`).
+
 ### **Development & Testing**
 ```kotlin
-val repo = Rdf.memory() // Fast, no setup required
+val repo = Rdf.memory() // In-memory Jena (or RDF4J) store
 ```
 
 ### **Production with Persistence**
@@ -162,7 +169,7 @@ val repositories = mapOf(
 Kastor follows the RDF 1.2 model: triple terms (`<<( s p o )>>`) appear only in object position, and statement metadata is attached to a reifier (`_:r rdf:reifies <<( s p o )>>`). See [RDF-star and triple terms](../features/rdf-star.md).
 
 ### **Supported Providers**
-- **Memory Provider**: ❌ RDF 1.1 graph store (`supportsTripleTerms = false`)
+- **Memory Provider**: ✅ RDF 1.2 triple terms (graph-only: no parsing, serialization or SPARQL)
 - **Jena Provider**: ✅ RDF 1.2 triple terms
 - **RDF4J Provider**: ✅ RDF 1.2 triple terms
 - **SPARQL Provider**: ❌ The HTTP adapter does not decode triple terms from results
