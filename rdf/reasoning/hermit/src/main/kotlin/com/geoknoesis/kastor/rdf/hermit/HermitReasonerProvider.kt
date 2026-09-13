@@ -10,7 +10,7 @@ import com.geoknoesis.kastor.rdf.reasoning.PerformanceProfile
 /**
  * Registers **HermiT** (OWL 2 DL) via **OWL API 4.x**, materializing inferred axioms as RDF triples.
  *
- * Only [ReasonerType.HERMIT] is supported here; use Jena/RDF4J providers for RDFS / OWL Micro.
+ * [ReasonerType.HERMIT] and [ReasonerType.OWL_DL] (HermiT is an OWL 2 DL reasoner) are supported here; use Jena/RDF4J providers for RDFS / OWL Micro.
  */
 class HermitReasonerProvider : RdfReasonerProvider {
 
@@ -20,16 +20,19 @@ class HermitReasonerProvider : RdfReasonerProvider {
 
     override val version: String = "1.4.5.x"
 
+    /** Preferred for the OWL 2 DL types it supports. */
+    override fun priority(): Int = 100
+
     override fun createReasoner(config: ReasonerConfig): RdfReasoner {
-        require(config.reasonerType == ReasonerType.HERMIT) {
-            "HermitReasonerProvider only supports ReasonerType.HERMIT, got ${config.reasonerType}"
+        require(isSupported(config.reasonerType)) {
+            "HermitReasonerProvider only supports ReasonerType.HERMIT and ReasonerType.OWL_DL, got ${config.reasonerType}"
         }
         return HermitRdfReasoner(config)
     }
 
     override fun getCapabilities(): ReasonerCapabilities =
         ReasonerCapabilities(
-            supportedTypes = setOf(ReasonerType.HERMIT),
+            supportedTypes = setOf(ReasonerType.HERMIT, ReasonerType.OWL_DL),
             supportsIncrementalReasoning = false,
             supportsCustomRules = false,
             supportsExplanation = false,
@@ -38,7 +41,7 @@ class HermitReasonerProvider : RdfReasonerProvider {
             typicalPerformance = PerformanceProfile.SLOW,
         )
 
-    override fun getSupportedTypes(): List<ReasonerType> = listOf(ReasonerType.HERMIT)
+    override fun getSupportedTypes(): List<ReasonerType> = listOf(ReasonerType.HERMIT, ReasonerType.OWL_DL)
 
-    override fun isSupported(type: ReasonerType): Boolean = type == ReasonerType.HERMIT
+    override fun isSupported(type: ReasonerType): Boolean = type == ReasonerType.HERMIT || type == ReasonerType.OWL_DL
 }
