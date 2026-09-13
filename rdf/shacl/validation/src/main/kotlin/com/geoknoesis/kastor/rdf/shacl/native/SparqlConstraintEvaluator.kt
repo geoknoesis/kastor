@@ -38,11 +38,21 @@ internal object SparqlConstraintEvaluator {
             false
         }
 
-    /** One provider repository per validation run, initialized only if a SPARQL constraint is evaluated. */
-    class Session(dataGraph: RdfGraph, shapesTriples: List<RdfTriple> = emptyList()) : AutoCloseable {
+    /** Default repository factory: an in-memory repository of a SPARQL-capable provider. */
+    val defaultRepositoryFactory: () -> RdfRepository = { Rdf.memory() }
+
+    /**
+     * One provider repository per validation run, initialized only if a SPARQL constraint is evaluated.
+     * [repositoryFactory] is an internal seam (tests simulate a classpath without a SPARQL provider).
+     */
+    class Session(
+        dataGraph: RdfGraph,
+        shapesTriples: List<RdfTriple> = emptyList(),
+        repositoryFactory: () -> RdfRepository = defaultRepositoryFactory,
+    ) : AutoCloseable {
         private val repo: RdfRepository =
             try {
-                Rdf.memory()
+                repositoryFactory()
             } catch (e: RdfProviderException) {
                 throw ShaclValidationException(MISSING_ENGINE, e)
             }

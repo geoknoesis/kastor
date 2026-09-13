@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.shacl.providers
 
+import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.shacl.PerformanceProfile
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidatorProvider
@@ -11,7 +12,19 @@ import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 /**
  * SPI provider for the Kastor native SHACL 1.2 Core engine (`getType()` = `kastor`).
  */
-class NativeShaclValidatorProvider : ShaclValidatorProvider {
+class NativeShaclValidatorProvider() : ShaclValidatorProvider {
+
+    /** Internal seam: whether a SPARQL engine for SHACL-SPARQL is available. */
+    private var sparqlEngineAvailable: () -> Boolean = SparqlConstraintEvaluator::engineAvailable
+
+    /** Internal seam: repository factory used by SHACL-SPARQL sessions. */
+    private var sparqlRepositoryFactory: () -> RdfRepository = SparqlConstraintEvaluator.defaultRepositoryFactory
+
+    /** Test seam: simulate the presence/absence of a SPARQL-capable provider without changing the classpath. */
+    internal constructor(sparqlEngineAvailable: () -> Boolean, sparqlRepositoryFactory: () -> RdfRepository) : this() {
+        this.sparqlEngineAvailable = sparqlEngineAvailable
+        this.sparqlRepositoryFactory = sparqlRepositoryFactory
+    }
 
     override fun priority(): Int = 10
 
@@ -21,7 +34,7 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
 
     override val version: String = "1.0.0"
 
-    override fun createValidator(config: ValidationConfig): ShaclValidator = NativeShaclValidator(config)
+    override fun createValidator(config: ValidationConfig): ShaclValidator = NativeShaclValidator(config, sparqlRepositoryFactory)
 
     /**
      * `supportsShaclSparql` (and the [ValidationProfile.SHACL_SPARQL] profile) reflect whether a SPARQL-capable
@@ -31,7 +44,7 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
     override fun getCapabilities(): ValidatorCapabilities =
         ValidatorCapabilities(
             supportsShaclCore = true,
-            supportsShaclSparql = SparqlConstraintEvaluator.engineAvailable(),
+            supportsShaclSparql = sparqlEngineAvailable(),
             supportsShaclJs = false,
             supportsShaclPy = false,
             supportsShaclDash = false,
@@ -48,7 +61,7 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
     override fun getSupportedProfiles(): List<ValidationProfile> =
         listOfNotNull(
             ValidationProfile.SHACL_CORE,
-            ValidationProfile.SHACL_SPARQL.takeIf { SparqlConstraintEvaluator.engineAvailable() },
+            ValidationProfile.SHACL_SPARQL.takeIf { sparqlEngineAvailable() },
             ValidationProfile.PERMISSIVE,
             ValidationProfile.STRICT,
         )
