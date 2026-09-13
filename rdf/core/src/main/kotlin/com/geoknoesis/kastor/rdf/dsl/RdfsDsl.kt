@@ -35,12 +35,7 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
  */
 class RdfsDsl {
     private val graphDsl = GraphDsl()
-    private var bnodeCounter = 0
-    
-    private fun nextBnode(prefix: String = "b"): BlankNode {
-        return bnode("${prefix}${++bnodeCounter}")
-    }
-    
+
     /**
      * Configure prefix mappings for QName resolution.
      */

@@ -12,11 +12,11 @@ import com.geoknoesis.kastor.rdf.vocab.DCAT
  * [DCAT](https://www.w3.org/TR/vocab-dcat/) catalog / dataset / distribution helpers for [TripleDsl] and [GraphDsl].
  */
 fun TripleDsl.dcat(block: DcatTripleBuilder.() -> Unit) {
-    DcatTripleBuilder(triples).apply(block)
+    DcatTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.dcat(block: DcatTripleBuilder.() -> Unit) {
-    DcatTripleBuilder(triples).apply(block)
+    DcatTripleBuilder(tripleSink).apply(block)
 }
 
 class DcatTripleBuilder(private val out: MutableList<RdfTriple>) {

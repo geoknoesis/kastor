@@ -2,6 +2,8 @@ package com.geoknoesis.kastor.rdf
 
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -137,35 +139,31 @@ class RdfCoreCoverageTest {
         val repository = CapturingQueryRepository()
         val graph1 = Iri("http://example.org/g1")
         val graph2 = Iri("http://example.org/g2")
-        val union = OptimizedUnionGraph(repository, listOf(null, graph1, graph2))
-
-        assertTrue(union.hasTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), string("o"))))
+        val union = OptimizedUnionGraph(repository, listOf(graph1, graph2))
 
         val triples = union.getTriples()
         assertEquals(1, triples.size)
-        assertNotNull(repository.lastAsk)
         assertNotNull(repository.lastSelect)
 
         val selectText = repository.lastSelect?.sparql ?: error("Expected select to be captured")
         assertTrue(selectText.contains("FROM <http://example.org/g1>"))
         assertTrue(selectText.contains("FROM <http://example.org/g2>"))
+        assertTrue(selectText.contains("SELECT ?s ?p ?o") && selectText.contains("WHERE"))
     }
 
     @Test
-    fun `OptimizedUnionGraph formats blank nodes in ASK and SELECT`() {
+    fun `OptimizedUnionGraph hasTriple uses the graph API rather than ASK text`() {
         val repository = CapturingQueryRepository()
-        val union = OptimizedUnionGraph(repository, listOf(null))
+        val graph1 = Iri("http://example.org/g1")
         val blank = BlankNode("b1")
+        val p = Iri("http://example.org/p")
+        repository.editGraph(graph1).addTriple(RdfTriple(blank, p, string("o")))
+        val union = OptimizedUnionGraph(repository, listOf(graph1))
 
-        union.hasTriple(RdfTriple(blank, Iri("http://example.org/p"), string("o")))
-        union.getTriples()
-
-        val askText = repository.lastAsk?.sparql ?: error("Expected ask to be captured")
-        val selectText = repository.lastSelect?.sparql ?: error("Expected select to be captured")
-
-        assertTrue(askText.contains("_:b1"))
-        assertTrue(askText.contains("ASK") && askText.contains("WHERE"))
-        assertTrue(selectText.contains("SELECT ?s ?p ?o") && selectText.contains("WHERE"))
+        // An ASK with `_:b1` would treat the blank node as a variable and match anything.
+        assertTrue(union.hasTriple(RdfTriple(blank, p, string("o"))))
+        assertFalse(union.hasTriple(RdfTriple(BlankNode("other"), p, string("o"))))
+        assertNull(repository.lastAsk)
     }
 
     private class CapturingQueryRepository(

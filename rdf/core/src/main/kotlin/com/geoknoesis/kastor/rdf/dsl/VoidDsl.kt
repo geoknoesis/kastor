@@ -10,11 +10,11 @@ import com.geoknoesis.kastor.rdf.vocab.VOID
  * [VoID](https://www.w3.org/TR/void/) dataset description helpers for [TripleDsl] and [GraphDsl].
  */
 fun TripleDsl.voidMeta(block: VoidTripleBuilder.() -> Unit) {
-    VoidTripleBuilder(triples).apply(block)
+    VoidTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.voidMeta(block: VoidTripleBuilder.() -> Unit) {
-    VoidTripleBuilder(triples).apply(block)
+    VoidTripleBuilder(tripleSink).apply(block)
 }
 
 class VoidTripleBuilder(private val out: MutableList<RdfTriple>) {

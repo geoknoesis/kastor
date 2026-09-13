@@ -72,24 +72,24 @@ inline fun <T> RdfRepository.selectResult(
  * 
  * Two terms are equivalent if they are of the same type and have the same value:
  * - Two IRIs are equivalent if their string values are equal
- * - Two Literals are equivalent if their lexical values and datatypes are equal
+ * - Two Literals are equivalent if their lexical values and datatypes are equal and, for
+ *   language-tagged strings, their (case-normalised) language tags and base directions are equal
  * - Two BlankNodes are equivalent if their IDs are equal
  * - Two TripleTerms are equivalent if their embedded triples are equivalent
- * 
+ *
  * **Example:**
  * ```kotlin
  * val term1 = Iri("http://example.org/person")
  * val term2 = Iri("http://example.org/person")
  * assertTrue(term1 equivalentTo term2)
  * ```
- * 
+ *
  * @param other The other RDF term to compare
  * @return true if the terms are equivalent, false otherwise
  */
 infix fun RdfTerm.equivalentTo(other: RdfTerm): Boolean = when {
     this is Iri && other is Iri -> value == other.value
-    this is Literal && other is Literal -> 
-        lexical == other.lexical && datatype == other.datatype
+    this is Literal && other is Literal -> this == other
     this is BlankNode && other is BlankNode -> id == other.id
     this is TripleTerm && other is TripleTerm -> 
         triple.subject equivalentTo other.triple.subject &&
@@ -187,10 +187,12 @@ fun RdfRepository.getTriplesSequence(graphName: Iri? = null): Sequence<RdfTriple
  * 
  * CBD includes:
  * 1. All triples where the resource is the subject (direct properties)
- * 2. Recursively, for any blank node object, all triples where that blank node is the subject
- * 
- * This follows the standard CBD definition where blank nodes are followed recursively
- * to get complete anonymous resource descriptions, but IRIs are not followed.
+ * 2. Transitively, for any blank node object - including blank nodes nested inside triple terms -
+ *    all triples where that blank node is the subject
+ *
+ * This follows the standard CBD definition where blank nodes are followed to get complete
+ * anonymous resource descriptions, but IRIs are not followed. Traversal is iterative and uses
+ * subject lookups ([RdfGraph.find]), so indexed graphs never scan all triples.
  * 
  * **Example:**
  * ```kotlin
@@ -210,30 +212,27 @@ fun RdfRepository.getTriplesSequence(graphName: Iri? = null): Sequence<RdfTriple
  * @return Set of all triples in the CBD closure
  */
 fun RdfGraph.getCbdClosure(resource: RdfResource): Set<RdfTriple> {
-    val visited = mutableSetOf<RdfResource>()
-    val result = mutableSetOf<RdfTriple>()
-    
-    fun collectCbd(resource: RdfResource) {
-        // Skip if already visited (prevent cycles)
-        if (resource in visited) return
-        visited.add(resource)
-        
-        // Get all triples where this resource is the subject (direct properties)
-        val directTriples = getTriplesSequence()
-            .filter { it.subject == resource }
-            .toSet()
-        
-        result.addAll(directTriples)
-        
-        // For each triple, if the object is a blank node, recursively collect its CBD
-        directTriples.forEach { triple ->
-            if (triple.obj is BlankNode) {
-                collectCbd(triple.obj as BlankNode)
+    val result = LinkedHashSet<RdfTriple>()
+    val visited = HashSet<RdfResource>()
+    val pending = ArrayDeque<RdfResource>()
+    val terms = ArrayDeque<RdfTerm>()
+    visited.add(resource)
+    pending.add(resource)
+
+    while (pending.isNotEmpty()) {
+        for (triple in find(subject = pending.removeFirst())) {
+            if (!result.add(triple)) continue
+            // Queue every unvisited blank node in the object, looking inside (nested) triple terms.
+            terms.add(triple.obj)
+            while (terms.isNotEmpty()) {
+                when (val term = terms.removeLast()) {
+                    is BlankNode -> if (visited.add(term)) pending.add(term)
+                    is TripleTerm -> { terms.add(term.triple.subject); terms.add(term.triple.obj) }
+                    else -> Unit
+                }
             }
         }
     }
-    
-    collectCbd(resource)
     return result
 }
 
