@@ -1,6 +1,6 @@
 **Kastor review remediation — 12 September 2026**
 
-This records changes against the 33 findings in [the original review](KASTOR_CODE_REVIEW.md). That review's 48/100 score describes the original commit, not this working tree. The release contract, supported limits, migration notes, and repeatable verification commands are in [release-contract.md](docs/reference/release-contract.md).
+This records changes against the 33 findings in [the original review](KASTOR_CODE_REVIEW.md). That review's 48/100 score describes the original commit, not this working tree. The release contract, supported limits, migration notes, and repeatable verification commands are in [release-contract.md](../../../docs/reference/release-contract.md).
 
 | Findings | Implemented correction | Regression coverage |
 |---|---|---|

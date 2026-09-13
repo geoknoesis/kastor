@@ -218,10 +218,12 @@ Both modes register in `OntoMapper` so **`graph.materialize<CatalogRecord>(node)
 
 ### 1. Add Dependencies
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.2.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+    ksp("com.geoknoesis.kastor:kastor-gen-processor:0.3.0-SNAPSHOT")
 }
 ```
 

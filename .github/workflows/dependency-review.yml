@@ -1,4 +1,4 @@
-# Flags vulnerable dependencies introduced on pull requests (GitHub Dependency graph).
+# Flags vulnerable dependencies introduced on pull requests.
 name: Dependency review
 
 on:
@@ -13,24 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
-      - name: Audit all pinned dependency versions
-        run: python scripts/audit-dependencies.py
+      - name: Audit locked dependency versions introduced by this PR
+        # Advisories on coordinates already locked on the base branch are reported, not blocking;
+        # the scheduled/manual release-readiness audit still fails on every known advisory.
+        run: python scripts/audit-dependencies.py --baseline-ref "origin/${{ github.base_ref }}"
 
       - name: Scan credential patterns without exposing matches
         run: python scripts/audit-secrets.py
 
       - name: Retain redacted audit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dependency-and-credential-audit
           path: build/review/*audit.json
 
       - name: Dependency review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate

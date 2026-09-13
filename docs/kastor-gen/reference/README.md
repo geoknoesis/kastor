@@ -103,7 +103,7 @@ RDF4J-based SHACL validation adapter.
 ## Version Compatibility
 
 - Kotlin: 1.9.24+
-- JDK: 17+
+- JDK: 21+
 - KSP: 1.9.24-1.0.20+
 
 ## Getting Started

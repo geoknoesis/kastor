@@ -97,15 +97,17 @@ fun createMemoryRepository(): RdfRepository {
 
 | Kastor Version | Minimum Kotlin | Recommended Kotlin | Notes |
 |----------------|----------------|-------------------|-------|
-| 0.1.x          | 1.9+           | 2.3.x             | Initial release |
+| 0.1.x          | 1.9+           | 2.3.x             | Initial release (historical) |
+| 0.3.x          | 2.4.20         | 2.4.20            | Current (`0.3.0-SNAPSHOT`); KSP 2.3.12 |
 | 1.0.x          | 2.0+           | 2.3.x+            | Stable release (planned) |
 
 ### Java Version Compatibility
 
 | Kastor Version | Minimum Java | Recommended Java | Notes |
 |----------------|--------------|------------------|-------|
-| 0.1.x          | 17+          | 17+              | JVM target: 17 |
-| 1.0.x          | 17+          | 21+              | JVM target: 17+ (planned) |
+| 0.1.x          | 17+          | 17+              | JVM target: 17 (historical) |
+| 0.3.x          | 21+          | 21+              | JVM target: 21 (current, `0.3.0-SNAPSHOT`) |
+| 1.0.x          | 21+          | 21+              | JVM target: 21 (planned) |
 
 ### Provider Compatibility
 

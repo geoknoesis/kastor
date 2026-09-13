@@ -6,10 +6,12 @@ This tutorial will walk you through creating your first Kastor Gen application s
 > **90% less manual code**, **100% consistency** with your ontology, **compile-time type safety**. 
 > [See detailed benefits →](../getting-started/benefits.md)
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ## Prerequisites
 
-- Kotlin 1.9.24+
-- JDK 17+
+- Kotlin 2.4.20+
+- JDK 21+
 - Basic understanding of Kotlin
 - Familiarity with RDF concepts (helpful but not required)
 
@@ -21,8 +23,8 @@ Add Kastor Gen dependencies to your `build.gradle.kts`:
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "1.9.24"
-    id("com.google.devtools.ksp") version "1.9.24-1.0.20"
+    kotlin("jvm") version "2.4.20"
+    id("com.google.devtools.ksp") version "2.3.12"
 }
 
 dependencies {

@@ -11,8 +11,8 @@
 
 ## Prerequisites
 
-- Dependencies on **`rdf-core`** plus the provider artifacts you actually use (for example **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**), aligned at **`0.2.0`** or via the BOM ([Installation](../getting-started/installation.md)).
-- If you use the Kotlin **`select { }`** SPARQL DSL or anything under **`com.geoknoesis.kastor.rdf.sparql`**, add **`sparql-lang`** (`com.geoknoesis.kastor:sparql-lang`). For **`shacl {}`** / **`Rdf.shacl`**, add **`rdf-shacl-dsl`** — see [Repository architecture — Dependency profiles](../concepts/architecture.md#dependency-profiles-gradle).
+- Dependencies on **`rdf-core`** plus the provider artifacts you actually use (for example **`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**), aligned at **`0.3.0-SNAPSHOT`** or via the BOM ([Installation](../getting-started/installation.md)).
+- If you use the Kotlin **`select { }`** SPARQL DSL or anything under **`com.geoknoesis.kastor.rdf.sparql`**, add **`rdf-sparql-lang`** (`com.geoknoesis.kastor:rdf-sparql-lang`). For **`shacl {}`** / **`Rdf.shacl`**, add **`rdf-shacl-dsl`** — see [Repository architecture — Dependency profiles](../concepts/architecture.md#dependency-profiles-gradle).
 
 ## Steps
 
@@ -115,7 +115,7 @@ ReasonerRegistry.register(JenaReasonerProvider())
 ValidatorRegistry.register(NativeShaclValidatorProvider())
 ```
 
-Only depend on **`reasoning`**, **`shacl-validation`**, **`jena-reasoning`** (for `JenaReasonerProvider`), and bridge modules that ship these classes when you need them.
+Only depend on **`rdf-reasoning`**, **`rdf-shacl-validation`**, **`rdf-jena-reasoning`** (for `JenaReasonerProvider`), and bridge modules that ship these classes when you need them.
 
 ### Step 6: ProGuard / R8 (Android)
 

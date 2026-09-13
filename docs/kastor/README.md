@@ -56,12 +56,14 @@ For a deeper explanation, see the [Design Philosophy](philosophy.md) page.
 
 ### 5-Minute Setup
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ```kotlin
 // Add to your build.gradle.kts
 dependencies {
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-jena:0.2.0") // or rdf-rdf4j
-    // Optional: Kotlin `select {}` → sparql-lang; `shacl {}` / Rdf.shacl → rdf-shacl-dsl
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-jena:0.3.0-SNAPSHOT") // or rdf-rdf4j
+    // Optional: Kotlin `select {}` → rdf-sparql-lang; `shacl {}` / Rdf.shacl → rdf-shacl-dsl
 }
 ```
 
@@ -125,7 +127,7 @@ The documentation is organized into four distinct pillars:
 - **[Reasoning](features/reasoning.md)** - RDFS, OWL inference capabilities
 - **[SHACL Validation](features/shacl-validation.md)** - Data validation and constraints (SHACL 1.2 support)
 - **[Ontology Quality](features/ontology-quality.md)** - Ontology pitfall checks with bundled SHACL catalogues and semantic (embedding) tier (`:tools:onto-quality`)
-- **[RDF-star Support](api/compact-dsl-guide.md#rdf-star-support)** - Metadata about statements
+- **[RDF 1.2 Triple Terms](features/rdf-star.md)** - Statements about statements via triple terms and `rdf:reifies` (replaces RDF-star since 0.2.0)
 
 ### **Guides**
 - **[Provider Overview](providers/README.md)** - Available backends comparison

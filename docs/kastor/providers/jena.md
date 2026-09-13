@@ -10,7 +10,7 @@ The enhanced Jena implementation provides:
 - **TDB2 Persistence**: High-performance persistent storage
 - **Transaction Management**: Built-in transaction support
 - **Inference Capabilities**: RDFS and OWL inference
-- **RDF-star Support**: Embedded triples support
+- **RDF 1.2 Triple Terms**: Triple terms and `rdf:reifies` support
 - **Repository Manager Integration**: Works seamlessly with the RepositoryManager
 
 ### Version alignment
@@ -231,7 +231,7 @@ The enhanced Jena implementation supports:
 - ✅ **Rule-based Inference**: Custom rule support
 - ✅ **Forward Chaining**: Forward chaining inference
 - ✅ **SHACL Validation**: SHACL constraint validation
-- ✅ **RDF-star**: Embedded triples support
+- ✅ **RDF 1.2 triple terms**: Triple terms and `rdf:reifies` support
 
 ## Performance Considerations
 

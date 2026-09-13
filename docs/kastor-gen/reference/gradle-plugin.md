@@ -24,6 +24,8 @@ com.geoknoesis.kastor.gen
 
 ## Installation
 
+> **Not yet on Maven Central.** Kastor artifacts are not published yet. Build from source and install locally with `./gradlew publishToMavenLocal` (then add `mavenLocal()` to your repositories), or include the Kastor checkout as a Gradle composite build (`includeBuild("../kastor")`). The version shown (`0.3.0-SNAPSHOT`) is defined once in the root `gradle.properties`.
+
 ### Plugin DSL (Recommended)
 
 ```kotlin
@@ -37,8 +39,8 @@ pluginManagement {
 
 // build.gradle.kts
 plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
+    id("org.jetbrains.kotlin.jvm") version "2.4.20"
+    id("com.geoknoesis.kastor.gen") version "0.3.0-SNAPSHOT"
 }
 ```
 
@@ -52,7 +54,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("com.geoknoesis.kastor:kastor-gen-gradle-plugin:0.2.0")
+        classpath("com.geoknoesis.kastor:kastor-gen-gradle-plugin:0.3.0-SNAPSHOT")
     }
 }
 
@@ -320,12 +322,12 @@ See [Incremental Builds Guide](../guides/incremental-builds.md) for detailed inf
 // build.gradle.kts
 plugins {
     id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
+    id("com.geoknoesis.kastor.gen") version "0.3.0-SNAPSHOT"
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.3.0-SNAPSHOT")
+    implementation("com.geoknoesis.kastor:rdf-core:0.3.0-SNAPSHOT")
 }
 
 kastorGen {

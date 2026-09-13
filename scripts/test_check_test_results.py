@@ -1,4 +1,5 @@
 """Regression tests for the release test-report gate (no JVM required)."""
+import json
 import subprocess
 import sys
 import tempfile
@@ -28,10 +29,16 @@ class TestReportGate(unittest.TestCase):
                 ET.SubElement(case, "failure")
         ET.ElementTree(suite).write(self.directory / f"TEST-{name}.xml", encoding="utf-8")
 
-    def run_gate(self):
+    def run_gate(self, *extra):
         return subprocess.run([sys.executable, str(ROOT / "scripts/check-test-results.py"),
-                               str(self.directory), "--minimum", "13", "--require-suite", "NativeSuite"],
+                               str(self.directory), "--minimum", "13", "--require-suite", "NativeSuite", *extra],
                               capture_output=True, text=True)
+
+    def allowlist(self, *entries):
+        path = self.directory / "allowlist.json"
+        path.write_text(json.dumps({"entries": [{"class": c, "test": t, "count": n} for c, t, n in entries]}),
+                        encoding="utf-8")
+        return str(path)
 
     def test_valid_native_and_ordinary_results_pass(self):
         self.report("OrdinarySuite", 12)
@@ -59,6 +66,41 @@ class TestReportGate(unittest.TestCase):
     def test_failed_case_fails(self):
         self.report("NativeSuite", 13, failed=1)
         self.assertNotEqual(0, self.run_gate().returncode)
+
+    def test_allowlisted_skip_passes(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "0", 1)))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_unlisted_skip_fails(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "other", 1)))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("OrdinarySuite > 0", result.stderr)
+
+    def test_skip_count_above_allowance_fails(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("DuplicateSuite", 1, skipped=1)
+        (self.directory / "TEST-DuplicateSuite.xml").rename(self.directory / "TEST-DuplicateSuite-copy.xml")
+        self.report("DuplicateSuite", 1, skipped=1)
+        self.report("NativeSuite", 1)
+        allowlist = self.allowlist(("OrdinarySuite", "0", 1), ("DuplicateSuite", "0", 1))
+        self.assertNotEqual(0, self.run_gate("--skip-allowlist", allowlist).returncode)
+
+    def test_allowlisted_test_that_now_runs_is_reported_not_failed(self):
+        self.report("OrdinarySuite", 12)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "3", 1)))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("now execute", result.stdout)
+
+    def test_committed_allowlist_is_well_formed(self):
+        document = json.loads((ROOT / "scripts/test-skip-allowlist.json").read_text(encoding="utf-8"))
+        keys = [(e["class"], e["test"]) for e in document["entries"]]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertTrue(all(int(e["count"]) >= 1 for e in document["entries"]))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ Write **`select { … }`** (and related DSL) queries using **`var`**, triple pat
 
 ## Prerequisites
 
-Add **`sparql-lang`** to Gradle or Maven (`com.geoknoesis.kastor:sparql-lang`, version aligned with **`rdf-core`** or via the [Kastor BOM](../getting-started/installation.md)). The **`select {}`** builders and **`com.geoknoesis.kastor.rdf.sparql`** package are **not** part of **`rdf-core`** alone ([architecture](../concepts/architecture.md)).
+Add **`rdf-sparql-lang`** to Gradle or Maven (`com.geoknoesis.kastor:rdf-sparql-lang`, version aligned with **`rdf-core`** or via the [Kastor BOM](../getting-started/installation.md)). The **`select {}`** builders and **`com.geoknoesis.kastor.rdf.sparql`** package are **not** part of **`rdf-core`** alone ([architecture](../concepts/architecture.md)).
 
 ## Introduction
 

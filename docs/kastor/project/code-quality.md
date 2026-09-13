@@ -15,7 +15,7 @@ description: How Kastor measures and protects quality—automated tests, W3C con
 |-------|-----------|------|
 | **Unit / integration** | `./gradlew test -x :rdf:conformance:test` (default CI) | Module tests across `rdf/*`, `kastor-gen`, `tools`, `examples` as applicable. |
 | **RDF 1.2 smoke** | `conformanceSmokeTest` | Fast harness check without the full W3C corpus checkout. |
-| **Full RDF 1.2 syntax suites** | `:rdf:conformance:test` with submodule | Large corpus; weekly/manual workflow and local runs per [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md). |
+| **Full RDF 1.2 syntax suites** | `:rdf:conformance:test` after `python scripts/fetch-conformance-data.py` | Large corpus; weekly/manual workflow and local runs per [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md). |
 | **SHACL** | `:rdf:shacl-validation:test` | Always runs a bundled W3C subset; extended upstream tree optional locally. |
 
 Failure of these tasks on `main` is treated as a **release blocker** for anything that claims standards compliance in the same area.

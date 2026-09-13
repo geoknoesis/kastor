@@ -10,9 +10,9 @@
 
 ## Prerequisites
 
-- **`rdf-core`** plus any provider artifacts you reference (**`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**, …) at **`0.2.0`** or via the BOM.
-- **`sparql-lang`** when you use Kotlin **`select {}`** SPARQL builders ([architecture](../concepts/architecture.md#dependency-profiles-gradle)).
-- **`shacl-dsl`** (`rdf-shacl-dsl`) when you use the **`shacl {}`** shapes DSL or **`Rdf.shacl`** (pulls **`sparql-lang`** transitively).
+- **`rdf-core`** plus any provider artifacts you reference (**`rdf-jena`**, **`rdf-rdf4j`**, **`rdf-sparql`**, …) at **`0.3.0-SNAPSHOT`** or via the BOM.
+- **`rdf-sparql-lang`** when you use Kotlin **`select {}`** SPARQL builders ([architecture](../concepts/architecture.md#dependency-profiles-gradle)).
+- **`shacl-dsl`** (`rdf-shacl-dsl`) when you use the **`shacl {}`** shapes DSL or **`Rdf.shacl`** (pulls **`rdf-sparql-lang`** transitively).
 
 ## Recipes
 

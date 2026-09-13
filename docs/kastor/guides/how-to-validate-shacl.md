@@ -10,11 +10,11 @@ You have **data** and **SHACL shapes** as RDF graphs and need a **validation rep
 
 ## Prerequisites
 
-Add **`com.geoknoesis.kastor:shacl-validation`** (in this monorepo: **`project(":rdf:shacl-validation")`**) aligned with your other Kastor artifacts (`0.2.0` at time of writing):
+Add **`com.geoknoesis.kastor:rdf-shacl-validation`** (in this monorepo: **`project(":rdf:shacl-validation")`**) aligned with your other Kastor artifacts:
 
 ```kotlin
 dependencies {
-    implementation("com.geoknoesis.kastor:shacl-validation:0.2.0")
+    implementation("com.geoknoesis.kastor:rdf-shacl-validation:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -109,7 +109,7 @@ Property 'http://xmlns.com/foaf/0.1/age' has 0 values, but minimum is 1
 
 ## Troubleshooting
 
-- **Classpath / missing validator** — ensure `shacl-validation` plus `rdf-core` and a provider are dependencies.
+- **Classpath / missing validator** — ensure `rdf-shacl-validation` plus `rdf-core` and a provider are dependencies.
 - **Unexpected conformance** — check **targets** (`sh:targetClass`, focus nodes) against your instance IRIs; see [SHACL feature](../features/shacl-validation.md).
 
 Prefer the [SHACL DSL](../api/shacl-dsl-guide.md) over hand-authored constraint triples for maintainability.

@@ -1,4 +1,5 @@
 """Validate staged POM metadata and source/documentation artifacts before consumer testing."""
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -6,6 +7,8 @@ from zipfile import ZipFile
 
 repository = Path(sys.argv[1] if len(sys.argv) > 1 else "build/release-repository")
 ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+# Artifact naming scheme for the com.geoknoesis.kastor group (plugin markers use their own group).
+ARTIFACT_ID = re.compile(r"rdf-[a-z0-9-]+|kastor-bom|kastor-gen-[a-z0-9-]+|onto-quality(-[a-z0-9-]+)?")
 poms = list(repository.rglob("*.pom"))
 if not poms:
     raise SystemExit("No staged publications found")
@@ -17,6 +20,10 @@ for pom in poms:
         query = "/".join(f"m:{part}" for part in field.split("/"))
         if not root.findtext(query, "", ns).strip():
             raise SystemExit(f"{pom}: missing or empty {field}")
+    if (root.findtext("m:groupId", "", ns).strip() == "com.geoknoesis.kastor"
+            and not ARTIFACT_ID.fullmatch(root.findtext("m:artifactId", "", ns).strip())):
+        raise SystemExit(f"{pom}: artifactId breaks the naming scheme "
+                         "(rdf-*, kastor-bom, kastor-gen-*, onto-quality[-*])")
     if root.findtext("m:packaging", "jar", ns) == "pom":
         continue
     for classifier in ("binary", "sources", "javadoc"):

@@ -12,7 +12,7 @@ Kastor provides comprehensive support for SPARQL 1.2, the latest version of the 
 
 SPARQL 1.2 introduces several significant enhancements over SPARQL 1.1:
 
-- **RDF-star Support**: Representing metadata about statements
+- **RDF 1.2 Triple Terms**: Representing metadata about statements via triple terms and `rdf:reifies`
 - **Enhanced String Functions**: More powerful text manipulation
 - **Language and Direction Functions**: Better internationalization support
 - **Date/Time Functions**: Improved temporal data handling

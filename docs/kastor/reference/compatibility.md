@@ -12,8 +12,8 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 | Platform | Minimum Version | Recommended Version | Status |
 |----------|----------------|---------------------|--------|
-| Java     | 17             | 17+                 | ✅ Supported |
-| Kotlin/JVM | 1.9+        | 2.0+                | ✅ Supported |
+| Java     | 21             | 21+                 | ✅ Supported |
+| Kotlin/JVM | 2.4.20      | 2.4.20+             | ✅ Supported |
 
 ### Android
 
@@ -38,7 +38,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Kotlin     | 2.3.21  | Language runtime (repo build; align with your toolchain) |
+| Kotlin     | 2.4.20  | Language runtime (repo build; KSP 2.3.12; align with your toolchain) |
 | SLF4J      | 2.0.13  | Logging framework |
 | JUnit 5   | 5.10.3  | Testing framework |
 
@@ -93,7 +93,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 | TDB2 Store | ✅ | ✅ | ✅ | Full support |
 | SPARQL Queries | ✅ | ✅ | ✅ | Full support |
 | Transactions | ✅ | ✅ | ✅ | Full support |
-| SHACL Validation | ✅ | ✅ | ✅ | Via shacl-validation module |
+| SHACL Validation | ✅ | ✅ | ✅ | Via rdf-shacl-validation module |
 
 ### RDF4J Provider
 
@@ -103,7 +103,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 | Native Store | ✅ | ✅ | ✅ | Full support |
 | SPARQL Queries | ✅ | ✅ | ✅ | Full support |
 | Transactions | ✅ | ✅ | ✅ | Full support |
-| SHACL Validation | ✅ | ✅ | ✅ | Via shacl-validation module |
+| SHACL Validation | ✅ | ✅ | ✅ | Via rdf-shacl-validation module |
 
 ### SPARQL Provider
 
@@ -132,7 +132,8 @@ Kastor uses the following Kotlin features:
 
 | Kastor Version | Minimum Kotlin | Recommended Kotlin | Breaking Changes |
 |----------------|----------------|-------------------|-----------------|
-| 0.1.x          | 1.9+           | 2.3.x             | None |
+| 0.1.x          | 1.9+           | 2.3.x             | None (historical) |
+| 0.3.x (current, `0.3.0-SNAPSHOT`) | 2.4.20 | 2.4.20 (KSP 2.3.12) | See release notes |
 | 1.0.x (planned) | 2.0+          | 2.3.x+            | TBD |
 
 ## Java Version Compatibility
@@ -150,8 +151,9 @@ Kastor uses the following Java features:
 
 | Kastor Version | Minimum Java | Recommended Java | JVM Target |
 |----------------|--------------|-------------------|------------|
-| 0.1.x          | 17           | 17+                | 17 |
-| 1.0.x (planned) | 17           | 21+                | 17+ |
+| 0.1.x          | 17           | 17+                | 17 (historical) |
+| 0.3.x (current, `0.3.0-SNAPSHOT`) | 21 | 21+          | 21 |
+| 1.0.x (planned) | 21           | 21+                | 21 |
 
 ## Build Tool Compatibility
 
@@ -213,7 +215,7 @@ Kastor uses the following Java features:
 | Framework | Version | Status |
 |-----------|---------|--------|
 | JUnit 5   | 5.10.3  | ✅ Supported |
-| Kotlin Test | 2.3.21 | ✅ Supported |
+| Kotlin Test | 2.4.20 | ✅ Supported |
 | Mockito   | N/A     | Not used |
 
 ### Test Runners

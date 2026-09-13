@@ -223,10 +223,10 @@ data class ReasonerCapabilities(
 The framework uses Java ServiceLoader for automatic discovery of reasoner providers:
 
 - **Core Module**: `MemoryReasonerProvider` (always available)
-- **`jena-reasoning` artifact**: `JenaReasonerProvider` (SPI + direct import)
-- **`rdf4j-reasoning` artifact**: `Rdf4jReasonerProvider` (SPI + direct import)
+- **`rdf-jena-reasoning` artifact**: `JenaReasonerProvider` (SPI + direct import)
+- **`rdf-rdf4j-reasoning` artifact**: `Rdf4jReasonerProvider` (SPI + direct import)
 
-Add **`com.geoknoesis.kastor:jena-reasoning`** / **`com.geoknoesis.kastor:rdf4j-reasoning`** alongside **`com.geoknoesis.kastor:rdf-jena`** / **`rdf-rdf4j`** when you need those providers; they are **not** transitive from the store adapters.
+Add **`com.geoknoesis.kastor:rdf-jena-reasoning`** / **`com.geoknoesis.kastor:rdf-rdf4j-reasoning`** alongside **`com.geoknoesis.kastor:rdf-jena`** / **`rdf-rdf4j`** when you need those providers; they are **not** transitive from the store adapters.
 
 ## 📊 **Performance Considerations**
 
@@ -291,7 +291,7 @@ To add reasoning to existing Kastor applications:
    implementation(project(":rdf:rdf4j-reasoning")) // RDF4J-backed RdfReasonerProvider
    ```
 
-   For Maven coordinates, use the [**kastor-bom**](https://github.com/geoknoesis/kastor/blob/main/bom/build.gradle.kts); optional reasoners are published as **`jena-reasoning`** and **`rdf4j-reasoning`**.
+   For Maven coordinates, use the [**kastor-bom**](https://github.com/geoknoesis/kastor/blob/main/bom/build.gradle.kts); optional reasoners are published as **`rdf-jena-reasoning`** and **`rdf-rdf4j-reasoning`**.
 
 2. **Use Reasoning**:
    ```kotlin

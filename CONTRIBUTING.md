@@ -4,8 +4,9 @@ Thank you for your interest in improving Kastor. This document explains how to b
 
 ## Prerequisites
 
-- **JDK 17** (Gradle uses the JVM toolchain from the build scripts)
-- No extra global tools are required beyond a recent **Gradle** wrapper (`./gradlew` / `gradlew.bat`)
+- **JDK 21+** installed locally. The build uses a JDK 21 toolchain and never downloads JDKs (`org.gradle.java.installations.auto-download=false`).
+- Python 3.10+ for the verification scripts under [`scripts/`](scripts/).
+- No global Gradle install is needed; use the wrapper (`./gradlew` / `gradlew.bat`).
 
 **Repo layout:** see [**Repository architecture**](docs/kastor/concepts/architecture.md) (modules, layers, Gradle targets) and [**Physical repository layout**](docs/kastor/concepts/architecture.md#physical-repository-layout) (on-disk grouping vs `:module:` paths).
 
@@ -14,56 +15,95 @@ Thank you for your interest in improving Kastor. This document explains how to b
 From the repository root:
 
 ```bash
-./gradlew test -x :rdf:conformance:test
+./gradlew check -x :rdf:conformance:test
 ./gradlew conformanceSmokeTest
 ```
 
-- **`test`** — all modules except the heavy RDF 1.2 corpus (`:rdf:conformance:test` is excluded from this aggregate run).
-- **`conformanceSmokeTest`** — fast RDF harness check using a **bundled fixture** in `:rdf:conformance` (no git submodule). Equivalent to `./gradlew :rdf:conformance:conformanceSmokeTest` (the root project exposes the same task name as a convenience alias).
+- **`check`** runs tests, ABI checks (`checkKotlinAbi`), per-module coverage floors (`jacocoTestCoverageVerification`) and BOM completeness (`:bom:verifyBomCoverage`). The heavy RDF 1.2 corpus (`:rdf:conformance:test`) is excluded here.
+- **`conformanceSmokeTest`** — a fast RDF harness check that uses a **bundled fixture** in `:rdf:conformance`.
 
-**Full W3C RDF 1.2 syntax suites** (large submodule under `rdf/conformance/test-data/`):
+**Full W3C RDF 1.2 and SHACL 1.2 suites.** Fetch the pinned corpora (the same commits CI uses) into their git-ignored locations:
 
 ```bash
-git submodule update --init --recursive
-./gradlew :rdf:conformance:test
+python scripts/fetch-conformance-data.py      # rdf/conformance/test-data + rdf/shacl/validation/test-data/w3c-shacl12
+./gradlew :rdf:conformance:test :rdf:shacl-validation:test
 ```
 
-**SHACL:** `./gradlew :rdf:shacl-validation:test` always exercises a **small bundled** W3C subset. For the full upstream SHACL 1.2 tree locally, follow [`rdf/shacl/validation/test-data/README.md`](rdf/shacl/validation/test-data/README.md) (clone [w3c/data-shapes](https://github.com/w3c/data-shapes) `gh-pages` into that directory), then re-run the module tests.
-
 On Windows, use `gradlew.bat` in place of `./gradlew`.
+
+### Memory and parallelism
+
+Test JVMs are capped by the root build: `maxHeapSize = 1g`, one fork per test task. Override the caps for your machine in **`~/.gradle/gradle.properties`**, not in the repository:
+
+```properties
+kastor.test.maxHeap=2g
+kastor.test.maxParallelForks=2
+org.gradle.workers.max=2
+```
+
+On memory-constrained machines, avoid running several Gradle builds at once. Every daemon, Kotlin daemon, test JVM and Gradle TestKit build is a separate JVM.
+
+### Dependencies, locks and verification metadata
+
+All versions live in [`gradle/libs.versions.toml`](gradle/libs.versions.toml). Every configuration is locked, and artifacts are checksum-verified against [`gradle/verification-metadata.xml`](gradle/verification-metadata.xml). After changing a dependency:
+
+```bash
+./gradlew resolveAndLockAll --write-locks
+./gradlew --write-verification-metadata sha256 resolveAndLockAll
+```
+
+Review both diffs in the same pull request. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
+
+### Tests that skip
+
+Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json). CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
 
 ### Automation reference
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master` | `./gradlew test -x :rdf:conformance:test`, `./gradlew :rdf:conformance:conformanceSmokeTest`, and `./gradlew buildHealth` |
-| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | `:rdf:conformance:test` and `:rdf:shacl-validation:test` against full upstream corpora (workflow clones W3C SHACL data when needed) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` (Linux, Windows; macOS on push/schedule) |
+| [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
+| [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, signing check, dependency audit |
+| [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment |
+| [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | OSV audit of dependencies introduced by the PR, secret-pattern scan, GitHub dependency review |
+| [`native-lifecycle.yml`](.github/workflows/native-lifecycle.yml) | Manual | Opt-in ONNX embedding lifecycle and soak tests |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
-| [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | Flags new vulnerable dependencies (requires [Dependency graph](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-the-dependency-graph) enabled on the repo) |
-| [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → [GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#publishing-with-a-custom-github-actions-workflow) |
+| [`pages.yml`](.github/workflows/pages.yml) | Push to `main` / `master` & manual | Jekyll build from `docs/` → GitHub Pages |
 
-Dependabot opens weekly PRs for **GitHub Actions** and **Gradle** ([`dependabot.yml`](.github/dependabot.yml)); keep CI green when merging bumps. If **Dependency review** fails on your PR, address or document any new vulnerable dependencies flagged in the check.
+Actions are pinned to full commit SHAs, with the release tag as a trailing comment. Dependabot updates both. Every workflow declares least-privilege `permissions`.
 
 Useful variants:
 
 - **Single module:** `./gradlew :rdf:core:test` or `./gradlew :kastor-gen:runtime:test`
 - **Examples:** `./gradlew :examples:dcat-us:check` (if you touch example code)
-- **Dependency hygiene:** `./gradlew buildHealth` — Dependency Analysis aggregate advice (library modules; `:benchmarks:*` and `:examples:*` excluded for CI footprint); see [Repository architecture — Dependency hygiene](docs/kastor/concepts/architecture.md#dependency-hygiene-automated).
+- **Dependency hygiene:** `./gradlew buildHealth` — Dependency Analysis aggregate advice; see [Repository architecture — Dependency hygiene](docs/kastor/concepts/architecture.md#dependency-hygiene-automated).
 
 ## Pull requests
 
 1. **Fork** the repository and create a **feature branch** from `main`.
 2. Keep changes **focused** on one concern when possible (easier review, cleaner history).
-3. **Run tests** locally before opening a PR (at minimum `./gradlew test -x :rdf:conformance:test` and `./gradlew conformanceSmokeTest`); fix any failures or add tests that cover new behavior.
+3. **Run tests** locally before opening a PR (at minimum `./gradlew check -x :rdf:conformance:test conformanceSmokeTest`). Fix any failures and add tests for new behavior.
 4. In the PR description, explain **what** changed and **why** (link issues with `Fixes #123` when applicable).
 5. Match existing **Kotlin style** and patterns in the touched modules; avoid unrelated reformatting.
 
 ## Documentation
 
-- User-facing docs live under [`docs/`](docs/).
-- The **published site** is built with **Jekyll** and deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) to GitHub Pages (`https://<owner>.github.io/<repo>/`).
+- User-facing docs live under [`docs/`](docs/). The **published site** is built with **Jekyll** by [`pages.yml`](.github/workflows/pages.yml). Internal material (`docs/project/reviews/`, `docs/superpowers/`) is excluded from the site.
 - **Local preview:** from the `docs/` directory, run `bundle install` then `bundle exec jekyll serve --livereload` (see [`docs/Gemfile`](docs/Gemfile)).
+- **Versions in docs:** the version is defined once, in `gradle.properties`. `python scripts/check-doc-versions.py` (run in CI) fails if README or docs show a different Kastor version in dependency coordinates.
+- **README code samples must compile.** Every Kotlin snippet in the root `README.md` is mirrored in [`examples/hello-world/src/main/kotlin/ReadmeSnippets.kt`](examples/hello-world/src/main/kotlin/ReadmeSnippets.kt), which the build compiles. When you edit a README sample, update the mirror in the same PR.
 - If you change public API or behavior, update the relevant **tutorial** or **reference** page in the same PR when practical.
+
+## Releases
+
+- The version lives only in [`gradle.properties`](gradle.properties) (`version=`). `main` always carries the next `-SNAPSHOT`. **A released version is never reused:** fixes after a release go into a new version.
+- Tags use the form **`vX.Y.Z`**. Historical tags `v0.2.0` and `0.2.1` predate this convention.
+- To release:
+  1. Commit `version=X.Y.Z` and the dated `CHANGELOG.md` section.
+  2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, builds the signed Central Portal bundle (`./gradlew centralBundle`) and uploads it for manual release once the `release` environment is approved.
+  3. Bump `main` to the next `-SNAPSHOT`.
+- The build refuses `centralBundle` for `-SNAPSHOT` versions or without `KASTOR_SIGNING_KEY`.
 
 ## Code of conduct
 

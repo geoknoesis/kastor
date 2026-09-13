@@ -10,7 +10,7 @@ Create a **Jena**-backed in-memory repository, load Turtle bytes into the defaul
 
 ### Prerequisites
 
-- Dependencies: `rdf-core`, `rdf-jena` at **`0.2.0`** (see [Installation](../getting-started/installation.md)).
+- Dependencies: `rdf-core`, `rdf-jena` at **`0.3.0-SNAPSHOT`** (see [Installation](../getting-started/installation.md)).
 
 ### Step 1: Start with an in-memory repository
 

@@ -8,7 +8,10 @@ repositories {
     mavenCentral()
 }
 kotlin { jvmToolchain(21) }
-val kastorVersion = providers.gradleProperty("kastorVersion").getOrElse("0.2.1")
+// Defaults to the single version in the root gradle.properties; override with -PkastorVersion=X.Y.Z.
+val kastorVersion = providers.gradleProperty("kastorVersion").getOrElse(
+    java.util.Properties().apply { rootDir.resolve("../gradle.properties").reader().use(::load) }.getProperty("version")
+)
 dependencies {
     implementation(platform("com.geoknoesis.kastor:kastor-bom:$kastorVersion"))
     implementation("com.geoknoesis.kastor:rdf-core")

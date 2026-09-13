@@ -34,7 +34,7 @@ Statuses use the following meanings:
 | **Eclipse RDF4J adapter** | Shipped | Native store / repository variants. |
 | **Remote SPARQL** (`rdf-sparql`) | Shipped | HTTP endpoints; no Jena/RDF4J required at compile time for the module itself. |
 | **Reasoning facade** (`rdf:reasoning`) | Shipped (optional) | Materialization / OWL DL checks in advanced flows. |
-| **Jena / RDF4J reasoner providers** | Shipped (optional) | **Not** transitive through store adapters; add `jena-reasoning` / `rdf4j-reasoning` or BOM. |
+| **Jena / RDF4J reasoner providers** | Shipped (optional) | **Not** transitive through store adapters; add `rdf-jena-reasoning` / `rdf-rdf4j-reasoning` or BOM. |
 
 ## Validation & quality
 
@@ -53,7 +53,7 @@ Statuses use the following meanings:
 
 | Area | Status | Notes |
 |------|--------|--------|
-| **RDF 1.2 syntax harness** | Shipped; **CI**: smoke + optional full | Submodule + full corpus in workflow; local smoke without submodule in default CI path. See [RDF 1.2 conformance](../concepts/rdf-1.2-conformance.md) and [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md). |
+| **RDF 1.2 syntax harness** | Shipped; **CI**: smoke + optional full | Full corpus fetched in workflow (`scripts/fetch-conformance-data.py`); local smoke without it in default CI path. See [RDF 1.2 conformance](../concepts/rdf-1.2-conformance.md) and [**CONTRIBUTING**](https://github.com/geoknoesis/kastor/blob/main/CONTRIBUTING.md). |
 | **SHACL W3C tests** | CI (tiered) | Module tests + extended workflow where configured. |
 
 ## Related

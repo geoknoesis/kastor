@@ -18,7 +18,7 @@ publishing {
       artifact(tasks.named("javadocJar"))
 
       groupId = project.group.toString()
-      artifactId = "sparql-lang"
+      artifactId = "rdf-sparql-lang"
       version = project.version.toString()
     }
   }
