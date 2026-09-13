@@ -1,28 +1,38 @@
 package com.geoknoesis.kastor.gen.gradle
 
-import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
-import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.parsers.JsonLdContextParser
+import com.geoknoesis.kastor.gen.processor.internal.parsers.ShaclParser
+import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.google.devtools.ksp.processing.KSPLogger
+import com.squareup.kotlinpoet.ClassName
+import com.squareup.kotlinpoet.CodeBlock
+import com.squareup.kotlinpoet.FileSpec
+import com.squareup.kotlinpoet.KModifier
+import com.squareup.kotlinpoet.PropertySpec
+import com.squareup.kotlinpoet.TypeSpec
+import com.squareup.kotlinpoet.asTypeName
 import java.io.File
-import java.io.FileInputStream
 
 /**
- * Generator for vocabulary files from SHACL, RDFS, or OWL ontology files.
- * 
+ * Generator for vocabulary files from SHACL shapes and JSON-LD context files.
+ *
  * This generator creates Kotlin vocabulary objects following the Kastor pattern,
  * extracting classes and properties from ontology files and generating type-safe
  * vocabulary constants.
+ *
+ * Output is built with KotlinPoet (so descriptions, quotes and `$` can never break the source) and is
+ * deterministic (terms sorted by IRI). Terms inside the vocabulary namespace use `term("local")`; terms
+ * from other namespaces (e.g. `dct:title` in a DCAT vocabulary) are emitted as full `Iri("…")` values.
+ * When several IRIs map to the same Kotlin name, the in-namespace term keeps the plain name and the others
+ * are qualified with their JSON-LD prefix (`dct_title`); remaining clashes fail with a diagnostic.
  */
 class VocabularyGenerator(private val logger: KSPLogger) {
-    
-    private val shaclParser = ShaclParser(logger)
-    private val contextParser = JsonLdContextParser(logger)
-    
+
     /**
      * Generates a vocabulary file from SHACL and JSON-LD context files.
-     * 
+     *
      * @param shaclFile The SHACL file
      * @param contextFile The JSON-LD context file
      * @param vocabularyName The name of the vocabulary (e.g., "DCAT")
@@ -39,191 +49,141 @@ class VocabularyGenerator(private val logger: KSPLogger) {
         prefix: String,
         packageName: String
     ): String {
-        logger.info("Generating vocabulary for $vocabularyName")
-        
-        // Parse SHACL shapes
-        val shapes = shaclParser.parseShacl(FileInputStream(shaclFile))
-        logger.info("Parsed ${shapes.size} SHACL shapes")
-        
-        // Parse JSON-LD context
-        val context = contextParser.parseContext(FileInputStream(contextFile))
-        logger.info("Parsed context with ${context.prefixes.size} prefixes")
-        
-        // Extract vocabulary terms
-        val classes = extractClasses(shapes, context)
-        val properties = extractProperties(shapes, context)
-        
-        logger.info("Extracted ${classes.size} classes and ${properties.size} properties")
-        
-        // Generate vocabulary code
-        return generateVocabularyCode(
-            vocabularyName,
-            namespace,
-            prefix,
-            packageName,
-            classes,
-            properties
-        )
+        val shapes = shaclFile.inputStream().use(ShaclParser(logger)::parseShacl)
+        val context = contextFile.inputStream().use(JsonLdContextParser(logger)::parseContext)
+        return generateVocabularyFile(shapes, context, vocabularyName, namespace, prefix, packageName).toString()
     }
-    
-    /**
-     * Extracts class terms from SHACL shapes and JSON-LD context.
-     */
-    private fun extractClasses(shapes: List<ShaclShape>, context: JsonLdContext): List<VocabularyTerm> {
-        val classes = mutableListOf<VocabularyTerm>()
-        
-        // Extract classes from SHACL shapes
-        shapes.forEach { shape ->
-            val classIri = context.typeMappings[shape.targetClass]?.value ?: shape.targetClass
-            val className = classIri.substringAfterLast('#').substringAfterLast('/')
 
-            if (className.isNotEmpty()) {
-                classes.add(
-                    VocabularyTerm(
-                        name = className,
-                        iri = classIri,
-                        type = TermType.CLASS,
-                        description = ""
-                    )
-                )
-            }
-        }
-        
-        // Extract additional classes from context
-        context.typeMappings.forEach { (term, iri) ->
-            val iriValue = iri.value
-            if (!classes.any { it.iri == iriValue }) {
-                classes.add(
-                    VocabularyTerm(
-                        name = term,
-                        iri = iriValue,
-                        type = TermType.CLASS,
-                        description = null
-                    )
-                )
-            }
-        }
-        
-        return classes.distinctBy { it.name }
-    }
-    
     /**
-     * Extracts property terms from SHACL shapes and JSON-LD context.
+     * Builds the vocabulary [FileSpec] from already-parsed [shapes] and [context].
+     *
+     * @throws IllegalStateException when distinct IRIs cannot be given distinct Kotlin names
      */
-    private fun extractProperties(shapes: List<ShaclShape>, context: JsonLdContext): List<VocabularyTerm> {
-        val properties = mutableListOf<VocabularyTerm>()
-        
-        // Extract properties from SHACL shapes
-        shapes.forEach { shape ->
-            shape.properties.forEach { property ->
-                val propertyIri = context.propertyMappings[property.path]?.id?.value ?: property.path
-                val propertyName = propertyIri.substringAfterLast('#').substringAfterLast('/')
-
-                if (propertyName.isNotEmpty()) {
-                    properties.add(
-                        VocabularyTerm(
-                            name = propertyName,
-                            iri = propertyIri,
-                            type = TermType.PROPERTY,
-                            description = property.description
-                        )
-                    )
-                }
-            }
-        }
-        
-        // Extract additional properties from context
-        context.propertyMappings.forEach { (term, property) ->
-            val iriValue = property.id.value
-            if (!properties.any { it.iri == iriValue }) {
-                properties.add(
-                    VocabularyTerm(
-                        name = term,
-                        iri = iriValue,
-                        type = TermType.PROPERTY,
-                        description = null
-                    )
-                )
-            }
-        }
-        
-        return properties.distinctBy { it.name }
-    }
-    
-    /**
-     * Generates the vocabulary code following the Kastor pattern.
-     */
-    private fun generateVocabularyCode(
+    fun generateVocabularyFile(
+        shapes: List<ShaclShape>,
+        context: JsonLdContext,
         vocabularyName: String,
         namespace: String,
         prefix: String,
         packageName: String,
-        classes: List<VocabularyTerm>,
-        properties: List<VocabularyTerm>
-    ): String {
-        val className = vocabularyName.uppercase()
-        
-        // Handle empty lists gracefully
-        val classTerms = if (classes.isEmpty()) {
-            "    // No classes found"
-        } else {
-            classes.joinToString("\n    ") { term ->
-                val kotlinName = toKotlinIdentifier(term.name)
-                val comment = if (term.description != null) "    // ${term.description}" else ""
-                "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
-            }
-        }
-        
-        val propertyTerms = if (properties.isEmpty()) {
-            "    // No properties found"
-        } else {
-            properties.joinToString("\n    ") { term ->
-                val kotlinName = toKotlinIdentifier(term.name)
-                val comment = if (term.description != null) "    // ${term.description}" else ""
-                "$comment\n    val $kotlinName: Iri by lazy { term(\"${term.name}\") }"
-            }
-        }
-        
-        return """
-package $packageName
+    ): FileSpec {
+        logger.info("Generating vocabulary for $vocabularyName")
+        val classes = extractClasses(shapes, context)
+        val properties = extractProperties(shapes, context)
+        logger.info("Extracted ${classes.size} classes and ${properties.size} properties")
 
-import com.geoknoesis.kastor.rdf.Iri
-import com.geoknoesis.kastor.rdf.vocab.Vocabulary
+        val objectName = GenerationNames.typeIdentifier(vocabularyName).uppercase()
+        val iri = ClassName("com.geoknoesis.kastor.rdf", "Iri")
+        val names = assignNames(classes + properties, namespace, context)
 
-/**
- * $vocabularyName vocabulary.
- * Generated from ontology files.
- */
-object $className : Vocabulary {
-    override val namespace: String = "$namespace"
-    override val prefix: String = "$prefix"
-    
-    // Classes
-$classTerms
-    
-    // Properties
-$propertyTerms
-}
-""".trimIndent()
+        val type = TypeSpec.objectBuilder(objectName)
+            .addSuperinterface(ClassName("com.geoknoesis.kastor.rdf.vocab", "Vocabulary"))
+            .addKdoc("%L", kdoc("$vocabularyName vocabulary.\nGenerated from ontology files."))
+            .addProperty(
+                PropertySpec.builder("namespace", String::class.asTypeName(), KModifier.OVERRIDE)
+                    .initializer("%S", namespace).build()
+            )
+            .addProperty(
+                PropertySpec.builder("prefix", String::class.asTypeName(), KModifier.OVERRIDE)
+                    .initializer("%S", prefix).build()
+            )
+
+        (classes + properties).sortedWith(compareBy({ it.type }, { it.iri })).forEach { term ->
+            val local = term.iri.removePrefix(namespace)
+            val value = if (term.iri.startsWith(namespace) && local.isNotEmpty()) CodeBlock.of("term(%S)", local)
+            else CodeBlock.of("%T(%S)", iri, term.iri)
+            val property = PropertySpec.builder(names.getValue(term.iri), iri)
+                .delegate(CodeBlock.of("lazy { %L }", value))
+            val doc = listOfNotNull(term.description?.takeIf { it.isNotBlank() }, "IRI: ${term.iri}").joinToString("\n")
+            property.addKdoc("%L", kdoc(doc))
+            type.addProperty(property.build())
+        }
+
+        return FileSpec.builder(packageName, objectName)
+            .addFileComment("GENERATED FILE - DO NOT EDIT")
+            .addType(type.build())
+            .build()
     }
-    
-    /**
-     * Converts a term name to a valid Kotlin identifier.
-     */
-    private fun toKotlinIdentifier(name: String): String {
-        // Handle reserved keywords
-        val reservedKeywords = setOf("class", "object", "package", "import", "val", "var", "fun", "return", "if", "else", "when", "for", "while", "do", "try", "catch", "finally", "throw", "type", "is", "as", "in", "out", "by", "get", "set", "init", "constructor", "this", "super", "override", "abstract", "final", "open", "private", "protected", "public", "internal", "external", "expect", "actual", "companion", "sealed", "enum", "annotation", "data", "inline", "noinline", "crossinline", "vararg", "tailrec", "operator", "infix", "suspend", "lateinit", "const", "inner", "interface", "typealias")
-        
-        val cleanName = name.replace("-", "_")
-            .replace(":", "_")
-            .replace(".", "_")
-            .replace(" ", "_")
-        
-        return if (reservedKeywords.contains(cleanName.lowercase())) {
-            "${cleanName}Prop"
-        } else {
-            cleanName
+
+    private fun kdoc(text: String): String = text.replace("/*", "&#47;*").replace("*/", "*&#47;")
+
+    private fun localName(iri: String): String = iri.substringAfterLast('#').substringAfterLast('/')
+
+    /** Kotlin-safe identifier preserving the term's case (keywords are escaped by KotlinPoet). */
+    private fun identifier(raw: String): String {
+        val cleaned = raw.map { if (it.isLetterOrDigit() || it == '_') it else '_' }.joinToString("")
+        return when {
+            cleaned.isEmpty() -> "term"
+            cleaned.first().isDigit() -> "_$cleaned"
+            cleaned in setOf("namespace", "prefix") -> "${cleaned}Term"
+            else -> cleaned
         }
+    }
+
+    private fun assignNames(terms: List<VocabularyTerm>, namespace: String, context: JsonLdContext): Map<String, String> {
+        val byIri = terms.associateBy { it.iri }
+        val result = HashMap<String, String>()
+        byIri.values.groupBy { identifier(it.name) }.toSortedMap().forEach { (name, group) ->
+            if (group.size == 1) {
+                result[group.single().iri] = name
+                return@forEach
+            }
+            val inNamespace = group.filter { it.iri.startsWith(namespace) }
+            val keeper = inNamespace.singleOrNull()
+            group.sortedBy { it.iri }.forEach { term ->
+                result[term.iri] = if (term === keeper) name else {
+                    val qualifier = context.prefixes.entries
+                        .filter { term.iri.startsWith(it.value) }
+                        .maxByOrNull { it.value.length }?.key
+                    if (qualifier != null) identifier("${qualifier}_$name") else name
+                }
+            }
+        }
+        val clashes = result.entries.groupBy({ it.value }, { it.key }).filterValues { it.size > 1 }
+        check(clashes.isEmpty()) {
+            "vocabulary term name collisions: " + clashes.toSortedMap().entries.joinToString("; ") { (name, iris) ->
+                "'$name' <- ${iris.sorted().joinToString { "<$it>" }}"
+            }
+        }
+        return result
+    }
+
+    /**
+     * Extracts class terms from SHACL shapes and JSON-LD context.
+     */
+    private fun extractClasses(shapes: List<ShaclShape>, context: JsonLdContext): List<VocabularyTerm> {
+        val terms = LinkedHashMap<String, VocabularyTerm>()
+        shapes.sortedBy { it.targetClass }.forEach { shape ->
+            val contextTerm = context.typeMappings.entries.filter { it.value.value == shape.targetClass }.minByOrNull { it.key }?.key
+            terms.getOrPut(shape.targetClass) {
+                VocabularyTerm(contextTerm ?: localName(shape.targetClass), shape.targetClass, TermType.CLASS, null)
+            }
+        }
+        context.typeMappings.entries.sortedBy { it.key }.forEach { (term, iri) ->
+            terms.getOrPut(iri.value) { VocabularyTerm(term, iri.value, TermType.CLASS, null) }
+        }
+        return terms.values.filter { it.name.isNotEmpty() }.sortedBy { it.iri }
+    }
+
+    /**
+     * Extracts property terms from SHACL shapes and JSON-LD context.
+     */
+    private fun extractProperties(shapes: List<ShaclShape>, context: JsonLdContext): List<VocabularyTerm> {
+        val terms = LinkedHashMap<String, VocabularyTerm>()
+        shapes.sortedBy { it.targetClass }.flatMap { it.properties }.sortedBy { it.path }.forEach { property ->
+            val contextTerm = context.propertyMappings.entries.filter { it.value.id.value == property.path }.minByOrNull { it.key }?.key
+            val existing = terms[property.path]
+            if (existing == null || existing.description.isNullOrBlank()) {
+                terms[property.path] = VocabularyTerm(
+                    contextTerm ?: localName(property.path), property.path, TermType.PROPERTY,
+                    property.description.takeIf { it.isNotBlank() } ?: existing?.description,
+                )
+            }
+        }
+        context.propertyMappings.entries.sortedBy { it.key }.forEach { (term, property) ->
+            terms.getOrPut(property.id.value) { VocabularyTerm(term, property.id.value, TermType.PROPERTY, null) }
+        }
+        return terms.values.filter { it.name.isNotEmpty() }.sortedBy { it.iri }
     }
 }
 
@@ -244,15 +204,3 @@ enum class TermType {
     CLASS,
     PROPERTY
 }
-
-
-
-
-
-
-
-
-
-
-
-

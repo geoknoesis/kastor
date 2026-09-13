@@ -16,7 +16,9 @@ import com.geoknoesis.kastor.rdf.Iri as RdfIri
 public data class ShaclShape(
     val shapeIri: String,
     val targetClass: String,
-    val properties: List<ShaclProperty>
+    val properties: List<ShaclProperty>,
+    /** Target classes of shapes this shape inherits from (via `sh:node` on the node shape or `rdfs:subClassOf`). */
+    val parentClasses: List<String> = emptyList(),
 )
 
 /**
@@ -58,6 +60,8 @@ public data class ShaclProperty(
     val minLength: Int? = null,
     val maxLength: Int? = null,
     val pattern: String? = null,
+    /** `sh:flags` for [pattern] (e.g. "i"). */
+    val patternFlags: String? = null,
     // Numeric constraints
     val minInclusive: Double? = null,
     val maxInclusive: Double? = null,

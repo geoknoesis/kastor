@@ -71,7 +71,7 @@ class ValidationCodeGeneratorTest {
 
         val code = method.toString()
         assertTrue(code.contains("prefLabelCount"))
-        assertTrue(code.contains("graph.getTriples"))
+        assertTrue(code.contains("graph.find"))
         assertTrue(code.contains("if (prefLabelCount < 1)"))
         assertTrue(code.contains("prefLabel is required"))
     }

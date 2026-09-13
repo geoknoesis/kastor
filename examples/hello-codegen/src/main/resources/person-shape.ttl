@@ -1,5 +1,6 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.org/> .
 
 ex:PersonShape
@@ -7,14 +8,15 @@ ex:PersonShape
     sh:targetClass ex:Person ;
     sh:property [
         sh:path ex:name ;
+        sh:name "name" ;
         sh:datatype xsd:string ;
         sh:minCount 1 ;
         sh:maxCount 1
     ] ;
     sh:property [
         sh:path ex:age ;
+        sh:name "age" ;
         sh:datatype xsd:integer ;
         sh:minCount 1 ;
         sh:maxCount 1
     ] .
-

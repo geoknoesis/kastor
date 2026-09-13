@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.4.20"
-    id("com.google.devtools.ksp") version "2.3.12"
+    kotlin("jvm")
+    id("com.google.devtools.ksp")
     id("com.geoknoesis.kastor.gen")
     application
 }
@@ -12,7 +12,7 @@ repositories {
     mavenCentral()
 }
 kotlin { jvmToolchain(21) }
-val kastorVersion = providers.gradleProperty("kastorVersion").getOrElse("0.2.1")
+val kastorVersion = gradle.extra["kastorVersion"] as String
 dependencies {
     implementation(platform("com.geoknoesis.kastor:kastor-bom:$kastorVersion"))
     implementation("com.geoknoesis.kastor:kastor-gen-runtime")

@@ -66,7 +66,7 @@ class WrapperGeneratorTest {
         assertTrue(code.contains("by rdfInt("))
         assertTrue(code.contains("by rdfObjects<Person>"))
         assertTrue(code.contains("companion object"))
-        assertTrue(code.contains("OntoMapper.registry[Person::class.java]"))
+        assertTrue(code.contains("OntoMapper.register(Person::class.java)"))
         assertTrue(code.contains("PersonWrapper") && code.contains("handle"))
     }
 

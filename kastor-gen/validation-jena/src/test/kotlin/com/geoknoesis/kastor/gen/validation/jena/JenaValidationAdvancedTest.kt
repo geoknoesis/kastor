@@ -139,7 +139,7 @@ class JenaValidationAdvancedTest {
     }
 
     @Test
-    fun `validation handles language-tagged literals`() {
+    fun `language-tagged names violate sh datatype xsd string`() {
         val validation = JenaValidation()
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -152,10 +152,13 @@ class JenaValidationAdvancedTest {
             person - FOAF.name - LangString("John", "en")
         }
 
-        // Should handle language-tagged literals
-        assertDoesNotThrow {
-            validation.validate(repo.defaultGraph, person).orThrow()
-        }
+        // rdf:langString values are not xsd:string, so real SHACL reports a datatype violation per value
+        val result = validation.validate(repo.defaultGraph, person)
+        assertTrue(result is com.geoknoesis.kastor.gen.runtime.ValidationResult.Violations)
+        val items = (result as com.geoknoesis.kastor.gen.runtime.ValidationResult.Violations).items
+        assertEquals(2, items.size)
+        assertTrue(items.all { it.constraintIri.value == "http://www.w3.org/ns/shacl#DatatypeConstraintComponent" })
+        assertEquals(setOf(LangString("Jean", "fr"), LangString("John", "en")), items.map { it.actualValue }.toSet())
     }
 
     @Test
@@ -316,7 +319,7 @@ class JenaValidationAdvancedTest {
             ageShape - shOr - list(intConstraint, stringConstraint)
             ageShape - shMessage - string("Age must be int or string")
 
-            intConstraint - shDatatype - Iri("${xsd}int")
+            intConstraint - shDatatype - Iri("${xsd}integer")
             stringConstraint - shDatatype - Iri("${xsd}string")
         }
     }

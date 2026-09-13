@@ -170,7 +170,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(catalogWrapper.contains("Catalog") && catalogWrapper.contains("RdfBacked"))
         assertTrue(catalogWrapper.contains("override val title: String by lazy {"))
         assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogWrapper.contains("OntoMapper.registry[Catalog::class.java]"))
+        assertTrue(catalogWrapper.contains("OntoMapper.register(Catalog::class.java)"))
 
         // Verify Dataset interface
         val datasetInterface = java.io.StringWriter().also { interfaces["Dataset"]!!.writeTo(it) }.toString()
@@ -186,7 +186,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(datasetWrapper.contains("Dataset") && datasetWrapper.contains("RdfBacked"))
         assertTrue(datasetWrapper.contains("override val title: String by lazy {"))
         assertTrue(datasetWrapper.contains("override val distribution: List<Distribution> by lazy {"))
-        assertTrue(datasetWrapper.contains("OntoMapper.registry[Dataset::class.java]"))
+        assertTrue(datasetWrapper.contains("OntoMapper.register(Dataset::class.java)"))
     }
 
     @Test
@@ -297,10 +297,10 @@ class OntologyProcessorIntegrationTest {
         // Verify type conversions
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toDoubleOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.double(it) }.firstOrNull()"))
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
-        assertTrue(complexWrapper.contains(".lexical.toBooleanStrict()"))
-        assertTrue(complexWrapper.contains(".map { it.lexical }.firstOrNull()?.toIntOrNull()"))
+        assertTrue(complexWrapper.contains("XsdLiterals.boolean("))
+        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.int(it) }.firstOrNull()"))
     }
 
     @Test
@@ -435,7 +435,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(emptyWrapper.contains("setOf"))
         assertTrue(emptyWrapper.contains(")"))
         assertTrue(emptyWrapper.contains("companion object {"))
-        assertTrue(emptyWrapper.contains("OntoMapper.registry[Empty::class.java]"))
+        assertTrue(emptyWrapper.contains("OntoMapper.register(Empty::class.java)"))
     }
 
     @Test

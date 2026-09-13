@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.gen.runtime.delegates
 
 import com.geoknoesis.kastor.gen.runtime.KastorGraphOps
 import com.geoknoesis.kastor.gen.runtime.RdfBacked
+import com.geoknoesis.kastor.gen.runtime.XsdLiterals
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import kotlin.properties.ReadOnlyProperty
@@ -62,20 +63,20 @@ fun rdfDoubles(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Double>> =
 fun rdfBoolean(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toBooleanStrictOrNull() }
+      .mapNotNull { XsdLiterals.boolean(it) }
       .firstOrNull() ?: false
   }
 
 fun rdfBooleanOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
-      .mapNotNull { it.lexical.toBooleanStrictOrNull() }
+      .mapNotNull { XsdLiterals.boolean(it) }
       .firstOrNull()
   }
 
 fun rdfBooleans(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Boolean>> =
   rdfLazy { ref ->
-    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { it.lexical.toBooleanStrictOrNull() }
+    KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { XsdLiterals.boolean(it) }
   }
 
 fun <T : Any> rdfLiteral(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, T> =

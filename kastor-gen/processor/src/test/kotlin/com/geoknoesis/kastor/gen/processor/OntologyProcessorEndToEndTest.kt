@@ -245,7 +245,7 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogInterface.contains("@Rdf(iri = \"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper has proper registry entry
-        assertTrue(simpleCatalogWrapper.contains("OntoMapper.registry[SimpleCatalog::class.java]"))
+        assertTrue(simpleCatalogWrapper.contains("OntoMapper.register(SimpleCatalog::class.java)"))
         assertTrue(simpleCatalogWrapper.contains("SimpleCatalogWrapper(handle)"))
 
         // Verify that generated wrapper has proper known predicates
@@ -438,7 +438,7 @@ class OntologyProcessorEndToEndTest {
         // Verify all wrappers have proper registry entries
         for (entity in expectedEntities) {
             val wrapper = java.io.StringWriter().also { wrappers["${entity}Wrapper"]!!.writeTo(it) }.toString()
-            assertTrue(wrapper.contains("OntoMapper.registry[${entity}::class.java]"))
+            assertTrue(wrapper.contains("OntoMapper.register(${entity}::class.java)"))
         }
     }
 

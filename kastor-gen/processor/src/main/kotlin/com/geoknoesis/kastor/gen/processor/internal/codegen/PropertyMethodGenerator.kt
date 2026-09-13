@@ -4,10 +4,11 @@ import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.PropertyBuilderModel
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
+import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
-import com.squareup.kotlinpoet.CodeBlock
 
 /**
  * Generator for property setter methods in builder classes using KotlinPoet.
@@ -29,10 +30,18 @@ internal class PropertyMethodGenerator(
         if (property.enumName != null && property.enumMemberKind != null) {
             return PropertyTypeStrategy.EnumStrategy.generateMethods(property, propertyIri, options)
         }
+        if (property.isIriValued) {
+            return PropertyTypeStrategy.IriStrategy.generateMethods(property, propertyIri, options)
+        }
         val strategy = PropertyTypeStrategy.from(property.kotlinType)
         return strategy.generateMethods(property, propertyIri, options)
     }
 }
+
+private val LITERAL = ClassName(CodegenConstants.RDF_PACKAGE, "Literal")
+private val IRI = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
+private val XSD = ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD")
+private val XSD_LITERALS = ClassName(CodegenConstants.RUNTIME_PACKAGE, "XsdLiterals")
 
 /**
  * Strategy for generating property methods based on type.
@@ -43,7 +52,7 @@ public sealed class PropertyTypeStrategy {
         propertyIri: CodeBlock,
         options: DslGenerationOptions
     ): List<FunSpec>
-    
+
     public object StringStrategy : PropertyTypeStrategy() {
         override fun generateMethods(
             property: PropertyBuilderModel,
@@ -51,264 +60,108 @@ public sealed class PropertyTypeStrategy {
             options: DslGenerationOptions
         ): List<FunSpec> {
             val methods = mutableListOf<FunSpec>()
-            
+            val langTags = options.output.supportLanguageTags
+
             val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
+                .addKdoc("%L", buildKdoc(property))
                 .addParameter("value", String::class)
-            
-            addImmediateValidation(functionBuilder, property, "value")
-            
-            if (options.output.supportLanguageTags) {
-                functionBuilder.addParameter(
-                    ParameterSpec.builder("lang", String::class.asTypeName().copy(nullable = true))
-                        .defaultValue(CodeBlock.of("null"))
-                        .build()
-                )
-                // RDF 1.2: an optional base direction. When supplied, the
-                // resulting literal carries the rdf:dirLangString datatype.
-                functionBuilder.addParameter(
-                    ParameterSpec.builder(
-                        "direction",
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Direction").copy(nullable = true),
-                    )
-                        .defaultValue(CodeBlock.of("null"))
-                        .build()
-                )
-                functionBuilder.addStatement("val literal = if (lang != null) {")
-                functionBuilder.addStatement(
-                    "    %T(value, lang, direction)",
-                    ClassName(CodegenConstants.RDF_PACKAGE, "LangString"),
-                )
-                functionBuilder.addStatement("} else {")
-                functionBuilder.addStatement("    %T(value, %T.string)",
-                    ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                    ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-                functionBuilder.addStatement("}")
-                functionBuilder.addStatement("graph.addTriple(resource, %L, literal)", propertyIri)
-            } else {
-                functionBuilder.addStatement("graph.addTriple(resource, %L, %T(value, %T.string))",
-                    propertyIri,
-                    ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                    ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            }
-            
+            if (langTags) addLanguageParameters(functionBuilder)
+            addImmediateValidation(functionBuilder, property, "value", STRING)
+            addStringWrite(functionBuilder, property, propertyIri, langTags)
             methods.add(functionBuilder.build())
-            
+
             // Add list variant if property is a list
             if (property.isList) {
-                methods.add(generateStringListMethod(property, propertyIri, options))
+                val listBuilder = FunSpec.builder(property.propertyName)
+                    .addKdoc("%L", buildKdoc(property))
+                    .addParameter("values", String::class, VARARG)
+                if (langTags) addLanguageParameters(listBuilder)
+                listBuilder.beginControlFlow("values.forEach { value ->")
+                addImmediateValidation(listBuilder, property, "value", STRING)
+                addStringWrite(listBuilder, property, propertyIri, langTags)
+                listBuilder.endControlFlow()
+                methods.add(listBuilder.build())
             }
-            
+
             return methods
         }
-        
-        private fun generateStringListMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("values", String::class, VARARG)
-            
-            if (options.output.supportLanguageTags) {
-                functionBuilder.addParameter(
-                    ParameterSpec.builder("lang", String::class.asTypeName().copy(nullable = true))
-                        .defaultValue(CodeBlock.of("null"))
-                        .build()
+
+        private fun addLanguageParameters(builder: FunSpec.Builder) {
+            builder.addParameter(
+                ParameterSpec.builder("lang", String::class.asTypeName().copy(nullable = true))
+                    .defaultValue(CodeBlock.of("null"))
+                    .build()
+            )
+            // RDF 1.2: an optional base direction. When supplied, the
+            // resulting literal carries the rdf:dirLangString datatype.
+            builder.addParameter(
+                ParameterSpec.builder("direction", ClassName(CodegenConstants.RDF_PACKAGE, "Direction").copy(nullable = true))
+                    .defaultValue(CodeBlock.of("null"))
+                    .build()
+            )
+        }
+
+        private fun addStringWrite(builder: FunSpec.Builder, property: PropertyBuilderModel, propertyIri: CodeBlock, langTags: Boolean) {
+            val typed = typedLiteral(property, CodeBlock.of("value")) ?: CodeBlock.of("%T(value, %T.string)", LITERAL, XSD)
+            if (langTags) {
+                builder.addStatement(
+                    "val literal = if (lang != null) %T(value, lang, direction) else %L",
+                    ClassName(CodegenConstants.RDF_PACKAGE, "LangString"), typed,
                 )
-                functionBuilder.addParameter(
-                    ParameterSpec.builder(
-                        "direction",
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Direction").copy(nullable = true),
-                    )
-                        .defaultValue(CodeBlock.of("null"))
-                        .build()
-                )
-                functionBuilder.addStatement("values.forEach { value ->")
-                addImmediateValidation(functionBuilder, property, "value", indent = "    ")
-                functionBuilder.addStatement("    val literal = if (lang != null) {")
-                functionBuilder.addStatement(
-                    "        %T(value, lang, direction)",
-                    ClassName(CodegenConstants.RDF_PACKAGE, "LangString"),
-                )
-                functionBuilder.addStatement("    } else {")
-                functionBuilder.addStatement("        %T(value, %T.string)",
-                    ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                    ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-                functionBuilder.addStatement("    }")
-                functionBuilder.addStatement("    graph.addTriple(resource, %L, literal)", propertyIri)
-                functionBuilder.addStatement("}")
+                builder.addStatement("graph.addTriple(resource, %L, literal)", propertyIri)
             } else {
-                functionBuilder.addStatement("values.forEach { value ->")
-                addImmediateValidation(functionBuilder, property, "value", indent = "    ")
-                functionBuilder.addStatement("    graph.addTriple(resource, %L, %T(value, %T.string))",
-                    propertyIri,
-                    ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                    ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-                functionBuilder.addStatement("}")
+                builder.addStatement("graph.addTriple(resource, %L, %L)", propertyIri, typed)
             }
-            
-            return functionBuilder.build()
         }
     }
-    
+
     public object IntStrategy : PropertyTypeStrategy() {
-        override fun generateMethods(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): List<FunSpec> {
-            return if (property.isList) {
-                listOf(generateIntListMethod(property, propertyIri, options))
-            } else {
-                listOf(generateIntMethod(property, propertyIri, options))
-            }
-        }
-        
-        private fun generateIntMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("value", Int::class)
-            
-            addImmediateValidation(functionBuilder, property, "value")
-            functionBuilder.addStatement("graph.addTriple(resource, %L, %T(value.toString(), %T.integer))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            
-            return functionBuilder.build()
-        }
-        
-        private fun generateIntListMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("values", Int::class, VARARG)
-            
-            functionBuilder.addStatement("values.forEach { value ->")
-            addImmediateValidation(functionBuilder, property, "value", indent = "    ")
-            functionBuilder.addStatement("    graph.addTriple(resource, %L, %T(value.toString(), %T.integer))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            functionBuilder.addStatement("}")
-            
-            return functionBuilder.build()
-        }
+        override fun generateMethods(property: PropertyBuilderModel, propertyIri: CodeBlock, options: DslGenerationOptions): List<FunSpec> =
+            valueMethods(property, propertyIri, Int::class.asTypeName(), CodeBlock.of("%T(value.toString(), %T.integer)", LITERAL, XSD))
     }
-    
+
     public object DoubleStrategy : PropertyTypeStrategy() {
-        override fun generateMethods(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): List<FunSpec> {
-            return if (property.isList) {
-                listOf(generateDoubleListMethod(property, propertyIri, options))
-            } else {
-                listOf(generateDoubleMethod(property, propertyIri, options))
-            }
-        }
-        
-        private fun generateDoubleMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("value", Double::class)
-            
-            addImmediateValidation(functionBuilder, property, "value")
-            functionBuilder.addStatement("graph.addTriple(resource, %L, %T(value.toString(), %T.double))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            
-            return functionBuilder.build()
-        }
-        
-        private fun generateDoubleListMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("values", Double::class, VARARG)
-            
-            functionBuilder.addStatement("values.forEach { value ->")
-            addImmediateValidation(functionBuilder, property, "value", indent = "    ")
-            functionBuilder.addStatement("    graph.addTriple(resource, %L, %T(value.toString(), %T.double))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            functionBuilder.addStatement("}")
-            
-            return functionBuilder.build()
-        }
+        override fun generateMethods(property: PropertyBuilderModel, propertyIri: CodeBlock, options: DslGenerationOptions): List<FunSpec> =
+            valueMethods(property, propertyIri, Double::class.asTypeName(), CodeBlock.of("%T.encode(value, %T.double)", XSD_LITERALS, XSD))
     }
-    
+
     public object BooleanStrategy : PropertyTypeStrategy() {
-        override fun generateMethods(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): List<FunSpec> {
-            return if (property.isList) {
-                listOf(generateBooleanListMethod(property, propertyIri, options))
-            } else {
-                listOf(generateBooleanMethod(property, propertyIri, options))
-            }
-        }
-        
-        private fun generateBooleanMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("value", Boolean::class)
-            
-            addImmediateValidation(functionBuilder, property, "value")
-            functionBuilder.addStatement("graph.addTriple(resource, %L, %T(value.toString(), %T.boolean))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            
-            return functionBuilder.build()
-        }
-        
-        private fun generateBooleanListMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            options: DslGenerationOptions
-        ): FunSpec {
-            val functionBuilder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("values", Boolean::class, VARARG)
-            
-            functionBuilder.addStatement("values.forEach { value ->")
-            addImmediateValidation(functionBuilder, property, "value", indent = "    ")
-            functionBuilder.addStatement("    graph.addTriple(resource, %L, %T(value.toString(), %T.boolean))",
-                propertyIri,
-                ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD"))
-            functionBuilder.addStatement("}")
-            
-            return functionBuilder.build()
+        override fun generateMethods(property: PropertyBuilderModel, propertyIri: CodeBlock, options: DslGenerationOptions): List<FunSpec> =
+            valueMethods(property, propertyIri, Boolean::class.asTypeName(), CodeBlock.of("%T(value.toString(), %T.boolean)", LITERAL, XSD))
+    }
+
+    /**
+     * Strategy for any other literal type (Long, Float, BigInteger, BigDecimal, LocalDate, LangString, …):
+     * the setter takes the Kotlin type and writes it with the property's declared datatype.
+     */
+    public object TypedLiteralStrategy : PropertyTypeStrategy() {
+        override fun generateMethods(property: PropertyBuilderModel, propertyIri: CodeBlock, options: DslGenerationOptions): List<FunSpec> {
+            val element = elementType(property.kotlinType)
+            val fallback = CodeBlock.of("%T.encode(value, %T.string)", XSD_LITERALS, XSD)
+            return valueMethods(property, propertyIri, element, fallback)
         }
     }
-    
+
+    /** Strategy for IRI-valued properties (`sh:class`, `sh:nodeKind sh:IRI`): setters take the IRI string. */
+    public object IriStrategy : PropertyTypeStrategy() {
+        override fun generateMethods(property: PropertyBuilderModel, propertyIri: CodeBlock, options: DslGenerationOptions): List<FunSpec> {
+            val methods = mutableListOf<FunSpec>()
+            methods += FunSpec.builder(property.propertyName)
+                .addKdoc("%L", buildKdoc(property))
+                .addParameter("value", String::class)
+                .addStatement("graph.addTriple(resource, %L, %T(value))", propertyIri, IRI)
+                .build()
+            if (property.isList) {
+                methods += FunSpec.builder(property.propertyName)
+                    .addKdoc("%L", buildKdoc(property))
+                    .addParameter("values", String::class, VARARG)
+                    .addStatement("values.forEach { value -> graph.addTriple(resource, %L, %T(value)) }", propertyIri, IRI)
+                    .build()
+            }
+            return methods
+        }
+    }
+
     /**
      * Strategy for enum-typed properties.
      *
@@ -330,145 +183,93 @@ public sealed class PropertyTypeStrategy {
             val enumType = ClassName("", enumName)
             val methods = mutableListOf<FunSpec>()
 
+            fun term(v: String) = when (memberKind) {
+                EnumMemberKind.IRI -> CodeBlock.of("%L.iri", v)
+                EnumMemberKind.LITERAL ->
+                    typedLiteral(property, CodeBlock.of("%L.code", v)) ?: CodeBlock.of("%T(%L.code, %T.string)", LITERAL, v, XSD)
+            }
+
             // Scalar setter
-            methods.add(generateEnumScalarMethod(property, propertyIri, enumType, memberKind))
+            methods.add(
+                FunSpec.builder(property.propertyName)
+                    .addKdoc("%L", buildKdoc(property))
+                    .addParameter("value", enumType)
+                    .addStatement("graph.addTriple(resource, %L, %L)", propertyIri, term("value"))
+                    .build()
+            )
 
             // List (vararg) setter when the property can hold multiple values
             if (property.isList) {
-                methods.add(generateEnumListMethod(property, propertyIri, enumType, memberKind))
+                methods.add(
+                    FunSpec.builder(property.propertyName)
+                        .addKdoc("%L", buildKdoc(property))
+                        .addParameter("values", enumType, VARARG)
+                        .beginControlFlow("values.forEach")
+                        .addStatement("graph.addTriple(resource, %L, %L)", propertyIri, term("it"))
+                        .endControlFlow()
+                        .build()
+                )
             }
 
             return methods
-        }
-
-        private fun generateEnumScalarMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            enumType: ClassName,
-            memberKind: EnumMemberKind
-        ): FunSpec {
-            val builder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("value", enumType)
-
-            when (memberKind) {
-                EnumMemberKind.IRI ->
-                    builder.addStatement(
-                        "graph.addTriple(resource, %L, value.iri)",
-                        propertyIri
-                    )
-                EnumMemberKind.LITERAL ->
-                    builder.addStatement(
-                        "graph.addTriple(resource, %L, %T(value.code, %T.string))",
-                        propertyIri,
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                        ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD")
-                    )
-            }
-
-            return builder.build()
-        }
-
-        private fun generateEnumListMethod(
-            property: PropertyBuilderModel,
-            propertyIri: CodeBlock,
-            enumType: ClassName,
-            memberKind: EnumMemberKind
-        ): FunSpec {
-            val builder = FunSpec.builder(property.propertyName)
-                .addKdoc(buildKdoc(property))
-                .addParameter("values", enumType, VARARG)
-
-            when (memberKind) {
-                EnumMemberKind.IRI -> {
-                    builder.addStatement("values.forEach {")
-                    builder.addStatement(
-                        "    graph.addTriple(resource, %L, it.iri)",
-                        propertyIri
-                    )
-                    builder.addStatement("}")
-                }
-                EnumMemberKind.LITERAL -> {
-                    builder.addStatement("values.forEach {")
-                    builder.addStatement(
-                        "    graph.addTriple(resource, %L, %T(it.code, %T.string))",
-                        propertyIri,
-                        ClassName(CodegenConstants.RDF_PACKAGE, "Literal"),
-                        ClassName(CodegenConstants.VOCAB_PACKAGE, "XSD")
-                    )
-                    builder.addStatement("}")
-                }
-            }
-
-            return builder.build()
         }
     }
 
     public companion object {
         public fun from(type: TypeName): PropertyTypeStrategy {
-            return when {
-                type.isStringType() -> StringStrategy
-                type.isIntType() -> IntStrategy
-                type.isDoubleType() -> DoubleStrategy
-                type.isBooleanType() -> BooleanStrategy
-                else -> StringStrategy // Default fallback
+            return when (elementType(type)) {
+                STRING -> StringStrategy
+                Int::class.asTypeName() -> IntStrategy
+                Double::class.asTypeName() -> DoubleStrategy
+                Boolean::class.asTypeName() -> BooleanStrategy
+                else -> if (elementType(type) is ClassName) TypedLiteralStrategy else StringStrategy
             }
         }
     }
 }
 
-// Extension functions for type checking
-private fun TypeName.isStringType(): Boolean {
-    return when {
-        this == String::class.asTypeName() -> true
-        this == String::class.asTypeName().copy(nullable = true) -> true
-        this is ParameterizedTypeName && this.rawType.simpleName == "List" -> {
-            val elementType = this.typeArguments.firstOrNull()
-            elementType == String::class.asTypeName()
-        }
-        else -> false
-    }
+private val STRING = String::class.asTypeName()
+
+/** Element type of `T`, `T?` or `List<T>` (non-null). */
+private fun elementType(type: TypeName): TypeName {
+    val base = if (type is ParameterizedTypeName && type.rawType.simpleName == "List") type.typeArguments.first() else type
+    return base.copy(nullable = false)
 }
 
-private fun TypeName.isIntType(): Boolean {
-    return when {
-        this == Int::class.asTypeName() -> true
-        this == Int::class.asTypeName().copy(nullable = true) -> true
-        this is ParameterizedTypeName && this.rawType.simpleName == "List" -> {
-            val elementType = this.typeArguments.firstOrNull()
-            elementType == Int::class.asTypeName()
-        }
-        else -> false
-    }
-}
+/** `XsdLiterals.encode(value, Iri("<datatype>"))` when the property declares a datatype. */
+private fun typedLiteral(property: PropertyBuilderModel, valueExpr: CodeBlock): CodeBlock? =
+    property.datatype?.let { CodeBlock.of("%T.encode(%L, %T(%S))", XSD_LITERALS, valueExpr, IRI, it) }
 
-private fun TypeName.isDoubleType(): Boolean {
-    return when {
-        this == Double::class.asTypeName() -> true
-        this == Double::class.asTypeName().copy(nullable = true) -> true
-        this is ParameterizedTypeName && this.rawType.simpleName == "List" -> {
-            val elementType = this.typeArguments.firstOrNull()
-            elementType == Double::class.asTypeName()
-        }
-        else -> false
-    }
-}
-
-private fun TypeName.isBooleanType(): Boolean {
-    return when {
-        this == Boolean::class.asTypeName() -> true
-        this == Boolean::class.asTypeName().copy(nullable = true) -> true
-        this is ParameterizedTypeName && this.rawType.simpleName == "List" -> {
-            val elementType = this.typeArguments.firstOrNull()
-            elementType == Boolean::class.asTypeName()
-        }
-        else -> false
+/** Scalar setter (+ vararg setter for lists) for a non-String literal type. */
+private fun valueMethods(
+    property: PropertyBuilderModel,
+    propertyIri: CodeBlock,
+    valueType: TypeName,
+    untypedWrite: CodeBlock,
+): List<FunSpec> {
+    val write = typedLiteral(property, CodeBlock.of("value")) ?: untypedWrite
+    return if (property.isList) {
+        val builder = FunSpec.builder(property.propertyName)
+            .addKdoc("%L", buildKdoc(property))
+            .addParameter("values", valueType, VARARG)
+            .beginControlFlow("values.forEach { value ->")
+        addImmediateValidation(builder, property, "value", valueType)
+        builder.addStatement("graph.addTriple(resource, %L, %L)", propertyIri, write)
+        builder.endControlFlow()
+        listOf(builder.build())
+    } else {
+        val builder = FunSpec.builder(property.propertyName)
+            .addKdoc("%L", buildKdoc(property))
+            .addParameter("value", valueType)
+        addImmediateValidation(builder, property, "value", valueType)
+        builder.addStatement("graph.addTriple(resource, %L, %L)", propertyIri, write)
+        listOf(builder.build())
     }
 }
 
 // Shared helper functions
 private fun buildKdoc(property: PropertyBuilderModel): String {
-    return buildString {
+    return kdocText(buildString {
         append("Set ${property.propertyName}.")
         if (property.isRequired) {
             append("\nRequired property.")
@@ -479,69 +280,75 @@ private fun buildKdoc(property: PropertyBuilderModel): String {
         if (property.constraints.pattern != null) {
             append("\nPattern: ${property.constraints.pattern}")
         }
-    }
+    })
 }
 
+/**
+ * Emits `require(...)` checks for the SHACL constraints that can be evaluated on the setter argument.
+ * Checks are datatype-aware: length/pattern checks only for text, numeric bounds only for numeric types
+ * (BigInteger/BigDecimal compare exactly), `sh:in`/`sh:hasValue` against the lexical form. Constraints that
+ * do not apply to [valueType] are left to `validate()` / SHACL validation.
+ */
 private fun addImmediateValidation(
     functionBuilder: FunSpec.Builder,
     property: PropertyBuilderModel,
     valueVar: String,
-    indent: String = ""
+    valueType: TypeName,
 ) {
-    // MinLength constraint
-    if (property.constraints.minLength != null) {
-        functionBuilder.addStatement("${indent}require($valueVar.length >= %L) { \"%L must have minLength >= %L\" }",
-            property.constraints.minLength, property.propertyName, property.constraints.minLength)
+    val c = property.constraints
+    val name = property.propertyName
+    val langString = ClassName(CodegenConstants.RDF_PACKAGE, "LangString")
+    val text: CodeBlock? = when (valueType) {
+        STRING -> CodeBlock.of("%L", valueVar)
+        langString -> CodeBlock.of("%L.lexical", valueVar)
+        else -> null
     }
-    
-    // MaxLength constraint
-    if (property.constraints.maxLength != null) {
-        functionBuilder.addStatement("${indent}require($valueVar.length <= %L) { \"%L must have maxLength <= %L\" }",
-            property.constraints.maxLength, property.propertyName, property.constraints.maxLength)
-    }
-    
-    // Pattern constraint
-    if (property.constraints.pattern != null) {
-        val errorMessage = "${property.propertyName} must match pattern: ${property.constraints.pattern}"
-        val statement = if (indent.isEmpty()) {
-            CodeBlock.of("require(%T(%S).containsMatchIn(%L)) { %S }",
-                Regex::class, property.constraints.pattern, valueVar, errorMessage)
-        } else {
-            CodeBlock.of("%S require(%T(%S).containsMatchIn(%L)) { %S }",
-                indent, Regex::class, property.constraints.pattern, valueVar, errorMessage)
+    val lexical: CodeBlock = text ?: CodeBlock.of("%L.toString()", valueVar)
+
+    if (text != null) {
+        c.minLength?.let {
+            functionBuilder.addStatement("require(%L.length >= %L) { %S }", text, it, "$name must have minLength >= $it")
         }
-        functionBuilder.addCode(statement)
+        c.maxLength?.let {
+            functionBuilder.addStatement("require(%L.length <= %L) { %S }", text, it, "$name must have maxLength <= $it")
+        }
+        c.pattern?.let {
+            functionBuilder.addStatement(
+                "require(%L.containsMatchIn(%L)) { %S }", regexCode(it, c.patternFlags), text, "$name must match pattern: $it"
+            )
+        }
     }
-    
-    // In constraint (value set)
-    if (property.constraints.inValues != null && property.constraints.inValues.isNotEmpty()) {
-        val valuesList = property.constraints.inValues.joinToString(", ") { "\"$it\"" }
-        functionBuilder.addStatement("${indent}require($valueVar in listOf($valuesList)) { \"%L must be one of: %S\" }",
-            property.propertyName, property.constraints.inValues.joinToString())
+
+    c.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
+        functionBuilder.addStatement(
+            "require(%L in listOf(%L)) { %S }",
+            lexical, values.map { CodeBlock.of("%S", it) }.joinToCode(", "), "$name must be one of: ${values.joinToString()}"
+        )
     }
-    
-    // HasValue constraint
-    if (property.constraints.hasValue != null) {
-        functionBuilder.addStatement("${indent}require($valueVar == \"%S\") { \"%L must equal: %S\" }",
-            property.constraints.hasValue, property.propertyName, property.constraints.hasValue)
+
+    c.hasValue?.let {
+        functionBuilder.addStatement("require(%L == %S) { %S }", lexical, it, "$name must equal: $it")
     }
-    
-    // Numeric constraints
-    if (property.constraints.minInclusive != null) {
-        functionBuilder.addStatement("${indent}require($valueVar >= %L) { \"%L must be >= %L\" }",
-            property.constraints.minInclusive, property.propertyName, property.constraints.minInclusive)
+
+    val primitiveNumbers = setOf(Int::class.asTypeName(), Long::class.asTypeName(), Float::class.asTypeName(), Double::class.asTypeName())
+    val bigInteger = ClassName("java.math", "BigInteger")
+    val bigDecimal = ClassName("java.math", "BigDecimal")
+    val comparable: CodeBlock? = when (valueType) {
+        in primitiveNumbers -> CodeBlock.of("%L", valueVar)
+        bigInteger -> CodeBlock.of("%L.toBigDecimal()", valueVar)
+        bigDecimal -> CodeBlock.of("%L", valueVar)
+        else -> null
     }
-    if (property.constraints.maxInclusive != null) {
-        functionBuilder.addStatement("${indent}require($valueVar <= %L) { \"%L must be <= %L\" }",
-            property.constraints.maxInclusive, property.propertyName, property.constraints.maxInclusive)
-    }
-    if (property.constraints.minExclusive != null) {
-        functionBuilder.addStatement("${indent}require($valueVar > %L) { \"%L must be > %L\" }",
-            property.constraints.minExclusive, property.propertyName, property.constraints.minExclusive)
-    }
-    if (property.constraints.maxExclusive != null) {
-        functionBuilder.addStatement("${indent}require($valueVar < %L) { \"%L must be < %L\" }",
-            property.constraints.maxExclusive, property.propertyName, property.constraints.maxExclusive)
+    if (comparable != null) {
+        fun bound(value: Double?, op: String, text: String) {
+            if (value == null) return
+            val boundExpr = if (valueType in primitiveNumbers) CodeBlock.of("%L", value)
+            else CodeBlock.of("%T(%S)", bigDecimal, value.toBigDecimal().toPlainString())
+            functionBuilder.addStatement("require(%L %L %L) { %S }", comparable, op, boundExpr, "$name must be $text $value")
+        }
+        bound(c.minInclusive, ">=", ">=")
+        bound(c.maxInclusive, "<=", "<=")
+        bound(c.minExclusive, ">", ">")
+        bound(c.maxExclusive, "<", "<")
     }
 }
-

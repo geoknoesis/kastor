@@ -132,25 +132,26 @@ class KastorGraphOpsTest {
     }
     
     @Test
-    fun `getObjectValues omits object when factory throws RuntimeException`() {
+    fun `getObjectValues propagates RuntimeException from factory with context`() {
         val repo = Rdf.memory()
         val subject = Iri("http://example.org/person")
         val friend = Iri("http://example.org/friend")
-        
+
         repo.add {
             subject - FOAF.knows - friend
             subject - FOAF.name - "John Doe"
         }
-        
-        val objects = KastorGraphOps.getObjectValues(repo.defaultGraph, subject, FOAF.knows) { term ->
-            when (term) {
-                is Iri -> if (term.value.contains("friend")) throw RuntimeException("Bad friend") else "Good: $term"
-                else -> "Other: $term"
+
+        // Failures are never silently dropped: they surface as MaterializationException.
+        val e = assertThrows(MaterializationException::class.java) {
+            KastorGraphOps.getObjectValues(repo.defaultGraph, subject, FOAF.knows) { term ->
+                when (term) {
+                    is Iri -> if (term.value.contains("friend")) throw RuntimeException("Bad friend") else "Good: $term"
+                    else -> "Other: $term"
+                }
             }
         }
-        
-        // IllegalStateException / ValidationException propagate; generic RuntimeException is skipped
-        assertTrue(objects.isEmpty())
+        assertTrue(e.message!!.contains("Bad friend"))
     }
 
     @Test

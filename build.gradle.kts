@@ -190,14 +190,14 @@ subprojects {
     }
 
     // Sources JAR
-    tasks.register<org.gradle.jvm.tasks.Jar>("sourcesJar") {
+    tasks.register<org.gradle.api.tasks.bundling.Jar>("sourcesJar") {
       archiveClassifier.set("sources")
       val sourceSets = project.extensions.getByType(org.gradle.api.tasks.SourceSetContainer::class.java)
       from(sourceSets.getByName("main").allSource)
     }
 
     // Javadoc JAR (may be empty for pure Kotlin projects)
-    tasks.register<org.gradle.jvm.tasks.Jar>("javadocJar") {
+    tasks.register<org.gradle.api.tasks.bundling.Jar>("javadocJar") {
       archiveClassifier.set("javadoc")
       val javadoc = tasks.findByName("javadoc") as? org.gradle.api.tasks.javadoc.Javadoc
       if (javadoc != null) {
@@ -225,7 +225,7 @@ subprojects {
         @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
         abiValidation { }
       }
-      tasks.named<org.gradle.jvm.tasks.Jar>("javadocJar") {
+      tasks.named<org.gradle.api.tasks.bundling.Jar>("javadocJar") {
         dependsOn("dokkaGeneratePublicationHtml")
         from(layout.buildDirectory.dir("dokka/html"))
       }
@@ -233,7 +233,7 @@ subprojects {
     extensions.configure<PublishingExtension> {
       repositories { maven { name = "staging"; url = rootProject.layout.buildDirectory.dir("release-repository").get().asFile.toURI() } }
       publications.withType<MavenPublication>().configureEach {
-        if (project.path == ":kastor-gen:gradle-plugin" && name == "pluginMaven") {
+        if (project.path == ":kastor-gen:gradle-plugin" && name == "pluginMaven" && !pluginManager.hasPlugin("com.gradle.plugin-publish")) {
           artifact(tasks.named("sourcesJar")); artifact(tasks.named("javadocJar"))
         }
         pom {

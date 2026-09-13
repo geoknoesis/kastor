@@ -117,6 +117,11 @@ public final class com/geoknoesis/kastor/gen/runtime/KastorGraphOps {
 	public final fun getRequiredLiteralValue-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
 }
 
+public final class com/geoknoesis/kastor/gen/runtime/MaterializationException : java/lang/IllegalStateException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
 public final class com/geoknoesis/kastor/gen/runtime/MaterializationKt {
 	public static final fun materialize (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/reflect/KClass;)Ljava/lang/Object;
 	public static final fun materialize (Lcom/geoknoesis/kastor/rdf/RdfRepository;Lcom/geoknoesis/kastor/rdf/RdfTerm;Lkotlin/reflect/KClass;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Ljava/lang/Object;
@@ -132,10 +137,13 @@ public final class com/geoknoesis/kastor/gen/runtime/OntoMapper {
 	public static final field ERROR_NOT_RDF_BACKED Ljava/lang/String;
 	public static final field ERROR_NO_FACTORY Ljava/lang/String;
 	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/OntoMapper;
-	public static final field registry Ljava/util/Map;
 	public static final fun initialize ([Ljava/lang/Class;)V
+	public static final fun isRegistered (Ljava/lang/Class;)Z
 	public static final fun materialize (Lcom/geoknoesis/kastor/gen/runtime/RdfRef;Ljava/lang/Class;)Ljava/lang/Object;
 	public static final fun materializeValidated (Lcom/geoknoesis/kastor/gen/runtime/RdfRef;Ljava/lang/Class;Lcom/geoknoesis/kastor/gen/runtime/ValidationContext;)Ljava/lang/Object;
+	public static final fun register (Ljava/lang/Class;Lkotlin/jvm/functions/Function1;)V
+	public static final fun registeredTypes ()Ljava/util/Set;
+	public static final fun unregister (Ljava/lang/Class;)Z
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/PredicateWriteKt {
@@ -372,6 +380,22 @@ public final class com/geoknoesis/kastor/gen/runtime/ValidationResult$Violations
 public final class com/geoknoesis/kastor/gen/runtime/WriteSupportKt {
 	public static final fun replaceResource (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/util/Collection;)V
 	public static final fun replaceValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Ljava/util/Collection;)V
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/XsdLiterals {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/XsdLiterals;
+	public final fun bigDecimal (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/math/BigDecimal;
+	public final fun bigInteger (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/math/BigInteger;
+	public final fun boolean (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Boolean;
+	public final fun booleanLexical (Ljava/lang/String;)Ljava/lang/Boolean;
+	public final fun double (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Double;
+	public final fun encode-AqFvXrU (Ljava/lang/Object;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
+	public final fun float (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Float;
+	public final fun int (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Integer;
+	public final fun langString (Lcom/geoknoesis/kastor/rdf/Literal;)Lcom/geoknoesis/kastor/rdf/LangString;
+	public final fun localDate (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/time/LocalDate;
+	public final fun long (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/Long;
+	public final fun string (Lcom/geoknoesis/kastor/rdf/Literal;)Ljava/lang/String;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/delegates/IrisKt {
