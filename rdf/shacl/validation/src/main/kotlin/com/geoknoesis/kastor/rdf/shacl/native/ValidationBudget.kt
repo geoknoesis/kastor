@@ -17,6 +17,16 @@ internal class ValidationBudget(
             throw ShaclValidationException("SHACL $phase timed out or was cancelled")
         }
     }
+    private var ticks = 0
+
+    /**
+     * Cheap cooperative check for hot loops: consults the clock and interrupt flag only every 64 calls.
+     * Not thread-safe by design (one budget per validation run).
+     */
+    fun tick(phase: String = "validation") {
+        if ((++ticks and 63) == 0) check(phase)
+    }
+
     fun remainingNanos(): Long {
         check()
         return allowed?.let { (it - (clock() - started)).coerceAtLeast(1) } ?: Long.MAX_VALUE
