@@ -211,7 +211,8 @@ class MemoryGraph internal constructor(
     private val access: (Boolean) -> Unit,
     private val recordUndo: ((() -> Unit) -> Unit)?,
 ) : MutableRdfGraph {
-    constructor(initialTriples: Collection<RdfTriple> = emptyList()) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
+    constructor() : this(emptyList())
+    constructor(initialTriples: Collection<RdfTriple>) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
 
     private val triples = linkedSetOf<RdfTriple>()
     private val subjects = mutableMapOf<RdfResource, MutableSet<RdfTriple>>()
