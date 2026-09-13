@@ -72,14 +72,41 @@ import com.geoknoesis.kastor.rdf.shacl.native.distinctShaclTerms
  * - Recursion is detected on (focus node, shape) pairs. SHACL leaves recursive shapes undefined; a pair that is
  *   re-entered while being checked is assumed to conform, so finite acyclic data chains validate normally.
  */
-internal class NativeShaclValidator(private val config: ValidationConfig) : ShaclValidator, com.geoknoesis.kastor.rdf.shacl.ShapeCacheControl {
+internal class NativeShaclValidator(
+    private val config: ValidationConfig,
+    private val sparqlRepositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository = SparqlConstraintEvaluator.defaultRepositoryFactory,
+) : ShaclValidator, com.geoknoesis.kastor.rdf.shacl.ShapeCacheControl {
 
     private companion object {
         val singleLineBreakRegex = Regex("[\\f\\r\\n\\u000B]")
+        const val DIGEST_MEMO_CAPACITY = 8
         val messagePlaceholder = Regex("\\{[?$]([A-Za-z_][A-Za-z0-9_]*)\\}")
     }
 
     private val compileCache = NativeCompileCache()
+
+    /**
+     * Structural digests of recently validated shapes snapshots (finding: avoid re-sorting and re-hashing an
+     * unchanged shapes graph on every run). The RdfGraph API exposes no modification counter, so entries are keyed
+     * by the **content** of the merged triple snapshot: a hit requires element-wise equality with a stored copy
+     * (O(n) `equals`, no canonicalization/sort/SHA-256). Any mutation of the shapes graph changes the snapshot and
+     * therefore misses — a stale digest can never be reused. Snapshots whose triple order differs simply miss.
+     * Bounded to [DIGEST_MEMO_CAPACITY] entries (each retains a copy of the triple list, not the graph).
+     */
+    private val digestMemo = object : LinkedHashMap<List<RdfTriple>, String>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<List<RdfTriple>, String>?): Boolean = size > DIGEST_MEMO_CAPACITY
+    }
+    @Volatile internal var digestMemoHits = 0L
+        private set
+
+    private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
+        synchronized(digestMemo) {
+            digestMemo[triples]?.let { digestMemoHits++; return it }
+        }
+        val digest = ShapesStructuralDigest.digest(triples, config, budget)
+        synchronized(digestMemo) { digestMemo[ArrayList(triples)] = digest }
+        return digest
+    }
     override val cacheStatistics get() = compileCache.statistics()
     override fun clearCache() = compileCache.clear()
     init {
@@ -121,13 +148,14 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         val compiled: CompiledShapeGraph,
         val data: DataGraphIndex,
         val budget: ValidationBudget,
+        private val repositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository,
     ) : AutoCloseable {
         val conformsMemo = HashMap<Pair<String, RdfResource>, Boolean>()
         val inProgress = HashSet<Pair<String, RdfResource>>()
         var recursionAssumptions = 0L
         val reportPaths = HashMap<RdfResource, ReportPath>()
         private val session = lazy {
-            SparqlConstraintEvaluator.Session(data.graph, if (compiled.sparqlUsesShapesGraph) compiled.index.triples else emptyList())
+            SparqlConstraintEvaluator.Session(data.graph, if (compiled.sparqlUsesShapesGraph) compiled.index.triples else emptyList(), repositoryFactory)
         }
         fun checkDeadline() {
             budget.check()
@@ -162,7 +190,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
             }
         val digest =
             try {
-                ShapesStructuralDigest.digest(mergedShapesTriples, config, budget)
+                digestOf(mergedShapesTriples, budget)
             } catch (e: ShapeCompileException) {
                 throw ShaclValidationException("SHACL shapes digest failed: ${e.message}", e)
             }
@@ -174,7 +202,7 @@ internal class NativeShaclValidator(private val config: ValidationConfig) : Shac
         val compiled = try {
             compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
         } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
-        ValidationContext(compiled, DataGraphIndex(graph, budget), budget).use { ctx ->
+        ValidationContext(compiled, DataGraphIndex(graph, budget), budget, sparqlRepositoryFactory).use { ctx ->
             ctx.checkDeadline()
 
             val violations = mutableListOf<ValidationViolation>()
