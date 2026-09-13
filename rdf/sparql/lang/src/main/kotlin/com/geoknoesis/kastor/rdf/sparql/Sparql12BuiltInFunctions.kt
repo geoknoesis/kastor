@@ -55,25 +55,9 @@ object Sparql12BuiltInFunctions {
         
         // String functions
         SparqlExtensionFunction(
-            iri = SPARQL12.replaceAll.value,
-            name = "replaceAll",
-            description = "Replaces all occurrences of a pattern in a string",
-            argumentTypes = listOf("xsd:string", "xsd:string", "xsd:string"),
-            returnType = "xsd:string",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
             iri = SPARQL12.encodeForUri.value,
             name = "encodeForUri",
             description = "Encodes a string for use in URIs",
-            argumentTypes = listOf("xsd:string"),
-            returnType = "xsd:string",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
-            iri = SPARQL12.decodeForUri.value,
-            name = "decodeForUri",
-            description = "Decodes a URI-encoded string",
             argumentTypes = listOf("xsd:string"),
             returnType = "xsd:string",
             isBuiltIn = true
@@ -91,16 +75,16 @@ object Sparql12BuiltInFunctions {
         SparqlExtensionFunction(
             iri = SPARQL12.hasLANG.value,
             name = "hasLANG",
-            description = "Tests if a literal carries a specific language tag",
-            argumentTypes = listOf("rdf:langString", "xsd:string"),
+            description = "Tests if a literal has a language tag",
+            argumentTypes = listOf("rdf:langString"),
             returnType = "xsd:boolean",
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
             iri = SPARQL12.hasLANGDIR.value,
             name = "hasLANGDIR",
-            description = "Tests if a literal carries a specific base direction",
-            argumentTypes = listOf("rdf:dirLangString", "xsd:string"),
+            description = "Tests if a literal has a base direction",
+            argumentTypes = listOf("rdf:dirLangString"),
             returnType = "xsd:boolean",
             isBuiltIn = true
         ),
@@ -131,30 +115,6 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.dateTime.value,
-            name = "dateTime",
-            description = "Creates a dateTime value",
-            argumentTypes = listOf("xsd:date", "xsd:time"),
-            returnType = "xsd:dateTime",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
-            iri = SPARQL12.date.value,
-            name = "date",
-            description = "Extracts the date part from a dateTime",
-            argumentTypes = listOf("xsd:dateTime"),
-            returnType = "xsd:date",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
-            iri = SPARQL12.time.value,
-            name = "time",
-            description = "Extracts the time part from a dateTime",
-            argumentTypes = listOf("xsd:dateTime"),
-            returnType = "xsd:time",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
             iri = SPARQL12.tz.value,
             name = "tz",
             description = "Extracts the timezone from a dateTime",
@@ -170,14 +130,6 @@ object Sparql12BuiltInFunctions {
             description = "Returns a random number between 0 and 1",
             argumentTypes = emptyList(),
             returnType = "xsd:double",
-            isBuiltIn = true
-        ),
-        SparqlExtensionFunction(
-            iri = SPARQL12.random.value,
-            name = "random",
-            description = "Returns a random integer",
-            argumentTypes = emptyList(),
-            returnType = "xsd:integer",
             isBuiltIn = true
         )
     )

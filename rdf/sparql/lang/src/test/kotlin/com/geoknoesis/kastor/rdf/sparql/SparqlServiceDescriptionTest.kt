@@ -157,9 +157,16 @@ class SparqlServiceDescriptionTest {
         assertNotNull(isTripleFunction)
         assertEquals("xsd:boolean", isTripleFunction?.returnType)
         
-        val replaceAllFunction = builtInFunctions.find { it.name == "replaceAll" }
-        assertNotNull(replaceAllFunction)
-        assertTrue(replaceAllFunction?.argumentTypes?.contains("xsd:string") == true)
+        val encodeFunction = builtInFunctions.find { it.name == "encodeForUri" }
+        assertEquals(listOf("xsd:string"), encodeFunction?.argumentTypes)
+
+        // hasLANG/hasLANGDIR are single-argument in SPARQL 1.2.
+        assertEquals(1, builtInFunctions.single { it.name == "hasLANG" }.argumentTypes.size)
+        assertEquals(1, builtInFunctions.single { it.name == "hasLANGDIR" }.argumentTypes.size)
+
+        // Functions that do not exist in SPARQL are not advertised.
+        val nonStandard = setOf("replaceAll", "decodeForUri", "dateTime", "date", "time", "random")
+        assertTrue(builtInFunctions.none { it.name in nonStandard }, builtInFunctions.map { it.name }.toString())
     }
     
     @Test
@@ -175,16 +182,10 @@ class SparqlServiceDescriptionTest {
             assertNotNull(capabilities.basic)
         }
         
-        // Test specialized providers if available (they may not be available in isolated tests)
-        val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
-        sparqlProvider?.let { provider ->
-            val sparqlCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())
-            assertEquals(ProviderCategory.SPARQL_ENDPOINT, sparqlCapabilities.providerCategory)
-            assertTrue(sparqlCapabilities.supportedSparqlFeatures["RDF-star"] == true)
-            assertTrue(sparqlCapabilities.supportedSparqlFeatures["Federation"] == true)
-            assertTrue(sparqlCapabilities.basic.supportsVersionDeclaration)
-        }
-        
+        // The remote SPARQL endpoint provider (id "sparql") lives in :rdf:sparql, which is not on this
+        // module's classpath; its registry discovery and detailed capabilities are asserted in
+        // SparqlEndpointHttpTest.
+
         val reasonerProvider = RdfProviderRegistry.getProvider("reasoner")
         reasonerProvider?.let { provider ->
             val reasonerCapabilities = provider.getDetailedCapabilities(provider.defaultVariantId())

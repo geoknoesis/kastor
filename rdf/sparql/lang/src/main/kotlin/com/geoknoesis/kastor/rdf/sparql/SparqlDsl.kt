@@ -684,11 +684,24 @@ fun predicate(expr: ExpressionAst): ExpressionAst = FunctionCallAst("PREDICATE",
 fun `object`(expr: ExpressionAst): ExpressionAst = FunctionCallAst("OBJECT", listOf(expr))
 
 fun langdir(expr: ExpressionAst): ExpressionAst = FunctionCallAst("LANGDIR", listOf(expr))
-fun hasLang(expr: ExpressionAst, lang: String): FilterExpressionAst =
-    FunctionCallAst("hasLANG", listOf(expr, TermExpressionAst(string(lang))))
+/** SPARQL 1.2 `hasLANG(expr)`: true if [expr] is a language-tagged literal. */
+fun hasLang(expr: ExpressionAst): FilterExpressionAst = FunctionCallAst("hasLANG", listOf(expr))
 
-fun hasLangdir(expr: ExpressionAst, dir: String): FilterExpressionAst =
-    FunctionCallAst("hasLANGDIR", listOf(expr, TermExpressionAst(string(dir))))
+/**
+ * `LANGMATCHES(LANG(expr), "lang")`: true if the language tag of [expr] matches the language
+ * range [lang] (RFC 4647 basic filtering, so `"en"` also matches `en-GB`; `"*"` matches any tag).
+ */
+fun hasLang(expr: ExpressionAst, lang: String): FilterExpressionAst =
+    FunctionCallAst("LANGMATCHES", listOf(FunctionCallAst("LANG", listOf(expr)), TermExpressionAst(string(lang))))
+
+/** SPARQL 1.2 `hasLANGDIR(expr)`: true if [expr] is a literal with a base direction. */
+fun hasLangdir(expr: ExpressionAst): FilterExpressionAst = FunctionCallAst("hasLANGDIR", listOf(expr))
+
+/** `LANGDIR(expr) = "dir"`: true if [expr] has base direction [dir] (`ltr` or `rtl`). */
+fun hasLangdir(expr: ExpressionAst, dir: String): FilterExpressionAst {
+    require(dir == "ltr" || dir == "rtl") { "Base direction must be 'ltr' or 'rtl', got '$dir'" }
+    return ComparisonExpressionAst(FunctionCallAst("LANGDIR", listOf(expr)), ComparisonOperator.EQ, TermExpressionAst(string(dir)))
+}
 
 fun strlangdir(expr: ExpressionAst, lang: String, dir: String): ExpressionAst =
     FunctionCallAst("STRLANGDIR", listOf(expr, TermExpressionAst(string(lang)), TermExpressionAst(string(dir))))
@@ -696,11 +709,15 @@ fun strlangdir(expr: ExpressionAst, lang: String, dir: String): ExpressionAst =
 fun replace(expr: ExpressionAst, pattern: String, replacement: String): ExpressionAst =
     FunctionCallAst("REPLACE", listOf(expr, TermExpressionAst(string(pattern)), TermExpressionAst(string(replacement))))
 
+/** SPARQL `REPLACE` already replaces every match; kept as an alias that renders `REPLACE`. */
+@Deprecated("SPARQL REPLACE replaces all matches", ReplaceWith("replace(expr, pattern, replacement)"))
 fun replaceAll(expr: ExpressionAst, pattern: String, replacement: String): ExpressionAst =
-    FunctionCallAst("REPLACE_ALL", listOf(expr, TermExpressionAst(string(pattern)), TermExpressionAst(string(replacement))))
+    FunctionCallAst("REPLACE", listOf(expr, TermExpressionAst(string(pattern)), TermExpressionAst(string(replacement))))
 
 fun encodeForUri(expr: ExpressionAst): ExpressionAst = FunctionCallAst("ENCODE_FOR_URI", listOf(expr))
-fun decodeForUri(expr: ExpressionAst): ExpressionAst = FunctionCallAst("DECODE_FOR_URI", listOf(expr))
+@Deprecated("SPARQL has no DECODE_FOR_URI function", level = DeprecationLevel.ERROR)
+fun decodeForUri(expr: ExpressionAst): ExpressionAst =
+    throw UnsupportedOperationException("SPARQL has no DECODE_FOR_URI function")
 fun contains(expr: ExpressionAst, substring: String): FilterExpressionAst =
     FunctionCallAst("CONTAINS", listOf(expr, TermExpressionAst(string(substring))))
 
@@ -717,13 +734,24 @@ fun strAfter(expr: ExpressionAst, substring: String): ExpressionAst =
     FunctionCallAst("STRAFTER", listOf(expr, TermExpressionAst(string(substring))))
 
 fun rand(): ExpressionAst = FunctionCallAst("RAND", emptyList())
-fun random(): ExpressionAst = FunctionCallAst("RANDOM", emptyList())
+@Deprecated("SPARQL has no RANDOM(); use rand() (xsd:double in [0, 1))", ReplaceWith("rand()"), level = DeprecationLevel.ERROR)
+fun random(): ExpressionAst = throw UnsupportedOperationException("SPARQL has no RANDOM(); use rand()")
 fun now(): ExpressionAst = FunctionCallAst("NOW", emptyList())
-fun timezone(): ExpressionAst = FunctionCallAst("TIMEZONE", emptyList())
+@Deprecated("TIMEZONE takes a dateTime argument", ReplaceWith("timezone(expr)"), level = DeprecationLevel.ERROR)
+fun timezone(): ExpressionAst = throw UnsupportedOperationException("TIMEZONE takes a dateTime argument; use timezone(expr)")
+
+/** `TIMEZONE(expr)`: the timezone of an xsd:dateTime as xsd:dayTimeDuration. */
+fun timezone(expr: ExpressionAst): ExpressionAst = FunctionCallAst("TIMEZONE", listOf(expr))
 fun tz(expr: ExpressionAst): ExpressionAst = FunctionCallAst("TZ", listOf(expr))
-fun dateTime(expr: ExpressionAst): ExpressionAst = FunctionCallAst("DATETIME", listOf(expr))
-fun date(expr: ExpressionAst): ExpressionAst = FunctionCallAst("DATE", listOf(expr))
-fun time(expr: ExpressionAst): ExpressionAst = FunctionCallAst("TIME", listOf(expr))
+/** XSD cast `xsd:dateTime(expr)`. */
+fun dateTime(expr: ExpressionAst): ExpressionAst =
+    FunctionCallAst(com.geoknoesis.kastor.rdf.vocab.XSD.dateTime.value, listOf(expr))
+/** XSD cast `xsd:date(expr)` (e.g. the date part of an xsd:dateTime). */
+fun date(expr: ExpressionAst): ExpressionAst =
+    FunctionCallAst(com.geoknoesis.kastor.rdf.vocab.XSD.date.value, listOf(expr))
+/** XSD cast `xsd:time(expr)` (e.g. the time part of an xsd:dateTime). */
+fun time(expr: ExpressionAst): ExpressionAst =
+    FunctionCallAst(com.geoknoesis.kastor.rdf.vocab.XSD.time.value, listOf(expr))
 
 // Conditional expression
 fun if_(condition: FilterExpressionAst, thenValue: ExpressionAst, elseValue: ExpressionAst): ExpressionAst =
