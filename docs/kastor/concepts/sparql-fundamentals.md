@@ -60,7 +60,6 @@ val query = select("name", "age") {
 This generates:
 ```sparql
 VERSION "1.2"
-
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
 SELECT ?name ?age
@@ -101,6 +100,8 @@ val query = select("name", "type") {
     }
 }
 ```
+
+The renderer emits the `PREFIX` declarations (in the order they were added) but always writes IRIs in full, for example `?person <http://xmlns.com/foaf/0.1/name> ?name .`. The generated query is therefore equivalent to the hand-written one above, not textually identical.
 
 ### RDF Triples
 
@@ -468,7 +469,6 @@ val query = select("person", "name") {
 This generates:
 ```sparql
 VERSION "1.2"
-
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 PREFIX ex: <http://example.org/>
 
@@ -479,25 +479,6 @@ WHERE {
 ```
 
 `quotedTriple(...)` renders the SPARQL 1.2 reified triple `<< s p o >>`. A bare triple term `<<( s p o )>>` is not a valid standalone graph pattern and is rejected by the renderer; to bind the reifier, use `ReifierPatternAst`, which renders `?r <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( s p o )>> .` (`rdf:reifies` is always written as a full IRI).
-
-### SPARQL 1.2 RDF-star Functions
-
-SPARQL 1.2 introduces new functions for working with triple terms:
-
-```kotlin
-val query = select {
-    version("1.2")
-    expression(triple(var_("s"), var_("p"), var_("o")), "tripleTerm")
-    expression(subject(var_("triple").expr()), "subj")
-    expression(predicate(var_("triple").expr()), "pred")
-    expression(`object`(var_("triple").expr()), "obj")
-    where {
-        triple(var_("s"), var_("p"), var_("o"))
-        triple(var_("triple"), RDF.type, RDF.Statement)
-        filter(isTriple(var_("triple").expr()))
-    }
-}
-```
 
 ### Binding the Reifier
 
@@ -524,6 +505,7 @@ val query = SelectQueryAst(
 This generates (layout may differ slightly):
 ```sparql
 VERSION "1.2"
+
 SELECT ?person ?confidence
 WHERE {
   ?statement <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?person <http://xmlns.com/foaf/0.1/name> ?name )>> .
