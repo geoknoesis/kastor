@@ -4,7 +4,14 @@
 
 ## Overview
 
-The Kastor Gen Gradle plugin (`com.geoknoesis.kastor.gen`) provides build-time code generation from SHACL shapes and JSON-LD context files. It generates domain interfaces, wrapper implementations, vocabulary constants, and domain-specific DSL builders without requiring annotations in your source code.
+The Kastor Gen Gradle plugin (`com.geoknoesis.kastor.gen`) generates code from a SHACL shapes file and a
+JSON-LD context file at build time, configured entirely in the build script (no `@Rdf` annotation needed).
+For each configured ontology it can generate:
+
+- domain interfaces,
+- RDF-backed wrappers (registered with `OntoMapper`),
+- a vocabulary object of `Iri` constants,
+- an instance-DSL builder.
 
 ## Plugin ID
 
@@ -12,334 +19,53 @@ The Kastor Gen Gradle plugin (`com.geoknoesis.kastor.gen`) provides build-time c
 com.geoknoesis.kastor.gen
 ```
 
-## Features
-
-- ✅ **Domain Interface Generation** - Pure Kotlin interfaces from SHACL shapes
-- ✅ **Wrapper Implementation** - RDF-backed implementations of interfaces
-- ✅ **Vocabulary Constants** - Type-safe vocabulary constants (auto-enabled when metadata provided)
-- ✅ **Domain DSL Builders** - Type-safe DSL for creating instances
-- ✅ **Multiple Ontologies** - Support for generating from multiple ontology files
-- ✅ **Incremental Builds** - Only regenerates when ontology files change
-- ✅ **Build Cache** - Caches generated code for faster builds
-
 ## Installation
 
-### Plugin DSL (Recommended)
+> Kastor Gen is **not yet published** to the Gradle Plugin Portal or Maven Central. Until it is, build it
+> from the [Kastor repository](https://github.com/geoknoesis/kastor) and consume it from Maven Local.
+
+Publish the plugin and the runtime from a Kastor checkout (requires JDK 21+):
+
+```bash
+./gradlew :kastor-gen:gradle-plugin:publishToMavenLocal :kastor-gen:runtime:publishToMavenLocal :rdf:core:publishToMavenLocal
+```
+
+`java-gradle-plugin` also publishes the plugin marker, so the plugin id resolves from Maven Local. Use the
+Kastor build's project version (the `version` in its root `build.gradle.kts`) below:
 
 ```kotlin
 // settings.gradle.kts
 pluginManagement {
     repositories {
+        mavenLocal()
         gradlePluginPortal()
-        mavenCentral()
-    }
-}
-
-// build.gradle.kts
-plugins {
-    id("org.jetbrains.kotlin.jvm") version "2.3.21"
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
-}
-```
-
-### Legacy Plugin Application
-
-```kotlin
-// build.gradle.kts
-buildscript {
-    repositories {
-        gradlePluginPortal()
-        mavenCentral()
-    }
-    dependencies {
-        classpath("com.geoknoesis.kastor:kastor-gen-gradle-plugin:0.2.0")
-    }
-}
-
-apply(plugin = "com.geoknoesis.kastor.gen")
-```
-
-## Configuration
-
-### Basic Configuration
-
-```kotlin
-kastorGen {
-    ontologies {
-        create("dcat") {
-            shaclPath = "ontologies/dcat-us.shacl.ttl"
-            contextPath = "ontologies/dcat-us.context.jsonld"
-            interfacePackage = "com.example.dcatus.generated"
-            wrapperPackage = "com.example.dcatus.generated"
-        }
     }
 }
 ```
-
-### Complete Configuration
-
-```kotlin
-kastorGen {
-    ontologies {
-        create("dcat") {
-            // Required: Paths to ontology files
-            shaclPath = "ontologies/dcat-us.shacl.ttl"
-            contextPath = "ontologies/dcat-us.context.jsonld"
-            
-            // Package configuration
-            interfacePackage = "com.example.dcatus.generated.interfaces"
-            wrapperPackage = "com.example.dcatus.generated.wrappers"
-            vocabularyPackage = "com.example.dcatus.generated.vocab"
-            dslPackage = "com.example.dcatus.generated.dsl"
-            
-            // Generation flags
-            generateInterfaces = true      // Default: true
-            generateWrappers = true       // Default: true
-            generateDsl = true            // Default: false
-            
-            // Vocabulary configuration (auto-enables vocabulary generation)
-            vocabularyName = "DCAT"
-            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
-            vocabularyPrefix = "dcat"
-            // generateVocabulary is automatically set to true when all three above are provided
-            
-            // DSL configuration (if generateDsl = true)
-            dslName = "dcat"              // Optional: auto-derived if not specified
-            
-            // Output directory
-            outputDirectory = "build/generated/sources/kastor-gen"
-        }
-    }
-}
-```
-
-## Configuration Properties
-
-### OntologyConfig Properties
-
-| Property | Type | Required | Default | Description |
-|----------|------|----------|---------|-------------|
-| `shaclPath` | String | ✅ Yes | - | Path to SHACL shape file (relative to project root or `src/main/resources`) |
-| `contextPath` | String | ✅ Yes | - | Path to JSON-LD context file (relative to project root or `src/main/resources`) |
-| `interfacePackage` | String | ❌ No | `"interfaces"` | Package for generated interfaces |
-| `wrapperPackage` | String | ❌ No | `"wrappers"` | Package for generated wrappers |
-| `vocabularyPackage` | String | ❌ No | `"vocabulary"` | Package for generated vocabulary |
-| `dslPackage` | String | ❌ No | `"dsl"` | Package for generated DSL |
-| `generateInterfaces` | Boolean | ❌ No | `true` | Whether to generate domain interfaces |
-| `generateWrappers` | Boolean | ❌ No | `true` | Whether to generate wrapper implementations |
-| `generateVocabulary` | Boolean | ❌ No | Auto-enabled if vocabulary metadata provided | Whether to generate vocabulary constants. Auto-enabled when `vocabularyName`, `vocabularyNamespace`, and `vocabularyPrefix` are all provided |
-| `generateDsl` | Boolean | ❌ No | `false` | Whether to generate domain-specific DSL builders |
-| `vocabularyName` | String | ❌ No | `""` | Name of vocabulary class (e.g., "DCAT"). If provided along with namespace and prefix, vocabulary generation is auto-enabled |
-| `vocabularyNamespace` | String | ❌ No | `""` | Namespace URI for vocabulary (e.g., "http://www.w3.org/ns/dcat#"). If provided along with name and prefix, vocabulary generation is auto-enabled |
-| `vocabularyPrefix` | String | ❌ No | `""` | Prefix for vocabulary (e.g., "dcat"). If provided along with name and namespace, vocabulary generation is auto-enabled |
-| `dslName` | String | ❌ No | `""` | Name of DSL (auto-derived from context file name if not specified) |
-| `outputDirectory` | String | ❌ No | `"build/generated/sources/kastor-gen"` | Output directory for generated code |
-
-## Generated Tasks
-
-The plugin automatically creates Gradle tasks for each configured ontology:
-
-### Individual Ontology Tasks
-
-For each ontology configuration named `"dcat"`, a task `generateOntologyDcat` is created:
-
-```bash
-./gradlew generateOntologyDcat
-```
-
-### Aggregate Task
-
-A main task `generateOntology` runs all ontology generation tasks:
-
-```bash
-./gradlew generateOntology
-```
-
-### Automatic Integration
-
-The `generateOntology` task is automatically configured to run before `compileKotlin`, so generated code is available during compilation.
-
-## Generated Code
-
-### Domain Interfaces
-
-Generated interfaces are pure Kotlin with no RDF dependencies:
-
-```kotlin
-// Generated: com.example.dcatus.generated.interfaces.Catalog
-interface Catalog {
-    val title: String
-    val description: String?
-    val dataset: List<Dataset>
-}
-```
-
-### Wrapper Implementations
-
-Generated wrappers provide RDF-backed implementations:
-
-```kotlin
-// Generated: com.example.dcatus.generated.wrappers.CatalogWrapper
-class CatalogWrapper(
-    private val graph: RdfGraph,
-    private val subject: Iri
-) : Catalog {
-    override val title: String
-        get() = graph.getObjectValue(subject, DCAT.title) as String
-    
-    override val description: String?
-        get() = graph.getObjectValue(subject, DCAT.description) as String?
-    
-    // ...
-}
-```
-
-### Vocabulary Constants
-
-Generated vocabulary provides type-safe constants:
-
-```kotlin
-// Generated: com.example.dcatus.generated.vocab.DCAT
-object DCAT {
-    val namespace = "http://www.w3.org/ns/dcat#"
-    
-    val Catalog = Iri("${namespace}Catalog")
-    val Dataset = Iri("${namespace}Dataset")
-    val title = Iri("${namespace}title")
-    val description = Iri("${namespace}description")
-    // ...
-}
-```
-
-### Domain DSL Builders
-
-Generated DSL provides type-safe instance creation:
-
-```kotlin
-// Generated: com.example.dcatus.generated.dsl.DcatDsl
-val catalog = dcat {
-    catalog("http://example.org/catalog") {
-        title("My Data Catalog")
-        description("A catalog of datasets")
-        dataset("http://example.org/dataset1") {
-            title("Dataset 1")
-            keyword("data", "example")
-        }
-    }
-}
-```
-
-## Multiple Ontologies
-
-Configure multiple ontologies in a single project:
-
-```kotlin
-kastorGen {
-    ontologies {
-        create("dcat") {
-            shaclPath = "ontologies/dcat-us.shacl.ttl"
-            contextPath = "ontologies/dcat-us.context.jsonld"
-            interfacePackage = "com.example.dcatus.generated"
-        }
-        
-        create("schema") {
-            shaclPath = "ontologies/schema.shacl.ttl"
-            contextPath = "ontologies/schema.context.jsonld"
-            interfacePackage = "com.example.schema.generated"
-        }
-        
-        create("foaf") {
-            shaclPath = "ontologies/foaf.shacl.ttl"
-            contextPath = "ontologies/foaf.context.jsonld"
-            interfacePackage = "com.example.foaf.generated"
-        }
-    }
-}
-```
-
-Each ontology gets its own generation task:
-- `generateOntologyDcat`
-- `generateOntologySchema`
-- `generateOntologyFoaf`
-
-## Source Set Configuration
-
-Add generated sources to your source sets:
-
-```kotlin
-sourceSets {
-    main {
-        kotlin {
-            srcDir("build/generated/sources/kastor-gen")
-        }
-    }
-}
-```
-
-**Note**: The plugin automatically configures generated sources, but you may need to add this for IDE support.
-
-## Incremental Builds
-
-The plugin supports incremental builds through Gradle's task input/output tracking:
-
-### Automatic File Tracking
-
-The plugin tracks ontology files as task inputs. When files change, only affected tasks are rerun.
-
-### Explicit File Tracking
-
-For better incremental build support, configure file inputs explicitly:
-
-```kotlin
-tasks.named("generateOntologyDcat") {
-    inputs.files(
-        file("ontologies/dcat-us.shacl.ttl"),
-        file("ontologies/dcat-us.context.jsonld")
-    )
-    outputs.dir("build/generated/sources/kastor-gen/main/kotlin")
-}
-```
-
-### Build Caching
-
-Enable build caching for faster builds:
-
-```kotlin
-tasks.named("generateOntologyDcat") {
-    outputs.cacheIf { true }
-}
-```
-
-See [Incremental Builds Guide](../guides/incremental-builds.md) for detailed information.
-
-## Examples
-
-### Example 1: Basic Interface Generation
 
 ```kotlin
 // build.gradle.kts
 plugins {
-    id("org.jetbrains.kotlin.jvm")
-    id("com.geoknoesis.kastor.gen") version "0.2.0"
+    id("org.jetbrains.kotlin.jvm") version "2.4.20"
+    id("com.geoknoesis.kastor.gen") version "<kastor-version>"
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
 }
 
 dependencies {
-    implementation("com.geoknoesis.kastor:kastor-gen-runtime:0.2.0")
-    implementation("com.geoknoesis.kastor:rdf-core:0.2.0")
-}
-
-kastorGen {
-    ontologies {
-        create("person") {
-            shaclPath = "src/main/resources/person-shape.ttl"
-            contextPath = "src/main/resources/person-context.jsonld"
-            interfacePackage = "com.example.generated"
-        }
-    }
+    implementation("com.geoknoesis.kastor:kastor-gen-runtime:<kastor-version>")
 }
 ```
 
-### Example 2: Full Generation (Interfaces + Wrappers + Vocabulary + DSL)
+Inside the Kastor build itself, apply the plugin by id and depend on `project(":kastor-gen:runtime")`.
+
+The plugin has no runtime dependency on the Kotlin Gradle plugin: it finds the Kotlin source sets
+reflectively, so it never adds a second copy of KGP classes to your build.
+
+## Configuration
 
 ```kotlin
 kastorGen {
@@ -347,142 +73,194 @@ kastorGen {
         create("dcat") {
             shaclPath = "ontologies/dcat-us.shacl.ttl"
             contextPath = "ontologies/dcat-us.context.jsonld"
-            
-            interfacePackage = "com.example.dcatus.interfaces"
-            wrapperPackage = "com.example.dcatus.wrappers"
-            vocabularyPackage = "com.example.dcatus.vocab"
-            dslPackage = "com.example.dcatus.dsl"
-            
-            generateInterfaces = true
-            generateWrappers = true
-            generateVocabulary = true
-            generateDsl = true
-            
-            vocabularyName = "DCAT"
-            vocabularyNamespace = "http://www.w3.org/ns/dcat#"
-            vocabularyPrefix = "dcat"
-            
-            dslName = "dcat"
+            interfacePackage = "com.example.dcatus"   // required
         }
     }
 }
 ```
 
-### Example 4: DSL Only
+`kastorGen.ontology("dcat") { … }` is an equivalent shorthand for `ontologies { create("dcat") { … } }`.
 
-```kotlin
-kastorGen {
-    ontologies {
-        create("skos") {
-            shaclPath = "ontologies/skos.shacl.ttl"
-            contextPath = "ontologies/skos.context.jsonld"
-            
-            generateInterfaces = false
-            generateWrappers = false
-            generateVocabulary = false
-            generateDsl = true
-            
-            dslPackage = "com.example.skos.dsl"
-            dslName = "skos"
-        }
-    }
-}
-```
-
-## Troubleshooting
-
-### Generated Code Not Found
-
-**Problem**: IDE or compiler can't find generated code.
-
-**Solution**: 
-1. Run `./gradlew generateOntology` to generate code
-2. Refresh Gradle project in IDE
-3. Ensure `sourceSets` includes generated directory
-
-### Task Not Running
-
-**Problem**: Generation task doesn't run automatically.
-
-**Solution**:
-```kotlin
-// Explicitly configure task dependency
-tasks.named("compileKotlin") {
-    dependsOn("generateOntology")
-}
-```
-
-### File Not Found
-
-**Problem**: Plugin can't find SHACL or context files.
-
-**Solution**: 
-1. Check file paths are relative to project root
-2. Try absolute paths for debugging
-3. Ensure files exist in `src/main/resources/` if using relative paths
-
-### DSL Name Validation Error
-
-**Problem**: `dslName` must be a valid Kotlin identifier.
-
-**Solution**: Use only letters, numbers, and underscores. Must start with a letter:
-- ✅ Valid: `"dcat"`, `"skos"`, `"myVocab"`
-- ❌ Invalid: `"dcat-us"`, `"123vocab"`, `"my-vocab"`
-
-## Best Practices
-
-### 1. Organize Ontology Files
-
-```
-project/
-├── ontologies/
-│   ├── dcat-us/
-│   │   ├── shapes.ttl
-│   │   └── context.jsonld
-│   └── schema/
-│       ├── shapes.ttl
-│       └── context.jsonld
-└── build.gradle.kts
-```
-
-### 2. Use Separate Packages
+### Complete configuration
 
 ```kotlin
 kastorGen {
     ontologies {
         create("dcat") {
-            interfacePackage = "com.example.dcatus.interfaces"
-            wrapperPackage = "com.example.dcatus.wrappers"
-            vocabularyPackage = "com.example.dcatus.vocab"
-            dslPackage = "com.example.dcatus.dsl"
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+
+            interfacePackage = "com.example.dcatus.model"      // required
+            wrapperPackage = "com.example.dcatus.rdf"          // default: interfacePackage
+            vocabularyPackage = "com.example.dcatus.vocab"     // default: interfacePackage
+            dslPackage = "com.example.dcatus.dsl"              // default: <interfacePackage>.dsl
+
+            generateInterfaces = true                          // default: true
+            generateWrappers = true                            // default: true
+            generateDsl = true                                 // default: false
+            dslName = "dcat"                                   // default: derived from the context file name
+
+            vocabularyName = "DCAT"                            // these three together enable
+            vocabularyNamespace = "http://www.w3.org/ns/dcat#" // vocabulary generation
+            vocabularyPrefix = "dcat"
+
+            outputDirectory = "src/generated/kotlin"           // default: build/generated/sources/kastor-gen
         }
     }
 }
 ```
 
-### 3. Version Control Generated Code
+## Configuration properties (`OntologyConfig`)
 
-**Option 1**: Don't commit generated code (recommended)
-```gitignore
-build/generated/
-```
+Every optional setting is `null` until you assign it; the task then applies the default below.
 
-**Option 2**: Commit generated code for stability
-- Useful for libraries
-- Ensures consistent API across versions
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `shaclPath` | `String` | required | SHACL file. Absolute, or relative to the project directory; if not found there, relative to `src/main/resources` |
+| `contextPath` | `String` | required | JSON-LD context file, resolved the same way |
+| `interfacePackage` | `String?` | **required** — the task fails with `interfacePackage must be set` | Package for interfaces |
+| `wrapperPackage` | `String?` | `interfacePackage` | Package for wrappers |
+| `vocabularyPackage` | `String?` | `interfacePackage` | Package for the vocabulary object |
+| `dslPackage` | `String?` | `<interfacePackage>.dsl` | Package for the DSL |
+| `generateInterfaces` | `Boolean?` | `true` | Generate interfaces |
+| `generateWrappers` | `Boolean?` | `true` | Generate wrappers |
+| `generateVocabulary` | `Boolean?` | `true` when `vocabularyName`, `vocabularyNamespace` and `vocabularyPrefix` are all set, else `false` | Generate a vocabulary object; if set to `true`, all three are required |
+| `vocabularyName` | `String?` | — | Vocabulary object name (converted to an upper-case identifier, e.g. `DCAT`) |
+| `vocabularyNamespace` | `String?` | — | Namespace IRI |
+| `vocabularyPrefix` | `String?` | — | Prefix |
+| `generateDsl` | `Boolean?` | `false` | Generate the instance DSL |
+| `dslName` | `String?` | derived from the context file name | Top-level DSL function name; an explicit value must match `[a-zA-Z][a-zA-Z0-9]*` |
+| `outputDirectory` | `String?` | `build/generated/sources/kastor-gen` | Output base directory, relative to the project directory; the ontology name is appended |
 
-### 4. Use Build Cache
+Validation performed before anything is written:
+
+- The ontology name must match `[A-Za-z][A-Za-z0-9_-]*`.
+- Every configured package must be a valid Kotlin package name (no keywords, valid segments).
+- A derived DSL name is sanitised into an identifier (`dcat-us_3.0_context` → `dcatUs30Context`; a
+  leading digit gets a `dsl` prefix).
+
+## Generated tasks
+
+| Task | Description |
+|---|---|
+| `generateOntology<Name>` | One `OntologyGenerationTask` per configuration (`dcat` → `generateOntologyDcat`) |
+| `generateOntology` | Depends on all of them |
+
+All tasks are in the `kastor-gen` group (`./gradlew tasks --group=kastor-gen`).
+
+### Automatic source-set wiring
+
+Each task's output directory is added to the `main` Kotlin source set of `org.jetbrains.kotlin.jvm`
+projects, or to `jvmMain` of `org.jetbrains.kotlin.multiplatform` projects. Because the source directory is
+the task's output, compiling Kotlin runs generation first — no `sourceSets { … }` or `dependsOn` is needed.
+The generated code is JVM-only: a multiplatform project without a `jvm()` target fails with a clear error.
+
+### `OntologyGenerationTask`
+
+- `ontologyName` — the configuration name, used in diagnostics (`kastorGen ontology 'dcat': …`).
+- `shaclFile` / `contextFile` — `@InputFile` properties resolved from the paths, so editing an ontology
+  file re-runs the task.
+- `@CacheableTask`; execution does not touch `Project`, so the task is configuration-cache compatible.
+- **All-or-nothing:** every file is generated in memory first. SHACL/JSON-LD parse errors, name
+  collisions, invalid packages or missing required settings fail the task *before* the output directory is
+  touched. Then the files written by the previous run (listed in `.kastor-generated-files`) are deleted and
+  the new ones written, so renamed shapes never leave stale files.
+
+See [Incremental Builds](../guides/incremental-builds.md).
+
+## Generated code
+
+### Interfaces and wrappers
+
+Interfaces and wrappers are the same as those produced by the KSP processor (see
+[Ontology Generation](../tutorials/ontology-generation.md) for type mapping, naming and inheritance).
+Interfaces carry no Jakarta/javax validation annotations. Wrappers are `internal`, register themselves with
+`OntoMapper.register`, and include the embedded constraint `validate()`.
+
+When `wrapperPackage` differs from `interfacePackage`, the task also emits a small internal
+`<Interface>Factory` object in the interface package that loads the wrapper, so `OntoMapper`'s
+auto-discovery (`<Interface>Wrapper` / `<Interface>Factory` next to the interface) still works.
 
 ```kotlin
-tasks.withType<OntologyGenerationTask> {
-    outputs.cacheIf { true }
+val catalog: Catalog = graph.materialize(Iri("https://data.example.org/catalog"))
+```
+
+### Vocabulary object
+
+Built with KotlinPoet (descriptions, quotes and `$` cannot break the source) and deterministic (classes,
+then properties, each sorted by IRI):
+
+```kotlin
+// GENERATED FILE - DO NOT EDIT
+package com.example.dcatus.vocab
+
+/** DCAT vocabulary. Generated from ontology files. */
+object DCAT : Vocabulary {
+    override val namespace: String = "http://www.w3.org/ns/dcat#"
+    override val prefix: String = "dcat"
+
+    /** IRI: http://www.w3.org/ns/dcat#Catalog */
+    val Catalog: Iri by lazy { term("Catalog") }
+
+    /** A name given to the resource. IRI: http://purl.org/dc/terms/title */
+    val title: Iri by lazy { Iri("http://purl.org/dc/terms/title") }   // outside the dcat namespace
 }
 ```
 
+- Terms come from the shapes' target classes and property paths plus the context's type/property terms;
+  the Kotlin name is the JSON-LD context term, else the IRI local name.
+- Terms inside `vocabularyNamespace` use `term("local")`; terms from other namespaces (e.g. `dct:title` in
+  a DCAT vocabulary) are emitted as full `Iri("…")` values.
+- When several IRIs map to the same name, the in-namespace term keeps the plain name and the others are
+  prefixed with their JSON-LD prefix (`dct_title`); any remaining clash fails the task and lists the IRIs.
+
+### Instance DSL
+
+With `generateDsl = true`, a type-safe builder DSL named `dslName` is generated into `dslPackage` for
+creating RDF instances of the shapes.
+
+## Multiple ontologies
+
+```kotlin
+kastorGen {
+    ontologies {
+        create("dcat") {
+            shaclPath = "ontologies/dcat-us.shacl.ttl"
+            contextPath = "ontologies/dcat-us.context.jsonld"
+            interfacePackage = "com.example.dcatus"
+        }
+        create("foaf") {
+            shaclPath = "ontologies/foaf.shacl.ttl"
+            contextPath = "ontologies/foaf.context.jsonld"
+            interfacePackage = "com.example.foaf"
+        }
+    }
+}
+```
+
+This creates `generateOntologyDcat`, `generateOntologyFoaf` and the aggregate `generateOntology`; each
+writes to its own directory (`build/generated/sources/kastor-gen/dcat`, `…/foaf`).
+
+## Troubleshooting
+
+**`kastorGen ontology 'x': interfacePackage must be set`** — `interfacePackage` is required.
+
+**`… is not a valid Kotlin package name`** — a package segment is a keyword or contains invalid characters.
+
+**`name collisions: …`** — two classes or properties map to the same Kotlin name (types are compared
+case-insensitively). Add distinct JSON-LD context terms or `sh:name` values.
+
+**`vocabulary term name collisions: …`** — distinct IRIs still share a name after prefix qualification;
+add distinct context terms.
+
+**`cannot read SHACL file …`** — the file does not exist or is not valid Turtle. Relative paths are tried
+against the project directory, then `src/main/resources`; `--info` logs the resolved absolute paths.
+
+**`Kotlin source set 'jvmMain' not found`** — add a `jvm()` target to the multiplatform project.
+
 ## Related Documentation
 
-- [Gradle Configuration Tutorial](../tutorials/gradle-configuration.md) - Detailed tutorial
-- [Incremental Builds Guide](../guides/incremental-builds.md) - Build optimization
-- [Ontology Generation](../tutorials/ontology-generation.md) - Understanding generation
-- [Processor Reference](processor.md) - Low-level API documentation
-
+- [Gradle Configuration Tutorial](../tutorials/gradle-configuration.md)
+- [Incremental Builds Guide](../guides/incremental-builds.md)
+- [Ontology Generation](../tutorials/ontology-generation.md)
+- [Processor Reference](processor.md)
