@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SPARQL_SD
 import com.geoknoesis.kastor.rdf.vocab.SPARQL12
 import org.junit.jupiter.api.Test
@@ -45,7 +46,10 @@ class SparqlServiceDescriptionTest {
         
         // Check that service description contains expected triples
         val serviceUri = Iri("https://example.com/sparql")
-        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, Iri("${SPARQL_SD.namespace}Service"), Iri("${SPARQL_SD.namespace}Service"))))
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, RDF.type, SPARQL_SD.Service)))
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, RDF.type, SPARQL12.Sparql12Service)))
+        // Class IRIs must never be used as predicates.
+        assertFalse(serviceDescription.getTriples().any { it.predicate == SPARQL_SD.Service || it.predicate == SPARQL_SD.Dataset })
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportedSparqlVersion, string("1.2"))))
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportsRdfStar, boolean(true))))
         assertTrue(
@@ -197,6 +201,44 @@ class SparqlServiceDescriptionTest {
         }
     }
     
+    @Test
+    fun `turtle and SPARQL renderings parse and escape hostile values`() {
+        val hostile = SparqlExtensionFunction(
+            iri = "http://example.org/fn",
+            name = "fn\" . <urn:x> <urn:y> <urn:z> . #",
+            description = "line1\nline2 \"quoted\" back\\slash",
+            argumentTypes = emptyList(),
+            returnType = null,
+            isBuiltIn = false
+        )
+        val capabilities = ProviderCapabilities(
+            sparqlVersion = "1.2",
+            supportsRdfStar = true,
+            extensionFunctions = listOf(hostile),
+            defaultGraphs = listOf("http://example.org/g1"),
+            namedGraphs = listOf("http://example.org/g2")
+        )
+        val generator = SparqlServiceDescriptionGenerator("https://example.com/sparql", capabilities)
+
+        val model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel()
+        model.read(java.io.ByteArrayInputStream(generator.generateAsTurtle().toByteArray()), null, "TURTLE")
+        val service = model.createResource("https://example.com/sparql")
+        assertTrue(model.contains(service, org.apache.jena.vocabulary.RDF.type, model.createResource(SPARQL_SD.Service.value)))
+        assertTrue(model.contains(null, model.createProperty(SPARQL_SD.functionName.value), hostile.name))
+        assertTrue(model.contains(null, model.createProperty(SPARQL_SD.description.value), hostile.description))
+        assertTrue(
+            model.contains(
+                service,
+                model.createProperty(SPARQL12.supportsRdfStar.value),
+                model.createTypedLiteral(true)
+            ),
+            "booleans must be typed xsd:boolean literals"
+        )
+        assertEquals(1, model.listStatements(null, model.createProperty("urn:y"), null as org.apache.jena.rdf.model.RDFNode?).toList().size + 1)
+
+        assertParsesQuery(generator.generateAsSparqlResult())
+    }
+
     @Test
     fun `test service description formats`() {
         val capabilities = ProviderCapabilities(
