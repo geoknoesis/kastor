@@ -125,7 +125,6 @@ import com.geoknoesis.kastor.gen.annotations.Rdf
 
 /**
  * Domain interface for http://www.w3.org/ns/dcat#Catalog
- * Pure domain interface with no RDF dependencies.
  * Generated from SHACL shape: http://example.org/shapes/Catalog
  */
 @Rdf(iri = "http://www.w3.org/ns/dcat#Catalog")
@@ -133,20 +132,16 @@ interface Catalog {
     /**
      * A name given to the catalog.
      * Path: http://purl.org/dc/terms/title
-     * Min count: 1
-     * Max count: 1
      */
     @Rdf(iri = "http://purl.org/dc/terms/title")
-    val title: String
+    val title: String          // sh:minCount 1, sh:maxCount 1 -> non-null
 
     /**
      * A free-text account of the catalog.
      * Path: http://purl.org/dc/terms/description
-     * Min count: 0
-     * Max count: 1
      */
     @Rdf(iri = "http://purl.org/dc/terms/description")
-    val description: String
+    val description: String?   // sh:maxCount 1 without sh:minCount -> nullable
 
     /**
      * A collection of data that is listed in the catalog.
@@ -159,7 +154,8 @@ interface Catalog {
 
 ### 3. Generated Wrappers
 
-The processor also generates RDF-backed wrapper implementations:
+The processor also generates RDF-backed wrapper implementations (simplified; the real output also
+contains a generated `validate()` when `validationMode = EMBEDDED`, and a `writeToGraph` helper):
 
 ```kotlin
 // GENERATED FILE - DO NOT EDIT
@@ -173,18 +169,18 @@ import com.geoknoesis.kastor.rdf.*
  * RDF-backed wrapper for Catalog
  * Generated from SHACL shape: http://example.org/shapes/Catalog
  */
-internal class CatalogWrapper(
+internal class CatalogWrapper private constructor(
   input: RdfHandle,
 ) : Catalog, RdfBacked {
 
   private val known: Set<Iri> = setOf(
-    Iri("http://purl.org/dc/terms/title"),
     Iri("http://purl.org/dc/terms/description"),
+    Iri("http://purl.org/dc/terms/title"),
     Iri("http://www.w3.org/ns/dcat#dataset"),
   )
 
   override val rdf: RdfHandle by lazy(LazyThreadSafetyMode.PUBLICATION) {
-    if (input is DefaultRdfHandle) DefaultRdfHandle(input.node, input.graph, known) else input
+    if (input is DefaultRdfHandle) input.withKnownPredicates(known) else input
   }
 
   /**
@@ -192,17 +188,16 @@ internal class CatalogWrapper(
    * Path: http://purl.org/dc/terms/title
    */
   override val title: String by lazy {
-    KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri("http://purl.org/dc/terms/title"))
-      .map { it.lexical }.firstOrNull() ?: ""
+    KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri("http://purl.org/dc/terms/title")).lexical
   }
 
   /**
    * A free-text account of the catalog.
    * Path: http://purl.org/dc/terms/description
    */
-  override val description: String by lazy {
+  override val description: String? by lazy {
     KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri("http://purl.org/dc/terms/description"))
-      .map { it.lexical }.firstOrNull() ?: ""
+      .map { it.lexical }.firstOrNull()
   }
 
   /**
@@ -225,20 +220,75 @@ internal class CatalogWrapper(
 
 ## Type Mapping
 
-The generator automatically maps SHACL datatypes to Kotlin types:
+Literal properties are typed from `sh:datatype`; values are decoded with `XsdLiterals` (see the
+[runtime reference](../reference/runtime.md#xsdliterals)):
 
-| SHACL Datatype | Kotlin Type | Notes |
+| SHACL datatype | Kotlin type | Notes |
 |----------------|-------------|-------|
-| `xsd:string` | `String` | |
-| `xsd:int`, `xsd:integer` | `Int` | |
-| `xsd:double`, `xsd:float` | `Double` | |
-| `xsd:boolean` | `Boolean` | |
-| `xsd:anyURI` | `String` | |
-| Object properties | Interface type | Based on `sh:class` |
+| `xsd:string`, no datatype | `String` | |
+| `xsd:boolean` | `Boolean` | accepts `true`/`false` and `1`/`0` |
+| `xsd:int`, `xsd:short`, `xsd:byte`, `xsd:unsignedShort`, `xsd:unsignedByte` | `Int` | |
+| `xsd:long`, `xsd:unsignedInt` | `Long` | |
+| `xsd:integer`, `xsd:nonNegativeInteger`, `xsd:positiveInteger`, `xsd:nonPositiveInteger`, `xsd:negativeInteger`, `xsd:unsignedLong` | `java.math.BigInteger` | exact, unbounded |
+| `xsd:decimal` | `java.math.BigDecimal` | exact |
+| `xsd:float` | `Float` | accepts `INF`, `-INF`, `NaN` |
+| `xsd:double` | `Double` | accepts `INF`, `-INF`, `NaN` |
+| `xsd:date` | `java.time.LocalDate` | an optional timezone is accepted and **dropped** on read |
+| `rdf:langString` | `com.geoknoesis.kastor.rdf.LangString` | value and language tag |
+| `xsd:dateTime`, `xsd:time`, `xsd:duration` | `String` | lexical form; no single `java.time` type represents their optional timezones losslessly |
+| any other datatype (e.g. `xsd:anyURI`) | `String` | lexical form |
 
-Cardinality is handled automatically:
-- `sh:maxCount 1` → Single value
-- `sh:maxCount > 1` or unbound → `List<T>`
+Writers (data-class `toTriples`, DSL builders) always emit the **declared** datatype, so a `String`
+declared `xsd:dateTime` is written back as `"…"^^xsd:dateTime`.
+
+Non-literal properties:
+
+| SHACL | Kotlin type |
+|-------|-------------|
+| `sh:class C` where `C` has a shape | the generated interface for `C` |
+| `sh:class C` where `C` has no shape | `String` (the IRI) |
+| `sh:node S` (S has one `sh:targetClass`) | the generated interface for S's target class |
+| `sh:nodeKind sh:IRI` / `sh:BlankNodeOrIRI` / `sh:BlankNode` only | `String` (the IRI) |
+| `sh:nodeKind sh:Literal` only | `String` (lexical form) |
+| `sh:or` / `sh:xone` whose members agree on one `sh:class` or one `sh:datatype` | that class / datatype |
+| `sh:or` / `sh:xone` over several classes | `String` (the IRI), with a warning |
+| `sh:in` | a generated enum |
+
+Cardinality:
+- `sh:maxCount 1` with `sh:minCount 1` → non-null value
+- `sh:maxCount 1` without `sh:minCount` → nullable value
+- no `sh:maxCount`, or `sh:maxCount > 1` → `List<T>`
+
+## Naming
+
+- **Types** come from the JSON-LD context term mapped to the class IRI, else the IRI's local name,
+  converted to PascalCase.
+- **Properties** come from `sh:name`, else the path's local name, converted to camelCase
+  (`date-issued`, `Date issued` → `dateIssued`). Kotlin keywords are backtick-escaped (`` `class` ``); a
+  leading digit gets `_`; names that clash with generated members (`rdf`, `validate`, `copy`, …) get a
+  `Value` suffix. Names are computed once and shared by every generator.
+- **Collisions fail the build** and list the IRIs involved: two classes mapping to the same type name
+  (compared case-insensitively, since generated file names must be distinct on case-insensitive file
+  systems), several node shapes for one class, or two properties of one shape with the same Kotlin name.
+  Resolve them with distinct context terms or `sh:name` values; for example the DCAT-US example maps
+  `vcard:Address` and `locn:Address` to `VcardAddress` and `LocnAddress` in its context.
+- Descriptions are copied into KDoc with `/*`, `*/` and `%` escaped, so shape text cannot break the
+  generated source.
+
+## Inheritance
+
+A node shape with `sh:node <OtherShape>`, or a target class that is `rdfs:subClassOf` another shaped
+class, produces an interface that **extends** the parent's generated interface; inherited properties are
+not redeclared.
+
+## Parser behaviour
+
+- A SHACL file that is not valid Turtle **fails the build**; it is never treated as "no shapes".
+- Blank-node node shapes are supported, as are implicit class targets (a shape that is also an
+  `rdfs:Class`/`owl:Class`).
+- Constructs that cannot be represented are **skipped with a warning** naming the shape and property:
+  complex property paths (inverse/sequence/alternative), properties with none of `sh:datatype`,
+  `sh:class`, `sh:node` or `sh:nodeKind`, shapes without a target class, non-integer cardinalities, etc.
 
 ## Usage
 
@@ -259,9 +309,10 @@ val extras = catalog.asRdf().extras
 val altLabels = extras.strings(SKOS.altLabel)
 println("Alternative labels: ${altLabels.joinToString()}")
 
-// Validation
-catalog.asRdf().validateOrThrow()
 ```
+
+For SHACL validation at runtime use a `ValidationContext` such as `JenaValidation` together with
+`materializeValidated` (see [Validation](validation.md)).
 
 ## Configuration options
 
@@ -348,7 +399,8 @@ src/main/kotlin/
 ### 3. **Version Control**
 - Commit ontology files to version control
 - Generated code should be in `.gitignore`
-- Use CI/CD to regenerate code when ontology changes
+- With KSP, editing only the ontology files does not trigger regeneration: touch the annotated source or
+  clean the module (see [Incremental Builds](../guides/incremental-builds.md))
 
 ### 4. **Testing**
 - Test generated interfaces with sample data
@@ -358,14 +410,14 @@ src/main/kotlin/
 ## Limitations
 
 ### 1. **SHACL Support**
-- Currently supports basic SHACL NodeShapes
-- Advanced constraints (e.g., `sh:or`, `sh:and`) not yet supported
-- Custom validation rules require manual implementation
+- Complex property paths (inverse, sequence, alternative) are skipped with a warning
+- `sh:or`/`sh:xone` are typed only when their members agree on one class or datatype; `sh:and`/`sh:not`
+  do not influence types
+- Full SHACL semantics at runtime require a `ValidationContext` (`JenaValidation`/`Rdf4jValidation`)
 
 ### 2. **Type System**
-- Limited to basic XSD datatypes
-- Custom datatypes default to `String`
-- Complex object relationships may need manual refinement
+- `xsd:dateTime`, `xsd:time`, `xsd:duration` and custom datatypes are exposed as `String`
+- `xsd:date` drops a timezone suffix on read
 
 ### 3. **Performance**
 - Code generation happens at compile time
@@ -377,7 +429,6 @@ src/main/kotlin/
 ### 1. **Advanced SHACL Support**
 - Support for complex constraint combinations
 - Custom validation rule generation
-- Shape inheritance and composition
 
 ### 2. **Enhanced Type System**
 - Custom datatype mapping

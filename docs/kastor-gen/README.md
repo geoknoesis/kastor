@@ -55,7 +55,7 @@ Kastor Gen generates type-safe interfaces automatically:
 flowchart LR
   Ontology["SHACL + JSON-LD"] --> KSP["KSP processor"]
   KSP --> Dom["Domain interfaces"]
-  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.registry"]
+  KSP --> Wrap["Wrappers (lazy)\nOntoMapper.register"]
   KSP --> DC["Data classes (eager)\n+ Factory objects"]
   Graph["RdfGraph / RdfRepository"] --> Mat["materialize / asType"]
   Wrap --> Mat

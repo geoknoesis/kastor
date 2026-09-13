@@ -440,8 +440,8 @@ dependencies {
 }
 
 ksp {
-    arg("validation.enabled", "true")
-    arg("shacl.shapes.path", "ontologies/production.shacl.ttl")
+    // The only processor option: extra directories searched for @Rdf(shacl/context/ontologyPath) files
+    arg("kastor.gen.resources", "${projectDir}/ontologies")
 }
 ```
 
