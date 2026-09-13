@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShaclValidatorProvider
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ValidationProfile
 import com.geoknoesis.kastor.rdf.shacl.ValidatorCapabilities
+import com.geoknoesis.kastor.rdf.shacl.native.SparqlConstraintEvaluator
 
 /**
  * SPI provider for the Kastor native SHACL 1.2 Core engine (`getType()` = `kastor`).
@@ -22,10 +23,15 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
 
     override fun createValidator(config: ValidationConfig): ShaclValidator = NativeShaclValidator(config)
 
+    /**
+     * `supportsShaclSparql` (and the [ValidationProfile.SHACL_SPARQL] profile) reflect whether a SPARQL-capable
+     * provider (`rdf-jena` or `rdf-rdf4j`) is on the runtime classpath: the native engine delegates `sh:sparql`
+     * queries to it.
+     */
     override fun getCapabilities(): ValidatorCapabilities =
         ValidatorCapabilities(
             supportsShaclCore = true,
-            supportsShaclSparql = true,
+            supportsShaclSparql = SparqlConstraintEvaluator.engineAvailable(),
             supportsShaclJs = false,
             supportsShaclPy = false,
             supportsShaclDash = false,
@@ -40,8 +46,9 @@ class NativeShaclValidatorProvider : ShaclValidatorProvider {
         )
 
     override fun getSupportedProfiles(): List<ValidationProfile> =
-        listOf(
+        listOfNotNull(
             ValidationProfile.SHACL_CORE,
+            ValidationProfile.SHACL_SPARQL.takeIf { SparqlConstraintEvaluator.engineAvailable() },
             ValidationProfile.PERMISSIVE,
             ValidationProfile.STRICT,
         )

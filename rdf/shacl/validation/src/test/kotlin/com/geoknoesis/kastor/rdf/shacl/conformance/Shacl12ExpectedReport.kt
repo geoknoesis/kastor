@@ -1,26 +1,35 @@
 package com.geoknoesis.kastor.rdf.shacl.conformance
 
-import com.geoknoesis.kastor.rdf.BlankNode
-import com.geoknoesis.kastor.rdf.jena.rdfTermFromJena
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
+import com.geoknoesis.kastor.rdf.RdfTerm
 import org.apache.jena.rdf.model.Model
+import org.apache.jena.rdf.model.RDFNode
 import org.apache.jena.rdf.model.Resource
-import org.apache.jena.rdf.model.Statement
 
-/** Expected `sh:ValidationReport` from W3C `mf:result` (subset compared to native output). */
+/**
+ * Expected `sh:ValidationReport` from a W3C `mf:result` node (or from a reference engine report).
+ *
+ * [results] contains the `sh:result` rows as an RDF graph rooted at [W3C_REPORT_NODE] (blank nodes kept),
+ * including `sh:value`, `sh:sourceShape`, complete `sh:resultPath` structures and `sh:resultMessage`, and
+ * excluding `sh:conforms` (asserted separately) and `sh:detail` (optional nested results, not compared).
+ */
 data class ExpectedConformanceReport(
     val conforms: Boolean,
-    /** Sorted keys aligned with [validationViolationConformanceSortKey]. */
-    val violationSortKeys: List<String>,
-    /** When true, only [conforms] and violation count are asserted (focus/path mismatches across engines). */
-    val skipDetailedComparison: Boolean,
-    val skipReason: String?,
+    val results: RdfGraph,
+    /** `sh:resultMessage` literals present in the expected rows; actual messages are compared only against these. */
+    val expectedMessages: Set<Literal>,
     /**
-     * Severities that force `sh:conforms false` when present among validation results.
-     * When null or empty, **any** validation row fails conformance (W3C default in the SHACL 1.2 suite).
-     * When set (e.g. `{sh:Violation}`), results whose severity is **not** listed still allow `sh:conforms true`.
+     * `sh:conformanceDisallows` severities from the manifest (SHACL 1.2 validation parameter). When null, any
+     * validation result makes the report non-conforming.
      */
     val conformanceDisallowsSeverityIrises: Set<String>? = null,
 )
+
+internal val W3C_REPORT_NODE = Iri("urn:x-kastor-test:report")
 
 object Shacl12ExpectedReport {
 
@@ -31,109 +40,46 @@ object Shacl12ExpectedReport {
             expectedReport.getProperty(model.createProperty(SH + "conforms"))
                 ?: error("expected ValidationReport missing sh:conforms")
         val conforms = conformsStmt.boolean
+        val messages = mutableSetOf<Literal>()
+        val triples = mutableListOf<Triple<RdfResource, Iri, RdfTerm>>()
 
-        val resultProp = model.createProperty(SH + "result")
-        val resultStmts = expectedReport.listProperties(resultProp).collectStatements()
-
-        val keys = mutableListOf<String>()
-        var skip = false
-        var skipReason: String? = null
-
-        fun noteSkip(reason: String) {
-            if (!skip) {
-                skip = true
-                skipReason = reason
+        fun addClosure(node: RDFNode, seen: MutableSet<Resource>) {
+            if (!node.isAnon) return
+            val r = node.asResource()
+            if (!seen.add(r)) return
+            for (st in r.listProperties().collectStatements()) {
+                triples.add(Triple(lexicalPreservingTerm(r) as RdfResource, Iri(st.predicate.uri), lexicalPreservingTerm(st.`object`)))
+                addClosure(st.`object`, seen)
             }
         }
 
-        for (rs in resultStmts) {
-            val rn = rs.`object`
-            if (!rn.isResource) continue
-            val result = rn.asResource()
-
-            val focusStmt = result.getProperty(model.createProperty(SH + "focusNode"))
-            val focusRdf = focusStmt?.`object` ?: continue
-
-            val term = rdfTermFromJena(focusRdf)
-            if (term is BlankNode) {
-                noteSkip("blank focus nodes are not mapped identically across engines")
+        triples.add(Triple(W3C_REPORT_NODE, Iri(RDF_TYPE), Iri(SH + "ValidationReport")))
+        for (rs in expectedReport.listProperties(model.createProperty(SH + "result")).collectStatements()) {
+            val row = rs.`object`.asResource()
+            val rowTerm = lexicalPreservingTerm(row) as RdfResource
+            triples.add(Triple(W3C_REPORT_NODE, Iri(SH + "result"), rowTerm))
+            for (st in row.listProperties().collectStatements()) {
+                val p = st.predicate.uri
+                if (p == SH + "detail") continue
+                val obj = lexicalPreservingTerm(st.`object`)
+                if (p == SH + "resultMessage" && obj is Literal) messages.add(obj)
+                triples.add(Triple(rowTerm, Iri(p), obj))
+                if (p == SH + "resultPath") addClosure(st.`object`, mutableSetOf())
             }
-            val focusKey = w3cViolationFocusKey(term)
-
-            val pathStmt = result.getProperty(model.createProperty(SH + "resultPath"))
-            val pathKey = resultPathKey(model, pathStmt, ::noteSkip)
-
-            val compStmt =
-                result.getProperty(model.createProperty(SH + "sourceConstraintComponent"))
-                    ?: error("expected result missing sh:sourceConstraintComponent")
-            check(compStmt.`object`.isURIResource) {
-                "sourceConstraintComponent must be an IRI in W3C manifests"
-            }
-            val componentIri = compStmt.`object`.asResource().uri
-
-            val shapeStmt = result.getProperty(model.createProperty(SH + "sourceShape"))
-            val shapeIri =
-                shapeStmt?.takeIf { it.`object`.isURIResource }?.`object`?.asResource()?.uri ?: ""
-
-            val sevStmt = result.getProperty(model.createProperty(SH + "resultSeverity"))
-            val severityIri =
-                sevStmt?.takeIf { it.`object`.isURIResource }?.`object`?.asResource()?.uri
-                    ?: (SH + "Violation")
-
-            keys.add(
-                listOf(focusKey, pathKey, componentIri, shapeIri, severityIri).joinToString("\u0001"),
-            )
         }
 
-        val conformanceDisallowsSeverityIrises: Set<String>? = run {
-            val out = mutableSetOf<String>()
-            val it = expectedReport.listProperties(model.createProperty(SH + "conformanceDisallows"))
-            while (it.hasNext()) {
-                val o = it.nextStatement().`object`
-                if (o.isURIResource) out.add(o.asResource().uri)
-            }
-            out.takeIf { it.isNotEmpty() }
-        }
+        val disallows = expectedReport.listProperties(model.createProperty(SH + "conformanceDisallows")).collectStatements()
+            .mapNotNull { it.`object`.takeIf { o -> o.isURIResource }?.asResource()?.uri }
+            .toSet()
+            .takeIf { it.isNotEmpty() }
 
-        keys.sort()
         return ExpectedConformanceReport(
             conforms = conforms,
-            violationSortKeys = keys,
-            skipDetailedComparison = skip,
-            skipReason = skipReason,
-            conformanceDisallowsSeverityIrises = conformanceDisallowsSeverityIrises,
+            results = Rdf.graph { triples.forEach { (s, p, o) -> triple(s, p, o) } },
+            expectedMessages = messages,
+            conformanceDisallowsSeverityIrises = disallows,
         )
     }
 
-    private fun resultPathKey(model: Model, pathStmt: Statement?, noteSkip: (String) -> Unit): String {
-        if (pathStmt == null) return ""
-        val obj = pathStmt.`object`
-        when {
-            obj.isURIResource -> return "P|" + obj.asResource().uri
-            obj.isLiteral -> {
-                noteSkip("literal sh:resultPath is not compared")
-                return "COMPLEX"
-            }
-        }
-        val head = obj.asResource()
-        return try {
-            val list = model.getList(head)
-            val iris = mutableListOf<String>()
-            for (node in list) {
-                if (!node.isURIResource) {
-                    noteSkip("non-IRI segment in sh:resultPath list")
-                    return "COMPLEX"
-                }
-                iris.add(node.asResource().uri)
-            }
-            when (iris.size) {
-                0 -> ""
-                1 -> "P|" + iris[0]
-                else -> "COMPLEX|" + iris.joinToString("|")
-            }
-        } catch (_: Exception) {
-            noteSkip("non-simple sh:resultPath is not yet compared")
-            "COMPLEX"
-        }
-    }
+    private const val RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 }

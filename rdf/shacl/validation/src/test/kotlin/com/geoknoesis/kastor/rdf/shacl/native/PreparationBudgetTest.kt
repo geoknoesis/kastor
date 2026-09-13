@@ -50,7 +50,7 @@ class PreparationBudgetTest {
         }
         assertEquals(0, cache.statistics().entries)
     }
-    @Test fun `cache wait can time out independently of another compilation`() {
+    @Test fun `cache wait for the same key can time out independently of the owning compilation`() {
         val cache = NativeCompileCache()
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -59,14 +59,17 @@ class PreparationBudgetTest {
             cache.getOrCompile("first") {
                 entered.countDown()
                 check(release.await(5, TimeUnit.SECONDS))
-                CompiledShapeGraph(emptyMap(), emptyList())
+                ShapesCompiler.compile(emptyList(), ValidationConfig())
             }
         }
         try {
             assertTrue(entered.await(2, TimeUnit.SECONDS))
             assertFailsWith<ShaclValidationException> {
-                cache.getOrCompile("second", ValidationBudget(Duration.ofMillis(30))) { error("must not compile") }
+                cache.getOrCompile("first", ValidationBudget(Duration.ofMillis(30))) { error("must not compile") }
             }
+            // A different key is not blocked by the in-flight compilation (compilation runs outside the lock).
+            val other = ShapesCompiler.compile(emptyList(), ValidationConfig())
+            assertTrue(cache.getOrCompile("second", ValidationBudget(Duration.ofSeconds(2))) { other } === other)
         } finally {
             release.countDown()
             first.get(5, TimeUnit.SECONDS)
