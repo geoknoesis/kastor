@@ -34,17 +34,17 @@ enum class ProviderCategory {
 
 #### SPARQL Endpoint Provider
 
-For remote SPARQL endpoints with full SPARQL 1.2 support:
+For remote SPARQL 1.1 Protocol endpoints (the adapter reports only what it supports itself):
 
 ```kotlin
 val sparqlProvider = SparqlEndpointProvider()
 
-// Capabilities include federation and service description
+// Capabilities describe the HTTP adapter, not the remote server
 val capabilities = sparqlProvider.getCapabilities()
 println("Type: ${sparqlProvider.id}") // "sparql-endpoint"
 println("Category: ${sparqlProvider.getProviderCategory()}") // SPARQL_ENDPOINT
-println("Federation: ${capabilities.supportsFederation}") // true
-println("SPARQL Version: ${capabilities.sparqlVersion}") // "1.2"
+println("Federation: ${capabilities.supportsFederation}") // false
+println("SPARQL Version: ${capabilities.sparqlVersion}") // "1.1"
 ```
 
 #### Reasoner Provider

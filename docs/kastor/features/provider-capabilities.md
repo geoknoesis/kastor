@@ -286,7 +286,7 @@ supportedFeatures.forEach { (providerType, features) ->
 }
 
 // Example output:
-// sparql-endpoint: [RDF-star, Property Paths, Aggregation, Federation, ...]
+// sparql: [Property Paths, Aggregation, Subqueries, Named Graphs, Updates]  (no RDF-star, federation or transactions)
 ```
 
 ## 📋 Provider Statistics
