@@ -72,10 +72,8 @@ class JenaProvider : RdfProvider {
         )
     }
 
-    override fun supportsFormat(format: String): Boolean {
-        val normalized = format.uppercase().trim()
-        return normalized in JenaParsing.FORMATS
-    }
+    /** Preferred over RDF4J (40) and the in-core memory store (-100) when several providers support a format. */
+    override val priority: Int = 50
 
     override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
         return JenaBridge.toString(graph, format, options)

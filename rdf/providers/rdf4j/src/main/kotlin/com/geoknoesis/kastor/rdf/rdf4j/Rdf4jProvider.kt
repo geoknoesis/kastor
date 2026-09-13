@@ -87,10 +87,8 @@ class Rdf4jProvider : RdfProvider {
         )
     }
     
-    override fun supportsFormat(format: String): Boolean {
-        val normalized = format.uppercase().trim()
-        return normalized in getCapabilities(null).supportedInputFormats
-    }
+    /** Ranked below Jena (50) and above the in-core memory store (-100) for format-based selection. */
+    override val priority: Int = 40
     
     override fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions): String {
         return Rdf4jFormatSupport.serializeGraph(graph, format, options)

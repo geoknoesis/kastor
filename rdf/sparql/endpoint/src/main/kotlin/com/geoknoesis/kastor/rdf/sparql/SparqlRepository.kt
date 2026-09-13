@@ -515,7 +515,7 @@ private object SparqlJsonResults {
                 val lang = binding["xml:lang"]?.jsonPrimitive?.contentOrNull
                 val datatype = binding["datatype"]?.jsonPrimitive?.contentOrNull
                 when {
-                    lang != null -> LangString(value, lang)
+                    !lang.isNullOrEmpty() -> LangString(value, lang)
                     datatype != null -> Literal(value, Iri(datatype))
                     else -> Literal(value, XSD.string)
                 }

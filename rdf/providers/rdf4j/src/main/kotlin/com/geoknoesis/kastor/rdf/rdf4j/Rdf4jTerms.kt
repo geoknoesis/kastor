@@ -117,7 +117,7 @@ internal object Rdf4jTerms {
     private fun fromRdf4jLiteral(value: Rdf4jLiteral): Literal {
         val lexical = value.label
         val lang = value.language.orElse(null)
-        if (lang != null) {
+        if (!lang.isNullOrEmpty()) {
             val match = directionSuffix.matchEntire(lang)
             return if (match != null) {
                 LangString(lexical, match.groupValues[1], Direction.fromToken(match.groupValues[2]))
