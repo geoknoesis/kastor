@@ -23,11 +23,11 @@ import com.geoknoesis.kastor.rdf.vocab.SKOS
  * ```
  */
 fun TripleDsl.skos(block: SkosTripleBuilder.() -> Unit) {
-    SkosTripleBuilder(triples).apply(block)
+    SkosTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.skos(block: SkosTripleBuilder.() -> Unit) {
-    SkosTripleBuilder(triples).apply(block)
+    SkosTripleBuilder(tripleSink).apply(block)
 }
 
 /**

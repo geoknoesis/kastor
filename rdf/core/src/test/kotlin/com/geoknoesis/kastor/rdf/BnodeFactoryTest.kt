@@ -1,211 +1,80 @@
 package com.geoknoesis.kastor.rdf
 
-import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
-import com.geoknoesis.kastor.rdf.dsl.bag
-import com.geoknoesis.kastor.rdf.dsl.seq
 import com.geoknoesis.kastor.rdf.dsl.alt
-import com.geoknoesis.kastor.rdf.dsl.values
+import com.geoknoesis.kastor.rdf.dsl.bag
 import com.geoknoesis.kastor.rdf.dsl.list
-import org.junit.jupiter.api.Assertions.*
+import com.geoknoesis.kastor.rdf.dsl.owl
+import com.geoknoesis.kastor.rdf.dsl.seq
+import com.geoknoesis.kastor.rdf.vocab.DCTERMS
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Test for bnode factory with sequential naming.
+ * Blank nodes minted by the DSLs must never collide, because providers keep the label as identity
+ * and every `repo.add { }` call builds a fresh DSL instance.
  */
 class BnodeFactoryTest {
 
+    private fun blankNodes(triples: Collection<RdfTriple>): Set<BlankNode> =
+        triples.flatMap { listOf(it.subject, it.obj) }.filterIsInstance<BlankNode>().toSet()
+
     @Test
-    fun `bnode factory creates sequential names for lists`() {
+    fun `lists added in separate repository add calls stay separate`() {
         val repo = Rdf.memory()
-        val person = Iri("http://example.org/person")
+        val a = Iri("http://example.org/a")
+        val b = Iri("http://example.org/b")
+        val p = Iri("http://example.org/p")
 
-        repo.add {
-            person - FOAF.name - string("Alice")
-            person - FOAF.mbox - list(
-                string("alice@example.com"),
-                string("alice@work.com"),
-                string("alice@personal.com")
-            )
-        }
+        repo.add { a - p - list("x") }
+        repo.add { b - p - list("y") }
 
-        val allTriples = repo.defaultGraph.getTriples()
-        val bnodeTriples = allTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-        
-        // Extract bnode names and verify they are sequential
-        val bnodeNames = bnodeTriples.flatMap { triple ->
-            listOfNotNull(
-                if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-            )
-        }.distinct().sorted()
-
-        // Should have sequential bnode names: b1, b2, b3
-        assertTrue(bnodeNames.any { it.startsWith("b") }, "Should have b bnode names")
-        assertTrue(bnodeNames.contains("b1"), "Should have b1")
-        assertTrue(bnodeNames.contains("b2"), "Should have b2") 
-        assertTrue(bnodeNames.contains("b3"), "Should have b3")
-
+        val graph = repo.defaultGraph
+        val headA = graph.find(a, p).single().obj as RdfResource
+        val headB = graph.find(b, p).single().obj as RdfResource
+        assertTrue(headA != headB, "Each add call must mint its own list head")
+        assertEquals(listOf(string("x")), graph.find(headA, RDF.first).map { it.obj })
+        assertEquals(listOf(string("y")), graph.find(headB, RDF.first).map { it.obj })
         repo.close()
     }
 
     @Test
-    fun `bnode factory creates sequential names for containers`() {
-        val repo = Rdf.memory()
+    fun `labels are unique across DSL instances and DSL kinds`() {
         val person = Iri("http://example.org/person")
-
-        repo.add {
-            person - FOAF.name - string("Alice")
-            person - DCTERMS.subject - bag(string("Tech"), string("AI"), string("RDF"))     // Creates bag_1
-            person - FOAF.knows - seq(person, person, person)      // Creates seq_2
-            person - FOAF.mbox - alt(string("email1"), string("email2"))          // Creates alt_3
+        val graphs = List(3) {
+            Rdf.graph {
+                person - FOAF.mbox - list(string("email1"), string("email2"))
+                person - DCTERMS.subject - bag(string("Tech"), string("AI"))
+                person - FOAF.knows - seq(person, person)
+                person - FOAF.mbox - alt(string("email1"), string("email2"))
+            }
+        }
+        val ontology = owl {
+            prefix("ex", "http://example.org/")
+            `class`("ex:A") { equivalentClass { unionOf("ex:B", "ex:C") } }
         }
 
-        val allTriples = repo.defaultGraph.getTriples()
-        val bnodeTriples = allTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-        
-        // Extract bnode names and verify they are sequential
-        val bnodeNames = bnodeTriples.flatMap { triple ->
-            listOfNotNull(
-                if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-            )
-        }.distinct().sorted()
-
-        // Should have sequential container bnode names: b1, b2, b3
-        assertTrue(bnodeNames.contains("b1"), "Should have b1")
-        assertTrue(bnodeNames.contains("b2"), "Should have b2")
-        assertTrue(bnodeNames.contains("b3"), "Should have b3")
-
-        repo.close()
+        val perGraph = graphs.map { blankNodes(it.getTriples()) }
+        perGraph.forEach { assertEquals(5, it.size, "list(2) + bag + seq + alt") }
+        val all = perGraph.flatten() + blankNodes(ontology.getTriples())
+        assertEquals(all.size, all.toSet().size, "No blank node may be shared between DSL instances")
+        all.forEach { assertTrue(it.id.matches(Regex("[A-Za-z][A-Za-z0-9_]*")), "Label '${it.id}' must be a valid Turtle label") }
     }
 
     @Test
-    fun `bnode factory creates predictable names across multiple operations`() {
+    fun `labels are unique within one DSL instance`() {
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
-
         repo.add {
-            person - FOAF.name - string("Alice")
-            
-            // First operation: list
             person - FOAF.mbox - list(string("email1"), string("email2"))
-        }
-
-        val firstRunTriples = repo.defaultGraph.getTriples()
-        val firstBnodeNames = firstRunTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-            .flatMap { triple ->
-                listOfNotNull(
-                    if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                    if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-                )
-            }.distinct().sorted()
-
-        // Add more data to the same repository
-        repo.add {
-            // Second operation: bag
             person - DCTERMS.subject - bag(string("Tech"), string("AI"))
+            person - FOAF.knows - seq(person, person)
+            person - FOAF.mbox - alt(string("email1"), string("email2"))
+            person - DCTERMS.subject - bag(string("More"), string("Tech"))
         }
-
-        val secondRunTriples = repo.defaultGraph.getTriples()
-        val secondBnodeNames = secondRunTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-            .flatMap { triple ->
-                listOfNotNull(
-                    if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                    if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-                )
-            }.distinct().sorted()
-
-        // Each repo.add call creates a new TripleDsl instance, so counters reset
-        assertTrue(firstBnodeNames.contains("b1"), "First run should have b1")
-        assertTrue(firstBnodeNames.contains("b2"), "First run should have b2")
-        
-        assertTrue(secondBnodeNames.contains("b1"), "Second run should still have b1")
-        assertTrue(secondBnodeNames.contains("b2"), "Second run should still have b2")
-        assertTrue(secondBnodeNames.contains("b1"), "Second run should have b1 (new TripleDsl instance)")
-
+        assertEquals(6, blankNodes(repo.defaultGraph.getTriples()).size)
         repo.close()
-    }
-
-    @Test
-    fun `bnode factory works with standalone graph`() {
-        val person = Iri("http://example.org/person")
-
-        val graph = Rdf.graph {
-            person - FOAF.name - string("Alice")
-            person - FOAF.mbox - list(string("email1"), string("email2"))      // Creates list_1, list_2
-            person - DCTERMS.subject - bag(string("Tech"), string("AI"))       // Creates bag_3
-            person - FOAF.knows - seq(person, person)          // Creates seq_4
-            person - FOAF.mbox - alt(string("email1"), string("email2"))       // Creates alt_5
-        }
-
-        val allTriples = graph.getTriples()
-        val bnodeNames = allTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-            .flatMap { triple ->
-                listOfNotNull(
-                    if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                    if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-                )
-            }.distinct().sorted()
-
-        // Should have sequential bnode names across all operations
-        assertTrue(bnodeNames.contains("b1"), "Should have b1")
-        assertTrue(bnodeNames.contains("b2"), "Should have b2")
-        assertTrue(bnodeNames.contains("b3"), "Should have b3")
-        assertTrue(bnodeNames.contains("b4"), "Should have b4")
-        assertTrue(bnodeNames.contains("b5"), "Should have b5")
-
-        // Verify no gaps in sequence
-        val numberedBnodes = bnodeNames.filter { it.matches(Regex("\\w+\\d+")) }
-            .map { Regex("\\d+").find(it)?.value?.toInt() ?: 0 }
-            .sorted()
-
-        assertEquals(listOf(1, 2, 3, 4, 5), numberedBnodes, "Should have sequential numbering")
-    }
-
-    @Test
-    fun `bnode factory creates unique names for different prefixes`() {
-        val repo = Rdf.memory()
-        val person = Iri("http://example.org/person")
-
-        repo.add {
-            person - FOAF.name - string("Alice")
-            
-            // Mix different container types
-            person - FOAF.mbox - list(string("email1"), string("email2"))          // list_1, list_2
-            person - DCTERMS.subject - bag(string("Tech"), string("AI"))           // bag_3
-            person - FOAF.knows - seq(person, person)              // seq_4
-            person - FOAF.mbox - alt(string("email1"), string("email2"))           // alt_5
-            person - DCTERMS.subject - bag(string("More"), string("Tech"))         // bag_6
-        }
-
-        val allTriples = repo.defaultGraph.getTriples()
-        val bnodeNames = allTriples.filter { it.subject is BlankNode || it.obj is BlankNode }
-            .flatMap { triple ->
-                listOfNotNull(
-                    if (triple.subject is BlankNode) (triple.subject as BlankNode).id else null,
-                    if (triple.obj is BlankNode) (triple.obj as BlankNode).id else null
-                )
-            }.distinct().sorted()
-
-        // Should have sequential numbering: b1, b2, b3, b4, b5, b6
-        assertTrue(bnodeNames.contains("b1"), "Should have b1")
-        assertTrue(bnodeNames.contains("b2"), "Should have b2")
-        assertTrue(bnodeNames.contains("b3"), "Should have b3")
-        assertTrue(bnodeNames.contains("b4"), "Should have b4")
-        assertTrue(bnodeNames.contains("b5"), "Should have b5")
-        assertTrue(bnodeNames.contains("b6"), "Should have b6")
-
-        // Verify all names are unique
-        assertEquals(bnodeNames.size, bnodeNames.distinct().size, "All bnode names should be unique")
     }
 }
-
-
-
-
-
-
-
-
-

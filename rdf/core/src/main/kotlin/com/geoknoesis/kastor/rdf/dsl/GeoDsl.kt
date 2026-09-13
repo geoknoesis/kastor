@@ -9,11 +9,11 @@ import com.geoknoesis.kastor.rdf.vocab.GEO
  * [GeoSPARQL](https://opengeospatial.github.io/ogc-geosparql/geosparql11/spec.html) geometry linkage helpers.
  */
 fun TripleDsl.geo(block: GeoTripleBuilder.() -> Unit) {
-    GeoTripleBuilder(triples).apply(block)
+    GeoTripleBuilder(tripleSink).apply(block)
 }
 
 fun GraphDsl.geo(block: GeoTripleBuilder.() -> Unit) {
-    GeoTripleBuilder(triples).apply(block)
+    GeoTripleBuilder(tripleSink).apply(block)
 }
 
 class GeoTripleBuilder(private val out: MutableList<RdfTriple>) {
