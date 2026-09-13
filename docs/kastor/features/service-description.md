@@ -15,14 +15,17 @@ SPARQL Service Description allows services to describe:
 
 ## 🚀 Key Features
 
-### 1. Automatic Service Description Generation
+### 1. Service Description Generation
 
-Kastor can automatically generate service descriptions for any provider:
+`SparqlServiceDescriptionGenerator` (module `rdf-sparql-lang`) builds a description from any `ProviderCapabilities`. Providers may also override `RdfProvider.generateServiceDescription`, but the bundled `memory`, `jena`, `rdf4j` and `sparql` providers do not, so for them that method (and `RdfProviderRegistry.generateServiceDescription`) returns `null`.
 
 ```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
+import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
+
+val provider = RdfProviderRegistry.getProvider("jena") ?: error("rdf-jena is not on the classpath")
 val serviceUri = "http://example.org/sparql"
-val description = provider.generateServiceDescription(serviceUri)
+val description = SparqlServiceDescriptionGenerator(serviceUri, provider.getCapabilities())
+    .generateServiceDescription()
 
 println("Service Description:")
 description.getTriples().forEach { triple ->
@@ -41,7 +44,7 @@ println("RDF-star Support: ${capabilities.basic.supportsRdfStar}")
 println("Property Paths: ${capabilities.basic.supportsPropertyPaths}")
 println("Aggregation: ${capabilities.basic.supportsAggregation}")
 
-// Check extension functions
+// Check extension functions (empty for the bundled providers; see SparqlExtensionFunctionRegistry)
 val functions = capabilities.basic.extensionFunctions
 println("Available Functions: ${functions.size}")
 functions.forEach { func ->
@@ -82,12 +85,12 @@ val sparql12Service = SPARQL12.Sparql12Service
 ```turtle
 <http://example.org/sparql> 
     sd:supportedLanguage sd:sparql ;
-    sd:supportedLanguage sparql:sparql12 ;
-    sd:resultFormat <application/sparql-results+json> ;
-    sd:resultFormat <application/sparql-results+xml> ;
-    sd:resultFormat <text/csv> ;
-    sd:inputFormat <application/sparql-query> ;
-    sd:inputFormat <application/sparql-update> .
+    sd:supportedLanguage sd:sparql12 ;
+    sd:resultFormat <https://www.iana.org/assignments/media-types/application/sparql-results+json> ;
+    sd:resultFormat <https://www.iana.org/assignments/media-types/application/sparql-results+xml> ;
+    sd:resultFormat <https://www.iana.org/assignments/media-types/text/csv> ;
+    sd:inputFormat <https://www.iana.org/assignments/media-types/application/sparql-query> ;
+    sd:inputFormat <https://www.iana.org/assignments/media-types/application/sparql-update> .
 ```
 
 ### SPARQL 1.2 Feature Support
@@ -105,20 +108,20 @@ val sparql12Service = SPARQL12.Sparql12Service
 ### Extension Functions
 
 ```turtle
-<http://example.org/sparql> 
+<http://example.org/sparql>
     sd:extensionFunction <http://www.w3.org/ns/sparql#TRIPLE> ;
-    sd:extensionFunction <http://www.w3.org/ns/sparql#replaceAll> .
+    sd:extensionFunction <http://www.w3.org/ns/sparql#encodeForUri> .
 
-<http://www.w3.org/ns/sparql#TRIPLE> 
+<http://www.w3.org/ns/sparql#TRIPLE>
     sd:functionName "TRIPLE" ;
-    sd:description "Creates a quoted triple from subject, predicate, and object" ;
-    sd:returnType <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement> .
+    sd:description "Creates a triple term from subject, predicate, and object" .
 
-<http://www.w3.org/ns/sparql#replaceAll> 
-    sd:functionName "replaceAll" ;
-    sd:description "Replaces all occurrences of a pattern in a string" ;
-    sd:returnType <http://www.w3.org/2001/XMLSchema#string> .
+<http://www.w3.org/ns/sparql#encodeForUri>
+    sd:functionName "encodeForUri" ;
+    sd:description "Encodes a string for use in URIs" .
 ```
+
+Each function also gets `sd:returnType` when `returnType` is set, and `sd:isAggregate true` for aggregates. Media types in `supportedResultFormats` / `supportedInputFormats` are emitted as IANA media-type IRIs.
 
 ## 🔧 Service Description Generator
 
@@ -154,8 +157,8 @@ val customCapabilities = ProviderCapabilities(
         SparqlExtensionFunction(
             iri = "http://www.w3.org/ns/sparql#TRIPLE",
             name = "TRIPLE",
-            description = "Creates a quoted triple",
-            returnType = RDF.Statement.value
+            description = "Creates a triple term",
+            returnType = "rdf:TripleTerm"
         )
     )
 )
@@ -201,16 +204,16 @@ allDescriptions.forEach { (providerType, description) ->
 ### Provider-Specific Service Descriptions
 
 ```kotlin
-val memoryDescription = RdfProviderRegistry.generateServiceDescription(
-    providerId = "memory",
-    serviceUri = "http://example.org/memory"
-)
-
-val jenaDescription = RdfProviderRegistry.generateServiceDescription(
-    providerId = "jena",
-    serviceUri = "http://example.org/jena"
+// Delegates to RdfProvider.generateServiceDescription: null for providers that do not implement it
+// (including the bundled memory, jena, rdf4j and sparql providers)
+val customDescription = RdfProviderRegistry.generateServiceDescription(
+    providerId = "custom",
+    serviceUri = "http://example.org/custom",
+    variantId = null
 )
 ```
+
+`getAllServiceDescriptions(baseUri)` returns one entry per registered provider, with an empty graph for providers that do not generate descriptions.
 
 ### Capability Discovery
 
@@ -231,52 +234,26 @@ supportedFeatures.forEach { (provider, features) ->
 
 ## 🎨 Specialized Providers
 
-### SPARQL Endpoint Provider
+### SPARQL Provider
 
 ```kotlin
-val sparqlProvider = SparqlEndpointProvider()
+import com.geoknoesis.kastor.rdf.sparql.SparqlProvider
+import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
 
-// Service description for SPARQL endpoint
-val description = sparqlProvider.generateServiceDescription(
-    "http://example.org/sparql"
-)
+val sparqlProvider = SparqlProvider()
 
-// Capabilities include federation and service description
+// Capabilities describe the HTTP adapter (SPARQL 1.1, no federation)
 val capabilities = sparqlProvider.getCapabilities()
-println("Federation Support: ${capabilities.supportsFederation}")
-println("Service Description: ${capabilities.supportsServiceDescription}")
+println("Federation Support: ${capabilities.supportsFederation}")          // false
+println("Service Description: ${capabilities.supportsServiceDescription}") // true
+
+val description = SparqlServiceDescriptionGenerator("http://example.org/sparql", capabilities)
+    .generateServiceDescription()
 ```
 
-### Reasoner Provider
+### Reasoners and SHACL Validators
 
-```kotlin
-val reasonerProvider = ReasonerProvider()
-
-// Service description for reasoning service
-val description = reasonerProvider.generateServiceDescription(
-    "http://example.org/reasoner"
-)
-
-// Capabilities include inference and entailment regimes
-val capabilities = reasonerProvider.getCapabilities()
-println("Inference Support: ${capabilities.supportsInference}")
-println("Entailment Regimes: ${capabilities.entailmentRegimes}")
-```
-
-### SHACL Validator Provider
-
-```kotlin
-val shaclProvider = ValidationContextProvider()
-
-// Service description for SHACL validation service
-val description = shaclProvider.generateServiceDescription(
-    "http://example.org/shacl"
-)
-
-// Capabilities include validation features
-val capabilities = shaclProvider.getCapabilities()
-println("Validation Support: ${capabilities.supportsValidation}")
-```
+Reasoners and SHACL validators are not `RdfProvider`s, so they have no service description. Discover them with `RdfReasoning.reasonerProviders()` and `ShaclValidation.validator(...)` instead (see [Enhanced Providers](enhanced-providers.md)).
 
 ## 📊 Provider Statistics
 
@@ -287,11 +264,9 @@ statistics.forEach { (category, count) ->
     println("$category: $count providers")
 }
 
-// Example output:
+// Example output with memory, jena, rdf4j and sparql on the classpath:
 // RDF_STORE: 3 providers
 // SPARQL_ENDPOINT: 1 providers
-// REASONER: 1 providers
-// SHACL_VALIDATOR: 1 providers
 ```
 
 ## 🔍 Extension Function Registry
@@ -389,14 +364,14 @@ if (capabilities.basic.supportsFederation) {
 
 ```kotlin
 // Validate service description
-val description = provider.generateServiceDescription(serviceUri)
+val description: RdfGraph? = SparqlServiceDescriptionGenerator(serviceUri, provider.getCapabilities()).generateServiceDescription()
 if (description != null) {
     val triples = description.getTriples()
     println("Service description contains ${triples.size} triples")
     
     // Check for required elements
     val hasServiceType = triples.any { 
-        it.predicate == SPARQL_SD.Service 
+        it.predicate == RDF.type && it.obj == SPARQL_SD.Service
     }
     val hasEndpoint = triples.any { 
         it.predicate == SPARQL_SD.endpointProp 
@@ -412,11 +387,12 @@ if (description != null) {
 ```kotlin
 fun serviceDescriptionExample() {
     // Get a provider
-    val provider = RdfProviderRegistry.getProvider("memory")
+    val provider = RdfProviderRegistry.getProvider("jena") ?: return
     
     // Generate service description
     val serviceUri = "http://example.org/sparql"
-    val description = provider.generateServiceDescription(serviceUri)
+    val description: RdfGraph? = SparqlServiceDescriptionGenerator(serviceUri, provider.getCapabilities())
+        .generateServiceDescription()
     
     if (description != null) {
         // Print basic information

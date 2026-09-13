@@ -6,7 +6,7 @@ Kastor features a comprehensive provider architecture that supports specialized 
 
 The enhanced provider architecture includes:
 
-- **Unified Interface**: Single `RdfApiProvider` interface for all providers
+- **Unified Interface**: Single `RdfProvider` interface for all RDF store and endpoint providers
 - **Specialized Providers**: Dedicated providers for specific use cases
 - **Category-Based Organization**: Providers organized by functionality
 - **Service Description Support**: Automatic capability discovery and description
@@ -34,57 +34,73 @@ enum class ProviderCategory {
 
 #### SPARQL Endpoint Provider
 
-For remote SPARQL 1.1 Protocol endpoints (the adapter reports only what it supports itself):
+For remote SPARQL 1.1 Protocol endpoints (artifact `rdf-sparql`; the adapter reports only what it supports itself):
 
 ```kotlin
-val sparqlProvider = SparqlEndpointProvider()
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.sparql.SparqlEndpointConfig
+import com.geoknoesis.kastor.rdf.sparql.SparqlProvider
+import com.geoknoesis.kastor.rdf.sparql.SparqlRepository
+
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql") ?: SparqlProvider()
 
 // Capabilities describe the HTTP adapter, not the remote server
 val capabilities = sparqlProvider.getCapabilities()
-println("Type: ${sparqlProvider.id}") // "sparql-endpoint"
+println("Type: ${sparqlProvider.id}") // "sparql"
 println("Category: ${sparqlProvider.getProviderCategory()}") // SPARQL_ENDPOINT
 println("Federation: ${capabilities.supportsFederation}") // false
 println("SPARQL Version: ${capabilities.sparqlVersion}") // "1.1"
+
+// Create a repository through the registry (options map onto SparqlEndpointConfig)
+val remote = RdfProviderRegistry.create(
+    RdfConfig(
+        providerId = "sparql",
+        variantId = "sparql",
+        options = mapOf("location" to "https://example.org/sparql", "header.X-API-Key" to "…")
+    )
+)
+
+// Or construct it directly with a typed configuration
+val direct = SparqlRepository(
+    SparqlEndpointConfig(
+        endpoint = "https://example.org/sparql",
+        headers = mapOf("X-API-Key" to "…")
+    )
+)
 ```
 
-#### Reasoner Provider
+See [SPARQL Provider](../providers/sparql.md) for all options.
 
-For inference engines with reasoning capabilities:
+#### Reasoners and SHACL Validators
+
+Reasoners and SHACL validators are **not** `RdfProvider`s and are not returned by `RdfProviderRegistry`; no bundled provider reports the `REASONER` or `SHACL_VALIDATOR` categories. Each has its own entry point:
 
 ```kotlin
-val reasonerProvider = ReasonerProvider()
+import com.geoknoesis.kastor.rdf.reasoning.*
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidation
+import com.geoknoesis.kastor.rdf.shacl.ValidationProfile
 
-// Capabilities include inference and entailment regimes
-val capabilities = reasonerProvider.getCapabilities()
-println("Type: ${reasonerProvider.id}") // "reasoner"
-println("Category: ${reasonerProvider.getProviderCategory()}") // REASONER
-println("Inference: ${capabilities.supportsInference}") // true
-println("Entailment Regimes: ${capabilities.entailmentRegimes}")
-// [RDFS, OWL-RL, OWL-EL, OWL-Q]
+// Reasoning (rdf-reasoning plus optional rdf-jena-reasoning / rdf-rdf4j-reasoning / rdf-reasoning-hermit)
+RdfReasoning.reasonerProviders().forEach { provider ->
+    println("${provider.name}: ${provider.getSupportedTypes()} (priority ${provider.priority()})")
+}
+val reasoner = RdfReasoning.reasoner(ReasonerType.RDFS)
+
+// SHACL validation (rdf-shacl-validation)
+val validator = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
+val report = validator.validate(dataGraph, shapesGraph)
 ```
 
-#### SHACL Validator Provider
-
-For SHACL validation services:
-
-```kotlin
-val shaclProvider = ValidationContextProvider()
-
-// Capabilities include validation features
-val capabilities = shaclProvider.getCapabilities()
-println("Type: ${shaclProvider.id}") // "shacl-validator"
-println("Category: ${shaclProvider.getProviderCategory()}") // SHACL_VALIDATOR
-println("Validation: ${capabilities.supportsValidation}") // true
-```
+See [Reasoning](reasoning.md) and [SHACL Validation](shacl-validation.md).
 
 ## 🔧 Unified Provider Interface
 
-### Enhanced RdfApiProvider
+### RdfProvider
 
-All providers implement the unified `RdfApiProvider` interface:
+All RDF store and endpoint providers implement the `RdfProvider` interface:
 
 ```kotlin
-interface RdfApiProvider {
+interface RdfProvider {
     // Basic provider information
     val id: String
     val name: String get() = id
@@ -111,7 +127,7 @@ The interface provides sensible defaults for optional methods:
 
 ```kotlin
 // Basic providers only need to implement core methods
-class BasicProvider : RdfApiProvider {
+class BasicProvider : RdfProvider {
     override val id: String = "basic"
     
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
@@ -126,18 +142,22 @@ class BasicProvider : RdfApiProvider {
 
 ### ProviderCapabilities
 
-Enhanced capabilities include SPARQL 1.2 and service description features:
+Capabilities include RDF 1.2, SPARQL 1.2 and service description features:
 
 ```kotlin
 data class ProviderCapabilities(
+    val rdfVersion: String = "1.1",
+    val supportsTripleTerms: Boolean = false,
+
     // Existing capabilities
     val supportsInference: Boolean = false,
     val supportsTransactions: Boolean = false,
     val supportsNamedGraphs: Boolean = false,
     val supportsUpdates: Boolean = false,
     val supportsRdfStar: Boolean = false,
+    val supportsShacl: Boolean = false,
     val maxMemoryUsage: Long = Long.MAX_VALUE,
-    
+
     // SPARQL 1.2 specific capabilities
     val sparqlVersion: String = "1.1",
     val supportsPropertyPaths: Boolean = false,
@@ -146,15 +166,17 @@ data class ProviderCapabilities(
     val supportsFederation: Boolean = false,
     val supportsVersionDeclaration: Boolean = false,
     val supportsServiceDescription: Boolean = false,
-    
+
     // Service description capabilities
     val supportedLanguages: List<String> = emptyList(),
     val supportedResultFormats: List<String> = emptyList(),
     val supportedInputFormats: List<String> = emptyList(),
+    val supportedOutputFormats: List<String> = emptyList(),
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
-    val defaultGraphs: List<String> = emptyList()
+    val defaultGraphs: List<String> = emptyList(),
+    val sparqlFeatures: Set<SparqlFeature> = emptySet()
 )
 ```
 
@@ -167,9 +189,14 @@ data class DetailedProviderCapabilities(
     val basic: ProviderCapabilities,
     val providerCategory: ProviderCategory,
     val supportedSparqlFeatures: Map<String, Boolean>,
-    val customExtensionFunctions: List<SparqlExtensionFunction>
+    val sparqlFeatures: Set<SparqlFeature> = emptySet(),
+    val customExtensionFunctions: List<SparqlExtensionFunction>,
+    val performanceMetrics: PerformanceMetrics? = null,
+    val limitations: List<String> = emptyList()
 )
 ```
+
+The default `RdfProvider.getDetailedCapabilities` reports an empty `supportedSparqlFeatures` map. Providers that override it choose their own feature names; the SPARQL provider, for example, reports `RDF-star`, `Federation`, `Property Paths`, `Aggregation`, `Subqueries`, `Named Graphs`, `Updates` and `Transactions`. `hasProviderWithFeature`, `supportsFeature` and `getSupportedFeatures` use these names.
 
 ## 🎨 Registry Integration
 
@@ -187,7 +214,7 @@ val reasonerProviders = RdfProviderRegistry.getProvidersByCategory(ProviderCateg
 
 // Get specific provider
 val memoryProvider = RdfProviderRegistry.getProvider("memory")
-val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql")
 ```
 
 ### Dynamic Registration
@@ -196,7 +223,7 @@ Providers are automatically registered when available:
 
 ```kotlin
 // Specialized providers are registered automatically
-val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql")
 if (sparqlProvider != null) {
     println("SPARQL Endpoint Provider available")
 } else {
@@ -221,47 +248,30 @@ println("Provider Statistics: $statistics")
 
 ## 🔍 Service Description Generation
 
-### Automatic Generation
+### Generating a Description
 
-All providers can generate service descriptions:
+`RdfProvider.generateServiceDescription` defaults to `null`, and the bundled providers (`memory`, `jena`, `rdf4j`, `sparql`) do not override it. Build a description from any provider's capabilities with `SparqlServiceDescriptionGenerator` (module `rdf-sparql-lang`):
 
 ```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
-val serviceUri = "http://example.org/sparql"
-val description = provider.generateServiceDescription(serviceUri)
+import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
 
-if (description != null) {
-    println("Service description generated with ${description.getTriples().size} triples")
-}
+val provider = RdfProviderRegistry.getProvider("jena") ?: error("rdf-jena is not on the classpath")
+val serviceUri = "http://example.org/sparql"
+
+val description = SparqlServiceDescriptionGenerator(serviceUri, provider.getCapabilities())
+    .generateServiceDescription()
+println("Service description generated with ${description.getTriples().size} triples")
 ```
 
 ### Provider-Specific Descriptions
 
-```kotlin
-// SPARQL Endpoint Provider
-val sparqlProvider = SparqlEndpointProvider()
-val sparqlDescription = sparqlProvider.generateServiceDescription(
-    "http://example.org/sparql"
-)
-
-// Reasoner Provider
-val reasonerProvider = ReasonerProvider()
-val reasonerDescription = reasonerProvider.generateServiceDescription(
-    "http://example.org/reasoner"
-)
-
-// SHACL Validator Provider
-val shaclProvider = ValidationContextProvider()
-val shaclDescription = shaclProvider.generateServiceDescription(
-    "http://example.org/shacl"
-)
-```
+Custom providers can return a description from `generateServiceDescription` (see [Creating Custom Providers](#creating-custom-providers)); `RdfProviderRegistry.generateServiceDescription(providerId, serviceUri, variantId)` then delegates to them.
 
 ## 🎯 Extension Function Registry
 
 ### Built-in Functions
 
-All SPARQL 1.2 built-in functions are automatically registered:
+The SPARQL 1.2 built-in function descriptions ([Extension Functions](extension-functions.md)) are registered automatically:
 
 ```kotlin
 val builtInFunctions = SparqlExtensionFunctionRegistry.getBuiltInFunctions()
@@ -369,13 +379,13 @@ class BasicProvider : RdfProvider {
 }
 
 // Override enhanced methods for specialized providers
-class SpecializedProvider : RdfApiProvider {
+class SpecializedProvider : RdfProvider {
     // Implement core methods
     override fun getProviderCategory(): ProviderCategory = ProviderCategory.SPARQL_ENDPOINT
-    override fun generateServiceDescription(serviceUri: String): RdfGraph? {
+    override fun generateServiceDescription(serviceUri: String, variantId: String?): RdfGraph? {
         // Custom service description
     }
-    override fun getDetailedCapabilities(): DetailedProviderCapabilities {
+    override fun getDetailedCapabilities(variantId: String?): DetailedProviderCapabilities {
         // Custom detailed capabilities
     }
 }
@@ -455,8 +465,8 @@ fun enhancedProviderExample() {
     println("Total providers with detailed capabilities: ${allCapabilities.size}")
     
     // Check feature support
-    val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("supportsRdfStar")
-    val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("supportsFederation")
+    val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
+    val hasFederationSupport = RdfProviderRegistry.hasProviderWithFeature("Federation")
     println("RDF-star support available: $hasRdfStarSupport")
     println("Federation support available: $hasFederationSupport")
     

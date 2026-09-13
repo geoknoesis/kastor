@@ -67,7 +67,8 @@ allCapabilities.forEach { (providerType, capabilities) ->
 ### Individual Provider Service Descriptions
 
 ```kotlin
-// Generate service description for specific provider
+// Delegates to RdfProvider.generateServiceDescription: null for providers that do not implement it
+// (the bundled memory, jena, rdf4j and sparql providers)
 val memoryDescription = RdfProviderRegistry.generateServiceDescription(
     providerId = "memory",
     serviceUri = "http://example.org/memory"
@@ -86,7 +87,8 @@ if (memoryDescription != null) {
 ### Bulk Service Description Generation
 
 ```kotlin
-// Generate service descriptions for all providers
+// One entry per provider; providers without their own implementation yield an empty graph,
+// so the generator below builds a description from each provider's capabilities
 val baseUri = "http://example.org"
 val allDescriptions = RdfProviderRegistry.getAllServiceDescriptions(baseUri)
 
@@ -125,7 +127,7 @@ println("Inference support available: $hasInferenceSupport")
 ### Provider-Specific Feature Checking
 
 ```kotlin
-// Check specific provider capabilities
+// Feature names are those each provider reports in DetailedProviderCapabilities.supportedSparqlFeatures
 val memorySupportsRdfStar = RdfProviderRegistry.supportsFeature("memory", "RDF-star")
 val jenaSupportsRdfStar = RdfProviderRegistry.supportsFeature("jena", "RDF-star")
 
@@ -224,21 +226,22 @@ mostCommonFunctions.forEach { (name, count) ->
 Specialized providers are automatically registered when available:
 
 ```kotlin
-// Check for specialized providers
-val sparqlProvider = RdfProviderRegistry.getProvider("sparql-endpoint")
-val reasonerProvider = RdfProviderRegistry.getProvider("reasoner")
-val shaclProvider = RdfProviderRegistry.getProvider("shacl-validator")
+// RdfProviders are discovered automatically when their module is on the classpath
+val sparqlProvider = RdfProviderRegistry.getProvider("sparql")   // rdf-sparql
+val jenaProvider = RdfProviderRegistry.getProvider("jena")       // rdf-jena
 
-println("SPARQL Endpoint Provider: ${sparqlProvider?.name ?: "Not available"}")
-println("Reasoner Provider: ${reasonerProvider?.name ?: "Not available"}")
-println("SHACL Validator Provider: ${shaclProvider?.name ?: "Not available"}")
+println("SPARQL Provider: ${sparqlProvider?.name ?: "Not available"}")
+println("Jena Provider: ${jenaProvider?.name ?: "Not available"}")
+
+// Reasoners are not RdfProviders: they have their own registry
+println("Reasoners: ${RdfReasoning.reasonerProviders().map { it.name }}")
 ```
 
 ### Manual Registration
 
 ```kotlin
 // Register custom provider
-class CustomProvider : RdfApiProvider {
+class CustomProvider : RdfProvider {
     override val id: String = "custom"
     override val name: String = "Custom Provider"
     override val version: String = "1.0.0"
@@ -249,7 +252,7 @@ class CustomProvider : RdfApiProvider {
         return CustomRepository(config)
     }
     
-    override fun getCapabilities(): ProviderCapabilities {
+    override fun getCapabilities(variantId: String?): ProviderCapabilities {
         return ProviderCapabilities(
             sparqlVersion = "1.2",
             supportsRdfStar = true,
@@ -278,7 +281,7 @@ fun selectProvider(
     requiresRdfStar: Boolean = false,
     requiresFederation: Boolean = false,
     requiresInference: Boolean = false
-): RdfApiProvider? {
+): RdfProvider? {
     val allProviders = RdfProviderRegistry.getAllProviders()
     
     return allProviders.find { provider ->
@@ -302,22 +305,22 @@ val inferenceProvider = selectProvider(requiresInference = true)
 
 ```kotlin
 // Select provider by category
-fun selectProviderByCategory(category: ProviderCategory): RdfApiProvider? {
+fun selectProviderByCategory(category: ProviderCategory): RdfProvider? {
     val providers = RdfProviderRegistry.getProvidersByCategory(category)
     return providers.firstOrNull()
 }
 
 // Use category-based selection
 val sparqlProvider = selectProviderByCategory(ProviderCategory.SPARQL_ENDPOINT)
-val reasonerProvider = selectProviderByCategory(ProviderCategory.REASONER)
-val shaclProvider = selectProviderByCategory(ProviderCategory.SHACL_VALIDATOR)
+// No bundled RdfProvider reports REASONER or SHACL_VALIDATOR:
+// use RdfReasoning.reasoner(...) and ShaclValidation.validator(...) instead
 ```
 
 ### Performance-Based Selection
 
 ```kotlin
 // Select provider based on performance characteristics
-fun selectBestProvider(useCase: String): RdfApiProvider? {
+fun selectBestProvider(useCase: String): RdfProvider? {
     val allProviders = RdfProviderRegistry.getAllProviders()
     
     return when (useCase) {
@@ -406,7 +409,7 @@ if (inconsistencies.isNotEmpty()) {
 
 ```kotlin
 // Always check provider availability before use
-fun getProviderSafely(type: String): RdfApiProvider? {
+fun getProviderSafely(type: String): RdfProvider? {
     return RdfProviderRegistry.getProvider(type)?.also { provider ->
         println("Using provider: ${provider.name} v${provider.version}")
     }
@@ -422,7 +425,7 @@ if (memoryProvider != null) {
 
 ```kotlin
 // Check capabilities before using advanced features
-fun useAdvancedFeatures(provider: RdfApiProvider) {
+fun useAdvancedFeatures(provider: RdfProvider) {
     val capabilities = provider.getCapabilities()
     
     if (capabilities.supportsRdfStar) {

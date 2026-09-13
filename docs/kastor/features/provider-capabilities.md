@@ -300,11 +300,9 @@ statistics.forEach { (category, count) ->
     println("$category: $count providers")
 }
 
-// Example output:
+// Example output with memory, jena, rdf4j and sparql on the classpath:
 // RDF_STORE: 3 providers
 // SPARQL_ENDPOINT: 1 providers
-// REASONER: 1 providers
-// SHACL_VALIDATOR: 1 providers
 ```
 
 ### Capability Statistics
@@ -402,7 +400,7 @@ if (capabilities.supportsRdfStar) {
 
 ```kotlin
 // Select provider based on required capabilities
-fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfApiProvider? {
+fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfProvider? {
     val allProviders = RdfProviderRegistry.getAllProviders()
     
     return allProviders.find { provider ->
@@ -419,7 +417,7 @@ fun selectProvider(requiresRdfStar: Boolean, requiresFederation: Boolean): RdfAp
 
 ```kotlin
 // Provide fallbacks for unsupported features
-fun executeQuery(query: String, provider: RdfApiProvider): QueryResult {
+fun executeQuery(query: String, provider: RdfProvider): SparqlQueryResult {
     val capabilities = provider.getCapabilities(provider.defaultVariantId())
     
     return try {
@@ -477,7 +475,7 @@ fun providerCapabilitiesExample() {
         println("Custom Functions: ${detailedCapabilities.customExtensionFunctions.size}")
         
         // Generate service description
-        val serviceUri = "http://example.org/$type"
+        val serviceUri = "http://example.org/${provider.id}"
         val description = provider.generateServiceDescription(serviceUri)
         if (description != null) {
             println("Service Description: ${description.getTriples().size} triples")
