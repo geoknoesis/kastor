@@ -63,15 +63,13 @@ class Rdf12Test {
             assertTrue(obj is LangString)
             val ls = obj as LangString
             assertEquals("ar", ls.lang)
-            // RDF4J 5.1.x does not yet support rdf:dirLangString; older builds
-            // round-trip as a plain rdf:langString. Newer builds preserve the
-            // direction field. Accept both.
-            if (ls.direction != null) {
-                assertEquals(Direction.RTL, ls.direction)
-                assertEquals(RDF.dirLangString, ls.datatype)
-            } else {
-                assertEquals(RDF.langString, ls.datatype)
-            }
+            // RDF4J 5.3.1 has no base-direction field; the adapter uses Rio's own `lang--dir`
+            // tag form and must decode it back. The direction must never be dropped.
+            assertEquals(Direction.RTL, ls.direction)
+            assertEquals(RDF.dirLangString, ls.datatype)
+            assertEquals(rtl, ls)
+            val ask = repo.ask(SparqlAskQuery("ASK { ?s ?p ?o FILTER(LANG(?o) = \"ar--rtl\") }"))
+            assertTrue(ask, "RDF4J stores the direction in its language tag")
         }
     }
 

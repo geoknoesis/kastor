@@ -53,7 +53,17 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
 
   private val vf = SimpleValueFactory.getInstance()
 
-  override fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport {
+  override fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport = runValidation(graph, shapes, null)
+
+  /**
+   * Validates [graph] against [shapes] with RDF4J's [ShaclSail]. When [focus] is set, only validation
+   * results for that focus node are reported (the whole data graph is still validated, so targets
+   * reached through `rdfs:subClassOf` and nested blank-node values are evaluated correctly).
+   *
+   * Validity follows SHACL: the report conforms only if there is no validation result at all
+   * (`sh:conforms`), regardless of severity and independent of [ValidationConfig.maxViolations] truncation.
+   */
+  private fun runValidation(graph: RdfGraph, shapes: RdfGraph, focus: RdfResource?): ValidationReport {
     val start = System.currentTimeMillis()
     val combined = graph.size().toLong() + shapes.size().toLong()
     if (combined > config.maxCombinedGraphTriples) {
@@ -82,11 +92,21 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
           val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
           if (cause is ValidationException) {
             val model = cause.validationReportAsModel()
-            val allViolations = violationsFromReport(model)
+            val reported = violationsFromReport(model)
+            val allViolations = if (focus == null) reported else reported.filter { it.focusNode == focus }
+            // Validity is decided on the complete result set, before maxViolations truncation.
+            val conforms =
+                if (focus == null) {
+                  val flag = model.filter(null, SHACL.CONFORMS, null).objects().asSequence().firstOrNull() as? Rdf4jLiteral
+                  (flag?.booleanValue() ?: false) && allViolations.isEmpty()
+                } else {
+                  allViolations.isEmpty()
+                }
+            if (focus != null && conforms) return emptyReport(graph, shapes, elapsed)
             val cap = config.maxViolations.coerceAtLeast(1)
             val truncated = allViolations.size > cap
             val violations = allViolations.take(cap)
-            return reportFromViolations(graph, shapes, violations, elapsed, truncated)
+            return reportFromViolations(graph, shapes, violations, elapsed, truncated, conforms)
           }
           throw ShaclValidationException(
               "RDF4J SHACL validation failed: ${e.message}",
@@ -110,14 +130,9 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
   }
 
   override fun validateResource(graph: RdfGraph, shapes: RdfGraph, resource: RdfResource): ValidationReport {
-    val triples = graph.getTriples().filter { it.subject == resource || it.obj == resource }
-    val filtered =
-        Rdf.graph {
-          for (triple in triples) {
-            triple.subject - triple.predicate - triple.obj
-          }
-        }
-    return validate(filtered, shapes)
+    // Validate the complete data graph and keep only results for this focus node: pruning the data to
+    // triples that touch the resource would drop nested blank-node values and rdfs:subClassOf targets.
+    return runValidation(graph, shapes, resource)
   }
 
   override fun validateConstraints(graph: RdfGraph, constraints: List<com.geoknoesis.kastor.rdf.shacl.ShaclConstraint>): ValidationReport {
@@ -164,10 +179,10 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
       violations: List<ValidationViolation>,
       elapsed: Duration,
       violationsTruncated: Boolean,
+      isValid: Boolean,
   ): ValidationReport {
-    val hasBlocking = violations.any { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }
     return ValidationReport(
-        isValid = !hasBlocking,
+        isValid = isValid,
         violations = violations,
         warnings = emptyList(),
         statistics = buildStatistics(graph, shapes, violations, emptyList()),
