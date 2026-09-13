@@ -8,121 +8,125 @@
 > [RDF 1.2 in Kastor](../concepts/rdf-1.2.md). The migration guide is
 > [here](../guides/migrating-to-rdf-1.2.md).
 
-Kastor provides comprehensive support for RDF-star (also known as RDF*), enabling you to make statements about statements. This powerful feature allows for rich metadata modeling, provenance tracking, and complex knowledge representation scenarios.
+Kastor lets you make statements about statements with RDF 1.2 triple terms and reifiers (the successor of RDF-star). This supports metadata modeling, provenance tracking and confidence scores.
 
 ## 🎯 Overview
 
-RDF-star support in Kastor includes:
+Support in Kastor includes:
 
-- **Quoted Triples**: Representing statements as subjects or objects
-- **SPARQL 1.2 Functions**: Built-in functions for RDF-star manipulation
-- **DSL Integration**: Natural language support for RDF-star in the DSL
-- **Provider Capabilities**: Automatic detection and advertisement of RDF-star support
-- **Service Description**: RDF-star capabilities in service descriptions
-- **Query Support**: Full SPARQL 1.2 query support for RDF-star
+- **Triple terms**: `TripleTerm` values (`quoted(triple)`), allowed only in object position
+- **Reifiers**: `reifies(...)` in the graph and repository DSLs emits `_:r rdf:reifies <<( s p o )>>`
+- **SPARQL 1.2 functions**: `TRIPLE`, `isTRIPLE`, `SUBJECT`, `PREDICATE`, `OBJECT`
+- **Query DSL**: `quotedTriple(...)` reified-triple patterns and `ReifierPatternAst` for bound reifiers (see [SPARQL fundamentals](../concepts/sparql-fundamentals.md))
+- **Provider capabilities**: `supportsTripleTerms` and `rdfVersion` on `ProviderCapabilities`
+
+All bundled stores hold triple terms (`supportsTripleTerms = true`): `jena`, `rdf4j` and the graph-only `memory` provider. Querying them with SPARQL needs `jena` or `rdf4j`, because the `memory` provider has no SPARQL engine.
 
 ## 🚀 Key Concepts
 
-### Quoted Triples
+### Reified Triples
 
-RDF-star allows you to quote triples using the `<<` and `>>` syntax:
+In RDF 1.2 Turtle, `<< … >>` is shorthand for a reifier:
 
 ```turtle
+PREFIX : <http://example.org/>
+
 :alice :knows :bob .
-<< :alice :knows :bob >> :certainty 0.9 .
-<< :alice :knows :bob >> :source :wikipedia .
+<< :alice :knows :bob >> :certainty 0.9 ;
+                         :source :wikipedia .
 ```
 
-This creates:
-- A regular triple: `:alice :knows :bob`
-- Metadata about that triple: certainty and source information
+This means:
+- A regular, asserted triple: `:alice :knows :bob`
+- A reifier (a blank node) with `rdf:reifies <<( :alice :knows :bob )>>`, carrying the certainty and source
+
+The reifier does **not** assert the triple; the first line does.
 
 ### Triple Terms
 
-In RDF-star, quoted triples become first-class citizens that can be:
-- Subjects of other statements
-- Objects of other statements
-- Values in SPARQL queries
-- Manipulated with built-in functions
+A triple term `<<( s p o )>>` is an RDF term that denotes a triple. RDF 1.2 allows it only in the **object** position, which is why metadata hangs off a reifier rather than off the triple term itself. In Kotlin, `TripleTerm(RdfTriple(s, p, o))` (or `quoted(triple)`) creates one.
 
 ## 🎨 DSL Integration
 
-### Creating Quoted Triples
+### Annotating a Triple
 
 ```kotlin
-val repo = Rdf.memory()
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.XSD
 
-// Add RDF-star data using DSL
+val ex = "http://example.org/"
+val alice = iri("${ex}alice")
+val bob = iri("${ex}bob")
+val knows = iri("${ex}knows")
+
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
+
 repo.add {
     // Regular triple
-    :alice has :knows with :bob
-    
-    // Quoted triple with metadata
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :certainty with 0.9
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :source with :wikipedia
+    alice has knows with bob
+
+    // Reifier with metadata: _:r rdf:reifies <<( alice knows bob )>>
+    reifies(alice, knows, bob) { r ->
+        r - iri("${ex}certainty") - 0.9
+        r - iri("${ex}source") - iri("${ex}wikipedia")
+        r - iri("${ex}date") - Literal("2024-01-15", XSD.date)
+    }
 }
 ```
 
-### Advanced RDF-star DSL
+`reifies(...)` returns the reifier, so you can keep adding triples to it later. Pass `reifier = iri("...")` to use an IRI instead of a fresh blank node:
 
 ```kotlin
 repo.add {
-    // Multiple metadata properties on the same quoted triple
-    val quotedTriple = quotedTripleOf {
-        :alice has :knows with :bob
-    }
-    
-    quotedTriple has :certainty with 0.9
-    quotedTriple has :source with :wikipedia
-    quotedTriple has :date with "2024-01-15"^^xsd:date
-    quotedTriple has :author with :system
+    val claim = reifies(alice, knows, bob, reifier = iri("${ex}claim1"))
+    claim - iri("${ex}author") - iri("${ex}system")
 }
 ```
 
-### Nested Quoted Triples
+The same `reifies` function is available inside `Rdf.graph { }`.
+
+### Statements About Annotations
+
+A reifier is an ordinary resource, so metadata about an annotation is just more triples about that resource. You can also reify a triple whose subject is the reifier:
 
 ```kotlin
 repo.add {
-    // Quoted triple about another quoted triple
-    val innerTriple = quotedTripleOf {
-        :alice has :knows with :bob
+    val claim = reifies(alice, knows, bob, reifier = iri("${ex}claim1"))
+    claim - iri("${ex}certainty") - 0.9
+
+    reifies(claim, iri("${ex}certainty"), 0.9.toLiteral()) { r ->
+        r - iri("${ex}verifiedBy") - iri("${ex}system")
     }
-    
-    val outerTriple = quotedTripleOf {
-        innerTriple has :certainty with 0.9
-    }
-    
-    outerTriple has :verified by :system
 }
 ```
 
 ## 🔍 SPARQL 1.2 Functions
 
+The query strings below assume `PREFIX : <http://example.org/>` and `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>`.
+
 ### TRIPLE Function
 
-Creates a quoted triple from subject, predicate, and object:
+Creates a triple term from subject, predicate, and object:
 
 ```kotlin
 val query = """
-    SELECT ?quotedTriple WHERE {
-        BIND(TRIPLE(:alice, :knows, :bob) AS ?quotedTriple)
+    SELECT ?tripleTerm WHERE {
+        BIND(TRIPLE(:alice, :knows, :bob) AS ?tripleTerm)
     }
 """
 ```
 
 ### isTRIPLE Function
 
-Checks if a term is a quoted triple:
+Checks if a term is a triple term:
 
 ```kotlin
 val query = """
     SELECT ?term ?isTriple WHERE {
-        ?term :hasValue ?value .
+        ?reifier rdf:reifies ?term .
         BIND(isTRIPLE(?term) AS ?isTriple)
     }
 """
@@ -130,85 +134,66 @@ val query = """
 
 ### Component Functions
 
-Extract components from quoted triples:
-
-```kotlin
-val query = """
-    SELECT ?subject ?predicate ?object WHERE {
-        << :alice :knows :bob >> :certainty ?certainty .
-        BIND(SUBJECT(<< :alice :knows :bob >>) AS ?subject)
-        BIND(PREDICATE(<< :alice :knows :bob >>) AS ?predicate)
-        BIND(OBJECT(<< :alice :knows :bob >>) AS ?object)
-    }
-"""
-```
-
-### Dynamic Component Extraction
+Extract components from triple terms:
 
 ```kotlin
 val query = """
     SELECT ?subject ?predicate ?object ?certainty WHERE {
-        ?quotedTriple :certainty ?certainty .
-        BIND(SUBJECT(?quotedTriple) AS ?subject)
-        BIND(PREDICATE(?quotedTriple) AS ?predicate)
-        BIND(OBJECT(?quotedTriple) AS ?object)
+        ?reifier rdf:reifies ?tripleTerm ;
+                 :certainty ?certainty .
+        BIND(SUBJECT(?tripleTerm) AS ?subject)
+        BIND(PREDICATE(?tripleTerm) AS ?predicate)
+        BIND(OBJECT(?tripleTerm) AS ?object)
     }
 """
 ```
 
 ## 📊 Provider Capabilities
 
-### Checking RDF-star Support
+### Checking Triple-Term Support
 
 ```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
-val capabilities = provider.getCapabilities()
+val capabilities = repo.getCapabilities()
 
-if (capabilities.supportsRdfStar) {
-    println("Provider supports RDF-star")
-    // Use RDF-star features
+if (capabilities.supportsTripleTerms) {
+    println("Repository supports RDF 1.2 triple terms (RDF ${capabilities.rdfVersion})")
 } else {
-    println("Provider does not support RDF-star")
-    // Use regular RDF features
+    println("RDF 1.1 store: triple terms are not supported")
 }
 ```
 
 ### Capability Discovery
 
 ```kotlin
-// Check if any provider supports RDF-star
-val hasRdfStarSupport = RdfProviderRegistry.hasProviderWithFeature("RDF-star")
-println("RDF-star support available: $hasRdfStarSupport")
-
-// Find providers that support RDF-star
-val rdfStarProviders = RdfProviderRegistry.getAllProviders().filter { 
-    it.getCapabilities(it.defaultVariantId()).supportsRdfStar 
+// Find registered providers whose default variant supports triple terms
+val tripleTermProviders = RdfProviderRegistry.getAllProviders().filter {
+    it.getCapabilities(it.defaultVariantId()).supportsTripleTerms
 }
-println("Providers supporting RDF-star: ${rdfStarProviders.size}")
+println("Providers supporting triple terms: ${tripleTermProviders.map { it.id }}")
 ```
 
 ### Service Description Integration
 
-```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
-val serviceDescription = provider.generateServiceDescription(
-    "http://example.org/sparql",
-    provider.defaultVariantId()
-)
+The bundled providers do not generate service descriptions themselves; build one from capabilities with `SparqlServiceDescriptionGenerator` (module `rdf-sparql-lang`):
 
-if (serviceDescription != null) {
-    val triples = serviceDescription.getTriples()
-    val hasRdfStarSupport = triples.any { triple ->
-        triple.predicate == SPARQL12.supportsRdfStar && 
-        triple.obj == boolean(true)
-    }
-    println("Service description advertises RDF-star support: $hasRdfStarSupport")
+```kotlin
+import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
+import com.geoknoesis.kastor.rdf.vocab.SPARQL12
+
+val description = SparqlServiceDescriptionGenerator(
+    "http://example.org/sparql",
+    repo.getCapabilities()
+).generateServiceDescription()
+
+val advertisesRdfStar = description.getTriples().any { triple ->
+    triple.predicate == SPARQL12.supportsRdfStar && triple.obj == boolean(true)
 }
+println("Service description advertises RDF-star support: $advertisesRdfStar")
 ```
 
 ## 🎯 Query Patterns
 
-### Basic RDF-star Queries
+### Basic Queries
 
 ```kotlin
 // Find all statements with certainty information
@@ -243,15 +228,16 @@ val query = """
 """
 ```
 
-### Complex Metadata Queries
+### Several Metadata Properties
 
 ```kotlin
-// Find statements with multiple metadata properties
+// Bind the reifier once to read several annotations of the same statement
 val query = """
     SELECT ?subject ?predicate ?object ?certainty ?source ?date WHERE {
-        << ?subject ?predicate ?object >> :certainty ?certainty .
-        << ?subject ?predicate ?object >> :source ?source .
-        << ?subject ?predicate ?object >> :date ?date .
+        ?reifier rdf:reifies <<( ?subject ?predicate ?object )>> ;
+                 :certainty ?certainty ;
+                 :source ?source ;
+                 :date ?date .
     }
 """
 ```
@@ -268,7 +254,7 @@ val query = """
             (?metadata = :source && ?value = :wikipedia)
         )
         BIND(
-            IF(?metadata = :certainty, "high certainty", "wikipedia source") 
+            IF(?metadata = :certainty, "high certainty", "wikipedia source")
             AS ?reason
         )
     }
@@ -277,269 +263,109 @@ val query = """
 
 ## 🔧 Advanced Use Cases
 
-### Provenance Tracking
+Provenance, confidence, temporal and contextual metadata all use the same pattern: one reifier per annotated statement.
 
 ```kotlin
 repo.add {
-    // Original statement
-    :alice has :knows with :bob
-    
-    // Provenance information
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :source with :wikipedia
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :extractedOn with "2024-01-15"^^xsd:date
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :extractedBy with :system
-}
-```
+    alice has knows with bob
 
-### Confidence and Uncertainty
-
-```kotlin
-repo.add {
-    // Multiple statements with different confidence levels
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :certainty with 0.9
-    
-    quotedTripleOf {
-        :alice has :knows with :charlie
-    } has :certainty with 0.7
-    
-    quotedTripleOf {
-        :bob has :knows with :alice
-    } has :certainty with 0.8
-}
-```
-
-### Temporal Metadata
-
-```kotlin
-repo.add {
-    // Statements with temporal information
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :validFrom with "2024-01-01"^^xsd:date
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :validUntil with "2024-12-31"^^xsd:date
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :lastUpdated with "2024-01-15T10:30:00Z"^^xsd:dateTime
-}
-```
-
-### Contextual Information
-
-```kotlin
-repo.add {
-    // Statements with context
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :context with :professional
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :location with :office
-    
-    quotedTripleOf {
-        :alice has :knows with :bob
-    } has :witnessedBy with :colleague
+    reifies(alice, knows, bob) { r ->
+        // Provenance
+        r - iri("${ex}source") - iri("${ex}wikipedia")
+        r - iri("${ex}extractedBy") - iri("${ex}system")
+        // Confidence
+        r - iri("${ex}certainty") - 0.9
+        // Temporal validity
+        r - iri("${ex}validFrom") - Literal("2024-01-01", XSD.date)
+        r - iri("${ex}validUntil") - Literal("2024-12-31", XSD.date)
+        // Context
+        r - iri("${ex}context") - iri("${ex}professional")
+    }
 }
 ```
 
 ## 🎨 Best Practices
 
-### 1. Provider Selection
-
-```kotlin
-// Always check RDF-star support before using
-val provider = RdfProviderRegistry.getProvider("memory")
-if (provider.getCapabilities().supportsRdfStar) {
-    // Use RDF-star features
-    val query = """
-        SELECT ?s ?p ?o ?certainty WHERE {
-            << ?s ?p ?o >> :certainty ?certainty
-        }
-    """
-} else {
-    // Fallback to regular RDF
-    val query = """
-        SELECT ?s ?p ?o WHERE {
-            ?s ?p ?o
-        }
-    """
-}
-```
-
-### 2. Graceful Degradation
-
-```kotlin
-// Handle providers without RDF-star support
-fun executeRdfStarQuery(query: String, provider: RdfApiProvider): QueryResult {
-    return try {
-        val variant = provider.defaultVariantId()
-        val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
-        repo.select(SparqlSelectQuery(query))
-    } catch (e: UnsupportedOperationException) {
-        if (!provider.getCapabilities(provider.defaultVariantId()).supportsRdfStar) {
-            // Convert RDF-star query to regular SPARQL
-            val fallbackQuery = query.replace("<<", "").replace(">>", "")
-            val variant = provider.defaultVariantId()
-            val repo = provider.createRepository(variant, RdfConfig(providerId = provider.id, variantId = variant))
-            repo.select(SparqlSelectQuery(fallbackQuery))
-        } else {
-            throw e
-        }
-    }
-}
-```
-
-### 3. Metadata Design
-
-```kotlin
-// Use consistent metadata properties
-repo.add {
-    val quotedTriple = quotedTripleOf {
-        :alice has :knows with :bob
-    }
-    
-    // Standard metadata properties
-    quotedTriple has :certainty with 0.9
-    quotedTriple has :source with :wikipedia
-    quotedTriple has :date with "2024-01-15"^^xsd:date
-    quotedTriple has :author with :system
-}
-```
-
-### 4. Query Optimization
-
-```kotlin
-// Use efficient query patterns
-val query = """
-    SELECT ?subject ?predicate ?object ?certainty WHERE {
-        << ?subject ?predicate ?object >> :certainty ?certainty .
-        FILTER(?certainty > 0.8)
-    }
-    ORDER BY DESC(?certainty)
-    LIMIT 100
-"""
-```
+1. **Choose a provider with SPARQL.** All bundled stores hold triple terms, but querying them needs `jena` or `rdf4j`; the `memory` provider is graph-only.
+2. **Assert explicitly.** A reifier does not assert its triple. Add the triple separately when it should be part of the data.
+3. **Use consistent metadata properties.** Attach all annotations of one statement to the same reifier, and prefer well-known vocabularies (for example PROV-O or Dublin Core terms).
+4. **Keep triple terms in object position.** RDF 1.2 forbids triple terms as subjects; use a reifier instead. See the [migration guide](../guides/migrating-to-rdf-1.2.md).
+5. **Bound queries.** Filter and `LIMIT` metadata queries as you would any other query.
 
 ## 📖 Complete Example
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 fun rdfStarExample() {
-    val repo = Rdf.memory()
-    
-    // Check RDF-star support
-    val provider = RdfProviderRegistry.getProvider("memory")
-    if (!provider.getCapabilities().supportsRdfStar) {
-        println("Provider does not support RDF-star")
+    val ex = "http://example.org/"
+    val alice = iri("${ex}alice")
+    val bob = iri("${ex}bob")
+    val charlie = iri("${ex}charlie")
+    val knows = iri("${ex}knows")
+    val certainty = iri("${ex}certainty")
+    val source = iri("${ex}source")
+
+    val repo = Rdf.repository {
+        providerId = "jena"
+        variantId = "memory"
+    }
+    if (!repo.getCapabilities().supportsTripleTerms) {
+        println("Repository does not support RDF 1.2 triple terms")
         return
     }
-    
-    // Add RDF-star data
+
     repo.add {
-        // Regular triples
-        :alice has :knows with :bob
-        :alice has :knows with :charlie
-        :bob has :knows with :alice
-        
-        // Metadata about statements
-        quotedTripleOf {
-            :alice has :knows with :bob
-        } has :certainty with 0.9
-        
-        quotedTripleOf {
-            :alice has :knows with :bob
-        } has :source with :wikipedia
-        
-        quotedTripleOf {
-            :alice has :knows with :bob
-        } has :date with "2024-01-15"^^xsd:date
-        
-        quotedTripleOf {
-            :alice has :knows with :charlie
-        } has :certainty with 0.7
-        
-        quotedTripleOf {
-            :alice has :knows with :charlie
-        } has :source with :linkedin
-        
-        quotedTripleOf {
-            :bob has :knows with :alice
-        } has :certainty with 0.8
-        
-        quotedTripleOf {
-            :bob has :knows with :alice
-        } has :source with :wikipedia
+        alice has knows with bob
+        alice has knows with charlie
+        bob has knows with alice
+
+        reifies(alice, knows, bob) { r ->
+            r - certainty - 0.9
+            r - source - iri("${ex}wikipedia")
+        }
+        reifies(alice, knows, charlie) { r ->
+            r - certainty - 0.7
+            r - source - iri("${ex}linkedin")
+        }
+        reifies(bob, knows, alice) { r ->
+            r - certainty - 0.8
+            r - source - iri("${ex}wikipedia")
+        }
     }
-    
-    // Query with RDF-star
+
     val query = """
+        PREFIX : <http://example.org/>
         SELECT ?subject ?object ?certainty ?source WHERE {
-            << ?subject :knows ?object >> :certainty ?certainty .
-            << ?subject :knows ?object >> :source ?source .
+            ?reifier <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?subject :knows ?object )>> ;
+                     :certainty ?certainty ;
+                     :source ?source .
             FILTER(?certainty > 0.7)
         }
         ORDER BY DESC(?certainty)
     """
-    
-    val results = repo.select(SparqlSelectQuery(query))
-    results.forEach { binding ->
-        val subject = binding.getIri("subject")
-        val obj = binding.getIri("object")
-        val certainty = binding.getDouble("certainty")
-        val source = binding.getIri("source")
-        
-        println("$subject knows $obj (certainty: $certainty, source: $source)")
+
+    repo.select(SparqlSelectQuery(query)).forEach { binding ->
+        val subject = binding.get("subject") as? Iri
+        val obj = binding.get("object") as? Iri
+        val score = binding.getDouble("certainty")
+        val from = binding.get("source") as? Iri
+        println("$subject knows $obj (certainty: $score, source: $from)")
     }
-    
-    // Use SPARQL 1.2 functions
-    val functionQuery = """
-        SELECT ?subject ?predicate ?object ?certainty WHERE {
-            << ?subject ?predicate ?object >> :certainty ?certainty .
-            BIND(SUBJECT(<< ?subject ?predicate ?object >>) AS ?subject)
-            BIND(PREDICATE(<< ?subject ?predicate ?object >>) AS ?predicate)
-            BIND(OBJECT(<< ?subject ?predicate ?object >>) AS ?object)
-        }
-    """
-    
-    val functionResults = repo.select(SparqlSelectQuery(functionQuery))
-    functionResults.forEach { binding ->
-        val subject = binding.getIri("subject")
-        val predicate = binding.getIri("predicate")
-        val obj = binding.getIri("object")
-        val certainty = binding.getDouble("certainty")
-        
-        println("Extracted: $subject $predicate $obj (certainty: $certainty)")
-    }
-    
-    // Aggregate metadata
+
     val aggregateQuery = """
-        SELECT ?source (AVG(?certainty) AS ?avgCertainty) (COUNT(?statement) AS ?statementCount) WHERE {
-            ?statement :certainty ?certainty .
-            ?statement :source ?source .
+        PREFIX : <http://example.org/>
+        SELECT ?source (AVG(?certainty) AS ?avgCertainty) (COUNT(?reifier) AS ?statementCount) WHERE {
+            ?reifier :certainty ?certainty ;
+                     :source ?source .
         }
         GROUP BY ?source
     """
-    
-    val aggregateResults = repo.select(SparqlSelectQuery(aggregateQuery))
-    aggregateResults.forEach { binding ->
-        val source = binding.getIri("source")
-        val avgCertainty = binding.getDouble("avgCertainty")
-        val statementCount = binding.getInt("statementCount")
-        
-        println("Source $source: avg certainty $avgCertainty, $statementCount statements")
+
+    repo.select(SparqlSelectQuery(aggregateQuery)).forEach { binding ->
+        println("Source ${binding.get("source")}: avg certainty ${binding.getDouble("avgCertainty")}, " +
+            "${binding.getInt("statementCount")} statements")
     }
 }
 ```
@@ -563,6 +389,3 @@ For questions about RDF-star support in Kastor:
 ---
 
 *Kastor RDF-star support is developed by [GeoKnoesis LLC](https://geoknoesis.com) and maintained by Stephane Fellah.*
-
-
-

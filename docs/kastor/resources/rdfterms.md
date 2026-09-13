@@ -288,8 +288,8 @@ val age = 30.toLiteral()
 **Typical Java (Verbose)**
 
 ```java
-// Requires a static factory method call.
-Literal age = Rdf.createLiteral(30);
+// Requires a static factory method call (typical of Java RDF libraries).
+Literal age = literalFactory.createTypedLiteral(30);
 ```
 
 This conciseness makes the code easier to write and, more importantly, easier to read and maintain.

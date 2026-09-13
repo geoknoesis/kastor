@@ -48,23 +48,23 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Apache Jena | 4.x     | RDF store and query engine |
+| Apache Jena | 6.2.0 | RDF store and query engine |
 
-**Compatibility**: Compatible with Jena 4.0.0 and later.
+**Compatibility**: Built and tested against Jena 6.2.0 (with Apache Thrift 0.24.0). Other Jena versions are not verified.
 
 #### RDF4J Provider
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Eclipse RDF4J | 4.x | RDF store and query engine |
+| Eclipse RDF4J | 5.3.1 | RDF store and query engine |
 
-**Compatibility**: Compatible with RDF4J 4.0.0 and later.
+**Compatibility**: Built and tested against RDF4J 5.3.1. Other RDF4J versions are not verified.
 
 #### SPARQL Provider
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| HTTP Client | Java 11+ | SPARQL endpoint communication |
+| JDK HTTP client (`java.net`) | JDK 21 | SPARQL endpoint communication (no Apache HttpClient dependency) |
 
 **Compatibility**: Works with any SPARQL 1.1 compliant endpoint.
 
@@ -87,23 +87,23 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 ### Jena Provider
 
-| Feature | Jena 4.0 | Jena 4.1 | Jena 4.2+ | Notes |
-|---------|----------|----------|-----------|-------|
-| In-Memory Store | ✅ | ✅ | ✅ | Full support |
-| TDB2 Store | ✅ | ✅ | ✅ | Full support |
-| SPARQL Queries | ✅ | ✅ | ✅ | Full support |
-| Transactions | ✅ | ✅ | ✅ | Full support |
-| SHACL Validation | ✅ | ✅ | ✅ | Via rdf-shacl-validation module |
+| Feature | Jena 6.2.0 | Notes |
+|---------|------------|-------|
+| In-Memory Store | ✅ | Full support |
+| TDB2 Store | ✅ | Full support |
+| SPARQL Queries | ✅ | Full support |
+| Transactions | ✅ | Full support |
+| SHACL Validation | ✅ | Via rdf-shacl-validation module |
 
 ### RDF4J Provider
 
-| Feature | RDF4J 4.0 | RDF4J 4.1 | RDF4J 4.2+ | Notes |
-|---------|-----------|-----------|------------|-------|
-| Memory Store | ✅ | ✅ | ✅ | Full support |
-| Native Store | ✅ | ✅ | ✅ | Full support |
-| SPARQL Queries | ✅ | ✅ | ✅ | Full support |
-| Transactions | ✅ | ✅ | ✅ | Full support |
-| SHACL Validation | ✅ | ✅ | ✅ | Via rdf-shacl-validation module |
+| Feature | RDF4J 5.3.1 | Notes |
+|---------|-------------|-------|
+| Memory Store | ✅ | Full support |
+| Native Store | ✅ | Full support |
+| SPARQL Queries | ✅ | Full support |
+| Transactions | ✅ | Full support |
+| SHACL Validation | ✅ | Via rdf-shacl-validation module |
 
 ### SPARQL Provider
 
@@ -111,8 +111,8 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 |---------|------------|-------|
 | SELECT Queries | ✅ | Full support |
 | ASK Queries | ✅ | Full support |
-| CONSTRUCT Queries | ⚠️ | Limited (parsing not fully implemented) |
-| DESCRIBE Queries | ⚠️ | Limited (parsing not fully implemented) |
+| CONSTRUCT Queries | ❌ | Not supported by the HTTP adapter (no RDF parser) |
+| DESCRIBE Queries | ❌ | Not supported by the HTTP adapter (no RDF parser) |
 | UPDATE Queries | ✅ | Full support |
 | Transactions | ❌ | Not supported (endpoint-dependent) |
 

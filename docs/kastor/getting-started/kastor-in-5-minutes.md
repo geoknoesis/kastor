@@ -169,7 +169,7 @@ val shapes = shacl {
 val report = ShaclValidation.validator(ValidationProfile.SHACL_CORE)
     .validate(repo.defaultGraph, shapes)
 
-println("Conforms: ${report.isValid}")
+println("Conforms: ${report.isValid}")  // sh:conforms: false for any result, including warnings
 ```
 
 Details: [SHACL validation](../features/shacl-validation.md), [SHACL DSL guide](../api/shacl-dsl-guide.md).
@@ -305,7 +305,7 @@ Reasoning-aware runs (`--reasoner rdfs`, `hermit`, …) are covered in the guide
 ## 8. Standards and conformance
 
 - **RDF 1.2 syntax**: Jena and RDF4J providers are driven against **W3C RDF 1.2 syntax** manifests (Turtle, TriG, N-Triples, N-Quads). See [RDF 1.2 conformance](../concepts/rdf-1.2-conformance.md).
-- **SHACL 1.2**: Native validator aims for **full SHACL 1.2** (Core + SPARQL-related extensions); see the feature page linked above.
+- **SHACL 1.2**: The native validator passes 154 of the 163 W3C SHACL 1.2 test cases. The 9 known deviations (SPARQL-based constraint components and node expressions) are listed in `W3cKnownDeviations`. SHACL-SPARQL needs `rdf-jena` or `rdf-rdf4j` at runtime. See the feature page linked above.
 
 ---
 

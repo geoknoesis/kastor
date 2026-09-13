@@ -2,7 +2,7 @@
 
 {% include version-banner.md %}
 
-The Kastor RDF API provides a **vocabulary-agnostic** core API with multiple syntax options for creating RDF triples. The core API makes **no assumptions** about specific vocabularies, allowing you to work with any RDF vocabulary. Optional vocabulary extensions provide domain-specific compact syntax when needed.
+The Kastor RDF API provides a **vocabulary-agnostic** core API with multiple syntax options for creating RDF triples. The core API makes **no assumptions** about specific vocabularies, allowing you to work with any RDF vocabulary.
 
 > **Note**: For creating ontologies and vocabularies, see the specialized DSL guides:
 > - [RDFS DSL Guide](rdfs-dsl-guide.md) - For RDF Schema vocabulary creation
@@ -19,7 +19,7 @@ The core API is designed to be **vocabulary-agnostic**, meaning:
 
 - ✅ **No hardcoded vocabulary assumptions** in the core API
 - ✅ **Works with any RDF vocabulary** (FOAF, Dublin Core, custom vocabularies, etc.)
-- ✅ **Flexible predicate specification** using full IRIs or string literals
+- ✅ **Explicit predicates** as `Iri` values (vocabulary constants, `iri(...)` or `qname(...)`)
 - ✅ **Type-safe** for all literal types (String, Int, Double, Boolean)
 - ✅ **Multiple syntax options** available for different preferences
 
@@ -27,56 +27,41 @@ The core API is designed to be **vocabulary-agnostic**, meaning:
 
 ### 1. **Ultra-Compact Syntax** (Most Concise)
 
-```kotlin
-// Bracket notation with full IRIs
-person["http://example.org/name"] = "Alice"
-person["http://example.org/age"] = 30
-person["http://example.org/email"] = "alice@example.com"
-person["http://example.org/friend"] = bob
-
-// With IRI predicates
-val name = iri("http://example.org/name")
-val age = iri("http://example.org/age")
-person[name] = "Alice"
-person[age] = 30
-```
+Bracket assignment takes an `Iri` predicate; strings are not accepted as predicates.
 
 ```kotlin
-// Typed IRI alternative (recommended)
 val namePred = iri("http://example.org/name")
 val agePred = iri("http://example.org/age")
 val emailPred = iri("http://example.org/email")
 val friendPred = iri("http://example.org/friend")
 
-person[namePred] = "Alice"
-person[agePred] = 30
-person[emailPred] = "alice@example.com"
-person[friendPred] = bob
+repo.add {
+    person[namePred] = "Alice"
+    person[agePred] = 30
+    person[emailPred] = "alice@example.com"
+    person[friendPred] = bob
+}
+```
 
-// With QNames (requires prefix mapping)
+With prefix mappings, build predicates from QNames with `qname(...)`:
+
+```kotlin
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.RDF
 
 repo.add {
-    // Built-in prefixes: rdf, rdfs, owl, sh, xsd (no need to declare!)
+    // Built-in prefixes need no declaration: rdf, rdfs, owl, sh, xsd, obo, skos, prov, dcat, dcterms, void, geo, time
     prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
+        put("foaf", FOAF.namespace)
     }
-    
-    person["foaf:name"] = "Alice"
-    person["foaf:age"] = 30
-    person["dcterms:email"] = "alice@example.com"
-    
-    // Turtle-style "a" alias for rdf:type (uses built-in rdf prefix)
-    person["a"] = "foaf:Person"
-    document["a"] = "dcterms:Dataset"
-    
-    // Smart QName detection with built-in prefixes
-    person - "rdf:type" - "rdfs:Class"           // Built-in prefixes → IRIs
-    person - "foaf:knows" - "foaf:Person"        // Custom prefix → IRI
-    person - "rdfs:label" - "Alice"              // Built-in prefix + string literal
-    person - "foaf:homepage" - "http://example.org"  // Full IRI → IRI
+
+    person[qname("foaf:name")] = "Alice"
+    person[qname("foaf:age")] = 30
+    person[DCTERMS.description] = "A person"
+
+    // rdf:type
+    person[RDF.type] = qname("foaf:Person")
 }
 ```
 
@@ -89,41 +74,18 @@ repo.add {
 ### 2. **Natural Language Syntax** (Most Explicit)
 
 ```kotlin
-// Natural language syntax with any predicate IRI
-val namePred = iri("http://example.org/name")
-val agePred = iri("http://example.org/age")
-val emailPred = iri("http://example.org/email")
-val friendPred = iri("http://example.org/friend")
-
-person has namePred with "Alice"
-person has agePred with 30
-person has emailPred with "alice@example.com"
-person has friendPred with bob
-
-// Typed IRI predicates (recommended)
-person has namePred with "Alice"
-
-// With QNames (requires prefix mapping)
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
-import com.geoknoesis.kastor.rdf.vocab.FOAF
-
 repo.add {
-    prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
-    }
-    
-    person has "foaf:name" with "Alice"
-    person has "foaf:age" with 30
-    person has "dcterms:email" with "alice@example.com"
-    
-    // Natural language "is" alias for rdf:type
-    person `is` "foaf:Person"
-    document `is` "dcterms:Dataset"
-}
+    person has namePred with "Alice"
+    person has agePred with 30
+    person has emailPred with "alice@example.com"
+    person has friendPred with bob
 
-// String IRI alternative (supported, less explicit)
-person has "http://example.org/name" with "Alice"
+    // QName predicates via qname(...)
+    person has qname("foaf:name") with "Alice"
+
+    // rdf:type with `is`
+    person `is` FOAF.Person
+}
 ```
 
 **Benefits:**
@@ -134,25 +96,13 @@ person has "http://example.org/name" with "Alice"
 
 ### 3. **Generic Infix Operator** (Natural Flow)
 
-```kotlin
-// Generic infix operator with any predicate IRI
-val namePred = iri("http://example.org/name")
-val agePred = iri("http://example.org/age")
-val emailPred = iri("http://example.org/email")
-val friendPred = iri("http://example.org/friend")
-
-person has namePred with "Alice"
-person has agePred with 30
-person has emailPred with "alice@example.com"
-person has friendPred with bob
-
-// Typed IRI predicates (recommended)
-person has namePred with "Alice"
-```
+`has` and `with` are ordinary infix functions, so the statement reads left to right. There is no separate string-predicate form:
 
 ```kotlin
-// String IRI alternative (supported, less explicit)
-person has "http://example.org/name" with "Alice"
+repo.add {
+    person has namePred with "Alice"
+    person has friendPred with bob
+}
 ```
 
 **Benefits:**
@@ -168,50 +118,26 @@ The minus operator (`-`) provides intuitive syntax for creating multiple triples
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-// Single values
-val namePred = iri("http://example.org/name")
-val agePred = iri("http://example.org/age")
-val emailPred = iri("http://example.org/email")
-
-person - namePred - "Alice"
-person - agePred - 30
-person - emailPred - "alice@example.com"
-
 repo.add {
-    prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
-    }
-    
-    person - "foaf:name" - "Alice"
-    person - "foaf:age" - 30
-    person - "dcterms:email" - "alice@example.com"
-    
-    // Turtle-style "a" alias for rdf:type
-    person - "a" - "foaf:Person"
-    document - "a" - "dcterms:Dataset"
+    // Single values
+    person - namePred - "Alice"
+    person - agePred - 30
+    person - qname("dcterms:description") - "A person"
+
+    // Multiple individual triples using values() function
+    person - FOAF.knows - values(friend1, friend2, friend3)
+
+    // RDF Lists using list() function
+    person - FOAF.mbox - list("alice@example.com", "alice@work.com")
+
+    // RDF Containers using bag(), seq(), alt() functions
+    person - DCTERMS.subject - bag("Technology", "AI", "RDF", "Kotlin")  // rdf:Bag
+    person - FOAF.knows - seq(friend1, friend2, friend3)                // rdf:Seq
+    person - FOAF.mbox - alt("alice@example.com", "alice@work.com")     // rdf:Alt
+
+    // Mixed types: pass RdfTerm values
+    person - DCTERMS.subject - values(string("Technology"), string("RDF"), int(42), boolean(true))
 }
-
-// Multiple individual triples using values() function
-person - FOAF.knows - values(friend1, friend2, friend3)
-
-// RDF Lists using list() function
-person - FOAF.mbox - list("alice@example.com", "alice@work.com")
-
-// RDF Containers using bag(), seq(), alt() functions
-person - DCTERMS.subject - bag("Technology", "AI", "RDF", "Kotlin")  // rdf:Bag
-person - FOAF.knows - seq(friend1, friend2, friend3)                // rdf:Seq
-person - FOAF.mbox - alt("alice@example.com", "alice@work.com")     // rdf:Alt
-
-// Mixed types work with all functions
-person - DCTERMS.subject - values("Technology", "Programming", "RDF", 42, true)
-```
-
-```kotlin
-// String IRI alternative (supported, less explicit)
-person - "http://example.org/name" - "Alice"
-person - "http://example.org/age" - 30
-person - "http://example.org/email" - "alice@example.com"
 ```
 
 **Benefits:**
@@ -267,21 +193,20 @@ person - FOAF.mbox - list("email1", "email2")           // ✅ Compiles
 
 ### Predicate Flexibility
 
+Predicates are always `Iri` values:
+
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 
-// String predicates (auto-converted to IRIs)
-person["http://example.org/name"] = "Alice"
+val name = iri("http://example.org/name")      // full IRI
+val foafName = FOAF.name                        // vocabulary constant
 
-// IRI predicates via vocab constants
-val name = iri("http://example.org/name")
-val foafName = FOAF.name
-val dcTitle = DCTERMS.title
-
-person[name] = "Alice"
-person has foafName with "Alice"
-person has dcTitle with "My Document"
+repo.add {
+    val dcTitle = qname("dcterms:title")        // QName via built-in or declared prefixes
+    person[name] = "Alice"
+    person has foafName with "Alice"
+    person has dcTitle with "My Document"
+}
 ```
 
 ### Variable Usage Patterns
@@ -347,9 +272,9 @@ repo.add {
     val people = listOf(person1, person2, person3)
     
     people.forEachIndexed { index, person ->
-        person["http://example.org/name"] = "Person ${index + 1}"
-        person["http://example.org/age"] = 20 + index * 5
-        person["http://example.org/email"] = "person${index + 1}@example.com"
+        person[iri("http://example.org/name")] = "Person ${index + 1}"
+        person[iri("http://example.org/age")] = 20 + index * 5
+        person[iri("http://example.org/email")] = "person${index + 1}@example.com"
     }
 }
 ```
@@ -358,7 +283,7 @@ repo.add {
 
 | Style | Example | Pros | Cons |
 |-------|---------|------|------|
-| **Ultra-Compact (String)** | `person["http://example.org/name"] = "Alice"` | Most concise, familiar pattern | Requires full IRIs, less readable |
+| **Ultra-Compact (String)** | `person[iri("http://example.org/name")] = "Alice"` | Most concise, familiar pattern | Requires full IRIs, less readable |
 | **Ultra-Compact (Variable)** | `person[name] = "Alice"` | Concise, readable, IDE support | Requires variable definition |
 | **Ultra-Compact (Vocab)** | `person[PersonVocab.name] = "Alice"` | Concise, organized, type-safe | Requires vocabulary object |
 | **Natural Language** | `person has name with "Alice"` | Most explicit, self-documenting | Most verbose |
@@ -370,80 +295,29 @@ repo.add {
 | **Minus Operator (RDF Seq)** | `person - FOAF.knows - seq(f1, f2, f3)` | RDF Seq container | Requires seq() function |
 | **Minus Operator (RDF Alt)** | `person - FOAF.mbox - alt("e1", "e2")` | RDF Alt container | Requires alt() function |
 
-## 🧠 Smart QName Detection
+## 🧠 Objects: Literals, IRIs and QNames
 
-Kastor automatically detects and resolves QNames in object position, making the DSL more intuitive and reducing the need for explicit type annotations:
-
-### How It Works
+A string object is always a string literal: the DSL does not guess whether a string is an IRI or a QName. Say what you mean:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.RDFS
+import com.geoknoesis.kastor.rdf.vocab.XSD
 
 repo.add {
     prefixes {
         put("foaf", FOAF.namespace)
-        put("rdfs", RDFS.namespace)
     }
-    
+
     val person = iri("http://example.org/person")
-    
-    // ✅ Smart: QName with declared prefix → IRI
-    person - "foaf:knows" - "foaf:Person"        // → <http://xmlns.com/foaf/0.1/Person>
-    person - "rdfs:subClassOf" - "foaf:Agent"    // → <http://xmlns.com/foaf/0.1/Agent>
-    
-    // ✅ Smart: Full IRI → IRI
-    person - "foaf:homepage" - "http://example.org/profile"  // → <http://example.org/profile>
-    
-    // ✅ Smart: String without colon → string literal
-    person - "foaf:name" - "Alice"               // → "Alice"^^xsd:string
-    person - "foaf:age" - 30                     // → "30"^^xsd:integer
-    
-    // ✅ Smart: Undeclared prefix → string literal (safe fallback)
-    person - "foaf:note" - "unknown:Person"      // → "unknown:Person"^^xsd:string
-    
-    // ✅ Special case: rdf:type always resolves QNames
-    person["a"] = "foaf:Person"                  // → <http://xmlns.com/foaf/0.1/Person>
-    person `is` "foaf:Agent"                     // → <http://xmlns.com/foaf/0.1/Agent>
+
+    person - FOAF.knows - qname("foaf:Person")                  // IRI from a QName
+    person - FOAF.homepage - iri("http://example.org/profile")  // IRI
+    person - FOAF.name - "Alice"                                // "Alice"^^xsd:string
+    person - FOAF.name - "foaf:Person"                          // "foaf:Person"^^xsd:string (not resolved)
+    person - FOAF.name - lang("Alice", "en")                    // "Alice"@en (tags are validated and lower-cased)
+    person - FOAF.age - Literal("30", XSD.integer)              // "30"^^xsd:integer, lexical form preserved
 }
 ```
-
-### Detection Rules
-
-1. **Full IRIs** (`http://...` or `https://...`) → Always resolved as IRIs
-2. **QNames with declared prefixes** (`foaf:Person`) → Resolved as IRIs
-3. **Strings without colons** (`Alice`) → Created as string literals
-4. **QNames with undeclared prefixes** (`unknown:Person`) → Created as string literals (safe fallback)
-5. **rdf:type special case** → Always attempts QName resolution first
-
-### Explicit Control
-
-When you need explicit control over the object type, use the dedicated functions:
-
-```kotlin
-// Explicit QName resolution
-person - "foaf:knows" - qname("foaf:Person")    // → <http://xmlns.com/foaf/0.1/Person>
-
-// Explicit string literal
-person - "foaf:name" - string("foaf:Person")   // → "foaf:Person"^^xsd:string
-
-// Explicit IRI
-person - "foaf:homepage" - iri("http://example.org")  // → <http://example.org>
-
-// Language-tagged literals
-person - "foaf:name" - lang("Alice", "en")      // → "Alice"@en
-
-// Typed literals
-person - "foaf:age" - typed("30", XSD.integer)  // → "30"^^xsd:integer
-```
-
-### Benefits
-
-- ✅ **Intuitive**: Follows Turtle conventions for QName resolution
-- ✅ **Safe**: Undeclared prefixes become string literals (no errors)
-- ✅ **Explicit when needed**: Use dedicated functions for precise control
-- ✅ **Backward compatible**: Existing code continues to work
-- ✅ **Less verbose**: Reduces need for explicit `qname()` calls
 
 ## 🏗️ Built-in Prefixes
 
@@ -458,27 +332,33 @@ Kastor comes with built-in prefixes for the most common vocabularies, so you don
 | `owl` | `http://www.w3.org/2002/07/owl#` | Web Ontology Language |
 | `sh` | `http://www.w3.org/ns/shacl#` | Shapes Constraint Language |
 | `xsd` | `http://www.w3.org/2001/XMLSchema#` | XML Schema datatypes |
+| `obo` | `http://purl.obolibrary.org/obo/` | OBO Foundry ontologies |
+| `skos` | `http://www.w3.org/2004/02/skos/core#` | SKOS |
+| `prov` | `http://www.w3.org/ns/prov#` | PROV-O |
+| `dcat` | `http://www.w3.org/ns/dcat#` | DCAT |
+| `dcterms` | `http://purl.org/dc/terms/` | Dublin Core terms |
+| `void` | `http://rdfs.org/ns/void#` | VoID |
+| `geo` | `http://www.opengis.net/ont/geosparql#` | GeoSPARQL |
+| `time` | `http://www.w3.org/2006/time#` | OWL-Time |
 
 ### Usage Examples
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+
 repo.add {
-    // No need to declare built-in prefixes!
-    val person = iri("http://example.org/person")
-    
-    // Use built-in prefixes directly
-    person["rdf:type"] = "rdfs:Class"              // → <http://www.w3.org/2000/01/rdf-schema#Class>
-    person - "rdfs:label" - "Person Class"         // → "Person Class"^^xsd:string
-    val sameAsTarget = iri("http://example.org/person2")
-    person - "owl:sameAs" - sameAsTarget           // → <http://example.org/person2>
-    person - "sh:targetClass" - "rdfs:Class"       // → <http://www.w3.org/2000/01/rdf-schema#Class>
-    
+    // No need to declare built-in prefixes
+    val personClass = iri("http://example.org/Person")
+
+    personClass[qname("rdf:type")] = qname("rdfs:Class")
+    personClass - qname("rdfs:label") - "Person Class"
+    personClass - qname("owl:sameAs") - iri("http://example.org/Person2")
+
     // Mix with custom prefixes
     prefixes {
-        "foaf" to FOAF.namespace
+        put("foaf", FOAF.namespace)
     }
-    person - "foaf:name" - "Alice"                 // Custom prefix
-    person - "rdfs:comment" - "A person"           // Built-in prefix
+    personClass - qname("rdfs:subClassOf") - qname("foaf:Agent")
 }
 ```
 
@@ -491,49 +371,20 @@ import com.geoknoesis.kastor.rdf.vocab.FOAF
 
 repo.add {
     prefixes {
-        "rdf" to "http://example.org/custom-rdf#"  // Override built-in rdf prefix
-        "foaf" to FOAF.namespace     // Custom prefix
+        put("rdf", "http://example.org/custom-rdf#")  // Override built-in rdf prefix
+        put("foaf", FOAF.namespace)                   // Custom prefix
     }
-    
+
     val resource = iri("http://example.org/resource")
-    resource["rdf:type"] = "rdf:CustomType"  // Uses custom namespace
+    resource[qname("rdf:type")] = qname("rdf:CustomType")  // Uses the custom namespace
 }
 ```
 
-### Benefits
+## 🎯 Custom Vocabularies
 
-- ✅ **Zero configuration**: Common prefixes work out of the box
-- ✅ **Less verbose**: No need to declare standard prefixes
-- ✅ **Overridable**: Can customize prefixes when needed
-- ✅ **Standards compliant**: Uses official namespace URIs
-
-## 🎯 Optional Vocabulary Extensions
-
-For domain-specific compact syntax, you can optionally import vocabulary extensions:
+Kastor ships no vocabulary-specific infix functions (such as `person name "Alice"`). Instead, group your predicates in an object and use them with any syntax:
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.VocabularyExtensions.*
-
-// Then use compact syntax with predefined vocabularies
-repo.add {
-    person name "Alice"           // Uses FOAF vocabulary
-    person age 30                 // Uses FOAF vocabulary
-    person email "alice@example.com" // Uses FOAF vocabulary
-    person friend bob             // Uses FOAF vocabulary
-}
-```
-
-### Available Vocabulary Extensions
-
-- **FOAF** (Friend of a Friend): `person name "Alice"`
-- **RDFS**: `person label "Alice"`
-- **Dublin Core**: `document title "My Document"`
-- **Example**: `person worksFor company`
-
-### Creating Custom Vocabularies
-
-```kotlin
-// Define your own vocabulary
 object MyVocab {
     val name = iri("http://myvocab.org/name")
     val age = iri("http://myvocab.org/age")
@@ -541,169 +392,70 @@ object MyVocab {
     val worksFor = iri("http://myvocab.org/worksFor")
 }
 
-// Use with core API
 repo.add {
     person[MyVocab.name] = "Alice"
     person has MyVocab.age with 30
-    person has MyVocab.email with "alice@example.com"
-}
-
-// Or create custom DSL extensions
-infix fun RdfResource.name(value: String): RdfTriple {
-    return createTriple(this, MyVocab.name, string(value))
-}
-
-// Then use
-repo.add {
-    person name "Alice"  // Uses your custom vocabulary
+    person - MyVocab.email - "alice@example.com"
 }
 ```
 
-## 🎯 Type Declaration Aliases
+## 🎯 Type Declarations
 
-Kastor provides convenient aliases for declaring RDF types, making your code more readable and familiar:
-
-### Turtle-Style "a" Alias
-
-The `"a"` alias is a Turtle-style shortcut for `rdf:type`:
+There are no string aliases such as `"a"`. Declare `rdf:type` with `is`, with `RDF.type` or with a QName:
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
-import com.geoknoesis.kastor.rdf.vocab.FOAF
-
-repo.add {
-    prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
-    }
-    
-    val person = iri("http://example.org/person")
-    val document = iri("http://example.org/document")
-    
-    // Turtle-style "a" alias for rdf:type
-    person["a"] = "foaf:Person"           // Bracket syntax
-    document - "a" - "dcterms:Dataset"    // Minus operator with quotes
-    person - a - "foaf:Agent"             // Minus operator without quotes
-}
-```
-
-### Natural Language "is" Alias
-
-The `is` keyword provides natural language syntax for type declarations:
-
-```kotlin
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
-import com.geoknoesis.kastor.rdf.vocab.FOAF
-
-repo.add {
-    prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
-    }
-    
-    val person = iri("http://example.org/person")
-    val document = iri("http://example.org/document")
-    
-    // Natural language "is" alias for rdf:type
-    person `is` "foaf:Person"        // With QName
-    document `is` FOAF.Agent            // With IRI
-}
-```
-
-### Mixed Type Declaration Styles
-
-You can mix different type declaration styles in the same code:
-
-```kotlin
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
 import com.geoknoesis.kastor.rdf.vocab.RDF
 
 repo.add {
-    prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
-    }
-    
     val person = iri("http://example.org/person")
     val organization = iri("http://example.org/org")
-    
-    // Mix different type declaration styles
-    person["a"] = "foaf:Person"                    // Turtle-style
-    person `is` "foaf:Agent"                         // Natural language
-    organization - "a" - "foaf:Organization"      // Minus operator with quotes
-    organization - a - "foaf:Agent"                // Minus operator without quotes
-    organization has RDF.type with "foaf:Agent"   // Traditional has/with
-    
-    // Add other properties
+
+    person `is` FOAF.Person                               // natural language
+    person[RDF.type] = FOAF.Agent                         // bracket syntax
+    organization - RDF.type - FOAF.Organization           // minus operator
+    organization has RDF.type with qname("foaf:Agent")    // has/with
+
     person[FOAF.name] = "Alice"
     organization[FOAF.name] = "ACME Corp"
 }
 ```
 
-### Type Declaration Comparison
-
-| Style | Example | Pros | Cons |
-|-------|---------|------|------|
-| **Turtle "a" (Bracket)** | `person["a"] = "foaf:Person"` | Concise, familiar to Turtle users | Less explicit |
-| **Turtle "a" (Minus)** | `person - "a" - "foaf:Person"` | Consistent with minus operator | Less explicit |
-| **Natural "is"** | `person `is` "foaf:Person"` | Most explicit, natural language | Clean and direct |
-| **Traditional** | `person has RDF.type with "foaf:Person"` | Explicit, clear intent | Most verbose |
-
-### When to Use Each Style
-
-**Use Turtle "a" when:**
-- You're familiar with Turtle syntax
-- You want the most concise type declarations
-- You're working with standard vocabularies
-
-**Use natural "is" when:**
-- You want the most explicit and readable code
-- You're working with complex type hierarchies
-- You want self-documenting code
-
-**Use traditional has/with when:**
-- You want to be explicit about using `rdf:type`
-- You're working with custom or less common vocabularies
-- You want consistency with other property declarations
+| Style | Example |
+|-------|---------|
+| **Natural "is"** | ``person `is` FOAF.Person`` |
+| **Bracket** | `person[RDF.type] = FOAF.Agent` |
+| **Minus operator** | `person - RDF.type - FOAF.Person` |
+| **has/with** | `person has RDF.type with FOAF.Person` |
 
 ## 🏷️ QName Support with Prefix Mappings
 
-Use QNames for cleaner, more readable code with prefix mappings:
+Use QNames for cleaner, more readable code with prefix mappings. `qname(...)` turns a QName (or a full IRI) into an `Iri` using the built-in and declared prefixes:
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.DCAT
-import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.FOAF
-import com.geoknoesis.kastor.rdf.vocab.SCHEMA
 
 repo.add {
     // Configure prefix mappings
     prefixes {
-        "foaf" to FOAF.namespace
-        "dcat" to DCAT.namespace
-        "dcterms" to DCTERMS.namespace
+        put("foaf", FOAF.namespace)
     }
-    
+
     val person = iri("http://example.org/person")
-    
+
     // Use QNames with all syntax styles
-    person - "foaf:name" - "Alice"                    // Minus operator
-    person["foaf:age"] = 30                           // Bracket syntax
-    person has "dcat:keyword" with "example"          // Natural language
-    
+    person - qname("foaf:name") - "Alice"             // Minus operator
+    person[qname("foaf:age")] = 30                    // Bracket syntax
+    person has qname("dcat:keyword") with "example"   // Natural language (dcat is built in)
+
     // Mix QNames and full IRIs
-    person - "foaf:knows" - iri("http://example.org/bob")
+    person - qname("foaf:knows") - iri("http://example.org/bob")
     val customProp = iri("http://example.org/customProp")
     person - customProp - "value"
-    
-    // Create IRIs from QNames
-    val nameIri = qname("foaf:name")
-    person - nameIri - "Alice"
-    
-    // Add single prefix mapping
-    prefix("schema", SCHEMA.namespace)
-    person - "schema:name" - "Alice"
+
+    // Add a single prefix mapping
+    prefix("schema", "https://schema.org/")
+    person - qname("schema:name") - "Alice"
 }
 ```
 
@@ -732,13 +484,13 @@ person - friend - bob
 // With QNames
 repo.add {
     prefixes {
-        "foaf" to FOAF.namespace
-        "dcterms" to DCTERMS.namespace
+        put("foaf", FOAF.namespace)
+        put("dcterms", DCTERMS.namespace)
     }
     
-    person - "foaf:name" - "Alice"
-    person - "foaf:age" - 30
-    person - "dcterms:email" - "alice@example.com"
+    person - qname("foaf:name") - "Alice"
+    person - qname("foaf:age") - 30
+    person - qname("dcterms:email") - "alice@example.com"
 }
 ```
 
@@ -754,7 +506,7 @@ Use `values()` function to create multiple individual triples:
 person - FOAF.knows - values(friend1, friend2, friend3)
 
 // Works with mixed types
-person - DCTERMS.subject - values("Technology", "Programming", "RDF", 42, true)
+person - DCTERMS.subject - values(string("Technology"), string("Programming"), string("RDF"), int(42), boolean(true))
 ```
 
 ### RDF Lists (Parentheses)
@@ -825,7 +577,7 @@ repo.add {
     person - FOAF.mbox - alt("alice@example.com", "alice@work.com")
     
     // Mixed types work with all syntaxes
-    person - DCTERMS.creator - values("Alice", "Bob", 42, true)
+    person - DCTERMS.creator - values(string("Alice"), string("Bob"), int(42), boolean(true))
 }
 ```
 
@@ -886,8 +638,8 @@ people.forEach { person ->
 
 ```kotlin
 // String IRI alternative (supported, less explicit)
-person["http://example.org/name"] = "Alice"
-person["http://example.org/age"] = 30
+person[iri("http://example.org/name")] = "Alice"
+person[iri("http://example.org/age")] = 30
 ```
 
 ### Vocabulary Management
@@ -918,18 +670,22 @@ repo.add {
 ### Performance Considerations
 
 ```kotlin
-// Efficient batch operations
+// One add { } call is written as one batch
 repo.add {
-    val triples = mutableListOf<RdfTriple>()
-    
     people.forEach { person ->
-        triples.add(RdfTriple(person, PersonVocab.name, string("Alice")))
-        triples.add(RdfTriple(person, PersonVocab.age, int(30)))
+        triple(person, PersonVocab.name, string("Alice"))
+        triple(person, PersonVocab.age, int(30))
     }
-    
-    // All triples added in one batch
 }
+
+// Or build RdfTriple values yourself and add them in one call
+val triples = people.flatMap { person ->
+    listOf(RdfTriple(person, PersonVocab.name, string("Alice")), RdfTriple(person, PersonVocab.age, int(30)))
+}
+repo.addTriples(triples)
 ```
+
+The DSL's `triples` property is a read-only view; blank nodes created inside the DSL get opaque, run-unique labels.
 
 ## 📚 Real-World Examples
 
@@ -939,11 +695,11 @@ repo.add {
 // Ultra-compact style with full IRIs
 val user = iri("http://example.org/user/1")
 repo.add {
-    user["http://example.org/user/name"] = "Alice Johnson"
-    user["http://example.org/user/email"] = "alice@example.com"
-    user["http://example.org/user/age"] = 30
-    user["http://example.org/user/active"] = true
-    user["http://example.org/user/created"] = "2024-01-01"
+    user[iri("http://example.org/user/name")] = "Alice Johnson"
+    user[iri("http://example.org/user/email")] = "alice@example.com"
+    user[iri("http://example.org/user/age")] = 30
+    user[iri("http://example.org/user/active")] = true
+    user[iri("http://example.org/user/created")] = "2024-01-01"
 }
 ```
 
@@ -973,8 +729,8 @@ val company = iri("http://example.org/company/1")
 
 repo.add {
     // Simple properties - ultra-compact
-    person["http://example.org/person/name"] = "Alice"
-    person["http://example.org/person/email"] = "alice@example.com"
+    person[iri("http://example.org/person/name")] = "Alice"
+    person[iri("http://example.org/person/email")] = "alice@example.com"
     
     // Complex relationships - natural language
     person has worksFor with company
@@ -1007,118 +763,123 @@ repo.add {
 
 ## 🎉 Conclusion
 
-The Kastor RDF API provides a **vocabulary-agnostic** core API that works with any RDF vocabulary. All syntax styles are equivalent and create the same RDF triples - choose what feels most natural to you!
+The Kastor RDF API provides a **vocabulary-agnostic** core API that works with any RDF vocabulary. All syntax styles are equivalent and create the same RDF triples; choose what feels most natural to you:
 
-- **Ultra-compact**: `person["http://example.org/name"] = "Alice"` (most concise)
-- **Natural language**: `person has name with "Alice"` (most explicit)
-- **Generic infix**: `person has name with "Alice"` (natural flow)
-- **Minus operator**: `person - name - "Alice"` (clean and familiar)
-- **QNames**: `person - "foaf:name" - "Alice"` (cleaner with prefix mappings)
-- **Type aliases**: `person["a"] = "foaf:Person"`, `person - a - "foaf:Person"`, or `person `is` "foaf:Person"` (Turtle-style and natural language)
-- **Multiple values**: `person - FOAF.knows - values(f1, f2, f3)` (intuitive collections)
+- **Ultra-compact**: `person[namePred] = "Alice"` (most concise)
+- **Natural language**: `person has namePred with "Alice"` (most explicit)
+- **Minus operator**: `person - namePred - "Alice"` (clean and familiar)
+- **QNames**: `person - qname("foaf:name") - "Alice"` (with prefix mappings)
+- **Type declarations**: ``person `is` FOAF.Person`` or `person[RDF.type] = FOAF.Person`
+- **Multiple values**: `person - FOAF.knows - values(f1, f2, f3)` (individual triples)
 - **RDF Lists**: `person - FOAF.mbox - list("e1", "e2")` (proper RDF semantics)
 
-The new **`values()` and `list()`** functions make it even easier to work with multiple values, following common programming conventions. Use `values()` for individual triples and `list()` for proper RDF Lists.
+Predicates are always `Iri` values and string objects are always string literals: use `iri(...)`, `qname(...)` or vocabulary constants when you mean an IRI. Configure mappings with `prefixes { put(prefix, namespace) }` or `prefix(prefix, namespace)`.
 
-**QName support** with prefix mappings provides cleaner, more readable code while maintaining full compatibility with existing syntax. Use `prefixes { }` blocks to configure mappings and `qname()` to create IRIs from QNames.
+## 🌟 RDF-star Support (RDF 1.2 reifiers)
 
-**Type declaration aliases** make RDF type declarations more intuitive and familiar. Use `"a"` for Turtle-style syntax (`person["a"] = "foaf:Person"`, `person - a - "foaf:Person"`) or `is` for natural language syntax (`person `is` "foaf:Person"`).
+Kastor follows the RDF 1.2 model for statements about statements. A triple term `<<( s p o )>>` may appear only as an **object**, and metadata is attached to a **reifier**: `_:r rdf:reifies <<( s p o )>>`. The compact DSL creates reifiers with `reifies(...)`, which is available in both `Rdf.graph { }` and `repo.add { }`. This is useful for provenance, confidence scores, temporal information and other metadata about statements.
 
-Optional vocabulary extensions provide domain-specific compact syntax when needed, but the core API remains flexible and vocabulary-agnostic.
-
-## 🌟 RDF-star Support
-
-RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples. This is useful for adding provenance, confidence scores, temporal information, and other metadata about statements.
-
-### **RDF-star Syntax**
+### **Reifier Syntax**
 
 ```kotlin
 val graph = Rdf.graph {
     val alice = iri("http://example.org/alice")
     val bob = iri("http://example.org/bob")
-    
+
     // Basic facts
     alice - FOAF.knows - bob
     alice - FOAF.age - 30
-    
-    // RDF-star: Add metadata about statements
-    val aliceKnowsBob = embedded(alice, FOAF.knows, bob)
-    aliceKnowsBob - DCTERMS.source - "LinkedIn"
-    aliceKnowsBob - iri("http://example.org/confidence") - 0.95
-    aliceKnowsBob - DCTERMS.date - "2025-01-15"
-    
-    // RDF-star: Add temporal metadata about age
-    val aliceAge = embedded(alice, FOAF.age, 30)
-    aliceAge - DCTERMS.date - "2025-01-15"
-    aliceAge - iri("http://example.org/validUntil") - "2025-12-31"
+
+    // Metadata about a statement: _:r rdf:reifies <<( alice foaf:knows bob )>>
+    reifies(alice, FOAF.knows, bob) { r ->
+        r - DCTERMS.source - "LinkedIn"
+        r - iri("http://example.org/confidence") - 0.95
+        r - DCTERMS.date - "2025-01-15"
+    }
+
+    // Temporal metadata about the age statement
+    reifies(alice, FOAF.age, 30.toLiteral()) { r ->
+        r - DCTERMS.date - "2025-01-15"
+        r - iri("http://example.org/validUntil") - "2025-12-31"
+    }
 }
 ```
 
-### **Embedded Triple Creation**
+The reifier does not assert the triple; add it separately (as above) when it belongs to the data.
 
-The `embedded()` function creates a quoted triple that can be used as a subject or object:
+### **Creating Reifiers**
 
 ```kotlin
-// Method 1: Using variables
-val subject = iri("http://example.org/alice")
-val predicate = FOAF.knows
-val obj = iri("http://example.org/bob")
-val statement = embedded(subject, predicate, obj)
+Rdf.graph {
+    val alice = iri("http://example.org/alice")
+    val bob = iri("http://example.org/bob")
 
-// Method 2: Direct specification
-val statement2 = embedded(alice, FOAF.knows, bob)
+    // Method 1: subject, predicate, object (fresh blank-node reifier)
+    val r1 = reifies(alice, FOAF.knows, bob)
 
-// Method 3: Using QNames
-val statement3 = embedded("http://example.org/alice", "foaf:name", "Alice")
+    // Method 2: an existing RdfTriple
+    val claim = RdfTriple(alice, FOAF.knows, bob)
+    val r2 = reifies(claim)
+
+    // Method 3: a named reifier IRI
+    val r3 = reifies(alice, FOAF.knows, bob, reifier = iri("http://example.org/claim1"))
+
+    // reifies returns the reifier, so you can add triples to it later
+    r3 - DCTERMS.source - "LinkedIn"
+}
 ```
+
+A triple term on its own is created with `quoted(RdfTriple(...))` (a `TripleTerm`), and can only be used in object position. The older `embedded(s, p, o)` helper just builds an `RdfStarTriple` holder; attach metadata with `reifies` instead.
 
 ### **Nested Metadata**
 
-RDF-star supports nested metadata - metadata about metadata:
+A reifier is an ordinary resource, so metadata about metadata is either more triples on the same reifier or a reifier for a triple whose subject is that reifier:
 
 ```kotlin
 val graph = Rdf.graph {
     val alice = iri("http://example.org/alice")
-    
-    // First embedded triple
-    val aliceName = embedded(alice, FOAF.name, "Alice Johnson")
-    aliceName - DCTERMS.source - "Profile"
-    
-    // Metadata about the metadata
-    val metadataTriple = embedded(aliceName, DCTERMS.source, "Profile")
-    metadataTriple - iri("http://example.org/verified") - true
-    metadataTriple - DCTERMS.date - "2025-01-15"
+
+    val nameClaim = reifies(alice, FOAF.name, string("Alice Johnson"), reifier = iri("http://example.org/nameClaim"))
+    nameClaim - DCTERMS.source - "Profile"
+
+    // Metadata about the "source" annotation
+    reifies(nameClaim, DCTERMS.source, string("Profile")) { r ->
+        r - iri("http://example.org/verified") - true
+        r - DCTERMS.date - "2025-01-15"
+    }
 }
 ```
 
 ### **Provider Support**
 
-RDF-star support depends on the repository provider:
+Triple terms need an RDF 1.2 store:
 
 ```kotlin
-val repo = Rdf.memory()
-val capabilities = repo.getCapabilities()
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
 
-if (capabilities.supportsRdfStar) {
-    // Use RDF-star features
+if (repo.getCapabilities().supportsTripleTerms) {
     repo.add {
-        val statement = embedded(alice, FOAF.knows, bob)
-        statement - DCTERMS.source - "LinkedIn"
+        reifies(alice, FOAF.knows, bob) { r ->
+            r - DCTERMS.source - "LinkedIn"
+        }
     }
 } else {
-    println("RDF-star not supported by this provider")
+    println("Triple terms are not supported by this provider")
 }
 ```
 
 **Supported Providers:**
-- ✅ **Memory Provider**: Full RDF-star support
-- ✅ **Jena Provider**: Full RDF-star support
-- ✅ **RDF4J Provider**: Full RDF-star support
-- ❌ **SPARQL Provider**: Depends on endpoint support
+- ✅ **Memory Provider**: RDF 1.2 triple terms (graph-only, no SPARQL)
+- ✅ **Jena Provider**: RDF 1.2 triple terms
+- ✅ **RDF4J Provider**: RDF 1.2 triple terms
+- ❌ **SPARQL Provider**: the HTTP adapter does not decode triple terms
 
 ### **Use Cases**
 
-RDF-star is particularly useful for:
+Reifiers are particularly useful for:
 
 - **Provenance**: Tracking the source of statements
 - **Confidence**: Adding confidence scores to statements
@@ -1130,30 +891,18 @@ RDF-star is particularly useful for:
 // Example: Scientific data with provenance and confidence
 val graph = Rdf.graph {
     val result = iri("http://example.org/experiment1")
-    val temperature = embedded(result, iri("http://example.org/temperature"), 25.5)
-    
-    temperature - iri("http://example.org/instrument") - "Thermometer-123"
-    temperature - iri("http://example.org/confidence") - 0.98
-    temperature - DCTERMS.date - "2025-01-15T14:30:00Z"
-    temperature - iri("http://example.org/calibrated") - true
-}
-```
+    val temperature = iri("http://example.org/temperature")
 
-### **Error Handling**
-
-The DSL validates embedded triples and throws meaningful errors:
-
-```kotlin
-try {
-    Rdf.graph {
-        // Error: Literal cannot be a subject
-        val invalid = embedded("Alice", FOAF.knows, bob)
-        invalid - DCTERMS.source - "Test"
+    result - temperature - 25.5
+    reifies(result, temperature, 25.5.toLiteral()) { r ->
+        r - iri("http://example.org/instrument") - "Thermometer-123"
+        r - iri("http://example.org/confidence") - 0.98
+        r - DCTERMS.date - "2025-01-15T14:30:00Z"
+        r - iri("http://example.org/calibrated") - true
     }
-} catch (e: IllegalArgumentException) {
-    println("Error: ${e.message}")
-    // Output: "RDF-star embedded triple subject must be a resource, got: TypedLiteral"
 }
 ```
 
+### **Type Safety**
 
+`reifies` takes an `RdfResource` subject and an `Iri` predicate, so a literal subject is a compile-time error rather than a runtime failure. RDF 1.2 forbids triple terms in subject position; see the [migration guide](../guides/migrating-to-rdf-1.2.md).

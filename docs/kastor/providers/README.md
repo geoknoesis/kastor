@@ -25,9 +25,16 @@ Kastor uses a pluggable provider architecture that allows you to choose the best
 
 ## 🚀 Quick Provider Selection
 
+How a provider is chosen:
+
+- `Rdf.memory()` returns Jena's in-memory store when `rdf-jena` is on the classpath, otherwise RDF4J's, and throws `RdfProviderException` if neither is present. It never falls back to the graph-only `memory` provider.
+- `Rdf.repository { providerId = ...; variantId = ... }` uses exactly that provider and variant. An unknown provider, an unsupported variant or unmet `requirements` throw `IllegalArgumentException` instead of silently selecting another provider.
+- A configuration with `requirements` but no `providerId` picks the matching provider with the highest `RdfProvider.priority` (Jena 50, RDF4J 40, memory −100).
+- A configuration with neither uses the default provider (`memory` unless changed with `Rdf.setDefaultProvider`).
+
 ### **Development & Testing**
 ```kotlin
-val repo = Rdf.memory() // Fast, no setup required
+val repo = Rdf.memory() // In-memory Jena (or RDF4J) store
 ```
 
 ### **Production with Persistence**
@@ -159,42 +166,44 @@ val repositories = mapOf(
 
 ## 🌟 RDF-star Support
 
-RDF-star enables representing metadata about statements by allowing triples to be quoted and used as subjects or objects in other triples.
+Kastor follows the RDF 1.2 model: triple terms (`<<( s p o )>>`) appear only in object position, and statement metadata is attached to a reifier (`_:r rdf:reifies <<( s p o )>>`). See [RDF-star and triple terms](../features/rdf-star.md).
 
 ### **Supported Providers**
-- **Memory Provider**: ✅ Full RDF-star support
-- **Jena Provider**: ✅ Full RDF-star support  
-- **RDF4J Provider**: ✅ Full RDF-star support
-- **SPARQL Provider**: ❌ Depends on endpoint support
+- **Memory Provider**: ✅ RDF 1.2 triple terms (graph-only: no parsing, serialization or SPARQL)
+- **Jena Provider**: ✅ RDF 1.2 triple terms
+- **RDF4J Provider**: ✅ RDF 1.2 triple terms
+- **SPARQL Provider**: ❌ The HTTP adapter does not decode triple terms from results
 
-### **RDF-star Usage Example**
+### **RDF 1.2 Reifier Example**
 ```kotlin
-val repo = Rdf.memory() // Memory provider supports RDF-star
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
+}
 
 repo.add {
     val alice = iri("http://example.org/alice")
     val bob = iri("http://example.org/bob")
-    
+
     // Basic fact
     alice - FOAF.knows - bob
-    
-    // Metadata about the statement using RDF-star
-    val statement = embedded(alice, FOAF.knows, bob)
-    statement - DCTERMS.source - "LinkedIn"
-    statement - iri("http://example.org/confidence") - 0.95
+
+    // Metadata about the statement: _:r rdf:reifies <<( alice foaf:knows bob )>>
+    reifies(alice, FOAF.knows, bob) { r ->
+        r - DCTERMS.source - "LinkedIn"
+        r - iri("http://example.org/confidence") - 0.95
+    }
 }
 ```
 
-### **Checking RDF-star Support**
+### **Checking Triple-Term Support**
 ```kotlin
-val repo = Rdf.memory()
 val capabilities = repo.getCapabilities()
 
-if (capabilities.supportsRdfStar) {
-    // Use RDF-star features
-    println("RDF-star is supported!")
+if (capabilities.supportsTripleTerms) {
+    println("RDF 1.2 triple terms are supported")
 } else {
-    println("RDF-star is not supported by this provider")
+    println("Triple terms are not supported by this provider")
 }
 ```
 

@@ -392,6 +392,8 @@ property("http://example.org/score") {
 
 #### Precision Constraints
 
+> **Deprecated.** `totalDigits` and `fractionDigits` emit `sh:totalDigits` / `sh:fractionDigits`, which are **not SHACL Core constraints**. The native validator does not enforce them and other SHACL Core validators ignore them, so the DSL marks both properties `@Deprecated`. Use `pattern` or a SPARQL constraint to limit digits.
+
 Precision constraints control the number of digits in numeric values.
 
 ```kotlin
@@ -668,6 +670,8 @@ Logical constraints combine multiple shapes or constraints using boolean logic. 
 
 The `and` constraint requires that **all** nested constraints must be satisfied. It's useful for requiring multiple conditions simultaneously.
 
+> **RDF lists.** Logical constraints emit proper RDF lists (`sh:and ( … )`). A block form such as `and { … }` creates a **single** operand shape: everything declared in the block belongs to that one operand. To combine several operand shapes, use `andShapes { shape { … }; shape { … } }` (and likewise `orShapes` / `xoneShapes`), or pass shape IRIs to `and(...)` / `or(...)` / `xone(...)`.
+
 ```kotlin
 nodeShape("http://example.org/Shape") {
     and {
@@ -709,16 +713,22 @@ The `or` constraint requires that **at least one** nested constraint must be sat
 
 ```kotlin
 nodeShape("http://example.org/Shape") {
-    or {
-        property("http://example.org/phone") {
-            minCount = 1
+    orShapes {
+        shape {
+            property("http://example.org/phone") {
+                minCount = 1
+            }
         }
-        property("http://example.org/mobile") {
-            minCount = 1
+        shape {
+            property("http://example.org/mobile") {
+                minCount = 1
+            }
         }
     }
 }
 ```
+
+A block `or { … }` would create a single operand requiring both properties; use `orShapes` for alternatives.
 
 **What it does:**
 - Validates that the resource conforms to AT LEAST ONE nested shape/constraint
@@ -740,12 +750,16 @@ The `xone` (exactly one) constraint requires that **exactly one** nested constra
 
 ```kotlin
 nodeShape("http://example.org/Shape") {
-    xone {
-        property("http://example.org/option1") {
-            minCount = 1
+    xoneShapes {
+        shape {
+            property("http://example.org/option1") {
+                minCount = 1
+            }
         }
-        property("http://example.org/option2") {
-            minCount = 1
+        shape {
+            property("http://example.org/option2") {
+                minCount = 1
+            }
         }
     }
 }
@@ -877,6 +891,8 @@ nodeShape("http://example.org/Shape") {
 - `Severity.Warning`: Non-critical issue - data may be problematic but not invalid
 - `Severity.Info`: Informational - provides guidance without indicating an error
 
+Property shapes do not inherit the severity of their node shape; each shape defaults to `sh:Violation`. Any result, including Warning and Info, makes `sh:conforms` (`ValidationReport.isValid`) false; see [Integration with Validation](#integration-with-validation).
+
 **Use cases:**
 - **Violation**: Required fields, type mismatches, critical business rules
 - **Warning**: Deprecated properties, best practice violations, data quality issues
@@ -982,8 +998,6 @@ val complexShape = shacl {
             minCount = 1
             datatype = XSD.decimal
             minExclusive = 0.0
-            totalDigits = 10
-            fractionDigits = 2
         }
         
         // Category must be from allowed list
@@ -1005,12 +1019,16 @@ val complexShape = shacl {
         }
         
         // Either phone or email required
-        or {
-            property("http://example.org/phone") {
-                minCount = 1
+        orShapes {
+            shape {
+                property("http://example.org/phone") {
+                    minCount = 1
+                }
             }
-            property("http://example.org/email") {
-                minCount = 1
+            shape {
+                property("http://example.org/email") {
+                    minCount = 1
+                }
             }
         }
     }
@@ -1075,6 +1093,15 @@ if (!report.isValid) {
     }
 }
 ```
+
+`report.isValid` follows SHACL `sh:conforms`: it is `false` as soon as **any** result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists. Use `report.hasViolations` when warnings and info results should not block (it is `true` only for Violation/Error severities).
+
+**DSL behaviour notes:**
+- Single-valued properties (`minCount`, `datatype`, `pattern`, `in`, …) **replace** the previously emitted triple when assigned again; assigning `null` removes it. Use the additive `class(...)` / `hasValue(...)` functions to emit several values.
+- Numeric bounds (`minInclusive`, `maxExclusive`, …) are typed `Number?`: `Int`/`Long`/`Short`/`Byte` emit `xsd:integer`, while `BigInteger`, `BigDecimal`, `Double` and `Float` emit their matching XSD datatype.
+- `ignoredProperties(...)` emits an RDF list, and generated blank-node labels never collide.
+- `languageDirection(...)` is deprecated: SHACL cannot constrain the base direction. It only emits `sh:datatype rdf:dirLangString`, so use `directionalLangString()` instead.
+- `sparqlAsk { }` was removed (deprecated with level ERROR) because SHACL-SPARQL constraints must be SELECT queries; use `sparql { }`. Inside a SPARQL constraint, `prefixes { put("ex", "http://example.org/") }` emits `sh:prefixes [ sh:declare [ sh:prefix "ex" ; sh:namespace "http://example.org/"^^xsd:anyURI ] ]`.
 
 ## Best Practices
 

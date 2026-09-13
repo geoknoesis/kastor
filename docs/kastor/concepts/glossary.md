@@ -50,7 +50,7 @@ Central definitions for terms reused across **Getting Started**, **Concepts**, *
 | **DSL** | Kotlin embedded syntax for building graphs and queries (“person has name with …”). Described in [Compact DSL Guide](../api/compact-dsl-guide.md). |
 | **Domain-first RDF** | Style where application types stay Kotlin‑centric and RDF is accessed via a controlled path (**side‑channel** / **`OntoMapper`**) rather than leaking engine types everywhere. See [Philosophy](../philosophy.md). |
 | **Side-channel** | Pattern (especially with **Kastor Gen**) where generated “handles” expose RDF operations alongside domain interfaces. |
-| **`Rdf.memory()`** | Convenience path to an in-memory repository via the default provider discovery (typically RDF 1.1-oriented in-memory **provider**). |
+| **`Rdf.memory()`** | Convenience path to an in-memory, SPARQL-capable repository: Jena's `memory` variant when `rdf-jena` is present, otherwise RDF4J's; throws if neither is on the classpath. The graph-only `memory` **provider** is used only when requested explicitly (`providerId = "memory"`). |
 | **`kastor-rdf` CLI** | Command-line helpers shipped with **`rdf-cli`** (parse, diff, etc.). Mentioned in graph testing guides. |
 
 ---

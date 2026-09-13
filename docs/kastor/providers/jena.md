@@ -15,7 +15,7 @@ The enhanced Jena implementation provides:
 
 ### Version alignment
 
-Kastor currently integrates with **Apache Jena 5.6.0**. If you depend on a different Jena
+Kastor currently integrates with **Apache Jena 6.2.0** (paired with Apache Thrift 0.24.0). If you depend on a different Jena
 version in your application, align your dependency set to avoid classpath conflicts.
 
 ## Repository Variants
@@ -194,6 +194,15 @@ val api = Rdf.repository {
 hidden ontology‑model behavior. If you need OntModel APIs, use Jena directly and convert
 to a Kastor graph via the Jena Bridge.
 
+Inference models are cached per graph, and reads on inference repositories are serialized.
+
+### Parsing, literals and Jena interop
+
+- **Lexical forms are preserved exactly**: `"007"^^xsd:integer` stays `"007"`. Only the exact lexical forms `"true"` / `"false"` become boolean singletons.
+- **`parseGraph` accepts triple formats only**: TriG and N-Quads are rejected with `RdfFormatException`; parse quad formats as a dataset instead.
+- **Strict parsing**: syntax errors are not silently skipped. Without a base IRI, relative IRIs are a parse error.
+- **`JenaBridge.toJenaModel(graph)`** returns the wrapped model for standalone Jena-backed graphs. For a graph that belongs to a repository, it returns a **detached copy** (including inferences for inference variants), because the live store model is only valid inside repository transactions. Use **`JenaBridge.copyToJenaModel(graph)`** when you always need an independent copy.
+
 ### 6. Multiple Repository Usage
 
 ```kotlin
@@ -251,7 +260,7 @@ The enhanced Jena implementation supports:
 ## Best Practices
 
 1. **Use TDB2 for Large Datasets**: TDB2 provides better performance for large datasets
-2. **Leverage Transactions**: Use transactions for batch operations
+2. **Leverage Transactions**: Batch writes (`addTriples` / `removeTriples`) run in one transaction, but each per-triple write outside a transaction costs a transaction of its own. Batch your writes or wrap them in `repo.transaction { }`
 3. **Named Graphs**: Use named graphs for data organization
 4. **Inference**: Enable inference only when needed
 5. **Repository Manager**: Use RepositoryManager for complex multi-repository scenarios

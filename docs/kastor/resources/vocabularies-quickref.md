@@ -266,8 +266,8 @@ val isKnown = isKnownTerm(someIri)
 // Find by prefix
 val foafVocab = findByPrefix("foaf")
 
-// Get all terms
-val foafTerms = getTermsByPrefix("foaf")
+// Vocabulary a term belongs to
+val vocab = findVocabularyForTerm(someIri)
 ```
 
 ## Performance Tips

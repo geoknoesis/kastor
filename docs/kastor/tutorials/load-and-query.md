@@ -15,11 +15,10 @@ Create a **Jena**-backed in-memory repository, load Turtle bytes into the defaul
 ### Step 1: Start with an in-memory repository
 
 ```kotlin
-val api = Rdf.repository {
+val repo = Rdf.repository {
   providerId = "jena"
   variantId = "memory"
 }
-val repo = api.repository
 ```
 
 ### Step 2: Load Turtle content
@@ -29,9 +28,8 @@ val turtle = """
 @prefix ex: <urn:ex:> .
 ex:s ex:p "o" .
 """.trimIndent()
-repo.beginTransaction()
-repo.readGraph(null, turtle.byteInputStream(), "TURTLE")
-repo.commit(); repo.end()
+val graph = Rdf.parse(turtle, "TURTLE")
+repo.addTriples(null, graph.getTriples())   // one batch write into the default graph
 ```
 
 ### Step 3: Run a SELECT query

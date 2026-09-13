@@ -22,7 +22,7 @@ Before installing Kastor RDF, ensure you have:
 
 ### Required Software
 
-- **Kotlin 1.9+** - [Download from kotlinlang.org](https://kotlinlang.org/docs/command-line.html)
+- **Kotlin 2.4.20+** (Kastor is compiled with Kotlin 2.4.20; older compilers cannot read its metadata) - [Download from kotlinlang.org](https://kotlinlang.org/docs/command-line.html)
 - **Java 21+** - [Download from oracle.com](https://www.oracle.com/java/technologies/downloads/) or [OpenJDK](https://adoptium.net/)
 - **Build System** - Gradle (recommended) or Maven
 
@@ -52,7 +52,7 @@ Add the following to your `build.gradle.kts`:
 
 ```kotlin
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
 }
 
 dependencies {
@@ -101,7 +101,7 @@ fun main() {
 ```kotlin
 // build.gradle.kts
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
     application
 }
 
@@ -143,9 +143,9 @@ tasks.test {
 ```kotlin
 // build.gradle.kts
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
     application
-    kotlin("plugin.serialization") version "1.9.0"
+    kotlin("plugin.serialization") version "2.4.20"
 }
 
 group = "com.example"
@@ -219,7 +219,7 @@ java {
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <kotlin.version>1.9.0</kotlin.version>
+        <kotlin.version>2.4.20</kotlin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -589,12 +589,12 @@ dependencies {
 ```kotlin
 // Use consistent Kotlin version
 plugins {
-    kotlin("jvm") version "1.9.0"
+    kotlin("jvm") version "2.4.20"
 }
 
 dependencies {
     // Ensure all Kotlin dependencies use same version
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.20")
 }
 ```
 

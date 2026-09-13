@@ -25,16 +25,25 @@ SPARQL 1.2 introduces several significant enhancements over SPARQL 1.1:
 
 RDF-star allows you to make statements about statements, enabling rich metadata modeling.
 
-#### Quoted Triples
+#### Reified Triples
 ```kotlin
-// Creating quoted triples in DSL
+val ex = "http://example.org/"
+val alice = iri("${ex}alice")
+val bob = iri("${ex}bob")
+val knows = iri("${ex}knows")
+
+// Annotate a triple through an RDF 1.2 reifier (use a jena or rdf4j repository)
 repo.add {
-    << :alice :knows :bob >> :certainty 0.9
-    << :alice :knows :bob >> :source :wikipedia
+    alice has knows with bob
+    reifies(alice, knows, bob) { r ->
+        r - iri("${ex}certainty") - 0.9
+        r - iri("${ex}source") - iri("${ex}wikipedia")
+    }
 }
 
-// Querying quoted triples
+// Querying reified triples
 val query = """
+    PREFIX : <http://example.org/>
     SELECT ?person ?certainty WHERE {
         << ?person :knows :bob >> :certainty ?certainty
     }
@@ -56,25 +65,28 @@ val query = """
 
 ### 2. Enhanced String Functions
 
-#### `replaceAll` Function
+#### `REPLACE` Function
 ```kotlin
 val query = """
     SELECT ?result WHERE {
-        BIND(replaceAll("Hello World", "World", "Universe") AS ?result)
+        BIND(REPLACE("Hello World", "World", "Universe") AS ?result)
     }
 """
 // Result: "Hello Universe"
 ```
 
-#### URI Encoding/Decoding
+In the Kotlin query DSL use `replace(expr, pattern, replacement)`; `replaceAll(...)` is a deprecated alias that renders the same `REPLACE` call.
+
+#### URI Encoding
 ```kotlin
 val query = """
-    SELECT ?encoded ?decoded WHERE {
-        BIND(encodeForUri("Hello World!") AS ?encoded)
-        BIND(decodeForUri("Hello%20World%21") AS ?decoded)
+    SELECT ?encoded WHERE {
+        BIND(ENCODE_FOR_URI("Hello World!") AS ?encoded)
     }
 """
 ```
+
+SPARQL has no `DECODE_FOR_URI`; the DSL's `decodeForUri(...)` is deprecated with level ERROR.
 
 ### 3. Language and Direction Functions
 
@@ -84,65 +96,73 @@ val query = """
     SELECT ?langdir ?hasLang ?hasLangdir WHERE {
         ?s rdfs:label "Hello"@en .
         BIND(LANGDIR(?s) AS ?langdir)
-        BIND(hasLANG(?s, "en") AS ?hasLang)
-        BIND(hasLANGDIR(?s, "ltr") AS ?hasLangdir)
+        BIND(hasLANG(?s) AS ?hasLang)
+        BIND(hasLANGDIR(?s) AS ?hasLangdir)
     }
 """
 ```
+
+`hasLANG` and `hasLANGDIR` take one argument. In the Kotlin DSL, `hasLang(x)` / `hasLangdir(x)` render these built-ins, while `hasLang(x, "en")` renders `LANGMATCHES(LANG(?x), "en")` and `hasLangdir(x, "ltr")` renders `LANGDIR(?x) = "ltr"`.
 
 ### 4. Date/Time Functions
 
 #### Current Time Functions
 ```kotlin
 val query = """
-    SELECT ?now ?timezone ?date ?time WHERE {
-        BIND(now() AS ?now)
-        BIND(timezone() AS ?timezone)
-        BIND(date() AS ?date)
-        BIND(time() AS ?time)
+    SELECT ?now ?timezone WHERE {
+        BIND(NOW() AS ?now)
+        BIND(TIMEZONE(NOW()) AS ?timezone)
     }
 """
 ```
 
+`TIMEZONE` requires a dateTime argument; the DSL's zero-argument `timezone()` is deprecated with level ERROR (use `timezone(expr)`).
+
 #### Date/Time Construction
 ```kotlin
 val query = """
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
     SELECT ?datetime WHERE {
-        BIND(dateTime("2024-01-15T10:30:00Z") AS ?datetime)
+        BIND(xsd:dateTime("2024-01-15T10:30:00Z") AS ?datetime)
     }
 """
 ```
+
+The DSL's `dateTime(expr)`, `date(expr)` and `time(expr)` render these XSD casts.
 
 ### 5. Random Functions
 
 #### Random Number Generation
 ```kotlin
 val query = """
-    SELECT ?random ?rand WHERE {
-        BIND(random() AS ?random)
-        BIND(rand() AS ?rand)
+    SELECT ?rand WHERE {
+        BIND(RAND() AS ?rand)
     }
 """
 ```
+
+SPARQL has no `RANDOM()`; the DSL's `random()` is deprecated with level ERROR (use `rand()`).
 
 ### 6. Version Declaration
 
 #### Explicit SPARQL Version
 ```kotlin
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT ?s ?p ?o WHERE {
         ?s ?p ?o
     }
 """
 ```
 
+The version specifier is a string literal. The DSL's `version("1.2")` renders `VERSION "1.2"` and rejects values that are not of the form `X.Y`.
+
 ## 🔧 Provider Capabilities
 
 ### Checking SPARQL 1.2 Support
 
 ```kotlin
-val provider = RdfProviderRegistry.getProvider("memory")
+val provider = RdfProviderRegistry.getProvider("jena") ?: error("rdf-jena is not on the classpath")
 val capabilities = provider.getCapabilities()
 
 // Check SPARQL version
@@ -160,13 +180,13 @@ println("Federation: ${capabilities.supportsFederation}")
 ```kotlin
 val detailedCapabilities = provider.getDetailedCapabilities()
 
-// Check supported features
+// Feature flags reported by the provider (empty for providers that do not override getDetailedCapabilities)
 val supportedFeatures = detailedCapabilities.supportedSparqlFeatures
 println("Supported Features: $supportedFeatures")
 
-// Check extension functions
-val functions = capabilities.extensionFunctions
-println("Extension Functions: ${functions.size}")
+// SPARQL 1.2 function descriptions (module rdf-sparql-lang)
+val functions = SparqlExtensionFunctionRegistry.getBuiltInFunctions()
+println("Built-in functions: ${functions.map { it.name }}")
 ```
 
 ## 📊 SPARQL 1.2 Vocabulary
@@ -184,20 +204,19 @@ val tripleFunction = SPARQL12.TRIPLE
 
 ## 🎨 DSL Integration
 
-### RDF-star in DSL
+### RDF 1.2 Reifiers in DSL
 
 ```kotlin
 repo.add {
-    // Create quoted triple
-    val quotedTriple = quotedTripleOf {
-        :alice has :knows with :bob
+    // _:r rdf:reifies <<( alice knows bob )>>, with metadata attached to _:r
+    reifies(alice, knows, bob) { r ->
+        r - iri("${ex}certainty") - 0.9
+        r - iri("${ex}source") - iri("${ex}wikipedia")
     }
-    
-    // Add metadata about the statement
-    quotedTriple has :certainty with 0.9
-    quotedTriple has :source with :wikipedia
 }
 ```
+
+In the query DSL, `quotedTriple(s, p, o)` renders the reified-triple pattern `<< s p o >>`; see [SPARQL fundamentals](../concepts/sparql-fundamentals.md) and [RDF-star and triple terms](rdf-star.md).
 
 ### Property Paths
 
@@ -223,23 +242,26 @@ val query = """
 
 ## 🔍 Service Description
 
-SPARQL 1.2 services can describe their capabilities:
+SPARQL 1.2 services can describe their capabilities. The bundled providers do not generate descriptions themselves (`generateServiceDescription` returns `null`), so build one from a provider's capabilities:
 
 ```kotlin
-val serviceDescription = provider.generateServiceDescription("http://example.org/sparql")
+import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
+
+val serviceDescription = SparqlServiceDescriptionGenerator("http://example.org/sparql", provider.getCapabilities())
+    .generateServiceDescription()
 println(serviceDescription.getTriples().size)
 ```
 
 The service description includes:
 - SPARQL version support
-- RDF-star capabilities
-- Extension functions
-- Supported formats
-- Dataset information
+- RDF-star and other feature flags
+- Extension functions listed in `ProviderCapabilities.extensionFunctions`
+- Supported languages and result/input formats
+- Default and named graph information
 
 ## 📚 Built-in Functions
 
-Kastor registers all SPARQL 1.2 built-in functions:
+Commonly used SPARQL 1.2 functions, evaluated by the underlying engine (the subset described in `SparqlExtensionFunctionRegistry` is listed in [Extension Functions](extension-functions.md)):
 
 ### RDF-star Functions
 - `TRIPLE(subject, predicate, object)`
@@ -249,27 +271,24 @@ Kastor registers all SPARQL 1.2 built-in functions:
 - `OBJECT(triple)`
 
 ### String Functions
-- `replaceAll(string, pattern, replacement)`
-- `encodeForUri(string)`
-- `decodeForUri(string)`
+- `REPLACE(string, pattern, replacement)`
+- `ENCODE_FOR_URI(string)`
+- `STRSTARTS(string, prefix)` / `STRENDS(string, suffix)`
 
 ### Language/Direction Functions
 - `LANGDIR(term)`
-- `hasLANG(term, language)`
-- `hasLANGDIR(term, direction)`
-- `STRLANGDIR(string, direction)`
+- `hasLANG(term)`
+- `hasLANGDIR(term)`
+- `STRLANGDIR(string, language, direction)`
 
 ### Date/Time Functions
-- `now()`
-- `timezone()`
-- `dateTime(string)`
-- `date()`
-- `time()`
-- `tz(datetime, timezone)`
+- `NOW()`
+- `TIMEZONE(datetime)`
+- `TZ(datetime)`
+- `xsd:dateTime(...)`, `xsd:date(...)`, `xsd:time(...)` casts
 
 ### Random Functions
-- `random()`
-- `rand()`
+- `RAND()`
 
 ## 🎯 Best Practices
 
@@ -277,35 +296,37 @@ Kastor registers all SPARQL 1.2 built-in functions:
 Always declare SPARQL version for clarity:
 ```kotlin
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT * WHERE { ?s ?p ?o }
 """
 ```
 
-### 2. RDF-star Usage
-Use quoted triples for metadata:
+### 2. RDF 1.2 Reifiers
+Use reifiers for statement metadata:
 ```kotlin
 repo.add {
-    << :alice :knows :bob >> :certainty 0.9
-    << :alice :knows :bob >> :source :wikipedia
+    reifies(alice, knows, bob) { r ->
+        r - iri("${ex}certainty") - 0.9
+        r - iri("${ex}source") - iri("${ex}wikipedia")
+    }
 }
 ```
 
 ### 3. Extension Functions
-Check provider capabilities before using extension functions:
+Look up SPARQL 1.2 function descriptions in the registry:
 ```kotlin
-if (provider.getCapabilities().extensionFunctions.isNotEmpty()) {
-    // Use extension functions
+if (SparqlExtensionFunctionRegistry.isRegistered(SPARQL12.TRIPLE.value)) {
+    // TRIPLE is described; evaluation still depends on the engine (Jena, RDF4J)
 }
 ```
 
 ### 4. Error Handling
-Handle unsupported features gracefully:
+Handle queries the engine rejects:
 ```kotlin
 try {
     val result = repo.select(SparqlSelectQuery(sparql12Query))
-} catch (e: UnsupportedOperationException) {
-    // Fallback to SPARQL 1.1 query
+} catch (e: RdfQueryException) {
+    // e.g. syntax the provider does not support; fall back to a SPARQL 1.1 query
 }
 ```
 
@@ -340,25 +361,41 @@ val jenaRepo = Rdf.repository {
 
 ```kotlin
 fun sparql12Example() {
-    val repo = Rdf.memory()
-    
-    // Add RDF-star data
-    repo.add {
-        << :alice :knows :bob >> :certainty 0.9
-        << :alice :knows :bob >> :source :wikipedia
-        << :bob :knows :charlie >> :certainty 0.7
+    val ex = "http://example.org/"
+    val alice = iri("${ex}alice")
+    val bob = iri("${ex}bob")
+    val charlie = iri("${ex}charlie")
+    val knows = iri("${ex}knows")
+    val certainty = iri("${ex}certainty")
+    val source = iri("${ex}source")
+
+    val repo = Rdf.repository {
+        providerId = "jena"
+        variantId = "memory"
     }
-    
+
+    // Add RDF 1.2 reifier data
+    repo.add {
+        reifies(alice, knows, bob) { r ->
+            r - certainty - 0.9
+            r - source - iri("${ex}wikipedia")
+        }
+        reifies(bob, knows, charlie) { r ->
+            r - certainty - 0.7
+        }
+    }
+
     // Query with SPARQL 1.2 features
     val query = """
-        VERSION 1.2
+        VERSION "1.2"
+        PREFIX : <http://example.org/>
         SELECT ?person ?certainty ?source WHERE {
             << ?person :knows :bob >> :certainty ?certainty .
             << ?person :knows :bob >> :source ?source .
             FILTER(?certainty > 0.8)
         }
     """
-    
+
     val results = repo.select(SparqlSelectQuery(query))
     results.forEach { binding ->
         val person = binding.get("person") as? Iri
@@ -379,16 +416,19 @@ val query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }"
 
 // After (SPARQL 1.2)
 val query = """
-    VERSION 1.2
+    VERSION "1.2"
     SELECT ?s ?p ?o WHERE { ?s ?p ?o }
 """
 ```
 
-### 2. Enable RDF-star
+### 2. Use an RDF 1.2 Provider
+No configuration flag is needed: Jena and RDF4J repositories support triple terms out of the box. Check before relying on them:
 ```kotlin
-val config = RdfConfig {
-    enableRdfStar = true
+val repo = Rdf.repository {
+    providerId = "jena"
+    variantId = "memory"
 }
+println("Triple terms: ${repo.getCapabilities().supportsTripleTerms}")
 ```
 
 ### 3. Use New Functions
@@ -396,7 +436,7 @@ val config = RdfConfig {
 // Use new string functions
 val query = """
     SELECT ?result WHERE {
-        BIND(replaceAll("Hello World", "World", "Universe") AS ?result)
+        BIND(REPLACE("Hello World", "World", "Universe") AS ?result)
     }
 """
 ```

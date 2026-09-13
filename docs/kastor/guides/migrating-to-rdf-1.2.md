@@ -119,6 +119,8 @@ If you rely on subject-position triple terms:
 
 ### Step 8: RDF4J bridge versions
 
+RDF4J 5.3.1 has no base-direction API: Kastor stores `"x"@ar--rtl` inside RDF4J under the language tag `ar--rtl`, so SPARQL `LANG()` evaluated by RDF4J returns `ar--rtl`. Also note that `parseGraph` rejects TriG / N-Quads in both Jena and RDF4J (use dataset parsing), and relative IRIs without a base IRI are a parse error.
+
 RDF4J **5.1.x** predates some **`createTripleTerm`** APIs. Kastor falls back to legacy **`createTriple`** where needed so triple terms continue to move across the bridge, but wire formats may remain RDF-star–skewed until you upgrade **RDF4J ≥ 5.2.x** when available.
 
 ## Validation

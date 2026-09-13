@@ -24,7 +24,7 @@ Complete reference documentation for the Kastor RDF API.
 The main interface for RDF repository operations.
 
 ```kotlin
-interface RdfRepository : Closeable {
+interface RdfRepository : Dataset, SparqlMutable {
     val defaultGraph: RdfGraph
 
     // Query operations
@@ -92,20 +92,9 @@ interface RdfProvider {
     fun defaultVariantId(): String
     fun createRepository(variantId: String, config: RdfConfig): RdfRepository
     fun getCapabilities(variantId: String? = null): ProviderCapabilities
-}
-```
-
-### RepositoryManager
-
-Interface for managing multiple repositories.
-
-```kotlin
-interface RepositoryManager : Closeable {
-    fun createRepository(name: String, config: RdfConfig): RdfRepository
-    fun getRepository(name: String): RdfRepository?
-    fun listRepositories(): List<String>
-    fun removeRepository(name: String)
-    fun federatedQuery(sparql: String, repositories: List<String>): SparqlQueryResult
+    val priority: Int                       // selection order when no providerId is given (default 0)
+    fun supportsInputFormat(format: String): Boolean
+    fun supportsOutputFormat(format: String): Boolean
 }
 ```
 
@@ -136,128 +125,102 @@ data class RdfConfig(
 )
 ```
 
-### RdfConfigVariant
+### RdfVariant
 
-Describes available configuration options.
+A provider variant, listed by `RdfProvider.variants()`. Pass `id` as `variantId`.
 
 ```kotlin
-data class RdfConfigVariant(
-    val name: String,
-    val description: String,
-    val parameters: List<RdfConfigParam> = emptyList()
+data class RdfVariant(
+    val id: String,
+    val description: String = "",
+    val defaultOptions: Map<String, String> = emptyMap()
 )
 ```
 
-### RdfConfigParam
+### SubjectPredicateChain
 
-Describes a configuration parameter.
-
-```kotlin
-data class RdfConfigParam(
-    val name: String,
-    val description: String,
-    val required: Boolean = false,
-    val defaultValue: Any? = null,
-    val type: String = "String"
-)
-```
-
-### SubjectAndPredicate
-
-Helper class for DSL operations.
-
-```kotlin
-data class SubjectAndPredicate(
-    val subject: RdfResource,
-    val predicate: Iri
-)
-```
+Returned by `subject has predicate` and `subject - predicate` inside the DSLs, and completed by `with value` or `- value`.
 
 ## 🏭 Factory Methods
 
 ### Rdf Object
 
-Main entry point for creating repositories.
+Main entry point for creating repositories and parsing.
 
 ```kotlin
 object Rdf {
-    // Simple factory methods
+    // SPARQL-capable factories: Jena, else RDF4J; throw RdfProviderException if neither is present
     fun memory(): RdfRepository
-    fun persistent(name: String): RdfRepository
     fun memoryWithInference(): RdfRepository
-    
-    // Advanced factory
+    fun persistent(location: String = "data"): RdfRepository
+
+    // Configurable factory
     fun repository(configure: RdfRepositoryBuilder.() -> Unit): RdfRepository
-    
-    // Manager factory
-    fun manager(configure: ManagerBuilder.() -> Unit): RepositoryManager
-    
-    // Registry
-    val registry: RdfProviderRegistry
+    fun repository(registry: ProviderRegistry, configure: RdfRepositoryBuilder.() -> Unit): RdfRepository
+
+    // Graphs and parsing
+    fun graph(configure: GraphDsl.() -> Unit): MutableRdfGraph
+    fun parse(data: String, format: String = "TURTLE"): MutableRdfGraph
+    fun parseFromUrl(url: String, format: String = "TURTLE", options: UrlLoadOptions = UrlLoadOptions.DEFAULT): MutableRdfGraph
+
+    // Default provider, used when a configuration names neither a provider nor requirements
+    fun setDefaultProvider(provider: String)
+    fun getDefaultProvider(): String
 }
 ```
 
 ### RdfRepositoryBuilder
 
-Builder for configuring individual repositories.
+Builder used by `Rdf.repository { }`.
 
 ```kotlin
 class RdfRepositoryBuilder {
-    var type: String = "memory"
-    val params: MutableMap<String, Any> = mutableMapOf()
-    
-    fun param(name: String, value: Any)
+    var providerId: String?                  // honoured exactly: an unknown provider/variant throws IllegalArgumentException
+    var variantId: String?
+    var requirements: ProviderRequirements   // used for priority-based selection when providerId is null
+    var location: String?                    // storage location for persistent variants
+    var inference: Boolean
+    var registry: ProviderRegistry
     fun build(): RdfRepository
-}
-```
-
-### ManagerBuilder
-
-Builder for configuring repository managers.
-
-```kotlin
-class ManagerBuilder {
-    val repositories: MutableMap<String, RdfConfig> = mutableMapOf()
-    
-    fun repository(name: String, configure: RepositoryBuilder.() -> Unit)
-    fun build(): RepositoryManager
 }
 ```
 
 ## 🎨 DSL Classes
 
-### TripleDsl
+### TripleDsl / GraphDsl
 
-DSL for building RDF triples.
+`repo.add { }` uses `TripleDsl` and `Rdf.graph { }` uses `GraphDsl`. Both extend `TripleBuilderDsl`:
 
 ```kotlin
-class TripleDsl {
-    val triples: MutableList<RdfTriple>
-    
-    // Ultra-compact syntax
-    operator fun RdfResource.set(predicate: Iri, value: RdfTerm)
-    operator fun RdfResource.set(predicate: Iri, value: String)
-    operator fun RdfResource.set(predicate: Iri, value: Int)
-    operator fun RdfResource.set(predicate: Iri, value: Double)
-    operator fun RdfResource.set(predicate: Iri, value: Boolean)
-    operator fun RdfResource.set(predicate: String, value: RdfTerm)
-    operator fun RdfResource.set(predicate: String, value: String)
-    operator fun RdfResource.set(predicate: String, value: Int)
-    operator fun RdfResource.set(predicate: String, value: Double)
-    operator fun RdfResource.set(predicate: String, value: Boolean)
-    
+abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> {
+    val triples: List<RdfTriple>                                  // read-only view of the collected triples
+
+    // Prefixes and QNames (built in: rdf, rdfs, owl, sh, xsd, obo, skos, prov, dcat, dcterms, void, geo, time)
+    fun prefixes(configure: MutableMap<String, String>.() -> Unit)
+    fun prefix(name: String, namespace: String)
+    fun qname(iriOrQName: String): Iri
+
+    // Ultra-compact syntax (predicates are Iri values)
+    operator fun RdfResource.set(predicate: Iri, value: RdfTerm)  // also String, Int, Long, Double, Float, Boolean, RdfResource
+
     // Natural language syntax
-    infix fun RdfResource.has(predicate: Iri): SubjectAndPredicate
-    infix fun SubjectAndPredicate.with(obj: RdfTerm): RdfTriple
-    infix fun SubjectAndPredicate.with(value: String): RdfTriple
-    infix fun SubjectAndPredicate.with(value: Int): RdfTriple
-    infix fun SubjectAndPredicate.with(value: Double): RdfTriple
-    infix fun SubjectAndPredicate.with(value: Boolean): RdfTriple
-    
-    // Generic infix operator
-    infix fun RdfResource.`is`(predicate: Iri): SubjectAndPredicate
+    infix fun RdfResource.has(predicate: Iri): SubjectPredicateChain
+    infix fun SubjectPredicateChain.with(value: RdfTerm)          // also String, Int, Long, Double, Float, Boolean, RdfResource
+    infix fun RdfResource.`is`(type: RdfResource)                  // rdf:type
+
+    // Minus operator
+    infix operator fun RdfResource.minus(predicate: Iri): SubjectPredicateChain
+    infix operator fun SubjectPredicateChain.minus(value: RdfTerm) // see Minus Operator Overloads below
+
+    // Explicit triples, literals and RDF 1.2 reifiers
+    fun triple(subject: RdfResource, predicate: Iri, obj: RdfTerm)
+    fun addTriples(newTriples: Collection<RdfTriple>)
+    fun lang(value: String, language: String): Literal
+    fun reifies(subject: RdfResource, predicate: Iri, obj: RdfTerm /* , reifier, configure */): RdfResource
 }
 ```
+
+Blank nodes created by the DSLs get opaque, run-unique labels (`b_<run>_<n>`), so separate `add { }` calls never share blank nodes.
 
 ## 🎯 DSL Functions
 
@@ -267,15 +230,15 @@ The DSL provides intuitive functions for creating multiple triples and RDF lists
 
 ```kotlin
 // Create multiple individual triples using curly braces syntax
-fun values(vararg values: Any): MultipleIndividualValues
+fun values(vararg values: RdfTerm): MultipleIndividualValues   // also String, Int, Long, Double, Float, Boolean
 
 // Create RDF lists using parentheses syntax  
-fun list(vararg values: Any): RdfListValues
+fun list(vararg values: RdfTerm): RdfListValues               // same overloads as values()
 
 // Create RDF containers
-fun bag(vararg values: Any): RdfBagValues     // rdf:Bag
-fun seq(vararg values: Any): RdfSeqValues     // rdf:Seq
-fun alt(vararg values: Any): RdfAltValues     // rdf:Alt
+fun bag(vararg values: RdfTerm): RdfBagValues     // rdf:Bag (same overloads)
+fun seq(vararg values: RdfTerm): RdfSeqValues     // rdf:Seq (same overloads)
+fun alt(vararg values: RdfTerm): RdfAltValues     // rdf:Alt (same overloads)
 ```
 
 **Examples:**
@@ -289,8 +252,8 @@ person - FOAF.knows - values(friend1, friend2, friend3)
 person - FOAF.mbox - list("alice@example.com", "alice@work.com")
 // Creates: person mbox -> RDF List with proper rdf:first, rdf:rest, rdf:nil structure
 
-// Mixed types
-person - DCTERMS.subject - values("Technology", "Programming", 42, true)
+// Mixed types: pass RdfTerm values
+person - DCTERMS.subject - values(string("Technology"), string("Programming"), int(42), boolean(true))
 // Creates individual triples with proper type conversion
 
 // RDF Bag (unordered, duplicates allowed)
@@ -329,26 +292,26 @@ infix operator fun SubjectPredicateChain.minus(values: RdfBagValues): Unit
 infix operator fun SubjectPredicateChain.minus(values: RdfSeqValues): Unit
 infix operator fun SubjectPredicateChain.minus(values: RdfAltValues): Unit
 
-// Arrays (creates individual triples)
-infix operator fun SubjectPredicateChain.minus(array: Array<*>): Unit
+// Arrays (create individual triples)
+infix operator fun SubjectPredicateChain.minus(values: Array<out RdfTerm>): Unit  // also Array<String|Int|Long|Double|Float|Boolean>
 
-// Lists (creates RDF List)
-infix operator fun SubjectPredicateChain.minus(list: List<*>): Unit
+// Lists (create an RDF List)
+infix operator fun SubjectPredicateChain.minus(values: List<out RdfTerm>): Unit   // also List<String|Int|Long|Double|Float|Boolean>
 ```
 
 ### Container Classes
 
 ```kotlin
 // Container for multiple individual values
-class MultipleIndividualValues(val values: List<Any>)
+class MultipleIndividualValues(val values: List<RdfTerm>)
 
 // Container for RDF list values
-class RdfListValues(val values: List<Any>)
+class RdfListValues(val values: List<RdfTerm>)
 
 // Containers for RDF containers
-class RdfBagValues(val values: List<Any>)     // rdf:Bag
-class RdfSeqValues(val values: List<Any>)     // rdf:Seq
-class RdfAltValues(val values: List<Any>)     // rdf:Alt
+class RdfBagValues(val values: List<RdfTerm>)     // rdf:Bag
+class RdfSeqValues(val values: List<RdfTerm>)     // rdf:Seq
+class RdfAltValues(val values: List<RdfTerm>)     // rdf:Alt
 ```
 
 ## 🔧 Extension Functions
@@ -370,6 +333,7 @@ fun RdfRepository.add(configure: TripleDsl.() -> Unit)
 fun RdfRepository.addToGraph(graphName: Iri, configure: TripleDsl.() -> Unit)
 fun RdfRepository.addTriple(triple: RdfTriple)
 fun RdfRepository.addTriples(triples: Collection<RdfTriple>)
+fun RdfRepository.addTriples(graphName: Iri?, triples: Collection<RdfTriple>)
 fun RdfRepository.addTriple(graphName: Iri?, triple: RdfTriple)
 fun RdfRepository.removeTriple(triple: RdfTriple): Boolean
 fun RdfRepository.removeTriples(triples: Collection<RdfTriple>): Boolean
@@ -377,73 +341,39 @@ fun RdfRepository.hasTriple(triple: RdfTriple): Boolean
 fun RdfRepository.getTriples(): List<RdfTriple>
 ```
 
-### Graph Extensions
+### Triple DSL Members
 
-```kotlin
-```
-
-### Triple DSL Extensions
-
-```kotlin
-fun TripleDsl.addTriples(triples: Collection<RdfTriple>)
-fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: RdfTerm)
-fun TripleDsl.triple(subject: RdfResource, predicate: String, obj: RdfTerm)
-fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: String)
-fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Int)
-fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Double)
-fun TripleDsl.triple(subject: RdfResource, predicate: Iri, obj: Boolean)
-```
-
-### Operator Overloads
-
-```kotlin
-infix fun RdfResource.`->`(pair: Pair<Iri, RdfTerm>): RdfTriple
-infix fun RdfResource.`->`(pair: Pair<String, RdfTerm>): RdfTriple
-infix fun RdfResource.`->`(pair: Pair<Iri, String>): RdfTriple
-infix fun RdfResource.`->`(pair: Pair<String, String>): RdfTriple
-```
+`triple(subject, predicate: Iri, obj: RdfTerm)` and `addTriples(...)` are members of the DSL receiver (see [TripleDsl / GraphDsl](#tripledsl--graphdsl)). There are no string-predicate overloads and no `->` operator; build standalone triples with `RdfTriple(subject, predicate, obj)`.
 
 ## 🚨 Exception Classes
 
-### RdfException
-
-Base exception for RDF operations.
+All RDF exceptions extend the sealed `RdfException` (package `com.geoknoesis.kastor.rdf`), which carries an `errorCode: RdfErrorCode` and an optional `context` map.
 
 ```kotlin
-sealed class RdfException(message: String, cause: Throwable? = null) : Exception(message, cause)
+sealed class RdfException(message: String, val errorCode: RdfErrorCode = RdfErrorCode.UNKNOWN_ERROR, cause: Throwable? = null) : Exception(message, cause)
+
+class RdfQueryException(
+    message: String,
+    errorCode: RdfErrorCode = RdfErrorCode.QUERY_EXECUTION_ERROR,
+    val query: String? = null,
+    val bindings: Map<String, RdfTerm>? = null,
+    cause: Throwable? = null
+) : RdfException(message, errorCode, cause)
+
+// Same (message, errorCode, cause) shape:
+class RdfTransactionException
+class RdfProviderException
+class RdfValidationException
+class RdfRepositoryException
+class RdfGraphException
+class RdfFederationException
+class RdfInferenceException
+class RdfConfigurationException
+
+sealed class RdfFormatException   // ParseError(parseError), UnsupportedFormat(format, availableFormats), Generic(message)
 ```
 
-### RdfQueryException
-
-Exception for query-related errors.
-
-```kotlin
-class RdfQueryException(message: String, cause: Throwable? = null) : RdfException(message, cause)
-```
-
-### RdfUpdateException
-
-Exception for update operation errors.
-
-```kotlin
-class RdfUpdateException(message: String, cause: Throwable? = null) : RdfException(message, cause)
-```
-
-### RdfTransactionException
-
-Exception for transaction-related errors.
-
-```kotlin
-class RdfTransactionException(message: String, cause: Throwable? = null) : RdfException(message, cause)
-```
-
-### RdfConfigurationException
-
-Exception for configuration errors.
-
-```kotlin
-class RdfConfigurationException(message: String, cause: Throwable? = null) : RdfException(message, cause)
-```
+URL loading can also throw `RdfInputTooLargeException` (an `IOException`) when a body exceeds `UrlLoadOptions.maxBytes`, and invalid configurations or disallowed URL schemes throw `IllegalArgumentException`.
 
 ## ⚙️ Configuration
 
@@ -483,11 +413,7 @@ providerId = "sparql", variantId = "sparql"
 RdfConfig(
     providerId = "jena",
     variantId = "tdb2",
-    options = mapOf(
-        "location" to "/path/to/storage",
-        "syncMode" to "WRITE_METADATA",
-        "unionDefaultGraph" to "true"
-    )
+    options = mapOf("location" to "/path/to/storage")   // the only option read by the Jena provider
 )
 ```
 
@@ -497,11 +423,7 @@ RdfConfig(
 RdfConfig(
     providerId = "rdf4j",
     variantId = "native",
-    options = mapOf(
-        "location" to "/path/to/storage",
-        "syncDelay" to "1000",
-        "tripleIndexes" to "spoc,posc,psoc"
-    )
+    options = mapOf("location" to "/path/to/storage")   // the only option read by the RDF4J provider
 )
 ```
 
@@ -512,10 +434,10 @@ RdfConfig(
     providerId = "sparql",
     variantId = "sparql",
     options = mapOf(
-        "queryEndpoint" to "https://dbpedia.org/sparql",
-        "updateEndpoint" to "https://example.org/update",
-        "timeout" to "30000"
-    )
+        "location" to "https://dbpedia.org/sparql",
+        "updateLocation" to "https://example.org/update",
+        "requestTimeoutMillis" to "30000"
+    )   // all options: see providers/sparql.md
 )
 ```
 
@@ -564,11 +486,7 @@ Query results provide `first()`, `toList()`, and `asSequence()` for common acces
 Represents an Internationalized Resource Identifier.
 
 ```kotlin
-data class Iri(val value: String) : RdfResource {
-    fun isValid(): Boolean
-    fun resolve(relative: String): Iri
-    fun relativize(base: Iri): String?
-}
+value class Iri(val value: String) : RdfResource
 ```
 
 ### Literal
@@ -586,12 +504,14 @@ sealed interface Literal : RdfTerm {
 
 ```kotlin
 fun string(value: String): Literal
-fun lang(value: String, lang: String): Literal
+fun lang(value: String, lang: String): Literal                       // tag validated and lower-cased
+fun lang(value: String, lang: String, direction: Direction): Literal
 fun int(value: Int): Literal
-fun double(value: Double): Literal
-fun decimal(value: Double): Literal
+fun decimal(value: BigDecimal): Literal                               // also Double, Float
 fun boolean(value: Boolean): Literal
-fun Literal(lexical: String, datatype: Iri = XSD.string): Literal
+Literal(lexical: String, datatype: Iri = XSD.string)                  // lexical form preserved exactly
+fun Literal.booleanValue(): Boolean?                                  // "true"/"1" -> true, "false"/"0" -> false
+fun normalizeLanguageTag(tag: String): String
 ```
 
 ## 🎯 Convenience Functions
@@ -599,21 +519,18 @@ fun Literal(lexical: String, datatype: Iri = XSD.string): Literal
 ### Global Functions
 
 ```kotlin
-fun resource(iri: String): RdfResource
 fun iri(value: String): Iri
+fun bnode(id: String): BlankNode
 fun string(value: String): Literal
 fun lang(value: String, lang: String): Literal
 fun int(value: Int): Literal
-fun double(value: Double): Literal
 fun decimal(value: Double): Literal
 fun boolean(value: Boolean): Literal
-fun triple(subject: RdfResource, predicate: Iri, obj: RdfTerm): RdfTriple
-fun triple(subject: RdfResource, predicate: String, obj: RdfTerm): RdfTriple
-fun triple(subject: RdfResource, predicate: Iri, obj: String): RdfTriple
-fun triple(subject: RdfResource, predicate: Iri, obj: Int): RdfTriple
-fun triple(subject: RdfResource, predicate: Iri, obj: Double): RdfTriple
-fun triple(subject: RdfResource, predicate: Iri, obj: Boolean): RdfTriple
+fun quoted(triple: RdfTriple): TripleTerm
+fun var_(name: String): Var
 ```
+
+Standalone triples are built with `RdfTriple(subject, predicate, obj)`; inside the DSLs use `triple(...)` or the infix syntax.
 
 ## 📚 Registry
 
@@ -651,10 +568,16 @@ val repo = Rdf.repository(registry) {
 ### Exception Hierarchy
 
 ```kotlin
-RdfException (base)
+RdfException (sealed base)
 ├── RdfQueryException
-├── RdfUpdateException
 ├── RdfTransactionException
+├── RdfProviderException
+├── RdfValidationException
+├── RdfFormatException (ParseError, UnsupportedFormat, Generic)
+├── RdfRepositoryException
+├── RdfGraphException
+├── RdfFederationException
+├── RdfInferenceException
 └── RdfConfigurationException
 ```
 

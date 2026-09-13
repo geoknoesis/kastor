@@ -46,14 +46,156 @@ Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*
 
 ### Fixed (audit remediation)
 
-<!-- Coordinator: fill in at integration from the remediation branches (rdf/core, providers, sparql,
-     shacl, kastor-gen, tools). Refine breaking changes above if any branch changes public API. -->
-- _Placeholder — rdf-core fixes_
-- _Placeholder — provider (Jena / RDF4J) fixes_
-- _Placeholder — SPARQL fixes_
-- _Placeholder — SHACL fixes_
-- _Placeholder — kastor-gen fixes_
-- _Placeholder — onto-quality tools fixes_
+<!-- kastor-gen entries pending -->
+
+#### Security
+
+- `rdf-core`: `Rdf.parseFromUrl`, `parseFromUrlAsync` and `parseDatasetFromUrl` load only `http`/`https` URLs by default (other schemes such as `file:` or `jar:` must be allowed through `UrlLoadOptions.allowedSchemes`) and cap response bodies at 64 MiB (`UrlLoadOptions.maxBytes`), failing with `RdfInputTooLargeException`.
+- `rdf-sparql-lang`: literals are always escaped when rendered (query injection fix). Variable names, aliases, prefixes, function names and `VERSION` values are validated against the SPARQL grammar.
+- `rdf-sparql`: only `http`/`https` endpoint URLs are accepted, and credentials are never printed by `SparqlEndpointConfig.toString()`.
+- `onto-quality-llm-koog`: ontology and finding text is sent to the model as escaped JSON data, and LLM output is Markdown-escaped in reports (no links, images or raw HTML).
+
+#### Breaking changes
+
+- **`rdf-core`:**
+  - `Rdf.parseFromUrl*` gained a trailing `options: UrlLoadOptions` parameter (source-compatible, binary-incompatible).
+  - `LangString`, `TrueLiteral` and `FalseLiteral` are no longer data classes (`LangString` keeps `copy` and `componentN`).
+  - `MemoryGraph`'s lock-sharing constructor is internal.
+  - Language tags are validated and normalised to lower case (`normalizeLanguageTag`).
+  - Boolean literals preserve their lexical form: only `"true"`/`"false"` map to `TrueLiteral`/`FalseLiteral`; use `Literal.booleanValue()` to interpret `"1"`/`"0"`.
+  - Temporal `toLiteral()` always includes seconds (`"10:15:00"`).
+  - DSL blank-node labels are opaque (`b_<run>_<n>`) and unique across DSL calls; the DSL `triples` property is read-only.
+  - The `memory` provider reports RDF 1.2 with triple terms.
+  - Provider selection orders by `RdfProvider.priority` (memory −100, RDF4J 40, Jena 50). An explicit `providerId` whose provider, variant or requirements do not match throws `IllegalArgumentException` instead of falling back.
+  - `Vocabularies.getTermsByPrefix` / `getTermsByNamespace` were removed.
+  - `MemoryRepository.getGraph` returns a live graph handle.
+- **`rdf-sparql-lang` AST:**
+  - `AggregateExpressionAst.expression` is nullable (`COUNT(*)`) and gains `separator`.
+  - `InsertDataOperationAst` / `DeleteDataOperationAst` gain `graphData`.
+  - `ModifyOperationAst` gains `deleteGraphs` / `insertGraphs`.
+  - Constructors and `copy` signatures changed.
+- **`rdf-sparql-lang` rendered output:**
+  - `VERSION "1.2"` is now quoted.
+  - Updates are joined with `;` and ordered `WITH … DELETE … INSERT … USING … WHERE`.
+  - `HAVING` renders `HAVING (expr)`, UNION renders `{ } UNION { }`, and `minus { }` always renders `MINUS { }`.
+  - Property paths are parenthesised by precedence.
+  - `FROM` now follows the query form.
+  - `quotedTriple` renders the reified triple `<< s p o >>`, and `rdf:reifies` is written as a full IRI.
+  - `startsWith`/`endsWith` render `STRSTARTS`/`STRENDS`. The two-argument `hasLang`/`hasLangdir` render `LANGMATCHES(LANG(x), "tag")` / `LANGDIR(x) = "dir"`. `dateTime`/`date`/`time` render XSD casts.
+  - Now rejected: `USING`/`WITH` on `INSERT DATA`/`DELETE DATA`/`DELETE WHERE`, `{n,m}` path ranges, negated property sets containing anything other than IRIs or `^IRI`, standalone `<<( )>>` patterns, `GRAPH` inside CONSTRUCT templates, and negative `LIMIT`/`OFFSET`.
+  - `random()`, zero-argument `timezone()` and `decodeForUri()` are deprecated with level ERROR.
+- **`rdf-shacl-validation`:**
+  - `ValidationReport.isValid` now follows `sh:conforms`: it is `false` when any result of severity Violation, Warning, Info or a custom severity exists. Use the new `hasViolations` for the previous severity-filtered check.
+  - `ValidationViolation` gains `resultPathNode`, `resultPathTriples`, `resultMessages` and `sourceConstraint`. Its constructor and `copy` are binary-incompatible.
+- **`rdf-shacl-dsl`:**
+  - `sparqlAsk` is removed (deprecated with level ERROR).
+  - Numeric bound properties (`minInclusive`, …) are typed `Number?`.
+  - Single-valued setters replace the previous value instead of appending.
+  - Block forms `and { }` / `or { }` / `xone { }` create a single list operand; use `andShapes` / `orShapes` / `xoneShapes` for several operands.
+- **Providers:** `parseGraph` rejects TriG / N-Quads with `RdfFormatException` (use dataset parsing). With no base IRI, relative IRIs are a parse error in both Jena and RDF4J, and Jena parsing is strict.
+- **Reasoning:** the Jena reasoner no longer accepts `ReasonerType.OWL_EL` (it supports `RDFS`, `OWL_RL` and `CUSTOM` only). The RDF4J reasoner supports `RDFS` only.
+- **onto-quality:**
+  - `ExplainedQualityReport` gains `failures`, and `LlmExplanationConfig` gains `requestTimeout`, `maxRetries` and `retryBackoff` (constructor/`copy` signatures changed).
+  - `OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)` has a new signature.
+  - The OQuaRE metric formulas were revised, so metric values change.
+
+#### Fixed
+
+- **rdf-core:**
+  - Blank-node label collisions between separate DSL calls.
+  - `FROM`/`FROM NAMED` placement when querying datasets, so queries mixing the default graph and named graphs return correct results.
+  - A parse fallback that silently produced an empty graph.
+  - Orphaned named-graph handles in the memory repository.
+  - Literal lexical fidelity.
+  - Graph isomorphism on long RDF lists.
+  - `equivalentTo` for language-tagged literals.
+  - Quadratic CBD closure computation.
+- **SPARQL DSL:**
+  - `LOAD <src> INTO GRAPH <g>` renders correctly.
+  - `graph(g) { }` is supported in `INSERT DATA`, `DELETE DATA` and update templates.
+  - `VALUES` rows accept `UNDEF` (`null`).
+  - `replaceAll` renders `REPLACE` and is deprecated.
+  - `timezone(expr)` renders `TIMEZONE`.
+  - The single-argument `hasLang(x)` / `hasLangdir(x)` render SPARQL 1.2 `hasLANG` / `hasLANGDIR`.
+- **SPARQL endpoint:**
+  - Capabilities truthfully report SPARQL 1.1, no RDF-star and no federation.
+  - Connections are reused.
+  - `removeTriples` issues one `ASK … VALUES` plus one `DELETE DATA` per batch (non-atomic).
+  - Blank nodes are accepted on add: labels are re-issued and blank-node data is never split across batches. Remove/find/has with blank nodes fail with guidance to use `DELETE WHERE`.
+  - Exceptions thrown by `withSelectRows` consumers propagate unchanged.
+  - The `httpclient5` dependency was removed.
+- **SHACL validation:**
+  - Property shapes default to `sh:Violation` (no inheritance).
+  - Multi-valued parameters produce one constraint each; a repeated single-valued parameter is a compile error.
+  - Literals can conform to nested shapes.
+  - Deactivated or empty shapes accept every node.
+  - Classes that are also shapes act as implicit class targets.
+  - Comparisons are datatype-aware (SPARQL operator mapping), and XSD lexical forms are checked.
+  - `sh:pattern` supports the `q` and `x` flags and is compiled at shape compile time.
+  - Reports carry `sh:message` with language, full result paths, spec-conformant `sh:value`, one `sh:closed` result per triple, and `sh:sourceConstraint`.
+- **SHACL-SPARQL:**
+  - `sh:prefixes`/`sh:declare` and `$PATH` are supported, and `$this`, `$currentShape` and `$shapesGraph` are pre-bound.
+  - Each solution row produces one result; message templates and `sh:deactivated` are honoured.
+  - Queries run over the data graph.
+  - Without `rdf-jena` or `rdf-rdf4j` on the runtime classpath, validation fails with a `ShaclValidationException` naming them, and capability flags reflect engine availability.
+- **W3C SHACL 1.2 suite:** 154 of 163 cases pass. The 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions) are listed in `W3cKnownDeviations`.
+- **SHACL DSL:**
+  - `and`/`or`/`xone` and `ignoredProperties` emit RDF lists.
+  - `prefixes { }` in SPARQL constraints emits `sh:declare [ sh:prefix ; sh:namespace ]`.
+  - Blank-node labels are collision-free.
+  - `languageDirection` and `totalDigits`/`fractionDigits` are deprecated (warning); the latter are not enforced by the native validator.
+- **RDF4J SHACL validator:** validity is taken from `sh:conforms` before the violation cap, and `validateResource` validates the whole graph filtered by focus node.
+- **Jena / RDF4J providers:**
+  - Literal lexical forms are preserved exactly (`"007"^^xsd:integer`); only the exact `"true"`/`"false"` become boolean singletons.
+  - RDF4J 5.3.1 represents `"x"@ar--rtl` as the language tag `ar--rtl`, so SPARQL `LANG()` returns `ar--rtl` there.
+  - Jena inference models are cached per graph, and reads on inference repositories are serialized.
+  - Batch writes run in one transaction.
+- **Reasoning:**
+  - Consistency checks are real (Jena `validate()`).
+  - The memory reasoner applies RDFS rules 2/3/5/7/9/11 to a fixpoint.
+  - The HermiT deadline is enforced by a watchdog `interrupt()`.
+- **RDF CLI:** `diff` is dataset-aware for quad formats, and unknown file extensions are an error.
+- **onto-quality:**
+  - Metrics are computed on the asserted graph even with `--reasoner`.
+  - The `OWL_MICRO` profile uses the Jena `OWL_RL` rule reasoner.
+  - Revised OQuaRE formulas (RFCOnto, NOC/CBO/RFC, CROnto, TMOnto, RROnto/INROnto, LCOMOnto) are documented in `tools/onto-quality/library/README.md`.
+  - `pipeline` writes the intermediate file only with `--keep-intermediate`.
+  - Options are validated before the model loads.
+  - Embedding tokenization truncates at `maxTokens` with dynamic padding, and blank-node similarity keys are rejected.
+
+#### Added
+
+- `rdf-core`:
+  - `UrlLoadOptions` and `RdfInputTooLargeException`.
+  - `RdfProvider.priority`, `RdfProvider.supportsInputFormat` and `supportsOutputFormat`.
+  - `Literal.booleanValue()` and `normalizeLanguageTag`.
+  - `TripleBuilderDsl`, the shared base of `GraphDsl` and `TripleDsl`.
+- `rdf-sparql-lang`: `countAll()`, `groupConcat(expr, separator)` and `UNDEF` in `VALUES`.
+- `rdf-sparql`:
+  - `SparqlEndpointConfig` with custom headers, HTTP Basic auth (also from URL credentials), `GET` / form `POST` queries and a separate update URL.
+  - An overall `requestTimeout` (default 5 min).
+  - `maxResponseBytes` for buffered calls and an optional `maxStreamedResponseBytes` for `withSelectRows`.
+  - `insertBatchSize` (default 5000).
+  - Provider options `header.<Name>`, `username`, `password`, `queryMethod`, `updateMethod`, `updateLocation`, `requestTimeoutMillis`, `maxStreamedResponseBytes` and `insertBatchSize`.
+- `rdf-shacl-validation`: `ValidationReport.hasViolations`.
+- `rdf-shacl-dsl`: `andShapes`, `orShapes` and `xoneShapes`.
+- `rdf-jena`: `JenaBridge.copyToJenaModel`. `toJenaModel` on repository graphs now returns a detached copy.
+- `rdf-rdf4j`: interop functions `rdfTermFromRdf4j`, `rdf4jValueOf`, `rdf4jResourceOf`, `rdfTripleFromRdf4j` and `rdf4jStatementOf`.
+- Reasoning:
+  - Deterministic provider selection via `priority()` (memory −100, RDF4J 40, Jena 50, HermiT 100).
+  - `ReasonerConfig.forType`.
+  - HermiT also serves `OWL_DL`, and HermiT/`OWL_DL` configurations default to `streamingMode = false`.
+- onto-quality CLI:
+  - Exit codes 0 / 1 (findings or usage error) / 2 (parse error) / 3 (explanation failure with `--fail-on-explain-error`).
+  - `--llm-timeout`, `--llm-retries` and `--input-format` (plus extension detection).
+  - Bounded `--explain-max` (1–500) and `--explain-batch` (1–100).
+  - JSON output via kotlinx.serialization, including `llmExplanationFailures`.
+- onto-quality LLM: per-request timeout, bounded retries with backoff, and partial results with per-batch failure records (`ExplainedQualityReport.failures`).
+- onto-quality embeddings: `SimilaritySearchBudgetExceededException`.
+- RDF 1.2 conformance: Jena 1038 executed / 32 unapproved skipped / 0 failed. RDF4J 1038 executed / 187 skipped (155 allowlisted upstream Rio gaps in `conformance-allowlist.tsv` + 32 unapproved) / 0 failed.
+
+#### Build, CI and documentation
+
 - Build, CI and documentation: README samples now match the current DSL and are compiled via `examples/hello-world`. Install docs require JDK 21, show `0.3.0-SNAPSHOT` and state that artifacts are not yet published.
 
 ## [0.2.1] - 2026-06-27

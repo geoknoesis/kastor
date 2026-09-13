@@ -8,7 +8,7 @@ The RDF4J repository management system provides:
 
 - **Centralized Repository Management**: Create and manage multiple repositories
 - **Advanced Storage Backends**: Memory, Native, and specialized variants
-- **Inference Capabilities**: RDFS and OWL reasoning support
+- **Inference Capabilities**: RDFS reasoning support (RDF4J ships no OWL reasoner)
 - **Validation Support**: SHACL constraint validation
 - **Federation**: Cross-repository query capabilities
 - **Statistics and Monitoring**: Performance tracking
@@ -165,6 +165,16 @@ val results = repo.select(
 )
 // Returns Person class due to inference
 ```
+
+The RDF4J `RdfReasonerProvider` (`rdf-rdf4j-reasoning`) supports only `ReasonerType.RDFS`; every other type is rejected. For OWL, use Jena (`OWL_RL`) or HermiT (`HERMIT` / `OWL_DL`).
+
+### Parsing, literals and interop
+
+- **Lexical forms are preserved exactly** (`"007"^^xsd:integer` stays `"007"`); only the exact forms `"true"` / `"false"` become boolean singletons.
+- **Base direction**: RDF4J 5.3.1 has no base-direction API. Kastor stores a directional literal such as `"x"@ar--rtl` inside RDF4J under the language tag `ar--rtl` and restores the direction when reading, so SPARQL `LANG()` evaluated by RDF4J returns `ar--rtl`.
+- **`parseGraph` accepts triple formats only**: TriG and N-Quads are rejected with `RdfFormatException`; use dataset parsing. Without a base IRI, relative IRIs are a parse error.
+- **Interop functions** (`com.geoknoesis.kastor.rdf.rdf4j`): `rdfTermFromRdf4j(value)`, `rdf4jValueOf(term)`, `rdf4jResourceOf(resource)`, `rdfTripleFromRdf4j(statement)` and `rdf4jStatementOf(triple)`.
+- **Transactions**: batch writes run in one transaction; per-triple writes outside a transaction each cost one, so batch them or use `repo.transaction { }`.
 
 ### Validation Capabilities
 

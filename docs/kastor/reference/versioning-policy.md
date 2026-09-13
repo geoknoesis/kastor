@@ -115,8 +115,8 @@ Kastor providers (Jena, RDF4J, SPARQL) have their own versioning:
 
 | Provider Module | Backend Library | Compatibility |
 |-----------------|-----------------|---------------|
-| `rdf:jena`      | Apache Jena 4.x | Compatible with Jena 4.0+ |
-| `rdf:rdf4j`     | Eclipse RDF4J 4.x | Compatible with RDF4J 4.0+ |
+| `rdf:jena`      | Apache Jena 6.2.0 | Built and tested against Jena 6.2.0 (with Thrift 0.24.0) |
+| `rdf:rdf4j`     | Eclipse RDF4J 5.3.1 | Built and tested against RDF4J 5.3.1 |
 | `rdf:sparql`    | HTTP/SPARQL 1.1 | Compatible with SPARQL 1.1 endpoints |
 
 **Note**: Provider modules may have different version numbers than the core SDK. Check individual provider documentation for specific compatibility requirements.

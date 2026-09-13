@@ -75,6 +75,8 @@ Exact naming is illustrative; final API lives in `onto-quality` (or optional `on
 - **`--explain-max N`**, **`--explain-severity …`**: caps.
 - **`--explain-dry-run`**: print prompt size / finding count without calling the model.
 
+*Implemented:* `check --explain` with `--explain-max` (1–500), `--explain-batch` (1–100), `--llm-timeout` (seconds), `--llm-retries` (0–10) and `--fail-on-explain-error` (exit status 3). JSON output also carries `llmExplanationFailures`.
+
 ---
 
 ## 4. Data model
@@ -111,7 +113,8 @@ If a violation lacks stable focus identifiers, fall back to hash including **ind
 Wrap or extend:
 
 - `report: QualityReport` (unchanged underlying SHACL result)
-- `explanations: List<FindingExplanation>` (partial list allowed if cap hit)
+- `explanations: List<FindingExplanation>` (partial list allowed if cap hit or batches failed)
+- `failures: List<ExplanationFailure>` (*implemented*): one record per batch that could not be explained
 
 Convenience: `describeMarkdown(includeExplanations = true)` that appends an **LLM explanations** section grouped by category.
 
@@ -156,6 +159,8 @@ Example **`explanations.schemaVersion: 1`**:
 
 Parser validates **count** (one item per input ref in batch) and **required fields**; on parse failure, **retry once** with a correction instruction; then **fail soft** (omit explanations for that batch, log).
 
+*Implemented:* every request (including the repair request) is bounded by `LlmExplanationConfig.requestTimeout`. Failed or timed-out requests are retried up to `maxRetries` times with exponential `retryBackoff`. Failures are isolated per batch and recorded in `ExplainedQualityReport.failures`.
+
 ---
 
 ## 6. Modules and dependencies
@@ -188,7 +193,8 @@ Never read secrets from files checked into git.
 
 ## 8. Security and privacy
 
-- Prefer **no logging** of full prompts or API keys; log **hashes** and counts.
+- Prefer **no logging** of full prompts or API keys; log **hashes** and counts. *Implemented:* `LlmExplanationConfig.toString()` redacts the API key.
+- *Implemented:* finding and ontology text is passed to the model as escaped JSON data with an instruction to treat it as data. LLM output is Markdown-escaped in reports, so no links, images or raw HTML are rendered.
 - Curators may run on **sensitive** TBox text in violation messages; treat prompts as **confidential**; document that cloud providers may process according to their policies.
 - Support **local inference** later via Koog-compatible providers (e.g. Ollama) without changing the v0.3 API—operational configuration only.
 

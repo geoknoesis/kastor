@@ -199,7 +199,7 @@ println(query.sparql)
 **What this does**:
 - `select(SparqlSelectQuery("name")))` - We want to find names
 - `where { ... }` - Here are the conditions
-- `personVar has namePred with nameVar` - Find people who have names
+- `triple(personVar, namePred, nameVar)` - Find people who have names
 
 **Generated SPARQL**:
 ```sparql
@@ -437,13 +437,13 @@ val phonePred = iri("http://example.org/phone")
 
 val query = select("name", "contact") {
     where {
-        triple(`var`("person"), namePred, `var`("name"))
         union {
             triple(`var`("person"), emailPred, `var`("contact"))
         }
         union {
             triple(`var`("person"), phonePred, `var`("contact"))
         }
+        triple(`var`("person"), namePred, `var`("name"))
     }
 }
 
@@ -454,16 +454,12 @@ println(query)
 ```sparql
 SELECT ?name ?contact
 WHERE {
+  { ?person <http://example.org/email> ?contact . } UNION { ?person <http://example.org/phone> ?contact . }
   ?person <http://example.org/name> ?name .
-  {
-    ?person <http://example.org/email> ?contact .
-  }
-  UNION
-  {
-    ?person <http://example.org/phone> ?contact .
-  }
 }
 ```
+
+**Note**: `union { }` uses the pattern added immediately before it as its left operand (`{ previous } UNION { block }`), and further `union { }` calls extend the same UNION. That is why the name pattern comes *after* the unions here: placed first, it would itself become the first UNION branch.
 
 **In plain English**: "Find people and their contact information (either email or phone)"
 
@@ -529,6 +525,8 @@ WHERE {
 
 **In plain English**: "Find people and their friends, friends of friends, friends of friends of friends, etc."
 
+**Note**: paths are parenthesised by operator precedence when rendered. `negation()` accepts only IRIs and inverse IRIs (`!(p|^q)`). The bounded repetition helpers `exactly`, `atLeast`, `atMost` and `between` build `{n,m}` paths, which are not standard SPARQL 1.1/1.2, so the renderer rejects them. Expand them into explicit sequences or alternatives instead.
+
 ### 16. Alternative Relationships
 
 Let's find people connected by either friendship OR colleague relationships:
@@ -561,31 +559,39 @@ WHERE {
 
 ### 17. Statement-level Information
 
-RDF-star lets you attach information to statements themselves. Let's find statements with confidence scores:
+RDF 1.2 attaches information to a statement through a **reifier**: `?statement rdf:reifies <<( subject predicate object )>>`. Let's find name statements with confidence scores above 0.8.
+
+The `where { }` builder has no helper for a bound reifier, so build this query from the AST types in `com.geoknoesis.kastor.rdf.sparql` and convert it with `toSparqlSelect()`:
 
 ```kotlin
-val query = select("statement", "confidence") {
-    where {
-        `var`("statement") quoted iri("http://example.org/confidence") with `var`("confidence")
-        `var`("statement") quoted iri("http://example.org/subject") with personVar
-        `var`("statement") quoted iri("http://example.org/predicate") with namePred
-        `var`("statement") quoted iri("http://example.org/object") with nameVar
-        filter(`var`("confidence") gt 0.8)
-    }
-}
+import com.geoknoesis.kastor.rdf.sparql.*
 
-println(query)
+val statementVar = `var`("statement")
+val confidenceVar = `var`("confidence")
+
+val query = SelectQueryAst(
+    selectItems = listOf(VariableSelectItemAst(statementVar), VariableSelectItemAst(confidenceVar)),
+    where = GroupPatternAst(listOf(
+        ReifierPatternAst(statementVar, TripleTermPatternAst(personVar, namePred, nameVar)),
+        TriplePatternAst(statementVar, iri("http://example.org/confidence"), confidenceVar),
+        FilterPatternAst(confidenceVar gt 0.8),
+    )),
+).toSparqlSelect()
+
+println(query.sparql)
 ```
 
-**Generated SPARQL**:
+**Generated SPARQL** (layout may differ slightly):
 ```sparql
 SELECT ?statement ?confidence
 WHERE {
-  ?statement << ?person <http://example.org/name> ?name >> .
+  ?statement <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( ?person <http://example.org/name> ?name )>> .
   ?statement <http://example.org/confidence> ?confidence .
-  FILTER(?confidence > 0.8)
+  FILTER(?confidence > "0.8"^^<http://www.w3.org/2001/XMLSchema#double>)
 }
 ```
+
+If you don't need the reifier itself, `quotedTriple(personVar, namePred, nameVar)` inside `where { }` renders the reified-triple pattern `<< ?person <http://example.org/name> ?name >> .`, which matches any reifier of the triple.
 
 **In plain English**: "Find statements about people's names that have high confidence scores (over 0.8)"
 
