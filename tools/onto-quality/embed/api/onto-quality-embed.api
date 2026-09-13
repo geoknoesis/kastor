@@ -52,6 +52,7 @@ public final class com/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel : 
 	public fun embed (Ljava/util/List;)Ljava/util/List;
 	public fun getDimension ()I
 	public fun getMaxTokens ()I
+	public final fun getModelSha256 ()Ljava/lang/String;
 	public fun getName ()Ljava/lang/String;
 	public final fun getOnnxModelPath ()Ljava/nio/file/Path;
 	public fun getTokenizerDescription ()Ljava/lang/String;
@@ -62,8 +63,8 @@ public final class com/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Co
 	public static synthetic fun fromCliOptions$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/lang/String;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/Integer;ILjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
 	public final fun fromLocalFiles (Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/String;IILjava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
 	public static synthetic fun fromLocalFiles$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/lang/String;IILjava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
-	public final fun fromMiniLm (Ljava/nio/file/Path;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
-	public static synthetic fun fromMiniLm$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/nio/file/Path;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public final fun fromMiniLm (Ljava/nio/file/Path;I)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
+	public static synthetic fun fromMiniLm$default (Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel$Companion;Ljava/nio/file/Path;IILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/OnnxEmbeddingModel;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SemanticEnricher : java/lang/AutoCloseable {
@@ -84,6 +85,10 @@ public final class com/geoknoesis/kastor/ontoquality/embed/SimilarityIndex {
 	public fun <init> (Ljava/util/Map;)V
 	public final fun pairsAboveThreshold (D)Lkotlin/sequences/Sequence;
 	public final fun pairsAboveThreshold (DLcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits;)Lkotlin/sequences/Sequence;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException : java/lang/IllegalStateException {
+	public fun <init> (Ljava/lang/String;)V
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits {

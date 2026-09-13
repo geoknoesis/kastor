@@ -9,9 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
-import kotlin.io.path.notExists
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -43,8 +41,13 @@ object ModelDownloader {
     const val EXPECTED_TOKENIZER_SHA256 =
         "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
 
+    /** How many times a caller re-attempts after *another* caller's in-flight attempt failed. */
+    private const val MAX_SHARED_FAILURE_RETRIES = 3
+
     private val httpClient: HttpClient =
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(60)).followRedirects(HttpClient.Redirect.NORMAL).build()
+
+    internal data class ModelAsset(val fileName: String, val uri: URI, val sha256: String)
 
     fun resolveCacheRoot(overrideCacheRoot: Path? = null): Path {
         if (overrideCacheRoot != null) return overrideCacheRoot.normalize()
@@ -60,32 +63,71 @@ object ModelDownloader {
     fun resolveMiniLmDir(cacheRoot: Path = resolveCacheRoot()): Path =
         cacheRoot.resolve("all-MiniLM-L6-v2")
 
-    private val inFlight = ConcurrentHashMap<Path, CompletableFuture<Pair<Path, Path>>>()
+    private val inFlight = ConcurrentHashMap<Path, CompletableFuture<List<Path>>>()
 
     fun ensureMiniLmFiles(cacheRoot: Path = resolveCacheRoot()): Pair<Path, Path> =
         ensureMiniLmFiles(cacheRoot, Duration.ofMinutes(10))
 
     /** Concurrent callers share only an in-flight verification; digests are never trusted indefinitely. */
     fun ensureMiniLmFiles(cacheRoot: Path, timeout: Duration): Pair<Path, Path> {
+        val files =
+            ensureAssets(
+                resolveMiniLmDir(cacheRoot),
+                listOf(
+                    ModelAsset("model.onnx", URI.create(MODEL_REL_URL), EXPECTED_MODEL_SHA256),
+                    ModelAsset("tokenizer.json", URI.create(TOKENIZER_REL_URL), EXPECTED_TOKENIZER_SHA256),
+                ),
+                timeout,
+            )
+        return files[0] to files[1]
+    }
+
+    /**
+     * Ensures every asset exists in [directory] with its expected digest, downloading as needed.
+     *
+     * Concurrent callers for the same directory wait on one in-flight attempt, but only its **success** is
+     * shared: if that attempt fails (for example because its caller had a much shorter budget), each waiter
+     * retries under its own [timeout], at most [MAX_SHARED_FAILURE_RETRIES] times.
+     */
+    internal fun ensureAssets(directory: Path, assets: List<ModelAsset>, timeout: Duration): List<Path> {
         val budget = DownloadBudget(timeout)
-        val dir = resolveMiniLmDir(cacheRoot).toAbsolutePath().normalize()
+        val dir = directory.toAbsolutePath().normalize()
         Files.createDirectories(dir)
         val key = dir.toRealPath()
-        val future = CompletableFuture<Pair<Path, Path>>()
-        val existing = inFlight.putIfAbsent(key, future)
-        if (existing != null) {
-            try { return existing.get(budget.remaining().toNanos(), TimeUnit.NANOSECONDS) }
-            catch (e: InterruptedException) { Thread.currentThread().interrupt(); budget.check(); throw e }
-            catch (e: TimeoutException) { throw java.net.SocketTimeoutException("Model initialization wait timed out") }
-            catch (e: ExecutionException) { throw e.cause ?: e }
+        var sharedFailures = 0
+        while (true) {
+            val future = CompletableFuture<List<Path>>()
+            val existing = inFlight.putIfAbsent(key, future)
+            if (existing == null) return downloadAsOwner(key, assets, budget, future)
+            try {
+                return existing.get(budget.remaining().toNanos(), TimeUnit.NANOSECONDS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt(); budget.check(); throw e
+            } catch (e: TimeoutException) {
+                throw java.net.SocketTimeoutException("Model initialization wait timed out")
+            } catch (e: ExecutionException) {
+                // Do not inherit another caller's failure: retry under this caller's own budget.
+                inFlight.remove(key, existing)
+                budget.check()
+                if (++sharedFailures > MAX_SHARED_FAILURE_RETRIES) throw e.cause ?: e
+                log.info("Concurrent model initialization failed ({}); retrying with this caller's budget", e.cause?.toString())
+            }
         }
+    }
+
+    private fun downloadAsOwner(
+        key: Path,
+        assets: List<ModelAsset>,
+        budget: DownloadBudget,
+        future: CompletableFuture<List<Path>>,
+    ): List<Path> {
         try {
             val result = withModelCacheLock(key, budget) {
-                val model = key.resolve("model.onnx")
-                val tokenizer = key.resolve("tokenizer.json")
-                ensureFile(model, URI.create(MODEL_REL_URL), EXPECTED_MODEL_SHA256, "model.onnx", budget)
-                ensureFile(tokenizer, URI.create(TOKENIZER_REL_URL), EXPECTED_TOKENIZER_SHA256, "tokenizer.json", budget)
-                model to tokenizer
+                assets.map { asset ->
+                    val target = key.resolve(asset.fileName)
+                    ensureFile(target, asset.uri, asset.sha256, asset.fileName, budget)
+                    target
+                }
             }
             future.complete(result)
             return result

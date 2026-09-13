@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.ontoquality.embed
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.decimal
 import com.geoknoesis.kastor.rdf.jena.JenaBridge
@@ -10,8 +11,6 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.nio.file.Files
-import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -54,7 +53,7 @@ class SemanticEnricher(
         val labelMap = LabelExtractor.extractLabelTexts(ontology)
         if (labelMap.isEmpty()) {
             return provenanceGraph(
-                modelPathForHash = null,
+                modelHash = modelHash(),
                 entitiesProcessed = 0,
                 pairsAboveThreshold = 0,
                 labelDriftTriples = emptyList(),
@@ -74,12 +73,10 @@ class SemanticEnricher(
                 RdfTriple(a, EnrichmentVocabulary.semanticallyCloseTo, b)
             }.toList()
 
-        val labelDriftTriples = computeLabelDefinitionDrift(ontology)
-
-        val modelPathForHash = (model as? OnnxEmbeddingModel)?.onnxModelPath
+        val labelDriftTriples = computeLabelDefinitionDrift(ontology, embeddings)
 
         return provenanceGraph(
-            modelPathForHash = modelPathForHash,
+            modelHash = modelHash(),
             entitiesProcessed = labelMap.size,
             pairsAboveThreshold = similarityTriples.size,
             labelDriftTriples = labelDriftTriples,
@@ -87,13 +84,22 @@ class SemanticEnricher(
         )
     }
 
-    private fun computeLabelDefinitionDrift(ontology: RdfGraph): List<RdfTriple> {
+    /**
+     * Label vectors already computed for the similarity index are reused (label strings are built by the same
+     * [LabelExtractor] join); only definitions, and labels not present in [labelVectors], are embedded here.
+     */
+    private fun computeLabelDefinitionDrift(
+        ontology: RdfGraph,
+        labelVectors: Map<out RdfResource, FloatArray>,
+    ): List<RdfTriple> {
         val pairs = LabelExtractor.extractLabelAndDefinitionTexts(ontology)
         if (pairs.isEmpty()) return emptyList()
-        val labelTexts = pairs.map { it.second.first }
-        val defTexts = pairs.map { it.second.second }
-        val labelEmb = model.embed(labelTexts)
-        val defEmb = model.embed(defTexts)
+        val missingLabels = pairs.filter { (iri, _) -> iri !in labelVectors }
+        val freshLabels =
+            if (missingLabels.isEmpty()) emptyMap()
+            else missingLabels.map { it.first }.zip(model.embed(missingLabels.map { it.second.first })).toMap()
+        val labelEmb = pairs.map { (iri, _) -> labelVectors[iri] ?: freshLabels.getValue(iri) }
+        val defEmb = model.embed(pairs.map { it.second.second })
         return pairs.indices.map { i ->
             val cosine = dotProduct(labelEmb[i], defEmb[i]).coerceIn(-1.0, 1.0)
             val driftScore = (1.0 - cosine).coerceIn(0.0, 1.0)
@@ -106,8 +112,11 @@ class SemanticEnricher(
         }
     }
 
+    /** Hash of the ONNX model; computed once per model instance by [OnnxEmbeddingModel.modelSha256]. */
+    private fun modelHash(): String = (model as? OnnxEmbeddingModel)?.modelSha256 ?: "unknown"
+
     private fun provenanceGraph(
-        modelPathForHash: java.nio.file.Path?,
+        modelHash: String,
         entitiesProcessed: Int,
         pairsAboveThreshold: Int,
         labelDriftTriples: List<RdfTriple>,
@@ -115,20 +124,7 @@ class SemanticEnricher(
     ): RdfGraph {
         val g = JenaBridge.createEmptyModel()
         val root = Iri("urn:onto-quality:enrichment:${UUID.randomUUID()}")
-        val hash =
-            modelPathForHash?.let { path ->
-                val digest = MessageDigest.getInstance("SHA-256")
-                Files.newInputStream(path).use { input ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        check(!Thread.currentThread().isInterrupted) { "Enrichment model hashing interrupted" }
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        digest.update(buffer, 0, count)
-                    }
-                }
-                digest.digest().joinToString("") { b -> "%02x".format(b) }
-            } ?: "unknown"
+        val hash = modelHash
 
         fun stringLit(s: String) = Literal(s, XSD.string)
 
