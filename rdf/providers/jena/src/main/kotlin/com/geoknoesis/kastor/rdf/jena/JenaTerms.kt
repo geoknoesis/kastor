@@ -2,8 +2,10 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.XSD
+import org.apache.jena.datatypes.TypeMapper
 import org.apache.jena.graph.Node
 import org.apache.jena.graph.NodeFactory
+import org.apache.jena.graph.TextDirection
 import org.apache.jena.graph.Triple
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
@@ -16,45 +18,16 @@ import org.apache.jena.rdf.model.Literal as JenaLiteral
  * Internal utility for converting between Kastor RDF terms and Jena types.
  * This is an implementation detail and should not be used directly.
  *
- * Targets the RDF 1.2 data model: triple terms via
- * [NodeFactory.createTripleTerm] (Jena 5.4+) and directional language strings
- * via [createLiteralDirLang] (Jena 5.4+, accessed reflectively to keep the
- * code building against any 5.x release that supplies the method).
+ * Targets the RDF 1.2 data model using the Jena 6 APIs directly: triple terms via
+ * [NodeFactory.createTripleTerm] / [Node.isTripleTerm], and directional language
+ * strings via [NodeFactory.createLiteralDirLang] / [Node.getLiteralBaseDirection].
+ *
+ * **Lexical forms are preserved exactly in both directions.** A literal such as
+ * `"1.50"^^xsd:decimal` or `"007"^^xsd:integer` converts to a [TypedLiteral] with the
+ * same lexical form, never a canonicalised value; otherwise the converted term would
+ * no longer identify the stored RDF term (`removeTriple`/`hasTriple` would miss it).
  */
 internal object JenaTerms {
-
-    /**
-     * Reflective handle to `NodeFactory.createLiteralDirLang(String, String, String)`,
-     * the Jena 5 API for RDF 1.2 directional language strings. Resolved once at
-     * class load; null if the running Jena does not expose it (very old 5.x).
-     */
-    private val createLiteralDirLang: java.lang.reflect.Method? = runCatching {
-        NodeFactory::class.java.getMethod(
-            "createLiteralDirLang",
-            String::class.java,
-            String::class.java,
-            String::class.java,
-        )
-    }.getOrNull()
-
-    /**
-     * Reflective handle to `Node.getLiteralBaseDirection()`. Returns either a
-     * `TextDirection` enum or null/string depending on Jena version. We only
-     * use its `toString()` value so we can normalise to ltr/rtl.
-     */
-    private val getLiteralBaseDirection: java.lang.reflect.Method? = runCatching {
-        Node::class.java.getMethod("getLiteralBaseDirection")
-    }.getOrNull()
-
-    // Triple-term reflection handles resolved once at class load instead of per call.
-    // fromNode() runs these for every node in a graph/result, so a per-call
-    // getMethod() (≈100× slower than an invoke) was a real hot-path cost.
-    private val isTripleTermMethod: java.lang.reflect.Method? =
-        runCatching { Node::class.java.getMethod("isTripleTerm") }.getOrNull()
-    private val isNodeTripleMethod: java.lang.reflect.Method? =
-        runCatching { Node::class.java.getMethod("isNodeTriple") }.getOrNull()
-    private val getTripleMethod: java.lang.reflect.Method? =
-        runCatching { Node::class.java.getMethod("getTriple") }.getOrNull()
 
     /**
      * Converts a Kastor RDF term to a Jena RDFNode.
@@ -69,161 +42,70 @@ internal object JenaTerms {
      */
     fun toNode(model: Model, term: RdfTerm?): RDFNode? {
         return when (term) {
-            is Iri -> model.createResource(term.value)
-            is BlankNode -> {
-                val anonId = org.apache.jena.rdf.model.AnonId.create(term.id.removePrefix("_:"))
-                model.createResource(anonId)
-            }
-            is TripleTerm -> {
-                val subj = toResource(model, term.triple.subject)
-                val pred = toProperty(model, term.triple.predicate)
-                val obj = toNode(model, term.triple.obj) ?: error("triple-term object cannot be null")
-                val triple = Triple.create(subj.asNode(), pred.asNode(), obj.asNode())
-                val tripleNode = createTripleTermNode(triple)
-                model.asRDFNode(tripleNode)
-            }
-            is Literal -> {
-                when (term) {
-                    is LangString -> {
-                        val direction = term.direction
-                        if (direction != null && createLiteralDirLang != null) {
-                            val node = createLiteralDirLang.invoke(
-                                null, term.lexical, term.lang, direction.token
-                            ) as Node
-                            model.asRDFNode(node)
-                        } else {
-                            // Fall back to a plain language-tagged literal when the
-                            // running Jena does not implement the directional API.
-                            model.createLiteral(term.lexical, term.lang)
-                        }
-                    }
-                    is TypedLiteral -> {
-                        val datatype = org.apache.jena.datatypes.TypeMapper.getInstance()
-                            .getSafeTypeByName(term.datatype.value)
-                        model.createTypedLiteral(term.lexical, datatype)
-                    }
-                    // TrueLiteral / FalseLiteral and any other Literal subtype with a
-                    // declared datatype must round-trip as a typed literal so the
-                    // datatype is preserved in the underlying Jena Model.
-                    else -> {
-                        val datatype = org.apache.jena.datatypes.TypeMapper.getInstance()
-                            .getSafeTypeByName(term.datatype.value)
-                        model.createTypedLiteral(term.lexical, datatype)
-                    }
-                }
-            }
             null -> null
-            else -> throw IllegalArgumentException("Unsupported RDF term type: ${term.javaClass}")
+            else -> model.asRDFNode(toJenaNode(term))
         }
     }
 
-    /**
-     * Builds a Jena RDF 1.2 triple-term node, falling back to the legacy
-     * `createTripleNode` if the running Jena predates the spec rename.
-     */
-    private fun createTripleTermNode(triple: Triple): Node {
-        val factory = NodeFactory::class.java
-        return runCatching {
-            factory.getMethod("createTripleTerm", Triple::class.java).invoke(null, triple) as Node
-        }.recoverCatching {
-            @Suppress("DEPRECATION")
-            factory.getMethod("createTripleNode", Triple::class.java).invoke(null, triple) as Node
-        }.getOrThrow()
+    /** Converts a Kastor term to a raw Jena [Node]. */
+    fun toJenaNode(term: RdfTerm): Node = when (term) {
+        is Iri -> NodeFactory.createURI(term.value)
+        is BlankNode -> NodeFactory.createBlankNode(term.id.removePrefix("_:"))
+        is TripleTerm -> NodeFactory.createTripleTerm(
+            toJenaNode(term.triple.subject),
+            NodeFactory.createURI(term.triple.predicate.value),
+            toJenaNode(term.triple.obj),
+        )
+        is LangString -> {
+            val direction = term.direction
+            if (direction != null) {
+                NodeFactory.createLiteralDirLang(term.lexical, term.lang, TextDirection.create(direction.token))
+            } else {
+                NodeFactory.createLiteralLang(term.lexical, term.lang)
+            }
+        }
+        // TypedLiteral, TrueLiteral and FalseLiteral: keep the exact lexical form and datatype.
+        is Literal -> NodeFactory.createLiteralDT(
+            term.lexical,
+            TypeMapper.getInstance().getSafeTypeByName(term.datatype.value),
+        )
+        else -> throw IllegalArgumentException("Unsupported RDF term type: ${term.javaClass}")
     }
 
     /**
      * Converts a Jena RDFNode to a Kastor RDF term.
      */
-    fun fromNode(node: RDFNode): RdfTerm {
-        // Triple terms are reported by Jena 5 as their own RDFNode subtype (e.g.
-        // StatementTermImpl) which does not extend Resource. Check that first.
-        val rawNode = node.asNode()
-        if (rawNode.isTripleTermSafe()) {
-            val t = rawNode.getTripleTermSafe()
-            return TripleTerm(
-                RdfTriple(
-                    fromNode(node.model.asRDFNode(t.subject)) as RdfResource,
-                    (fromNode(node.model.asRDFNode(t.predicate)) as Iri),
-                    fromNode(node.model.asRDFNode(t.`object`))
-                )
-            )
+    fun fromNode(node: RDFNode): RdfTerm = fromJenaNode(node.asNode())
+
+    /** Converts a raw Jena [Node] to a Kastor term, preserving literal lexical forms. */
+    fun fromJenaNode(node: Node): RdfTerm = when {
+        node.isURI -> Iri(node.uri)
+        node.isBlank -> BlankNode(node.blankNodeLabel)
+        node.isTripleTerm -> {
+            val t: Triple = node.triple
+            val subject = fromJenaNode(t.subject) as? RdfResource
+                ?: throw IllegalArgumentException("RDF 1.2 triple-term subjects must be IRIs or blank nodes: $t")
+            TripleTerm(RdfTriple(subject, Iri(t.predicate.uri), fromJenaNode(t.`object`)))
         }
-        return when (node) {
-            is Resource -> {
-                if (node.isURIResource) {
-                    Iri(node.uri)
-                } else {
-                    BlankNode(node.id.toString())
-                }
-            }
-            is Property -> Iri(node.uri)
-            is JenaLiteral -> {
-                when {
-                    node.language.isNotEmpty() -> {
-                        val direction = readDirection(node.asNode())
-                        if (direction != null) {
-                            LangString(node.lexicalForm, node.language, direction)
-                        } else {
-                            Literal(node.lexicalForm, node.language)
-                        }
-                    }
-                    node.datatypeURI != null -> {
-                        val datatype = Iri(node.datatypeURI)
-                        when (datatype) {
-                            XSD.string -> Literal(node.lexicalForm, XSD.string)
-                            XSD.integer ->
-                                node.lexicalForm.toIntOrNull()?.toLiteral()
-                                    ?: TypedLiteral(node.lexicalForm, XSD.integer)
-                            XSD.decimal ->
-                                node.lexicalForm.toBigDecimalOrNull()?.toLiteral()
-                                    ?: TypedLiteral(node.lexicalForm, XSD.decimal)
-                            XSD.double ->
-                                node.lexicalForm.toDoubleOrNull()?.toLiteral()
-                                    ?: TypedLiteral(node.lexicalForm, XSD.double)
-                            XSD.boolean ->
-                                when (node.lexicalForm.lowercase()) {
-                                    "true" -> TrueLiteral
-                                    "false" -> FalseLiteral
-                                    else -> TypedLiteral(node.lexicalForm, XSD.boolean)
-                                }
-                            XSD.date ->
-                                try {
-                                    java.time.LocalDate.parse(node.lexicalForm).toLiteral()
-                                } catch (_: Exception) {
-                                    TypedLiteral(node.lexicalForm, XSD.date)
-                                }
-                            XSD.dateTime ->
-                                try {
-                                    java.time.LocalDateTime.parse(node.lexicalForm).toLiteral()
-                                } catch (_: Exception) {
-                                    TypedLiteral(node.lexicalForm, XSD.dateTime)
-                                }
-                            else -> Literal(node.lexicalForm, datatype)
-                        }
-                    }
-                    else -> Literal(node.lexicalForm)
-                }
-            }
-            else -> throw IllegalArgumentException("Unknown RDF node type: ${node.javaClass}")
+        node.isLiteral -> literalFromJena(node)
+        else -> throw IllegalArgumentException("Unknown RDF node type: $node")
+    }
+
+    private fun literalFromJena(node: Node): Literal {
+        val lexical = node.literalLexicalForm
+        val language = node.literalLanguage
+        if (!language.isNullOrEmpty()) {
+            return LangString(lexical, language, node.literalBaseDirection?.let { Direction.fromToken(it.direction()) })
+        }
+        val datatype = node.literalDatatypeURI?.let(::Iri) ?: XSD.string
+        return when {
+            // Only the exact canonical boolean spellings map to the singletons; "1"/"0"
+            // stay TypedLiterals so their lexical form is preserved.
+            datatype == XSD.boolean && lexical == "true" -> TrueLiteral
+            datatype == XSD.boolean && lexical == "false" -> FalseLiteral
+            else -> TypedLiteral(lexical, datatype)
         }
     }
-
-    private fun readDirection(node: Node): Direction? {
-        val method = getLiteralBaseDirection ?: return null
-        val value = runCatching { method.invoke(node) }.getOrNull() ?: return null
-        return Direction.fromToken(value.toString())
-    }
-
-    private fun Node.isTripleTermSafe(): Boolean {
-        // Jena 5.4+: Node.isTripleTerm(); fallback to the legacy isNodeTriple().
-        isTripleTermMethod?.let { m -> runCatching { m.invoke(this) as Boolean }.getOrNull()?.let { return it } }
-        isNodeTripleMethod?.let { m -> runCatching { m.invoke(this) as Boolean }.getOrNull()?.let { return it } }
-        return false
-    }
-
-    private fun Node.getTripleTermSafe(): Triple =
-        (getTripleMethod ?: error("Jena Node.getTriple() is unavailable on this Jena version"))
-            .invoke(this) as Triple
 
     /**
      * Converts a Kastor RDF resource to a Jena Resource. RDF 1.2 forbids triple
@@ -243,7 +125,7 @@ internal object JenaTerms {
             }
         }
     }
-    
+
     /**
      * Converts a Kastor IRI to a Jena Property.
      * Convenience method for predicates.
@@ -255,15 +137,15 @@ internal object JenaTerms {
     fun toProperty(model: Model, iri: Iri): Property {
         return model.createProperty(iri.value)
     }
-    
+
     /**
      * Converts a Kastor RDF term to a Jena Value.
      * This is the most general conversion method.
      */
-    fun toValue(term: RdfTerm): org.apache.jena.rdf.model.RDFNode {
+    fun toValue(term: RdfTerm): RDFNode {
         return toNode(term) ?: throw IllegalArgumentException("Cannot convert null term to Jena value")
     }
-    
+
     /**
      * Converts a Jena Resource to a Kastor RDF resource.
      */
@@ -273,20 +155,22 @@ internal object JenaTerms {
             else -> BlankNode(resource.id.toString())
         }
     }
-    
+
     /**
      * Converts a Jena Property to a Kastor IRI.
      */
     fun fromProperty(property: Property): Iri {
         return Iri(property.uri)
     }
+
+    /** Converts a Jena graph [Triple] to a Kastor triple. */
+    fun fromJenaTriple(triple: Triple): RdfTriple {
+        val subject = fromJenaNode(triple.subject) as? RdfResource
+            ?: throw IllegalArgumentException("RDF 1.2 subjects must be IRIs or blank nodes: $triple")
+        return RdfTriple(subject, Iri(triple.predicate.uri), fromJenaNode(triple.`object`))
+    }
+
+    /** Converts a Kastor triple to a Jena graph [Triple]. */
+    fun toJenaTriple(triple: RdfTriple): Triple =
+        Triple.create(toJenaNode(triple.subject), NodeFactory.createURI(triple.predicate.value), toJenaNode(triple.obj))
 }
-
-
-
-
-
-
-
-
-
