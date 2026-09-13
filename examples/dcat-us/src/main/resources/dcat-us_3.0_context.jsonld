@@ -35,6 +35,8 @@
     "Distribution": "dcat:Distribution",
     "DataService": "dcat:DataService",
     "Agent": "foaf:Agent",
+    "VcardAddress": "vcard:Address",
+    "LocnAddress": "locn:Address",
     "Organization": "foaf:Organization"
   }
 }
