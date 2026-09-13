@@ -99,18 +99,21 @@ interface Person {
 
 ### Can I use custom types in domain interfaces?
 
-Yes, but you need to register them:
+Yes. Register a factory for the type with `OntoMapper.register`; `materialize` then uses it:
 
 ```kotlin
-// Define custom type
 data class CustomDate(val year: Int, val month: Int, val day: Int)
 
-// Register converter
-OntoMapper.registry[CustomDate::class.java] = { handle ->
-    // Custom materialization logic
-    CustomDate(2024, 1, 1)
+OntoMapper.register(CustomDate::class.java) { handle ->
+    val lexical = KastorGraphOps.getLiteralValues(handle.graph, handle.node, Iri("http://example.org/date"))
+        .firstOrNull()?.lexical ?: error("missing date")
+    val (y, m, d) = lexical.split("-").map(String::toInt)
+    CustomDate(y, m, d)
 }
 ```
+
+For literal values inside generated or hand-written code, the `XsdLiterals` decoders
+(`localDate`, `bigDecimal`, …) are usually enough.
 
 ## RDF Integration
 
@@ -406,7 +409,7 @@ If you have manual wrapper classes:
 
 1. **Extract interfaces** - Create domain interfaces
 2. **Replace manual code** - Use generated wrappers
-3. **Update registrations** - Use OntoMapper registry
+3. **Update registrations** - Use `OntoMapper.register(type) { handle -> ... }`
 4. **Test thoroughly** - Ensure behavior is preserved
 
 ### How do I upgrade OntoMapper versions?

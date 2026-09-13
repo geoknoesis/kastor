@@ -93,7 +93,7 @@ With `generateWriteSupport = true` the factory gains a `toTriples` function alon
 ```kotlin
 // Generated (simplified):
 object PersonRecordFactory {
-    init { OntoMapper.registry[PersonRecord::class.java] = { h -> from(h) } }
+    init { OntoMapper.register(PersonRecord::class.java) { handle -> from(handle) } }
 
     fun from(handle: RdfHandle): PersonRecord { ... }
 
@@ -216,7 +216,7 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 
     companion object {
         init {
-            OntoMapper.registry[Person::class.java] = { handle -> PersonWrapper(handle) }
+            OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
         }
     }
 }

@@ -166,9 +166,7 @@ Wrapper factories are registered automatically during KSP compilation:
 // Generated registration code
 companion object {
     init {
-        OntoMapper.registry[Person::class.java] = { handle -> 
-            PersonWrapper(handle) 
-        }
+        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
     }
 }
 ```

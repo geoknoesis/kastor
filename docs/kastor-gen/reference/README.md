@@ -49,7 +49,10 @@ See [annotations.md](annotations.md) for the full `@Rdf` / `@file:Rdf` / `Prefix
 
 ```kotlin
 object OntoMapper {
-    val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
+    fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)
+    fun unregister(type: Class<*>): Boolean
+    fun isRegistered(type: Class<*>): Boolean
+    fun registeredTypes(): Set<Class<*>>
     fun <T : Any> materialize(ref: RdfRef, type: Class<T>): T
     fun <T : Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T
 }

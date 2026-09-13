@@ -461,7 +461,7 @@ fun initializeOntoMapper() {
     // Eager-load wrapper classes you materialize in hot paths
     OntoMapper.initialize(Person::class.java, Catalog::class.java)
 
-    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper ready ({} factories)", OntoMapper.registry.size)
+    LoggerFactory.getLogger(OntoMapper::class.java).info("OntoMapper ready ({} factories)", OntoMapper.registeredTypes().size)
 }
 ```
 

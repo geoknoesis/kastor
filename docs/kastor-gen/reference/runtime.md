@@ -133,7 +133,10 @@ Central materializer populated by generated registration code.
 
 ```kotlin
 object OntoMapper {
-    val registry: MutableMap<Class<*>, (RdfHandle) -> Any>
+    fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)
+    fun unregister(type: Class<*>): Boolean
+    fun isRegistered(type: Class<*>): Boolean
+    fun registeredTypes(): Set<Class<*>>
 
     fun <T : Any> materialize(ref: RdfRef, type: Class<T>): T
     fun <T : Any> materializeValidated(ref: RdfRef, type: Class<T>, validation: ValidationContext): T
@@ -141,13 +144,25 @@ object OntoMapper {
 }
 ```
 
-**Properties:**
-- `registry` — maps each domain interface (or data class) to a factory, installed by generated `companion object` blocks (wrappers) or `init` blocks (data-class factories)
+The factory registry itself is private (a `ConcurrentHashMap`); use the functions below.
+
+**Registration:**
+- `register(type, factory)` — registers or replaces the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation.
+- `unregister(type)` — removes a factory; returns `true` if one was registered.
+- `isRegistered(type)` / `registeredTypes()` — inspect the registry (a snapshot copy).
 
 **Methods:**
-- `materialize` — invokes the registered factory with a provisional handle; generated wrappers typically replace `rdf` so `extras` and validation behave correctly. If the class is not yet in the registry, `OntoMapper` attempts to class-load `${type.name}Wrapper` and then `${type.name}Factory` before erroring.
-- `materializeValidated` — same, with a non-null `ValidationContext` on the provisional handle, then validates after materialization
+- `materialize` — invokes the registered factory with a provisional handle; generated wrappers typically replace `rdf` so `extras` and validation behave correctly. If the class is not yet registered, `OntoMapper` attempts to class-load `${type.name}Wrapper` and then `${type.name}Factory` before erroring.
+- `materializeValidated` — same, with a non-null `ValidationContext` on the provisional handle, then validates the focus node and throws `ValidationException` on violations
 - `initialize(Class…​)` — optional eager class-loading of wrapper or factory types to avoid first-hit registration races
+
+**Nested materialization and cycles:** each outermost `materialize` call opens a per-thread scope. Within
+that call, a node already materialized as the same type from the same graph is reused (shared nodes are
+built once). Re-entering a node that is *still being built* throws a `MaterializationException` naming the
+cycle (for example `PersonRecord <a> -> PersonRecord <b> -> PersonRecord <a>`) instead of overflowing the
+stack. This only affects eagerly-loaded snapshots generated with `NestedMode.DATA_CLASS` over cyclic data
+such as `a foaf:knows b . b foaf:knows a`; live wrappers load nested objects lazily and are unaffected. Use
+`NestedMode.INTERFACE` or `NestedMode.IRI_ONLY` for cyclic data.
 
 **Auto-discovery order** (on first `materialize` call for a type not yet registered):
 
@@ -239,7 +254,7 @@ object KastorGraphOps {
 - `extras(graph: RdfGraph, subj: RdfTerm, exclude: Set<Iri>): PropertyBag` - Create property bag
 - `getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<Literal>` - Get literal values
 - `getRequiredLiteralValue(graph: RdfGraph, subj: RdfTerm, pred: Iri): Literal` - Get required literal value
-- `getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, factory: (RdfTerm) -> T): List<T>` - Get object values; `IllegalStateException` and `ValidationException` from `factory` propagate; other exceptions omit that object
+- `getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, factory: (RdfTerm) -> T): List<T>` - Materialize IRI and blank-node objects (literal objects are skipped). Failures are never silently dropped: `Error`, `ValidationException` and `MaterializationException` from `factory` propagate unchanged; any other exception is rethrown as a `MaterializationException` naming the subject, predicate and object
 
 **Usage:**
 ```kotlin
@@ -272,12 +287,15 @@ internal class PropertyBagImpl(
 ### Materialization Extensions
 
 ```kotlin
-inline fun <reified T: Any> RdfRef.asType(validation: ValidationContext? = null): T
-inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext? = null): T
+inline fun <reified T: Any> RdfRef.asType(): T
+inline fun <reified T: Any> RdfRef.asValidatedType(validation: ValidationContext): T
+
+inline fun <reified T : Any> RdfGraph.materialize(node: RdfTerm): T
+inline fun <reified T : Any> RdfGraph.materializeValidated(node: RdfTerm, validation: ValidationContext): T
 ```
 
 **Parameters:**
-- `validation: ValidationContext? = null` - Validation context to use (optional)
+- `validation: ValidationContext` - Validation context (required for the `…Validated…` variants)
 
 **Returns:**
 - `T` - Materialized domain object
@@ -397,38 +415,79 @@ val turtle = targetGraph.serialize(RdfFormat.TURTLE)
 Exception thrown when SHACL validation fails.
 
 ```kotlin
-class ValidationException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+class ValidationException(
+    message: String,
+    val violations: List<ShaclViolation> = emptyList(),
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 ```
-
-**Constructor Parameters:**
-- `message: String` - Error message
-- `cause: Throwable? = null` - Optional cause
 
 **Usage:**
 ```kotlin
 try {
     rdfHandle.validateOrThrow()
 } catch (e: ValidationException) {
-    println("Validation failed: ${e.message}")
+    e.violations.forEach { println("${it.path?.value}: ${it.message}") }
 }
 ```
+
+See the [Validation API Reference](validation.md).
+
+### MaterializationException
+
+```kotlin
+class MaterializationException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+```
+
+Thrown when materializing a domain object fails: a nested value could not be converted, a factory threw
+(wrapped by `KastorGraphOps.getObjectValues`), or an eagerly-loaded `NestedMode.DATA_CLASS` snapshot graph
+is cyclic (the message names the cycle). Earlier versions silently dropped nested values that failed to
+materialize; they now surface as this exception.
 
 ## Type System
 
 ### Supported Types
 
-OntoMapper supports various Kotlin types in domain interfaces:
+- **Hand-written domain interfaces** (`@Rdf(iri = …)`, no `shacl`): `String`, `Int`, `Double`, `Boolean`,
+  `List` of those, a single `@Rdf` domain interface, or `List` of domain interfaces.
+- **SHACL-generated types**: literal types follow the shape's `sh:datatype` — see the
+  [type-mapping table](../tutorials/ontology-generation.md#type-mapping) (`xsd:integer` → `BigInteger`,
+  `xsd:decimal` → `BigDecimal`, `xsd:date` → `LocalDate`, `rdf:langString` → `LangString`, …).
 
-- **Primitive types**: `String`, `Int`, `Double`, `Boolean`
-- **Collections**: `List<T>` where T is a supported type
-- **Domain objects**: Interfaces annotated with `@Rdf` (domain mode: non-blank `iri`, no `shacl`)
+### XsdLiterals
 
-### Type Conversion
+`com.geoknoesis.kastor.gen.runtime.XsdLiterals` holds the lexical codecs used by generated wrappers,
+data-class factories, writers and DSL builders. You can use it in hand-written code too:
 
-Automatic type conversion is provided for:
-- RDF literals to Kotlin primitives
-- RDF objects to domain interfaces
-- Collections of RDF values to Kotlin collections
+```kotlin
+object XsdLiterals {
+    fun string(literal: Literal): String
+    fun int(literal: Literal): Int?
+    fun long(literal: Literal): Long?
+    fun bigInteger(literal: Literal): BigInteger?
+    fun bigDecimal(literal: Literal): BigDecimal?
+    fun float(literal: Literal): Float?          // accepts INF, -INF, NaN
+    fun double(literal: Literal): Double?        // accepts INF, -INF, NaN
+    fun boolean(literal: Literal): Boolean?      // "true"/"1" and "false"/"0"
+    fun booleanLexical(lexical: String): Boolean?
+    fun localDate(literal: Literal): LocalDate?  // optional timezone suffix accepted and dropped
+    fun langString(literal: Literal): LangString?
+    fun encode(value: Any, datatype: Iri): Literal
+}
+```
+
+- Decoders return `null` for ill-typed lexical forms and follow XML Schema lexical rules rather than
+  Kotlin's.
+- `encode` always produces a literal with the **declared** datatype (literals such as `LangString` are
+  returned unchanged), so values round-trip: a `String` property declared `xsd:dateTime` is written back
+  as `"…"^^xsd:dateTime`, not as a plain string.
+
+### Regenerate after upgrading
+
+Generated wrappers, factories and DSL builders call these runtime APIs (`OntoMapper.register`,
+`XsdLiterals`, …). Code generated by earlier Kastor Gen versions (which wrote to `OntoMapper.registry`
+directly) does not compile against this runtime: regenerate it (clean build / re-run the generation task)
+when upgrading.
 
 ### Custom Types
 
@@ -462,10 +521,9 @@ val name2 = person.name.firstOrNull()  // Uses cached result
 
 ## Thread Safety
 
-- `OntoMapper.registry` is not thread-safe
-- `RdfHandle` instances are not thread-safe
-- `PropertyBag` instances are not thread-safe
-- Use synchronization for concurrent access
+- `OntoMapper` registration and lookup are thread-safe (the registry is a concurrent map); call `OntoMapper.initialize(...)` at startup to avoid first-hit class-loading races
+- The cycle-detection scope of `materialize` is per thread
+- Wrapper property delegates are memoized with synchronized one-shot initialization; the underlying graph's own thread-safety rules still apply
 
 ## Best Practices
 

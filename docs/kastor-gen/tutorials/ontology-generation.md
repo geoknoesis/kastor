@@ -217,7 +217,7 @@ internal class CatalogWrapper(
 
   companion object {
     init {
-      OntoMapper.registry[Catalog::class.java] = { handle -> CatalogWrapper(handle) }
+      OntoMapper.register(Catalog::class.java) { handle -> CatalogWrapper(handle) }
     }
   }
 }
