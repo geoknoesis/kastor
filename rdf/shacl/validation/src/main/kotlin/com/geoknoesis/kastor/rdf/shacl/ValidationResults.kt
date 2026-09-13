@@ -21,7 +21,17 @@ data class ValidationReport(
      */
     val violationsTruncated: Boolean = false,
 ) {
-    
+
+    /**
+     * True when at least one result has severity [ViolationSeverity.VIOLATION] or [ViolationSeverity.ERROR].
+     *
+     * Unlike [isValid] (SHACL `sh:conforms`, which is false as soon as a result of severity `sh:Violation`,
+     * `sh:Warning`, `sh:Info` or a custom severity exists), this helper lets callers treat lower severities as
+     * non-blocking.
+     */
+    val hasViolations: Boolean
+        get() = violations.any { it.severity == ViolationSeverity.VIOLATION || it.severity == ViolationSeverity.ERROR }
+
     /**
      * Get all violations by severity.
      */
@@ -86,6 +96,17 @@ data class ValidationViolation(
     val context: Map<String, Any> = emptyMap(),
     /** Non-standard `sh:resultSeverity` IRI (SHACL allows user-defined severities). */
     val resultSeverityIri: String? = null,
+    /**
+     * Full `sh:resultPath` term when the path is not representable by [path] (inverse, alternative, closures…).
+     * Blank-node path structures are described by [resultPathTriples].
+     */
+    val resultPathNode: RdfTerm? = null,
+    /** Triples describing the blank-node structure rooted at [resultPathNode] (empty for IRI paths). */
+    val resultPathTriples: List<RdfTriple> = emptyList(),
+    /** `sh:message` values of the source shape/constraint (with language tags), emitted as `sh:resultMessage`. */
+    val resultMessages: List<Literal> = emptyList(),
+    /** `sh:sourceConstraint` (e.g. the SHACL-SPARQL constraint node), when applicable. */
+    val sourceConstraint: RdfTerm? = null,
 ) {
     
     /**

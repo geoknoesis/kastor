@@ -17,8 +17,12 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * Serializes this in-memory report to an RDF graph using `sh:ValidationReport` and `sh:ValidationResult`
  * ([SHACL validation reports](https://www.w3.org/TR/shacl/#validation-report)).
  *
- * This is a best-effort mapping: some fields (e.g. complex `sh:resultPath`) may be omitted when the
- * portable model does not carry enough structure.
+ * `sh:conforms` mirrors [ValidationReport.isValid]: per SHACL, a report conforms only when it has no
+ * validation results of any severity. `sh:resultPath` is exported in full: engines that populate
+ * [ValidationViolation.resultPathNode] get their complete path structure copied (with fresh blank nodes
+ * per result); otherwise a single IRI or a sequence of IRIs from [ValidationViolation.path] is used.
+ * `sh:resultMessage` uses [ValidationViolation.resultMessages] (the shape's `sh:message` values, language
+ * tags preserved) when present, else the engine message.
  *
  * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
  * in this serialization.
@@ -33,7 +37,7 @@ fun ValidationReport.toShaclValidationReportRdf(
         report.violations.forEachIndexed { idx, v ->
             val row = bnode("resultV$idx")
             reportNode - SHACL.result - row
-            addValidationResult(row, v)
+            addValidationResult(row, v, "resultV${idx}_")
         }
         report.warnings.forEachIndexed { idx, w ->
             val res = w.resource ?: return@forEachIndexed
@@ -47,19 +51,48 @@ fun ValidationReport.toShaclValidationReportRdf(
         }
     }
 
-private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation) {
+private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation, bnodePrefix: String) {
     row - RDF.type - SHACL.ValidationResult
     row - SHACL.focusNode - v.focusNode
-    row - SHACL.resultSeverity - v.severity.toShaclSeverityIri()
-    row - SHACL.resultMessage - v.message
+    row - SHACL.resultSeverity - (v.resultSeverityIri?.let { Iri(it) } ?: v.severity.toShaclSeverityIri())
+    if (v.resultMessages.isNotEmpty()) {
+        v.resultMessages.forEach { row - SHACL.resultMessage - it }
+    } else {
+        row - SHACL.resultMessage - v.message
+    }
     v.shapeUri?.let { parseReportShapeRef(it) }?.let { row - SHACL.sourceShape - it }
     v.constraint.constraintType.toSourceConstraintComponentIri()?.let { cc ->
         row - SHACL.sourceConstraintComponent - cc
     }
-    simpleResultPath(v.path)?.let { pathTerm ->
-        row - SHACL.resultPath - pathTerm
+    val pathNode = v.resultPathNode
+    if (pathNode != null) {
+        row - SHACL.resultPath - copyPathStructure(pathNode, v.resultPathTriples, bnodePrefix)
+    } else {
+        simpleResultPath(v.path, bnodePrefix)?.let { pathTerm ->
+            row - SHACL.resultPath - pathTerm
+        }
     }
     v.value?.let { row - SHACL.value - it }
+    v.sourceConstraint?.let { row - SHACL.sourceConstraint - it }
+}
+
+/**
+ * Copies a blank-node path structure as a tree with fresh blank nodes: results never share path nodes, and a
+ * blank node referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is unfolded per occurrence.
+ */
+private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoesis.kastor.rdf.RdfTriple>, prefix: String): RdfTerm {
+    if (root !is BlankNode) return root
+    val bySubject = triples.groupBy { it.subject }
+    var counter = 0
+    fun copy(term: RdfTerm, ancestors: Set<BlankNode>): RdfTerm {
+        if (term !is BlankNode || term in ancestors) return term
+        val fresh = bnode("${prefix}p${counter++}")
+        for (t in bySubject[term].orEmpty()) {
+            triple(fresh, t.predicate, copy(t.obj, ancestors + term))
+        }
+        return fresh
+    }
+    return copy(root, emptySet())
 }
 
 private fun ViolationSeverity.toShaclSeverityIri(): Iri =
@@ -76,12 +109,20 @@ private fun ViolationSeverity.toShaclSeverityIri(): Iri =
 private fun parseReportShapeRef(id: String): RdfResource? =
     when {
         id.startsWith("_:") -> BlankNode(id.removePrefix("_:"))
-        id.startsWith("http://") || id.startsWith("https://") || id.startsWith("urn:") -> Iri(id)
+        id.contains(':') -> Iri(id)
         else -> null
     }
 
-/** Single-IRI paths only; blank-node / sequence paths are skipped. */
-private fun simpleResultPath(path: List<RdfTerm>?): RdfTerm? {
+/** Single IRI, or a sequence path of IRIs rendered as an RDF list. */
+private fun GraphDsl.simpleResultPath(path: List<RdfTerm>?, prefix: String): RdfTerm? {
     val p = path ?: return null
-    return p.singleOrNull() as? Iri
+    if (p.isEmpty()) return null
+    if (p.size == 1) return p.single() as? Iri
+    if (p.any { it !is Iri }) return null
+    val cells = p.indices.map { bnode("${prefix}seq$it") }
+    p.forEachIndexed { i, term ->
+        cells[i] - RDF.first - term
+        cells[i] - RDF.rest - (cells.getOrNull(i + 1) ?: RDF.nil)
+    }
+    return cells.first()
 }
