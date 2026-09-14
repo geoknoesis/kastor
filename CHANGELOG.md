@@ -14,7 +14,57 @@ and is kept as is; it was never published to Maven Central.
 
 ### Fixed (round three)
 
-<!-- entries pending -->
+#### Breaking changes
+
+- **`rdf-core`:**
+  - A saturated `parseFromUrlAsync` executor now returns a failed future (`RejectedExecutionException`) instead of running the load on the caller's thread.
+  - Graph isomorphism has a 60-second default time limit again. Pass `timeout = null` for no limit.
+  - `Rdf.memory()` skips providers whose `memory` variant declares no SPARQL support.
+  - `BlankNode.toString()` writes invalid ids as `ux_` followed by 4 hex digits per UTF-16 unit; valid labels are unchanged.
+- **`rdf-sparql` (endpoint):**
+  - An explicit per-call `timeout` now bounds the whole call (headers, body and row consumption).
+  - When `requestTimeout` is null, `readTimeout` bounds the wait for response headers.
+  - HTTP clients are shared across repositories, so close repositories when done.
+- **`rdf-sparql-lang`:** these now throw instead of rendering invalid SPARQL:
+  - `SelectQueryAst` with a negative LIMIT/OFFSET, `*` mixed with other projection items, or `*`/an empty projection together with GROUP BY or HAVING;
+  - `ValuesPatternAst` rows whose length differs from the variable count;
+  - an `AggregateExpressionAst` with a null `expression` other than COUNT, or a `separator` other than GROUP_CONCAT;
+  - `using`/`usingNamed`/`with` on update operations other than DELETE/INSERT;
+  - CLEAR/DROP with both a graph and a non-DEFAULT scope.
+
+  Source-level changes: `ValuesPatternAst.values` is now `List<List<RdfTerm?>>`, and COPY/MOVE/ADD `source`/`destination` are `Iri?` (binary bridges to the 0.2.1 signatures are kept).
+- **Build and release:**
+  - `publish.yml` signs and uploads the exact artifacts staged by the release-readiness steps in the same run, and refuses to upload while a previous deployment for the tag is still live.
+  - `scripts/configure-github-release.sh` requires `dependency-review` only when the Dependency graph is enabled, and gives admins bypass on `main` by default.
+
+#### Fixed
+
+- `rdf-core`:
+  - Graph isomorphism on star-shaped graphs is near-linear; stars with 50,000 identical or distinguishable children now match quickly.
+  - Dataset queries using `GRAPH` no longer see the source repository's named graphs.
+  - Blank node labels are injective for lone surrogates and no longer grow on round trips.
+  - URL loading enforces its total deadline across connect, headers and body.
+  - Added `Rdf.parse(String, String, String?)`.
+  - Providers without base-IRI streaming log a one-time warning instead of silently parsing eagerly.
+- `rdf-sparql`:
+  - `COUNT(*)` is no longer taken for `SELECT *` when applying initial bindings.
+  - Bound projected variables are always rewritten, including those exposed through UNION/OPTIONAL sub-selects.
+  - `\uXXXX` escapes and `\#` in prefixed names are tokenized correctly.
+  - `addTriples`/`removeTriples` validate every batch before sending, and report partial progress on server failure.
+  - Stream deadlines are tracked without a global scheduler.
+  - Service descriptions use the core blank-node label encoding.
+- CI:
+  - The advisory `buildHealth` step reports failures as warnings and job-summary entries.
+  - New checks keep the `kotlin-metadata-jvm` pin in step with the Kotlin version and README snippets in step with their imports.
+  - `dependency-review` skips GitHub's review when the Dependency graph is unavailable.
+  - GitHub Actions are upgraded (pinned by SHA), and the JMH plugin is 0.7.3.
+
+#### Added
+
+- `rdf-sparql-contract`: `com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings`, shared Jena-style initial-binding substitution (non-API).
+- `scripts/check-build-pins.py`, `scripts/check-readme-imports.py`, `scripts/regenerate-verification-metadata.sh`.
+
+<!-- providers, SHACL, kastor-gen and onto-quality entries pending -->
 
 ### Fixed (re-audit)
 
