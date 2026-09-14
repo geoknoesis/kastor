@@ -150,7 +150,7 @@ class VocabularyMetricsTest {
         assertEquals(listOf("${ns}KastorAdaptedScoring"), schemes)
 
         assertTrue(r.describeText().contains("[Kastor-adapted (not OQuaRE)]"), r.describeText())
-        assertTrue(r.describeMarkdown().contains("### Kastor-adapted variants (not OQuaRE)"), r.describeMarkdown())
+        assertTrue(r.describeMarkdown().contains("### Kastor-adapted (not OQuaRE)"), r.describeMarkdown())
     }
 
     @Test
