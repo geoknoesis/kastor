@@ -63,7 +63,8 @@ property("prop") {
     maxInclusive = 100.0
     minExclusive = 0.0
     maxExclusive = 100.0
-    // totalDigits / fractionDigits are deprecated: not SHACL Core, not enforced by the native validator
+    // totalDigits / fractionDigits are deprecated (not SHACL): setting them throws UnsupportedOperationException.
+    // Limit digits with pattern instead, e.g. pattern = "^-?\\d{1,8}\\.\\d{2}$"
 }
 ```
 
@@ -188,7 +189,7 @@ Severity.Warning
 Severity.Info
 ```
 
-Any result, whatever its severity, makes `ValidationReport.isValid` (`sh:conforms`) false; use `hasViolations` to ignore Warning/Info.
+By default, any Violation, Warning, Info or custom-severity result makes `ValidationReport.isValid` (`sh:conforms`) false; Debug and Trace results do not. Use `hasViolations` to ignore Warning/Info, or on the native engine set `ValidationConfig(conformanceDisallows = setOf(SHACL.Violation))`.
 
 ## Prefixes
 

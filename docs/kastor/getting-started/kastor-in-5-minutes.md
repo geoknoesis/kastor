@@ -305,7 +305,7 @@ Reasoning-aware runs (`--reasoner rdfs`, `hermit`, …) are covered in the guide
 ## 8. Standards and conformance
 
 - **RDF 1.2 syntax**: Jena and RDF4J providers are driven against **W3C RDF 1.2 syntax** manifests (Turtle, TriG, N-Triples, N-Quads). See [RDF 1.2 conformance](../concepts/rdf-1.2-conformance.md).
-- **SHACL 1.2**: The native validator passes 154 of the 163 W3C SHACL 1.2 test cases. The 9 known deviations (SPARQL-based constraint components and node expressions) are listed in `W3cKnownDeviations`. SHACL-SPARQL needs `rdf-jena` or `rdf-rdf4j` at runtime. See the feature page linked above.
+- **SHACL 1.2**: CI runs the full W3C SHACL 1.2 test suite (pinned `w3c/data-shapes` commit) against the native validator with `:rdf:shacl-validation:w3cConformanceTest`. The known deviations (SPARQL-based constraint components, node expressions, SPARQL node expressions and SHACL functions) are listed in `W3cKnownDeviations` and must fail with their `UnsupportedShaclFeature` category. SHACL-SPARQL needs `rdf-jena` or `rdf-rdf4j` at runtime. See the feature page linked above.
 
 ---
 
