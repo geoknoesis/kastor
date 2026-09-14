@@ -10,7 +10,7 @@ This complements generic [SHACL Validation](shacl-validation.md): here the **sha
 |--------|------|
 | **`:tools:onto-quality`** | `QualityChecker`, `BundledCatalogs`, bundled Turtle under `src/main/resources/shapes/` |
 | **`:tools:onto-quality-embed`** | `SemanticEnricher`, **configurable** BERT-style ONNX embeddings (bundled MiniLM or local ONNX + `tokenizer.json`), `oqsh:semanticallyCloseTo` materialization |
-| **`:tools:onto-quality-cli`** | **`onto-qa`** — `check`, `enrich`, `pipeline` (optional **`--explain`**, **`--reasoner`**; see below) |
+| **`:tools:onto-quality-cli`** | **`onto-qa`** — `check`, `enrich`, `pipeline`, `metrics` (optional **`--explain`**, **`--reasoner`**; see below). Distinct exit codes: 0 ok, 1 findings at/above `--severity`, 2 parse error, 3 explanation failure with `--fail-on-explain-error`, 4 usage/configuration error, 5 runtime error; `onto-qa --debug` prints stack traces. Input is parsed with the file URI as base IRI, so relative IRIs resolve. See [How to Check Ontology Quality](../guides/how-to-ontology-quality.md#validation). |
 | **`:tools:onto-quality-llm-koog`** | **v0.3:** `DefaultQualityExplanationEnricher` / `qualityExplanationEnricher`, `LlmExplanationConfig` (OpenAI / Anthropic / Ollama; `modelId` / `modelPreset`) |
 
 Published Maven coordinates follow `com.geoknoesis.kastor:onto-quality` and `onto-quality-embed` (see [Installation](../getting-started/installation.md) / BOM).

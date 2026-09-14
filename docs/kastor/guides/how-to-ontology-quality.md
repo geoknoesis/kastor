@@ -200,14 +200,29 @@ Run via Gradle from the repository root:
 ./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog skos-vocabulary-embed --severity info"
 ```
 
-The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
+The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. The file is parsed with its own URI as base IRI, so relative IRIs such as `<> a owl:Ontology` in Turtle or `rdf:about="#Foo"` in RDF/XML resolve against the file (for example `file:///home/me/onto.ttl#Foo`) instead of failing to parse. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
 
-See the [module README](../../../tools/onto-quality/library/README.md) for threshold tuning, exit codes, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
+Errors print a one-line message; add the root option **`--debug`** before the subcommand (`onto-qa --debug check …`) to also print stack traces.
+
+**Report output:** text taken from the ontology (SHACL messages, focus node and shape names) and from the LLM is Markdown-escaped in `--format markdown`, so it cannot inject links, images or raw HTML. In `--format text`, control characters other than newline and tab are shown as visible `\uXXXX` escapes, so terminal escape sequences embedded in the ontology cannot execute. JSON output is serialized with kotlinx.serialization and escapes every string.
+
+See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats) for the complete option validation rules, threshold tuning, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
 
 ## Validation
 
 - Kotlin: `report.conforms` / `report.describeText()` reflect SHACL outcomes for the selected catalogues.
-- CLI exit codes: **0** success; **1** findings reached `--severity`, or invalid usage; **2** the input could not be parsed; **3** LLM explanations failed and `--fail-on-explain-error` was set (1 takes precedence). See the [module README](../../../tools/onto-quality/library/README.md).
+- CLI exit codes (every failure has its own status):
+
+| Exit status | Meaning |
+|-------------|---------|
+| **0** | Success; no findings at or above `--severity` (default `violation`). |
+| **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Used for nothing else. |
+| **2** | The input ontology could not be parsed in the selected RDF syntax. |
+| **3** | `--fail-on-explain-error` was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
+| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`. |
+| **5** | Runtime error: embedding model download or loading, similarity search budget exceeded, I/O (for example the output cannot be written), or an unexpected internal error. Run `onto-qa --debug <command> …` for the stack trace. |
+
+  Scripts that treated status 1 as "findings or bad usage" should also check 4 and 5. See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
 
 ## Troubleshooting
 
