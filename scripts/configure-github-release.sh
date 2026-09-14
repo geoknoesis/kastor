@@ -5,26 +5,37 @@
 #   scripts/configure-github-release.sh --reviewer <github-login> --apply                            # change GitHub
 #
 # Options:
-#   --repo OWNER/NAME     Target repository (default: the current checkout's GitHub repository).
-#   --reviewer LOGIN      Required reviewer on the `release` environment (repeatable, at least one).
-#   --approvals N         Approving reviews required on pull requests to main (default 0: a solo
-#                         maintainer cannot approve their own PR; PRs and green CI are still required).
-#   --apply               Perform the calls. Without it, every call is printed and nothing changes.
+#   --repo OWNER/NAME             Target repository (default: the current checkout's GitHub repository).
+#   --reviewer LOGIN              Required reviewer on the `release` environment (repeatable, at least one).
+#   --approvals N                 Approving reviews required on pull requests to main (default 0: a solo
+#                                 maintainer cannot approve their own PR; PRs and green CI are still required).
+#   --require-dependency-review   Require the `dependency-review` check even when the Dependency graph is not
+#                                 detected as enabled. By default it is required only when the read-only probe
+#                                 `GET repos/OWNER/NAME/dependency-graph/sbom` succeeds.
+#   --no-dependency-review        Never require the `dependency-review` check.
+#   --no-admin-bypass             Do not let repository admins bypass `main-protection`. By default admins
+#                                 (RepositoryRole 5) may bypass it, so maintainer pushes and emergency merges
+#                                 still work while everyone else goes through a pull request.
+#   --apply                       Perform the calls. Without it, every call is printed and nothing changes.
 #
 # What it configures (see docs/reference/release-checklist.md):
 #   1. Environment `release`: required reviewers, deployments only from tags matching `v*`.
 #   2. Tag ruleset `release-tags`: only repository admins may create, update or delete `v*` tags.
-#   3. Branch ruleset `main-protection`: PRs required, no force-push/deletion, required CI checks.
+#   3. Branch ruleset `main-protection`: PRs required, no force-push/deletion, required CI checks,
+#      admin bypass unless --no-admin-bypass.
 #   4. GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build.
 # Secrets are never passed through this script. It prints the `gh secret set` commands to run.
+# In dry-run mode only read-only GET requests are sent.
 #
-# Requires: gh (authenticated with admin rights on the repository), jq-free (uses gh --jq).
+# Requires: gh (authenticated; admin rights on the repository for --apply), no jq (uses gh --jq).
 set -euo pipefail
 
 apply=false
 repo=""
 approvals=0
 reviewers=()
+dependency_review=auto   # auto | always | never
+admin_bypass=true
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +44,10 @@ while [ $# -gt 0 ]; do
     --repo) repo="$2"; shift ;;
     --reviewer) reviewers+=("$2"); shift ;;
     --approvals) approvals="$2"; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    --require-dependency-review) dependency_review=always ;;
+    --no-dependency-review) dependency_review=never ;;
+    --no-admin-bypass) admin_bypass=false ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -49,19 +63,58 @@ if [ "${#reviewers[@]}" -eq 0 ]; then
 fi
 case "$approvals" in ''|*[!0-9]*) echo "--approvals must be a non-negative integer" >&2; exit 2 ;; esac
 
-# Required status checks: job names (plus matrix suffix) from .github/workflows that run on pull requests.
+# --- pre-flight (read-only GETs) -------------------------------------------------------------------
+# Dependency graph: the SBOM export only exists when the graph is enabled (404 otherwise).
+graph_enabled=false
+if gh api "repos/$repo/dependency-graph/sbom" --jq '.sbom.SPDXID' >/dev/null 2>&1; then
+  graph_enabled=true
+fi
+case "$dependency_review" in
+  always) require_dependency_review=true ;;
+  never) require_dependency_review=false ;;
+  *) require_dependency_review=$graph_enabled ;;
+esac
+
+# Required status checks: the check-run names GitHub reports for jobs that run on every pull request.
+#   ci.yml                job `build` (matrix os)         -> "build (ubuntu-latest)", "build (windows-latest)"
+#   ci.yml                job `shacl-w3c-suite`           -> "shacl-w3c-suite"
+#   dependency-review.yml job `dependency-review`         -> "dependency-review"
+# The `macos` job skips pull requests and must never be required.
 required_checks=(
   "build (ubuntu-latest)"
   "build (windows-latest)"
   "shacl-w3c-suite"
-  "dependency-review"
 )
+$require_dependency_review && required_checks+=("dependency-review")
 
-mode="DRY RUN (pass --apply to change $repo)"
+current_pages="$(gh api "repos/$repo/pages" --jq .build_type 2>/dev/null || echo "unavailable")"
+existing_rulesets="$(gh api "repos/$repo/rulesets" --jq '[.[] | "\(.name) (\(.enforcement))"] | join(", ")' 2>/dev/null || echo "unavailable")"
+
+mode="DRY RUN (pass --apply to change $repo; only GET requests are sent)"
 $apply && mode="APPLYING to $repo"
 echo "== $mode"
+echo
+echo "== Plan"
+echo "- Environment 'release': reviewers ${reviewers[*]}; deployments only from tags v*"
+echo "- Ruleset 'release-tags': only admins create/update/delete refs/tags/v*"
+echo "- Ruleset 'main-protection' on the default branch:"
+echo "    pull request required (approvals: $approvals), no force-push, no deletion"
+if $admin_bypass; then
+  echo "    bypass: repository admins (RepositoryRole 5, always) - direct maintainer pushes keep working"
+else
+  echo "    bypass: NONE (--no-admin-bypass) - every change, including admins', must come through a PR"
+fi
+echo "    required checks: $(printf '"%s" ' "${required_checks[@]}")"
+if $require_dependency_review; then
+  echo "    dependency-review is required (dependency graph enabled: $graph_enabled, mode: $dependency_review)"
+else
+  echo "    dependency-review is NOT required (dependency graph enabled: $graph_enabled, mode: $dependency_review)"
+  [ "$dependency_review" = auto ] && echo "    enable Settings > Code security > Dependency graph, then re-run to require it"
+fi
+echo "- Pages build type: $current_pages -> workflow"
+echo "- Existing rulesets: ${existing_rulesets:-none}"
 
-# call METHOD PATH [JSON]: prints the call; performs it only with --apply. GET lookups always run.
+# call METHOD PATH [JSON]: prints the call; performs it only with --apply.
 call() {
   local method="$1" path="$2" body="${3:-}"
   echo
@@ -77,11 +130,8 @@ call() {
   fi
 }
 
-json_list() { # json_list a b c -> "a","b","c"
-  local out="" item
-  for item in "$@"; do out="$out${out:+,}\"$item\""; done
-  printf '%s' "$out"
-}
+echo
+echo "== Calls"
 
 # --- 1. release environment ---------------------------------------------------------------------
 reviewer_json=""
@@ -134,12 +184,14 @@ checks_json=""
 for check in "${required_checks[@]}"; do
   checks_json="$checks_json${checks_json:+,}{\"context\":\"$check\"}"
 done
+bypass_json=""
+$admin_bypass && bypass_json='{ "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }'
 upsert_ruleset "main-protection" "$(cat <<JSON
 {
   "name": "main-protection",
   "target": "branch",
   "enforcement": "active",
-  "bypass_actors": [],
+  "bypass_actors": [$bypass_json],
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
   "rules": [
     { "type": "deletion" },
@@ -159,7 +211,13 @@ JSON
 )"
 
 # --- 4. Pages from GitHub Actions ------------------------------------------------------------------
-call PUT "pages" '{ "build_type": "workflow" }'
+# Switching build_type to "workflow" stops the legacy "pages build and deployment" run on every push,
+# so pages.yml is the only deployment.
+if [ "$current_pages" = "workflow" ]; then
+  echo; echo "# Pages already built by GitHub Actions"
+else
+  call PUT "pages" '{ "build_type": "workflow" }'
+fi
 
 # --- secrets (manual, never echoed) ----------------------------------------------------------------
 cat <<EOF

@@ -2,14 +2,21 @@
 #
 # Release procedure (see CONTRIBUTING.md#releases and docs/reference/release-checklist.md):
 #   1. A release commit sets `version=X.Y.Z` in gradle.properties and finalizes CHANGELOG.md.
-#   2. Tag it `vX.Y.Z` and push the tag. This workflow runs release readiness, then waits for
-#      approval on the protected `release` environment, which holds the secrets
-#      KASTOR_SIGNING_KEY, KASTOR_SIGNING_PASSWORD, CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD.
+#   2. Tag it `vX.Y.Z` and push the tag. This workflow runs release readiness (release-readiness.yml) in
+#      the same run, then waits for approval on the protected `release` environment, which holds the
+#      secrets KASTOR_SIGNING_KEY, KASTOR_SIGNING_PASSWORD, CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD.
 #      scripts/configure-github-release.sh creates that environment and the tag/branch rulesets.
-#   3. The bundle is uploaded with publishingType=USER_MANAGED. The job then polls the Central
-#      Portal until the deployment is VALIDATED (success) or FAILED (job fails with the errors).
+#   3. The published bytes are the tested bytes: the publish job does NOT rebuild. It downloads the
+#      `staged-release-ubuntu-latest` artifact that readiness staged, tested and consumed in this run,
+#      verifies its checksums, signs every file with the release key, and zips that into the bundle.
+#   4. Re-runs are guarded: every upload records its deployment id as the artifact
+#      `central-deployment-<tag>`. Before uploading, all recorded ids for the tag are queried; any
+#      deployment that is not FAILED (PENDING, VALIDATING, VALIDATED, PUBLISHING, PUBLISHED) blocks a new
+#      upload. Drop it in the portal first (see docs/reference/release-checklist.md).
+#   5. The bundle is uploaded with publishingType=USER_MANAGED. The job then polls the Central Portal
+#      until the deployment is VALIDATED (success) or FAILED (job fails with the errors).
 #      A maintainer releases the validated deployment from https://central.sonatype.com.
-#   4. Bump main to the next `-SNAPSHOT`.
+#   6. Bump main to the next `-SNAPSHOT`.
 # Gradle Plugin Portal publication of com.geoknoesis.kastor.gen is not automated yet.
 name: Publish release
 
@@ -38,14 +45,14 @@ jobs:
     needs: readiness
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # list and download earlier `central-deployment-<tag>` records
     environment:
       name: release
-    env:
-      KASTOR_SKIP_EMBEDDING_TESTS: "1"
-      KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
       - name: Require release secrets
-        # Fails before any build work when the environment is misconfigured. Missing secrets expand to "".
+        # Fails before any work when the environment is misconfigured. Missing secrets expand to "".
         env:
           KASTOR_SIGNING_KEY: ${{ secrets.KASTOR_SIGNING_KEY }}
           KASTOR_SIGNING_PASSWORD: ${{ secrets.KASTOR_SIGNING_PASSWORD }}
@@ -62,12 +69,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
-        with:
-          distribution: temurin
-          java-version: "21"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify tag matches the release version
         id: version
@@ -102,24 +104,106 @@ jobs:
           fi
           echo "$CENTRAL_NAMESPACE:$CENTRAL_PROBE_ARTIFACT:$VERSION is not yet published"
 
-      - name: Build signed Central Portal bundle
-        # The build itself refuses centralBundle without a (non-blank) signing key or for -SNAPSHOT versions.
+      - name: Refuse a second deployment while an earlier one is still live
+        # The Publisher API has no "list deployments" endpoint, and /published only reports PUBLISHED
+        # components, so earlier uploads of this tag are tracked through `central-deployment-<tag>` artifacts.
         env:
-          KASTOR_SIGNING_KEY: ${{ secrets.KASTOR_SIGNING_KEY }}
-          KASTOR_SIGNING_PASSWORD: ${{ secrets.KASTOR_SIGNING_PASSWORD }}
-        run: ./gradlew centralBundle --no-daemon
-        shell: bash
-
-      - name: Inspect metadata, documentation jars and signatures
+          GH_TOKEN: ${{ github.token }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          RECORD: central-deployment-${{ github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
+          token="$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)"
+          records="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=$RECORD&per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | .id')"
+          blocking=""
+          for artifact in $records; do
+            dir="$(mktemp -d)"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$dir/record.zip"
+            unzip -q -o "$dir/record.zip" -d "$dir"
+            for id in $(cat "$dir"/deployment-id*.txt 2>/dev/null | tr -d '\r'); do
+              code="$(curl --silent --show-error --retry 3 --output "$dir/status.json" --write-out '%{http_code}' \
+                --request POST --header "Authorization: Bearer $token" "$CENTRAL_API/status?id=$id")"
+              if [ "$code" = "404" ]; then echo "Deployment $id no longer exists (dropped)"; continue; fi
+              if [ "$code" != "200" ]; then
+                echo "::error::Central Portal status for recorded deployment $id returned HTTP $code; refusing to upload a possible duplicate"
+                exit 1
+              fi
+              state="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("deploymentState", "UNKNOWN"))' "$dir/status.json")"
+              echo "Recorded deployment $id: $state"
+              [ "$state" = "FAILED" ] || blocking="$blocking $id($state)"
+            done
+          done
+          if [ -n "$blocking" ]; then
+            echo "::error::$GITHUB_REF_NAME already has live Central Portal deployments:$blocking. Release or drop them at https://central.sonatype.com/publishing/deployments (see docs/reference/release-checklist.md) before re-running."
+            exit 1
+          fi
+          echo "No live deployment recorded for $GITHUB_REF_NAME"
+
+      - name: Download the artifacts staged and tested by readiness in this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: staged-release-ubuntu-latest
+          path: build
+
+      - name: Verify staged checksums and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/release-repository || { echo "::error::staged-release-ubuntu-latest has no release-repository"; exit 1; }
+          python3 - <<'PY'
+          import hashlib, pathlib, sys
+          repo = pathlib.Path("build/release-repository")
+          checked = 0
+          for digest in ("sha1", "md5"):
+              for sidecar in repo.rglob(f"*.{digest}"):
+                  target = sidecar.with_suffix("")
+                  expected = sidecar.read_text().split()[0].strip().lower()
+                  actual = hashlib.new(digest, target.read_bytes()).hexdigest()
+                  if actual != expected:
+                      sys.exit(f"{digest} mismatch for {target}")
+                  checked += 1
+          if checked == 0:
+              sys.exit("No checksum files found in the staged repository")
+          print(f"{checked} staged checksums match")
+          PY
           python scripts/check-staged-publications.py
+          find build/release-repository -name '*.asc' -print -quit | grep -q . \
+            && { echo "::error::Staged artifacts are already signed; readiness must stage unsigned"; exit 1; } || true
+
+      - name: Sign the staged artifacts and build the Central Portal bundle
+        env:
+          KASTOR_SIGNING_KEY: ${{ secrets.KASTOR_SIGNING_KEY }}
+          KASTOR_SIGNING_PASSWORD: ${{ secrets.KASTOR_SIGNING_PASSWORD }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          printf '%s' "$KASTOR_SIGNING_KEY" | gpg --batch --import
+          cd build/release-repository
+          find . -name 'maven-metadata*' -delete
+          count=0
+          while IFS= read -r -d '' file; do
+            printf '%s' "$KASTOR_SIGNING_PASSWORD" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --armor --detach-sign --output "$file.asc" "$file"
+            gpg --batch --verify "$file.asc" "$file" 2>/dev/null
+            count=$((count + 1))
+          done < <(find . -type f ! -name '*.md5' ! -name '*.sha1' ! -name '*.sha256' ! -name '*.sha512' ! -name '*.asc' -print0)
+          echo "Signed and verified $count files"
           missing=""
           while IFS= read -r file; do
             [ -f "$file.asc" ] || missing="$missing $file"
-          done < <(find build/release-repository -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \))
+          done < <(find . -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \))
           if [ -n "$missing" ]; then echo "::error::Unsigned artifacts:$missing"; exit 1; fi
+          mkdir -p ../central
+          bundle="../central/kastor-$VERSION-central-bundle.zip"
+          find . -type f | LC_ALL=C sort | zip -q -X "$bundle" -@
+          rm -rf "$GNUPGHOME"
+          echo "Bundle sha256: $(sha256sum "$bundle" | cut -d' ' -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload bundle to Maven Central Portal
         id: upload
@@ -137,8 +221,18 @@ jobs:
             --form "bundle=@build/central/kastor-$VERSION-central-bundle.zip" \
             "$CENTRAL_API/upload?name=kastor-$VERSION&publishingType=USER_MANAGED" | tr -d '[:space:]"')"
           if [ -z "$deployment" ]; then echo "::error::Central Portal returned no deployment id"; exit 1; fi
-          echo "Deployment id: $deployment"
+          echo "Deployment id: $deployment" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "deployment=$deployment" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$deployment" > "build/central/deployment-id-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.txt"
+
+      - name: Record the deployment id for re-run protection
+        if: always() && steps.upload.outputs.deployment != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: central-deployment-${{ github.ref_name }}
+          path: build/central/deployment-id-*.txt
+          retention-days: 90
+          overwrite: true
 
       - name: Wait for Central Portal validation
         env:
@@ -179,7 +273,8 @@ jobs:
 
       - name: Retain bundle
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: central-bundle
           path: build/central/
+          if-no-files-found: ignore

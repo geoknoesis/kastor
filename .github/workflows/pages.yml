@@ -1,5 +1,11 @@
 # Build and deploy the Jekyll site under docs/ to GitHub Pages.
-# Repository settings: Settings → Pages → Build and deployment → Source: GitHub Actions
+#
+# Required repository setting: Settings > Pages > Build and deployment > Source: GitHub Actions
+# (API: build_type "workflow"). As of 2026-09-14 geoknoesis/kastor is still on the legacy
+# "Deploy from a branch" source (main /docs), so every push to main is deployed twice: once by the
+# legacy "pages build and deployment" run and once by this workflow. Switch the source with
+# `scripts/configure-github-release.sh --reviewer <login> --apply` (step 4) or in the settings page;
+# verify with `gh api repos/geoknoesis/kastor/pages --jq .build_type` (must print `workflow`).
 name: Deploy documentation to GitHub Pages
 
 on:
@@ -22,10 +28,10 @@ jobs:
       pages: read
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Set Jekyll baseurl for project site
         # https://USER.github.io/REPO/ — required for theme assets and relative_url
@@ -46,7 +52,7 @@ jobs:
           destination: ./_site
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ./_site
 
