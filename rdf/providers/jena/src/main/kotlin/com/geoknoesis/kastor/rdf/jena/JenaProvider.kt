@@ -105,7 +105,8 @@ class JenaProvider : RdfProvider {
             model.close()
             throw failure
         }
-        return JenaBridge.fromJenaModel(model)
+        // Parsed data is already validated: keep strict reads.
+        return JenaGraph(model)
     }
 
     /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer. */
@@ -162,19 +163,25 @@ class JenaProvider : RdfProvider {
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
         val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
             ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
+        val jena = repository as? JenaRepository
+        if (jena != null) {
+            // Stream straight into one write transaction on the store (joining an enclosing transaction):
+            // no intermediate copy of the dataset, and a parse failure rolls the whole load back.
+            jena.transaction {
+                JenaParsing.parseWithFormatErrors(format) {
+                    JenaParsing.parser(inputStream, lang, baseIri)
+                        .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))
+                }
+            }
+            return
+        }
+        // Foreign repositories: parse fully first, so a syntax error never leaves partial data behind.
         val parsed = org.apache.jena.query.DatasetFactory.create()
         try {
             JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
             repository.transaction {
-                val jena = repository as? JenaRepository
-                if (jena != null) {
-                    val target = jena.getJenaDataset()
-                    target.defaultModel.add(parsed.defaultModel)
-                    parsed.listNames().forEachRemaining { target.getNamedModel(it).add(parsed.getNamedModel(it)) }
-                } else {
-                    editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
-                    parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
-                }
+                editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
+                parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
             }
         } finally { parsed.close() }
     }

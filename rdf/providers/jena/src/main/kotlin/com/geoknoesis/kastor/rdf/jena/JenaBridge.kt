@@ -35,18 +35,28 @@ object JenaBridge {
      * @return A Kastor RdfGraph that wraps the Jena Model
      */
     fun fromJenaModel(model: Model): MutableRdfGraph {
-        return JenaGraph(model)
+        return JenaGraph(model, lenientRead = true)
     }
 
     /**
-     * Converts a Jena Graph to a Kastor RdfGraph.
+     * Wraps a Jena Model as a Kastor RdfGraph with an explicit read policy.
+     *
+     * A wrapped model may contain statements Kastor cannot represent (e.g. `xml:lang="en_US"` or an IRI that
+     * RFC 3987 rejects). With [strictRead] `false` (the default of [fromJenaModel]) reads skip such statements
+     * and log one warning per read; with `true` a read fails with [IllegalArgumentException].
+     * [RdfGraph.size] always counts every statement of the model.
+     */
+    fun fromJenaModel(model: Model, strictRead: Boolean): MutableRdfGraph = JenaGraph(model, lenientRead = !strictRead)
+
+    /**
+     * Converts a Jena Graph to a Kastor RdfGraph (lenient reads, see [fromJenaModel]).
      *
      * @param graph The Jena Graph to convert
      * @return A Kastor RdfGraph that wraps the Jena Graph
      */
     fun fromJenaGraph(graph: Graph): MutableRdfGraph {
         val model = ModelFactory.createModelForGraph(graph)
-        return JenaGraph(model)
+        return JenaGraph(model, lenientRead = true)
     }
 
     /**
@@ -171,22 +181,35 @@ object JenaBridge {
      * @return A Kastor RdfGraph containing the loaded data
      */
     fun fromFile(filePath: String, format: String = "TURTLE"): MutableRdfGraph {
-        val model = ModelFactory.createDefaultModel()
-        model.read(filePath, format)
-        return fromJenaModel(model)
+        // Same strict, validating parser and error mapping as JenaProvider.parseGraph; relative IRIs resolve
+        // against the file's URI.
+        val path = java.nio.file.Path.of(filePath).toAbsolutePath()
+        return java.nio.file.Files.newInputStream(path).use { JenaProvider().parseGraph(it, format, path.toUri().toString()) }
     }
 
     /**
      * Loads RDF data from a URL into a Jena Model and converts it to a Kastor RdfGraph.
+     *
+     * Parsing is spec-strict and validated like [JenaProvider.parseGraph]: syntax errors and terms that are not
+     * valid RDF surface as [RdfFormatException]. Relative IRIs resolve against [url].
      *
      * @param url The URL to load RDF data from
      * @param format The RDF format (e.g., "TURTLE", "RDF/XML", "JSON-LD")
      * @return A Kastor RdfGraph containing the loaded data
      */
     fun fromUrl(url: String, format: String = "TURTLE"): MutableRdfGraph {
+        val lang = JenaParsing.graphLang(format)
         val model = ModelFactory.createDefaultModel()
-        model.read(url, format)
-        return fromJenaModel(model)
+        try {
+            JenaParsing.parseWithFormatErrors(format) {
+                org.apache.jena.riot.RDFParser.source(url).forceLang(lang).strict(true).base(url)
+                    .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.graph(model.graph)))
+            }
+        } catch (failure: Throwable) {
+            model.close()
+            throw failure
+        }
+        return JenaGraph(model)
     }
 
     /**
@@ -209,7 +232,12 @@ object JenaBridge {
             "RDF/XML", "RDFXML", "XML" -> Lang.RDFXML
             "N-TRIPLES", "NT", "NTRIPLES", "N-TRIPLES-1.2", "NTRIPLES12" -> Lang.NTRIPLES
             "JSON-LD", "JSONLD", "JSON-LD-1.2", "JSONLD12" -> Lang.JSONLD
-            else -> throw IllegalArgumentException("Unsupported format: $format")
+            // A graph is a dataset with only a default graph: quad formats write it as such.
+            "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR", "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" ->
+                return withGraphView(rdfGraph) { graph ->
+                    serializeDataset(DatasetFactory.wrap(org.apache.jena.sparql.core.DatasetGraphFactory.wrap(graph)), format, options)
+                }
+            else -> throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
         }
         return withGraphView(rdfGraph) { graph ->
             val prefixes: PrefixMapping = PrefixMappingImpl()
@@ -277,7 +305,7 @@ object JenaBridge {
         val jenaFormat = when (format.uppercase().trim()) {
             "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> JenaRDFFormat.TRIG
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> JenaRDFFormat.NQUADS
-            else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
+            else -> throw RdfFormatException.UnsupportedFormat(format, QUAD_FORMATS)
         }
         val source = dataset.asDatasetGraph()
         val prefixes: PrefixMap = PrefixMapFactory.create(source.prefixes()).also { map ->
@@ -294,20 +322,34 @@ object JenaBridge {
     /**
      * Parses RDF dataset data from an input stream into a Jena Dataset.
      *
+     * Uses the same spec-strict, validating parser as [JenaProvider.parseDataset] (no base IRI: relative IRIs
+     * are errors); syntax errors and terms that are not valid RDF surface as [RdfFormatException].
+     *
      * @param inputStream The input stream containing RDF dataset data
      * @param format The RDF format (e.g., "TRIG", "N-QUADS")
      * @return A Jena Dataset containing the loaded data
+     * @throws RdfFormatException.UnsupportedFormat for formats other than TriG and N-Quads
      */
     fun parseDatasetFromStream(inputStream: java.io.InputStream, format: String = "TRIG"): Dataset {
         val lang = when (format.uppercase().trim()) {
             "TRIG", "TRI-G", "TRIG-1.2", "TRIG12", "TRIGSTAR" -> org.apache.jena.riot.Lang.TRIG
             "N-QUADS", "NQUADS", "NQ", "N-QUADS-1.2", "NQUADS12" -> org.apache.jena.riot.Lang.NQUADS
-            else -> throw IllegalArgumentException("Unsupported quad format: $format. Supported: TRIG, N-QUADS")
+            else -> throw RdfFormatException.UnsupportedFormat(format, QUAD_FORMATS)
         }
         val dataset = DatasetFactory.create()
-        JenaParsing.parseWithFormatErrors(format) { RDFDataMgr.read(dataset, inputStream, lang) }
+        try {
+            JenaParsing.parseWithFormatErrors(format) {
+                JenaParsing.parser(inputStream, lang, null)
+                    .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(dataset.asDatasetGraph())))
+            }
+        } catch (failure: Throwable) {
+            dataset.close()
+            throw failure
+        }
         return dataset
     }
+
+    private val QUAD_FORMATS = listOf("TRIG", "N-QUADS")
 }
 
 /**
