@@ -23,7 +23,7 @@ class JenaReasonerProviderTest {
     @Test
     fun `capabilities are honest`() {
         val caps = provider.getCapabilities()
-        assertEquals(setOf(ReasonerType.RDFS, ReasonerType.OWL_RL, ReasonerType.CUSTOM), caps.supportedTypes)
+        assertEquals(setOf(ReasonerType.RDFS, ReasonerType.OWL_MICRO, ReasonerType.OWL_RL, ReasonerType.CUSTOM), caps.supportedTypes)
         assertFalse(caps.supportsIncrementalReasoning)
         assertTrue(caps.supportsCustomRules)
         assertFalse(provider.isSupported(ReasonerType.OWL_EL))

@@ -134,14 +134,26 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         )
     }
 
-    /** Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order. */
+    /**
+     * Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order.
+     *
+     * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted)
+     * and [ReasonerConfig.materializationThreshold] bounds the number of entailed triples ([IllegalArgumentException]).
+     */
     internal fun closure(asserted: Collection<RdfTriple>): Set<RdfTriple> {
+        val deadline = System.nanoTime() + config.timeout.toNanos()
+        var steps = 0L
+        fun checkBudget() {
+            check(System.nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
+        }
         val rules = config.enabledRules
         val subClass = ReasoningRule.RDFS_SUBCLASS in rules
         val subProperty = ReasoningRule.RDFS_SUBPROPERTY in rules
         val domain = ReasoningRule.RDFS_DOMAIN in rules
         val range = ReasoningRule.RDFS_RANGE in rules
         val all = LinkedHashSet(asserted)
+        val assertedCount = all.size
+        checkBudget()
         while (true) {
             val superClasses = index(all, SUB_CLASS_OF)
             val superProperties = index(all, SUB_PROPERTY_OF)
@@ -150,6 +162,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val added = LinkedHashSet<RdfTriple>()
             fun emit(triple: RdfTriple) { if (triple !in all) added.add(triple) }
             for (t in all) {
+                if ((++steps and 1023L) == 0L) checkBudget()
                 val obj = t.obj
                 when (t.predicate) {
                     SUB_CLASS_OF -> if (subClass && obj is RdfResource) {
@@ -174,6 +187,10 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
             }
             if (added.isEmpty()) return all
             all.addAll(added)
+            require(all.size - assertedCount <= config.materializationThreshold) {
+                "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
+            }
+            checkBudget()
         }
     }
 
