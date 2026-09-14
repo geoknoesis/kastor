@@ -54,7 +54,7 @@ class Rdf4jTripleStreamTest {
             }
         }
         assertTrue(input.reading.await(10, TimeUnit.SECONDS))
-        Thread.sleep(100)
+        awaitParked(consumer) // the consumer is blocked waiting for the next triple
         stream.close()
         assertTrue(consumerDone.await(10, TimeUnit.SECONDS), "consumer must not hang after close()")
         consumer.join(5_000)
@@ -74,32 +74,53 @@ class Rdf4jTripleStreamTest {
         }
     }
 
-    @Test
-    fun `an abandoned unclosed stream lets its producer thread exit`() {
-        val before = liveProducers()
-        val lines = (0 until 50_000).joinToString("\n") { "<http://example.org/s$it> <http://example.org/p> \"$it\" ." }
-        fun openAndAbandon() {
-            val stream: TripleStream = Rdf4jProvider().openTripleStream(lines.byteInputStream(), "N-TRIPLES")
-            stream.iterator().next() // never closed, never fully consumed
-        }
-        openAndAbandon()
+    /** Waits (condition-based) until [thread] is parked, e.g. blocked on a queue. */
+    private fun awaitParked(thread: Thread) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
-        while (liveProducers() > before && System.nanoTime() < deadline) {
-            System.gc()
-            Thread.sleep(100)
+        while (thread.state != Thread.State.WAITING && thread.state != Thread.State.TIMED_WAITING) {
+            assertTrue(System.nanoTime() < deadline, "thread ${thread.name} never blocked (state ${thread.state})")
+            assertTrue(thread.isAlive, "thread ${thread.name} ended")
+            Thread.onSpinWait()
         }
-        assertEquals(before, liveProducers(), "producer thread of an abandoned stream must terminate")
+    }
+
+    private fun producers(): Set<Thread> = Thread.getAllStackTraces().keys.filter { it.name == producerName && it.isAlive }.toSet()
+
+    @Test
+    fun `the cleanup of an abandoned unclosed stream lets its producer thread exit`() {
+        val before = producers()
+        val lines = (0 until 50_000).joinToString("\n") { "<http://example.org/s$it> <http://example.org/p> \"$it\" ." }
+        var cleanup: Runnable? = null
+        val registrar: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable = { _, action ->
+            cleanup = action
+            java.lang.ref.Cleaner.Cleanable { action.run() }
+        }
+        fun openAndAbandon(): Thread {
+            val stream: TripleStream = Rdf4jFormatSupport.openTripleStream(lines.byteInputStream(), "N-TRIPLES", null, registrar)
+            stream.iterator().next() // never closed, never fully consumed
+            return (producers() - before).single()
+        }
+        val producer = openAndAbandon()
+        awaitParked(producer)
+
+        // The cleaner's action must not reach the stream, otherwise an abandoned stream never becomes unreachable.
+        val action = checkNotNull(cleanup)
+        assertTrue(action.javaClass.declaredFields.none { TripleStream::class.java.isAssignableFrom(it.type) }, "cleanup action references the stream")
+
+        action.run() // what the Cleaner does once the stream is unreachable
+        producer.join(10_000)
+        assertTrue(!producer.isAlive, "producer thread of an abandoned stream must terminate")
     }
 
     @Test
     fun `closing an exhausted or unconsumed stream stops the producer`() {
-        val before = liveProducers()
+        val before = producers()
         val stream = Rdf4jProvider().openTripleStream(BlockingInput(""), "N-TRIPLES")
+        val producer = (producers() - before).single()
         stream.close()
         assertThrows(IllegalStateException::class.java) { stream.iterator() }
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-        while (liveProducers() > before && System.nanoTime() < deadline) Thread.sleep(50)
-        assertEquals(before, liveProducers())
+        producer.join(10_000)
+        assertTrue(!producer.isAlive, "producer must stop after close()")
     }
 
     @Test
@@ -117,18 +138,32 @@ class Rdf4jTripleStreamTest {
     @Test
     fun `provider openTripleStream with a base IRI streams a relative Turtle document lazily`() {
         val document = (0 until 200_000).joinToString("\n") { "<s$it> <p> \"$it\" ." }.toByteArray()
-        var bytesRead = 0L
+        // Read by the producer thread and checked by the test thread, hence atomic.
+        val bytesRead = java.util.concurrent.atomic.AtomicLong()
         val counting = object : java.io.FilterInputStream(java.io.ByteArrayInputStream(document)) {
-            override fun read(): Int = super.read().also { if (it >= 0) bytesRead++ }
-            override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead += it }
+            override fun read(): Int = super.read().also { if (it >= 0) bytesRead.incrementAndGet() }
+            override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead.addAndGet(it.toLong()) }
         }
         val provider: com.geoknoesis.kastor.rdf.RdfProvider = Rdf4jProvider()
+        val before = producers()
         provider.openTripleStream(counting, "TURTLE", "http://example.org/base/").use { stream ->
             val first = stream.iterator().next()
             assertEquals(Iri("http://example.org/base/s0"), first.subject)
             assertEquals(Iri("http://example.org/base/p"), first.predicate)
-            Thread.sleep(300) // let the background parser read ahead as far as it will
-            assertTrue(bytesRead < document.size / 2, "must not materialise the document: read $bytesRead of ${document.size} bytes")
+            // Condition-based: wait until the producer is parked on its full queue and the byte count stops moving.
+            val producer = (producers() - before).single()
+            var last = -1L
+            var stable = 0
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+            while (stable < 5) {
+                assertTrue(System.nanoTime() < deadline && producer.isAlive, "producer never blocked: read ${bytesRead.get()} of ${document.size} bytes")
+                awaitParked(producer)
+                val now = bytesRead.get()
+                stable = if (now == last) stable + 1 else 0
+                last = now
+                Thread.onSpinWait()
+            }
+            assertTrue(bytesRead.get() < document.size / 2, "must not materialise the document: read ${bytesRead.get()} of ${document.size} bytes")
         }
         val eager = provider.parseStreaming("<s> <p> <o> .".byteInputStream(), "TURTLE", "http://example.org/base/").toList()
         assertEquals(Iri("http://example.org/base/o"), eager.single().obj)

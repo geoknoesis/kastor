@@ -155,9 +155,21 @@ internal object Rdf4jFormatSupport {
      * queue, so memory stays constant regardless of document size. Closing the stream stops the
      * parser and closes [inputStream].
      */
-    fun openTripleStream(inputStream: InputStream, format: String, baseIri: String? = null): TripleStream {
+    fun openTripleStream(inputStream: InputStream, format: String, baseIri: String? = null): TripleStream =
+        openTripleStream(inputStream, format, baseIri) { stream, action -> Rdf4jTripleStream.CLEANER.register(stream, action) }
+
+    /**
+     * [openTripleStream] with an injectable cleanup registrar, so tests can run the cleanup of an abandoned stream
+     * deterministically instead of waiting for garbage collection.
+     */
+    internal fun openTripleStream(
+        inputStream: InputStream,
+        format: String,
+        baseIri: String?,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+    ): TripleStream {
         val rdf4jFormat = graphFormat(format)
-        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "")
+        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "", registerCleanup)
     }
 
     /**
@@ -176,6 +188,7 @@ internal object Rdf4jFormatSupport {
         rdf4jFormat: RDFFormat,
         private val formatName: String,
         baseIri: String,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
     ) : TripleStream {
         private class Failure(val error: Throwable)
         private class Cancelled : RuntimeException(null, null, false, false)
@@ -200,7 +213,7 @@ internal object Rdf4jFormatSupport {
         }
 
         private val state = State(input)
-        private val cleanable = CLEANER.register(this, state)
+        private val cleanable = registerCleanup(this, state)
         private var next: Any? = null
         private var finished = false
         private var iterated = false
@@ -248,7 +261,7 @@ internal object Rdf4jFormatSupport {
 
         override fun close() = cleanable.clean()
 
-        private companion object {
+        companion object {
             const val PRODUCER_THREAD = "kastor-rdf4j-stream-parser"
             const val QUEUE_CAPACITY = 1024
             const val POLL_MILLIS = 50L
