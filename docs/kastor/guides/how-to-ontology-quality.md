@@ -182,9 +182,14 @@ Similarity options on `enrich` and `pipeline`:
 |--------|---------|
 | `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, at least 50,000,000. |
 | `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30. |
+| `--similarity-max-pairs N` | Maximum similar pairs the search may return before failing (≥ 1). Default: 1,000,000. |
 | `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
 
-When a similarity budget is exhausted, the command exits with status 5 and names these options.
+When a similarity budget is exhausted, the command exits with status 5. The message says which limit was reached, and the hint matches it:
+
+- **Work** (distance evaluations): raise `--similarity-max-work`, or use `--similarity-mode approximate`.
+- **Time**: raise `--similarity-timeout`, or use `--similarity-mode approximate`.
+- **Pairs**: too many pairs are similar. Raise `--threshold` or `--similarity-max-pairs`.
 
 ### Step 4 (optional): LLM explanations (Koog)
 
@@ -224,9 +229,15 @@ Run via Gradle from the repository root:
 ./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog skos-vocabulary-embed --severity info"
 ```
 
-The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. The file is parsed with its own URI as base IRI, so relative IRIs such as `<> a owl:Ontology` in Turtle or `rdf:about="#Foo"` in RDF/XML resolve against the file (for example `file:///home/me/onto.ttl#Foo`) instead of failing to parse. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
+The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`.
 
-Errors print a one-line message; add the root option **`--debug`** before the subcommand (`onto-qa --debug check …`) to also print stack traces.
+Relative IRIs resolve against the default base IRI **`urn:onto-qa:input/<file name>`**, whatever directory the file is in. In `onto.ttl`, `<> a owl:Ontology` becomes `urn:onto-qa:input/onto.ttl`, `<#Foo>` (or `rdf:about="#Foo"` in RDF/XML) becomes `urn:onto-qa:input/onto.ttl#Foo`, and `<Sub>` becomes `urn:onto-qa:input/Sub`. As a result, finding IRIs and `findingRef` values are the same on every machine, and no absolute path (such as a user name) appears in reports or LLM prompts. To resolve against another base, such as the ontology's published namespace, pass **`--base-iri <absolute IRI>`**. A value that is not an absolute IRI is a usage error (status 4).
+
+Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
+
+Errors print a one-line message. To also print stack traces, add **`--debug`** before or after the subcommand (`onto-qa --debug check …` or `onto-qa check x.ttl --debug`).
+
+**Warnings** go to stderr. Two cases produce one: `--explain` without `KASTOR_ONTO_QUALITY_LLM=true`, and an embedding catalogue on a graph with no `oqsh:semanticallyCloseTo` triples. The CLI also ships the `slf4j-simple` binding at WARN level, writing to stderr, so library warnings are visible too (for example, a corrupt model cache being downloaded again). Untrusted text in these messages, such as exception messages, paths and LLM failure reasons, is sanitised (see **Report output** below).
 
 **Report output:** text taken from the ontology (SHACL messages, focus node and shape names) and from the LLM is Markdown-escaped in `--format markdown`, so it cannot inject links, images or raw HTML. In `--format text`, control characters other than newline and tab are shown as visible `\uXXXX` escapes, so terminal escape sequences embedded in the ontology cannot execute. JSON output is serialized with kotlinx.serialization and escapes every string.
 
@@ -243,16 +254,17 @@ See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-c
 | **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Used for nothing else. |
 | **2** | The input ontology could not be parsed in the selected RDF syntax. |
 | **3** | `--fail-on-explain-error` was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
-| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`. |
-| **5** | Runtime error: embedding model download or loading, similarity search budget exceeded, I/O (for example the output cannot be written), or an unexpected internal error. Run `onto-qa --debug <command> …` for the stack trace. |
+| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, an input path that is a directory, a `--base-iri` that is not an absolute IRI, `--reasoner hermit` when HermiT is not on the classpath (the message says how to fix it), inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`. |
+| **5** | Runtime error: embedding model download or loading, similarity search budget exceeded, I/O (for example the output cannot be written), or an unexpected internal error. Add `--debug` (before or after the command) for the stack trace. |
 
   Scripts that treated status 1 as "findings or bad usage" should also check 4 and 5. See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
+- The SHACL benchmark CLI (`benchmarks/shacl/era-cli`) uses the same convention for the statuses it has: 0, 2, 4 and 5. It prints errors as one sanitised stderr line. See its [README](../../../benchmarks/shacl/era-cli/README.md#exit-status).
 
 ## Troubleshooting
 
 - **No embedding findings** — run **`SemanticEnricher`** first when using **`EMBEDDING_QUALITY`** / `skos-vocabulary-embed`; without similarity triples, those shapes usually emit nothing (by design).
 - **Missing K07 / pitfall text** — ensure **`OOPS_PITFALL_REGISTRY`** is on the checker when using custom catalogue lists; **`QualityChecker.default()`** and **`onto-qa --catalog all`** include it.
-- **HermiT / classpath** — CLI **`--reasoner hermit`** needs **`:rdf:reasoning-hermit`** transitively on the classpath for the packaged CLI.
+- **HermiT / classpath** — CLI **`--reasoner hermit`** needs **`:rdf:reasoning-hermit`** transitively on the classpath for the packaged CLI. Without it, the command exits with status 4 before loading anything, and suggests `owl-rl`, `owl-micro` or `rdfs`.
 
 ## Calibration and pitfall metadata
 
