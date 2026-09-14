@@ -107,11 +107,19 @@ collisions or invalid configuration. Only then does it replace the previous outp
    escapes the output directory;
 2. it writes the complete new output to a staging directory, so an I/O failure leaves the previous output
    and manifest untouched;
-3. it deletes the files recorded by the previous run, moves the staged files in and writes the manifest
-   last.
+3. it rewrites the manifest to list the previous and the new files, deletes the files recorded by the
+   previous run, moves the staged files in, and rewrites the manifest to list only the new files once every
+   move has succeeded.
 
 Renamed or removed shapes therefore never leave stale files behind, including case-only renames on
 case-insensitive file systems.
+
+Deletes and moves blocked by a transient lock (for example a file held open by an IDE, indexer or virus
+scanner on Windows) are retried with exponential backoff. Moves between different drives copy each file
+next to its target and rename it into place. If replacing still fails, the task fails with a message
+explaining how to recover; because the manifest still lists every file written so far, closing the programs
+holding the files and running the task again cleans up and completes the output. See the
+[Gradle plugin reference](../reference/gradle-plugin.md#ontologygenerationtask).
 
 ### Wiring
 
