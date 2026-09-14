@@ -8,6 +8,11 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import kotlin.properties.ReadOnlyProperty
 
+private const val XSD_LITERALS = "com.geoknoesis.kastor.gen.runtime.XsdLiterals"
+private const val DEFAULTING = "invents a default value when the value is missing instead of throwing MaterializationException"
+private const val DROPPING = "silently drops values that cannot be decoded instead of following MaterializationPolicy"
+
+@Deprecated("rdfString $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::string)", XSD_LITERALS))
 fun rdfString(predicate: Iri): ReadOnlyProperty<RdfBacked, String> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).map { it.lexical }.firstOrNull() ?: ""
@@ -23,6 +28,7 @@ fun rdfStrings(predicate: Iri): ReadOnlyProperty<RdfBacked, List<String>> =
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).map { it.lexical }
   }
 
+@Deprecated("rdfInt $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::int)", XSD_LITERALS))
 fun rdfInt(predicate: Iri): ReadOnlyProperty<RdfBacked, Int> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -30,6 +36,7 @@ fun rdfInt(predicate: Iri): ReadOnlyProperty<RdfBacked, Int> =
       .firstOrNull() ?: 0
   }
 
+@Deprecated("rdfIntOrNull $DROPPING", ReplaceWith("rdfLiteralOrNull(predicate, XsdLiterals::int)", XSD_LITERALS))
 fun rdfIntOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Int?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -37,11 +44,13 @@ fun rdfIntOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Int?> =
       .firstOrNull()
   }
 
+@Deprecated("rdfInts $DROPPING", ReplaceWith("rdfLiterals(predicate, XsdLiterals::int)", XSD_LITERALS))
 fun rdfInts(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Int>> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { it.lexical.toIntOrNull() }
   }
 
+@Deprecated("rdfDouble $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::double)", XSD_LITERALS))
 fun rdfDouble(predicate: Iri): ReadOnlyProperty<RdfBacked, Double> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -49,6 +58,7 @@ fun rdfDouble(predicate: Iri): ReadOnlyProperty<RdfBacked, Double> =
       .firstOrNull() ?: 0.0
   }
 
+@Deprecated("rdfDoubleOrNull $DROPPING", ReplaceWith("rdfLiteralOrNull(predicate, XsdLiterals::double)", XSD_LITERALS))
 fun rdfDoubleOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Double?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -56,11 +66,13 @@ fun rdfDoubleOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Double?> =
       .firstOrNull()
   }
 
+@Deprecated("rdfDoubles $DROPPING", ReplaceWith("rdfLiterals(predicate, XsdLiterals::double)", XSD_LITERALS))
 fun rdfDoubles(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Double>> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { it.lexical.toDoubleOrNull() }
   }
 
+@Deprecated("rdfBoolean $DEFAULTING", ReplaceWith("rdfLiteral(predicate, XsdLiterals::boolean)", XSD_LITERALS))
 fun rdfBoolean(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -68,6 +80,7 @@ fun rdfBoolean(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean> =
       .firstOrNull() ?: false
   }
 
+@Deprecated("rdfBooleanOrNull $DROPPING", ReplaceWith("rdfLiteralOrNull(predicate, XsdLiterals::boolean)", XSD_LITERALS))
 fun rdfBooleanOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean?> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate)
@@ -75,6 +88,7 @@ fun rdfBooleanOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Boolean?> =
       .firstOrNull()
   }
 
+@Deprecated("rdfBooleans $DROPPING", ReplaceWith("rdfLiterals(predicate, XsdLiterals::boolean)", XSD_LITERALS))
 fun rdfBooleans(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Boolean>> =
   rdfLazy { ref ->
     KastorGraphOps.getLiteralValues(ref.rdf.graph, ref.rdf.node, predicate).mapNotNull { XsdLiterals.boolean(it) }

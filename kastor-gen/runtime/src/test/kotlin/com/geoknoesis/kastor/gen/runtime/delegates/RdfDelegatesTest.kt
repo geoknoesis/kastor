@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.geoknoesis.kastor.gen.runtime.delegates
 
 import com.geoknoesis.kastor.gen.runtime.DefaultRdfHandle

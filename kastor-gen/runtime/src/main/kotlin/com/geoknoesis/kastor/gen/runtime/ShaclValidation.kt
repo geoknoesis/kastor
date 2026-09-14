@@ -52,6 +52,53 @@ interface ValidationContext : AutoCloseable {
     override fun close() {}
 }
 
+/**
+ * Process-wide validators shared by generated wrappers, one per validator implementation.
+ *
+ * Wrappers generated with `ValidationMode.EXTERNAL` name a [ValidationContext] class with a no-argument constructor;
+ * the class alone determines the shapes it validates against. Validators can be expensive (the RDF4J adapter keeps a
+ * copy of the last validated graph in an in-memory store), so all wrapper types that name the same class use one
+ * instance obtained from [get] instead of one instance each.
+ *
+ * ## Lifecycle
+ * A shared validator is created on first use and lives until [close] (for its class) or [closeAll] is called, which
+ * closes it and removes it; the next [get] creates a fresh one. Call [closeAll] when the application (or a test, or a
+ * reloadable module) shuts down to release the resources held by the validators. Do not close a shared validator
+ * directly while wrappers may still use it.
+ */
+object SharedValidators {
+    private val validators = java.util.concurrent.ConcurrentHashMap<Class<*>, ValidationContext>()
+
+    /** The shared validator of [type], created with [create] on first use. */
+    @JvmStatic
+    fun <V : ValidationContext> get(type: Class<V>, create: () -> V): V {
+        @Suppress("UNCHECKED_CAST")
+        return validators.computeIfAbsent(type) { create() } as V
+    }
+
+    /** Closes and removes the shared validator of [type]; returns false when there was none. */
+    @JvmStatic
+    fun close(type: Class<out ValidationContext>): Boolean {
+        val validator = validators.remove(type) ?: return false
+        validator.close()
+        return true
+    }
+
+    /** Closes and removes every shared validator. A failure to close one does not prevent closing the others. */
+    @JvmStatic
+    fun closeAll() {
+        var failure: Exception? = null
+        validators.keys.toList().forEach { type ->
+            try {
+                validators.remove(type)?.close()
+            } catch (e: Exception) {
+                failure?.addSuppressed(e) ?: run { failure = e }
+            }
+        }
+        failure?.let { throw it }
+    }
+}
+
 class ValidationException(
     message: String,
     val violations: List<ShaclViolation> = emptyList(),

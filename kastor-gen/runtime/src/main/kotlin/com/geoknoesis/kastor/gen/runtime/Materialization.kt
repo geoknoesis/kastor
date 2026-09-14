@@ -111,7 +111,12 @@ object OntoMapper {
    * (for example two generated modules claiming one interface); use the `replace = true` overload to replace a
    * factory deliberately (tests, plugins).
    *
-   * @throws IllegalStateException when a different factory is already registered for [type]
+   * **Class reloading.** When the previously registered factory's class was defined by a *different* class loader
+   * than [factory]'s (a hot-reload or plugin framework re-defined the wrapper in a new child class loader while
+   * [type] stays in a shared parent loader), the new factory replaces the old one, logged at debug level. The old
+   * factory is dropped, so its class loader is no longer reachable from the registry.
+   *
+   * @throws IllegalStateException when a different factory from the same class loader is already registered for [type]
    */
   @JvmStatic
   fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T): Unit = register(type, replace = false, factory = factory)
@@ -126,12 +131,24 @@ object OntoMapper {
       registry[type] = factory
       return
     }
-    val previous = registry.putIfAbsent(type, factory)
-    check(previous == null || previous === factory) {
-      "A different factory is already registered for ${type.name}; " +
-        "call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
+    while (true) {
+      val previous = registry.putIfAbsent(type, factory) ?: return
+      if (previous === factory) return
+      check(previous.javaClass.classLoader !== factory.javaClass.classLoader) {
+        "A different factory is already registered for ${type.name}; " +
+          "call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
+      }
+      if (registry.replace(type, previous, factory)) {
+        log.debug(
+          "Replacing the factory for {} registered from class loader {} with one from class loader {}",
+          type.name, previous.javaClass.classLoader, factory.javaClass.classLoader,
+        )
+        return
+      }
     }
   }
+
+  private val log = org.slf4j.LoggerFactory.getLogger(OntoMapper::class.java)
 
   /** Removes the factory for [type]; returns true when one was registered. */
   @JvmStatic
