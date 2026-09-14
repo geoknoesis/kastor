@@ -101,7 +101,11 @@ RDF4J-based SHACL validation adapter.
 
 ### Required
 - `com.geoknoesis.kastor:rdf-core`
-- `org.slf4j:slf4j-api`
+
+`org.slf4j:slf4j-api` is only needed on the runtime class path when the runtime actually logs something: its
+loggers are created lazily, only when a factory registered from a different class loader replaces a stale one
+or when a value is skipped under `IllTypedValueHandling.SKIP`. Loading `OntoMapper`, materializing and throwing
+`MaterializationException` under the default `THROW` policy do not require SLF4J.
 
 ### Optional
 - `com.geoknoesis.kastor:rdf-jena` (for Jena backend)
