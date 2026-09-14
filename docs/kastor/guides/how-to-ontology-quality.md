@@ -126,7 +126,18 @@ val checker = QualityChecker.builder(validator)
 val report = checker.check(enriched)
 ```
 
-On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
+On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. A cached file whose SHA-256 no longer matches (truncated or tampered) is deleted and downloaded again once. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
+
+**Similarity limits and large vocabularies.** By default the pairwise search is exact, and its limits scale with the number of labelled entities (`SimilarityLimitsPolicy.scaled()`). The work budget covers the worst case, n(n−1)/2 distance evaluations plus the index build, and never drops below 50,000,000 evaluations or a 30 s deadline. Override one or both with `SimilarityLimitsPolicy.scaled(maxDistanceEvaluations, timeout)`, or pin them with `SimilarityLimitsPolicy.fixed(SimilaritySearchLimits(...))`. For tens of thousands of entities, opt in to approximate search:
+
+```kotlin
+import com.geoknoesis.kastor.ontoquality.embed.SimilarityLimitsPolicy
+import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
+
+val enricher = SemanticEnricher(model, 0.85, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.ApproximateLsh())
+```
+
+`ApproximateLsh` (defaults: 20 tables, 10 bits per table, seed 42) uses random-projection locality-sensitive hashing. Only entities that share a bucket are compared, and every reported pair is verified against the threshold. Results are therefore a subset of the exact results: no pair is invented, but some may be missed (about 95 % chance of comparing a pair at cosine 0.85 with the defaults, higher for closer pairs). The mode used is recorded in the enrichment provenance (`oqsh:similaritySearchMode`).
 
 #### Domain-specific embeddings (e.g. medical)
 
@@ -162,7 +173,17 @@ onto-qa enrich ontology.ttl --model custom \
   --tokenizer-note "dmis-lab/biobert-base-cased-v1.2"
 ```
 
-Bundled **`--model all-MiniLM-L6-v2`** must not be combined with `--onnx` / `--tokenizer` / `--embedding-dim`.
+Bundled **`--model all-MiniLM-L6-v2`** must not be combined with `--onnx` / `--tokenizer` / `--embedding-dim`; inconsistent embedding options exit with status 4 before any model is loaded.
+
+Similarity options on `enrich` and `pipeline`:
+
+| Option | Meaning |
+|--------|---------|
+| `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, at least 50,000,000. |
+| `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30. |
+| `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
+
+When a similarity budget is exhausted, the command exits with status 5 and names these options.
 
 ### Step 4 (optional): LLM explanations (Koog)
 
