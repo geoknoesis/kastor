@@ -31,6 +31,8 @@ jobs:
 
       - name: Fetch pinned RDF and SHACL corpora
         # Commits are pinned in scripts/fetch-conformance-data.py (the same script used locally).
+        # The old workflow cloned data-shapes `gh-pages` unpinned; upstream's new uniqueValuesFor-005 case
+        # then failed every weekly run from 2026-07-20. Bump the pin deliberately, with the allowlist/engine.
         run: python scripts/fetch-conformance-data.py
 
       - name: RDF conformance tests
@@ -42,7 +44,7 @@ jobs:
         shell: bash
 
       - name: Require populated conformance suites
-        # Floors are ~90% of executed counts on a clean build (RDF 1,863; SHACL 222 on 2026-09-13).
+        # Floors are ~90% of executed counts on a clean build (RDF 1,869; SHACL module 222, of which W3C 154, on 2026-09-13).
         run: |
           python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1660 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 200 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 200 --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=140 --skip-allowlist scripts/test-skip-allowlist.json

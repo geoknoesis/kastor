@@ -1,59 +1,53 @@
 {
- "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: 9 known deviations); other entries are environment-gated. 244 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed.",
+ "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: 9 known deviations); other entries are environment-gated. 239 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
  "entries": [
-  {
-   "class": "com.geoknoesis.kastor.examples.dcat.DCAT_US_ExampleTest",
-   "test": "placeholder()",
-   "count": 1,
-   "reason": ""
-  },
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
    "test": "benchmark semantic embedding catalogue against bundled OOPS fixtures()",
    "count": 1,
-   "reason": ""
+   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case additionally needs the ONNX model and is off under KASTOR_SKIP_EMBEDDING_TESTS=1."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
    "test": "benchmark structural OWL quality against full bundled OOPS corpus()",
    "count": 1,
-   "reason": ""
+   "reason": "Latency benchmark, opt-in with KASTOR_OOPS_BENCHMARK=1 (@EnabledIfEnvironmentVariable); the semantic case additionally needs the ONNX model and is off under KASTOR_SKIP_EMBEDDING_TESTS=1."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsCalibrationTest$SemanticTierAfterEnrichment",
    "test": "semantic tier catches OOPS pitfall after enrichment(String)",
    "count": 1,
-   "reason": ""
+   "reason": "Semantic tier downloads the all-MiniLM-L6-v2 ONNX model; disabled when KASTOR_SKIP_EMBEDDING_TESTS=1 (CI). Exercised by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.NativeResourceSoakTest",
    "test": "native model creation inference and close remain stable()",
    "count": 1,
-   "reason": ""
+   "reason": "Native ONNX soak test, opt-in with KASTOR_RUN_SOAK_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
    "test": "car and automobile have high cosine similarity()",
    "count": 1,
-   "reason": ""
+   "reason": "Real ONNX model download and inference, opt-in with KASTOR_RUN_EMBEDDING_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
    "test": "enrichment hashes the real model and preserves its source graph()",
    "count": 1,
-   "reason": ""
+   "reason": "Real ONNX model download and inference, opt-in with KASTOR_RUN_EMBEDDING_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
    "test": "normalized embeddings are unit length()",
    "count": 1,
-   "reason": ""
+   "reason": "Real ONNX model download and inference, opt-in with KASTOR_RUN_EMBEDDING_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModelManualTest",
    "test": "repeated inference and concurrent close release native resources safely()",
    "count": 1,
-   "reason": ""
+   "reason": "Real ONNX model download and inference, opt-in with KASTOR_RUN_EMBEDDING_TESTS=1; run by native-lifecycle.yml."
   },
   {
    "class": "com.geoknoesis.kastor.ontoquality.llm.OpenAiExplanationIntegrationTest",
@@ -65,229 +59,229 @@
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkBatchOperations()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkLargeFileParsing()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkLargeGraphCreation()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkLargeGraphQuery()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkSerialization()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
    "test": "benchmarkStreamingParse()",
    "count": 1,
-   "reason": ""
+   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] comment_following_triple",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#comment_following_triple"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#comment_following_triple"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] langtagged_string",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#langtagged_string"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#langtagged_string"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] lantag_with_subtag",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#lantag_with_subtag"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#lantag_with_subtag"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_ascii_boundaries",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_ascii_boundaries"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_ascii_boundaries"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_2_dquotes",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_dquotes"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_dquotes"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_2_squotes",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_squotes"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_squotes"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_BACKSPACE",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_BACKSPACE"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_BACKSPACE"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_CARRIAGE_RETURN",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CARRIAGE_RETURN"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CARRIAGE_RETURN"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_CHARACTER_TABULATION",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CHARACTER_TABULATION"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CHARACTER_TABULATION"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_FORM_FEED",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_FORM_FEED"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_FORM_FEED"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_LINE_FEED",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_LINE_FEED"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_LINE_FEED"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_REVERSE_SOLIDUS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_REVERSE_SOLIDUS2",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS2"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS2"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_UTF8_boundaries",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_UTF8_boundaries"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_UTF8_boundaries"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_dquote",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_dquote"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_dquote"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_numeric_escape4",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape4"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape4"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_numeric_escape8",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape8"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape8"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] literal_with_squote",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_squote"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_squote"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/N_TRIPLES] minimal_whitespace",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#minimal_whitespace"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#minimal_whitespace"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TRIG] IRI-resolution-01",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-01"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-01"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TRIG] IRI-resolution-02",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-02"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-02"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TRIG] IRI-resolution-07",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-07"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-07"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TRIG] IRI-resolution-08",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-08"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-08"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] IRI-resolution-01",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-01"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-01"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] IRI-resolution-02",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-02"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-02"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] IRI-resolution-07",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-07"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-07"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] IRI-resolution-08",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-08"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-08"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] comment_following_PNAME_NS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_PNAME_NS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_PNAME_NS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] comment_following_localName",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_localName"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_localName"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] number_sign_following_PNAME_NS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_PNAME_NS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_PNAME_NS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] number_sign_following_localName",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_localName"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_localName"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -359,145 +353,145 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] comment_following_triple",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#comment_following_triple"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#comment_following_triple"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] langtagged_string",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#langtagged_string"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#langtagged_string"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] lantag_with_subtag",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#lantag_with_subtag"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#lantag_with_subtag"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_ascii_boundaries",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_ascii_boundaries"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_ascii_boundaries"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_2_dquotes",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_dquotes"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_dquotes"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_2_squotes",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_squotes"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_2_squotes"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_BACKSPACE",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_BACKSPACE"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_BACKSPACE"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_CARRIAGE_RETURN",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CARRIAGE_RETURN"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CARRIAGE_RETURN"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_CHARACTER_TABULATION",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CHARACTER_TABULATION"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_CHARACTER_TABULATION"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_FORM_FEED",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_FORM_FEED"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_FORM_FEED"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_LINE_FEED",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_LINE_FEED"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_LINE_FEED"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_REVERSE_SOLIDUS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_REVERSE_SOLIDUS2",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS2"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_REVERSE_SOLIDUS2"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_UTF8_boundaries",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_UTF8_boundaries"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_UTF8_boundaries"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_dquote",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_dquote"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_dquote"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_numeric_escape4",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape4"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape4"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_numeric_escape8",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape8"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_numeric_escape8"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] literal_with_squote",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_squote"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#literal_with_squote"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] minimal_whitespace",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#minimal_whitespace"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-n-triples/manifest.ttl#minimal_whitespace"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] IRI-resolution-01",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-01"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-01"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] IRI-resolution-02",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-02"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-02"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] IRI-resolution-07",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-07"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-07"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] IRI-resolution-08",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-08"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#IRI-resolution-08"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -767,127 +761,127 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-bnode-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-n3-extras-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01: RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01: RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-num-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-05",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-06",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-07",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-08",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-09",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-10",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] IRI-resolution-01",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-01"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-01"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] IRI-resolution-02",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-02"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-02"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] IRI-resolution-07",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-07"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-07"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] IRI-resolution-08",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-08"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-08"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -1271,121 +1265,121 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] comment_following_PNAME_NS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_PNAME_NS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_PNAME_NS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] comment_following_localName",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_localName"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_localName"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] number_sign_following_PNAME_NS",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_PNAME_NS"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_PNAME_NS"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] number_sign_following_localName",
    "count": 1,
-   "reason": "test not approved: file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_localName"
+   "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_localName"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-bnode-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-num-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-05",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-06",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-07",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-08",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-09",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-10",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J file:///D:/work/kastor/rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
