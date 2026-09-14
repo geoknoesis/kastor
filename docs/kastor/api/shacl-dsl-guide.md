@@ -392,7 +392,7 @@ property("http://example.org/score") {
 
 #### Precision Constraints
 
-> **Not available.** `totalDigits` and `fractionDigits` are deprecated at `ERROR` level and emit nothing: `sh:totalDigits` / `sh:fractionDigits` are not defined by SHACL 1.0 or SHACL 1.2, so no SHACL validator enforces them.
+> **Not available.** `totalDigits` and `fractionDigits` are deprecated at `ERROR` level: `sh:totalDigits` / `sh:fractionDigits` are not defined by SHACL 1.0 or SHACL 1.2, so no SHACL validator enforces them. They are kept only for binary compatibility. The getters return `null`, and **setting either one throws `UnsupportedOperationException`**, so code compiled against an older version fails loudly instead of silently losing the limit.
 
 To limit digits, constrain the lexical form with `pattern` (or use a SPARQL constraint):
 
