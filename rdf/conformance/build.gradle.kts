@@ -22,6 +22,8 @@ dependencies {
 tasks.named<Test>("test") {
   val corpus = providers.gradleProperty("conformanceDataDir").orNull
   corpus?.let { systemProperty("conformance.dataDir", it) }
+  // Maintainers: -PconformanceAllowlistProposal=<file> appends a proposed allowlist row per failing/skipped test.
+  providers.gradleProperty("conformanceAllowlistProposal").orNull?.let { systemProperty("conformance.allowlistProposal", it) }
   inputs.files(fileTree(corpus ?: "test-data"))
 }
 

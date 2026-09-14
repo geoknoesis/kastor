@@ -1,6 +1,5 @@
 package com.geoknoesis.kastor.rdf.conformance.jena
 
-import com.geoknoesis.kastor.rdf.RdfFormatException
 import com.geoknoesis.kastor.rdf.conformance.ConformanceAllowlist
 import com.geoknoesis.kastor.rdf.conformance.Conformer
 import com.geoknoesis.kastor.rdf.conformance.Rdf12ConformanceRunner
@@ -16,7 +15,9 @@ import org.junit.jupiter.api.TestFactory
  *
  * The test factory walks `test-data/rdf12/` manifests, turning each test row into a dynamic test.
  * When the W3C data has not been initialised, the factory yields a single skipped test.
- * Known deviations must be listed by IRI with a reason in `conformance-allowlist.tsv`.
+ * Known deviations must be listed by IRI with a reason and failure signature in `conformance-allowlist.tsv`.
+ *
+ * Eval expectations are parsed by the independent reference parser, not by the Jena provider under test.
  *
  * The system property `conformance.includeUnapproved=true` opts in to running
  * tests whose `rdft:approval` is not `rdft:Approved`.
@@ -26,13 +27,11 @@ import org.junit.jupiter.api.TestFactory
 @Tag("w3c-rdf12-full")
 class JenaConformanceTest {
 
-    private val provider = JenaProvider()
     private val conformer = Conformer(
         label = "Jena",
-        provider = provider,
+        provider = JenaProvider(),
         newDatasetRepo = { JenaRepository.MemoryRepository() },
         allowlist = ConformanceAllowlist.forProvider("Jena"),
-        expectedFailure = { it is RdfFormatException },
     )
 
     @TestFactory
