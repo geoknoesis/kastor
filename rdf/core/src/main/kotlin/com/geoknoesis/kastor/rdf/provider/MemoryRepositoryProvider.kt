@@ -68,6 +68,14 @@ class MemoryRepositoryProvider : RdfProvider {
  * - **Transactions** keep an undo log, so a rollback costs the size of the change, not of the repository.
  * - **Graph handles** from [getGraph] / [editGraph] / [createGraph] are live views of a graph name: they
  *   stay valid across [clear] and [removeGraph], and reading a graph never creates it.
+ * - **Graph existence:** a graph created with [createGraph] is reported by [hasGraph] / [listGraphs] even while
+ *   empty, until [removeGraph] or [clear]. A graph that only came into existence by writing to it is reported
+ *   while it holds triples.
+ * - **Transactions hold the lock for the whole block:** [transaction] holds the write lock and [readTransaction]
+ *   the read lock until the block returns. Work handed to another thread that touches this repository blocks
+ *   until then, so waiting for such work from inside a block deadlocks.
+ * - **Rollback** runs every undo action even if one fails; undo failures are attached to the original
+ *   exception as suppressed exceptions, and the original exception is rethrown.
  *
  * **Resource Management:**
  * - Always use [use] or call [close] explicitly
@@ -75,6 +83,8 @@ class MemoryRepositoryProvider : RdfProvider {
 class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private val lock = ReentrantReadWriteLock()
     private val graphs = linkedMapOf<Iri, MemoryGraph>()
+    /** Graphs created explicitly with [createGraph]; listed even while empty. Guarded by [lock]. */
+    private val createdGraphs = HashSet<Iri>()
     @Volatile private var closed = false
     private val transactionMode = ThreadLocal<Boolean?>()
     /** Undo actions of the active write transaction; only touched while holding the write lock. */
@@ -87,7 +97,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         check(!write || transactionMode.get() != false) { "Cannot write inside a read transaction" }
     }
 
-    private fun recordUndo(undo: () -> Unit) {
+    internal fun recordUndo(undo: () -> Unit) {
         undoLog?.add(undo)
     }
 
@@ -97,15 +107,34 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
 
     override val defaultGraph: RdfGraph get() { checkAccess(false); return default }
     override fun getGraph(name: Iri): RdfGraph { checkAccess(false); return NamedGraphView(name) }
-    override fun hasGraph(name: Iri): Boolean = lock.read { checkAccess(false); (graphs[name]?.size() ?: 0) > 0 }
-    override fun listGraphs(): List<Iri> = lock.read { checkAccess(false); graphs.filterValues { it.size() > 0 }.keys.toList() }
-    override fun createGraph(name: Iri): RdfGraph = getGraph(name)
+    private fun existsUnlocked(name: Iri): Boolean = name in createdGraphs || (graphs[name]?.size() ?: 0) > 0
+    override fun hasGraph(name: Iri): Boolean = lock.read { checkAccess(false); existsUnlocked(name) }
+    override fun listGraphs(): List<Iri> = lock.read { checkAccess(false); graphs.keys.filter(::existsUnlocked) }
+    override fun createGraph(name: Iri): RdfGraph {
+        checkAccess(true)
+        lock.write {
+            if (name !in graphs) {
+                graphs[name] = newGraph()
+                recordUndo { lock.write { graphs.remove(name) } }
+            }
+            if (createdGraphs.add(name)) recordUndo { lock.write { createdGraphs.remove(name) } }
+        }
+        return NamedGraphView(name)
+    }
     override fun removeGraph(name: Iri): Boolean {
         checkAccess(true)
         return lock.write {
-            val graph = graphs.remove(name) ?: return@write false
-            recordUndo { lock.write { graphs[name] = graph } }
-            graph.clear()
+            val wasCreated = createdGraphs.remove(name)
+            val graph = graphs.remove(name)
+            if (graph == null && !wasCreated) return@write false
+            recordUndo {
+                lock.write {
+                    if (graph != null) graphs[name] = graph
+                    if (wasCreated) createdGraphs.add(name)
+                }
+            }
+            val changed = graph?.clear() ?: false
+            changed || wasCreated
         }
     }
     override fun editDefaultGraph(): MutableRdfGraph { checkAccess(false); return default }
@@ -128,7 +157,10 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
                 operations(this)
             } catch (e: Throwable) {
                 undoLog = null // undo actions must not journal themselves
-                for (i in log.indices.reversed()) log[i]()
+                for (i in log.indices.reversed()) {
+                    // Keep rolling back and keep the caller's failure as the primary exception.
+                    try { log[i]() } catch (undoFailure: Throwable) { if (undoFailure !== e) e.addSuppressed(undoFailure) }
+                }
                 throw e
             } finally {
                 undoLog = null
@@ -152,8 +184,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
             var changed = default.clear()
             graphs.values.forEach { if (it.clear()) changed = true }
             val removed = LinkedHashMap(graphs)
+            val removedCreated = HashSet(createdGraphs)
+            if (removedCreated.isNotEmpty()) changed = true
             graphs.clear()
-            recordUndo { lock.write { graphs.putAll(removed) } }
+            createdGraphs.clear()
+            recordUndo { lock.write { graphs.putAll(removed); createdGraphs.addAll(removedCreated) } }
             changed
         }
     }

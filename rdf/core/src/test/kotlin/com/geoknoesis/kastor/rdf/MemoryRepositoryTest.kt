@@ -20,14 +20,15 @@ class MemoryRepositoryTest {
         RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
 
     @Test
-    fun `createGraph is idempotent and lists nonempty graphs`() {
+    fun `createGraph is idempotent and lists created graphs`() {
         val repo = memory()
         val graphName = Iri("http://example.org/graph")
 
         assertFalse(repo.hasGraph(graphName))
         val graph = repo.createGraph(graphName)
         assertNotNull(graph)
-        assertFalse(repo.hasGraph(graphName))
+        assertTrue(repo.hasGraph(graphName), "a created graph exists even while empty")
+        assertEquals(listOf(graphName), repo.listGraphs())
         repo.editGraph(graphName).addTriple(RdfTriple(Iri("urn:s"), Iri("urn:p"), string("o")))
         assertTrue(repo.hasGraph(graphName))
         assertEquals(listOf(graphName), repo.listGraphs())
