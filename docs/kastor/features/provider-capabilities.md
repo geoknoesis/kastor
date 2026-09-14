@@ -19,41 +19,45 @@ The provider capability system includes:
 
 The main capability data class with comprehensive feature descriptions:
 
+Declared in `rdf-core` (package `com.geoknoesis.kastor.rdf`). Every flag defaults to `false` and every list to empty, so a provider advertises only what it sets explicitly:
+
 ```kotlin
 data class ProviderCapabilities(
+    // === RDF 1.2 ===
+    val rdfVersion: String = "1.1",
+    val supportsTripleTerms: Boolean = false,
+
     // === BASIC CAPABILITIES ===
     val supportsInference: Boolean = false,
     val supportsTransactions: Boolean = false,
     val supportsNamedGraphs: Boolean = false,
     val supportsUpdates: Boolean = false,
-    val supportsRdfStar: Boolean = false,
+    val supportsRdfStar: Boolean = false,       // legacy RDF-star round-trip; see supportsTripleTerms
+    val supportsShacl: Boolean = false,         // validates writes against SHACL shapes
     val maxMemoryUsage: Long = Long.MAX_VALUE,
-    
-    // === SPARQL 1.2 CAPABILITIES ===
-    val sparqlVersion: String = "1.2",
-    val supportsPropertyPaths: Boolean = true,
-    val supportsAggregation: Boolean = true,
-    val supportsSubSelect: Boolean = true,
+
+    // === SPARQL CAPABILITIES ===
+    val sparqlVersion: String = "1.1",
+    val supportsPropertyPaths: Boolean = false,
+    val supportsAggregation: Boolean = false,
+    val supportsSubSelect: Boolean = false,
     val supportsFederation: Boolean = false,
-    val supportsVersionDeclaration: Boolean = true,
-    val supportsServiceDescription: Boolean = true,
-    
+    val supportsVersionDeclaration: Boolean = false,
+    val supportsServiceDescription: Boolean = false,
+
     // === SERVICE DESCRIPTION CAPABILITIES ===
-    val supportedLanguages: List<String> = listOf("sparql", "sparql12"),
-    val supportedResultFormats: List<String> = listOf(
-        "application/sparql-results+json",
-        "application/sparql-results+xml",
-        "text/csv",
-        "text/tab-separated-values"
-    ),
-    val supportedInputFormats: List<String> = listOf(
-        "application/sparql-query",
-        "application/sparql-update"
-    ),
+    val supportedLanguages: List<String> = emptyList(),
+    val supportedResultFormats: List<String> = emptyList(),
+    val supportedInputFormats: List<String> = emptyList(),
+    val supportedOutputFormats: List<String> = emptyList(),   // formats supported for serialization
     val extensionFunctions: List<SparqlExtensionFunction> = emptyList(),
     val entailmentRegimes: List<String> = emptyList(),
     val namedGraphs: List<String> = emptyList(),
-    val defaultGraphs: List<String> = emptyList()
+    val defaultGraphs: List<String> = emptyList(),
+    val sparqlFeatures: Set<SparqlFeature> = emptySet(),
+
+    // === LITERALS ===
+    val supportsBaseDirection: Boolean = false, // native rdf:dirLangString base direction
 )
 ```
 
