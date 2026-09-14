@@ -323,13 +323,13 @@ internal class NativeShaclValidator(
 
             val violations = mutableListOf<ValidationViolation>()
             var totalResults = 0L
-            // SHACL 1.2: sh:Debug and sh:Trace results do not affect conformance (default sh:conformanceDisallows).
+            // SHACL 1.2 sh:conformanceDisallows (by default, sh:Debug and sh:Trace results do not affect conformance).
             var blockingResults = 0L
-            fun blocking(severity: ViolationSeverity) = severity != ViolationSeverity.DEBUG && severity != ViolationSeverity.TRACE
+            fun blocking(severity: ViolationSeverity, customIri: Iri?) = disallowsConformance(severity, customIri)
             var validatedConstraintSlots = 0L
             fun record(results: List<ValidationViolation>) {
                 totalResults += results.size
-                blockingResults += results.count { blocking(it.severity) }
+                blockingResults += results.count { blocking(it.severity, it.resultSeverityIri?.let { iri -> Iri(iri) }) }
                 for (result in results) {
                     if (violations.size >= config.maxViolations) break
                     violations.add(result)
@@ -345,7 +345,7 @@ internal class NativeShaclValidator(
                     val (rows, count) = validateUniqueValuesForShape(shape, allFocusNodes, focusOnly, ctx, config.maxViolations - violations.size)
                     violations.addAll(rows)
                     totalResults += count
-                    if (blocking(shape.severity)) blockingResults += count
+                    if (blocking(shape.severity, shape.severityCustomIri)) blockingResults += count
                 }
                 val focusNodes = if (focusOnly == null) allFocusNodes else allFocusNodes.filter { it == focusOnly }
                 validatedConstraintSlots += countConstraintEvaluationSlots(shape, focusNodes.size)
@@ -458,6 +458,20 @@ internal class NativeShaclValidator(
 
     override fun getValidationStatistics(graph: RdfGraph, shapes: RdfGraph): ValidationStatistics =
         validate(graph, shapes).statistics
+
+    /** Whether a result of this severity makes the report non-conforming ([ValidationConfig.conformanceDisallows]). */
+    private fun disallowsConformance(severity: ViolationSeverity, customIri: Iri?): Boolean {
+        val disallowed = config.conformanceDisallows
+            ?: return severity != ViolationSeverity.DEBUG && severity != ViolationSeverity.TRACE
+        val iri = customIri ?: when (severity) {
+            ViolationSeverity.VIOLATION, ViolationSeverity.ERROR -> SHACL.Violation
+            ViolationSeverity.WARNING -> SHACL.Warning
+            ViolationSeverity.INFO -> SHACL.Info
+            ViolationSeverity.DEBUG -> SHACL.Debug
+            ViolationSeverity.TRACE -> SHACL.Trace
+        }
+        return iri in disallowed
+    }
 
     private fun computeFocusNodes(shape: CompiledNodeShape, ctx: ValidationContext, undecidedTargets: MutableList<ValidationViolation>): List<RdfTerm> {
         val data = ctx.data

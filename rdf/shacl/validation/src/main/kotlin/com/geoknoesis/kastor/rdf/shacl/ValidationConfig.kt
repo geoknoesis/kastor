@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.Iri
 import java.time.Duration
 
 /**
@@ -56,6 +57,13 @@ data class ValidationConfig(
      * engine). Exceeding it fails validation instead of exhausting memory.
      */
     val maxPathValueNodes: Int = 1_000_000,
+    /**
+     * SHACL 1.2 `sh:conformanceDisallows` (native engine): the result severities — `sh:Violation`, `sh:Warning`,
+     * `sh:Info`, `sh:Debug`, `sh:Trace` or a custom severity IRI — whose results make [ValidationReport.isValid]
+     * false. `null` (default) applies the SHACL default: every severity except `sh:Debug` and `sh:Trace`. Results of
+     * other severities are still reported. Results about undefined recursive dependencies have severity `sh:Warning`.
+     */
+    val conformanceDisallows: Set<Iri>? = null,
 ) {
     
     companion object {

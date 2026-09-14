@@ -17,6 +17,9 @@ import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedFeatureHandling
+import com.geoknoesis.kastor.rdf.shacl.SparqlPreBindingRestrictionException
+import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
+import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 
@@ -211,9 +214,10 @@ internal object ShapesCompiler {
         val nodeShapeSubjects = findNodeShapes(index, budget)
         val unsupported = detectUnsupportedFeatures(index, nodeShapeSubjects, budget)
         if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
-            throw ShapeCompileException(
-                "Unsupported SHACL feature(s) for the native engine: ${unsupported.joinToString("; ")}. " +
+            throw UnsupportedShaclFeatureException(
+                "Unsupported SHACL feature(s) for the native engine: ${unsupported.keys.joinToString("; ")}. " +
                     "Set ValidationConfig.unsupportedFeatures = IGNORE_WITH_WARNING to skip these constructs.",
+                unsupported.values.toSet(),
             )
         }
         val compiled = mutableListOf<CompiledNodeShape>()
@@ -259,7 +263,7 @@ internal object ShapesCompiler {
         return CompiledShapeGraph(
             byNode, compiled, refNodes, refProps, index,
             recursiveComponents(refNodes, refProps, budget),
-            unsupported.map { "Unsupported SHACL feature ignored: $it" },
+            unsupported.keys.map { "Unsupported SHACL feature ignored: $it" },
         )
     }
 
@@ -366,11 +370,17 @@ internal object ShapesCompiler {
      * Node-expression positions are only inspected on shape-reachable nodes, so data triples that share the shapes
      * graph (`validate(g, g)`, discovered shapes graphs) are never mistaken for expressions.
      */
-    private fun detectUnsupportedFeatures(index: ShapeGraphIndex, nodeShapes: List<RdfResource>, budget: ValidationBudget): List<String> {
-        val out = LinkedHashSet<String>()
+    private fun detectUnsupportedFeatures(
+        index: ShapeGraphIndex,
+        nodeShapes: List<RdfResource>,
+        budget: ValidationBudget,
+    ): Map<String, UnsupportedShaclFeature> {
+        val out = LinkedHashMap<String, UnsupportedShaclFeature>()
         val components = LinkedHashSet<RdfResource>()
         val functions = LinkedHashSet<Iri>()
         val shapes = shapeReachableNodes(index, nodeShapes, budget)
+        fun expression(term: RdfTerm) =
+            if (isNodeExpression(term, index)) UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION else UnsupportedShaclFeature.NODE_EXPRESSION
         for (t in index.triples) {
             budget.tick("feature detection")
             when {
@@ -379,20 +389,22 @@ internal object ShapesCompiler {
                 t.predicate == RDF.type && t.obj != SHACL.NodeShape && index.isInstanceOf(t.subject, SHACL.ConstraintComponent) ->
                     components.add(t.subject)
                 t.subject !in shapes -> Unit
-                t.predicate == shValues -> out.add("sh:values node expression on ${t.subject}")
-                t.predicate == shExpression -> out.add("sh:expression constraint on ${t.subject}")
-                t.predicate == shTarget -> out.add("sh:target (SPARQL-based or custom target) on ${t.subject}")
+                t.predicate == shValues -> out["sh:values node expression on ${t.subject}"] = expression(t.obj)
+                t.predicate == shExpression -> out["sh:expression constraint on ${t.subject}"] = expression(t.obj)
+                t.predicate == shTarget ->
+                    out["sh:target (SPARQL-based or custom target) on ${t.subject}"] = UnsupportedShaclFeature.CUSTOM_TARGET
                 t.predicate == SHACL.targetWhere && isNodeExpression(t.obj, index) ->
-                    out.add("sh:targetWhere with a SPARQL node expression on ${t.subject}")
+                    out["sh:targetWhere with a SPARQL node expression on ${t.subject}"] = UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION
                 t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) ->
-                    out.add("sh:targetNode with a node expression on ${t.subject}")
+                    out["sh:targetNode with a node expression on ${t.subject}"] = expression(t.obj)
                 t.predicate == SHACL.nodeByExpression && t.obj is BlankNode ->
-                    out.add("sh:nodeByExpression with a computed node expression on ${t.subject}")
+                    out["sh:nodeByExpression with a computed node expression on ${t.subject}"] = expression(t.obj)
             }
         }
         for (component in components) {
             if (constraintComponentUsed(component, index, shapes)) {
-                out.add("SPARQL-based constraint component $component (sh:validator / sh:nodeValidator / sh:propertyValidator)")
+                out["SPARQL-based constraint component $component (sh:validator / sh:nodeValidator / sh:propertyValidator)"] =
+                    UnsupportedShaclFeature.SPARQL_CONSTRAINT_COMPONENT
             }
         }
         if (functions.isNotEmpty()) {
@@ -404,11 +416,11 @@ internal object ShapesCompiler {
                 val localName = function.value.substringAfterLast('#').substringAfterLast('/')
                 val call = Regex("(?<![A-Za-z0-9_])" + Regex.escape(localName) + "[ ]*[(]")
                 if (sparqlTexts.any { it.contains(function.value) || (localName.isNotEmpty() && call.containsMatchIn(it)) }) {
-                    out.add("SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query")
+                    out["SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query"] = UnsupportedShaclFeature.SHACL_FUNCTION
                 }
             }
         }
-        return out.toList()
+        return out
     }
 
     /** Whether some shape node has values for every mandatory parameter of [component]. */
@@ -876,7 +888,7 @@ internal object ShapesCompiler {
             renderSparqlPath(p)
         }
         SparqlQueryTemplate.restrictionViolation(body)?.let { what ->
-            throw ShapeCompileException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
+            throw SparqlPreBindingRestrictionException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
         }
         val prefixes = collectPrefixDeclarations(node, index)
         val query = prefixes.entries.joinToString("") { (p, ns) ->

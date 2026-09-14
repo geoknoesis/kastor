@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.rdf.shacl.conformance
 
 import java.nio.file.Files
 import java.nio.file.Path
+import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
 import java.util.stream.Stream
 import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.DynamicContainer
@@ -21,8 +22,9 @@ import org.junit.jupiter.api.TestFactory
  *    stays meaningful without cloning the suite.
  *
  * Non-approved manifest rows are skipped unless `-Dshacl.w3c.includeNonApproved=true`. Cases listed in
- * [W3cKnownDeviations] use features the native engine does not implement: they are **executed** and must fail
- * explicitly with "Unsupported SHACL feature" (never pass silently, never be skipped).
+ * [W3cKnownDeviations] use features the native engine does not implement: they are **executed** and must fail with an
+ * [com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException] of exactly the listed category (never pass
+ * silently, never be skipped). `sht:Failure` cases must fail with the category in [W3cExpectedFailures].
  *
  * Tagged `w3c`: `./gradlew :rdf:shacl-validation:w3cConformanceTest` runs only this suite and fails (instead of
  * falling back to the bundled fixture) when the upstream checkout is missing.
@@ -42,6 +44,7 @@ class Shacl12NativeConformanceTest {
         }
 
         val cases = Shacl12ManifestParser.collect(manifest)
+        if (System.getProperty("shacl.w3c.requireSuite") == "true") assertCompleteSuite(manifest, cases)
         if (cases.isEmpty()) {
             return Stream.of(
                 DynamicTest.dynamicTest("no sht Validate entries") {
@@ -75,10 +78,24 @@ class Shacl12NativeConformanceTest {
         return containers.stream()
     }
 
+    /**
+     * With `shacl.w3c.requireSuite=true` the run must cover the full suite, including when `shacl.w3c.manifest`
+     * overrides the location: the collected cases must come from the core, SPARQL and node-expression manifests.
+     */
+    private fun assertCompleteSuite(manifest: Path, cases: List<ShaclValidateCase>) {
+        val files = cases.map { it.manifestPath.toString().replace(java.io.File.separatorChar, '/') }
+        val missing = listOf("/core/", "/sparql/", "/node-expr/").filter { part -> files.none { it.contains(part) } }
+        check(missing.isEmpty()) {
+            "shacl.w3c.requireSuite=true but $manifest does not include the ${missing.joinToString()} manifests of the full W3C SHACL 1.2 suite"
+        }
+    }
+
     private fun manifestRoot(): Path {
         System.getProperty("shacl.w3c.manifest")?.trim()?.takeIf { it.isNotEmpty() }?.let {
             val p = Path.of(it).toAbsolutePath().normalize()
-            if (Files.isRegularFile(p)) return p
+            // An explicit override never falls back silently to another suite.
+            check(Files.isRegularFile(p)) { "shacl.w3c.manifest=$it is not a manifest file" }
+            return p
         }
 
         val checkout =
@@ -96,26 +113,36 @@ class Shacl12NativeConformanceTest {
 
 /**
  * Explicit, reviewed list of W3C SHACL 1.2 cases that use features the native engine does not implement. Every entry
- * is matched against the end of the path of the manifest file containing the case (`.../dir/file.ttl`) and carries a
- * justification. The harness runs these cases and asserts that validation fails with an explicit
- * "Unsupported SHACL feature" error ([com.geoknoesis.kastor.rdf.shacl.ValidationConfig.unsupportedFeatures]).
+ * is matched against the end of the path of the manifest file containing the case (`.../dir/file.ttl`) and carries the
+ * expected [UnsupportedShaclFeature] category and a justification. The harness runs these cases and asserts that
+ * validation fails with an [com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException] whose categories are
+ * exactly that category ([com.geoknoesis.kastor.rdf.shacl.ValidationConfig.unsupportedFeatures]).
  */
 internal object W3cKnownDeviations {
-    private const val SPARQL_COMPONENTS =
+    class Deviation(val category: UnsupportedShaclFeature, val reason: String)
+
+    private val SPARQL_COMPONENTS = Deviation(
+        UnsupportedShaclFeature.SPARQL_CONSTRAINT_COMPONENT,
         "SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / " +
             "sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine " +
-            "(ValidatorCapabilities.supportsCustomConstraints = false)"
-    private const val NODE_EXPRESSIONS =
-        "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine"
-    private const val SPARQL_EXPRESSIONS =
+            "(ValidatorCapabilities.supportsCustomConstraints = false)",
+    )
+    private val NODE_EXPRESSIONS = Deviation(
+        UnsupportedShaclFeature.NODE_EXPRESSION,
+        "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine",
+    )
+    private val SPARQL_EXPRESSIONS = Deviation(
+        UnsupportedShaclFeature.SPARQL_NODE_EXPRESSION,
         "SHACL 1.2 SPARQL node expressions (sh:select / sh:sparqlExpr as sh:targetNode or sh:property values) are " +
-            "not implemented by the native engine"
-
-    private const val SPARQL_FUNCTIONS =
+            "not implemented by the native engine",
+    )
+    private val SPARQL_FUNCTIONS = Deviation(
+        UnsupportedShaclFeature.SHACL_FUNCTION,
         "SHACL 1.2 expression functions (sh:ListParameterExpressionFunction with sh:bodyExpression) called from " +
-            "SPARQL are not implemented by the native engine"
+            "SPARQL are not implemented by the native engine",
+    )
 
-    private val deviations: Map<String, String> = linkedMapOf(
+    private val deviations: Map<String, Deviation> = linkedMapOf(
         "sparql/component/optional-001.ttl" to SPARQL_COMPONENTS,
         "sparql/component/propertyValidator-select-001.ttl" to SPARQL_COMPONENTS,
         "sparql/component/validator-001.ttl" to SPARQL_COMPONENTS,
@@ -130,7 +157,7 @@ internal object W3cKnownDeviations {
         "sparql/functions/spacedConcat-example.ttl" to SPARQL_FUNCTIONS,
     )
 
-    fun reasonFor(manifestPath: Path): String? {
+    fun deviationFor(manifestPath: Path): Deviation? {
         val file = manifestPath.toString().replace(java.io.File.separatorChar, '/')
         return deviations.entries.firstOrNull { (suffix, _) -> file.endsWith("/$suffix") }?.value
     }

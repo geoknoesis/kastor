@@ -38,18 +38,12 @@ internal fun ValidationReport.toW3cResultGraph(expected: ExpectedConformanceRepo
 }
 
 internal fun assertMatchesW3cExpected(report: ValidationReport, expected: ExpectedConformanceReport, label: String) {
-    val disallows = expected.conformanceDisallowsSeverityIrises
-    if (disallows == null) {
-        assertEquals(expected.conforms, report.isValid, "$label: sh:conforms (ValidationReport.isValid)")
-        val exported = report.toShaclValidationReportRdf(W3C_REPORT_NODE).getTriples()
-            .single { it.predicate == SHACL.conforms }.obj
-        assertEquals(expected.conforms, (exported as Literal).lexical == "true", "$label: exported sh:conforms")
-    } else {
-        // sh:conformanceDisallows is a validation-process parameter the native engine does not expose;
-        // derive conformance from the reported severities exactly as the SHACL 1.2 definition prescribes.
-        val actual = report.violations.none { (it.resultSeverityIri ?: it.severity.toDefaultShaclResultSeverityIri()) in disallows }
-        assertEquals(expected.conforms, actual, "$label: sh:conforms under sh:conformanceDisallows $disallows")
-    }
+    // The engine decides conformance; sh:conformanceDisallows is passed to it through ValidationConfig by the runner.
+    val disallows = expected.conformanceDisallowsSeverityIrises?.let { " under sh:conformanceDisallows $it" }.orEmpty()
+    assertEquals(expected.conforms, report.isValid, "$label: sh:conforms (ValidationReport.isValid)$disallows")
+    val exported = report.toShaclValidationReportRdf(W3C_REPORT_NODE).getTriples()
+        .single { it.predicate == SHACL.conforms }.obj
+    assertEquals(expected.conforms, (exported as Literal).lexical == "true", "$label: exported sh:conforms$disallows")
     assertResultGraphsIsomorphic(expected.results, report.toW3cResultGraph(expected), label)
 }
 
