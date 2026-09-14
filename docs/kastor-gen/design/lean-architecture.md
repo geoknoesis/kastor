@@ -266,11 +266,12 @@ fun rdfIntOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Int?>
 fun rdfInts(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Int>>
 // ... double, boolean, BigDecimal, LocalDate, Instant, etc.
 
-// Generic typed literal
-fun <T : Any> rdfLiteral(
-    predicate: Iri,
-    decoder: (Literal) -> T,
-): ReadOnlyProperty<RdfBacked, T>
+// Generic typed literals: the decoder returns null for a value it cannot decode.
+// Undecodable values follow MaterializationPolicy.illTypedValues (THROW by default, or SKIP);
+// a required value that is missing throws MaterializationException.
+fun <T : Any> rdfLiteral(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, T>
+fun <T : Any> rdfLiteralOrNull(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, T?>
+fun <T : Any> rdfLiterals(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, List<T>>
 
 // IRIs (raw)
 fun rdfIri(predicate: Iri): ReadOnlyProperty<RdfBacked, Iri>

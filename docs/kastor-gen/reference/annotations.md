@@ -239,11 +239,17 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 
 4. **Missing values**
    - Missing values are never replaced by invented defaults (`""`, `0`, `false`).
-   - A **non-null** single-valued property throws `IllegalStateException` when its value is missing or
-     cannot be decoded (e.g. `"abc"` for an `Int`).
+   - A **non-null** single-valued property throws `MaterializationException` (an `IllegalStateException`) with the message
+     `Required value missing for <member> <path>` when its value is missing. There is no lenient option.
+   - A value that cannot be decoded (e.g. `"abc"` for an `Int`) follows `MaterializationPolicy.illTypedValues`:
+     `THROW` (default) raises `MaterializationException` naming the value, its datatype, the member and the
+     expected type; `SKIP` omits the value and logs a warning. This applies to lists, nullable and non-null
+     members, and mutable getters. Under `SKIP`, a non-null property whose only values were skipped counts
+     as missing and throws.
    - A **nullable** property returns `null` when the value is missing; assigning `null` to a nullable `var`
      removes the triples for that predicate.
    - Lists are empty when there are no values.
+   - See the [runtime reference](runtime.md#materializationpolicy).
 
 ## Common Patterns
 
