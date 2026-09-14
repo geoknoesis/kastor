@@ -1,62 +1,111 @@
-package com.geoknoesis.kastor.rdf.sparql
+package com.geoknoesis.kastor.rdf.sparql.internal
 
 /**
- * Applies initial bindings to a SPARQL SELECT query by syntactic substitution, following the same
- * rules as Jena's `QueryExecution...substitution(...)` (`QueryTransformOps`), which is what the
- * Jena provider uses for [com.geoknoesis.kastor.rdf.SparqlQueryable.withSelectRows] with bindings:
+ * **Not public API.** Applies initial bindings to a SPARQL SELECT query by syntactic substitution,
+ * following the same rules as Jena's `QueryExecution...substitution(...)` (`QueryTransformOps`),
+ * which is what the Jena provider uses for `SparqlQueryable.withSelectRows` with bindings. It lives
+ * here so every provider that has to emulate initial bindings over query text (the SPARQL HTTP
+ * endpoint adapter, or any provider that wants Jena-identical semantics) shares one implementation.
+ * It is public only because Kotlin `internal` cannot be shared across modules; it may change
+ * without notice.
  *
+ * Substitution rules:
  * - Every occurrence of a bound variable in the WHERE clause (including FILTER, BIND expressions,
  *   OPTIONAL, MINUS, EXISTS/NOT EXISTS, sub-selects), GROUP BY, HAVING and ORDER BY is replaced by
  *   the constant, so the binding restricts the query *before* aggregation, LIMIT and filtering.
  *   A bare `ORDER BY ?var` becomes `ORDER BY (constant)`.
- * - A bound variable listed in the projection is kept in the results as `(constant AS ?var)`.
- *   `GROUP BY ?var` becomes `GROUP BY (constant AS ?var)` and the projection keeps `?var`.
+ * - A bound variable listed in a projection is returned as `(constant AS ?var)`, so it is bound in
+ *   every row. `GROUP BY ?var` becomes `GROUP BY (constant AS ?var)` and the projection keeps `?var`.
+ * - `(constant AS ?var)` is only legal when `?var` is not already in scope, so when a sub-select
+ *   also projects the variable, the sub-select's copy is renamed to a fresh, unused variable. That
+ *   copy only ever held the constant (or nothing), so joins are unchanged.
  * - `SELECT *` does not return bound variables (as in Jena).
  * - Because variables are replaced, a `MINUS` whose only shared variable is bound no longer shares
  *   a variable and removes nothing (identical to the Jena provider).
  *
  * Rejected with [IllegalArgumentException], where substitution cannot produce a valid query with
  * the same meaning:
+ * - the query is not a SELECT query;
  * - the variable is assigned by the query (`BIND(... AS ?var)`, `(expr AS ?var)`, `VALUES ?var`);
  * - the variable is used inside a sub-select that does not project it. Such a variable is local to
  *   the sub-select, so an outer binding must not apply to it (Jena substitutes it anyway).
  *
- * Tokenizing skips comments, string literals and IRIs, so text inside them is never rewritten.
+ * Lexical handling:
+ * - SPARQL 1.1 codepoint escapes (backslash-u plus 4 hex digits, backslash-U plus 8 hex digits;
+ *   SPARQL 1.1 section 19.2) are decoded over the whole text before tokenizing, as a SPARQL 1.1
+ *   parser does. As in Java and Jena's SPARQL 1.1 parser, a backslash preceded by an odd number of
+ *   raw backslashes does not start an escape. Text outside the replaced tokens is kept exactly as
+ *   written. Literals rendered by [SparqlLexical.escapeString] read the same with or without this
+ *   pre-pass, so they tokenize identically either way.
+ * - Comments, string literals and IRIs are skipped, so text inside them is never rewritten.
+ *   Escaped characters in prefixed local names (`ex:a\#b`) belong to the name.
  */
-internal object InitialBindings {
+object SparqlInitialBindings {
 
-    /** [bindings] maps variable names (without `?`) to already-rendered SPARQL constants. */
+    /**
+     * Rewrite [sparql] with [bindings], which maps variable names (without `?`) to SPARQL constant
+     * terms already rendered with [SparqlLexical] (IRIs, literals). The constants are inserted as
+     * given.
+     */
     fun apply(sparql: String, bindings: Map<String, String>): String {
         if (bindings.isEmpty()) return sparql
-        bindings.keys.forEach { SparqlTermFormat.varName(it) }
-        val tokens = tokenize(sparql)
-        val select = tokens.indices.firstOrNull { tokens[it].isKeyword("SELECT") }
-            ?: throw IllegalArgumentException("Initial bindings can only be applied to a SELECT query")
+        bindings.keys.forEach { SparqlLexical.varName(it) }
+        val decoded = decodeCodepointEscapes(sparql)
+        val tokens = tokenize(decoded.text)
+        val form = tokens.indexOfFirst { token -> QUERY_FORMS.any { token.isKeyword(it) } }
+        require(form >= 0 && tokens[form].isKeyword("SELECT")) { "Initial bindings can only be applied to a SELECT query" }
         val replacements = HashMap<Int, String>()
-        Rewriter(tokens, bindings, replacements).query(select, tokens.size)
+        Rewriter(tokens, bindings, replacements).query(form, tokens.size)
         return buildString(sparql.length + 64) {
             var last = 0
             tokens.forEachIndexed { index, token ->
                 val replacement = replacements[index] ?: return@forEachIndexed
-                append(sparql, last, token.start)
+                append(sparql, last, decoded.originalOffset(token.start))
                 append(replacement)
-                last = token.end
+                last = decoded.originalOffset(token.end)
             }
             append(sparql, last, sparql.length)
         }
     }
 
+    private val QUERY_FORMS = listOf("SELECT", "ASK", "CONSTRUCT", "DESCRIBE")
+
     // ------------------------------------------------------------------ rewriting
+
+    /** Per bound variable a query projects, the tokens that project it; and whether it is `SELECT *`. */
+    private class Projection(val exposures: Map<String, List<Int>>, val star: Boolean)
 
     private class Rewriter(
         private val tokens: List<Token>,
         private val bindings: Map<String, String>,
         private val out: MutableMap<Int, String>,
     ) {
+        /** Token indices currently rendered as `(constant AS ?name)`. */
+        private val aliased = HashSet<Int>()
+
+        /** Variable names used by the query or generated by [rename]. */
+        private val taken: MutableSet<String> = tokens.filter { it.kind == Kind.VAR }.mapTo(HashSet()) { it.name }
+
         private fun bound(index: Int): Boolean = tokens[index].kind == Kind.VAR && tokens[index].name in bindings
 
         private fun substitute(index: Int) {
             if (bound(index)) out[index] = bindings.getValue(tokens[index].name)
+        }
+
+        private fun alias(index: Int, name: String) {
+            out[index] = "(${bindings.getValue(name)} AS ?$name)"
+            aliased.add(index)
+        }
+
+        /** Give the projection tokens [indices] of bound variable [name] one fresh variable name. */
+        private fun rename(indices: List<Int>, name: String) {
+            var fresh = "${name}_bound"
+            var n = 0
+            while (fresh in taken) fresh = "${name}_bound${++n}"
+            taken.add(fresh)
+            for (index in indices) {
+                out[index] = if (index in aliased) "(${bindings.getValue(name)} AS ?$fresh)" else "?$fresh"
+            }
         }
 
         private fun reject(name: String, why: String): Nothing =
@@ -64,36 +113,30 @@ internal object InitialBindings {
 
         /**
          * Rewrite the SELECT query whose `SELECT` keyword is at [select] and which ends before [end]
-         * (the closing brace of a sub-select, or the end of the text). Returns the bound variables it
-         * projects.
+         * (the closing brace of a sub-select, or the end of the text).
          */
-        fun query(select: Int, end: Int): Set<String> {
+        fun query(select: Int, end: Int): Projection {
             // ---- projection
             var i = select + 1
             if (i < end && (tokens[i].isKeyword("DISTINCT") || tokens[i].isKeyword("REDUCED"))) i++
-            val projectionStart = i
             var depth = 0
+            var star = false
+            val bareProjected = ArrayList<Int>()
             while (i < end) {
                 val t = tokens[i]
                 if (depth == 0 && (t.isPunct('{') || t.isKeyword("WHERE") || t.isKeyword("FROM"))) break
-                if (t.isPunct('(')) depth++ else if (t.isPunct(')')) depth--
-                i++
-            }
-            val projectionEnd = i
-            val star = (projectionStart until projectionEnd).any { tokens[it].kind == Kind.WORD && tokens[it].text == "*" }
-            val bareProjected = LinkedHashSet<Int>()
-            depth = 0
-            for (k in projectionStart until projectionEnd) {
-                val t = tokens[k]
                 when {
                     t.isPunct('(') -> depth++
                     t.isPunct(')') -> depth--
-                    t.kind == Kind.VAR && depth == 0 -> if (t.name in bindings) bareProjected.add(k)
+                    // Only a top-level `*` is `SELECT *`; the one in `COUNT(*)` is not.
+                    depth == 0 && t.kind == Kind.WORD && t.text == "*" -> star = true
+                    t.kind == Kind.VAR && depth == 0 -> if (t.name in bindings) bareProjected.add(i)
                     t.kind == Kind.VAR -> {
-                        if (k > 0 && tokens[k - 1].isKeyword("AS") && t.name in bindings) reject(t.name, "the query assigns it with AS")
-                        substitute(k)
+                        if (tokens[i - 1].isKeyword("AS") && t.name in bindings) reject(t.name, "the query assigns it with AS")
+                        substitute(i)
                     }
                 }
+                i++
             }
 
             // ---- dataset clauses and WHERE group
@@ -101,10 +144,10 @@ internal object InitialBindings {
             require(i < end) { "Malformed SELECT query: no WHERE group" }
             val groupOpen = i
             val groupClose = matching(groupOpen, end)
-            val exposedByChildren = group(groupOpen + 1, groupClose)
+            val children = group(groupOpen + 1, groupClose)
 
             // ---- solution modifiers and trailing VALUES
-            val groupAliased = HashSet<String>()
+            val groupAliases = HashMap<String, MutableList<Int>>()
             var k = groupClose + 1
             var clause = ""
             depth = 0
@@ -119,8 +162,8 @@ internal object InitialBindings {
                     t.kind == Kind.VAR && t.name in bindings -> when {
                         tokens[k - 1].isKeyword("AS") -> reject(t.name, "the query assigns it with AS")
                         clause == "GROUP" && depth == 0 -> {
-                            out[k] = "(${bindings.getValue(t.name)} AS ?${t.name})"
-                            groupAliased.add(t.name)
+                            alias(k, t.name)
+                            groupAliases.getOrPut(t.name) { ArrayList() }.add(k)
                         }
                         // A bare constant is not an OrderCondition (an IRI would parse as a function
                         // call); a bracketed expression is, and ordering by a constant is a no-op.
@@ -132,27 +175,31 @@ internal object InitialBindings {
             }
 
             // ---- projection of bound variables
-            val exposed = HashSet<String>()
+            val exposures = HashMap<String, MutableList<Int>>()
             for (index in bareProjected) {
                 val name = tokens[index].name
-                exposed.add(name)
-                if (name !in groupAliased && name !in exposedByChildren) out[index] = "(${bindings.getValue(name)} AS ?$name)"
+                exposures.getOrPut(name) { ArrayList() }.add(index)
+                if (name !in groupAliases) alias(index, name)
             }
-            if (star) exposed.addAll(exposedByChildren)
-            return exposed
+            for ((name, indices) in groupAliases) exposures[name]?.addAll(indices)
+            // Every `AS ?name` emitted at this level needs ?name out of scope in the WHERE group.
+            for (name in bareProjected.map { tokens[it].name } + groupAliases.keys) {
+                children.remove(name)?.let { rename(it, name) }
+            }
+            if (star) children.forEach { (name, indices) -> exposures.getOrPut(name) { ArrayList() }.addAll(indices) }
+            return Projection(exposures, star)
         }
 
-        /** Rewrite the group content in [from, to); returns bound variables projected by sub-selects. */
-        private fun group(from: Int, to: Int): Set<String> {
-            val exposed = HashSet<String>()
+        /** Rewrite the group content in [from, to); returns the projection tokens of its sub-selects. */
+        private fun group(from: Int, to: Int): MutableMap<String, MutableList<Int>> {
+            val exposed = HashMap<String, MutableList<Int>>()
             var i = from
             while (i < to) {
                 val t = tokens[i]
                 when {
                     t.isPunct('{') && i + 1 < to && tokens[i + 1].isKeyword("SELECT") -> {
                         val close = matching(i, to)
-                        val projected = subSelect(i + 1, close)
-                        exposed.addAll(projected)
+                        subSelect(i + 1, close).forEach { (name, indices) -> exposed.getOrPut(name) { ArrayList() }.addAll(indices) }
                         i = close
                     }
                     t.isKeyword("VALUES") -> valuesDeclaration(i, to)
@@ -166,26 +213,15 @@ internal object InitialBindings {
             return exposed
         }
 
-        private fun subSelect(select: Int, close: Int): Set<String> {
+        private fun subSelect(select: Int, close: Int): Map<String, List<Int>> {
             val usedBound = (select until close).filter { bound(it) }.map { tokens[it].name }.toSet()
-            val projected = query(select, close)
-            val starProjection = projectionIsStar(select, close)
+            val projection = query(select, close)
             for (name in usedBound) {
-                if (name !in projected && !starProjection) {
+                if (name !in projection.exposures && !projection.star) {
                     reject(name, "it is used inside a sub-select that does not project it, so it is a different, local variable there")
                 }
             }
-            return projected
-        }
-
-        private fun projectionIsStar(select: Int, end: Int): Boolean {
-            var i = select + 1
-            while (i < end && !tokens[i].isPunct('{') && !tokens[i].isKeyword("WHERE") && !tokens[i].isKeyword("FROM")) {
-                if (tokens[i].kind == Kind.WORD && tokens[i].text == "*") return true
-                if (tokens[i].isPunct('(')) return false
-                i++
-            }
-            return false
+            return projection.exposures
         }
 
         /** Reject a `VALUES ?v` / `VALUES (?a ?b)` declaration of a bound variable starting at [values]. */
@@ -217,6 +253,59 @@ internal object InitialBindings {
         }
     }
 
+    // ------------------------------------------------------------------ codepoint escapes
+
+    /** Decoded query text; [originalOffset] maps an offset in [text] back to the original text. */
+    private class Decoded(val text: String, private val offsets: IntArray?) {
+        fun originalOffset(index: Int): Int = offsets?.get(index) ?: index
+    }
+
+    private fun decodeCodepointEscapes(text: String): Decoded {
+        if (text.indexOf('\\') < 0) return Decoded(text, null)
+        val out = StringBuilder(text.length)
+        // Decoding never makes the text longer.
+        val offsets = IntArray(text.length + 1)
+        var i = 0
+        var rawBackslashes = 0
+        while (i < text.length) {
+            val c = text[i]
+            if (c == '\\' && rawBackslashes % 2 == 0) {
+                val digits = when (text.getOrNull(i + 1)) {
+                    'u' -> 4
+                    'U' -> 8
+                    else -> 0
+                }
+                val codepoint = if (digits == 0) -1 else hexCodepoint(text, i + 2, digits)
+                if (codepoint >= 0) {
+                    val start = out.length
+                    out.appendCodePoint(codepoint)
+                    for (k in start until out.length) offsets[k] = i
+                    i += 2 + digits
+                    rawBackslashes = 0
+                    continue
+                }
+            }
+            offsets[out.length] = i
+            out.append(c)
+            rawBackslashes = if (c == '\\') rawBackslashes + 1 else 0
+            i++
+        }
+        offsets[out.length] = text.length
+        return Decoded(out.toString(), offsets)
+    }
+
+    /** The codepoint written as [digits] hex digits starting at [from], or -1. */
+    private fun hexCodepoint(text: String, from: Int, digits: Int): Int {
+        if (from + digits > text.length) return -1
+        var value = 0L
+        for (k in from until from + digits) {
+            val digit = Character.digit(text[k], 16)
+            if (digit < 0) return -1
+            value = value * 16 + digit
+        }
+        return if (value > Character.MAX_CODE_POINT) -1 else value.toInt()
+    }
+
     // ------------------------------------------------------------------ tokenizer
 
     private enum class Kind { VAR, IRI, STRING, PUNCT, WORD }
@@ -232,7 +321,7 @@ internal object InitialBindings {
     private const val WORD_BREAK = "{}()[],;\"'<?$#"
 
     private fun isVarChar(c: Char) =
-        c == '_' || c.isLetterOrDigit() || c == '\u00B7' || c in '\u0300'..'\u036F' || c in '\u203F'..'\u2040' ||
+        c == '_' || c.isLetterOrDigit() || c == '·' || c in '̀'..'ͯ' || c in '‿'..'⁀' ||
             Character.isSurrogate(c)
 
     private fun tokenize(text: String): List<Token> {
@@ -272,8 +361,11 @@ internal object InitialBindings {
                 c == '<' || c == '?' || c == '$' -> { tokens.add(Token(Kind.WORD, c.toString(), i, i + 1)); i++ }
                 else -> {
                     val start = i
-                    while (i < n && !text[i].isWhitespace() && text[i] !in WORD_BREAK) i++
-                    tokens.add(Token(Kind.WORD, text.substring(start, i), start, i))
+                    while (i < n && !text[i].isWhitespace() && text[i] !in WORD_BREAK) {
+                        // PN_LOCAL_ESC (`ex:a\#b`): the escaped character belongs to the name.
+                        i += if (text[i] == '\\' && i + 1 < n) 2 else 1
+                    }
+                    tokens.add(Token(Kind.WORD, text.substring(start, minOf(i, n)), start, minOf(i, n)))
                 }
             }
         }

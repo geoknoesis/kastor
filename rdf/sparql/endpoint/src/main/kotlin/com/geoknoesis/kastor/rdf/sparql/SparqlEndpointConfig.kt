@@ -40,11 +40,14 @@ enum class SparqlUpdateMethod {
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout.
- * @property readTimeout maximum wait for any single read of the response body.
+ * @property readTimeout maximum wait for any single read of the response body. When
+ *   [requestTimeout] is `null` it also bounds the wait for the response headers.
  * @property requestTimeout deadline for one request. For buffered calls (select, ASK, UPDATE) it
  *   covers the whole exchange including reading the response. For streamed rows
- *   ([SparqlRepository.withSelectRows]) it only covers the time until the response headers arrive,
- *   so a slow row consumer is never cut off by it. `null` disables the deadline.
+ *   ([SparqlRepository.withSelectRows] without a per-call timeout) it only covers the time until the
+ *   response headers arrive, so a slow row consumer is never cut off by it. `null` disables the
+ *   deadline (the wait for response headers is then bounded by [readTimeout]). A per-call timeout
+ *   passed to `withSelectRows(query, bindings, timeout)` replaces it and bounds the whole call.
  * @property headers extra HTTP headers sent with every request (e.g. API keys). Never sent to a
  *   different origin after a redirect.
  * @property username HTTP Basic user; requires [password]. A warning is logged once per endpoint
