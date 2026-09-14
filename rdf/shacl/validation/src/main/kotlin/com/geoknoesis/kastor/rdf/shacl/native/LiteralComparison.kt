@@ -218,6 +218,63 @@ internal fun literalLess(a: RdfTerm, b: RdfTerm): Boolean =
 internal fun literalLessOrEqual(a: RdfTerm, b: RdfTerm): Boolean =
     tryCompareLiterals(a, b)?.let { it <= 0 } ?: false
 
+/** A value space in which [tryCompareLiterals] is a total order (and never null), or null for any other term. */
+private fun totalOrderClass(term: RdfTerm): Any? {
+    val lit = term as? Literal ?: return null
+    if (lit is LangString) return null
+    parseNumeric(lit)?.let { n ->
+        return when (n) {
+            is NumericValue.Exact -> "exact"
+            is NumericValue.Approx -> if (n.value.isNaN()) null else "approximate"
+        }
+    }
+    if (lit.datatype == XSD.string) return "string"
+    if (lit.datatype == XSD.boolean) return if (parseBoolean(lit.lexical) != null) "boolean" else null
+    val (family, moment) = parseTemporal(lit) ?: return null
+    // Values with and without a timezone are only partially ordered (XSD 1.1 §E.3.3).
+    return family to (moment.tzMinutes != null)
+}
+
+/**
+ * The (value, other) pairs for which `value < other` ([strict], `sh:lessThan`) or `value <= other`
+ * (`sh:lessThanOrEquals`) does not hold; SHACL reports one result per such pair.
+ *
+ * When every term lies in one value space that [tryCompareLiterals] orders totally (exact or approximate numbers,
+ * strings, booleans, or date/time values of one family that all have or all lack a timezone), [others] is sorted once
+ * and each value is compared from the smallest other value upwards until it is below one, since the violating others
+ * form a prefix: O((n + m) log m + results) comparisons instead of n × m. Otherwise every pair is compared.
+ * [onCompare] observes the comparisons (instrumentation).
+ */
+internal fun orderViolations(
+    values: List<RdfTerm>,
+    others: List<RdfTerm>,
+    strict: Boolean,
+    onCompare: () -> Unit = {},
+): List<Pair<RdfTerm, RdfTerm>> {
+    if (values.isEmpty() || others.isEmpty()) return emptyList()
+    fun ordered(v: RdfTerm, w: RdfTerm): Boolean {
+        onCompare()
+        return if (strict) literalLess(v, w) else literalLessOrEqual(v, w)
+    }
+    val out = ArrayList<Pair<RdfTerm, RdfTerm>>()
+    val space = totalOrderClass(others[0])
+    if (space == null || others.any { totalOrderClass(it) != space } || values.any { totalOrderClass(it) != space }) {
+        for (v in values) for (w in others) if (!ordered(v, w)) out.add(v to w)
+        return out
+    }
+    val sorted = others.sortedWith { a, b ->
+        onCompare()
+        tryCompareLiterals(a, b) ?: 0
+    }
+    for (v in values) {
+        for (w in sorted) {
+            if (ordered(v, w)) break
+            out.add(v to w)
+        }
+    }
+    return out
+}
+
 internal fun satisfiesMinInclusive(value: RdfTerm, bound: RdfTerm): Boolean {
     val c = tryCompareLiterals(value, bound) ?: return false
     return c >= 0

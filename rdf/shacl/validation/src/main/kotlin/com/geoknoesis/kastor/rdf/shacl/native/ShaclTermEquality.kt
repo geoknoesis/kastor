@@ -43,6 +43,21 @@ internal fun shaclRdfTermFingerprint(term: RdfTerm): String {
 }
 
 /**
+ * Hash code consistent with [shaclRdfTermEquals], for structured keys that avoid building a [shaclRdfTermFingerprint]
+ * string per lookup. Language tags compare case-insensitively, so they do not contribute to the hash.
+ */
+internal fun shaclRdfTermHash(term: RdfTerm): Int =
+    when (term) {
+        is Iri -> 31 * term.value.hashCode() + 1
+        is BlankNode -> 31 * term.id.hashCode() + 2
+        is TripleTerm ->
+            31 * (31 * (31 * shaclRdfTermHash(term.triple.subject as RdfTerm) + shaclRdfTermHash(term.triple.predicate)) +
+                shaclRdfTermHash(term.triple.obj)) + 3
+        is Literal -> 31 * term.lexical.hashCode() + term.datatype.value.hashCode()
+        else -> term.hashCode()
+    }
+
+/**
  * RDF term equality aligned with SHACL / RDF 1.2 usage (language literals compare lang;
  * triple terms recurse).
  */
