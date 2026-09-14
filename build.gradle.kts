@@ -5,7 +5,9 @@ buildscript {
   dependencies {
     // dependency-analysis 3.12.0 brings kotlin-metadata-jvm 2.2.x, which cannot read Kotlin 2.4 class
     // metadata ("maximum supported version is 2.3.0"), so buildHealth fails. Keep this in step with the
-    // `kotlin` version in gradle/libs.versions.toml (version catalogs are not available in buildscript {}).
+    // `kotlin` version in gradle/libs.versions.toml (version catalogs are not available in buildscript {});
+    // scripts/check-build-pins.py fails CI when they differ. Drop this block once dependency-analysis ships
+    // Kotlin 2.4 metadata support (docs/reference/dependency-upgrade-plan.md, "Temporary pins").
     classpath("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20")
   }
 }
@@ -285,10 +287,11 @@ subprojects {
 // Release publication
 //
 //   publishAllPublicationsToStagingRepository  -> build/release-repository (unsigned allowed)
-//   centralBundle                              -> signed Maven Central Portal bundle zip
+//   centralBundle                              -> signed Maven Central Portal bundle zip (local use)
 //
-// The bundle is uploaded by .github/workflows/publish.yml (tag `vX.Y.Z`, protected `release`
-// environment). Nothing in this build uploads anywhere.
+// .github/workflows/publish.yml does not run centralBundle: it signs and bundles the exact
+// build/release-repository that release-readiness.yml staged and tested in the same workflow run,
+// so the uploaded bytes are the tested bytes. Nothing in this build uploads anywhere.
 // ---------------------------------------------------------------------------------------------
 val releaseRepository = layout.buildDirectory.dir("release-repository")
 
