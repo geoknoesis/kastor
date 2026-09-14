@@ -8,7 +8,7 @@
 
 - Run **bundled SHACL catalogues** (OWL, SKOS, data quality, RDF 1.2, modern engineering, optional semantic tier) and interpret **`QualityReport`** / **`QualityFinding`** (**category**, **tier**, **pitfall** codes: OOPS **P**, Kastor **K**, modern **N**, …).
 - Use **`QualityChecker.default()`** (includes **OOPS pitfall registry** metadata) or a **custom catalogue list**.
-- Optionally: **`SemanticEnricher`** + embedding shapes, **LLM** explanations (`onto-quality-llm-koog`), **reasoning** before SHACL (**RDFS** / **OWL Micro** / **HermiT**; **K07** when globally inconsistent).
+- Optionally: **`SemanticEnricher`** + embedding shapes, **LLM** explanations (`onto-quality-llm-koog`), **reasoning** before SHACL (**RDFS** / **OWL RL** / **HermiT**; **K07** when globally inconsistent).
 - Operate from Kotlin and/or **`onto-qa`** CLI.
 
 ## Prerequisites
@@ -87,7 +87,7 @@ Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, 
 ```kotlin
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 
-// Jena RDFS or OWL Micro (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
+// Jena RDFS or OWL_RL (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
 val reportRdfs = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 
 // HermiT (OWL 2 DL): same pipeline; globally inconsistent ontologies add ERROR-level rows tagged Kastor **K07** (with default checker / registry)
@@ -99,9 +99,11 @@ CLI examples:
 ```bash
 onto-qa check ontology.ttl --catalog all --reasoner none
 onto-qa check ontology.ttl --catalog all --reasoner rdfs
-onto-qa check ontology.ttl --catalog all --reasoner owl-micro
+onto-qa check ontology.ttl --catalog all --reasoner owl-rl
 onto-qa check ontology.ttl --catalog all --reasoner hermit
 ```
+
+`--reasoner owl-micro` is still accepted as a deprecated alias of `owl-rl` and prints a warning: it has always run Jena's OWL rule reasoner, not OWL Micro. The Kotlin enum constant `OntoQualityReasoningProfile.OWL_MICRO` is likewise deprecated in favour of `OWL_RL`.
 
 **CLI `--catalog all`** uses **`QualityChecker.default()`**, so the OOPS registry is present and **K07** metadata applies when **HermiT** reports inconsistency. Requires **`:rdf:reasoning-hermit`** (and its transitive deps) on the classpath for the CLI artifact.
 
@@ -124,7 +126,18 @@ val checker = QualityChecker.builder(validator)
 val report = checker.check(enriched)
 ```
 
-On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
+On first use, the default MiniLM ONNX model is downloaded under **`~/.kastor/onto-quality/models/`**. A cached file whose SHA-256 no longer matches (truncated or tampered) is deleted and downloaded again once. Override the cache root with **`KASTOR_MODEL_CACHE`** or **`-Dkastor.onto-quality.model-cache=...`**, or pass it directly with **`OnnxEmbeddingModel.fromMiniLm(cacheRoot, maxTokens)`**. Input text is truncated to `maxTokens` and batches are padded dynamically. Similarity search that would exceed its budget fails with **`SimilaritySearchBudgetExceededException`** instead of running unbounded.
+
+**Similarity limits and large vocabularies.** By default the pairwise search is exact, and its limits scale with the number of labelled entities (`SimilarityLimitsPolicy.scaled()`). The work budget covers the worst case, n(n−1)/2 distance evaluations plus the index build, and never drops below 50,000,000 evaluations or a 30 s deadline. Override one or both with `SimilarityLimitsPolicy.scaled(maxDistanceEvaluations, timeout)`, or pin them with `SimilarityLimitsPolicy.fixed(SimilaritySearchLimits(...))`. For tens of thousands of entities, opt in to approximate search:
+
+```kotlin
+import com.geoknoesis.kastor.ontoquality.embed.SimilarityLimitsPolicy
+import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
+
+val enricher = SemanticEnricher(model, 0.85, SimilarityLimitsPolicy.scaled(), SimilaritySearchMode.ApproximateLsh())
+```
+
+`ApproximateLsh` (defaults: 20 tables, 10 bits per table, seed 42) uses random-projection locality-sensitive hashing. Only entities that share a bucket are compared, and every reported pair is verified against the threshold. Results are therefore a subset of the exact results: no pair is invented, but some may be missed (about 95 % chance of comparing a pair at cosine 0.85 with the defaults, higher for closer pairs). The mode used is recorded in the enrichment provenance (`oqsh:similaritySearchMode`).
 
 #### Domain-specific embeddings (e.g. medical)
 
@@ -160,7 +173,17 @@ onto-qa enrich ontology.ttl --model custom \
   --tokenizer-note "dmis-lab/biobert-base-cased-v1.2"
 ```
 
-Bundled **`--model all-MiniLM-L6-v2`** must not be combined with `--onnx` / `--tokenizer` / `--embedding-dim`.
+Bundled **`--model all-MiniLM-L6-v2`** must not be combined with `--onnx` / `--tokenizer` / `--embedding-dim`; inconsistent embedding options exit with status 4 before any model is loaded.
+
+Similarity options on `enrich` and `pipeline`:
+
+| Option | Meaning |
+|--------|---------|
+| `--similarity-max-work N` | Maximum distance evaluations (≥ 1). Default: scaled to the number of labelled entities, at least 50,000,000. |
+| `--similarity-timeout S` | Similarity search deadline in seconds (1–86400). Default: scaled, at least 30. |
+| `--similarity-mode exact\|approximate` | `exact` (default) finds every pair. `approximate` is the opt-in LSH mode: much faster on large vocabularies, may miss some pairs, every reported pair is verified, and the mode is recorded in provenance. |
+
+When a similarity budget is exhausted, the command exits with status 5 and names these options.
 
 ### Step 4 (optional): LLM explanations (Koog)
 
@@ -180,9 +203,11 @@ val explained = runBlocking {
 println(explained.describeMarkdown())
 ```
 
-Library callers can tune `LlmExplanationConfig.requestTimeout` (default 60 s), `maxRetries` (default 2) and `retryBackoff`. Batches that time out, fail after retries or return unusable JSON are listed in **`explained.failures`**; explanations from the other batches are kept.
+Library callers can tune `LlmExplanationConfig.requestTimeout` (default 60 s per request, including the JSON repair request), `maxRetries` (default 2), `retryBackoff` (default 1 s), `maxTotalDuration` (default 10 minutes for the whole run) and `circuitBreakerThreshold` (default 3). Only transient failures are retried: timeouts, HTTP 408 / 429 / 5xx and connection errors. Other errors (for example HTTP 400 / 401 / 403 / 404) fail the batch immediately. Each retry waits `retryBackoff` × 2^attempt with jitter (a random delay between half and all of it), or the provider's `Retry-After` when the error carries one. Once `maxTotalDuration` is spent, the remaining batches are recorded as failures instead of being sent. After `circuitBreakerThreshold` consecutive identical non-retryable failures (a bad API key, say), the remaining batches are skipped. Batches that time out, fail after retries, are skipped, or return unusable JSON are listed in **`explained.failures`**; explanations from the other batches are kept.
 
-**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain-dry-run` to preview counts without an API call. Tune calls with `--llm-timeout` (seconds, default 60), `--llm-retries` (0–10, default 2), `--explain-max` (1–500) and `--explain-batch` (1–100). Explanation failures are reported on stderr; add `--fail-on-explain-error` to exit with status 3. JSON output (kotlinx.serialization) includes **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**.
+Finding text comes from the ontology and is treated as untrusted. It is sent as JSON-encoded data inside explicit data tags, with `<` and `>` escaped, plus an instruction to ignore any instructions it contains. The JSON repair request frames the model's previous reply the same way, because that reply may echo injected ontology text.
+
+**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain-dry-run` to preview counts without an API call. Tune calls with `--llm-timeout` (seconds per request, 1–3600, default 60), `--llm-retries` (0–10, default 2; transient failures only), `--llm-max-duration` (seconds for all requests, retries and waits, 1–86400, default 600), `--explain-max` (1–500) and `--explain-batch` (1–100). Explanation failures are reported on stderr; add `--fail-on-explain-error` to exit with status 3. JSON output (kotlinx.serialization) includes **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**.
 
 ## CLI (`onto-qa`)
 
@@ -198,14 +223,29 @@ Run via Gradle from the repository root:
 ./gradlew :tools:onto-quality-cli:run --args="pipeline path/to/ontology.ttl --catalog skos-vocabulary-embed --severity info"
 ```
 
-The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
+The input syntax is picked from the file extension (`.ttl` Turtle; `.owl`/`.rdf`/`.xml` RDF/XML; `.nt` N-Triples; `.jsonld`/`.json` JSON-LD; anything else is read as Turtle). Override it with `--input-format turtle|rdfxml|ntriples|jsonld`. The file is parsed with its own URI as base IRI, so relative IRIs such as `<> a owl:Ontology` in Turtle or `rdf:about="#Foo"` in RDF/XML resolve against the file (for example `file:///home/me/onto.ttl#Foo`) instead of failing to parse. Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
 
-See the [module README](../../../tools/onto-quality/library/README.md) for threshold tuning, exit codes, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
+Errors print a one-line message; add the root option **`--debug`** before the subcommand (`onto-qa --debug check …`) to also print stack traces.
+
+**Report output:** text taken from the ontology (SHACL messages, focus node and shape names) and from the LLM is Markdown-escaped in `--format markdown`, so it cannot inject links, images or raw HTML. In `--format text`, control characters other than newline and tab are shown as visible `\uXXXX` escapes, so terminal escape sequences embedded in the ontology cannot execute. JSON output is serialized with kotlinx.serialization and escapes every string.
+
+See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats) for the complete option validation rules, threshold tuning, and **`KASTOR_SKIP_EMBEDDING_TESTS`** (CI).
 
 ## Validation
 
 - Kotlin: `report.conforms` / `report.describeText()` reflect SHACL outcomes for the selected catalogues.
-- CLI exit codes: **0** success; **1** findings reached `--severity`, or invalid usage; **2** the input could not be parsed; **3** LLM explanations failed and `--fail-on-explain-error` was set (1 takes precedence). See the [module README](../../../tools/onto-quality/library/README.md).
+- CLI exit codes (every failure has its own status):
+
+| Exit status | Meaning |
+|-------------|---------|
+| **0** | Success; no findings at or above `--severity` (default `violation`). |
+| **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Used for nothing else. |
+| **2** | The input ontology could not be parsed in the selected RDF syntax. |
+| **3** | `--fail-on-explain-error` was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
+| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`. |
+| **5** | Runtime error: embedding model download or loading, similarity search budget exceeded, I/O (for example the output cannot be written), or an unexpected internal error. Run `onto-qa --debug <command> …` for the stack trace. |
+
+  Scripts that treated status 1 as "findings or bad usage" should also check 4 and 5. See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
 
 ## Troubleshooting
 

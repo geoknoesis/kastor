@@ -75,7 +75,7 @@ Exact naming is illustrative; final API lives in `onto-quality` (or optional `on
 - **`--explain-max N`**, **`--explain-severity …`**: caps.
 - **`--explain-dry-run`**: print prompt size / finding count without calling the model.
 
-*Implemented:* `check --explain` with `--explain-max` (1–500), `--explain-batch` (1–100), `--llm-timeout` (seconds), `--llm-retries` (0–10) and `--fail-on-explain-error` (exit status 3). JSON output also carries `llmExplanationFailures`.
+*Implemented:* `check --explain` (and `pipeline --explain`) with `--explain-max` (1–500), `--explain-batch` (1–100), `--llm-timeout` (seconds per request), `--llm-retries` (0–10, transient failures only), `--llm-max-duration` (seconds for the whole run, default 600) and `--fail-on-explain-error` (exit status 3). JSON output also carries `llmExplanationFailures`. The full CLI option and exit-code reference is in the [module README](../../../tools/onto-quality/library/README.md#llm-explanations).
 
 ---
 
@@ -159,7 +159,7 @@ Example **`explanations.schemaVersion: 1`**:
 
 Parser validates **count** (one item per input ref in batch) and **required fields**; on parse failure, **retry once** with a correction instruction; then **fail soft** (omit explanations for that batch, log).
 
-*Implemented:* every request (including the repair request) is bounded by `LlmExplanationConfig.requestTimeout`. Failed or timed-out requests are retried up to `maxRetries` times with exponential `retryBackoff`. Failures are isolated per batch and recorded in `ExplainedQualityReport.failures`.
+*Implemented:* every request (including the repair request) is bounded by `LlmExplanationConfig.requestTimeout`. Failures are classified before retrying: only timeouts, HTTP 408 / 429 / 5xx and connection errors are retried, up to `maxRetries` times. The wait is `retryBackoff` × 2^attempt with equal jitter (uniform between half and all of it), or the provider's `Retry-After` when it appears in the error. Other failures, such as HTTP 400 / 401 / 403 / 404, are not retried. The whole run is bounded by `maxTotalDuration` (default 10 minutes); batches that cannot finish in time are recorded as failures. After `circuitBreakerThreshold` (default 3) consecutive identical non-retryable failures, the remaining batches are skipped. Failures are isolated per batch and recorded in `ExplainedQualityReport.failures`.
 
 ---
 
@@ -194,7 +194,7 @@ Never read secrets from files checked into git.
 ## 8. Security and privacy
 
 - Prefer **no logging** of full prompts or API keys; log **hashes** and counts. *Implemented:* `LlmExplanationConfig.toString()` redacts the API key.
-- *Implemented:* finding and ontology text is passed to the model as escaped JSON data with an instruction to treat it as data. LLM output is Markdown-escaped in reports, so no links, images or raw HTML are rendered.
+- *Implemented:* finding and ontology text is untrusted. It is passed to the model as JSON-encoded data inside explicit data tags (`<` and `>` escaped, so the text cannot close the tag), with an instruction to ignore any instructions inside it. The JSON repair request frames the model's previous reply the same way, since that reply may echo injected text. LLM output and ontology-derived text (SHACL messages, focus and shape names) are Markdown-escaped in reports, so no links, images or raw HTML are rendered. Plain-text output shows control characters as visible `\uXXXX` escapes.
 - Curators may run on **sensitive** TBox text in violation messages; treat prompts as **confidential**; document that cloud providers may process according to their policies.
 - Support **local inference** later via Koog-compatible providers (e.g. Ollama) without changing the v0.3 API—operational configuration only.
 
