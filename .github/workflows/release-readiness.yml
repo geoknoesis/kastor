@@ -58,14 +58,14 @@ jobs:
       - name: Audit pinned dependency versions
         run: python scripts/audit-dependencies.py
       - name: Verify executed test counts and skips
-        # Floors: ~90% of a clean build overall (3,461 executed on 2026-09-13); RDF corpus 1,869 executed;
-        # the W3C SHACL suite must run from the pinned corpus (163 cases, 154 executed on 2026-09-13), not the 4-case bundled fixture.
+        # Floors: ~90% of executed counts with the pinned corpora (overall ~3,750, RDF corpus 1,898, SHACL module 282 on 2026-09-14);
+        # the W3C SHACL suite must run from the pinned corpus (166 cases, all executed on 2026-09-14), not the 4-case bundled fixture.
         shell: bash
         run: |
-          python scripts/check-test-results.py build/modules --minimum 3100 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1800 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 200 \
-            --require-suite "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=140" \
+          python scripts/check-test-results.py build/modules --minimum 3350 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1700 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 250 \
+            --require-suite "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150" \
             --skip-allowlist scripts/test-skip-allowlist.json
       - name: Retain staged artifacts and reports
         if: always()
