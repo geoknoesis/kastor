@@ -47,6 +47,7 @@ jobs:
           python scripts/test_check_test_results.py
           python scripts/test_check_staged_publications.py
           python scripts/test_check_build_pins.py
+          python scripts/test_check_readme_imports.py
 
       - name: Documentation version references
         run: python scripts/check-doc-versions.py
@@ -54,6 +55,9 @@ jobs:
       - name: Build pins match the version catalog
         # e.g. the kotlin-metadata-jvm buildscript pin in build.gradle.kts must equal `kotlin` in libs.versions.toml.
         run: python scripts/check-build-pins.py
+
+      - name: README samples import what they use
+        run: python scripts/check-readme-imports.py
 
       - name: Gradle check (tests, ABI, BOM coverage, coverage floors)
         run: ./gradlew check --no-daemon -x :rdf:conformance:test
