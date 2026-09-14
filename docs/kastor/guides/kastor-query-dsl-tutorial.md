@@ -813,16 +813,31 @@ val query = select("name", "friendOfFriend") {
 
 ```kotlin
 // Find average age by age group
-val query = select("ageGroup", "avgAge") {
+val query = select("ageGroup") {
+    aggregate(AggregateFunction.AVG, `var`("age").expr(), "avgAge")
     where {
         triple(`var`("person"), agePred, `var`("age"))
-        bind(`var`("ageGroup"), 
-            if_(`var`("age") gt 65, string("senior"), 
-                if_(`var`("age") gt 18, string("adult"), string("minor"))))
+        bind(`var`("ageGroup"),
+            if_(`var`("age") gt 65, string("senior").expr(),
+                if_(`var`("age") gt 18, string("adult").expr(), string("minor").expr())))
     }
     groupBy(`var`("ageGroup"))
 }
+
+println(query.sparql)
 ```
+
+**Generated SPARQL**:
+```sparql
+SELECT ?ageGroup (AVG(?age) AS ?avgAge)
+WHERE {
+  ?person <http://example.org/age> ?age .
+  BIND(IF(?age > "65"^^<http://www.w3.org/2001/XMLSchema#integer>, "senior"^^<http://www.w3.org/2001/XMLSchema#string>, IF(?age > "18"^^<http://www.w3.org/2001/XMLSchema#integer>, "adult"^^<http://www.w3.org/2001/XMLSchema#string>, "minor"^^<http://www.w3.org/2001/XMLSchema#string>)) AS ?ageGroup)
+}
+GROUP BY ?ageGroup
+```
+
+`aggregate(...)` adds `(AVG(?age) AS ?avgAge)` after the listed variables. With `groupBy`, every projected variable must be grouped or computed by an aggregate. Literals are written with their datatype.
 
 ### 24. Conditional Queries
 
