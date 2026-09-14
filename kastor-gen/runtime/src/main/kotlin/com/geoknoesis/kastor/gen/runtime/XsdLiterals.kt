@@ -5,9 +5,8 @@ import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.time.DateTimeException
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 
 /**
  * Lexical-form codecs used by generated wrappers, data-class factories, writers and DSL builders.
@@ -21,13 +20,22 @@ object XsdLiterals {
 
   fun string(literal: Literal): String = literal.lexical
 
-  fun int(literal: Literal): Int? = literal.lexical.trim().toIntOrNull()
+  private val INTEGER = Regex("[+-]?[0-9]+")
+  private val DECIMAL = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
+  private val DATE = Regex("(-?)([0-9]{4,})-([0-9]{2})-([0-9]{2})(Z|[+-][0-9]{2}:[0-9]{2})?")
 
-  fun long(literal: Literal): Long? = literal.lexical.trim().toLongOrNull()
+  private fun integerLexical(literal: Literal): String? = literal.lexical.trim().takeIf { INTEGER.matches(it) }
 
-  fun bigInteger(literal: Literal): BigInteger? = literal.lexical.trim().toBigIntegerOrNull()
+  /** xsd:int and smaller types; `[+-]?digits` (a leading `+` is valid XSD), range-checked. */
+  fun int(literal: Literal): Int? = integerLexical(literal)?.toIntOrNull()
 
-  fun bigDecimal(literal: Literal): BigDecimal? = literal.lexical.trim().toBigDecimalOrNull()
+  fun long(literal: Literal): Long? = integerLexical(literal)?.toLongOrNull()
+
+  fun bigInteger(literal: Literal): BigInteger? = integerLexical(literal)?.let(::BigInteger)
+
+  /** xsd:decimal: `[+-]?(digits[.digits] | .digits)`; exponents are not decimal syntax. */
+  fun bigDecimal(literal: Literal): BigDecimal? =
+    literal.lexical.trim().takeIf { DECIMAL.matches(it) }?.let(::BigDecimal)
 
   fun float(literal: Literal): Float? = when (val s = literal.lexical.trim()) {
     "INF", "+INF" -> Float.POSITIVE_INFINITY
@@ -52,11 +60,28 @@ object XsdLiterals {
     else -> null
   }
 
-  /** xsd:date; an optional timezone suffix is accepted and dropped. */
-  fun localDate(literal: Literal): LocalDate? = try {
-    LocalDate.parse(literal.lexical.trim(), DateTimeFormatter.ISO_DATE)
-  } catch (_: DateTimeParseException) {
-    null
+  /**
+   * xsd:date; an optional timezone suffix is accepted and dropped. Years have at least four digits and may have
+   * more (`12345-06-07`, without the `+` that ISO-8601 requires) or be negative (`-0044-03-15`, proleptic).
+   */
+  fun localDate(literal: Literal): LocalDate? {
+    val match = DATE.matchEntire(literal.lexical.trim()) ?: return null
+    val (sign, year, month, day) = match.destructured
+    return try {
+      LocalDate.of((sign + year).toInt(), month.toInt(), day.toInt())
+    } catch (_: DateTimeException) {
+      null
+    } catch (_: NumberFormatException) {
+      null
+    }
+  }
+
+  /** Lexical xsd:date for [date]: `yyyy-MM-dd` with at least four year digits and no `+` for years above 9999. */
+  private fun dateLexical(date: LocalDate): String {
+    val year = date.year
+    val digits = (if (year < 0) -year else year).toString().padStart(4, '0')
+    return (if (year < 0) "-" else "") + digits + "-" +
+      date.monthValue.toString().padStart(2, '0') + "-" + date.dayOfMonth.toString().padStart(2, '0')
   }
 
   /** rdf:langString values are exposed as the core [LangString] term. */
@@ -83,6 +108,7 @@ object XsdLiterals {
         else -> value.toString()
       }
       is BigDecimal -> value.toPlainString()
+      is LocalDate -> dateLexical(value)
       else -> value.toString()
     }
     return Literal(lexical, datatype)

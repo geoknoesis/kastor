@@ -39,8 +39,17 @@ sealed interface ValidationResult {
     data class Violations(val items: List<ShaclViolation>) : ValidationResult
 }
 
-interface ValidationContext {
+/**
+ * A SHACL validator for a focus node in a data graph.
+ *
+ * Validators may hold resources (an RDF4J repository, parsed shapes); callers that create one should close it
+ * (`use { }`). The default [close] does nothing.
+ */
+interface ValidationContext : AutoCloseable {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
+
+    /** Releases resources held by this validator. The default does nothing. */
+    override fun close() {}
 }
 
 class ValidationException(
@@ -49,14 +58,23 @@ class ValidationException(
     cause: Throwable? = null
 ) : RuntimeException(message, cause)
 
-fun ValidationResult.orThrow() {
-    when (this) {
-        is ValidationResult.Ok -> Unit
-        is ValidationResult.Violations -> {
-            val message = items.joinToString("; ") { it.message }
-            throw ValidationException(message.ifBlank { "SHACL validation failed" }, items)
-        }
-    }
+/**
+ * Throws [ValidationException] when the result contains an `sh:Violation`. Results with severity `sh:Warning` or
+ * `sh:Info` do not make data invalid (SHACL `sh:conforms` is still false, but they are advisory) and are ignored;
+ * use the overload with a minimum severity to fail on them too.
+ */
+fun ValidationResult.orThrow(): Unit = orThrow(ShaclSeverity.Violation)
+
+/**
+ * Throws [ValidationException] carrying the items at least as severe as [minimumSeverity]
+ * (Violation > Warning > Info); does nothing when there are none.
+ */
+fun ValidationResult.orThrow(minimumSeverity: ShaclSeverity) {
+    if (this !is ValidationResult.Violations) return
+    val failing = items.filter { it.severity.ordinal <= minimumSeverity.ordinal }
+    if (failing.isEmpty()) return
+    val message = failing.joinToString("; ") { it.message }
+    throw ValidationException(message.ifBlank { "SHACL validation failed" }, failing)
 }
 
 

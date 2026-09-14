@@ -162,7 +162,7 @@ class EdgeCaseTest {
         // Register a factory that handles malformed data
         data class PersonData(val name: String, val age: Int?)
         
-        OntoMapper.register(PersonData::class.java) { handle ->
+        OntoMapper.register(PersonData::class.java, replace = true) { handle ->
             PersonData(
                 name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, FOAF.name)
                     .map { it.lexical }
@@ -252,7 +252,7 @@ class EdgeCaseTest {
         // Register a factory that could create circular references
         data class PersonWithFriends(val name: String, val friends: List<String>)
         
-        OntoMapper.register(PersonWithFriends::class.java) { handle ->
+        OntoMapper.register(PersonWithFriends::class.java, replace = true) { handle ->
             PersonWithFriends(
                 name = KastorGraphOps.getLiteralValues(handle.graph, handle.node, FOAF.name)
                     .map { it.lexical }

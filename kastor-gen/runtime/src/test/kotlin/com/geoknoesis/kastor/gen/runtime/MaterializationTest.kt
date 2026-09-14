@@ -18,7 +18,7 @@ class MaterializationTest {
     fun `RdfRef asType materializes and asRdf works on result`() {
         
         // Register a simple factory
-        OntoMapper.register(TestPerson::class.java) { handle ->
+        OntoMapper.register(TestPerson::class.java, replace = true) { handle ->
             object : TestPerson, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -59,7 +59,7 @@ class MaterializationTest {
     
     @Test
     fun `graph ref materialize and repository shortcuts match RdfRef asType`() {
-        OntoMapper.register(TestPerson::class.java) { handle ->
+        OntoMapper.register(TestPerson::class.java, replace = true) { handle ->
             object : TestPerson, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {
@@ -104,7 +104,7 @@ class MaterializationTest {
     @Test
     fun `resource as materializes with live access`() {
         // Register a simple factory
-        OntoMapper.register(TestPerson::class.java) { handle ->
+        OntoMapper.register(TestPerson::class.java, replace = true) { handle ->
             object : TestPerson, RdfBacked {
                 override val rdf = handle
                 override val name: List<String> by lazy {

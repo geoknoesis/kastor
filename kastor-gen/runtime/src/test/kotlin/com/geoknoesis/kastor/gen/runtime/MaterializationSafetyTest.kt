@@ -31,7 +31,7 @@ class MaterializationSafetyTest {
     }
 
     private fun registerEagerFactory() {
-        OntoMapper.register(PersonSnapshot::class.java) { handle ->
+        OntoMapper.register(PersonSnapshot::class.java, replace = true) { handle ->
             PersonSnapshot(
                 id = handle.node.toString(),
                 knows = KastorGraphOps.getObjectValues(handle.graph, handle.node, knows) { child ->
@@ -66,7 +66,7 @@ class MaterializationSafetyTest {
     @Test
     fun `shared nested node is materialized once per outer call`() {
         var builds = 0
-        OntoMapper.register(PersonSnapshot::class.java) { handle ->
+        OntoMapper.register(PersonSnapshot::class.java, replace = true) { handle ->
             builds++
             PersonSnapshot(
                 id = handle.node.toString(),
