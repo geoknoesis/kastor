@@ -135,6 +135,7 @@ The client follows redirects itself (up to `maxRedirects`):
 - A bound variable in the projection stays in the results as `(constant AS ?var)`.
 - `GROUP BY ?var` becomes `GROUP BY (constant AS ?var)`, and the projection keeps `?var`.
 - `ORDER BY ?var` becomes `ORDER BY (constant)`.
+- `BOUND(?var)` becomes `(true)`, because `BOUND(constant)` is not legal SPARQL.
 - `SELECT *` does not return bound variables.
 - Because the variable is replaced, a `MINUS` whose only shared variable is bound no longer shares a variable and removes nothing (the same as with Jena).
 - Comments, string literals and IRIs are never rewritten.

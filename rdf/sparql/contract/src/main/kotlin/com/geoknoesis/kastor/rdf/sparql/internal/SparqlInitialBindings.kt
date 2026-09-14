@@ -19,6 +19,8 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  * - `(constant AS ?var)` is only legal when `?var` is not already in scope, so when a sub-select
  *   also projects the variable, the sub-select's copy is renamed to a fresh, unused variable. That
  *   copy only ever held the constant (or nothing), so joins are unchanged.
+ * - `BOUND(?var)` becomes `(true)`: `BOUND(constant)` is not legal SPARQL text, and Jena evaluates its
+ *   substituted `BOUND` to true.
  * - `SELECT *` does not return bound variables (as in Jena).
  * - Because variables are replaced, a `MINUS` whose only shared variable is bound no longer shares
  *   a variable and removes nothing (identical to the Jena provider).
@@ -70,6 +72,9 @@ object SparqlInitialBindings {
 
     private val QUERY_FORMS = listOf("SELECT", "ASK", "CONSTRUCT", "DESCRIBE")
 
+    /** A word ending in the `BOUND` keyword, not as part of a name (`ex:BOUND`, `myBOUND`); group 1 is the operator prefix. */
+    private val BOUND_CALL = Regex("(|.*[^\\p{L}\\p{N}_:.\\-\\\\])BOUND", RegexOption.IGNORE_CASE)
+
     // ------------------------------------------------------------------ rewriting
 
     /** Per bound variable a query projects, the tokens that project it; and whether it is `SELECT *`. */
@@ -89,7 +94,20 @@ object SparqlInitialBindings {
         private fun bound(index: Int): Boolean = tokens[index].kind == Kind.VAR && tokens[index].name in bindings
 
         private fun substitute(index: Int) {
-            if (bound(index)) out[index] = bindings.getValue(tokens[index].name)
+            if (!bound(index)) return
+            // `BOUND(constant)` is not legal SPARQL text (BOUND takes a variable); a bound variable is always
+            // bound, which is how Jena evaluates its substituted `BOUND`. `(true)` is legal wherever BOUND(...) is,
+            // including directly after FILTER.
+            // Operators such as `!` or `&&` are not word breaks, so the keyword may end a longer word (`!BOUND`).
+            val keyword = if (index >= 2 && tokens[index - 2].kind == Kind.WORD) BOUND_CALL.matchEntire(tokens[index - 2].text) else null
+            if (keyword != null && index + 1 < tokens.size && tokens[index - 1].isPunct('(') && tokens[index + 1].isPunct(')')) {
+                out[index - 2] = keyword.groupValues[1] + "(true)"
+                out[index - 1] = ""
+                out[index] = ""
+                out[index + 1] = ""
+                return
+            }
+            out[index] = bindings.getValue(tokens[index].name)
         }
 
         private fun alias(index: Int, name: String) {

@@ -133,6 +133,14 @@ class InitialBindingsJenaParityTest {
     }
 
     @Test
+    fun `BOUND of a bound variable stays legal SPARQL and is true`() {
+        assertSameAsJena("BOUND in a FILTER expression", "SELECT ?o WHERE { ?s <urn:p> ?o FILTER(BOUND(?s) && ?o != 2) }", mapOf("s" to a))
+        assertSameAsJena("BOUND directly after FILTER", "SELECT ?o WHERE { ?s <urn:p> ?o FILTER bound( \$s ) }", mapOf("s" to a))
+        assertSameAsJena("negated BOUND", "SELECT ?o WHERE { ?x <urn:p> ?o OPTIONAL { ?s <urn:q> ?o } FILTER(!BOUND(?s)) }", mapOf("s" to b))
+        assertSameAsJena("BOUND in the projection", "SELECT ?o (BOUND(?s) AS ?has) WHERE { ?s <urn:p> ?o }", mapOf("s" to a))
+    }
+
+    @Test
     fun `escaped characters in prefixed local names do not start comments`() {
         assertSameAsJena(
             "PN_LOCAL_ESC",
