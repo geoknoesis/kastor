@@ -200,6 +200,14 @@ private fun GraphDsl.emitSparqlConstraint(
     SparqlConstraintDsl(sparqlConstraint, this, nextBnode).configure()
 }
 
+private const val TARGET_WHERE_EXPRESSION_DEPRECATION =
+    "SPARQL node expressions are not evaluated as sh:targetWhere values: SHACL validators (including the Kastor native " +
+        "engine, which rejects them as an unsupported SHACL feature) cannot compute these targets. Use targetWhere " +
+        "with a shape, or a SHACL-SPARQL constraint."
+
+private const val DIGITS_DEPRECATION =
+    "sh:totalDigits / sh:fractionDigits are not SHACL constraints and are no longer emitted; use pattern or a SPARQL constraint"
+
 private const val SPARQL_ASK_DEPRECATION =
     "sh:ask is not allowed on SHACL-SPARQL constraints (only sh:select is); this function never " +
         "produced a valid shapes graph and now throws IllegalArgumentException. Express the check as a " +
@@ -356,7 +364,12 @@ class NodeShapeDsl(
 
     /**
      * Add a targetWhere constraint using a SPARQL SelectExpression (SHACL 1.2 SPARQL Extensions).
+     *
+     * Deprecated: SHACL validators do not evaluate SPARQL node expressions as `sh:targetWhere` values; the native
+     * engine rejects such shapes graphs ("Unsupported SHACL feature"). Use [targetWhere] with a shape, or a
+     * SHACL-SPARQL constraint.
      */
+    @Deprecated(TARGET_WHERE_EXPRESSION_DEPRECATION, level = DeprecationLevel.ERROR)
     fun targetWhereSelect(configureQuery: SelectBuilder.() -> Unit) {
         val selectExpr = nextBnode("selectExpr")
         graphDsl.triple(shape, SHACL.targetWhere, selectExpr)
@@ -371,7 +384,10 @@ class NodeShapeDsl(
 
     /**
      * Add a targetWhere constraint using a SPARQL expression (SHACL 1.2 SPARQL Extensions).
+     *
+     * Deprecated for the same reason as [targetWhereSelect].
      */
+    @Deprecated(TARGET_WHERE_EXPRESSION_DEPRECATION, level = DeprecationLevel.ERROR)
     fun targetWhereExpr(expression: String) {
         val exprNode = nextBnode("exprExpr")
         graphDsl.triple(shape, SHACL.targetWhere, exprNode)
@@ -401,10 +417,11 @@ class NodeShapeDsl(
     }
 
     /**
-     * Set whether this shape is closed (only allows declared properties).
+     * Set whether this shape is closed (only allows declared properties). Single-valued: calling it again replaces
+     * the previous value.
      */
     fun closed(value: Boolean) {
-        graphDsl.triple(shape, SHACL.closed, value.toLiteral())
+        slots.set(SHACL.closed, value, value.toLiteral())
     }
 
     /**
@@ -425,10 +442,10 @@ class NodeShapeDsl(
 
 
     /**
-     * Deactivate this shape.
+     * Deactivate this shape. Single-valued: calling it again replaces the previous value.
      */
     fun deactivated(value: Boolean = true) {
-        graphDsl.triple(shape, SHACL.deactivated, value.toLiteral())
+        slots.set(SHACL.deactivated, value, value.toLiteral())
     }
 
     /**
@@ -598,10 +615,10 @@ class NodeShapeDsl(
     }
 
     /**
-     * Set the severity level for violations of this shape.
+     * Set the severity level for violations of this shape. Single-valued: calling it again replaces the previous value.
      */
     fun severity(severity: Severity) {
-        graphDsl.triple(shape, SHACL.severity, severity.iri)
+        slots.set(SHACL.severity, severity, severity.iri)
     }
 
     /**
@@ -840,24 +857,23 @@ class PropertyShapeDsl(
     fun setMaxExclusiveDouble(value: Double?) { maxExclusive = value }
 
     /**
-     * Emits `sh:totalDigits`. **Not a SHACL Core constraint** (it is an XSD facet that is not part
-     * of SHACL 1.0/1.2 Core): SHACL Core validators, including Kastor's native validator, ignore it.
-     * Kept for source compatibility; enforce digit limits with `pattern` or a SPARQL constraint.
+     * No longer emits anything. `sh:totalDigits` is **not a SHACL constraint** (neither SHACL 1.0 nor 1.2 Core
+     * defines it; it is an XSD facet), so emitting it would suggest a limit no validator enforces.
+     * Kept for binary compatibility only; enforce digit limits with `pattern` or a SPARQL constraint.
      */
-    @Deprecated("sh:totalDigits is not a SHACL Core constraint and is ignored by SHACL Core validators; use pattern or a SPARQL constraint")
+    @Deprecated(DIGITS_DEPRECATION, level = DeprecationLevel.ERROR)
     var totalDigits: Int?
-        set(value) = slots.set(SHACL.totalDigits, value, value?.toLiteral())
-        get() = slots.get(SHACL.totalDigits) as Int?
+        set(@Suppress("UNUSED_PARAMETER") value) = Unit
+        get() = null
 
     /**
-     * Emits `sh:fractionDigits`. **Not a SHACL Core constraint** (it is an XSD facet that is not part
-     * of SHACL 1.0/1.2 Core): SHACL Core validators, including Kastor's native validator, ignore it.
-     * Kept for source compatibility; enforce digit limits with `pattern` or a SPARQL constraint.
+     * No longer emits anything. `sh:fractionDigits` is **not a SHACL constraint** (see [totalDigits]).
+     * Kept for binary compatibility only; enforce digit limits with `pattern` or a SPARQL constraint.
      */
-    @Deprecated("sh:fractionDigits is not a SHACL Core constraint and is ignored by SHACL Core validators; use pattern or a SPARQL constraint")
+    @Deprecated(DIGITS_DEPRECATION, level = DeprecationLevel.ERROR)
     var fractionDigits: Int?
-        set(value) = slots.set(SHACL.fractionDigits, value, value?.toLiteral())
-        get() = slots.get(SHACL.fractionDigits) as Int?
+        set(@Suppress("UNUSED_PARAMETER") value) = Unit
+        get() = null
 
     // Value constraints
 
@@ -1056,12 +1072,14 @@ class PropertyShapeDsl(
         graphDsl.triple(propertyShape, SHACL.message, lang(message, lang))
     }
 
+    /** Severity of this property shape's results. Single-valued: calling it again replaces the previous value. */
     fun severity(severity: Severity) {
-        graphDsl.triple(propertyShape, SHACL.severity, severity.iri)
+        slots.set(SHACL.severity, severity, severity.iri)
     }
 
+    /** Deactivate this property shape. Single-valued: calling it again replaces the previous value. */
     fun deactivated(value: Boolean = true) {
-        graphDsl.triple(propertyShape, SHACL.deactivated, value.toLiteral())
+        slots.set(SHACL.deactivated, value, value.toLiteral())
     }
 
     /**
@@ -1159,6 +1177,8 @@ class SparqlConstraintDsl(
     private val graphDsl: GraphDsl,
     private val nextBnode: (String) -> BlankNode
 ) {
+    private val slots = SingleValueSlots(sparqlConstraint, graphDsl, nextBnode)
+
     /**
      * Add prefix declarations for the SPARQL query, emitted as
      * `sh:prefixes [ sh:declare [ sh:prefix "p" ; sh:namespace "ns"^^xsd:anyURI ] , ... ]`.
@@ -1222,17 +1242,18 @@ class SparqlConstraintDsl(
     }
 
     /**
-     * Set the severity level for violations of this constraint.
+     * Set the severity level for violations of this constraint. Single-valued: calling it again replaces the
+     * previous value.
      */
     fun severity(severity: Severity) {
-        graphDsl.triple(sparqlConstraint, SHACL.severity, severity.iri)
+        slots.set(SHACL.severity, severity, severity.iri)
     }
 
     /**
-     * Deactivate this constraint.
+     * Deactivate this constraint. Single-valued: calling it again replaces the previous value.
      */
     fun deactivated(value: Boolean = true) {
-        graphDsl.triple(sparqlConstraint, SHACL.deactivated, value.toLiteral())
+        slots.set(SHACL.deactivated, value, value.toLiteral())
     }
 }
 
