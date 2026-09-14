@@ -35,3 +35,12 @@ tasks.register<JavaExec>("runGeneratedExample") {
     description = "Run the DCAT-US example using interfaces generated from the SHACL shapes"
     group = "examples"
 }
+
+// KSP cannot see ontology files: declare the SHACL shapes and JSON-LD context as inputs of the KSP task so that
+// editing them re-runs generation, and tell the Kastor processor they are tracked (silences its staleness warning).
+tasks.matching { it.name == "kspKotlin" }.configureEach {
+    inputs.dir("src/main/resources").withPropertyName("kastorOntologyFiles").withPathSensitivity(PathSensitivity.RELATIVE)
+}
+extensions.configure<com.google.devtools.ksp.gradle.KspExtension> {
+    arg("kastor.gen.resources.tracked", "true")
+}

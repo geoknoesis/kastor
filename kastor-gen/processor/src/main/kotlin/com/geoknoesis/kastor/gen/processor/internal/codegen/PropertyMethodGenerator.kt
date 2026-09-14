@@ -183,7 +183,8 @@ public sealed class PropertyTypeStrategy {
         ): List<FunSpec> {
             val enumName = requireNotNull(property.enumName) { "EnumStrategy requires enumName" }
             val memberKind = requireNotNull(property.enumMemberKind) { "EnumStrategy requires enumMemberKind" }
-            val enumType = ClassName("", enumName)
+            // InstanceDslGenerator passes the qualified enum name; a simple name is taken as-is.
+            val enumType = if ('.' in enumName) ClassName.bestGuess(enumName) else ClassName("", enumName)
             val methods = mutableListOf<FunSpec>()
 
             fun term(v: String) = when (memberKind) {

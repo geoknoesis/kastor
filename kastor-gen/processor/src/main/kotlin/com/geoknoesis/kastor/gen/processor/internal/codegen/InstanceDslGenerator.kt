@@ -57,7 +57,7 @@ public class InstanceDslGenerator(
         logger.info("Generating DSL '${request.dslName}' for ${request.ontologyModel.shapes.size} shapes")
         GenerationNames.checkCollisions(request.ontologyModel)
 
-        val classBuilders = buildClassBuilders(request.ontologyModel, request.options)
+        val classBuilders = buildClassBuilders(request.ontologyModel, request.options, request.enumPackage ?: request.packageName)
         val requiredImports = classBuilders.collectRequiredImports()
 
         return generateDslFile(
@@ -74,7 +74,8 @@ public class InstanceDslGenerator(
      */
     private fun buildClassBuilders(
         model: OntologyModel,
-        options: DslGenerationOptions
+        options: DslGenerationOptions,
+        enumPackage: String,
     ): List<ClassBuilderModel> {
         val enumsByName = model.enums.associateBy { it.name }
         val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model)) { logger.warn(it) }
@@ -90,6 +91,7 @@ public class InstanceDslGenerator(
                     // One setter per path; aliases (a path inherited under two names) write the same triples.
                     properties = buildPropertyBuilders(
                         members[shape.targetClass].orEmpty().filter { it.primaryForPath }, model.context, options, enumsByName, knownTypes,
+                        enumPackage,
                     ),
                     shapeIri = shape.shapeIri
                 )
@@ -105,6 +107,7 @@ public class InstanceDslGenerator(
         options: DslGenerationOptions,
         enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>,
         knownTypes: Set<String>,
+        enumPackage: String,
     ): List<PropertyBuilderModel> {
         return members.map { member ->
             val property = member.typing
@@ -125,7 +128,8 @@ public class InstanceDslGenerator(
                 isRequired = Cardinality.isRequired(member.constraints),
                 isList = Cardinality.isList(property),
                 constraints = PropertyConstraints.from(member.constraints),
-                enumName = enumModel?.name,
+                // Qualified, so setters compile when the DSL and the enums are generated into different packages.
+                enumName = enumModel?.name?.let { "$enumPackage.$it" },
                 enumMemberKind = enumModel?.memberKind,
                 datatype = if (kind == ValueKind.LITERAL || kind == ValueKind.ENUM) property.datatype else null,
                 isIriValued = kind == ValueKind.IRI || kind == ValueKind.OBJECT,
