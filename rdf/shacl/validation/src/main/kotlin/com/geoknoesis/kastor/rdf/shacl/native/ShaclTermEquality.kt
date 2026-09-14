@@ -35,7 +35,7 @@ internal fun shaclRdfTermFingerprint(term: RdfTerm): String {
             "T$FP_SEP${shaclRdfTermFingerprint(s)}$FP_SEP${shaclRdfTermFingerprint(p)}$FP_SEP${shaclRdfTermFingerprint(o)}"
         }
         is LangString ->
-            "LS$FP_SEP${esc(term.lexical)}$FP_SEP${esc(term.lang)}$FP_SEP${term.direction?.token.orEmpty()}"
+            "LS$FP_SEP${esc(term.lexical)}$FP_SEP${esc(term.lang.lowercase())}$FP_SEP${term.direction?.token.orEmpty()}"
         is Literal ->
             "L$FP_SEP${esc(term.lexical)}$FP_SEP${esc(term.datatype.value)}"
         else -> error("Unsupported RDF term for SHACL fingerprint: ${term::class.simpleName}")
@@ -54,7 +54,8 @@ fun shaclRdfTermEquals(a: RdfTerm, b: RdfTerm): Boolean = when {
             shaclRdfTermEquals(a.triple.predicate as RdfTerm, b.triple.predicate as RdfTerm) &&
             shaclRdfTermEquals(a.triple.obj, b.triple.obj)
     a is LangString && b is LangString ->
-        a.lexical == b.lexical && a.lang == b.lang && a.direction == b.direction
+        // RDF term equality compares language tags case-insensitively.
+        a.lexical == b.lexical && a.lang.lowercase() == b.lang.lowercase() && a.direction == b.direction
     a is Literal && b is Literal ->
         a.lexical == b.lexical && a.datatype == b.datatype
     else -> false
