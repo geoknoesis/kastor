@@ -87,7 +87,7 @@ Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, 
 ```kotlin
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 
-// Jena RDFS or OWL_RL (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
+// Jena RDFS, OWL_MICRO (Jena OWL Micro, ReasonerType.OWL_MICRO) or OWL_RL (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
 val reportRdfs = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 
 // HermiT (OWL 2 DL): same pipeline; globally inconsistent ontologies add ERROR-level rows tagged Kastor **K07** (with default checker / registry)
@@ -99,11 +99,12 @@ CLI examples:
 ```bash
 onto-qa check ontology.ttl --catalog all --reasoner none
 onto-qa check ontology.ttl --catalog all --reasoner rdfs
+onto-qa check ontology.ttl --catalog all --reasoner owl-micro
 onto-qa check ontology.ttl --catalog all --reasoner owl-rl
 onto-qa check ontology.ttl --catalog all --reasoner hermit
 ```
 
-`--reasoner owl-micro` is still accepted as a deprecated alias of `owl-rl` and prints a warning: it has always run Jena's OWL rule reasoner, not OWL Micro. The Kotlin enum constant `OntoQualityReasoningProfile.OWL_MICRO` is likewise deprecated in favour of `OWL_RL`.
+`--reasoner owl-micro` (`OntoQualityReasoningProfile.OWL_MICRO`) runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`): faster than `owl-rl`, but it covers only RDFS plus property axioms, equality and simple class expressions. `--reasoner owl-rl` (`OWL_RL`) runs Jena's full OWL rule reasoner (`ReasonerType.OWL_RL`).
 
 **CLI `--catalog all`** uses **`QualityChecker.default()`**, so the OOPS registry is present and **K07** metadata applies when **HermiT** reports inconsistency. Requires **`:rdf:reasoning-hermit`** (and its transitive deps) on the classpath for the CLI artifact.
 

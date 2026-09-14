@@ -8,7 +8,7 @@ This note describes **HermiT** (OWL 2 DL) integration in Kastor alongside the [r
 
 ## 1. Goals
 
-1. Expose **HermiT-backed** `RdfReasoner.reason(...)` / inferred-triple materialization for graphs that benefit from **OWL 2 DL** entailments (beyond Jena RDFS / OWL Micro).
+1. Expose **HermiT-backed** `RdfReasoner.reason(...)` / inferred-triple materialization for graphs that benefit from **OWL 2 DL** entailments (beyond Jena RDFS / OWL Micro / OWL rule reasoning).
 2. Fit the existing **`RdfReasonerProvider` + ServiceLoader** pattern so callers can opt in without forking SHACL or core RDF APIs.
 3. Keep **core** and **default** Kastor installs free of HermiT; ship integration in a **dedicated Gradle module** (fat optional artifact).
 4. Allow **onto-quality** (or any tool) to run SHACL on a **materialized** graph after HermiT closure, with **explicit** profile selection (same determinism principle as Jena-only v0.4).

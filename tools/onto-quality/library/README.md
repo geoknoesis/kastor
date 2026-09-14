@@ -125,7 +125,7 @@ Combined validation passes produce a single report whose **`violationsByType`** 
 - **Structural validation** — OWL / SKOS / data-quality SHACL bundles.
 - **Semantic tier** — embeddings (`:tools:onto-quality-embed`, **`EMBEDDING_QUALITY`** catalogue).
 - **LLM explanations** — optional **`onto-quality-llm-koog`** ([Koog](https://github.com/JetBrains/koog)); [design](../../../docs/kastor/design/onto-quality-v0.3-llm-explanations.md), [broader LLM notes](../../../docs/kastor/design/llm-assisted-ontology-modeling-review.md).
-- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_RL** (OWL rule reasoner; `OWL_MICRO` is a deprecated alias) or **HermiT** ([reasoning overview](../../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-rl|hermit`**.
+- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_MICRO** (Jena OWL Micro rule reasoner: fast, incomplete) / **OWL_RL** (Jena OWL rule reasoner) or **HermiT** ([reasoning overview](../../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-micro|owl-rl|hermit`**.
 
 ## LLM explanations
 
@@ -177,7 +177,7 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 val report = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 ```
 
-**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-rl`, `hermit`, default `none`). `owl-micro` is still accepted as a deprecated alias of `owl-rl` and prints a warning: the profile has always run Jena's OWL rule reasoner, not Jena's OWL Micro rule set. Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
+**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `owl-rl`, `hermit`, default `none`). `owl-micro` runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`: RDFS plus property axioms, equality and simple class expressions; faster, less complete); `owl-rl` runs Jena's OWL rule reasoner (`ReasonerType.OWL_RL`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
 
 ## CLI: exit codes and input formats
 

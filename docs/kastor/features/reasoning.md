@@ -27,7 +27,7 @@ Which types are actually served depends on the providers on the classpath:
 | Provider | Supported `ReasonerType`s | Notes |
 |----------|---------------------------|-------|
 | Memory (built in) | `RDFS` | RDFS rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9 and rdfs11 applied to a fixpoint; no axiomatic triples |
-| Jena (`rdf-jena-reasoning`) | `RDFS`, `OWL_RL`, `CUSTOM` | `OWL_RL` uses Jena's OWL rule reasoner, which is close to but not a complete OWL 2 RL implementation; `CUSTOM` requires at least one `customRules` entry; `OWL_EL`, `OWL_QL`, `OWL_DL` are rejected |
+| Jena (`rdf-jena-reasoning`) | `RDFS`, `OWL_MICRO`, `OWL_RL`, `CUSTOM` | `OWL_MICRO` uses Jena's OWL Micro rule reasoner (fast, incomplete OWL fragment); `OWL_RL` uses Jena's OWL rule reasoner, which is close to but not a complete OWL 2 RL implementation; `CUSTOM` requires at least one `customRules` entry; `OWL_EL`, `OWL_QL`, `OWL_DL` are rejected |
 | RDF4J (`rdf-rdf4j-reasoning`) | `RDFS` | RDF4J ships no OWL reasoner |
 | HermiT (`rdf-reasoning-hermit`) | `HERMIT`, `OWL_DL` | OWL 2 DL; defaults to `streamingMode = false`; the timeout is enforced by a watchdog that interrupts the reasoner |
 
@@ -246,7 +246,7 @@ Each provider reports a coarse `typicalPerformance` hint in `ReasonerCapabilitie
 | Provider | `typicalPerformance` | Supported types | Custom rules |
 |----------|----------------------|-----------------|--------------|
 | Memory (`MemoryReasonerProvider`) | `FAST` | `RDFS` | No |
-| Jena (`JenaReasonerProvider`) | `MEDIUM` | `RDFS`, `OWL_RL`, `CUSTOM` | Yes |
+| Jena (`JenaReasonerProvider`) | `MEDIUM` | `RDFS`, `OWL_MICRO`, `OWL_RL`, `CUSTOM` | Yes |
 | RDF4J (`Rdf4jReasonerProvider`) | `FAST` | `RDFS` | No |
 | HermiT (`HermitReasonerProvider`) | `SLOW` | `HERMIT`, `OWL_DL` | No |
 

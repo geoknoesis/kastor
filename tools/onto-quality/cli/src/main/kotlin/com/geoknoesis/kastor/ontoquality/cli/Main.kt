@@ -536,8 +536,8 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
     val reasoner by
         option(
             "--reasoner",
-            help = "none | rdfs | owl-rl | hermit — materialize inferences before SHACL (owl-rl = Jena OWL rule reasoner; " +
-                "hermit = OWL DL via HermiT; owl-micro is a deprecated alias of owl-rl)",
+            help = "none | rdfs | owl-micro | owl-rl | hermit — materialize inferences before SHACL (owl-micro = Jena OWL Micro " +
+                "rule reasoner, fast and incomplete; owl-rl = Jena OWL rule reasoner; hermit = OWL DL via HermiT)",
         ).choice(*REASONER_CHOICES, ignoreCase = true).default("none")
     val markdownAscii by
         option(
@@ -577,7 +577,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
     override fun execute() {
         // Resolve and validate every input before loading a model.
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
-        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner) { echo(it, err = true) }
+        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         val llm = reportOptions.explainCli()
         val embeddingOptions = embedding.toOptions()
         val ontology = parseOntology(ontologyArg, format)
@@ -642,7 +642,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
 
     override fun execute() {
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
-        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner) { echo(it, err = true) }
+        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         val llm = reportOptions.explainCli()
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
@@ -685,8 +685,8 @@ private fun exitStatus(report: QualityReport, options: ReportOptionGroup, outcom
         else -> EXIT_OK
     }
 
-/** `owl-micro` is accepted for compatibility: it always ran Jena's OWL rule reasoner, now named `owl-rl`. */
-private fun parseReasonerProfile(s: String, warn: (String) -> Unit): OntoQualityReasoningProfile =
+/** `owl-rl` runs Jena's OWL rule reasoner; `owl-micro` runs Jena's faster, less complete OWL Micro rule reasoner. */
+private fun parseReasonerProfile(s: String): OntoQualityReasoningProfile =
     when (s.lowercase()) {
         "none",
         "off",
@@ -697,16 +697,10 @@ private fun parseReasonerProfile(s: String, warn: (String) -> Unit): OntoQuality
         -> OntoQualityReasoningProfile.OWL_RL
         "owl-micro",
         "owl_micro",
-        -> {
-            warn(
-                "Warning: --reasoner owl-micro is deprecated: it runs Jena's OWL rule reasoner (OWL RL rules), " +
-                    "not OWL Micro. Use --reasoner owl-rl.",
-            )
-            OntoQualityReasoningProfile.OWL_RL
-        }
+        -> OntoQualityReasoningProfile.OWL_MICRO
         "hermit" -> OntoQualityReasoningProfile.HERMIT
         else ->
-            throw usageError("Unknown --reasoner $s (expected none|rdfs|owl-rl|hermit)")
+            throw usageError("Unknown --reasoner $s (expected none|rdfs|owl-micro|owl-rl|hermit)")
     }
 
 internal data class LlmExplainCli(

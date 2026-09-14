@@ -322,7 +322,7 @@ class CliTest {
     // ---- other CLI behaviour ----------------------------------------------------------------------------------
 
     @Test
-    fun `owl-rl reasoner is accepted and owl-micro is a deprecated alias`() {
+    fun `owl-rl and owl-micro reasoners are both accepted without warnings`() {
         val onto = ontology().toString()
         fun expectedStatus(json: Path): Int =
             if (findingSeverities(json.readText()).any { it == "VIOLATION" || it == "ERROR" }) EXIT_FINDINGS else EXIT_OK
@@ -336,10 +336,8 @@ class CliTest {
         val microOut = dir.resolve("micro.json")
         val micro = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "owl-micro", "--format", "json", "--output", microOut.toString()))
         assertEquals(expectedStatus(microOut), micro.statusCode, micro.stderr)
-        assertTrue(micro.stderr.contains("--reasoner owl-micro is deprecated"), micro.stderr)
-        // The alias runs exactly the same reasoner.
-        assertEquals(findingSeverities(rlOut.readText()), findingSeverities(microOut.readText()))
-        assertEquals(rl.statusCode, micro.statusCode)
+        // owl-micro is a first-class profile (Jena OWL Micro), no longer a deprecated alias of owl-rl.
+        assertFalse(micro.stderr.contains("deprecated"), micro.stderr)
     }
 
     @Test

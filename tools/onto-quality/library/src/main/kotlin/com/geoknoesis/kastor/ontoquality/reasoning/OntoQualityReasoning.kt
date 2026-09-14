@@ -32,13 +32,9 @@ enum class OntoQualityReasoningProfile {
     RDFS,
 
     /**
-     * Deprecated alias of [OWL_RL]. The profile was always bound to Jena's full OWL rule reasoner
-     * (`ReasonerType.OWL_RL`), never to Jena's OWL Micro rule set, which Kastor's reasoning providers do not expose.
+     * Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO` binding): a fast, incomplete OWL fragment
+     * (RDFS plus property axioms, equality and simple class expressions). Faster and weaker than [OWL_RL].
      */
-    @Deprecated(
-        "Misnamed: this profile runs Jena's OWL rule reasoner (ReasonerType.OWL_RL), not OWL Micro. Use OWL_RL.",
-        ReplaceWith("OntoQualityReasoningProfile.OWL_RL"),
-    )
     OWL_MICRO,
 
     /** OWL 2 DL materialization via HermiT (slower; requires `:rdf:reasoning-hermit` on the classpath). */
@@ -51,17 +47,12 @@ enum class OntoQualityReasoningProfile {
     OWL_RL,
 }
 
-@Suppress("DEPRECATION")
 internal fun OntoQualityReasoningProfile.toReasonerConfigOrNull(): ReasonerConfig? =
     when (this) {
         OntoQualityReasoningProfile.NONE -> null
         OntoQualityReasoningProfile.RDFS -> ReasonerConfig.rdfs()
-        OntoQualityReasoningProfile.OWL_RL,
-        OntoQualityReasoningProfile.OWL_MICRO,
-        ->
-            ReasonerConfig(
-                reasonerType = ReasonerType.OWL_RL,
-            )
+        OntoQualityReasoningProfile.OWL_RL -> ReasonerConfig(reasonerType = ReasonerType.OWL_RL)
+        OntoQualityReasoningProfile.OWL_MICRO -> ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO)
         OntoQualityReasoningProfile.HERMIT -> ReasonerConfig.hermit()
     }
 
