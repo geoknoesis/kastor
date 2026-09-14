@@ -9,79 +9,137 @@ import java.util.regex.PatternSyntaxException
 
 /**
  * `sh:pattern` values are XPath (`fn:matches`) regular expressions. Generated code runs them with
- * `kotlin.text.Regex` (java.util.regex), so the XPath-only syntax is translated first:
+ * `kotlin.text.Regex` (java.util.regex), so XPath syntax whose meaning differs is translated first:
+ * - `\d` / `\D` are Unicode decimal digits (`\p{Nd}`), `\w` / `\W` are "everything but punctuation, separators and
+ *   other characters" (`[^\p{P}\p{Z}\p{C}]`, so `_` is not a word character but symbols such as `$` are), and
+ *   `\s` / `\S` are exactly space, tab, newline and carriage return; Java's defaults are ASCII-only or wider;
  * - `\i` / `\I` (XML name-start characters) and `\c` / `\C` (XML name characters), approximated with Unicode
  *   letter/digit classes plus `_`, `:`, `.`, `-` and U+00B7;
- * - character-class subtraction `[base-[excluded]]` becomes `[base&&[^excluded]]`;
+ * - character-class subtraction `[base-[excluded]]` becomes `[[base]&&[^[excluded]]]`, with every operand a
+ *   self-contained class so a negated base (`[^a-z-[0-9]]` = "not a-z, minus digits") keeps XPath precedence;
  * - Unicode block escapes `\p{IsBlock}` become `\p{InBlock}`;
- * - a literal `&&` or `[` inside a class is escaped (they are operators in Java classes).
+ * - a literal `&` or `[` inside a class is escaped (they are operators in Java classes);
+ * - the `x` flag removes whitespace outside character classes during translation. It is not mapped to Java's
+ *   `COMMENTS` mode, which would also treat `#` as a comment start and drop whitespace inside classes.
  *
- * The `q` flag (literal pattern) disables translation. Patterns that are still invalid after translation are
- * reported at generation time by [problems].
+ * The `q` flag (literal pattern) disables translation, and `m`, `s` and `x` have no effect with it (as in XPath).
+ * Patterns that are still invalid after translation are reported at generation time by [problems].
  */
 internal object ShaclPatterns {
 
     private const val NAME_START = "\\p{L}_:"
     private const val NAME_CHAR = "\\p{L}\\p{Nd}._:\\-\\u00B7"
+    private const val SPACE = " \\t\\n\\r"
+    private const val NOT_WORD = "\\p{P}\\p{Z}\\p{C}"
 
     fun toJava(pattern: String, flags: String?): String {
-        if (flags.orEmpty().contains('q')) return pattern
-        val out = StringBuilder(pattern.length + 16)
-        var depth = 0
-        var i = 0
-        while (i < pattern.length) {
-            val c = pattern[i]
-            when {
-                c == '\\' && i + 1 < pattern.length -> {
-                    when (val n = pattern[i + 1]) {
-                        'i' -> out.append(if (depth > 0) NAME_START else "[$NAME_START]")
-                        'I' -> out.append("[^$NAME_START]")
-                        'c' -> out.append(if (depth > 0) NAME_CHAR else "[$NAME_CHAR]")
-                        'C' -> out.append("[^$NAME_CHAR]")
-                        'p', 'P' -> {
-                            if (pattern.startsWith("{Is", i + 2)) {
-                                out.append('\\').append(n).append("{In")
-                                i += 5
-                                continue
-                            }
-                            out.append('\\').append(n)
-                        }
-                        else -> out.append('\\').append(n)
-                    }
-                    i += 2
-                }
-                depth > 0 && c == '-' && i + 1 < pattern.length && pattern[i + 1] == '[' -> {
-                    val negated = i + 2 < pattern.length && pattern[i + 2] == '^'
-                    out.append(if (negated) "&&[" else "&&[^")
-                    depth++
-                    i += if (negated) 3 else 2
-                }
-                depth > 0 && c == '[' -> { out.append("\\["); i++ }
-                depth > 0 && c == '&' -> { out.append("\\&"); i++ }
-                c == '[' -> {
-                    depth++
-                    out.append('[')
-                    i++
-                    if (i < pattern.length && pattern[i] == '^') { out.append('^'); i++ }
-                }
-                depth > 0 && c == ']' -> { depth--; out.append(']'); i++ }
-                else -> { out.append(c); i++ }
-            }
-        }
-        return out.toString()
+        val f = flags.orEmpty()
+        if ('q' in f) return pattern
+        return Translator(pattern, extended = 'x' in f).translate()
     }
 
-    /** The [RegexOption] names for SHACL `sh:flags` (i, m, s, x, q). */
-    fun options(flags: String?): List<String> = flags.orEmpty().mapNotNull {
-        when (it) {
-            'i' -> "IGNORE_CASE"
-            'm' -> "MULTILINE"
-            's' -> "DOT_MATCHES_ALL"
-            'x' -> "COMMENTS"
-            'q' -> "LITERAL"
-            else -> null
+    private class Translator(private val p: String, private val extended: Boolean) {
+        private var i = 0
+
+        fun translate(): String {
+            val out = StringBuilder(p.length + 16)
+            while (i < p.length) {
+                val c = p[i]
+                when {
+                    c == '\\' && i + 1 < p.length -> out.append(escape(inClass = false))
+                    c == '[' -> out.append(charClass())
+                    extended && (c == ' ' || c == '\t' || c == '\n' || c == '\r') -> i++
+                    else -> {
+                        out.append(c)
+                        i++
+                    }
+                }
+            }
+            return out.toString()
         }
-    }.distinct()
+
+        /** Translates the escape starting at [i] (a backslash with a following character) and moves past it. */
+        private fun escape(inClass: Boolean): String {
+            val n = p[i + 1]
+            if ((n == 'p' || n == 'P') && p.startsWith("{Is", i + 2)) {
+                i += 5 // the block name and `}` are copied as ordinary characters
+                return "\\" + n + "{In"
+            }
+            i += 2
+            return when (n) {
+                'd' -> "\\p{Nd}"
+                'D' -> "\\P{Nd}"
+                // Nested classes are unions inside a Java class, so the negated forms work in both contexts.
+                'w' -> "[^$NOT_WORD]"
+                'W' -> if (inClass) NOT_WORD else "[$NOT_WORD]"
+                's' -> if (inClass) SPACE else "[$SPACE]"
+                'S' -> "[^$SPACE]"
+                'i' -> if (inClass) NAME_START else "[$NAME_START]"
+                'I' -> "[^$NAME_START]"
+                'c' -> if (inClass) NAME_CHAR else "[$NAME_CHAR]"
+                'C' -> "[^$NAME_CHAR]"
+                else -> "\\" + n
+            }
+        }
+
+        /**
+         * Translates the character class expression starting at [i] (`[`) into a self-contained Java class and moves
+         * past its closing `]`. An unterminated class is returned unterminated so that compiling it fails.
+         */
+        private fun charClass(): String {
+            i++ // [
+            val negated = i < p.length && p[i] == '^'
+            if (negated) i++
+            val group = StringBuilder()
+            var subtraction: String? = null
+            while (i < p.length) {
+                val c = p[i]
+                when {
+                    c == ']' -> {
+                        i++
+                        val base = if (negated) "[^$group]" else "[$group]"
+                        return if (subtraction == null) base else "[$base&&[^$subtraction]]"
+                    }
+                    c == '\\' && i + 1 < p.length -> group.append(escape(inClass = true))
+                    c == '-' && i + 1 < p.length && p[i + 1] == '[' -> {
+                        i++
+                        subtraction = charClass()
+                    }
+                    c == '[' -> {
+                        group.append("\\[")
+                        i++
+                    }
+                    c == '&' -> {
+                        group.append("\\&")
+                        i++
+                    }
+                    else -> {
+                        group.append(c)
+                        i++
+                    }
+                }
+            }
+            return (if (negated) "[^" else "[") + group
+        }
+    }
+
+    /**
+     * The [RegexOption] names for SHACL `sh:flags`: `i`, `m`, `s` and `q`. `x` is applied by [toJava]. With `q` only
+     * `i` still applies. (Kotlin's `IGNORE_CASE` is Unicode-aware, like XPath's `i`.)
+     */
+    fun options(flags: String?): List<String> {
+        val f = flags.orEmpty()
+        val applicable = if ('q' in f) f.filter { it == 'i' || it == 'q' } else f
+        return applicable.mapNotNull {
+            when (it) {
+                'i' -> "IGNORE_CASE"
+                'm' -> "MULTILINE"
+                's' -> "DOT_MATCHES_ALL"
+                'q' -> "LITERAL"
+                else -> null
+            }
+        }.distinct()
+    }
 
     /** Error text when [pattern] cannot be compiled after translation, otherwise null. */
     fun error(pattern: String, flags: String?): String? = try {

@@ -38,8 +38,9 @@ class KspWrapperCompilationTest {
             val n = Iri("urn:doc")
             g.addTriple(RdfTriple(n, Iri("https://example.test/a%20b"), Literal("T")))
             val d = OntoMapper.materialize(RdfRef(n, g), Doc::class.java)
-            val count = try { d.count.toString() } catch (e: IllegalStateException) { "missing" }
-            val label = try { d.label } catch (e: IllegalStateException) { "missing" }
+            // MaterializationException specifically: a plain IllegalStateException would escape and fail the test.
+            val count = try { d.count.toString() } catch (e: MaterializationException) { "missing" }
+            val label = try { d.label } catch (e: MaterializationException) { "missing" }
             d.label = "L"
             return d.title + "|" + count + "|" + label + "|" + d.label
         }

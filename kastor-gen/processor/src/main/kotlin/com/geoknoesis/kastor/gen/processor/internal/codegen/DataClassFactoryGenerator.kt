@@ -186,22 +186,24 @@ public class DataClassFactoryGenerator(
                 val enumModel = enumsByName[property.enumName]
                     ?: error("enum ${property.enumName} referenced by $pred is not in the model")
                 val enumType = ClassName(packageName, enumModel.name)
+                // Values of the wrong term kind follow MaterializationPolicy, like the live wrappers.
                 if (enumModel.memberKind == EnumMemberKind.IRI) {
                     CodeBlock.of(
-                        "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { it }.filterIsInstance<%T>().map { %T.from(it) }",
-                        graphOps, iriClass, pred, iriClass, enumType,
+                        "%T.getIriValues(handle.graph, handle.node, %T(%S), %S).map { %T.from(it) }",
+                        graphOps, iriClass, pred, label, enumType,
                     )
                 } else {
                     CodeBlock.of(
-                        "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).map { %T.from(it.lexical) }",
-                        graphOps, iriClass, pred, enumType,
+                        "%T.getLiteralValues(handle.graph, handle.node, %T(%S), %S).map { %T.from(it.lexical) }",
+                        graphOps, iriClass, pred, label, enumType,
                     )
                 }
             }
-            ValueKind.IRI -> CodeBlock.of(
-                "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { it }.filterIsInstance<%T>().map { it.value }",
-                graphOps, iriClass, pred, iriClass,
-            )
+            ValueKind.IRI -> if (TypeMapper.isResourceReference(property)) {
+                CodeBlock.of("%T.getResourceValues(handle.graph, handle.node, %T(%S), %S)", graphOps, iriClass, pred, label)
+            } else {
+                CodeBlock.of("%T.getIriValues(handle.graph, handle.node, %T(%S), %S).map { it.value }", graphOps, iriClass, pred, label)
+            }
             ValueKind.OBJECT -> {
                 val baseName = NamingUtils.domainName(property.targetClass!!, context)
                 val targetType = when (nestedMode) {
@@ -209,16 +211,16 @@ public class DataClassFactoryGenerator(
                     else -> ClassName(packageName, baseName)
                 }
                 CodeBlock.of(
-                    "%T.getObjectValues(handle.graph, handle.node, %T(%S)) { child ->\n⇥%T.materialize(%T(child, handle.graph), %T::class.java)\n⇤}",
-                    graphOps, iriClass, pred, ontoMapper, rdfRef, targetType,
+                    "%T.getObjectValues(handle.graph, handle.node, %T(%S), %S) { child ->\n⇥%T.materialize(%T(child, handle.graph), %T::class.java)\n⇤}",
+                    graphOps, iriClass, pred, label, ontoMapper, rdfRef, targetType,
                 )
             }
             ValueKind.LITERAL -> {
                 val mapping = TypeMapper.literalMapping(property.datatype)
                 // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
                 CodeBlock.of(
-                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
-                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("lit")),
+                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S), %S).mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+                    graphOps, iriClass, pred, label, mapping.decode(CodeBlock.of("lit")),
                     ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy"), label, mapping.expectedDescription(),
                 )
             }

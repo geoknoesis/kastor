@@ -19,6 +19,8 @@ public data class ShaclShape(
     val properties: List<ShaclProperty>,
     /** Target classes of shapes this shape inherits from (via `sh:node` on the node shape or `rdfs:subClassOf`). */
     val parentClasses: List<String> = emptyList(),
+    /** `sh:deactivated true`: the shape's constraints are not validated (types are still generated). */
+    val deactivated: Boolean = false,
 )
 
 /**
@@ -62,11 +64,11 @@ public data class ShaclProperty(
     val pattern: String? = null,
     /** `sh:flags` for [pattern] (e.g. "i"). */
     val patternFlags: String? = null,
-    // Numeric constraints
-    val minInclusive: Double? = null,
-    val maxInclusive: Double? = null,
-    val minExclusive: Double? = null,
-    val maxExclusive: Double? = null,
+    // Numeric constraints: exact decimal values (a Double would round bounds such as 9223372036854775807)
+    val minInclusive: java.math.BigDecimal? = null,
+    val maxInclusive: java.math.BigDecimal? = null,
+    val minExclusive: java.math.BigDecimal? = null,
+    val maxExclusive: java.math.BigDecimal? = null,
     // Value constraints
     val inValues: List<String>? = null,
     val inValuesTyped: List<ShaclInValue>? = null,
@@ -76,7 +78,14 @@ public data class ShaclProperty(
     val nodeKind: String? = null,
     val qualifiedValueShape: String? = null,
     val qualifiedMinCount: Int? = null,
-    val qualifiedMaxCount: Int? = null
+    val qualifiedMaxCount: Int? = null,
+    // Shape-level parameters of the property shape
+    /** `sh:severity` IRI (e.g. `sh:Warning`); `null` means `sh:Violation`. */
+    val severity: String? = null,
+    /** `sh:message` used for this property shape's validation results instead of the generated message. */
+    val message: String? = null,
+    /** `sh:deactivated true`: the property shape's constraints are not validated and do not make the member required. */
+    val deactivated: Boolean = false,
 )
 
 /**

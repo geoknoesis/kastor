@@ -47,7 +47,7 @@ class GeneratedReadAndValidateTest {
                     prop("age", datatype = "${XSD_NS}integer"),
                     prop("homepage", datatype = null).copy(nodeKind = "http://www.w3.org/ns/shacl#IRI"),
                     prop("author", targetClass = EX + "Person"),
-                    prop("amount", datatype = "${XSD_NS}decimal").copy(maxInclusive = 0.1),
+                    prop("amount", datatype = "${XSD_NS}decimal").copy(maxInclusive = java.math.BigDecimal("0.1")),
                 ),
             ),
         ),
@@ -71,12 +71,8 @@ class GeneratedReadAndValidateTest {
             g.addTriple(RdfTriple(d, p("scores"), TypedLiteral("abc", xsd("integer"))))
             val wrapper = try { OntoMapper.materialize(RdfRef(d, g), Doc::class.java).scores.toString() } catch (e: MaterializationException) { "throws" }
             val record = try { OntoMapper.materialize(RdfRef(d, g), DocRecord::class.java).scores.toString() } catch (e: MaterializationException) { "throws" }
-            val previous = MaterializationPolicy.illTypedValues
-            MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP
-            try {
-                return wrapper + "|" + record + "|" + OntoMapper.materialize(RdfRef(d, g), Doc::class.java).scores
-            } finally {
-                MaterializationPolicy.illTypedValues = previous
+            return MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+                wrapper + "|" + record + "|" + OntoMapper.materialize(RdfRef(d, g), Doc::class.java).scores
             }
         }
 

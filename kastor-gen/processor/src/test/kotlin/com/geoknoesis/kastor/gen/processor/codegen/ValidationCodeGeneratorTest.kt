@@ -198,8 +198,8 @@ class ValidationCodeGeneratorTest {
                     isRequired = false,
                     isList = false,
                     constraints = PropertyConstraints(
-                        minInclusive = 0.0,
-                        maxInclusive = 120.0,
+                        minInclusive = java.math.BigDecimal("0.0"),
+                        maxInclusive = java.math.BigDecimal("120.0"),
                         minExclusive = null,
                         maxExclusive = null
                     )

@@ -10,7 +10,9 @@ import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
+import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
 import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
+import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.DATA
@@ -42,6 +44,7 @@ public class DataClassGenerator(
         GenerationNames.checkCollisions(model)
         val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
         val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model))
+        checkIriOnlyImplementsInterface(model, members)
         return model.shapes
             .sortedBy { it.targetClass }
             .associateTo(sortedMapOf()) { shape ->
@@ -53,6 +56,33 @@ public class DataClassGenerator(
 
     internal fun dataClassName(classIri: String, context: JsonLdContext): String =
         NamingUtils.domainName(classIri, context) + suffix
+
+    /**
+     * [NestedMode.IRI_ONLY] types object references as IRI strings, while the generated interfaces type them with
+     * the referenced interface; a data class cannot override such a member, so the combination with
+     * [implementsInterface] is rejected (naming the members) instead of generating code that does not compile.
+     */
+    private fun checkIriOnlyImplementsInterface(
+        model: OntologyModel,
+        members: Map<String, List<com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember>>,
+    ) {
+        if (!implementsInterface || nestedMode != NestedMode.IRI_ONLY) return
+        // Interfaces are generated with unshaped sh:class targets typed as IRI strings, which stay compatible.
+        val knownTypes = GenerationNames.knownTypes(model)
+        val conflicts = model.shapes.flatMap { shape ->
+            members[shape.targetClass].orEmpty().map { it.typing }
+                .filter { TypeMapper.valueKind(it, model.context, knownTypes) == ValueKind.OBJECT }
+                .map { "${NamingUtils.domainName(shape.targetClass, model.context)}.${NamingUtils.propertyName(it)}" }
+        }.distinct().sorted()
+        if (conflicts.isEmpty()) return
+        throw InvalidConfigurationException(
+            config = "nestedMode",
+            reason = "NestedMode.IRI_ONLY types object references as IRI strings, but dataClassImplementsInterface = true " +
+                "requires the data classes to override interface members typed with the referenced interfaces " +
+                "(${conflicts.joinToString()}); use NestedMode.INTERFACE (or DATA_CLASS) with dataClassImplementsInterface, " +
+                "or set dataClassImplementsInterface = false to keep IRI_ONLY",
+        )
+    }
 
     // ── Per-shape generation ──────────────────────────────────────────────────
 

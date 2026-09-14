@@ -120,15 +120,15 @@ class OntologyWrapperGeneratorTest {
         
         // Check property implementations
         assertTrue(catalogCode.contains("override val title: String by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"), \""))
         assertTrue(catalogCode.contains(".lexical"))
         
         assertTrue(catalogCode.contains("override val description: String? by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"), \""))
         assertTrue(catalogCode.contains(".map { it.lexical }.firstOrNull()"))
         
         assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
         // Check companion object
@@ -195,22 +195,22 @@ class OntologyWrapperGeneratorTest {
         
         // Check string property
         assertTrue(testCode.contains("override val stringProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
         
         // Check int property
         assertTrue(testCode.contains("override val intProp: Int by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.int("))
         
         // Check boolean property
         assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.boolean("))
         
         // Check double property
         assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.double("))
     }
 
@@ -263,7 +263,7 @@ class OntologyWrapperGeneratorTest {
         
         // Single value property
         assertTrue(testCode.contains("override val singleProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
         
         // Multiple value property
@@ -315,12 +315,12 @@ class OntologyWrapperGeneratorTest {
         
         // List object property
         assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
         // Single object property
         assertTrue(catalogCode.contains("override val publisher: Agent? by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
         assertTrue(catalogCode.contains(".firstOrNull()"))
     }
@@ -479,7 +479,7 @@ class OntologyWrapperGeneratorTest {
         
         // Unknown datatypes should default to String
         assertTrue(testCode.contains("override val unknownProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
     }
 
@@ -607,8 +607,8 @@ class OntologyWrapperGeneratorTest {
                     targetClass = null,
                     minCount = 0,
                     maxCount = 1,
-                    minInclusive = 0.0,
-                    maxExclusive = 100.0
+                    minInclusive = java.math.BigDecimal("0.0"),
+                    maxExclusive = java.math.BigDecimal("100.0")
                 )
             )
         )
