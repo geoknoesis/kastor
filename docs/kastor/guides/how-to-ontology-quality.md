@@ -8,7 +8,7 @@
 
 - Run **bundled SHACL catalogues** (OWL, SKOS, data quality, RDF 1.2, modern engineering, optional semantic tier) and interpret **`QualityReport`** / **`QualityFinding`** (**category**, **tier**, **pitfall** codes: OOPS **P**, Kastor **K**, modern **N**, …).
 - Use **`QualityChecker.default()`** (includes **OOPS pitfall registry** metadata) or a **custom catalogue list**.
-- Optionally: **`SemanticEnricher`** + embedding shapes, **LLM** explanations (`onto-quality-llm-koog`), **reasoning** before SHACL (**RDFS** / **OWL Micro** / **HermiT**; **K07** when globally inconsistent).
+- Optionally: **`SemanticEnricher`** + embedding shapes, **LLM** explanations (`onto-quality-llm-koog`), **reasoning** before SHACL (**RDFS** / **OWL RL** / **HermiT**; **K07** when globally inconsistent).
 - Operate from Kotlin and/or **`onto-qa`** CLI.
 
 ## Prerequisites
@@ -87,7 +87,7 @@ Catalogue ids match the CLI `--catalog` flag: `owl-quality`, `skos-validation`, 
 ```kotlin
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 
-// Jena RDFS or OWL Micro (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
+// Jena RDFS or OWL_RL (Jena OWL rule reasoner, ReasonerType.OWL_RL): materialize then validate (no consistency row unless the engine reports one)
 val reportRdfs = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 
 // HermiT (OWL 2 DL): same pipeline; globally inconsistent ontologies add ERROR-level rows tagged Kastor **K07** (with default checker / registry)
@@ -99,9 +99,11 @@ CLI examples:
 ```bash
 onto-qa check ontology.ttl --catalog all --reasoner none
 onto-qa check ontology.ttl --catalog all --reasoner rdfs
-onto-qa check ontology.ttl --catalog all --reasoner owl-micro
+onto-qa check ontology.ttl --catalog all --reasoner owl-rl
 onto-qa check ontology.ttl --catalog all --reasoner hermit
 ```
+
+`--reasoner owl-micro` is still accepted as a deprecated alias of `owl-rl` and prints a warning: it has always run Jena's OWL rule reasoner, not OWL Micro. The Kotlin enum constant `OntoQualityReasoningProfile.OWL_MICRO` is likewise deprecated in favour of `OWL_RL`.
 
 **CLI `--catalog all`** uses **`QualityChecker.default()`**, so the OOPS registry is present and **K07** metadata applies when **HermiT** reports inconsistency. Requires **`:rdf:reasoning-hermit`** (and its transitive deps) on the classpath for the CLI artifact.
 
