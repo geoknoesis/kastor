@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.rdf.shacl.native
 
+import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.StaleShapesGraphTagException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -11,7 +12,9 @@ import java.util.concurrent.TimeoutException
  *
  * Compilation runs **outside** the cache lock: each key maps to a future completed by the first caller, while
  * concurrent callers for the same key wait on that future within their own [ValidationBudget]. Different keys
- * compile in parallel. A failed or cancelled compilation is removed so the next caller retries.
+ * compile in parallel. A failed or cancelled compilation is removed so later callers retry. Callers already waiting
+ * on a compilation that fails with a deterministic [ShapeCompileException] receive that same exception instead of
+ * recompiling the same broken shapes graph; other failures (e.g. the owner's own deadline) make waiters retry.
  */
 internal class NativeCompileCache(private val capacity: Int = 64) {
     private val lock = Any()
@@ -70,8 +73,10 @@ internal class NativeCompileCache(private val capacity: Int = 64) {
                 return future.get(budget.remainingNanos(), TimeUnit.NANOSECONDS)
             } catch (_: TimeoutException) {
                 budget.check("shape cache wait")
-            } catch (_: ExecutionException) {
-                // The owning caller failed (e.g. its own deadline); retry, possibly becoming the owner.
+            } catch (e: ExecutionException) {
+                // Deterministic compile errors are shared with every caller waiting on this attempt.
+                (e.cause as? ShapeCompileException)?.let { throw it }
+                // The owning caller failed for its own reasons (e.g. its deadline); retry, possibly becoming the owner.
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 budget.check("shape cache wait")

@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION_ERROR")
+
 package com.geoknoesis.kastor.rdf.dsl
 
 import com.geoknoesis.kastor.rdf.*
@@ -110,8 +112,9 @@ class ShaclDslTest {
         val triples = shapesGraph.getTriples().toList()
         assertTrue(triples.any { it.predicate == SHACL.minExclusive })
         assertTrue(triples.any { it.predicate == SHACL.maxInclusive })
-        assertTrue(triples.any { it.predicate == SHACL.totalDigits })
-        assertTrue(triples.any { it.predicate == SHACL.fractionDigits })
+        // Not SHACL constraints: the deprecated properties no longer emit triples.
+        assertFalse(triples.any { it.predicate == SHACL.totalDigits })
+        assertFalse(triples.any { it.predicate == SHACL.fractionDigits })
     }
     
     @Test
@@ -780,8 +783,9 @@ class ShaclDslTest {
         assertTrue(triples.any { it.predicate == SHACL.maxInclusive })
         assertTrue(triples.any { it.predicate == SHACL.minExclusive })
         assertTrue(triples.any { it.predicate == SHACL.maxExclusive })
-        assertTrue(triples.any { it.predicate == SHACL.totalDigits })
-        assertTrue(triples.any { it.predicate == SHACL.fractionDigits })
+        // Not SHACL constraints: the deprecated properties no longer emit triples.
+        assertFalse(triples.any { it.predicate == SHACL.totalDigits })
+        assertFalse(triples.any { it.predicate == SHACL.fractionDigits })
     }
     
     @Test

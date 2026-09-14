@@ -37,14 +37,17 @@ internal object ShapesStructuralDigest {
                 config.strictMode,
                 config.allowTripleTermsInShapeParameters,
             ).joinToString(",") { it.toString() }
-        val rows = triples.map { budget.check("shape digest"); canonicalTripleRow(it) }.sortedWith { a, b -> budget.check("shape digest sorting"); a.compareTo(b) }
+        // tick() reads the clock only every 64 calls; a clock read per comparison would dominate the sort.
+        val rows = triples.map { budget.tick("shape digest"); canonicalTripleRow(it) }
+            .sortedWith { a, b -> budget.tick("shape digest sorting"); a.compareTo(b) }
+        budget.check("shape digest")
         val md = MessageDigest.getInstance("SHA-256")
         md.update(profilePart.toByteArray(StandardCharsets.UTF_8))
         md.update(0)
         md.update(flagPart.toByteArray(StandardCharsets.UTF_8))
         md.update(0)
         rows.forEach { row ->
-            budget.check("shape digest")
+            budget.tick("shape digest")
             md.update(row.toByteArray(StandardCharsets.UTF_8))
             md.update(0)
         }

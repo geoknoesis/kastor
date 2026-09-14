@@ -26,6 +26,18 @@ tasks.withType<Test>().configureEach {
     }
 }
 
+// Full W3C SHACL 1.2 manifest suite only (JUnit tag `w3c`). Requires the upstream checkout under
+// test-data/w3c-shacl12 (see test-data/README.md) and fails instead of skipping when it is missing.
+tasks.register<Test>("w3cConformanceTest") {
+    group = "verification"
+    description = "Runs the full W3C SHACL 1.2 test suite against the native SHACL engine."
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform { includeTags("w3c") }
+    systemProperty("shacl.w3c.requireSuite", "true")
+    shouldRunAfter(tasks.named("test"))
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {

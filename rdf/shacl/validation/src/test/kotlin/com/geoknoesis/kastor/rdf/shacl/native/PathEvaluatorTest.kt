@@ -13,7 +13,7 @@ class PathEvaluatorTest {
     private val ex = "http://example.org/ns#"
 
     @Test
-    fun `parallel triples preserve multiset on predicate path`() {
+    fun `predicate path yields objects in graph order`() {
         val a = Iri("${ex}a")
         val o1 = Iri("${ex}o1")
         val o2 = Iri("${ex}o2")
@@ -29,7 +29,7 @@ class PathEvaluatorTest {
     }
 
     @Test
-    fun `sequence concatenates multisets`() {
+    fun `sequence yields a set of value nodes`() {
         val a = Iri("${ex}a")
         val m1 = Iri("${ex}m1")
         val m2 = Iri("${ex}m2")
@@ -49,9 +49,8 @@ class PathEvaluatorTest {
             ShaclPath.Sequence(
                 listOf(ShaclPath.Predicate(Iri("${ex}p1")), ShaclPath.Predicate(Iri("${ex}p2"))),
             )
-        val vals = PathEvaluator.evaluate(a, path, idx)
-        assertEquals(4, vals.size)
-        assertEquals(mapOf(o1 to 2, o2 to 2), vals.groupingBy { it }.eachCount())
+        // SHACL value nodes are a set: o1 and o2 are reached through both m1 and m2 but occur once.
+        assertEquals(listOf(o1, o2), PathEvaluator.evaluate(a, path, idx))
     }
 
     @Test
