@@ -3,11 +3,11 @@ package com.geoknoesis.kastor.gen.runtime
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.RdfTerm
 import java.math.BigDecimal
 import java.math.BigInteger
+import java.time.DateTimeException
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 
 /**
  * Lexical-form codecs used by generated wrappers, data-class factories, writers and DSL builders.
@@ -21,13 +21,22 @@ object XsdLiterals {
 
   fun string(literal: Literal): String = literal.lexical
 
-  fun int(literal: Literal): Int? = literal.lexical.trim().toIntOrNull()
+  private val INTEGER = Regex("[+-]?[0-9]+")
+  private val DECIMAL = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
+  private val DATE = Regex("(-?)([0-9]{4,})-([0-9]{2})-([0-9]{2})(Z|[+-][0-9]{2}:[0-9]{2})?")
 
-  fun long(literal: Literal): Long? = literal.lexical.trim().toLongOrNull()
+  private fun integerLexical(literal: Literal): String? = literal.lexical.trim().takeIf { INTEGER.matches(it) }
 
-  fun bigInteger(literal: Literal): BigInteger? = literal.lexical.trim().toBigIntegerOrNull()
+  /** xsd:int and smaller types; `[+-]?digits` (a leading `+` is valid XSD), range-checked. */
+  fun int(literal: Literal): Int? = integerLexical(literal)?.toIntOrNull()
 
-  fun bigDecimal(literal: Literal): BigDecimal? = literal.lexical.trim().toBigDecimalOrNull()
+  fun long(literal: Literal): Long? = integerLexical(literal)?.toLongOrNull()
+
+  fun bigInteger(literal: Literal): BigInteger? = integerLexical(literal)?.let(::BigInteger)
+
+  /** xsd:decimal: `[+-]?(digits[.digits] | .digits)`; exponents are not decimal syntax. */
+  fun bigDecimal(literal: Literal): BigDecimal? =
+    literal.lexical.trim().takeIf { DECIMAL.matches(it) }?.let(::BigDecimal)
 
   fun float(literal: Literal): Float? = when (val s = literal.lexical.trim()) {
     "INF", "+INF" -> Float.POSITIVE_INFINITY
@@ -52,15 +61,98 @@ object XsdLiterals {
     else -> null
   }
 
-  /** xsd:date; an optional timezone suffix is accepted and dropped. */
-  fun localDate(literal: Literal): LocalDate? = try {
-    LocalDate.parse(literal.lexical.trim(), DateTimeFormatter.ISO_DATE)
-  } catch (_: DateTimeParseException) {
-    null
+  /**
+   * xsd:date; an optional timezone suffix is accepted and dropped. Years have at least four digits and may have
+   * more (`12345-06-07`, without the `+` that ISO-8601 requires) or be negative (`-0044-03-15`, proleptic).
+   */
+  fun localDate(literal: Literal): LocalDate? {
+    val match = DATE.matchEntire(literal.lexical.trim()) ?: return null
+    val (sign, year, month, day) = match.destructured
+    return try {
+      LocalDate.of((sign + year).toInt(), month.toInt(), day.toInt())
+    } catch (_: DateTimeException) {
+      null
+    } catch (_: NumberFormatException) {
+      null
+    }
+  }
+
+  /** Lexical xsd:date for [date]: `yyyy-MM-dd` with at least four year digits and no `+` for years above 9999. */
+  private fun dateLexical(date: LocalDate): String {
+    val year = date.year
+    val digits = (if (year < 0) -year else year).toString().padStart(4, '0')
+    return (if (year < 0) "-" else "") + digits + "-" +
+      date.monthValue.toString().padStart(2, '0') + "-" + date.dayOfMonth.toString().padStart(2, '0')
   }
 
   /** rdf:langString values are exposed as the core [LangString] term. */
   fun langString(literal: Literal): LangString? = literal as? LangString
+
+  private const val XSD = "http://www.w3.org/2001/XMLSchema#"
+
+  private fun integerIn(literal: Literal, min: BigInteger?, max: BigInteger?): Boolean {
+    val value = bigInteger(literal) ?: return false
+    return (min == null || value >= min) && (max == null || value <= max)
+  }
+
+  /**
+   * Whether [literal]'s lexical form is valid for its own datatype. XSD numeric, boolean and date datatypes are
+   * checked (including the ranges of the derived integer types); other datatypes are accepted.
+   */
+  fun isWellFormed(literal: Literal): Boolean = when (literal.datatype.value) {
+    "${XSD}boolean" -> boolean(literal) != null
+    "${XSD}integer" -> integerIn(literal, null, null)
+    "${XSD}nonNegativeInteger" -> integerIn(literal, BigInteger.ZERO, null)
+    "${XSD}positiveInteger" -> integerIn(literal, BigInteger.ONE, null)
+    "${XSD}nonPositiveInteger" -> integerIn(literal, null, BigInteger.ZERO)
+    "${XSD}negativeInteger" -> integerIn(literal, null, BigInteger.ONE.negate())
+    "${XSD}long" -> long(literal) != null
+    "${XSD}int" -> int(literal) != null
+    "${XSD}short" -> integerIn(literal, BigInteger.valueOf(Short.MIN_VALUE.toLong()), BigInteger.valueOf(Short.MAX_VALUE.toLong()))
+    "${XSD}byte" -> integerIn(literal, BigInteger.valueOf(Byte.MIN_VALUE.toLong()), BigInteger.valueOf(Byte.MAX_VALUE.toLong()))
+    "${XSD}unsignedLong" -> integerIn(literal, BigInteger.ZERO, BigInteger("18446744073709551615"))
+    "${XSD}unsignedInt" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(4294967295L))
+    "${XSD}unsignedShort" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(65535L))
+    "${XSD}unsignedByte" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(255L))
+    "${XSD}decimal" -> bigDecimal(literal) != null
+    "${XSD}float" -> float(literal) != null
+    "${XSD}double" -> double(literal) != null
+    "${XSD}date" -> localDate(literal) != null
+    else -> true
+  }
+
+  /** SHACL `sh:datatype`: [term] is a literal of exactly [datatype] whose lexical form is well formed. */
+  fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean =
+    term is Literal && term.datatype == datatype && isWellFormed(term)
+
+  private val NUMERIC_DATATYPES = setOf(
+    "integer", "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
+    "long", "int", "short", "byte", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
+    "decimal", "float", "double",
+  ).map { XSD + it }.toSet()
+
+  /**
+   * Exact comparison of a numeric literal with [bound] (a decimal lexical form), for `sh:minInclusive` and friends.
+   * Returns the sign of `value - bound`, or `null` when the comparison is undefined: [term] is not a well-formed
+   * XSD numeric literal, or is `NaN`. Infinite values compare beyond every bound.
+   */
+  fun compareNumeric(term: RdfTerm, bound: String): Int? {
+    val literal = term as? Literal ?: return null
+    if (literal.datatype.value !in NUMERIC_DATATYPES || !isWellFormed(literal)) return null
+    val lexical = literal.lexical.trim()
+    val value = when (literal.datatype.value) {
+      "${XSD}float", "${XSD}double" -> {
+        val d = double(literal) ?: return null
+        when {
+          d.isNaN() -> return null
+          d.isInfinite() -> return if (d > 0) 1 else -1
+          else -> BigDecimal(lexical)
+        }
+      }
+      else -> BigDecimal(lexical)
+    }
+    return value.compareTo(BigDecimal(bound)).coerceIn(-1, 1)
+  }
 
   /**
    * Encodes [value] as a literal of [datatype]. Literals (e.g. [LangString]) are returned unchanged.
@@ -83,6 +175,7 @@ object XsdLiterals {
         else -> value.toString()
       }
       is BigDecimal -> value.toPlainString()
+      is LocalDate -> dateLexical(value)
       else -> value.toString()
     }
     return Literal(lexical, datatype)

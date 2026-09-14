@@ -30,6 +30,32 @@ fun RdfBacked.replacePredicateLiterals(predicate: Iri, literal: Literal) {
 }
 
 /**
+ * Removes all **literal** objects for ([RdfBacked.rdf]'s subject, [predicate]); used when a nullable
+ * literal-backed property is set to `null`. Requires a [MutableRdfGraph] backing store.
+ */
+fun RdfBacked.clearPredicateLiterals(predicate: Iri) {
+  val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
+  val editor = rdf.graph as? MutableRdfGraph ?: error(
+    "Graph is not mutable; use a mutable graph/repository to assign literal-backed properties.",
+  )
+  val stale = rdf.graph.find(subj, predicate).filter { it.obj is Literal }.toList()
+  if (stale.isNotEmpty()) editor.removeTriples(stale)
+}
+
+/**
+ * Removes all **non-literal** (IRI or blank node) objects for ([RdfBacked.rdf]'s subject, [predicate]); used when
+ * a nullable object-backed property is set to `null`. Requires a [MutableRdfGraph] backing store.
+ */
+fun RdfBacked.clearPredicateObjects(predicate: Iri) {
+  val subj = rdf.node as? RdfResource ?: error("RDF subject must be an IRI or blank node")
+  val editor = rdf.graph as? MutableRdfGraph ?: error(
+    "Graph is not mutable; use a mutable graph/repository to assign object-backed properties.",
+  )
+  val stale = rdf.graph.find(subj, predicate).filter { it.obj is Iri || it.obj is BlankNode }.toList()
+  if (stale.isNotEmpty()) editor.removeTriples(stale)
+}
+
+/**
  * Replaces all **non-literal** (IRI or blank node) objects for ([RdfBacked.rdf]'s subject, [predicate]) with [obj].
  * Requires a [MutableRdfGraph] backing store.
  */

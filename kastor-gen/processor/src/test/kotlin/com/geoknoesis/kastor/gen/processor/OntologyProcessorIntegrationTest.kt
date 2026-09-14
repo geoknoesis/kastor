@@ -297,10 +297,10 @@ class OntologyProcessorIntegrationTest {
         // Verify type conversions
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
-        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.double(it) }.firstOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.double(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
         assertTrue(complexWrapper.contains("XsdLiterals.boolean("))
-        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.int(it) }.firstOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.int(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
     }
 
     @Test
@@ -431,7 +431,7 @@ class OntologyProcessorIntegrationTest {
         // Verify empty wrapper
         assertTrue(emptyWrapper.contains("internal class EmptyWrapper"))
         assertTrue(emptyWrapper.contains("Empty") && emptyWrapper.contains("RdfBacked"))
-        assertTrue(emptyWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(emptyWrapper.contains("private val KNOWN: Set<Iri>"))
         assertTrue(emptyWrapper.contains("setOf"))
         assertTrue(emptyWrapper.contains(")"))
         assertTrue(emptyWrapper.contains("companion object {"))
@@ -482,7 +482,7 @@ class OntologyProcessorIntegrationTest {
         assertFalse(malformedInterface.contains("@get:Rdf"))
 
         assertTrue(malformedWrapper.contains("internal class MalformedWrapper"))
-        assertTrue(malformedWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(malformedWrapper.contains("private val KNOWN: Set<Iri>"))
         assertTrue(malformedWrapper.contains("setOf"))
         assertTrue(malformedWrapper.contains(")"))
     }

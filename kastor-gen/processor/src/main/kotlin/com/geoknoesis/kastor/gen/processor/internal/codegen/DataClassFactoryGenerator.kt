@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
@@ -52,13 +53,13 @@ public class DataClassFactoryGenerator(
         GenerationNames.checkCollisions(model)
         val enumsByName = model.enums.associateBy { it.name }
         val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
-        val supers = GenerationNames.superTypes(model)
+        val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model))
         return model.shapes
             .sortedBy { it.targetClass }
             .associateTo(sortedMapOf()) { shape ->
                 val name = factoryName(shape.targetClass, model.context)
                 name to generateFactory(
-                    shape, GenerationNames.effectiveProperties(shape, supers), model.context, packageName, enumsByName, knownTypes,
+                    shape, members[shape.targetClass].orEmpty(), model.context, packageName, enumsByName, knownTypes,
                 )
             }
     }
@@ -72,12 +73,13 @@ public class DataClassFactoryGenerator(
 
     private fun generateFactory(
         shape: ShaclShape,
-        properties: List<ShaclProperty>,
+        members: List<EffectiveMember>,
         context: JsonLdContext,
         packageName: String,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
     ): FileSpec {
+        val properties = members.map { it.typing }
         val dcName      = dataClassName(shape.targetClass, context)
         val fName       = factoryName(shape.targetClass, context)
         val dcClassName = ClassName(packageName, dcName)
@@ -116,7 +118,9 @@ public class DataClassFactoryGenerator(
         objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes))
 
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
-        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, properties)
+        // One write per path: members that alias a path (same path under two inherited names) hold the same values.
+        val writtenProperties = members.filter { it.primaryForPath }.map { it.typing }
+        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties)
             ?.let { objectBuilder.addFunction(it) }
 
         file.addType(objectBuilder.build())
@@ -208,9 +212,11 @@ public class DataClassFactoryGenerator(
             }
             ValueKind.LITERAL -> {
                 val mapping = TypeMapper.literalMapping(property.datatype)
+                // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
                 CodeBlock.of(
-                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { %L }",
-                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("it")),
+                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("lit")),
+                    ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy"), label, mapping.expectedDescription(),
                 )
             }
         }

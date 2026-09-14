@@ -211,6 +211,8 @@ public data class OntologyClass(
  * @param ontologyModel Combined SHACL shapes and JSON-LD context
  * @param packageName Target package name for generated code
  * @param options Generation configuration options
+ * @param enumPackage package of the enums generated for `sh:in` value sets (see `ShaclEnumExtractor`) when the
+ *   model carries them; defaults to [packageName]. Models without enums get `String` setters.
  *
  * @throws IllegalArgumentException if dslName or packageName are invalid
  *
@@ -219,7 +221,8 @@ public data class InstanceDslRequest(
     val dslName: String,
     val ontologyModel: OntologyModel,
     val packageName: String,
-    val options: DslGenerationOptions = DslGenerationOptions()
+    val options: DslGenerationOptions = DslGenerationOptions(),
+    val enumPackage: String? = null,
 ) {
     init {
         require(dslName.isNotBlank()) { "dslName cannot be blank" }

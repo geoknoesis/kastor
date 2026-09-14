@@ -31,6 +31,12 @@ generator refuses ambiguous names, so the context maps them to `VcardAddress` an
 
 Generated sources end up under `build/…/generated/ksp/main/kotlin`; they are not checked in.
 
+KSP itself does not observe the `.ttl` / `.jsonld` files. `build.gradle.kts` therefore declares
+`src/main/resources` as an input of the `kspKotlin` task (so editing the shapes re-runs generation) and sets the
+KSP option `kastor.gen.resources.tracked=true`; without that the processor warns that the generated code can go
+stale. Projects outside this repository should prefer the `com.geoknoesis.kastor.gen` Gradle plugin, which tracks
+ontology files as task inputs.
+
 ## Run
 
 ```bash

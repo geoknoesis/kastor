@@ -120,8 +120,15 @@ public class DataClassWriterGenerator(
             ValueKind.IRI -> CodeBlock.of("%T(it)", iriClass)
             ValueKind.OBJECT -> when (nestedMode) {
                 NestedMode.DATA_CLASS -> return buildDataClassSkip(name, property)
-                // Live wrappers expose their node; other implementations have no subject and are skipped.
-                else -> CodeBlock.of("((it as? %T)?.rdf?.node ?: return@let)", rdfBackedClass)
+                // Live wrappers expose their node. Any other implementation has no subject: silently dropping the
+                // value would lose data, so the write fails with guidance.
+                else -> CodeBlock.of(
+                    "((it as? %T)?.rdf?.node ?: throw IllegalArgumentException(%S))",
+                    rdfBackedClass,
+                    "toTriples: '$name' <$pred> holds a value that is not RdfBacked, so it has no RDF subject. " +
+                        "In NestedMode.INTERFACE nested values must be materialized from a graph (live wrappers); " +
+                        "otherwise use NestedMode.IRI_ONLY or write the nested object separately.",
+                )
             }
             ValueKind.LITERAL -> {
                 val mapping = TypeMapper.literalMapping(property.datatype)

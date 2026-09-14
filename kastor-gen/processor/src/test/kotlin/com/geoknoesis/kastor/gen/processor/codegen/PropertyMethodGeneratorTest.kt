@@ -247,7 +247,7 @@ class PropertyMethodGeneratorTest {
         
         // Check that validation code is present - should have require statement
         assertTrue(code.contains("require"), "Code should contain 'require' for validation. Code: $code")
-        assertTrue(code.contains("Regex(") && code.contains("containsMatchIn(value)"), code)
+        assertTrue(code.contains("PATTERN_") && code.contains(".containsMatchIn(value)"), code)
         // Pattern validation is verified by the presence of require - pattern constraints always generate require statements
     }
 

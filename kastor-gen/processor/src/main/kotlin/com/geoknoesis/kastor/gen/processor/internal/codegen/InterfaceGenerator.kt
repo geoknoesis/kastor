@@ -3,9 +3,9 @@ package com.geoknoesis.kastor.gen.processor.internal.codegen
 import com.geoknoesis.kastor.gen.annotations.ValidationAnnotations
 import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
-import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
+import com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
@@ -25,6 +25,9 @@ public class InterfaceGenerator(
     /**
      * Generates Kotlin interface code from SHACL shapes.
      *
+     * Inherited members keep the supertype's name and a signature that is a valid override; see
+     * [GenerationNames.effectiveProperties] for the rules.
+     *
      * @param ontologyModel The combined SHACL + JSON-LD model
      * @param packageName The target package name
      * @param fallbackUnshapedToIri when true, object properties whose `sh:class` target has no shape in
@@ -32,7 +35,7 @@ public class InterfaceGenerator(
      *   to contain ALL shapes (the Gradle task and KSP processor pass the full model); leave false for partial models.
      * @return Map of interface names to generated FileSpec
      * @throws com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException when two shapes or
-     *   two properties of a shape map to the same Kotlin name
+     *   two properties of a shape map to the same Kotlin name, or supertypes declare incompatible signatures
      */
     public fun generateInterfaces(
         ontologyModel: OntologyModel,
@@ -44,6 +47,7 @@ public class InterfaceGenerator(
 
         val knownTypes: Set<String>? = if (fallbackUnshapedToIri) GenerationNames.knownTypes(ontologyModel) else null
         val parents = GenerationNames.superTypes(ontologyModel)
+        val members = GenerationNames.effectiveMembers(ontologyModel, parents) { logger.warn(it) }
 
         // Sort shapes by targetClass IRI to ensure deterministic output
         ontologyModel.shapes
@@ -52,7 +56,7 @@ public class InterfaceGenerator(
                 val interfaceName = NamingUtils.domainName(shape.targetClass, ontologyModel.context)
                 interfaces[interfaceName] = generateInterface(
                     shape, ontologyModel.context, packageName, knownTypes,
-                    parents[shape.targetClass].orEmpty(), GenerationNames.inheritedPaths(shape, parents),
+                    parents[shape.targetClass].orEmpty(), members[shape.targetClass].orEmpty(),
                 )
                 logger.info("Generated interface: $interfaceName")
             }
@@ -66,7 +70,7 @@ public class InterfaceGenerator(
         packageName: String,
         knownTypes: Set<String>?,
         superTypes: List<ShaclShape>,
-        inherited: Set<String>,
+        members: List<EffectiveMember>,
     ): FileSpec {
         val interfaceName = NamingUtils.domainName(shape.targetClass, context)
 
@@ -91,51 +95,47 @@ public class InterfaceGenerator(
             interfaceBuilder.addSuperinterface(ClassName(packageName, NamingUtils.domainName(parent.targetClass, context)))
         }
 
-        // Generate properties - sort by path IRI to ensure deterministic output
-        shape.properties
-            .sortedBy { it.path }
-            .forEach { property ->
-                interfaceBuilder.addProperty(
-                    generateProperty(property, context, packageName, knownTypes, override = property.path in inherited)
-                )
-            }
+        // Members are sorted by path IRI (then name) for deterministic output; inherited members are only
+        // re-declared when this shape restates them or their signature changes.
+        members.filter { it.declared }.forEach { member ->
+            interfaceBuilder.addProperty(generateProperty(member, context, packageName, knownTypes))
+        }
 
         fileBuilder.addType(interfaceBuilder.build())
         return fileBuilder.build()
     }
 
     private fun generateProperty(
-        property: ShaclProperty,
+        member: EffectiveMember,
         context: JsonLdContext,
         packageName: String,
         knownTypes: Set<String>?,
-        override: Boolean,
     ): PropertySpec {
-        val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = packageName, knownTypes = knownTypes)
-        val propertyName = NamingUtils.propertyName(property)
+        val kotlinType = TypeMapper.toKotlinType(member.typing, context, objectPackage = packageName, knownTypes = knownTypes)
+        val constraints = member.constraints
 
         val kdoc = buildString {
-            append(property.description)
-            append("\nPath: ${property.path}")
-            if (property.minCount != null) {
-                append("\nMin count: ${property.minCount}")
+            append(constraints.description)
+            append("\nPath: ${member.path}")
+            if (constraints.minCount != null) {
+                append("\nMin count: ${constraints.minCount}")
             }
-            if (property.maxCount != null) {
-                append("\nMax count: ${property.maxCount}")
+            if (constraints.maxCount != null) {
+                append("\nMax count: ${constraints.maxCount}")
             }
         }
 
-        val propertyBuilder = PropertySpec.builder(propertyName, kotlinType)
+        val propertyBuilder = PropertySpec.builder(member.name, kotlinType)
             .addKdoc("%L", kdocText(kdoc))
             .addAnnotation(
                 AnnotationSpec.builder(ClassName("com.geoknoesis.kastor.gen.annotations", "Rdf"))
-                    .addMember("iri = %S", property.path)
+                    .addMember("iri = %S", member.path)
                     .build()
             )
-        if (override) propertyBuilder.addModifiers(KModifier.OVERRIDE)
+        if (member.inherited) propertyBuilder.addModifiers(KModifier.OVERRIDE)
 
         // Add validation annotations
-        validationAnnotationsForProperty(property).forEach { annotationSpec ->
+        validationAnnotationsForProperty(member).forEach { annotationSpec ->
             propertyBuilder.addAnnotation(annotationSpec)
         }
 
@@ -143,12 +143,12 @@ public class InterfaceGenerator(
     }
 
 
-    private fun validationAnnotationsForProperty(property: ShaclProperty): List<AnnotationSpec> {
+    private fun validationAnnotationsForProperty(member: EffectiveMember): List<AnnotationSpec> {
         if (validationAnnotations == ValidationAnnotations.NONE) return emptyList()
         val annotations = mutableListOf<AnnotationSpec>()
-        val isList = Cardinality.isList(property)
-        val min = property.minCount
-        val max = property.maxCount
+        val isList = Cardinality.isList(member.typing)
+        val min = member.constraints.minCount
+        val max = member.constraints.maxCount
 
         if (!isList) {
             if (min != null && min > 0) {

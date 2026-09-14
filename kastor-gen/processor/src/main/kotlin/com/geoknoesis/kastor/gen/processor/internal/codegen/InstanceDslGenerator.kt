@@ -14,7 +14,9 @@ import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
+import com.geoknoesis.kastor.gen.processor.internal.utils.ShaclPatterns
 import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
@@ -55,7 +57,7 @@ public class InstanceDslGenerator(
         logger.info("Generating DSL '${request.dslName}' for ${request.ontologyModel.shapes.size} shapes")
         GenerationNames.checkCollisions(request.ontologyModel)
 
-        val classBuilders = buildClassBuilders(request.ontologyModel, request.options)
+        val classBuilders = buildClassBuilders(request.ontologyModel, request.options, request.enumPackage ?: request.packageName)
         val requiredImports = classBuilders.collectRequiredImports()
 
         return generateDslFile(
@@ -72,10 +74,11 @@ public class InstanceDslGenerator(
      */
     private fun buildClassBuilders(
         model: OntologyModel,
-        options: DslGenerationOptions
+        options: DslGenerationOptions,
+        enumPackage: String,
     ): List<ClassBuilderModel> {
         val enumsByName = model.enums.associateBy { it.name }
-        val supers = GenerationNames.superTypes(model)
+        val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model)) { logger.warn(it) }
         val knownTypes = GenerationNames.knownTypes(model)
         return model.shapes
             .sortedBy { it.targetClass }
@@ -85,8 +88,10 @@ public class InstanceDslGenerator(
                     className = className,
                     classIri = shape.targetClass,
                     builderName = NamingUtils.toMemberIdentifier(className),
+                    // One setter per path; aliases (a path inherited under two names) write the same triples.
                     properties = buildPropertyBuilders(
-                        GenerationNames.effectiveProperties(shape, supers), model.context, options, enumsByName, knownTypes,
+                        members[shape.targetClass].orEmpty().filter { it.primaryForPath }, model.context, options, enumsByName, knownTypes,
+                        enumPackage,
                     ),
                     shapeIri = shape.shapeIri
                 )
@@ -97,13 +102,15 @@ public class InstanceDslGenerator(
      * Builds PropertyBuilderModel instances from SHACL properties.
      */
     private fun buildPropertyBuilders(
-        properties: List<ShaclProperty>,
+        members: List<EffectiveMember>,
         context: JsonLdContext,
         options: DslGenerationOptions,
         enumsByName: Map<String, com.geoknoesis.kastor.gen.processor.api.model.EnumModel>,
         knownTypes: Set<String>,
+        enumPackage: String,
     ): List<PropertyBuilderModel> {
-        return properties.map { property ->
+        return members.map { member ->
+            val property = member.typing
             val kotlinType = TypeMapper.toKotlinType(property, context)
             val enumModel = property.enumName?.let { enumName ->
                 val found = enumsByName[enumName]
@@ -118,10 +125,11 @@ public class InstanceDslGenerator(
                 propertyName = determinePropertyName(property, options),
                 propertyIri = property.path,
                 kotlinType = kotlinType,
-                isRequired = Cardinality.isRequired(property),
+                isRequired = Cardinality.isRequired(member.constraints),
                 isList = Cardinality.isList(property),
-                constraints = PropertyConstraints.from(property),
-                enumName = enumModel?.name,
+                constraints = PropertyConstraints.from(member.constraints),
+                // Qualified, so setters compile when the DSL and the enums are generated into different packages.
+                enumName = enumModel?.name?.let { "$enumPackage.$it" },
                 enumMemberKind = enumModel?.memberKind,
                 datatype = if (kind == ValueKind.LITERAL || kind == ValueKind.ENUM) property.datatype else null,
                 isIriValued = kind == ValueKind.IRI || kind == ValueKind.OBJECT,
@@ -197,6 +205,13 @@ public class InstanceDslGenerator(
         classBuilders.forEach { classBuilder ->
             fileBuilder.addType(generateBuilderClass(classBuilder, packageName, options))
         }
+
+        // sh:pattern regexes referenced by setters and validate(): compiled lazily once per pattern, not per call.
+        classBuilders.flatMap { it.properties }
+            .mapNotNull { p -> p.constraints.pattern?.let { it to p.constraints.patternFlags } }
+            .distinct()
+            .sortedBy { (pattern, flags) -> ShaclPatterns.constantName(pattern, flags) }
+            .forEach { (pattern, flags) -> fileBuilder.addProperty(ShaclPatterns.lazyProperty(pattern, flags)) }
 
         return fileBuilder.build()
     }
