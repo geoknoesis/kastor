@@ -64,7 +64,7 @@ property("prop") {
     minExclusive = 0.0
     maxExclusive = 100.0
     // totalDigits / fractionDigits are deprecated (not SHACL): setting them throws UnsupportedOperationException.
-    // Limit digits with pattern instead, e.g. pattern = "^-?\d{1,8}\.\d{2}$"
+    // Limit digits with pattern instead, e.g. pattern = "^-?\\d{1,8}\\.\\d{2}$"
 }
 ```
 
