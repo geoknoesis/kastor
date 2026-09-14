@@ -135,20 +135,23 @@ class RdfCoreCoverageTest {
     }
 
     @Test
-    fun `OptimizedUnionGraph builds FROM clauses and queries repository`() {
-        val repository = CapturingQueryRepository()
+    fun `OptimizedUnionGraph reads member graphs through the graph API without SPARQL`() {
+        // The graph-only memory provider throws on select, so any SPARQL use would fail this test.
+        val repository = RdfProviderRegistry.create(RdfConfig(providerId = "memory", variantId = "memory"))
         val graph1 = Iri("http://example.org/g1")
         val graph2 = Iri("http://example.org/g2")
+        val shared = RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/p"), string("shared"))
+        val onlyInG2 = RdfTriple(BlankNode("b1"), Iri("http://example.org/p"), string("g2"))
+        repository.editGraph(graph1).addTriple(shared)
+        repository.editGraph(graph2).addTriple(shared)
+        repository.editGraph(graph2).addTriple(onlyInG2)
         val union = OptimizedUnionGraph(repository, listOf(graph1, graph2))
 
-        val triples = union.getTriples()
-        assertEquals(1, triples.size)
-        assertNotNull(repository.lastSelect)
-
-        val selectText = repository.lastSelect?.sparql ?: error("Expected select to be captured")
-        assertTrue(selectText.contains("FROM <http://example.org/g1>"))
-        assertTrue(selectText.contains("FROM <http://example.org/g2>"))
-        assertTrue(selectText.contains("SELECT ?s ?p ?o") && selectText.contains("WHERE"))
+        assertEquals(listOf(shared, onlyInG2), union.getTriples())
+        assertEquals(listOf(shared, onlyInG2), union.getTriplesSequence().toList())
+        assertEquals(2, union.size())
+        assertEquals(1, OptimizedUnionGraph(repository, listOf(graph1)).size())
+        repository.close()
     }
 
     @Test

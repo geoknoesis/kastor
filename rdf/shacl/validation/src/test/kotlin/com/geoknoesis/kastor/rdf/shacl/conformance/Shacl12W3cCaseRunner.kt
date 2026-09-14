@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidatorProvider
 import org.apache.jena.rdf.model.ModelFactory
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 
 object Shacl12W3cCaseRunner {
 
@@ -56,6 +57,11 @@ object Shacl12W3cCaseRunner {
         val useNative = System.getProperty("shacl.w3c.useNative") != "false"
         if (useNative) {
             val validator = NativeShaclValidatorProvider().createValidator(ValidationConfig.default())
+            W3cKnownDeviations.reasonFor(manifestPath)?.let { reason ->
+                val error = assertThrows(ShaclValidationException::class.java, { validator.validate(data, shapes) }, "${case.displayName}: known deviation must fail explicitly ($reason)")
+                assertTrue(error.message.orEmpty().contains("Unsupported SHACL feature"), "${case.displayName}: unexpected failure ${error.message}")
+                return
+            }
             if (expectsFailure) {
                 assertThrows(ShaclValidationException::class.java, { validator.validate(data, shapes) }, "${case.displayName}: expected sht:Failure")
                 return

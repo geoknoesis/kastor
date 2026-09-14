@@ -2,6 +2,11 @@ package com.geoknoesis.kastor.ontoquality.metrics
 
 data class MetricsConfig(
     val emitOQuaREScores: Boolean = true,
+    /** Has no effect: metrics are computed over exactly the graph passed in. Kept for binary compatibility. */
+    @Deprecated(
+        "Has no effect. Metrics are always computed over the graph passed to VocabularyMetrics.compute; " +
+            "materialise inferences first (e.g. OntoQualityReasoning.expand) to measure an inferred graph.",
+    )
     val useInferredGraph: Boolean = false,
     val maxDepthCap: Int = 50,
     val topNHotSpots: Int = 20,

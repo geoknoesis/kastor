@@ -25,7 +25,12 @@ fun rdf4jValueOf(term: RdfTerm): Value = Rdf4jTerms.toRdf4jValue(term)
 /** Converts a Kastor [RdfResource] (IRI or blank node) to an RDF4J [Resource]. */
 fun rdf4jResourceOf(resource: RdfResource): Resource = Rdf4jTerms.toRdf4jResource(resource)
 
-/** Converts an RDF4J [Statement] (its context is ignored) to a Kastor [RdfTriple]. */
+/**
+ * Converts an RDF4J [Statement] (its context is ignored) to a Kastor [RdfTriple].
+ *
+ * An RDF-star quoted-triple subject (not representable in RDF 1.2) becomes its deterministic reifier blank
+ * node; the matching `_:r rdf:reifies <<( s p o )>>` triple is not part of this single-triple result.
+ */
 fun rdfTripleFromRdf4j(statement: Statement): RdfTriple = RdfTriple(
     Rdf4jTerms.fromRdf4jResource(statement.subject),
     Rdf4jTerms.fromRdf4jIri(statement.predicate),

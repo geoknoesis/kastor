@@ -14,5 +14,8 @@ object EnrichmentVocabulary {
     val timestamp: Iri = Iri("${NS}timestamp")
     val entitiesProcessed: Iri = Iri("${NS}entitiesProcessed")
     val pairsAboveThreshold: Iri = Iri("${NS}pairsAboveThreshold")
+
+    /** `exact`, or an `approximate-lsh(…)` label when similarity pairs may be incomplete. */
+    val similaritySearchMode: Iri = Iri("${NS}similaritySearchMode")
     val labelDefinitionDriftScore: Iri = Iri("${NS}labelDefinitionDriftScore")
 }

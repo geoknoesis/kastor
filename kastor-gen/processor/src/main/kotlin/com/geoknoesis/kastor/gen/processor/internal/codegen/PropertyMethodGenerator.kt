@@ -4,8 +4,8 @@ import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.EnumMemberKind
 import com.geoknoesis.kastor.gen.processor.api.model.PropertyBuilderModel
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.ShaclPatterns
 import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
-import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
@@ -45,6 +45,9 @@ private val XSD_LITERALS = ClassName(CodegenConstants.RUNTIME_PACKAGE, "XsdLiter
 
 /**
  * Strategy for generating property methods based on type.
+ *
+ * `sh:pattern` checks reference a file-level lazily compiled constant named by the pattern; the enclosing DSL
+ * file (see [InstanceDslGenerator]) declares it.
  */
 public sealed class PropertyTypeStrategy {
     public abstract fun generateMethods(
@@ -180,7 +183,8 @@ public sealed class PropertyTypeStrategy {
         ): List<FunSpec> {
             val enumName = requireNotNull(property.enumName) { "EnumStrategy requires enumName" }
             val memberKind = requireNotNull(property.enumMemberKind) { "EnumStrategy requires enumMemberKind" }
-            val enumType = ClassName("", enumName)
+            // InstanceDslGenerator passes the qualified enum name; a simple name is taken as-is.
+            val enumType = if ('.' in enumName) ClassName.bestGuess(enumName) else ClassName("", enumName)
             val methods = mutableListOf<FunSpec>()
 
             fun term(v: String) = when (memberKind) {
@@ -313,8 +317,9 @@ private fun addImmediateValidation(
             functionBuilder.addStatement("require(%L.length <= %L) { %S }", text, it, "$name must have maxLength <= $it")
         }
         c.pattern?.let {
+            // The lazily compiled constant is emitted once per file by InstanceDslGenerator.
             functionBuilder.addStatement(
-                "require(%L.containsMatchIn(%L)) { %S }", regexCode(it, c.patternFlags), text, "$name must match pattern: $it"
+                "require(%N.containsMatchIn(%L)) { %S }", ShaclPatterns.constantName(it, c.patternFlags), text, "$name must match pattern: $it"
             )
         }
     }

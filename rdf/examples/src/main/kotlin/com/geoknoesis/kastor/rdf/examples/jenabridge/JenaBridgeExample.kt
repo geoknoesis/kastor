@@ -1,6 +1,7 @@
-package com.geoknoesis.kastor.rdf.jena
+package com.geoknoesis.kastor.rdf.examples.jenabridge
 
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.jena.*
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.rdf.model.ResourceFactory
 

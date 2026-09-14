@@ -47,31 +47,57 @@ class GraphIsomorphismStructure {
     fun size(): Int = nodes.size
 }
 
-/** Compact structural refinement followed by exact, bijective blank-node matching.
+/**
+ * Compact structural refinement followed by exact, bijective blank-node matching.
  * A bounded search fails explicitly on excessively symmetric inputs rather than exhausting resources.
+ *
+ * **Limits** are cooperative (provider snapshots themselves cannot be preempted); exceeding one throws
+ * [IllegalStateException]:
+ * - [maxSearchStates] caps backtracking assignments.
+ * - `maxWork` caps abstract work units (terms inspected, signatures built, candidates tried). `null`, the default,
+ *   scales with the input: `max(50,000,000, 1,000 x (triples in both graphs))`, so large but easy graphs (long
+ *   lists, many independent blank nodes) complete, while pathological symmetric inputs still stop.
+ * - `timeout` is a wall-clock limit; `null`, the default, means no limit. Thread interruption is always honoured.
+ *
+ * The same limits are available on [isIsomorphicTo] and [findBlankNodeMapping].
  */
 class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) {
-    private var maxWork: Long = 50_000_000
-    private var timeout: java.time.Duration = java.time.Duration.ofSeconds(30)
+    private var maxWork: Long? = null
+    private var timeout: java.time.Duration? = null
 
     init { require(maxSearchStates > 0) { "maxSearchStates must be positive" } }
 
-    /** Explicit cooperative limits; provider snapshots themselves cannot be preempted. */
-    constructor(maxSearchStates: Int, maxWork: Long, timeout: java.time.Duration) : this(maxSearchStates) {
-        require(maxWork > 0) { "maxWork must be positive" }
-        require(!timeout.isNegative && !timeout.isZero) { "timeout must be positive" }
+    /** Explicit work and wall-clock limits (see the class documentation). */
+    constructor(maxSearchStates: Int, maxWork: Long, timeout: java.time.Duration) :
+        this(maxSearchStates, maxWork as Long?, timeout as java.time.Duration?)
+
+    /**
+     * Explicit limits: [maxWork] `null` scales the work budget with the input size, [timeout] `null` disables the
+     * wall-clock limit.
+     */
+    constructor(maxSearchStates: Int, maxWork: Long?, timeout: java.time.Duration?) : this(maxSearchStates) {
+        require(maxWork == null || maxWork > 0) { "maxWork must be positive" }
+        require(timeout == null || (!timeout.isNegative && !timeout.isZero)) { "timeout must be positive" }
         this.maxWork = maxWork
         this.timeout = timeout
     }
 
-    private class WorkBudget(maxWork: Long, timeout: java.time.Duration) {
-        private var remaining = maxWork
+    private class WorkBudget(timeout: java.time.Duration?) {
+        var remaining = Long.MAX_VALUE
         private val started = System.nanoTime()
-        private val nanos = try { timeout.toNanos() } catch (_: ArithmeticException) { Long.MAX_VALUE }
-        fun check(depth: Int = 0) {
+        private val nanos = timeout?.let { try { it.toNanos() } catch (_: ArithmeticException) { Long.MAX_VALUE } } ?: Long.MAX_VALUE
+        private var calls = 0
+
+        /** Charges [cost] work units; interruption and the clock are polled every 1024 charges. */
+        fun check(depth: Int = 0, cost: Long = 1) {
             kotlin.check(depth < 128) { "Graph isomorphism triple-term depth limit exceeded (128)" }
+            remaining -= cost
+            kotlin.check(remaining >= 0) { "Graph isomorphism work limit exceeded" }
+            if ((++calls and 0x3FF) == 0) poll()
+        }
+
+        fun poll() {
             kotlin.check(!Thread.currentThread().isInterrupted) { "Graph isomorphism interrupted" }
-            kotlin.check(remaining-- > 0) { "Graph isomorphism work limit exceeded" }
             kotlin.check(System.nanoTime() - started < nanos) { "Graph isomorphism time limit exceeded" }
         }
     }
@@ -79,11 +105,13 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
     fun areIsomorphic(graph1: RdfGraph, graph2: RdfGraph): Boolean = mapping(graph1, graph2) != null
 
     fun mapping(graph1: RdfGraph, graph2: RdfGraph): Map<BlankNode, BlankNode>? {
-        val budget = WorkBudget(maxWork, timeout)
-        budget.check()
+        val budget = WorkBudget(timeout)
+        budget.poll()
         val left = graph1.getTriples().toSet()
-        budget.check()
+        budget.poll()
         val right = graph2.getTriples().toSet()
+        budget.poll()
+        budget.remaining = maxWork ?: defaultIsomorphismWorkBudget(left.size.toLong() + right.size)
         budget.check()
         if (left.size != right.size) return null
         fun blanks(term: RdfTerm, depth: Int = 0): Set<BlankNode> {
@@ -106,25 +134,28 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         if (li.isEmpty()) return emptyMap()
         var lc = li.keys.associateWith { 0 }
         var rc = ri.keys.associateWith { 0 }
-        fun token(t: RdfTerm, focus: BlankNode, colors: Map<BlankNode, Int>, depth: Int = 0): String {
-            budget.check(depth)
-            return when (t) {
-                is BlankNode -> if (t == focus) "SELF" else "B${colors[t]}"
-                is TripleTerm -> "T(${token(t.triple.subject, focus, colors, depth + 1)},${token(t.triple.predicate, focus, colors, depth + 1)},${token(t.triple.obj, focus, colors, depth + 1)})"
-                else -> t.toString().let { "${t.javaClass.name}:${it.length}:$it" }
+        fun token(t: RdfTerm, focus: BlankNode, colors: Map<BlankNode, Int>, depth: Int = 0): String = when (t) {
+            is BlankNode -> if (t == focus) "SELF" else "B${colors[t]}"
+            is TripleTerm -> {
+                budget.check(depth)
+                "T(${token(t.triple.subject, focus, colors, depth + 1)},${token(t.triple.predicate, focus, colors, depth + 1)},${token(t.triple.obj, focus, colors, depth + 1)})"
             }
+            else -> groundTermToken(t)
         }
         // Refinement only prunes the exact search below, so it is capped: a path of n blank nodes needs ~n/2
         // rounds to separate fully, which made the cost quadratic. The anchored search handles long chains.
         repeat(minOf(li.size, MAX_REFINEMENT_ROUNDS)) {
+            // Work is charged per signature, in proportion to its triples, rather than per sort comparison.
             fun signatures(index: Map<BlankNode, List<RdfTriple>>, colors: Map<BlankNode, Int>) = index.mapValues { (b, ts) ->
+                budget.check(cost = ts.size.toLong() + 1)
                 colors.getValue(b).toString() + ":" + ts.map { t ->
                     token(t.subject, b, colors) + "/" + token(t.predicate, b, colors) + "/" + token(t.obj, b, colors)
-                }.sortedWith { a, b -> budget.check(); a.compareTo(b) }.joinToString(";")
+                }.sorted().joinToString(";")
             }
             val ls = signatures(li, lc)
             val rs = signatures(ri, rc)
-            val ids = (ls.values + rs.values).distinct().sortedWith { a, b -> budget.check(); a.compareTo(b) }.withIndex().associate { it.value to it.index }
+            budget.poll()
+            val ids = (ls.values + rs.values).distinct().sorted().withIndex().associate { it.value to it.index }
             val nl = ls.mapValues { ids.getValue(it.value) }
             val nr = rs.mapValues { ids.getValue(it.value) }
             if (nl.values.groupingBy { it }.eachCount() != nr.values.groupingBy { it }.eachCount()) return null
@@ -259,5 +290,39 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         const val MAX_REFINEMENT_ROUNDS = 16
     }
 }
+/** Default work budget for graphs with [tripleCount] triples in total: `max(50,000,000, 1,000 x tripleCount)`. */
+internal fun defaultIsomorphismWorkBudget(tripleCount: Long): Long =
+    maxOf(50_000_000L, if (tripleCount > Long.MAX_VALUE / 1_000) Long.MAX_VALUE else tripleCount * 1_000)
+
+/**
+ * Refinement token for a term without blank nodes. Equal terms get equal tokens, whatever their class
+ * ([TrueLiteral] and `"true"^^xsd:boolean`) or language-tag case, and every variable-length part is
+ * length-prefixed so joined tokens stay unambiguous.
+ */
+private fun groundTermToken(term: RdfTerm): String = when (term) {
+    is Iri -> "I${term.value.length}:${term.value}"
+    is LangString ->
+        "S${term.lexical.length}:${term.lexical}${term.normalizedLang.length}:${term.normalizedLang}${term.direction?.token ?: ""}"
+    is Literal -> "L${term.lexical.length}:${term.lexical}${term.datatype.value.length}:${term.datatype.value}"
+    else -> term.toString().let { "X${term.javaClass.name}:${it.length}:$it" }
+}
+
+/** True if the graphs are equal up to blank-node renaming, with the default limits of [WeisfeilerLehmanIsomorphism]. */
 fun RdfGraph.isIsomorphicTo(other: RdfGraph): Boolean = WeisfeilerLehmanIsomorphism().areIsomorphic(this, other)
+
+/** A blank-node bijection making the graphs equal, or null; default limits of [WeisfeilerLehmanIsomorphism]. */
 fun RdfGraph.findBlankNodeMapping(other: RdfGraph): Map<BlankNode, BlankNode>? = WeisfeilerLehmanIsomorphism().mapping(this, other)
+
+/**
+ * [isIsomorphicTo] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means no
+ * wall-clock limit.
+ */
+fun RdfGraph.isIsomorphicTo(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Boolean =
+    WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).areIsomorphic(this, other)
+
+/**
+ * [findBlankNodeMapping] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means
+ * no wall-clock limit.
+ */
+fun RdfGraph.findBlankNodeMapping(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Map<BlankNode, BlankNode>? =
+    WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).mapping(this, other)

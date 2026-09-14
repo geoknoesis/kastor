@@ -53,8 +53,8 @@ class IntegrationTest {
     @Test
     fun `end-to-end materialization with nested objects works`() {
         // Register wrapper factories (simulating KSP-generated registry entries)
-        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
-        OntoMapper.register(Organization::class.java) { handle -> OrganizationWrapper(handle) }
+        OntoMapper.register(Person::class.java, replace = true) { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Organization::class.java, replace = true) { handle -> OrganizationWrapper(handle) }
 
         val repo = Rdf.memory()
         val person1 = Iri("http://example.org/person1")
@@ -122,7 +122,7 @@ class IntegrationTest {
             }
         }
 
-        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java, replace = true) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -154,7 +154,7 @@ class IntegrationTest {
 
     @Test
     fun `property bag integration with materialization works`() {
-        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java, replace = true) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -191,7 +191,7 @@ class IntegrationTest {
     @Test
     fun `cross-module compatibility works`() {
         // Test that the API works from different modules
-        OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
+        OntoMapper.register(Person::class.java, replace = true) { handle -> PersonWrapper(handle) }
 
         val repo = Rdf.memory()
         val person = Iri("http://example.org/person")
@@ -232,7 +232,7 @@ class IntegrationTest {
         }
 
         // Restore registry
-        if (wasRegistered) OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }
+        if (wasRegistered) OntoMapper.register(Person::class.java, replace = true) { handle -> PersonWrapper(handle) }
 
         // Test invalid asRdf() call
         val regularObject = object {}

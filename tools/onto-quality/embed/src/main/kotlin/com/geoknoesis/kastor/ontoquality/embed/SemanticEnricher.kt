@@ -18,7 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Reads labels from an ontology, computes embeddings, and materializes similarity triples.
  *
- * Pairwise similarity uses an exact [SimilarityIndex] with explicit resource limits.
+ * Pairwise similarity uses a [SimilarityIndex] with explicit resource limits. By default the search is exact and
+ * its limits scale with the number of labelled entities ([SimilarityLimitsPolicy.scaled]); a
+ * [SimilaritySearchMode.ApproximateLsh] mode is available for large vocabularies. The mode used is recorded on the
+ * enrichment node. Exhausted limits raise [SimilaritySearchBudgetExceededException].
  * Constructor-supplied models remain caller-owned. [default] creates an owned model;
  * close that enricher with `use` to release its native resources.
  */
@@ -28,10 +31,23 @@ class SemanticEnricher(
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
     private var ownedModel: AutoCloseable? = null
-    private var searchLimits = SimilaritySearchLimits()
+    private var limitsPolicy: SimilarityLimitsPolicy = SimilarityLimitsPolicy.scaled()
+    private var searchMode: SimilaritySearchMode = SimilaritySearchMode.Exact
     init { require(threshold.isFinite() && threshold in -1.0..1.0) }
+
+    /** Exact search with the same fixed [limits] for every ontology. */
     constructor(model: EmbeddingModel, threshold: Double, limits: SimilaritySearchLimits) : this(model, threshold) {
-        searchLimits = limits
+        limitsPolicy = SimilarityLimitsPolicy.fixed(limits)
+    }
+
+    constructor(
+        model: EmbeddingModel,
+        threshold: Double,
+        limitsPolicy: SimilarityLimitsPolicy,
+        mode: SimilaritySearchMode,
+    ) : this(model, threshold) {
+        this.limitsPolicy = limitsPolicy
+        searchMode = mode
     }
     /**
      * Reads labels from [ontology], embeds them, and returns a NEW [RdfGraph] containing the
@@ -69,7 +85,7 @@ class SemanticEnricher(
 
         val index = SimilarityIndex(embeddings)
         val similarityTriples =
-            index.pairsAboveThreshold(threshold, searchLimits).map { (a, b) ->
+            index.pairsAboveThreshold(threshold, limitsPolicy.limitsFor(labelMap.size), searchMode).map { (a, b) ->
                 RdfTriple(a, EnrichmentVocabulary.semanticallyCloseTo, b)
             }.toList()
 
@@ -133,6 +149,7 @@ class SemanticEnricher(
         g.addTriple(RdfTriple(root, EnrichmentVocabulary.modelHash, stringLit(hash)))
         g.addTriple(RdfTriple(root, EnrichmentVocabulary.threshold, decimal(BigDecimal.valueOf(threshold))))
         g.addTriple(RdfTriple(root, EnrichmentVocabulary.tokenizer, stringLit(model.tokenizerDescription)))
+        g.addTriple(RdfTriple(root, EnrichmentVocabulary.similaritySearchMode, stringLit(searchMode.label)))
         g.addTriple(
             RdfTriple(
                 root,

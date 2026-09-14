@@ -112,7 +112,7 @@ class OntologyWrapperGeneratorTest {
         assertTrue(catalogCode.contains("Catalog") && catalogCode.contains("RdfBacked"))
         
         // Check known predicates
-        assertTrue(catalogCode.contains("private val known: Set<Iri>"))
+        assertTrue(catalogCode.contains("private val KNOWN: Set<Iri>"))
         assertTrue(catalogCode.contains("setOf"))
         assertTrue(catalogCode.contains("Iri(\"http://purl.org/dc/terms/title\")"))
         assertTrue(catalogCode.contains("Iri(\"http://purl.org/dc/terms/description\")"))
@@ -120,7 +120,7 @@ class OntologyWrapperGeneratorTest {
         
         // Check property implementations
         assertTrue(catalogCode.contains("override val title: String by lazy {"))
-        assertTrue(catalogCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(catalogCode.contains(".lexical"))
         
         assertTrue(catalogCode.contains("override val description: String? by lazy {"))
@@ -195,22 +195,22 @@ class OntologyWrapperGeneratorTest {
         
         // Check string property
         assertTrue(testCode.contains("override val stringProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"))"))
         assertTrue(testCode.contains(".lexical"))
         
         // Check int property
         assertTrue(testCode.contains("override val intProp: Int by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"))"))
         assertTrue(testCode.contains("XsdLiterals.int("))
         
         // Check boolean property
         assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"))"))
         assertTrue(testCode.contains("XsdLiterals.boolean("))
         
         // Check double property
         assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"))"))
         assertTrue(testCode.contains("XsdLiterals.double("))
     }
 
@@ -263,7 +263,7 @@ class OntologyWrapperGeneratorTest {
         
         // Single value property
         assertTrue(testCode.contains("override val singleProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"))"))
         assertTrue(testCode.contains(".lexical"))
         
         // Multiple value property
@@ -402,7 +402,7 @@ class OntologyWrapperGeneratorTest {
         assertTrue(emptyCode.contains("internal class EmptyWrapper"))
         assertTrue(emptyCode.contains("override val rdf: RdfHandle"))
         assertTrue(emptyCode.contains("Empty") && emptyCode.contains("RdfBacked"))
-        assertTrue(emptyCode.contains("private val known: Set<Iri>"))
+        assertTrue(emptyCode.contains("private val KNOWN: Set<Iri>"))
         assertTrue(emptyCode.contains("setOf"))
         assertTrue(emptyCode.contains(")"))
         assertTrue(emptyCode.contains("companion object {"))
@@ -479,7 +479,7 @@ class OntologyWrapperGeneratorTest {
         
         // Unknown datatypes should default to String
         assertTrue(testCode.contains("override val unknownProp: String by lazy {"))
-        assertTrue(testCode.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"))"))
+        assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"))"))
         assertTrue(testCode.contains(".lexical"))
     }
 

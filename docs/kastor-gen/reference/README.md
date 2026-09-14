@@ -49,7 +49,8 @@ See [annotations.md](annotations.md) for the full `@Rdf` / `@file:Rdf` / `Prefix
 
 ```kotlin
 object OntoMapper {
-    fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)
+    fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)                   // fails if a different factory is registered
+    fun <T : Any> register(type: Class<T>, replace: Boolean, factory: (RdfHandle) -> T)
     fun unregister(type: Class<*>): Boolean
     fun isRegistered(type: Class<*>): Boolean
     fun registeredTypes(): Set<Class<*>>
@@ -73,9 +74,13 @@ fun <T : RdfBacked> T.writeToGraph(targetGraph: MutableRdfGraph, subject: Iri? =
 ### Validation
 
 ```kotlin
-interface ValidationContext {
+interface ValidationContext : AutoCloseable {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
+    override fun close() {}
 }
+
+fun ValidationResult.orThrow()                                // throws on sh:Violation results only
+fun ValidationResult.orThrow(minimumSeverity: ShaclSeverity)  // opt in to Warning / Info
 ```
 
 ## Module Structure

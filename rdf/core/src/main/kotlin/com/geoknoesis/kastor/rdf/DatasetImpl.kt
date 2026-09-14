@@ -14,6 +14,16 @@ import java.io.Closeable
  * 3. Everything else - graphs from different repositories, untracked graphs, or the store's
  *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it) -
  *    is materialized into a temporary repository
+ *
+ * **Dataset clauses:** the dataset defines the default and named graphs, so queries that declare
+ * their own `FROM` / `FROM NAMED` are rejected with [IllegalArgumentException] on every path.
+ * (Run in place, such a query would read any graph of the source repository and escape the dataset;
+ * materialized, it would see different graphs - so there is no consistent meaning to give it.)
+ *
+ * **Cost of the materialized path:** every query copies all referenced graphs into a fresh in-memory
+ * repository (one batched write per target graph inside a single transaction) and discards it
+ * afterwards. The copy is not cached, because the source graphs can change between queries without
+ * notification. Prefer datasets that qualify for strategy 1 or 2 for repeated querying of large graphs.
  */
 internal class DatasetImpl(
     private val defaultGraphRefs: List<GraphRef>,
@@ -22,6 +32,9 @@ internal class DatasetImpl(
 
     override val defaultGraphs: List<RdfGraph> = defaultGraphRefs
     override val namedGraphs: Map<Iri, RdfGraph> = namedGraphRefs
+
+    /** Creates the temporary repository used by the materialized path; replaceable for tests. */
+    internal var materializationRepositoryFactory: () -> RdfRepository = { Rdf.memory() }
 
     /** A dataset expressible as dataset clauses against a single repository. */
     private class QueryPlan(val repository: RdfRepository, val from: List<Iri>, val fromNamed: List<Iri>)
@@ -47,6 +60,7 @@ internal class DatasetImpl(
     override fun listNamedGraphs(): List<Iri> = namedGraphRefs.keys.toList()
 
     override fun select(query: SparqlSelect): SparqlQueryResult {
+        requireNoDatasetClauses(query.sparql)
         val plan = queryPlan
         val rewritten = plan?.let { rewrite(query.sparql, it) }
         return if (plan != null && rewritten != null) {
@@ -57,6 +71,7 @@ internal class DatasetImpl(
     }
 
     override fun ask(query: SparqlAsk): Boolean {
+        requireNoDatasetClauses(query.sparql)
         val plan = queryPlan
         val rewritten = plan?.let { rewrite(query.sparql, it) }
         return if (plan != null && rewritten != null) {
@@ -67,6 +82,7 @@ internal class DatasetImpl(
     }
 
     override fun construct(query: SparqlConstruct): Sequence<RdfTriple> {
+        requireNoDatasetClauses(query.sparql)
         val plan = queryPlan
         val rewritten = plan?.let { rewrite(query.sparql, it) }
         return if (plan != null && rewritten != null) {
@@ -79,6 +95,7 @@ internal class DatasetImpl(
     }
 
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
+        requireNoDatasetClauses(query.sparql)
         val plan = queryPlan
         val rewritten = plan?.let { rewrite(query.sparql, it) }
         return if (plan != null && rewritten != null) {
@@ -94,6 +111,13 @@ internal class DatasetImpl(
         namedGraphRefs.values.forEach { graphsToClose.add(it.getReferencedGraph()) }
         graphsToClose.forEach { graph ->
             if (graph is Closeable) graph.close()
+        }
+    }
+
+    private fun requireNoDatasetClauses(queryText: String) {
+        require(!SparqlDatasetClauses.declaresDataset(queryText)) {
+            "Queries executed against a Dataset must not declare FROM or FROM NAMED clauses: the dataset already " +
+                "defines the default and named graphs. Remove the dataset clauses, or query the source repository directly."
         }
     }
 
@@ -114,7 +138,7 @@ internal class DatasetImpl(
 
     /**
      * Returns the query text to send to the plan's repository, or null if the query cannot be analysed
-     * (the caller then materializes). Queries that declare their own dataset are returned unchanged.
+     * (the caller then materializes). Callers reject queries with their own dataset clauses first.
      */
     private fun rewrite(queryText: String, plan: QueryPlan): String? {
         if (plan.from.isEmpty() && plan.fromNamed.isEmpty()) return queryText
@@ -126,16 +150,17 @@ internal class DatasetImpl(
     // Materialized execution fallback
 
     /**
-     * Materialize graphs into a temporary repository for query execution.
+     * Copies the dataset's graphs into [repo]: one batched write per target graph, in one transaction
+     * (a per-triple write would be a separate transaction on transactional providers).
      */
     private fun materializeGraphs(repo: RdfRepository) {
-        val defaultGraphEditor = repo.editDefaultGraph()
-        defaultGraphRefs.forEach { ref ->
-            ref.getReferencedGraph().getTriplesSequence().forEach { triple -> defaultGraphEditor.addTriple(triple) }
-        }
-        namedGraphRefs.forEach { (name, ref) ->
-            val graphEditor = repo.editGraph(name)
-            ref.getReferencedGraph().getTriplesSequence().forEach { triple -> graphEditor.addTriple(triple) }
+        repo.transaction {
+            repo.editDefaultGraph().addTriples(
+                defaultGraphRefs.asSequence().flatMap { it.getReferencedGraph().getTriplesSequence() }
+            )
+            namedGraphRefs.forEach { (name, ref) ->
+                repo.editGraph(name).addTriples(ref.getReferencedGraph().getTriplesSequence())
+            }
         }
     }
 
@@ -144,7 +169,7 @@ internal class DatasetImpl(
      * materialize its result before returning.
      */
     private fun <T> executeOnMaterializedUnion(execute: (RdfRepository) -> T): T {
-        val unionRepo = Rdf.memory()
+        val unionRepo = materializationRepositoryFactory()
         try {
             materializeGraphs(unionRepo)
             return execute(unionRepo)
@@ -168,6 +193,16 @@ internal object SparqlDatasetClauses {
     private class Token(val kind: Kind, val start: Int, val end: Int)
 
     private val SOLUTION_MODIFIERS = setOf("ORDER", "GROUP", "HAVING", "LIMIT", "OFFSET", "VALUES")
+
+    /**
+     * True if [query] contains a `FROM` keyword, i.e. declares `FROM` or `FROM NAMED` dataset clauses.
+     * `FROM` inside strings, IRIs, comments, variables and prefixed names does not count; `FROM` is not
+     * used by any other SPARQL construct.
+     */
+    fun declaresDataset(query: String): Boolean {
+        val tokens = tokenize(query) ?: return false
+        return tokens.any { it.kind == Kind.WORD && it.end - it.start == 4 && query.regionMatches(it.start, "FROM", 0, 4, ignoreCase = true) }
+    }
 
     /**
      * @return the rewritten query; [query] itself if it already declares a dataset; or null if no
@@ -271,44 +306,37 @@ internal object SparqlDatasetClauses {
 }
 
 /**
- * Optimized union of named graphs of one repository, queried with FROM clauses instead of
- * materialization. Membership tests use the graph pattern API so that terms (blank nodes,
- * boolean and directional literals, triple terms) are matched exactly.
+ * Union of named graphs of one repository. All reads use the graph API of each member graph (no
+ * SPARQL), so the union works on graph-only providers such as `memory`, and terms (blank nodes,
+ * boolean and directional literals, triple terms) are matched exactly. Triples in several member
+ * graphs are reported once, in first-seen order.
  */
 internal class OptimizedUnionGraph(
     private val repository: RdfRepository,
     private val graphNames: List<Iri>
 ) : RdfGraph {
 
-    private fun fromClauses(): String = graphNames.joinToString("\n") { "FROM <${it.value}>" }
-
     override fun hasTriple(triple: RdfTriple): Boolean = graphNames.any { repository.getGraph(it).hasTriple(triple) }
 
     override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
         graphNames.flatMap { repository.getGraph(it).find(subject, predicate, obj) }.distinct()
 
-    override fun getTriples(): List<RdfTriple> = getTriplesSequence().toList()
+    override fun getTriples(): List<RdfTriple> {
+        val union = LinkedHashSet<RdfTriple>()
+        graphNames.forEach { union.addAll(repository.getGraph(it).getTriples()) }
+        return union.toList()
+    }
 
-    override fun getTriplesSequence(): Sequence<RdfTriple> {
-        val result = repository.select(SparqlSelectQuery("SELECT ?s ?p ?o\n${fromClauses()}\nWHERE { ?s ?p ?o }"))
-        return result.asSequence().mapNotNull { binding ->
-            val s = binding.get("s") as? RdfResource ?: return@mapNotNull null
-            val p = binding.get("p") as? Iri ?: return@mapNotNull null
-            val o = binding.get("o") ?: return@mapNotNull null
-            RdfTriple(s, p, o)
+    override fun getTriplesSequence(): Sequence<RdfTriple> = sequence {
+        val seen = HashSet<RdfTriple>()
+        for (name in graphNames) {
+            for (triple in repository.getGraph(name).getTriplesSequence()) {
+                if (seen.add(triple)) yield(triple)
+            }
         }
     }
 
-    override fun size(): Int {
-        return try {
-            val result = repository.select(SparqlSelectQuery("SELECT (COUNT(*) AS ?count)\n${fromClauses()}\nWHERE { ?s ?p ?o }"))
-            val count = result.firstOrNull()?.get("count") as? Literal
-            count?.lexical?.toIntOrNull() ?: getTriples().size
-        } catch (e: Exception) {
-            // Fallback to materialization if COUNT fails
-            getTriples().size
-        }
-    }
+    override fun size(): Int = if (graphNames.size == 1) repository.getGraph(graphNames[0]).size() else getTriples().size
 }
 
 /**

@@ -7,7 +7,6 @@ import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.QueryExecutionFactory
 import org.apache.jena.query.QueryFactory
 import org.apache.jena.query.ReadWrite
-import org.apache.jena.rdf.model.InfModel
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.tdb2.TDB2Factory
@@ -15,16 +14,18 @@ import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 /**
  * Transactional Jena store. Inference is a read view and never replaces asserted data.
  *
- * **Inference views** (`*-inference` variants) are RDFS inference models built once per graph and
- * cached until the next committed write, instead of per query. Jena inference graphs are not safe
- * for concurrent use, so reads on an inference repository are serialized by a repository lock
- * (plain repositories keep fully concurrent reads).
+ * **Inference views** (`*-inference` variants) are RDFS closures computed once per graph and per committed
+ * state, instead of per query. Jena inference graphs are not safe for concurrent use, so the closure is
+ * materialised into an immutable plain model and cached keyed by the **snapshot generation** the read
+ * transaction actually sees; readers share it without any lock. A reader whose snapshot cannot be tied to a
+ * generation (a commit raced with its `begin`) gets a private, uncached view. Only building a cache entry
+ * is serialised (per graph); caller-supplied consumers never run under a lock, so they may freely wait on
+ * reads performed by other threads. Inside a write transaction the view is built fresh so uncommitted
+ * changes are visible.
  *
  * **Query errors:** failures while preparing or evaluating a query surface as [RdfQueryException];
  * exceptions thrown by a caller-supplied `consume` lambda propagate unchanged.
@@ -47,15 +48,21 @@ class JenaRepository private constructor(
         private const val DEFAULT_GRAPH_KEY = ""
     }
 
-    /** Bumped around every committed write; cached inference models from older generations are stale. */
+    /**
+     * Commit sequence number, used like a seqlock: even while no commit is in flight, odd while one is.
+     * Every write commit moves it by two (before and after `commit()`), so a read transaction whose
+     * `begin` happened while the value stayed the same even number sees exactly the committed state of
+     * that generation.
+     */
     private val generation = AtomicLong()
-    private class CachedInference(val generation: Long, val model: InfModel)
+    private class CachedInference(val generation: Long, val model: Model)
     private val inferenceCache = ConcurrentHashMap<String, CachedInference>()
-    private val inferenceLock = ReentrantLock()
+    private val buildLocks = ConcurrentHashMap<String, Any>()
 
-    internal fun <T> withRead(block: () -> T): T =
-        if (inference) inferenceLock.withLock { inTransaction(ReadWrite.READ, block) }
-        else inTransaction(ReadWrite.READ, block)
+    /** Generation of the snapshot seen by this thread's read transaction, or null when it is not provable. */
+    private val readGeneration = ThreadLocal<Long?>()
+
+    internal fun <T> withRead(block: () -> T): T = inTransaction(ReadWrite.READ, block)
 
     internal fun <T> withWrite(block: () -> T): T = inTransaction(ReadWrite.WRITE, block)
 
@@ -65,41 +72,63 @@ class JenaRepository private constructor(
             check(mode != ReadWrite.WRITE || dataset.transactionMode() == ReadWrite.WRITE) { "Cannot write inside a read transaction" }
             return block()
         }
+        val before = generation.get()
         dataset.begin(mode)
         try {
-            val result = block()
-            if (mode == ReadWrite.WRITE) {
-                // Invalidate before and after the commit: a reader that builds an inference
-                // model in between may still see the pre-commit snapshot.
-                invalidateInference()
-                dataset.commit()
-                invalidateInference()
+            if (inference && mode == ReadWrite.READ) {
+                val after = generation.get()
+                readGeneration.set(if (before == after && before % 2 == 0L) before else null)
             }
+            val result = block()
+            if (mode == ReadWrite.WRITE) commit()
             return result
         } catch (e: Throwable) {
             if (mode == ReadWrite.WRITE) dataset.abort()
             throw e
-        } finally { dataset.end() }
+        } finally {
+            readGeneration.remove()
+            dataset.end()
+        }
     }
 
-    private fun invalidateInference() {
-        if (!inference) return
+    private fun commit() {
+        if (!inference) {
+            dataset.commit()
+            return
+        }
         generation.incrementAndGet()
-        inferenceCache.clear()
+        try {
+            dataset.commit()
+        } finally {
+            generation.incrementAndGet()
+            inferenceCache.clear()
+        }
     }
 
     /**
      * Read view of [model] (identified by [graphKey]). Must be called inside a transaction.
-     * Inference views are cached per graph until the next committed write; inside a write
-     * transaction a fresh, uncached view is built so uncommitted changes are visible.
+     * Inference views are cached per graph for the snapshot generation of the current read transaction;
+     * inside a write transaction a fresh, uncached view is built so uncommitted changes are visible.
      */
     internal fun readModel(graphKey: String, model: Model): Model {
         if (!inference) return model
         if (dataset.transactionMode() == ReadWrite.WRITE) return ModelFactory.createRDFSModel(model)
-        val current = generation.get()
-        inferenceCache[graphKey]?.takeIf { it.generation == current }?.let { return it.model }
-        return ModelFactory.createRDFSModel(model).also { inferenceCache[graphKey] = CachedInference(current, it) }
+        val snapshot = readGeneration.get() ?: return materializedInference(model)
+        inferenceCache[graphKey]?.takeIf { it.generation == snapshot }?.let { return it.model }
+        synchronized(buildLocks.computeIfAbsent(graphKey) { Any() }) {
+            inferenceCache[graphKey]?.takeIf { it.generation == snapshot }?.let { return it.model }
+            val built = materializedInference(model)
+            // Never replace an entry for a newer snapshot with one built by an older reader.
+            inferenceCache.compute(graphKey) { _, existing ->
+                if (existing == null || existing.generation < snapshot) CachedInference(snapshot, built) else existing
+            }
+            return built
+        }
     }
+
+    /** RDFS closure of [model] copied into a plain in-memory model, which is safe for concurrent reads. */
+    private fun materializedInference(model: Model): Model =
+        ModelFactory.createDefaultModel().add(ModelFactory.createRDFSModel(model))
 
     /** Dataset used for queries and dataset serialization: the store, or its inference view. Call inside a transaction. */
     internal fun queryDataset(): Dataset {

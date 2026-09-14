@@ -17,11 +17,15 @@ import com.geoknoesis.kastor.ontoquality.metrics.MetricValue
  * - `Sup_C` / `Sub_C` direct named superclasses / subclasses of C; `|SubClassOf|` = Σ|Sup_C|;
  * - `P_C` declared object/datatype properties *used* by C — `p rdfs:domain C` or an `owl:Restriction`
  *   on `p` attached to C by `rdfs:subClassOf` / `owl:equivalentClass` (each (C, p) pair counted once);
- * - `leaves` classes without named (non-cycle) subclasses; paths run from a root to a leaf over the acyclic
- *   part of the hierarchy (cycle participants are excluded and reported separately).
+ * - `Assoc_C` named classes associated with C through a property: the `rdfs:range` of a property whose
+ *   `rdfs:domain` is C, or the `owl:someValuesFrom` / `owl:allValuesFrom` / `owl:onClass` filler of a restriction
+ *   on C;
+ * - `leaves` classes without named (non-cycle) subclasses; paths run from **owl:Thing** to a leaf over the
+ *   acyclic part of the hierarchy (cycle participants are excluded and reported separately). owl:Thing has
+ *   depth 0, so a root has depth 1 and an isolated class forms one path of length 1.
  */
 internal object OquareCalculators {
-    /** DITOnto = max over leaves of the length (edges) of the longest root-to-leaf path. */
+    /** DITOnto = length (edges) of the longest owl:Thing-to-leaf path, i.e. the maximum depth with depth(Root) = 1. */
     fun depthOfInheritanceTree(q: IntermediateQuantities, scores: Boolean): MetricValue {
         if (q.namedClasses.isEmpty()) return notComputable("depthOfInheritanceTree", "DITOnto", "no classes")
         val maxDepth = q.ditDepthOf.values.maxOrNull() ?: 0
@@ -57,12 +61,15 @@ internal object OquareCalculators {
         )
     }
 
-    /** NOCOnto = Σ|Sub_C| / (|C| − |Root|). */
+    /**
+     * NOCOnto = Σ|Sub_C| / |{C : Sub_C ≠ ∅}| — mean number of direct subclasses of the classes that have
+     * subclasses (the class fan-out). Dividing by the non-root classes, as a literal reading of the OQuaRE table
+     * does, makes NOCOnto identical to CBOOnto whenever both only count subclass edges.
+     */
     fun numberOfChildren(q: IntermediateQuantities, scores: Boolean): MetricValue {
-        val denom = nonRootClasses(q)
-        if (denom <= 0) return notComputable("numberOfChildren", "NOCOnto", "no non-root classes")
-        val sumChildren = q.subClassChildrenOf.values.sumOf { it.size }
-        val mean = sumChildren.toDouble() / denom
+        val parents = q.subClassChildrenOf.values.filter { it.isNotEmpty() }
+        if (parents.isEmpty()) return notComputable("numberOfChildren", "NOCOnto", "no class has subclasses")
+        val mean = parents.sumOf { it.size }.toDouble() / parents.size
         return MetricValue(
             metricIri = KastorMetricsVocab.numberOfChildren,
             oquareName = "NOCOnto",
@@ -73,12 +80,14 @@ internal object OquareCalculators {
         )
     }
 
-    /** CBOOnto = Σ|Sup_C| / (|C| − |Root|). */
+    /**
+     * CBOOnto = Σ|Sup_C ∪ Assoc_C| / |C| — mean number of classes each class is coupled to: its direct
+     * superclasses plus the classes it is associated with through properties (`Assoc_C` in the notation above).
+     */
     fun couplingBetweenObjects(q: IntermediateQuantities, scores: Boolean): MetricValue {
-        val denom = nonRootClasses(q)
-        if (denom <= 0) return notComputable("couplingBetweenObjects", "CBOOnto", "no non-root classes")
-        val sumParents = q.superClassesOf.values.sumOf { it.size }
-        val mean = sumParents.toDouble() / denom
+        if (q.namedClasses.isEmpty()) return notComputable("couplingBetweenObjects", "CBOOnto", "no classes")
+        val related = q.namedClasses.sumOf { q.couplingsOf[it]?.size ?: 0 }
+        val mean = related.toDouble() / q.namedClasses.size
         return MetricValue(
             metricIri = KastorMetricsVocab.couplingBetweenObjects,
             oquareName = "CBOOnto",
@@ -138,8 +147,9 @@ internal object OquareCalculators {
     }
 
     /**
-     * LCOMOnto = Σ length(path) / |paths| over all root-to-leaf paths (mean path length). Both sums come from
-     * the memoized hierarchy DP, so tangled hierarchies with exponentially many paths are handled exactly.
+     * LCOMOnto = Σ length(path) / |paths| over all owl:Thing-to-leaf paths (mean path length, counting the edge
+     * from owl:Thing; an isolated class contributes one path of length 1). Both sums come from the memoized
+     * hierarchy DP, so tangled hierarchies with exponentially many paths are handled exactly.
      */
     fun lackOfCohesionInMethods(q: IntermediateQuantities, scores: Boolean): MetricValue {
         if (q.leaves.isEmpty() || q.pathCount <= 0.0) {
@@ -257,8 +267,8 @@ internal object OquareCalculators {
 
     /**
      * TMOnto = Σ|Sup_C| / |C_DP| over classes C_DP with more than one direct superclass (mean number of
-     * direct parents of multiply-inheriting classes; ≥ 2 whenever defined, matching the OQuaRE 1–5 scale).
-     * A hierarchy without multiple inheritance yields 0 (best score).
+     * direct parents of multiply-inheriting classes; ≥ 2 whenever defined). A hierarchy without multiple
+     * inheritance yields 0, the only value scored 5 — see [OquareScoring.scoreTM].
      */
     fun tangledness(q: IntermediateQuantities, scores: Boolean): MetricValue {
         if (q.namedClasses.isEmpty()) return notComputable("tangledness", "TMOnto", "no classes")

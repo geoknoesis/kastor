@@ -4,7 +4,7 @@
 - **`RdfTerm`**: sealed interface implemented by `Iri`, `BlankNode`, `Literal`, `TripleTerm`.
 - **`Iri`**: wraps a String IRI value.
 - **`BlankNode`**: wraps an internal identifier.
-- **`Literal`**: `lexical: String` and `datatype: Iri`. `LangString` adds `lang` (validated and lower-cased) and an optional base `direction`.
+- **`Literal`**: `lexical: String` and `datatype: Iri`. `LangString` adds `lang` (validated, case preserved as given; `normalizedLang` is the lower-case form) and an optional base `direction`.
 - **`RdfTriple`**: `subject: RdfResource`, `predicate: Iri`, `obj: RdfTerm`.
 
 ### Query results
@@ -111,7 +111,7 @@ object Rdf {
 `Rdf.memory()` uses Jena's in-memory store, or RDF4J's if Jena is absent, and throws `RdfProviderException` when neither is on the classpath.
 
 ### Behaviour notes
-- **Language tags** are validated and normalised to lower case: `LangString("Hi", "en-US").lang == "en-us"` (see `normalizeLanguageTag`).
+- **Language tags** are validated against the `LANGTAG` grammar and keep their case: `LangString("Hi", "en-US").lang == "en-US"`, `normalizedLang == "en-us"`. Equality ignores tag case, so `LangString("Hi", "en-US") == LangString("Hi", "en-us")`; providers fall back to a case-insensitive match when looking up a stored literal.
 - **Literals keep their lexical form.** `Literal("007", XSD.integer)` stays `"007"`. Only the exact `xsd:boolean` forms `"true"`/`"false"` become `TrueLiteral`/`FalseLiteral`; read `"1"`/`"0"` with `Literal.booleanValue()`.
 - **Temporal literals** created with `toLiteral()` always include seconds: `LocalTime.of(10, 15).toLiteral()` is `"10:15:00"^^xsd:time`.
 - **DSL blank nodes** get opaque labels (`b_<run>_<n>`) that are unique across all `add { }` / `Rdf.graph { }` calls in a JVM run, so separate calls never merge blank nodes. Don't depend on the label text.

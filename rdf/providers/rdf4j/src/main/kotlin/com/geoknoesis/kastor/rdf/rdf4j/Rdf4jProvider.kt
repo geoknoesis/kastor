@@ -15,8 +15,8 @@ class Rdf4jProvider : RdfProvider {
         return listOf(
             RdfVariant("memory", "In-memory store"),
             RdfVariant("native", "Native persistent store"),
-            RdfVariant("memory-star", "Alias of memory (RDF-star triple terms are enabled on every RDF4J store)"),
-            RdfVariant("native-star", "Alias of native (RDF-star triple terms are enabled on every RDF4J store)"),
+            RdfVariant("memory-star", "Alias of memory (RDF-star triple terms are enabled on memory stores)"),
+            RdfVariant("native-star", "Alias of native (RDF4J's NativeStore cannot store RDF-star triple terms)"),
             RdfVariant("memory-rdfs", "In-memory store with RDFS inference"),
             RdfVariant("native-rdfs", "Native store with RDFS inference"),
             RdfVariant("memory-shacl", "In-memory store with SHACL"),
@@ -60,21 +60,24 @@ class Rdf4jProvider : RdfProvider {
         // enables RDF-star on every store by default.
         val supportsInference = variantId?.contains("rdfs") == true
         val supportsShacl = variantId?.contains("shacl") == true
-        // RDF4J's MemoryStore/NativeStore support RDF-star (RDF 1.2 triple terms
-        // for newer versions). All variants advertise it.
-        val supportsRdfStar = true
+        // RDF4J's MemoryStore holds RDF-star triples (used for RDF 1.2 triple terms); its NativeStore rejects
+        // them ("value parameter should be a URI, BNode or Literal"), so native variants do not advertise them.
+        val supportsRdfStar = variantId?.startsWith("native") != true
 
         return ProviderCapabilities(
             // Rio has partial RDF 1.2 term support; it does not implement the full 1.2 syntax suite.
             rdfVersion = "1.1",
-            supportsTripleTerms = true,
+            supportsTripleTerms = supportsRdfStar,
             supportsInference = supportsInference,
             supportsTransactions = true,
             supportsNamedGraphs = true,
             supportsUpdates = true,
             supportsRdfStar = supportsRdfStar,
             supportsShacl = supportsShacl,
-            // No native base direction: Kastor encodes it into the language tag as "lang--dir".
+            // No native base direction: Kastor encodes it into the language tag as "lang--dir". Visible effects:
+            // SPARQL LANG() returns "ar--rtl"; RDF4J's SPARQL 1.1 parser rejects the literal syntax "x"@ar--rtl
+            // (the repository reports this with an explicit RdfQueryException; pass such literals as bindings);
+            // RDF4J SHACL sees such values as rdf:langString; Rio writers emit the tag "ar--rtl".
             supportsBaseDirection = false,
             maxMemoryUsage = Long.MAX_VALUE,
             sparqlVersion = "1.1",
@@ -114,11 +117,31 @@ class Rdf4jProvider : RdfProvider {
 
     /** Streaming parse: Rio runs on a background thread and hands triples over through a bounded queue. */
     override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream =
-        Rdf4jFormatSupport.openTripleStream(inputStream, format)
+        openTripleStreamWithBase(inputStream, format, null)
 
     /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer thread. */
     override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
-        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+        parseStreamingWithBase(inputStream, format, null)
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        openTripleStreamWithBase(inputStream, format, baseIri)
+
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        parseStreamingWithBase(inputStream, format, baseIri)
+
+    /**
+     * Streaming parse resolving relative IRIs against [baseIri] (`null`: relative IRIs are a parse error).
+     * Implementation target for the core `openTripleStream(inputStream, format, baseIri)` provider method.
+     */
+    internal fun openTripleStreamWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        Rdf4jFormatSupport.openTripleStream(inputStream, format, baseIri)
+
+    /**
+     * Eager compatibility parse with a base IRI; the caller's stream is not closed.
+     * Implementation target for the core `parseStreaming(inputStream, format, baseIri)` provider method.
+     */
+    internal fun parseStreamingWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        openTripleStreamWithBase(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format, baseIri)
             .use { it.toList().asSequence() }
 
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) {

@@ -250,6 +250,7 @@ class OnnxEmbeddingModel private constructor(
             displayName: String? = null,
             tokenizerNote: String? = null,
         ): OnnxEmbeddingModel {
+            validateCliOptions(modelId, onnxPath, tokenizerPath, embeddingDim, maxTokens)
             val id = modelId.trim()
             return when {
                 id.equals(MODEL_ID_MINILM, ignoreCase = true) -> {
@@ -277,6 +278,42 @@ class OnnxEmbeddingModel private constructor(
                     )
                 }
 
+                else ->
+                    throw IllegalArgumentException(
+                        "Unknown --model '$modelId'. Use $MODEL_ID_MINILM (bundled) or $MODEL_ID_CUSTOM " +
+                            "with --onnx, --tokenizer, and --embedding-dim.",
+                    )
+            }
+        }
+
+        /**
+         * Checks CLI embedding options for consistency without touching the network or the file system, so callers
+         * can report configuration errors separately from model download / load failures.
+         *
+         * @throws IllegalArgumentException with a user-facing message if options are inconsistent.
+         */
+        fun validateCliOptions(
+            modelId: String,
+            onnxPath: Path?,
+            tokenizerPath: Path?,
+            embeddingDim: Int?,
+            maxTokens: Int,
+        ) {
+            val id = modelId.trim()
+            when {
+                id.equals(MODEL_ID_MINILM, ignoreCase = true) -> {
+                    require(onnxPath == null && tokenizerPath == null && embeddingDim == null) {
+                        "Do not use --onnx, --tokenizer, or --embedding-dim with bundled model $MODEL_ID_MINILM"
+                    }
+                    require(maxTokens in 1..MINILM_MAX_POSITIONS) { "maxTokens must be between 1 and $MINILM_MAX_POSITIONS" }
+                }
+                id.equals(MODEL_ID_CUSTOM, ignoreCase = true) -> {
+                    require(onnxPath != null) { "--onnx is required when --model $MODEL_ID_CUSTOM" }
+                    require(tokenizerPath != null) { "--tokenizer is required when --model $MODEL_ID_CUSTOM" }
+                    require(embeddingDim != null) { "--embedding-dim is required when --model $MODEL_ID_CUSTOM" }
+                    require(embeddingDim > 0) { "dimension must be positive" }
+                    require(maxTokens > 0) { "maxTokens must be positive" }
+                }
                 else ->
                     throw IllegalArgumentException(
                         "Unknown --model '$modelId'. Use $MODEL_ID_MINILM (bundled) or $MODEL_ID_CUSTOM " +

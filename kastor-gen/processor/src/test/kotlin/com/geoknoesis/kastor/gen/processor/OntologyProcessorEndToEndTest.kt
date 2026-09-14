@@ -249,13 +249,13 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogWrapper.contains("SimpleCatalogWrapper(handle)"))
 
         // Verify that generated wrapper has proper known predicates
-        assertTrue(simpleCatalogWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(simpleCatalogWrapper.contains("private val KNOWN: Set<Iri>"))
         assertTrue(simpleCatalogWrapper.contains("setOf"))
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/title\")"))
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper uses correct KastorGraphOps methods
-        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"))"))
     }
 

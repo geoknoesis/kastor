@@ -25,7 +25,7 @@ This document describes how **RDF reasoning** is exposed in Kastor and how **ont
 ### Providers shipped in this repo
 
 - **Memory** ([MemoryReasonerProvider](../../../rdf/reasoning/facade/src/main/kotlin/com/geoknoesis/kastor/rdf/reasoning/providers/MemoryReasonerProvider.kt)): **RDFS** rules rdfs2, rdfs3, rdfs5, rdfs7, rdfs9 and rdfs11 applied to a fixpoint (no axiomatic triples). Useful for tests and fast smoke checks; **not** full RDFS entailment or OWL.
-- **Jena** ([JenaReasonerProvider](../../../rdf/providers/jena-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider.kt)): **RDFS**, **OWL_RL** (Jena's OWL rule reasoner — close to, but not a complete implementation of, OWL 2 RL) and **CUSTOM** rules (requires `customRules`). `OWL_EL`, `OWL_QL` and `OWL_DL` are rejected. This is the **reference implementation** for realistic rule-based entailment when Jena is on the classpath.
+- **Jena** ([JenaReasonerProvider](../../../rdf/providers/jena-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/jena/reasoning/JenaReasonerProvider.kt)): **RDFS**, **OWL_MICRO** (Jena's OWL Micro rule reasoner — fast, incomplete OWL fragment), **OWL_RL** (Jena's OWL rule reasoner — close to, but not a complete implementation of, OWL 2 RL) and **CUSTOM** rules (requires `customRules`). `OWL_EL`, `OWL_QL` and `OWL_DL` are rejected. This is the **reference implementation** for realistic rule-based entailment when Jena is on the classpath.
 - **RDF4J** ([Rdf4jReasonerProvider](../../../rdf/providers/rdf4j-reasoning/src/main/kotlin/com/geoknoesis/kastor/rdf/rdf4j/reasoning/Rdf4jReasonerProvider.kt)): **RDFS** only.
 - **HermiT** (`:rdf:reasoning-hermit`): **HERMIT** and **OWL_DL** (OWL 2 DL).
 
@@ -55,7 +55,7 @@ SHACL validation in Kastor operates on an [RdfGraph](../../../rdf/core/src/main/
 
 | API | Meaning |
 |-----|---------|
-| [OntoQualityReasoningProfile](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `NONE`, `RDFS`, `OWL_MICRO`, `HERMIT` (OWL 2 DL via HermiT when module present). |
+| [OntoQualityReasoningProfile](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `NONE`, `RDFS`, `OWL_MICRO` (Jena OWL Micro rule reasoner, `ReasonerType.OWL_MICRO`), `OWL_RL` (Jena OWL rule reasoner, `ReasonerType.OWL_RL`), `HERMIT` (OWL 2 DL via HermiT when module present). |
 | [OntoQualityReasoning.expand](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `expand(graph, profile)` → materialized [RdfGraph](../../../rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/RdfTerms.kt). |
 | [QualityChecker.check(graph, profile)](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt) | Expand (single `reason()` per profile), run SHACL, merge **OWL inconsistency** rows (HermiT) as violations when reported. |
 | [OntoQualityReasoning.expand(graph, ReasonerConfig)](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | Advanced: custom timeouts/rules when you depend on `:rdf:reasoning`. |
@@ -74,7 +74,8 @@ On **`check`** and **`pipeline`**:
 
 - `--reasoner none` (default) — no expansion.
 - `--reasoner rdfs` — RDFS materialization before SHACL.
-- `--reasoner owl-micro` — Jena OWL rule reasoner (`ReasonerType.OWL_RL` binding; not complete OWL 2 RL).
+- `--reasoner owl-micro` — Jena OWL Micro rule reasoner (`ReasonerType.OWL_MICRO` binding; fast, incomplete OWL fragment).
+- `--reasoner owl-rl` — Jena OWL rule reasoner (`ReasonerType.OWL_RL` binding; not complete OWL 2 RL).
 - `--reasoner hermit` — HermiT-backed OWL 2 DL materialization (requires `:rdf:reasoning-hermit`); inconsistent ontologies fail quality checks via merged **K07** rows when pitfall metadata is present (included in **`QualityChecker.default()`** / CLI `--catalog all`).
 
 When a non-`none` profile is selected, the CLI logs the active reasoning profile name.

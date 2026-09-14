@@ -62,9 +62,17 @@ class OntoQualityReasoningTest {
             """.trimIndent()
 
         val base = Rdf.parse(turtle, RdfFormat.TURTLE)
-        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_MICRO))
-        // OWL_MICRO binds to Jena's ReasonerType.OWL_RL rule reasoner; it must not throw.
-        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_MICRO)
+        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_RL))
+        // OWL_RL binds to Jena's ReasonerType.OWL_RL rule reasoner, OWL_MICRO to Jena's OWL Micro reasoner.
+        org.junit.jupiter.api.Assertions.assertEquals(
+            com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_RL,
+            OntoQualityReasoningProfile.OWL_RL.toReasonerConfigOrNull()?.reasonerType,
+        )
+        org.junit.jupiter.api.Assertions.assertEquals(
+            com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_MICRO,
+            OntoQualityReasoningProfile.OWL_MICRO.toReasonerConfigOrNull()?.reasonerType,
+        )
+        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_RL)
 
         val type = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
         val ns = "http://example.org/ns#"
@@ -72,11 +80,11 @@ class OntoQualityReasoningTest {
         assertTrue(triples.containsAll(base.getTriples()), "Asserted triples must be kept")
         assertTrue(
             RdfTriple(Iri(ns + "i"), type, Iri(ns + "B")) in triples,
-            "Expected OWL_MICRO to entail ex:i a ex:B; triples: $triples",
+            "Expected OWL_RL to entail ex:i a ex:B; triples: $triples",
         )
         assertTrue(
             RdfTriple(Iri(ns + "j"), Iri(ns + "q"), Iri(ns + "i")) in triples,
-            "Expected OWL_MICRO to entail ex:j ex:q ex:i via owl:inverseOf; triples: $triples",
+            "Expected OWL_RL to entail ex:j ex:q ex:i via owl:inverseOf; triples: $triples",
         )
     }
 
@@ -103,5 +111,32 @@ class OntoQualityReasoningTest {
             expanded.getTriples().contains(inferred),
             "Expected HermiT to entail ex:i a ex:B; triples: ${expanded.getTriples()}",
         )
+    }
+
+    @Test
+    fun owlMicroUsesJenaOwlMicroReasoner() {
+        val turtle =
+            """
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+            @prefix owl:  <http://www.w3.org/2002/07/owl#> .
+            @prefix ex:   <http://example.org/ns#> .
+
+            ex:A a owl:Class ; rdfs:subClassOf ex:B .
+            ex:B a owl:Class .
+            ex:p a owl:ObjectProperty ; owl:inverseOf ex:q .
+            ex:i rdf:type ex:A ; ex:p ex:j .
+            """.trimIndent()
+
+        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_MICRO))
+        val base = Rdf.parse(turtle, RdfFormat.TURTLE)
+        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_MICRO)
+
+        val type = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        val ns = "http://example.org/ns#"
+        val triples = expanded.getTriples()
+        assertTrue(triples.containsAll(base.getTriples()), "Asserted triples must be kept")
+        assertTrue(RdfTriple(Iri(ns + "i"), type, Iri(ns + "B")) in triples, "Expected ex:i a ex:B; triples: $triples")
+        assertTrue(RdfTriple(Iri(ns + "j"), Iri(ns + "q"), Iri(ns + "i")) in triples, "Expected ex:j ex:q ex:i; triples: $triples")
     }
 }

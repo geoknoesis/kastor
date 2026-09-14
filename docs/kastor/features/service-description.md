@@ -9,7 +9,7 @@ SPARQL Service Description allows services to describe:
 - **Supported Languages**: Query and update languages
 - **Result Formats**: Available output formats
 - **Input Formats**: Accepted input formats
-- **Extension Functions**: Custom and built-in functions
+- **Extension Functions**: Custom (non-built-in) functions
 - **Dataset Information**: Available graphs and datasets
 - **SPARQL 1.2 Features**: RDF-star, property paths, aggregation, etc.
 
@@ -54,38 +54,45 @@ functions.forEach { func ->
 
 ### 3. Service Description Vocabulary
 
-Kastor includes complete SPARQL Service Description vocabulary:
+Descriptions use two vocabularies:
+
+- the W3C SPARQL Service Description vocabulary (`SPARQL_SD`, prefix `sd:`, `http://www.w3.org/ns/sparql-service-description#`) for every term it defines;
+- `KastorSparqlVocabulary` (module `rdf-sparql-lang`, prefix `ksparql:`, `https://kastor.geoknoesis.com/ns/sparql#`) for Kastor capability flags that the standard cannot express. Kastor does not put its own terms in the W3C-owned `http://www.w3.org/ns/sparql#` namespace.
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.vocab.SPARQL_SD
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
+import com.geoknoesis.kastor.rdf.sparql.KastorSparqlVocabulary
 
 // Use vocabulary terms
 val service = SPARQL_SD.Service
 val endpoint = SPARQL_SD.endpointProp
-val sparql12Service = SPARQL12.Sparql12Service
+val sparql12Service = KastorSparqlVocabulary.Sparql12Service   // https://kastor.geoknoesis.com/ns/sparql#Sparql12Service
 ```
 
 ## 📊 Service Description Structure
+
+The snippets below show the triples in abbreviated Turtle for readability. `generateAsTurtle()` declares the same `sd:` and `ksparql:` prefixes but writes one triple per line with full IRIs.
 
 ### Basic Service Information
 
 ```turtle
 @prefix sd: <http://www.w3.org/ns/sparql-service-description#> .
-@prefix sparql: <http://www.w3.org/ns/sparql#> .
+@prefix ksparql: <https://kastor.geoknoesis.com/ns/sparql#> .
 
-<http://example.org/sparql> a sd:Service, sparql:Sparql12Service ;
+<http://example.org/sparql> a sd:Service, ksparql:Sparql12Service ;
     sd:endpoint <http://example.org/sparql/sparql> ;
     sd:updateEndpoint <http://example.org/sparql/update> ;
-    sparql:supportedSparqlVersion "1.2" .
+    ksparql:supportedSparqlVersion "1.2" .
 ```
+
+`ksparql:Sparql12Service` is added only when `sparqlVersion` starts with `1.2`.
 
 ### Supported Languages and Formats
 
 ```turtle
-<http://example.org/sparql> 
-    sd:supportedLanguage sd:sparql ;
-    sd:supportedLanguage sd:sparql12 ;
+<http://example.org/sparql>
+    sd:supportedLanguage sd:SPARQL11Query ;
+    sd:supportedLanguage sd:SPARQL11Update ;
     sd:resultFormat <https://www.iana.org/assignments/media-types/application/sparql-results+json> ;
     sd:resultFormat <https://www.iana.org/assignments/media-types/application/sparql-results+xml> ;
     sd:resultFormat <https://www.iana.org/assignments/media-types/text/csv> ;
@@ -93,35 +100,56 @@ val sparql12Service = SPARQL12.Sparql12Service
     sd:inputFormat <https://www.iana.org/assignments/media-types/application/sparql-update> .
 ```
 
-### SPARQL 1.2 Feature Support
+Entries of `supportedLanguages` map to language IRIs as follows:
 
-```turtle
-<http://example.org/sparql> 
-    sparql:supportsRdfStar true ;
-    sparql:supportsPropertyPaths true ;
-    sparql:supportsAggregation true ;
-    sparql:supportsSubSelect true ;
-    sparql:supportsFederation true ;
-    sparql:supportsVersionDeclaration true .
-```
+- `SPARQL10Query`, `SPARQL11Query` and `SPARQL11Update` (the only standard language instances) become `sd:` terms.
+- Absolute IRIs are used as given.
+- Anything else, for example `sparql12`, becomes `ksparql:language-<name>`.
 
-### Extension Functions
+Media types in `supportedResultFormats` / `supportedInputFormats` are emitted as IANA media-type IRIs (parameters such as `; charset=utf-8` are dropped).
+
+### Feature Support
 
 ```turtle
 <http://example.org/sparql>
-    sd:extensionFunction <http://www.w3.org/ns/sparql#TRIPLE> ;
-    sd:extensionFunction <http://www.w3.org/ns/sparql#encodeForUri> .
-
-<http://www.w3.org/ns/sparql#TRIPLE>
-    sd:functionName "TRIPLE" ;
-    sd:description "Creates a triple term from subject, predicate, and object" .
-
-<http://www.w3.org/ns/sparql#encodeForUri>
-    sd:functionName "encodeForUri" ;
-    sd:description "Encodes a string for use in URIs" .
+    ksparql:supportsRdfStar true ;
+    ksparql:supportsPropertyPaths true ;
+    ksparql:supportsAggregation true ;
+    ksparql:supportsSubSelect true ;
+    ksparql:supportsVersionDeclaration true ;
+    sd:feature sd:BasicFederatedQuery .
 ```
 
-Each function also gets `sd:returnType` when `returnType` is set, and `sd:isAggregate true` for aggregates. Media types in `supportedResultFormats` / `supportedInputFormats` are emitted as IANA media-type IRIs.
+Only flags that are `true` are emitted. Federation (`supportsFederation`) is advertised with the standard `sd:feature sd:BasicFederatedQuery`.
+
+### Extension Functions
+
+Only functions with `isBuiltIn = false` are advertised. SPARQL built-in functions (`TRIPLE`, `encodeForUri`, `now`, …) are part of the query language, so they never appear as `sd:extensionFunction`, even when they are listed in `extensionFunctions`:
+
+```turtle
+<http://example.org/sparql>
+    sd:extensionFunction <http://example.org/functions#customFunction> .
+
+<http://example.org/functions#customFunction>
+    sd:functionName "customFunction" ;
+    sd:description "A custom SPARQL function" ;
+    sd:returnType <http://www.w3.org/2001/XMLSchema#string> .
+```
+
+Each function gets `sd:returnType` when `returnType` is set, and `sd:isAggregate true` for aggregates.
+
+### Dataset
+
+```turtle
+<http://example.org/sparql> sd:defaultDataset _:dataset .
+_:dataset a sd:Dataset ;
+    sd:defaultGraph <http://example.org/graphs/default> ;
+    sd:namedGraph <http://example.org/graphs/people> .
+<http://example.org/graphs/default> a sd:DefaultGraph .
+<http://example.org/graphs/people> a sd:NamedGraph .
+```
+
+Graphs come from `ProviderCapabilities.defaultGraphs` and `namedGraphs`.
 
 ## 🔧 Service Description Generator
 
@@ -139,7 +167,7 @@ val description = generator.generateServiceDescription()
 ### Custom Capabilities
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.XSD
 
 val customCapabilities = ProviderCapabilities(
     sparqlVersion = "1.2",
@@ -147,7 +175,7 @@ val customCapabilities = ProviderCapabilities(
     supportsPropertyPaths = true,
     supportsAggregation = true,
     supportsFederation = true,
-    supportedLanguages = listOf("sparql", "sparql12"),
+    supportedLanguages = listOf("SPARQL11Query", "SPARQL11Update"),
     supportedResultFormats = listOf(
         "application/sparql-results+json",
         "application/sparql-results+xml",
@@ -155,10 +183,11 @@ val customCapabilities = ProviderCapabilities(
     ),
     extensionFunctions = listOf(
         SparqlExtensionFunction(
-            iri = "http://www.w3.org/ns/sparql#TRIPLE",
-            name = "TRIPLE",
-            description = "Creates a triple term",
-            returnType = "rdf:TripleTerm"
+            iri = "http://example.org/functions#customFunction",
+            name = "customFunction",
+            description = "A custom SPARQL function",
+            returnType = XSD.string.value,
+            isBuiltIn = false   // built-in functions (the default) are not advertised
         )
     )
 )
@@ -186,6 +215,11 @@ val turtle = generator.generateAsTurtle()
 // Generate as JSON-LD
 val jsonLd = generator.generateAsJsonLd()
 ```
+
+`generateAsTurtle()` and `generateAsJsonLd()` declare the `sd` and `ksparql` prefixes. `generateAsSparqlResult()` returns a `SELECT ?subject ?predicate ?object` query with the triples in a `VALUES` block. SPARQL forbids blank nodes in `VALUES`, so blank nodes (such as the dataset node) are replaced by skolem IRIs:
+
+- for hierarchical service URIs with an authority, RDF 1.1 well-known IRIs such as `http://example.org/.well-known/genid/dataset`;
+- for opaque or authority-less service URIs (for example `urn:`), `urn:kastor:genid:<hash>:<label>`, where `<hash>` is derived from the service URI.
 
 ## 📋 Registry Integration
 
@@ -314,9 +348,10 @@ val allFunctions = SparqlExtensionFunctionRegistry.getAllFunctions()
 // Get functions by name
 val tripleFunctions = SparqlExtensionFunctionRegistry.getFunctionsByName("TRIPLE")
 
-// Check if function is registered
+// Check if function is registered. Built-ins use Kastor identifiers
+// (https://kastor.geoknoesis.com/ns/sparql/function#TRIPLE), not W3C IRIs.
 val isRegistered = SparqlExtensionFunctionRegistry.isRegistered(
-    "http://www.w3.org/ns/sparql#TRIPLE"
+    KastorSparqlVocabulary.function("TRIPLE").value
 )
 ```
 
@@ -335,13 +370,14 @@ val capabilities = ProviderCapabilities(
     supportsPropertyPaths = true,
     supportsAggregation = true,
     supportsFederation = true,
-    supportedLanguages = listOf("sparql", "sparql12"),
+    supportedLanguages = listOf("SPARQL11Query", "SPARQL11Update"),
     supportedResultFormats = listOf(
         "application/sparql-results+json",
         "application/sparql-results+xml",
         "text/csv"
     ),
-    extensionFunctions = SparqlExtensionFunctionRegistry.getBuiltInFunctions()
+    // Only custom functions are advertised; built-ins are part of SPARQL itself
+    extensionFunctions = SparqlExtensionFunctionRegistry.getCustomFunctions()
 )
 ```
 

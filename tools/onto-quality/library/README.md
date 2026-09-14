@@ -125,7 +125,7 @@ Combined validation passes produce a single report whose **`violationsByType`** 
 - **Structural validation** — OWL / SKOS / data-quality SHACL bundles.
 - **Semantic tier** — embeddings (`:tools:onto-quality-embed`, **`EMBEDDING_QUALITY`** catalogue).
 - **LLM explanations** — optional **`onto-quality-llm-koog`** ([Koog](https://github.com/JetBrains/koog)); [design](../../../docs/kastor/design/onto-quality-v0.3-llm-explanations.md), [broader LLM notes](../../../docs/kastor/design/llm-assisted-ontology-modeling-review.md).
-- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_MICRO** or **HermiT** ([reasoning overview](../../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-micro|hermit`**.
+- **RDF reasoning before SHACL** — Jena **RDFS** / **OWL_MICRO** (Jena OWL Micro rule reasoner: fast, incomplete) / **OWL_RL** (Jena OWL rule reasoner) or **HermiT** ([reasoning overview](../../../docs/kastor/design/reasoning-in-kastor.md)); **K07** inconsistency rows with **HERMIT**. APIs: [`OntoQualityReasoning`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt), [`QualityChecker.check`](src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt); CLI **`--reasoner none|rdfs|owl-micro|owl-rl|hermit`**.
 
 ## LLM explanations
 
@@ -158,15 +158,15 @@ println(explained.describeMarkdown())
 
 Set **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or run **Ollama** locally for `LlmProvider.OLLAMA`.
 
-**CLI (`onto-quality-cli`):** enable **`--explain`** on **`check`** or **`pipeline`** when **`KASTOR_ONTO_QUALITY_LLM=true`**. Typical flags: **`--llm-provider`**, **`--llm-model`**, **`--llm-model-preset`**, **`--ollama-base`**, **`--explain-max`**, **`--explain-batch`**, **`--explain-min-severity`**, **`--explain-dry-run`**, **`--markdown-ascii`**. Limits: **`--explain-max`** 1–500 (default 50), **`--explain-batch`** 1–100 (default 12). Reliability: **`--llm-timeout`** (seconds per request, 1–3600, default 60) and **`--llm-retries`** (0–10, default 2, exponential backoff). JSON output contains **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**; each finding reference uses **`FindingRef`** (order-independent).
+**CLI (`onto-quality-cli`):** enable **`--explain`** on **`check`** or **`pipeline`** when **`KASTOR_ONTO_QUALITY_LLM=true`**. Typical flags: **`--llm-provider`**, **`--llm-model`**, **`--llm-model-preset`**, **`--ollama-base`**, **`--explain-max`**, **`--explain-batch`**, **`--explain-min-severity`**, **`--explain-dry-run`**, **`--markdown-ascii`**. Limits: **`--explain-max`** 1–500 (default 50), **`--explain-batch`** 1–100 (default 12). Reliability: **`--llm-timeout`** (seconds per request, 1–3600, default 60), **`--llm-retries`** (0–10, default 2; exponential backoff with jitter, or the provider's `Retry-After`) and **`--llm-max-duration`** (seconds for the whole explanation run, 1–86400, default 600). JSON output contains **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**; each finding reference uses **`FindingRef`** (order-independent).
 
-Failures are isolated per batch: explanations from successful batches are kept, and batches that time out, error after retries, or return unparseable/incomplete JSON are recorded in **`ExplainedQualityReport.failures`** (library) and reported on stderr (CLI). By default the CLI still exits normally; pass **`--fail-on-explain-error`** to exit with status **3**. Finding text is sent to the model as JSON-encoded data with an instruction to treat it as data, and LLM output is Markdown-escaped in reports (no links, images or raw HTML). **`LlmExplanationConfig.toString()`** redacts the API key; library users can set **`requestTimeout`**, **`maxRetries`** and **`retryBackoff`**.
+Failures are isolated per batch: explanations from successful batches are kept, and batches that time out, error after retries, or return unparseable/incomplete JSON are recorded in **`ExplainedQualityReport.failures`** (library) and reported on stderr (CLI). Only transient failures are retried — timeouts, HTTP 408 / 429 / 5xx and connection errors; client errors such as HTTP 400 / 401 / 403 / 404 fail the batch immediately. After three consecutive identical non-retryable failures (for example a bad API key) the remaining batches are not sent, and once the run budget (`maxTotalDuration`) is spent the remaining batches are recorded as failures instead of being sent. By default the CLI still exits normally; pass **`--fail-on-explain-error`** to exit with status **3**. Finding text — and, for the JSON repair request, the model's previous reply — is sent to the model as JSON-encoded data inside tags with an instruction to treat it as data. LLM output and ontology-derived text (SHACL messages, focus and shape names) are Markdown-escaped in reports (no links, images or raw HTML), and control characters are rendered visibly (`\u001B`) in text output so terminal escape sequences cannot run. **`LlmExplanationConfig.toString()`** redacts the API key; library users can set **`requestTimeout`**, **`maxRetries`**, **`retryBackoff`**, **`maxTotalDuration`** and **`circuitBreakerThreshold`**.
 
 **Automated tests:** `./gradlew :tools:onto-quality-llm-koog:test` uses OpenAI when **`OPENAI_API_KEY`** is set; otherwise those cases are skipped. Set **`KASTOR_SKIP_OPENAI_LLM_TESTS=1`** to skip them even when a key is present.
 
 ## RDF reasoning before validation
 
-Optional **materialization** merges asserted triples with **Jena** RDFS or OWL-micro inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated, and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
+Optional **materialization** merges asserted triples with **Jena** RDFS or OWL RL rule inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated, and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
 
 **Library:**
 
@@ -177,18 +177,22 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 val report = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 ```
 
-**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `hermit`, default `none`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
+**CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `owl-rl`, `hermit`, default `none`). `owl-micro` runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`: RDFS plus property axioms, equality and simple class expressions; faster, less complete); `owl-rl` runs Jena's OWL rule reasoner (`ReasonerType.OWL_RL`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
 
 ## CLI: exit codes and input formats
 
 | Exit status | Meaning |
 |-------------|---------|
-| **0** | Success; no findings at or above **`--severity`** (default `violation`; `info` never fails). |
-| **1** | Findings reached **`--severity`**. Also used by Clikt for invalid command-line usage (unknown option, bad choice, out-of-range value). |
+| **0** | Success; no findings at or above **`--severity`** (default `violation`). |
+| **1** | At least one finding is at or above **`--severity`** (`info` fails on any finding). Used for nothing else. |
 | **2** | The input ontology could not be parsed in the selected RDF syntax. |
 | **3** | **`--fail-on-explain-error`** was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
+| **4** | Usage or configuration error: unknown command or option, bad or out-of-range value, missing or non-existent input file, inconsistent embedding options (e.g. `--model custom` without `--onnx`), `--include` with `--format json`/`turtle`. Nothing was run. |
+| **5** | Runtime error: embedding model download or loading failed (network, checksum), similarity search budget exceeded, output could not be written, or any unexpected internal error. A one-line message is printed; run **`onto-qa --debug <command> …`** for the stack trace. |
 
-Options are validated before any work starts (no model download, no LLM call): **`--format`**, **`--severity`**, **`--catalog`**, **`--reasoner`**, LLM provider/preset choices, **`--threshold`** in [-1, 1], **`--explain-max`** 1–500, **`--explain-batch`** 1–100, **`--max-tokens`** ≥ 1.
+Options are validated before any work starts (no model download, no LLM call): **`--format`**, **`--severity`**, **`--catalog`**, **`--reasoner`**, LLM provider/preset choices, **`--threshold`** in [-1, 1], **`--explain-max`** 1–500, **`--explain-batch`** 1–100, **`--max-tokens`** ≥ 1 (≤ 512 for the bundled MiniLM), the `--model` / `--onnx` / `--tokenizer` / `--embedding-dim` combination, **`--similarity-max-work`** ≥ 1, **`--similarity-timeout`** 1–86400, **`--llm-max-duration`** 1–86400.
+
+**Relative IRIs:** the input file's URI is used as the base IRI, so `<> a owl:Ontology` in Turtle or `rdf:about="#Foo"` in RDF/XML resolve against the file (e.g. `file:///home/me/onto.ttl#Foo`) instead of failing to parse.
 
 **Input formats:** `check`, `enrich`, `pipeline` and `metrics` pick the RDF syntax from the file extension — `.ttl` Turtle, `.owl` / `.rdf` / `.xml` RDF/XML, `.nt` N-Triples, `.jsonld` / `.json` JSON-LD; any other extension is read as Turtle. Override with **`--input-format turtle|rdfxml|ntriples|jsonld`** (e.g. a Turtle file named `.owl`).
 
@@ -214,7 +218,9 @@ onto-qa pipeline my-ontology.ttl
 
 `pipeline` keeps the enriched graph in memory; nothing is written to disk unless **`--keep-intermediate`** is given, in which case the enriched Turtle is written to a temporary `onto-qa-*.enriched.ttl` file whose path is printed on stderr and which is not deleted. The embedding model is always closed before the exit status is reported, including on failure.
 
-On first run, the embedding model (~80–90 MB ONNX) is downloaded to `~/.kastor/onto-quality/models/` (override with `KASTOR_MODEL_CACHE` or `-Dkastor.onto-quality.model-cache=...`). Subsequent runs use the cache.
+On first run, the embedding model (~80–90 MB ONNX) is downloaded to `~/.kastor/onto-quality/models/` (override with `KASTOR_MODEL_CACHE` or `-Dkastor.onto-quality.model-cache=...`). Subsequent runs use the cache; a cached file whose SHA-256 no longer matches (truncated or tampered) is deleted and downloaded again once.
+
+**Large vocabularies:** pairwise similarity is an exact search whose work budget (distance evaluations) and deadline scale with the number of labelled entities (at least 50,000,000 evaluations and 30 s). Override them with **`--similarity-max-work`** and **`--similarity-timeout`** (seconds). **`--similarity-mode approximate`** switches to random-projection LSH: much faster for tens of thousands of entities, but it may miss some similar pairs (about 95 % recall at cosine 0.85; every reported pair is verified), and the mode is recorded on the enrichment node as `oqsh:similaritySearchMode`. When a budget is exhausted the command stops with exit status **5** and a message naming these options.
 
 ### Custom ONNX + tokenizer (domain / medical)
 

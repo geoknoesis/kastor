@@ -106,10 +106,15 @@ private fun parseXsdDouble(lexical: String): Double? = when (lexical) {
  * and `graph()` DSL are stable and part of the public API.
  */
 object Rdf {
+    /**
+     * Default executor for [parseFromUrlAsync]: 4 daemon threads and a queue of 64 pending loads. When both are
+     * full, the load runs on the calling thread ([java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy]), so a
+     * burst is throttled (the call blocks until that load finishes) instead of being rejected.
+     */
     private val urlIoExecutor: Executor = java.util.concurrent.ThreadPoolExecutor(
         4, 4, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.ArrayBlockingQueue(64),
         java.util.concurrent.ThreadFactory { runnable -> Thread(runnable, "kastor-url-io").apply { isDaemon = true } },
-        java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+        java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy(),
     ).apply { allowCoreThreadTimeOut(true) }
     
     /**
@@ -129,26 +134,26 @@ object Rdf {
      * support SPARQL queries or RDF parsing/serialization. To use that provider for
      * graph-only testing, opt in explicitly via [repository] with `providerId = "memory"`.
      *
+     * The provider is the first registered provider, in registry order ([RdfProvider.priority], then
+     * registration order), that offers a `memory` variant - for example Jena (priority 50) before RDF4J
+     * (priority 40) when both are present.
+     *
      * @throws RdfProviderException if no SPARQL-capable provider with a `memory`
      * variant is registered.
      */
-    fun memory(): RdfRepository = repository {
-        when {
-            RdfProviderRegistry.supportsVariant("jena", "memory") -> {
-                providerId = "jena"
-                variantId = "memory"
-            }
-            RdfProviderRegistry.supportsVariant("rdf4j", "memory") -> {
-                providerId = "rdf4j"
-                variantId = "memory"
-            }
-            else -> throw RdfProviderException(
-                "Rdf.memory() requires a SPARQL-capable provider on the classpath. " +
-                    "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
-                    "to your dependencies, or call Rdf.repository { providerId = \"memory\" } " +
-                    "to use the limited graph-only memory provider explicitly.",
-                RdfErrorCode.PROVIDER_NOT_FOUND
-            )
+    fun memory(): RdfRepository {
+        val provider = RdfProviderRegistry.discoverProviders().firstOrNull {
+            it !is com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider && it.supportsVariant("memory")
+        } ?: throw RdfProviderException(
+            "Rdf.memory() requires a SPARQL-capable provider on the classpath. " +
+                "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
+                "to your dependencies, or call Rdf.repository { providerId = \"memory\" } " +
+                "to use the limited graph-only memory provider explicitly.",
+            RdfErrorCode.PROVIDER_NOT_FOUND
+        )
+        return repository {
+            providerId = provider.id
+            variantId = "memory"
         }
     }
     
@@ -320,6 +325,16 @@ object Rdf {
     fun parse(data: String, format: RdfFormat): MutableRdfGraph {
         return parseFromInputStream(data.byteInputStream(), format.formatName)
     }
+
+    /**
+     * Parse RDF data from a string, resolving relative IRIs against [baseIri].
+     *
+     * @param baseIri Absolute IRI for relative references; null keeps the provider's default (relative IRIs
+     *   are then errors with the bundled providers)
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parse(data: String, format: RdfFormat, baseIri: String?): MutableRdfGraph =
+        parseFromInputStream(data.byteInputStream(), format.formatName, baseIri)
     
     /**
      * Parse RDF data from a file into a graph.
@@ -335,13 +350,17 @@ object Rdf {
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws java.io.FileNotFoundException if the file does not exist
+     *
+     * Relative IRIs (`<>`, `<#Foo>`, RDF/XML `rdf:about="#Foo"`) resolve against the file's absolute
+     * `file:` URI.
      */
     fun parseFromFile(filePath: String, format: String = "TURTLE"): MutableRdfGraph {
         val file = java.io.File(filePath)
         if (!file.exists()) {
             throw java.io.FileNotFoundException("RDF file not found: $filePath")
         }
-        return file.inputStream().use { stream -> parseFromInputStream(stream, format) }
+        val baseIri = file.absoluteFile.toURI().toString()
+        return file.inputStream().use { stream -> parseFromInputStream(stream, format, baseIri) }
     }
     
     /**
@@ -375,15 +394,20 @@ object Rdf {
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws IllegalArgumentException if the URL is malformed or its scheme is not allowed
      * @throws RdfInputTooLargeException if the body exceeds [UrlLoadOptions.maxBytes]
+     * @throws RdfHttpStatusException if the server answers with a non-2xx status
+     * @throws RdfLoadTimeoutException if loading exceeds [UrlLoadOptions.totalTimeoutMillis]
      * @throws java.io.IOException if network access fails
+     *
+     * The request asks for the format's media type (`Accept`), and relative IRIs resolve against the
+     * final URL.
      */
     fun parseFromUrl(
         url: String,
         format: String = "TURTLE",
         options: UrlLoadOptions = UrlLoadOptions.DEFAULT,
     ): MutableRdfGraph {
-        val connection = openRdfUrl(url, options)
-        return boundedUrlStream(connection, options).use { stream -> parseFromInputStream(stream, format) }
+        val body = openRdfUrlStream(url, RdfFormat.fromString(format), options)
+        return body.read { stream -> parseFromInputStream(stream, format, body.baseIri) }
     }
     
     /**
@@ -402,7 +426,10 @@ object Rdf {
     /**
      * Parse RDF data from a URL asynchronously into a graph.
      *
-     * This runs the blocking network call on the provided executor.
+     * This runs the blocking network call on the provided executor. The default executor has 4 threads and
+     * queues up to 64 loads; beyond that the load runs on the calling thread, so this call blocks instead of
+     * failing with [java.util.concurrent.RejectedExecutionException]. A custom executor that rejects a task
+     * yields a future completed exceptionally with that exception.
      *
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
@@ -432,11 +459,10 @@ object Rdf {
         try { executor.execute {
             if (!result.isCancelled) {
                 try {
-                    val connection = openRdfUrl(url, options)
-                    active.set(connection)
-                    if (!result.isCancelled) boundedUrlStream(connection, options).use { stream ->
+                    val body = openRdfUrlStream(url, RdfFormat.fromString(format), options) { active.set(it) }
+                    body.read { stream ->
                         input.set(stream)
-                        if (!result.isCancelled) result.complete(parseFromInputStream(stream, format))
+                        if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
                     }
                 } catch (e: Throwable) { result.completeExceptionally(e)
                 } finally { (active.get() as? java.net.HttpURLConnection)?.disconnect(); input.set(null) }
@@ -472,7 +498,22 @@ object Rdf {
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      */
-    fun parseFromInputStream(inputStream: InputStream, format: String): MutableRdfGraph {
+    fun parseFromInputStream(inputStream: InputStream, format: String): MutableRdfGraph =
+        parseFromInputStream(inputStream, format, null)
+
+    /**
+     * Parse RDF data from an input stream into a graph, resolving relative IRIs against [baseIri].
+     *
+     * **Note:** The input stream is automatically closed after parsing.
+     *
+     * @param inputStream The input stream containing RDF data
+     * @param format The RDF format
+     * @param baseIri Absolute IRI for relative references, passed to [RdfProvider.parseGraph]; null keeps the
+     *   provider's default (relative IRIs are then errors with the bundled providers)
+     * @return A new MutableRdfGraph containing the parsed triples
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseFromInputStream(inputStream: InputStream, format: String, baseIri: String?): MutableRdfGraph {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         val providers = RdfProviderRegistry.discoverProviders()
         // The stream goes straight to the highest-priority provider that declares the input format; nothing
@@ -482,12 +523,12 @@ object Rdf {
         for (provider in providers) {
             if (!provider.supportsInputFormat(formatEnum.formatName)) continue
             try {
-                return provider.parseGraph(input, formatEnum.formatName)
+                return provider.parseGraph(input, formatEnum.formatName, baseIri)
             } catch (e: UnsupportedOperationException) {
                 if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                 continue
             } catch (e: RdfFormatException) {
-                throw e
+                throw e.inputLimitCause() ?: e
             } catch (e: Exception) {
                 e.inputLimitCause()?.let { throw it }
                 // Extract parsing error context with line/column information
@@ -513,6 +554,10 @@ object Rdf {
     fun parseFromInputStream(inputStream: InputStream, format: RdfFormat): MutableRdfGraph {
         return parseFromInputStream(inputStream, format.formatName)
     }
+
+    /** Type-safe [parseFromInputStream] with a base IRI for relative references. */
+    fun parseFromInputStream(inputStream: InputStream, format: RdfFormat, baseIri: String?): MutableRdfGraph =
+        parseFromInputStream(inputStream, format.formatName, baseIri)
     
     /**
      * Legacy sequence convenience API. Bundled providers materialize the input before returning.
@@ -530,7 +575,15 @@ object Rdf {
      * @return A sequence over the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
      */
-    fun parseStreaming(inputStream: InputStream, format: String): Sequence<RdfTriple> {
+    fun parseStreaming(inputStream: InputStream, format: String): Sequence<RdfTriple> =
+        parseStreaming(inputStream, format, null)
+
+    /**
+     * [parseStreaming] resolving relative IRIs against [baseIri] (see [RdfProvider.parseStreaming]).
+     *
+     * @param baseIri Absolute IRI for relative references; null keeps the provider's default
+     */
+    fun parseStreaming(inputStream: InputStream, format: String, baseIri: String?): Sequence<RdfTriple> {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         val providers = RdfProviderRegistry.discoverProviders()
         // Streaming must not buffer the input, so a declining provider may only be skipped if it
@@ -540,13 +593,13 @@ object Rdf {
         for (provider in providers) {
             if (provider.supportsInputFormat(formatEnum.formatName)) {
                 try {
-                    return provider.parseStreaming(input, formatEnum.formatName)
+                    return provider.parseStreaming(input, formatEnum.formatName, baseIri)
                 } catch (e: UnsupportedOperationException) {
                     if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                     continue
                 } catch (e: RdfFormatException) {
-                    // Format error, rethrow
-                    throw e
+                    // Format error, rethrow (or the URL-loading limit it wraps)
+                    throw e.inputLimitCause() ?: e
                 } catch (e: Exception) {
                     e.inputLimitCause()?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
@@ -572,6 +625,10 @@ object Rdf {
     fun parseStreaming(inputStream: InputStream, format: RdfFormat): Sequence<RdfTriple> {
         return parseStreaming(inputStream, format.formatName)
     }
+
+    /** Type-safe [parseStreaming] with a base IRI for relative references. */
+    fun parseStreaming(inputStream: InputStream, format: RdfFormat, baseIri: String?): Sequence<RdfTriple> =
+        parseStreaming(inputStream, format.formatName, baseIri)
     
     // === DATASET PARSING (QUAD FORMATS) ===
     
@@ -604,7 +661,12 @@ object Rdf {
             throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parse() for graph formats, or use TRIG or N-QUADS for datasets.")
         }
         val repo = memory()
-        parseDataset(repo, data.byteInputStream(), format)
+        try {
+            parseDataset(repo, data.byteInputStream(), format)
+        } catch (e: Throwable) {
+            runCatching { repo.close() }.exceptionOrNull()?.let(e::addSuppressed)
+            throw e
+        }
         return repo
     }
     
@@ -628,6 +690,8 @@ object Rdf {
      * @return A new Dataset containing the parsed data
      * @throws RdfFormatException if parsing fails or format is not supported
      * @throws java.io.FileNotFoundException if the file does not exist
+     *
+     * Relative IRIs resolve against the file's absolute `file:` URI. The repository is closed if parsing fails.
      */
     fun parseDatasetFromFile(filePath: String, format: String = "TRIG"): Dataset {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
@@ -638,8 +702,14 @@ object Rdf {
         if (!file.exists()) {
             throw java.io.FileNotFoundException("RDF file not found: $filePath")
         }
+        val baseIri = file.absoluteFile.toURI().toString()
         val repo = memory()
-        file.inputStream().use { stream -> parseDataset(repo, stream, format) }
+        try {
+            file.inputStream().use { stream -> parseDataset(repo, stream, format, baseIri) }
+        } catch (e: Throwable) {
+            runCatching { repo.close() }.exceptionOrNull()?.let(e::addSuppressed)
+            throw e
+        }
         return repo
     }
     
@@ -676,12 +746,17 @@ object Rdf {
         if (!RdfFormat.isQuadFormat(formatEnum)) {
             throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromUrl() for graph formats, or use TRIG or N-QUADS for datasets.")
         }
-        val connection = openRdfUrl(url, options)
-        val repo = memory()
-        try {
-            boundedUrlStream(connection, options).use { stream -> parseDataset(repo, stream, format) }
+        val body = openRdfUrlStream(url, formatEnum, options)
+        val repo = try {
+            memory()
         } catch (e: Throwable) {
-            repo.close()
+            runCatching { body.stream.close() }
+            throw e
+        }
+        try {
+            body.read { stream -> parseDataset(repo, stream, format, body.baseIri) }
+        } catch (e: Throwable) {
+            runCatching { repo.close() }.exceptionOrNull()?.let(e::addSuppressed)
             throw e
         }
         return repo
@@ -711,6 +786,17 @@ object Rdf {
      * @throws RdfFormatException if parsing fails or format is not supported
      */
     fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: String) {
+        parseDataset(repository, inputStream, format, null)
+    }
+
+    /**
+     * Parse an RDF dataset from an input stream into [repository], resolving relative IRIs against [baseIri]
+     * (passed to [RdfProvider.parseDataset]).
+     *
+     * @param baseIri Absolute IRI for relative references; null keeps the provider's default
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: String, baseIri: String?) {
         val formatEnum = RdfFormat.fromStringOrThrow(format)
         if (!RdfFormat.isQuadFormat(formatEnum)) {
             throw IllegalArgumentException("Format '${formatEnum.formatName}' is not a quad format. Use parseFromInputStream() for graph formats, or use TRIG or N-QUADS for datasets.")
@@ -723,14 +809,14 @@ object Rdf {
         for (provider in providers) {
             if (provider.supportsInputFormat(formatEnum.formatName)) {
                 try {
-                    provider.parseDataset(repository, input, formatEnum.formatName)
+                    provider.parseDataset(repository, input, formatEnum.formatName, baseIri)
                     return
                 } catch (e: UnsupportedOperationException) {
                     if (input.count > 0) throw providerConsumedInput(provider, formatEnum, e)
                     continue
                 } catch (e: RdfFormatException) {
-                    // Format error, rethrow
-                    throw e
+                    // Format error, rethrow (or the URL-loading limit it wraps)
+                    throw e.inputLimitCause() ?: e
                 } catch (e: Exception) {
                     e.inputLimitCause()?.let { throw it }
                     val parseError = extractParseErrorContext(e, formatEnum.formatName, null)
@@ -755,6 +841,11 @@ object Rdf {
      */
     fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: RdfFormat) {
         parseDataset(repository, inputStream, format.formatName)
+    }
+
+    /** Type-safe [parseDataset] into a repository with a base IRI for relative references. */
+    fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: RdfFormat, baseIri: String?) {
+        parseDataset(repository, inputStream, format.formatName, baseIri)
     }
     
     
@@ -1435,6 +1526,12 @@ interface RdfProvider {
      * declares no input formats at all, its output formats are assumed to be parseable too.
      * Parsing entry points ([Rdf.parse], [Rdf.parseStreaming], [Rdf.parseDataset],
      * [Rdf.openTripleStream]) select providers with this method.
+     *
+     * The output-format fallback is kept for compatibility with third-party providers written before input
+     * and output formats were declared separately; no bundled provider relies on it (Jena and RDF4J declare
+     * both lists, the SPARQL endpoint provider declares neither). A provider that declares output formats
+     * but cannot parse should declare `supportedInputFormats` explicitly or override this method; otherwise
+     * it is offered the input first and must decline with [UnsupportedOperationException] before reading.
      */
     fun supportsInputFormat(format: String): Boolean {
         val capabilities = getCapabilities()
@@ -1560,11 +1657,35 @@ interface RdfProvider {
         }
     }
 
+    /**
+     * [openTripleStream] with an explicit base IRI for relative references.
+     *
+     * The default implementation calls [openTripleStream] when [baseIri] is null, and otherwise materializes
+     * [parseGraph] with the base before returning. Providers with a streaming parser should override it.
+     */
+    fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
+        if (baseIri == null) return openTripleStream(inputStream, format)
+        val rows = inputStream.use { parseGraph(it, format, baseIri).getTriplesSequence().constrainOnce() }
+        return object : TripleStream {
+            override fun iterator(): Iterator<RdfTriple> = rows.iterator()
+            override fun close() = Unit
+        }
+    }
+
     fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> {
         // Default implementation: parse to graph, then return triples as sequence
         val graph = parseGraph(inputStream, format)
         return graph.getTriplesSequence()
     }
+
+    /**
+     * [parseStreaming] with an explicit base IRI for relative references.
+     *
+     * The default implementation calls [parseStreaming] when [baseIri] is null, and otherwise returns the
+     * triples of [parseGraph] with the base. Providers with a streaming parser should override it.
+     */
+    fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        if (baseIri == null) parseStreaming(inputStream, format) else parseGraph(inputStream, format, baseIri).getTriplesSequence()
     
     /**
      * Parse RDF dataset (with named graphs) from an input stream into a repository.

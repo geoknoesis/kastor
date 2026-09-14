@@ -24,6 +24,10 @@ data class ExplainedQualityReport @JvmOverloads constructor(
     fun explanationsByRef(): Map<FindingRef, FindingExplanation> =
         explanations.associateBy { it.findingRef }
 
+    /**
+     * Plain-text report for terminals. LLM and ontology text is untrusted: C0 / C1 control characters (other
+     * than newline and tab) are rendered visibly as `\uXXXX`, so terminal escape sequences cannot execute.
+     */
     fun describeText(): String =
         buildString {
             append(report.describeText())
@@ -31,22 +35,24 @@ data class ExplainedQualityReport @JvmOverloads constructor(
                 appendLine()
                 appendLine("=== LLM explanations (advisory; not SHACL entailment) ===")
                 for (e in explanations) {
-                    appendLine("[${e.findingRef.hexSha256}] (${e.providerKind} / ${e.modelId})")
-                    appendLine("  ${e.summary}")
-                    e.whyItMatters?.let { appendLine("  Why it matters: $it") }
+                    appendLine(
+                        "[${e.findingRef.hexSha256}] (${sanitizeTerminalText(e.providerKind)} / ${sanitizeTerminalText(e.modelId)})",
+                    )
+                    appendLine("  ${sanitizeTerminalText(e.summary)}")
+                    e.whyItMatters?.let { appendLine("  Why it matters: ${sanitizeTerminalText(it)}") }
                     if (e.suggestedActions.isNotEmpty()) {
                         appendLine("  Suggested actions:")
                         for (a in e.suggestedActions) {
-                            appendLine("    - $a")
+                            appendLine("    - ${sanitizeTerminalText(a)}")
                         }
                     }
-                    e.confidenceNote?.let { appendLine("  Note: $it") }
+                    e.confidenceNote?.let { appendLine("  Note: ${sanitizeTerminalText(it)}") }
                     appendLine()
                 }
             }
             if (failures.isNotEmpty()) {
                 appendLine("LLM explanation failures: ${failures.sumOf { it.findingRefs.size }} finding(s) not explained")
-                for (f in failures) appendLine("  - ${f.reason}")
+                for (f in failures) appendLine("  - ${sanitizeTerminalText(f.reason)}")
             }
         }
 
@@ -112,7 +118,7 @@ internal fun escapeMarkdownInline(text: String): String {
     val sb = StringBuilder(text.length + 16)
     for (ch in text) {
         when {
-            ch == '\r' || ch == '\n' || ch == ' ' || ch == ' ' -> sb.append(' ')
+            ch == '\r' || ch == '\n' || ch == '\u2028' || ch == '\u2029' -> sb.append(' ')
             ch.isISOControl() -> sb.append(' ')
             ch in MARKDOWN_SPECIAL -> sb.append('\\').append(ch)
             else -> sb.append(ch)
@@ -125,6 +131,22 @@ internal fun escapeMarkdownInline(text: String): String {
     out = Regex("^(\\s*\\d+)([.)])").replace(out) { "${it.groupValues[1]}\\${it.groupValues[2]}" }
     return out
 }
+
+/**
+ * Makes untrusted text safe to print on a terminal: C0 and C1 control characters (U+0000–U+001F, U+007F–U+009F)
+ * other than newline and tab — ESC, CSI, BEL, CR, … — are rendered visibly as `\uXXXX`, so ANSI / OSC escape
+ * sequences cannot recolour, clear, retitle or overwrite terminal output.
+ */
+internal fun sanitizeTerminalText(text: String): String {
+    if (text.none(::isUnsafeTerminalChar)) return text
+    val sb = StringBuilder(text.length + 16)
+    for (ch in text) {
+        if (isUnsafeTerminalChar(ch)) sb.append("\\u").append("%04X".format(ch.code)) else sb.append(ch)
+    }
+    return sb.toString()
+}
+
+private fun isUnsafeTerminalChar(ch: Char): Boolean = ch.isISOControl() && ch != '\n' && ch != '\t'
 
 /** Code spans cannot contain backticks or line breaks; strip them. */
 private fun codeSpanSafe(text: String): String = text.filter { it != '`' && !it.isISOControl() }

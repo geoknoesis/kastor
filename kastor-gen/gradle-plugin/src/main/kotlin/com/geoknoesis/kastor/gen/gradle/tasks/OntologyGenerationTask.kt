@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.gen.gradle.VocabularyGenerator
 import com.geoknoesis.kastor.gen.processor.api.exceptions.GenerationException
 import com.geoknoesis.kastor.gen.processor.api.model.DslGenerationOptions
 import com.geoknoesis.kastor.gen.processor.api.model.InstanceDslRequest
+import com.geoknoesis.kastor.gen.processor.api.model.JsonLdContext
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InstanceDslGenerator
 import com.geoknoesis.kastor.gen.processor.internal.codegen.InterfaceGenerator
@@ -26,6 +27,7 @@ import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Gradle task for generating domain interfaces and wrappers from SHACL and JSON-LD context files.
@@ -57,15 +59,22 @@ abstract class OntologyGenerationTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     open val shaclFile: RegularFileProperty = project.objects.fileProperty()
 
+    /** JSON-LD context; optional (without it type and property names come from IRIs and `sh:name`). */
     @get:InputFile
+    @get:Optional
     @get:PathSensitive(PathSensitivity.RELATIVE)
     open val contextFile: RegularFileProperty = project.objects.fileProperty()
 
     // Preserve the legacy getters while keeping execution independent of Project.
     @get:Internal
     val shaclInput: File get() = shaclFile.get().asFile
+    /** The context file; throws when no context is configured (see [contextFile]). */
     @get:Internal
     val contextInput: File get() = contextFile.get().asFile
+
+    /** Test hook: called before each generated file is written to the staging directory. */
+    @get:Internal
+    internal var beforeFileWritten: ((File) -> Unit)? = null
 
     init {
         val root = project.layout.projectDirectory.asFile
@@ -131,7 +140,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
             throw GradleException("kastorGen ontology '$label': $message", cause)
 
         val shaclFile = this.shaclFile.get().asFile
-        val contextFile = this.contextFile.get().asFile
+        val contextFile = this.contextFile.orNull?.asFile
         val kspLogger = GradleKspLogger(logger)
         fun failOnRecordedErrors() {
             if (kspLogger.errors.isNotEmpty()) fail("generation reported errors:\n  " + kspLogger.errors.joinToString("\n  "))
@@ -160,7 +169,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
         if (generateDsl) validatePackage("dslPackage", dslPackage)?.let { fail(it) }
 
         logger.info("SHACL file: ${shaclFile.absolutePath}")
-        logger.info("Context file: ${contextFile.absolutePath}")
+        logger.info("Context file: ${contextFile?.absolutePath ?: "(none)"}")
         logger.info("Interface package: $interfacePackage, wrapper package: $wrapperPackage")
 
         // Parse SHACL and JSON-LD context
@@ -169,10 +178,14 @@ abstract class OntologyGenerationTask : DefaultTask() {
         } catch (e: Exception) {
             fail("cannot read SHACL file ${shaclFile.path}: ${e.message}", e)
         }
-        val jsonLdContext = try {
-            contextFile.inputStream().use(JsonLdContextParser(kspLogger)::parseContext)
-        } catch (e: Exception) {
-            fail("cannot read JSON-LD context ${contextFile.path}: ${e.message}", e)
+        val jsonLdContext = if (contextFile == null) {
+            JsonLdContext(prefixes = emptyMap(), typeMappings = emptyMap(), propertyMappings = emptyMap())
+        } else {
+            try {
+                contextFile.inputStream().use(JsonLdContextParser(kspLogger)::parseContext)
+            } catch (e: Exception) {
+                fail("cannot read JSON-LD context ${contextFile.path}: ${e.message}", e)
+            }
         }
         failOnRecordedErrors()
         logger.info("Parsed ${shaclShapes.size} SHACL shapes")
@@ -220,7 +233,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
             if (generateDsl) {
                 val actualDslName = dslName.orNull?.takeIf { it.isNotBlank() }
                     ?.also { if (!it.matches(DSL_NAME)) fail("dslName '$it' must match ${DSL_NAME.pattern}") }
-                    ?: deriveDslName(contextFile.nameWithoutExtension)
+                    ?: deriveDslName((contextFile ?: shaclFile).nameWithoutExtension)
                 files += InstanceDslGenerator(kspLogger).generate(
                     InstanceDslRequest(
                         dslName = actualDslName,
@@ -240,24 +253,50 @@ abstract class OntologyGenerationTask : DefaultTask() {
         }
         failOnRecordedErrors()
 
-        // Replace the previous run's output: delete what it wrote BEFORE writing, so a case-only rename
-        // (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file systems.
         val outputDir = outputDirectory.get().asFile
         val root = outputDir.toPath().toAbsolutePath().normalize()
         val manifest = File(outputDir, MANIFEST)
-        if (manifest.exists()) {
-            manifest.readLines().filter { it.isNotBlank() }.forEach { relative ->
-                val previous = root.resolve(relative).normalize()
-                if (!previous.startsWith(root)) fail("generated-files manifest escapes the output directory: $relative")
-                Files.deleteIfExists(previous)
+
+        // 1. Validate every entry of the previous manifest before deleting anything.
+        val previous = if (manifest.exists()) {
+            manifest.readLines().filter { it.isNotBlank() }.map { relative ->
+                root.resolve(relative).normalize().also {
+                    if (!it.startsWith(root) || it == root) fail("generated-files manifest escapes the output directory: $relative")
+                }
             }
+        } else {
+            emptyList()
         }
+
+        // 2. Write the complete new output to a staging directory: an IO failure here leaves the previous output
+        //    and manifest untouched.
+        val staging = File(temporaryDir, "staging")
+        val generated = try {
+            staging.deleteRecursively()
+            staging.mkdirs()
+            files.map { spec ->
+                val relative = spec.packageName.replace('.', '/') + "/" + spec.name + ".kt"
+                beforeFileWritten?.invoke(File(staging, relative))
+                spec.writeTo(staging)
+                relative
+            }.sorted()
+        } catch (e: Exception) {
+            staging.deleteRecursively()
+            fail("cannot write generated files: ${e.message}", e)
+        }
+
+        // 3. Replace: delete what the previous run wrote BEFORE moving the new files in, so a case-only rename
+        //    (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file systems; then moves (renames
+        //    within one file system) and the manifest last.
+        previous.forEach { Files.deleteIfExists(it) }
         outputDir.mkdirs()
-        val generated = files.map { spec ->
-            spec.writeTo(outputDir)
-            spec.packageName.replace('.', '/') + "/" + spec.name + ".kt"
+        generated.forEach { relative ->
+            val target = File(outputDir, relative)
+            target.parentFile.mkdirs()
+            Files.move(File(staging, relative).toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
-        manifest.writeText(generated.sorted().joinToString("\n"))
+        manifest.writeText(generated.joinToString("\n"))
+        staging.deleteRecursively()
         logger.info("Ontology generation completed: ${generated.size} files")
     }
 

@@ -36,8 +36,10 @@ enum class ExplanationModelPreset {
  * API keys: when [apiKey] is null, [OPENAI_API_KEY] / [ANTHROPIC_API_KEY] are read from the environment. Ollama ignores [apiKey].
  * [toString] redacts [apiKey] so configs can be logged safely.
  *
- * Reliability: every LLM request is bounded by [requestTimeout]; failed or timed-out requests are retried up to
- * [maxRetries] times, waiting [retryBackoff] × 2^attempt between attempts.
+ * Reliability: every LLM request is bounded by [requestTimeout]; transient failures (timeouts, HTTP 408 / 429 / 5xx,
+ * connection errors) are retried up to [maxRetries] times, waiting [retryBackoff] × 2^attempt with jitter (or the
+ * provider's `Retry-After`). Other failures are not retried. A whole enrichment run is bounded by
+ * [maxTotalDuration], and [circuitBreakerThreshold] consecutive identical non-retryable failures stop the run.
  */
 data class LlmExplanationConfig @JvmOverloads constructor(
     val provider: LlmProvider,
@@ -51,21 +53,27 @@ data class LlmExplanationConfig @JvmOverloads constructor(
     val modelPreset: ExplanationModelPreset = ExplanationModelPreset.AUTO,
     /** Upper bound for a single LLM request (including the JSON repair request). */
     val requestTimeout: Duration = Duration.ofSeconds(60),
-    /** Additional attempts after a failed or timed-out request (0 disables retries). */
+    /** Additional attempts after a transient failure — timeout, HTTP 408 / 429 / 5xx, connection error (0 disables retries). */
     val maxRetries: Int = 2,
-    /** Base delay before the first retry; doubled for each further retry. */
+    /** Base delay before the first retry; doubled for each further retry, then jittered to between half and all of it. */
     val retryBackoff: Duration = Duration.ofSeconds(1),
+    /** Upper bound for a whole enrichment run (all batches, retries and waits); later batches are recorded as failures. */
+    val maxTotalDuration: Duration = Duration.ofMinutes(10),
+    /** Consecutive identical non-retryable failures (e.g. HTTP 401) after which the remaining batches are not sent. */
+    val circuitBreakerThreshold: Int = 3,
 ) {
     init {
         require(!requestTimeout.isNegative && !requestTimeout.isZero) { "requestTimeout must be positive" }
         require(maxRetries in 0..10) { "maxRetries must be between 0 and 10" }
         require(!retryBackoff.isNegative) { "retryBackoff must not be negative" }
+        require(!maxTotalDuration.isNegative && !maxTotalDuration.isZero) { "maxTotalDuration must be positive" }
+        require(circuitBreakerThreshold >= 1) { "circuitBreakerThreshold must be at least 1" }
     }
 
     override fun toString(): String =
         "LlmExplanationConfig(provider=$provider, apiKey=${if (apiKey == null) "null" else "***"}, baseUrl=$baseUrl, " +
             "modelId=$modelId, modelPreset=$modelPreset, requestTimeout=$requestTimeout, maxRetries=$maxRetries, " +
-            "retryBackoff=$retryBackoff)"
+            "retryBackoff=$retryBackoff, maxTotalDuration=$maxTotalDuration, circuitBreakerThreshold=$circuitBreakerThreshold)"
 
     companion object {
         const val OPENAI_API_KEY = "OPENAI_API_KEY"

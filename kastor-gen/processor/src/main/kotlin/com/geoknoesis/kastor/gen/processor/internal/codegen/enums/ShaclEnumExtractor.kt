@@ -61,7 +61,7 @@ internal class ShaclEnumExtractor(private val logger: KSPLogger) {
             return prop
         }
 
-        val enumMembers = members.map { member ->
+        val rawMembers = members.map { member ->
             if (kind == EnumMemberKind.IRI)
                 EnumMember(
                     constantName = NamingUtils.toEnumConstant(localName(member.value)),
@@ -73,6 +73,18 @@ internal class ShaclEnumExtractor(private val logger: KSPLogger) {
                     code = member.value,
                     datatype = member.datatype?.takeIf { it != "${XSD}string" },
                 )
+        }
+        // Distinct values can map to one constant ("in-progress"/"in_progress", "Draft"/"draft", equal local names
+        // in different namespaces): later members get _2, _3, ... in sh:in order, keeping their own value.
+        val taken = HashSet<String>()
+        val enumMembers = rawMembers.map { member ->
+            var constant = member.constantName
+            var suffix = 2
+            while (!taken.add(constant)) constant = "${member.constantName}_${suffix++}"
+            if (constant != member.constantName) {
+                logger.warn("sh:in on ${prop.path}: constant ${member.constantName} for '${member.iri ?: member.code}' is already used; generating $constant")
+            }
+            member.copy(constantName = constant)
         }
 
         val candidate = EnumModel(name = name, classIri = prop.targetClass, memberKind = kind, members = enumMembers)

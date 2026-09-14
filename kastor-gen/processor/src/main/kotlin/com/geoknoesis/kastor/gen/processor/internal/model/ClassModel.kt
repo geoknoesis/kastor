@@ -17,6 +17,8 @@ public data class PropertyModel(
     val type: PropertyType,
     /** When true, generated wrapper uses `override var` and writes through a [MutableRdfGraph]. */
     val mutable: Boolean = false,
+    /** Whether the declared type is nullable: a missing value reads as `null` (non-null members throw instead). */
+    val nullable: Boolean = false,
 )
 
 public enum class PropertyType {

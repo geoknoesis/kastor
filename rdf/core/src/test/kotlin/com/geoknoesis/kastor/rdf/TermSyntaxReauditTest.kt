@@ -1,0 +1,75 @@
+package com.geoknoesis.kastor.rdf
+
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Test
+
+/** IRI scanner (RFC 3986/3987), blank node labels and the triple DSL view. */
+class TermSyntaxReauditTest {
+
+    @Test
+    fun `IRIs accept ucschar code points such as no-break space and ideographic space`() {
+        assertEquals("http://example.org/a\u00A0b", Iri("http://example.org/a\u00A0b").value)
+        assertEquals("http://example.org/\u3000", Iri("http://example.org/\u3000").value)
+        assertDoesNotThrow { Iri("http://example.org/\u2028") }
+        assertDoesNotThrow { Iri("http://example.org/\uD83D\uDE00") } // supplementary plane (U+1F600)
+    }
+
+    @Test
+    fun `IRIs still reject ASCII whitespace, controls and non-characters`() {
+        listOf(
+            "http://example.org/a b", "http://example.org/a\tb", "http://example.org/a\u0000",
+            "http://example.org/a\u007F", "http://example.org/a\u0085", "http://example.org/a\uFFFE",
+            "http://example.org/a\uFDD0", "http://example.org/a\uD800",
+        ).forEach { value -> assertThrows(IllegalArgumentException::class.java, { Iri(value) }, value) }
+    }
+
+    @Test
+    fun `authority with more than one at-sign is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) { Iri("http://a@b@c/") }
+        assertDoesNotThrow { Iri("http://user:pw@host:8080/path") }
+        assertDoesNotThrow { Iri("http://host/p@q") } // '@' is allowed in the path
+    }
+
+    @Test
+    fun `scheme with an empty hier-part is a valid absolute IRI`() {
+        assertEquals("urn:", Iri("urn:").value)
+        assertEquals("about:", Iri("about:").value)
+        assertThrows(IllegalArgumentException::class.java) { Iri("about") }
+        assertThrows(IllegalArgumentException::class.java) { Iri(":") }
+    }
+
+    @Test
+    fun `blank node ids that are not valid labels still serialize as parseable labels`() {
+        val odd = BlankNode("a b")
+        assertEquals("a b", odd.id)
+        val virtuoso = BlankNode("nodeID://b1")
+        listOf(odd, virtuoso, BlankNode("-x"), BlankNode("x."), BlankNode("\u00E9t\u00E9")).forEach { node ->
+            val parsed = Rdf.parse("$node <urn:p> <urn:o> .", RdfFormat.N_TRIPLES)
+            assertEquals(1, parsed.size(), node.toString())
+        }
+        assertEquals("_:b1", BlankNode("b1").toString())
+        assertEquals("_:\u00E9t\u00E9", BlankNode("\u00E9t\u00E9").toString())
+        assertNotEquals(BlankNode("a b").toString(), BlankNode("a_b").toString())
+        assertNotEquals(BlankNode("a b").toString(), BlankNode("a-b").toString())
+        assertNotEquals(BlankNode("a b").toString(), BlankNode("a\u0000b").toString())
+    }
+
+    @Test
+    fun `DSL triples cannot be mutated through a cast`() {
+        var view: List<RdfTriple>? = null
+        val graph = Rdf.graph {
+            Iri("urn:s") - Iri("urn:p") - "o"
+            Iri("urn:s") - Iri("urn:p") - "o2"
+            view = triples
+        }
+        @Suppress("UNCHECKED_CAST")
+        val mutable = view as MutableList<RdfTriple>
+        assertThrows(UnsupportedOperationException::class.java) { mutable.add(RdfTriple(Iri("urn:x"), Iri("urn:p"), Iri("urn:y"))) }
+        assertThrows(UnsupportedOperationException::class.java) { mutable.clear() }
+        assertEquals(2, graph.size())
+        assertEquals(2, view!!.size)
+    }
+}

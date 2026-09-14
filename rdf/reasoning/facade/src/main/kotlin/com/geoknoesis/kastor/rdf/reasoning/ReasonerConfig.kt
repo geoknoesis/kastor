@@ -85,7 +85,10 @@ data class ReasonerConfig(
 }
 
 enum class ReasonerType {
-    RDFS, OWL_EL, OWL_QL, OWL_RL, OWL_DL, CUSTOM, PELLET, HERMIT, FACT_PLUS_PLUS
+    RDFS, OWL_EL, OWL_QL, OWL_RL, OWL_DL, CUSTOM, PELLET, HERMIT, FACT_PLUS_PLUS,
+
+    /** Jena OWL Micro rule reasoner — fast, incomplete OWL fragment. */
+    OWL_MICRO,
 }
 
 enum class ReasoningRule {

@@ -105,17 +105,42 @@ class JenaProvider : RdfProvider {
             model.close()
             throw failure
         }
-        return JenaBridge.fromJenaModel(model)
+        // Parsed data is already validated: keep strict reads.
+        return JenaGraph(model)
     }
 
     /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer. */
     override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
-        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+        parseStreamingWithBase(inputStream, format, null)
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream =
+        openTripleStreamWithBase(inputStream, format, null)
+
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        parseStreamingWithBase(inputStream, format, baseIri)
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        openTripleStreamWithBase(inputStream, format, baseIri)
+
+    /**
+     * Eager compatibility parse with a base IRI; the caller's stream is not closed.
+     * Implementation target for the core `parseStreaming(inputStream, format, baseIri)` provider method.
+     */
+    internal fun parseStreamingWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        openTripleStreamWithBase(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format, baseIri)
             .use { it.toList().asSequence() }
 
-    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
+    /**
+     * Lazy streaming parse resolving relative IRIs against [baseIri] (`null`: relative IRIs are a parse error).
+     * Jena parses on a background thread; read-ahead is bounded to [STREAM_CHUNK_SIZE] x [STREAM_QUEUE_SIZE] triples.
+     * Implementation target for the core `openTripleStream(inputStream, format, baseIri)` provider method.
+     */
+    internal fun openTripleStreamWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
         val lang = JenaParsing.graphLang(format)
-        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, null)).asyncParseTriples()
+        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, baseIri))
+            .setChunkSize(STREAM_CHUNK_SIZE)
+            .setQueueSize(STREAM_QUEUE_SIZE)
+            .asyncParseTriples()
         return object : TripleStream {
             private var closed = false
             private val knownIris = HashSet<String>()
@@ -144,24 +169,38 @@ class JenaProvider : RdfProvider {
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
         val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
             ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
+        val jena = repository as? JenaRepository
+        if (jena != null) {
+            // Stream straight into one write transaction on the store (joining an enclosing transaction):
+            // no intermediate copy of the dataset, and a parse failure rolls the whole load back.
+            jena.transaction {
+                JenaParsing.parseWithFormatErrors(format) {
+                    JenaParsing.parser(inputStream, lang, baseIri)
+                        .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))
+                }
+            }
+            return
+        }
+        // Foreign repositories: parse fully first, so a syntax error never leaves partial data behind.
         val parsed = org.apache.jena.query.DatasetFactory.create()
         try {
             JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
             repository.transaction {
-                val jena = repository as? JenaRepository
-                if (jena != null) {
-                    val target = jena.getJenaDataset()
-                    target.defaultModel.add(parsed.defaultModel)
-                    parsed.listNames().forEachRemaining { target.getNamedModel(it).add(parsed.getNamedModel(it)) }
-                } else {
-                    editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
-                    parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
-                }
+                editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
+                parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
             }
         } finally { parsed.close() }
     }
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) =
         parseDataset(repository, inputStream, format, null)
+
+    private companion object {
+        /** Triples per batch handed from Jena's background parser to the consumer. */
+        const val STREAM_CHUNK_SIZE = 1_000
+
+        /** Batches buffered ahead of the consumer. */
+        const val STREAM_QUEUE_SIZE = 4
+    }
 }
 
 /** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */

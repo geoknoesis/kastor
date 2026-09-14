@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
@@ -52,13 +53,13 @@ public class DataClassFactoryGenerator(
         GenerationNames.checkCollisions(model)
         val enumsByName = model.enums.associateBy { it.name }
         val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
-        val supers = GenerationNames.superTypes(model)
+        val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model))
         return model.shapes
             .sortedBy { it.targetClass }
             .associateTo(sortedMapOf()) { shape ->
                 val name = factoryName(shape.targetClass, model.context)
                 name to generateFactory(
-                    shape, GenerationNames.effectiveProperties(shape, supers), model.context, packageName, enumsByName, knownTypes,
+                    shape, members[shape.targetClass].orEmpty(), model.context, packageName, enumsByName, knownTypes,
                 )
             }
     }
@@ -72,12 +73,13 @@ public class DataClassFactoryGenerator(
 
     private fun generateFactory(
         shape: ShaclShape,
-        properties: List<ShaclProperty>,
+        members: List<EffectiveMember>,
         context: JsonLdContext,
         packageName: String,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
     ): FileSpec {
+        val properties = members.map { it.typing }
         val dcName      = dataClassName(shape.targetClass, context)
         val fName       = factoryName(shape.targetClass, context)
         val dcClassName = ClassName(packageName, dcName)
@@ -113,10 +115,12 @@ public class DataClassFactoryGenerator(
                 .build()
         )
 
-        objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes))
+        objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes, shape.shapeIri))
 
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
-        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, properties)
+        // One write per path: members that alias a path (same path under two inherited names) hold the same values.
+        val writtenProperties = members.filter { it.primaryForPath }.map { it.typing }
+        writerGenerator?.buildToTriplesFunction(shape, packageName, dcClassName, enumsByName, context, knownTypes, writtenProperties)
             ?.let { objectBuilder.addFunction(it) }
 
         file.addType(objectBuilder.build())
@@ -133,6 +137,7 @@ public class DataClassFactoryGenerator(
         dcClassName: ClassName,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
+        shapeIri: String,
     ): FunSpec {
         val handleType = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle")
         val fn = FunSpec.builder("from")
@@ -141,7 +146,7 @@ public class DataClassFactoryGenerator(
 
         // One local val per property, then the constructor call
         properties.forEach { property ->
-            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName, knownTypes))
+            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName, knownTypes, shapeIri))
         }
 
         // Constructor call: DataClass(prop1 = _prop1, ...). Local names derive from the unescaped identifier.
@@ -168,10 +173,12 @@ public class DataClassFactoryGenerator(
         packageName: String,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
+        shapeIri: String,
     ): CodeBlock {
         val name = NamingUtils.propertyName(property)
         val pred = property.path
-        val label = "$name <$pred>"
+        val label = "$name <$pred> of shape <$shapeIri>"
+        val policy = ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy")
         val kind = TypeMapper.valueKind(property, context, knownTypes, nestedMode)
 
         val listExpr: CodeBlock = when (kind) {
@@ -208,18 +215,24 @@ public class DataClassFactoryGenerator(
             }
             ValueKind.LITERAL -> {
                 val mapping = TypeMapper.literalMapping(property.datatype)
+                // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
                 CodeBlock.of(
-                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { %L }",
-                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("it")),
+                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("lit")),
+                    ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy"), label, mapping.expectedDescription(),
                 )
             }
         }
 
+        // Same cardinality rule as the live wrappers: a required member without a value throws MaterializationException.
         val local = "_$name"
         return when {
+            Cardinality.isList(property) && Cardinality.isRequired(property) -> CodeBlock.builder()
+                .addStatement("val %N = %L.ifEmpty { %T.missingRequired(%S) }", local, listExpr, policy, label)
+                .build()
             Cardinality.isList(property) -> CodeBlock.builder().addStatement("val %N = %L", local, listExpr).build()
             Cardinality.isRequiredSingle(property) -> CodeBlock.builder()
-                .addStatement("val %N = %L.firstOrNull() ?: error(%S)", local, listExpr, "Required value $label missing or invalid")
+                .addStatement("val %N = %L.firstOrNull() ?: %T.missingRequired(%S)", local, listExpr, policy, label)
                 .build()
             else -> CodeBlock.builder().addStatement("val %N = %L.firstOrNull()", local, listExpr).build()
         }

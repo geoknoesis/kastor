@@ -68,8 +68,11 @@ Kastor Gen artifacts are **not yet published** to a public repository. Use one o
   }
   ```
 
-The processor needs no KSP arguments. The only option it reads is `kastor.gen.resources` (extra directories
-for ontology files, see the [annotations reference](../reference/annotations.md#resolving-shacl-context-and-ontologypath)).
+The processor needs no KSP arguments for hand-written `@Rdf` interfaces. When you generate from SHACL files
+(`@Rdf(shacl = …)`), KSP cannot see edits to those files and the processor warns about each one it reads;
+declare `src/main/resources` as an input of the `kspKotlin` task and set
+`kastor.gen.resources.tracked=true` as shown in [Incremental Builds](../guides/incremental-builds.md#ksp-processor).
+All options are listed in the [processor reference](../reference/processor.md#processor-options).
 
 ## Step 2: Create Your First Domain Interface
 

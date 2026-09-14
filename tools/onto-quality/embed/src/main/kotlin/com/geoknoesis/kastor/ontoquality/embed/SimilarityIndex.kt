@@ -101,6 +101,82 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
     fun pairsAboveThreshold(threshold: Double): Sequence<Pair<Iri, Iri>> =
         pairsAboveThreshold(threshold, SimilaritySearchLimits())
 
+    /** Exact or approximate ([SimilaritySearchMode.ApproximateLsh]) pair enumeration under the same [limits]. */
+    fun pairsAboveThreshold(
+        threshold: Double,
+        limits: SimilaritySearchLimits,
+        mode: SimilaritySearchMode,
+    ): Sequence<Pair<Iri, Iri>> =
+        when (mode) {
+            SimilaritySearchMode.Exact -> pairsAboveThreshold(threshold, limits)
+            is SimilaritySearchMode.ApproximateLsh -> approximatePairsAboveThreshold(threshold, limits, mode)
+        }
+
+    /**
+     * Random-projection LSH candidate generation followed by exact verification. Each candidate comparison counts
+     * as one distance evaluation; a pair is only compared in the first table where it collides.
+     */
+    private fun approximatePairsAboveThreshold(
+        threshold: Double,
+        limits: SimilaritySearchLimits,
+        lsh: SimilaritySearchMode.ApproximateLsh,
+    ): Sequence<Pair<Iri, Iri>> {
+        require(threshold.isFinite() && threshold in -1.0..1.0)
+        return sequence {
+            val budget = Budget(limits)
+            val n = entries.size
+            if (n < 2) return@sequence
+            val dimension = entries[0].second.size
+            val random = java.util.Random(lsh.seed)
+            val signatures = Array(lsh.tables) { LongArray(n) }
+            val plane = DoubleArray(dimension)
+            for (table in 0 until lsh.tables) {
+                val signature = signatures[table]
+                for (bit in 0 until lsh.bitsPerTable) {
+                    budget.check()
+                    for (k in 0 until dimension) plane[k] = random.nextGaussian()
+                    val mask = 1L shl bit
+                    for (i in 0 until n) {
+                        val vector = entries[i].second
+                        var dot = 0.0
+                        for (k in 0 until dimension) dot += vector[k] * plane[k]
+                        if (dot >= 0.0) signature[i] = signature[i] or mask
+                    }
+                }
+            }
+            var pairs = 0
+            var steps = 0L
+            for (table in 0 until lsh.tables) {
+                val buckets = HashMap<Long, MutableList<Int>>()
+                for (i in 0 until n) buckets.getOrPut(signatures[table][i]) { ArrayList(2) }.add(i)
+                for (members in buckets.values) {
+                    if (members.size < 2) continue
+                    for (x in 0 until members.size - 1) {
+                        val i = members[x]
+                        for (y in x + 1 until members.size) {
+                            val j = members[y]
+                            if (++steps and 0xFFF == 0L) budget.check()
+                            if ((0 until table).any { signatures[it][i] == signatures[it][j] }) continue
+                            budget.evaluate()
+                            val a = entries[i]
+                            val b = entries[j]
+                            var dot = 0.0
+                            for (k in a.second.indices) dot += a.second[k].toDouble() * b.second[k]
+                            if (dot >= threshold) {
+                                if (pairs++ >= limits.maxPairs) {
+                                    throw SimilaritySearchBudgetExceededException("Similarity result limit exceeded (${limits.maxPairs} pairs)")
+                                }
+                                budget.pause()
+                                yield(if (a.first.value < b.first.value) a.first to b.first else b.first to a.first)
+                                budget.resume()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Throws [SimilaritySearchBudgetExceededException] on exhaustion instead of silently returning an
      * incomplete exact result. The deadline covers tree construction and search only, not time the consumer

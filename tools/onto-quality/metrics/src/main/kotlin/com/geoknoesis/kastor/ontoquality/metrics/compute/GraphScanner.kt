@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.ontoquality.metrics.OntologyHeader
 import com.geoknoesis.kastor.ontoquality.metrics.OwlEntityCounts
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
@@ -57,6 +58,21 @@ internal object GraphScanner {
 
     private fun excluded(cfg: MetricsConfig, iri: String): Boolean = cfg.excludedNamespaces.any { iri.startsWith(it) }
 
+    /**
+     * VoID distinct-object key for a literal: the full RDF term (lexical form, datatype IRI, language tag and base
+     * direction), so `"1"`, `"1"^^xsd:integer` and `"1"@en` are distinct objects. The lexical form is
+     * length-prefixed so no lexical content can collide with another term's key. Language tags are compared
+     * case-insensitively (their RDF value space is lower case).
+     */
+    private fun literalKey(o: Literal): String {
+        val lang = (o as? LangString)?.let { "@${it.lang.lowercase()}${it.direction?.let { d -> "--$d" } ?: ""}" } ?: ""
+        return "L${o.lexical.length}:${o.lexical}^^${o.datatype.value}$lang"
+    }
+
+    private val OWL_SOME_VALUES_FROM = "${OWL.namespace}someValuesFrom"
+    private val OWL_ALL_VALUES_FROM = "${OWL.namespace}allValuesFrom"
+    private val OWL_ON_CLASS = "${OWL.namespace}onClass"
+
     fun scan(graph: RdfGraph, config: MetricsConfig): ScanBundle {
         val owlThing = OWL.Thing.value
         val owlNothing = "${OWL.namespace}Nothing"
@@ -91,6 +107,10 @@ internal object GraphScanner {
         /// restriction node key -> owl:onProperty IRIs
         val onPropertyOf = mutableMapOf<String, MutableSet<String>>()
 
+        /// restriction node key -> class fillers (owl:someValuesFrom / owl:allValuesFrom / owl:onClass IRIs)
+        val restrictionFillers = mutableMapOf<String, MutableSet<String>>()
+        val rangePairs = mutableListOf<Pair<String, String>>()
+
         val importsList = mutableListOf<String>()
         val skos = SkosScratch()
 
@@ -119,7 +139,7 @@ internal object GraphScanner {
                 }
                 is Literal -> {
                     literalObjects++
-                    distinctObjects.add("\"${o.lexical}\"")
+                    distinctObjects.add(literalKey(o))
                 }
                 is BlankNode -> distinctObjects.add("_:${o.id}")
                 else -> Unit // TripleTerm, Var, etc.
@@ -165,8 +185,16 @@ internal object GraphScanner {
                 onPropertyOf.getOrPut(sk) { mutableSetOf() }.add(objIri)
             }
 
+            if ((p == OWL_SOME_VALUES_FROM || p == OWL_ALL_VALUES_FROM || p == OWL_ON_CLASS) && objIri != null) {
+                restrictionFillers.getOrPut(sk) { mutableSetOf() }.add(objIri)
+            }
+
             if (t.predicate == RDFS.domain && subIri != null && objIri != null) {
                 domainPairs.add(subIri to objIri)
+            }
+
+            if (t.predicate == RDFS.range && subIri != null && objIri != null) {
+                rangePairs.add(subIri to objIri)
             }
 
             if (subIri != null &&
@@ -266,6 +294,24 @@ internal object GraphScanner {
             }
         }
 
+        /// CBOOnto related classes: Sup_C ∪ Assoc_C, where Assoc_C holds the named-class ranges of properties whose
+        /// rdfs:domain is C and the named-class fillers of restrictions (on usable properties) attached to C.
+        val rangesOf = rangePairs.groupBy({ it.first }, { it.second })
+        val couplingsOf = mutableMapOf<String, MutableSet<String>>()
+        for ((cls, parents) in superClassesOf) couplingsOf.getOrPut(cls) { mutableSetOf() }.addAll(parents)
+        for ((prop, dom) in domainPairs) {
+            if (dom !in namedClasses || prop !in usableProperties) continue
+            for (range in rangesOf[prop].orEmpty()) {
+                if (range in namedClasses && range != dom) couplingsOf.getOrPut(dom) { mutableSetOf() }.add(range)
+            }
+        }
+        for ((cls, node) in classExpressionLinks) {
+            if (cls !in namedClasses || onPropertyOf[node].orEmpty().none { it in usableProperties }) continue
+            for (filler in restrictionFillers[node].orEmpty()) {
+                if (filler in namedClasses && filler != cls) couplingsOf.getOrPut(cls) { mutableSetOf() }.add(filler)
+            }
+        }
+
         val dtDomAssertions =
             domainPairs.distinct().count { (prop, dom) -> prop in datatypeProperties && dom in namedClasses }.toLong()
 
@@ -316,6 +362,7 @@ internal object GraphScanner {
                 pathsFromThingToLeaves = hierarchy.pathCount.toLong(),
                 pathCount = hierarchy.pathCount,
                 totalPathLength = hierarchy.totalPathLength,
+                couplingsOf = couplingsOf.mapValues { it.value.toSet() },
             )
 
         val distinctImports = importsList.distinct()
@@ -412,11 +459,15 @@ internal object GraphScanner {
      * One iterative pass in topological (Kahn) order over the acyclic part of the named hierarchy;
      * no recursion, so arbitrarily deep chains do not consume the call stack.
      *
-     * - `depth(c)` = 0 for roots, else `max(depth(parent) + 1)`, capped at [maxCap] (the cap bounds the
-     *   reported value only, never the traversal).
-     * - `paths(c)` = 1 for roots, else `sum(paths(parent))` — memoized, so a lattice with 2^n root-to-leaf
+     * Paths start at owl:Thing (depth 0), per OQuaRE: every root — including an isolated class with neither
+     * superclasses nor subclasses — is a direct child of owl:Thing.
+     *
+     * - `depth(c)` = 1 for roots, else `max(depth(parent) + 1)`, capped at [maxCap] (the cap bounds the
+     *   reported value only, never the traversal). Cycle participants get depth 0 and are excluded.
+     * - `paths(c)` = 1 for roots, else `sum(paths(parent))` — memoized, so a lattice with 2^n Thing-to-leaf
      *   paths costs O(V + E) instead of enumerating paths.
-     * - `length(c)` = total edge length of all root-to-c paths = `sum(length(parent) + paths(parent))`.
+     * - `length(c)` = total edge length of all Thing-to-c paths = 1 for roots, else
+     *   `sum(length(parent) + paths(parent))`.
      *
      * Counts are doubles: they stay exact up to 2^53 and only overflow to +Infinity beyond ~1e308.
      */
@@ -441,9 +492,9 @@ internal object GraphScanner {
             remainingParents[c] = parents
             if (parents == 0) {
                 queue.addLast(c)
-                depth[c] = 0
+                depth[c] = min(1, maxCap)
                 paths[c] = 1.0
-                lengths[c] = 0.0
+                lengths[c] = 1.0
             }
         }
         while (queue.isNotEmpty()) {

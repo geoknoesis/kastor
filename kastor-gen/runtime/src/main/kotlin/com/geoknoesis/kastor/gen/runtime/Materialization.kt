@@ -102,10 +102,35 @@ object OntoMapper {
   const val ERROR_NO_FACTORY = "No wrapper factory registered for"
   const val ERROR_NOT_RDF_BACKED = "Object is not RDF-backed:"
 
-  /** Registers (or replaces) the factory used to materialize [type]. Called by generated code. */
+  /**
+   * Registers the factory used to materialize [type]. Called by generated code from the static initialiser of a
+   * wrapper or data-class factory.
+   *
+   * Registering the same factory instance again is a no-op. Registering a *different* factory for a type that
+   * already has one fails, because it would silently change how the whole application materializes that type
+   * (for example two generated modules claiming one interface); use the `replace = true` overload to replace a
+   * factory deliberately (tests, plugins).
+   *
+   * @throws IllegalStateException when a different factory is already registered for [type]
+   */
   @JvmStatic
-  fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T) {
-    registry[type] = factory
+  fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T): Unit = register(type, replace = false, factory = factory)
+
+  /**
+   * Registers the factory for [type]; with [replace] a previously registered factory is replaced, otherwise
+   * behaves like the two-argument [register].
+   */
+  @JvmStatic
+  fun <T : Any> register(type: Class<T>, replace: Boolean, factory: (RdfHandle) -> T) {
+    if (replace) {
+      registry[type] = factory
+      return
+    }
+    val previous = registry.putIfAbsent(type, factory)
+    check(previous == null || previous === factory) {
+      "A different factory is already registered for ${type.name}; " +
+        "call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
+    }
   }
 
   /** Removes the factory for [type]; returns true when one was registered. */

@@ -9,6 +9,138 @@ version while we are in 0.x.
 
 Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been published yet.
 
+Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
+and is kept as is; it was never published to Maven Central.
+
+### Fixed (re-audit)
+
+#### Security
+
+- `rdf-sparql`: redirects are handled manually.
+  - 307/308 keep method and body; 301/302/303 are followed only for GET; a redirected POST is an error.
+  - Cross-origin redirects are refused unless `followCrossOriginRedirects` is set, and custom headers and credentials are stripped when followed.
+  - Reserved headers such as `Host` and `Content-Length` are rejected.
+- `rdf-sparql-lang`: a `u`/`U` after a backslash in a literal is sent as `u`/`U`, so SPARQL 1.1 codepoint-escape pre-passes cannot alter literal text.
+- `onto-quality`: ontology-derived text in Markdown reports is escaped, and control characters in text output appear as visible `\uXXXX`.
+
+#### Breaking changes
+
+- **`rdf-core`:**
+  - `LangString.lang` keeps the tag as given; use `normalizedLang` for the lower-case form. Equality and hashing still ignore tag case.
+  - A `Dataset` rejects queries that declare their own `FROM` / `FROM NAMED`.
+- **`rdf-sparql-lang`:**
+  - `ClearOperationAst` / `DropOperationAst` take a `GraphScope`, and COPY/MOVE/ADD source and destination are nullable (`null` = `DEFAULT`).
+  - Invalid projections and blank-node label reuse across patterns are rejected.
+  - `union {}` is deprecated; use `union({..},{..})` / `unionOf { branch {} }`.
+- **`rdf-sparql`:**
+  - The transport is `java.net.http.HttpClient`.
+  - For streamed rows, `requestTimeout` covers only the wait for response headers; `streamingRequestTimeout` bounds the whole stream.
+  - Non-standard service-description terms moved to `https://kastor.geoknoesis.com/ns/sparql#`.
+- **`rdf-shacl-validation`:**
+  - Unsupported SHACL features fail with an unsupported-feature error by default (`ValidationConfig.unsupportedFeatures`). This covers SPARQL constraint components, `sh:expression`, `sh:values` and SPARQL expressions used as targets.
+  - `sh:uniqueValuesFor` reports one result per duplicate target.
+- **`rdf-shacl-dsl`:** `totalDigits`, `fractionDigits`, `targetWhereSelect` and `targetWhereExpr` are deprecated at `ERROR` level.
+- **`onto-quality-cli`:**
+  - Exit codes are distinct: 0 ok, 1 findings, 2 parse error, 3 explanation failure, 4 usage/configuration error, 5 runtime error.
+  - `--reasoner owl-micro` / `OntoQualityReasoningProfile.OWL_MICRO` now run Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`) instead of the OWL rule reasoner; use `owl-rl` / `OWL_RL` for the previous behaviour.
+  - NOCOnto, CBOOnto, DIT/LCOMOnto (paths now measured from `owl:Thing`) and TMOnto banding values change.
+
+#### Fixed
+
+- `rdf-core`:
+  - File and URL parsing pass a base IRI, so relative IRIs resolve.
+  - Isomorphism treats equal literals as equal (`TrueLiteral` vs `"true"^^xsd:boolean`, and tags differing only in case) and scales its work budget with graph size.
+  - URL loading checks HTTP status, sends `Accept`, and applies a total timeout.
+  - Memory rollback runs every undo action, and empty created graphs are listed.
+  - Dataset parse failures no longer leak repositories.
+  - The IRI scanner follows RFC 3987 `ucschar`.
+  - `Rdf.memory()` honours provider priority.
+- `rdf-sparql`:
+  - Bound `withSelectRows` substitutes values Jena-style instead of appending `VALUES`, so aggregates, FILTER and sub-selects return correct results.
+  - Triples connected through blank nodes are never split across batches.
+  - Long GET URLs fall back to POST.
+  - A stalled read is interrupted promptly, and UPDATE requests are never re-sent.
+- `rdf-sparql-lang`: MINUS with a non-empty left side renders `{ left MINUS { right } }`.
+- `rdf-shacl-validation`:
+  - Recursive shapes are evaluated without a stack-depth limit (10,000-node chains validate).
+  - Recursion through negation reports a warning instead of assuming conformance.
+  - Property shapes with targets no longer apply their child shapes twice.
+  - Closed shapes allow the paths of deactivated property shapes.
+  - Paths use sets, respect the deadline and are capped (`maxPathValueNodes`).
+  - `sh:targetWhere` also considers object nodes.
+  - SPARQL pre-binding is provider-independent.
+  - Language tags compare case-insensitively, and `"24:00:00"^^xsd:time` equals `00:00:00`.
+  - More XSD lexical-form checks.
+- `onto-quality`:
+  - The CLI parses with the file URI as base IRI.
+  - LLM calls are retried only on timeouts, 408/429/5xx and connection errors, with a total-duration bound and a circuit breaker.
+  - Similarity limits scale with entity count.
+  - A corrupted cached model is downloaded again once.
+- CI: pull requests run the pinned W3C SHACL 1.2 suite (`w3cConformanceTest`) and execute every SHACL benchmark workload. The weekly Conformance workflow no longer tracks the unpinned upstream branch.
+
+#### Added
+
+- `rdf-core`:
+  - `LangString.normalizedLang`
+  - `baseIri` parse overloads and isomorphism limit overloads
+  - `RdfHttpStatusException`, `RdfLoadTimeoutException`, `UrlLoadOptions.totalTimeoutMillis`
+- `rdf-sparql` config options: `streamingRequestTimeout`, `maxGetUrlLength`, `maxBlankNodeComponentTriples`, `followCrossOriginRedirects`, `maxRedirects`.
+- `rdf-shacl-validation`: `UnsupportedFeatureHandling`, `ValidationConfig.maxPathValueNodes`, and the `w3cConformanceTest` Gradle task.
+- `onto-quality-cli` options: `--debug`, `--llm-max-duration`, `--similarity-max-work`, `--similarity-timeout`, `--similarity-mode exact|approximate`.
+- Release tooling:
+  - `scripts/configure-github-release.sh` applies the release environment, rulesets and Pages settings (dry run by default).
+  - `publish.yml` polls Maven Central validation.
+
+#### Code generator (`kastor-gen-*`)
+
+- **Breaking:**
+  - Ill-typed literal values now throw during materialisation by default. Use `MaterializationPolicy` with `IllTypedValueHandling` to skip them with a warning instead.
+  - `OntoMapper.register` refuses a different factory for a type that is already registered, unless you pass `replace = true`.
+  - `ValidationResult.orThrow()` fails only on `sh:Violation`. Use `orThrow(minimumSeverity)` to fail on warnings or info as well.
+  - `xsd:decimal` values with an exponent are rejected.
+  - `ValidationContext` now extends `AutoCloseable`, with a no-op default `close()`.
+  - Generated embedded validation now enforces `sh:datatype`, `sh:nodeKind` and `sh:class`, and compares numeric bounds exactly.
+- **Fixed:**
+  - Shape inheritance generates compilable overrides. A restated path keeps the parent's member name and may narrow nullability. Refinements that Kotlin can't express as overrides (such as a list narrowed to a single value) are enforced only in validation. Conflicting parent member types fail at generation time.
+  - A path used by several property shapes in one shape produces one member everywhere.
+  - IRIs containing `%` no longer break the KSP `@Rdf` wrapper path, and missing values are never replaced by invented defaults.
+  - `sh:pattern` XPath constructs (`\i`, `\c`, class subtraction, `\p{Is…}`) are translated. A still-invalid pattern fails generation. Regexes are compiled lazily, so a bad pattern can no longer break class loading.
+  - KSP no longer reprocesses symbols it has already generated (no `FileAlreadyExistsException`). Relative `kastor.gen.resources` entries resolve against `kastor.gen.projectDir`.
+  - Colliding `sh:in` enum constants get deterministic suffixes.
+  - The RDF4J adapter reuses one repository, reloads only when the graph changes, and validates only the shapes targeting the focus node.
+  - The Gradle plugin validates the whole output manifest before deleting anything, and stages new files before replacing old ones.
+  - Projects with ontologies but without the Kotlin JVM or multiplatform plugin fail with a clear message.
+  - Multiplatform projects wire the main compilation of every JVM target.
+  - The JSON-LD context file is optional.
+  - Generated DSL enum types are package-qualified.
+  - XSD integer/decimal parsing follows the lexical rules, and dates with years above 9999 round-trip.
+- **Added:** `MaterializationPolicy`, `IllTypedValueHandling`, `register(type, replace, factory)`, `orThrow(ShaclSeverity)`, and the KSP options `kastor.gen.projectDir` and `kastor.gen.resources.tracked`.
+
+#### Providers and reasoning (`rdf-jena`, `rdf-rdf4j`, reasoning, testkit, CLI, conformance)
+
+- **Breaking:**
+  - `rdf-jena-reasoning` and `rdf-rdf4j-reasoning` now honour `ReasonerConfig`: Jena runs exactly the selected RDFS rules for a rule subset and rejects rule selections for its OWL reasoners, RDF4J rejects rule subsets its inferencer cannot apply, and both enforce `timeout` and `materializationThreshold`. Axiomatic `rdf:`/`rdfs:`/`owl:`/`xsd:` vocabulary triples are dropped from the inferred triples by default; set `parameters["includeAxiomaticTriples"] = true` to keep them.
+  - RDF4J NativeStore variants no longer advertise triple-term / RDF-star support, and repositories report the capabilities of the variant they were created as.
+  - `JenaBridge` throws `RdfFormatException.UnsupportedFormat` for unsupported formats instead of `IllegalArgumentException`.
+  - Graphs wrapped with `JenaBridge.fromJenaModel(model)` read leniently: statements Kastor cannot represent are skipped with one warning. Use `fromJenaModel(model, strictRead = true)` for strict reads. Parsed graphs stay strict.
+  - `JenaBridgeDemoKt` is no longer part of the `rdf-jena` artifact; the demo lives in `rdf/examples`.
+  - Conformance allowlist rows need a fourth column: a regex for the expected failure signature. A test is skipped only when its failure matches.
+- **Fixed:**
+  - RDF4J reads map RDF-star quoted-triple subjects to a deterministic reifier blank node plus `rdf:reifies`, for store reads, CONSTRUCT/DESCRIBE, `parseGraph` and streaming parses, so one such statement no longer makes the whole graph unreadable.
+  - The Jena inference cache is keyed by the read snapshot, so a reader can no longer cache stale inferences after a concurrent commit, and readers share the materialised closure without a lock.
+  - The HermiT deadline is enforced: interrupts are repeated until the reasoner returns, every reasoner call checks the remaining budget, and ontology loading is only awaited until the deadline.
+  - Conformance eval expectations are parsed by an independent Jena RIOT oracle and compared with the provider output as datasets, so a provider parser bug cannot cancel out on both sides.
+  - RDF4J triple streams: `close()` from another thread wakes a blocked consumer, a `Cleaner` closes abandoned streams so their producer thread exits, and read-ahead is bounded (also for Jena).
+  - SPARQL text with RDF 1.2 direction-tagged literals (`"x"@ar--rtl`) on RDF4J fails with an explicit `RdfQueryException`. CONSTRUCT/DESCRIBE failures are wrapped as `RdfQueryException`.
+  - Jena graph serialisation supports the advertised TriG and N-Quads formats, `JenaBridge` file, URL and dataset loaders use the strict validating parser, and `parseDataset` streams into a Jena repository in one write transaction.
+  - CLI `diff` compares datasets with one isomorphism across all graphs, so blank nodes shared between graphs must correspond.
+  - The memory reasoner accepts valid XSD 1.1 lexical forms (`24:00:00`, years beyond 9999, collapsed whitespace).
+- **Added:**
+  - `ReasonerType.OWL_MICRO` (Jena's OWL Micro rule reasoner; other providers reject it).
+  - `RdfDatasetIsomorphism` in `rdf-testkit`.
+  - `JenaBridge.fromJenaModel(model, strictRead)`.
+  - Jena and RDF4J providers override `openTripleStream(inputStream, format, baseIri)` and `parseStreaming(inputStream, format, baseIri)`, so relative IRIs resolve without materialising the graph.
+
 ### Breaking changes (Maven `artifactId`s)
 
 Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*` scheme used by every other RDF module. Gradle project paths are unchanged:

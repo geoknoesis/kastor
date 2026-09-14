@@ -10,7 +10,7 @@ The extension function system includes:
 - **Built-in Functions**: the SPARQL 1.2 functions listed below, registered automatically when the registry is first used
 - **Custom Functions**: descriptions you register yourself
 - **Function Discovery**: lookup by IRI or name
-- **Service Description Integration**: `ProviderCapabilities.extensionFunctions` is emitted by `SparqlServiceDescriptionGenerator`
+- **Service Description Integration**: the custom (non-built-in) entries of `ProviderCapabilities.extensionFunctions` are emitted by `SparqlServiceDescriptionGenerator`
 
 ## 🚀 Function Registry
 
@@ -61,7 +61,7 @@ data class SparqlExtensionFunction(
 
 ## 📊 Built-in SPARQL 1.2 Functions
 
-`Sparql12BuiltInFunctions.functions` contains the following entries. Their IRIs are in the `http://www.w3.org/ns/sparql#` namespace (constants on the `SPARQL12` vocabulary object), and argument and return types are given as prefixed names.
+`Sparql12BuiltInFunctions.functions` contains the following entries, all with `isBuiltIn = true`. SPARQL built-ins are keywords, not IRIs, so the `iri` of each entry is a Kastor registry identifier in the `https://kastor.geoknoesis.com/ns/sparql/function#` namespace (`KastorSparqlVocabulary.FUNCTION_NAMESPACE`), built with `KastorSparqlVocabulary.function(name)`, for example `https://kastor.geoknoesis.com/ns/sparql/function#TRIPLE`. They are not W3C IRIs. Argument and return types are given as prefixed names.
 
 | Group | Name | Arguments | Returns |
 |-------|------|-----------|---------|
@@ -80,7 +80,7 @@ data class SparqlExtensionFunction(
 | Date / time | `tz` | `xsd:dateTime` | `xsd:dayTimeDuration` |
 | Random | `rand` | none | `xsd:double` (in [0, 1)) |
 
-The non-standard entries `replaceAll`, `decodeForUri`, `random()` and a zero-argument `timezone()` are **not** registered. SPARQL `REPLACE` already replaces every match; SPARQL has no `DECODE_FOR_URI` or `RANDOM()`; and `TIMEZONE` requires a dateTime argument. The matching query-DSL helpers are deprecated (see [SPARQL 1.2 Support](sparql-1.2.md)). The `SPARQL12` vocabulary still defines IRIs for these names, but no built-in function uses them.
+The non-standard entries `replaceAll`, `decodeForUri`, `random()` and a zero-argument `timezone()` are **not** registered. SPARQL `REPLACE` already replaces every match; SPARQL has no `DECODE_FOR_URI` or `RANDOM()`; and `TIMEZONE` requires a dateTime argument. The matching query-DSL helpers are deprecated (see [SPARQL 1.2 Support](sparql-1.2.md)). The registry does not use the `SPARQL12` vocabulary object (`http://www.w3.org/ns/sparql#`): look built-ins up with `KastorSparqlVocabulary.function(name)`.
 
 ## 🔧 Function Registration
 
@@ -157,10 +157,11 @@ println("Custom functions: ${customFunctions.map { it.name }}")
 ### Function Lookup
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
+import com.geoknoesis.kastor.rdf.sparql.KastorSparqlVocabulary
 
-// Get function by IRI
-val tripleFunction = SparqlExtensionFunctionRegistry.getFunction(SPARQL12.TRIPLE.value)
+// Get function by its registry identifier
+val tripleId = KastorSparqlVocabulary.function("TRIPLE").value
+val tripleFunction = SparqlExtensionFunctionRegistry.getFunction(tripleId)
 println("Found: ${tripleFunction?.name} - ${tripleFunction?.description}")
 
 // Get functions by name
@@ -168,27 +169,27 @@ val tripleFunctions = SparqlExtensionFunctionRegistry.getFunctionsByName("TRIPLE
 println("Functions named 'TRIPLE': ${tripleFunctions.size}")
 
 // Check if function is registered
-println("TRIPLE registered: ${SparqlExtensionFunctionRegistry.isRegistered(SPARQL12.TRIPLE.value)}")
+println("TRIPLE registered: ${SparqlExtensionFunctionRegistry.isRegistered(tripleId)}")
 ```
 
 ## 🎨 Provider Integration
 
 ### Function Capabilities
 
-`ProviderCapabilities.extensionFunctions` lets a provider advertise functions. The bundled providers (`memory`, `jena`, `rdf4j`, `sparql`) leave it empty. Custom providers can publish the registry contents:
+`ProviderCapabilities.extensionFunctions` lets a provider advertise functions. The bundled providers (`memory`, `jena`, `rdf4j`, `sparql`) leave it empty. Custom providers can publish the custom functions they implement:
 
 ```kotlin
 override fun getCapabilities(variantId: String?): ProviderCapabilities =
     ProviderCapabilities(
         sparqlVersion = "1.2",
         supportsServiceDescription = true,
-        extensionFunctions = SparqlExtensionFunctionRegistry.getBuiltInFunctions()
+        extensionFunctions = SparqlExtensionFunctionRegistry.getCustomFunctions()
     )
 ```
 
 ### Service Description Integration
 
-`SparqlServiceDescriptionGenerator` emits one `sd:extensionFunction` per entry of `extensionFunctions`, with `sd:functionName`, `sd:description`, `sd:returnType` and (for aggregates) `sd:isAggregate`:
+`SparqlServiceDescriptionGenerator` emits one `sd:extensionFunction` for each entry of `extensionFunctions` with `isBuiltIn = false`, with `sd:functionName`, `sd:description`, `sd:returnType` and (for aggregates) `sd:isAggregate`. Built-in functions (`isBuiltIn = true`, including every entry of `Sparql12BuiltInFunctions`) are part of the query language and are **not** advertised as extension functions:
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.ProviderCapabilities
@@ -201,6 +202,7 @@ val capabilities = ProviderCapabilities(
 val description = SparqlServiceDescriptionGenerator("http://example.org/sparql", capabilities)
     .generateServiceDescription()
 
+// Counts only the custom functions: built-ins are filtered out
 val functionTriples = description.getTriples().filter { it.predicate == SPARQL_SD.extensionFunction }
 println("Service advertises ${functionTriples.size} extension functions")
 ```

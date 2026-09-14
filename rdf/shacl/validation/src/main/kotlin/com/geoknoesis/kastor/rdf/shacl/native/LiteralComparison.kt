@@ -158,9 +158,10 @@ private fun parseTemporal(lit: Literal): Pair<TemporalFamily, XsdMoment>? {
         XSD.time -> {
             val m = timeRx.matchEntire(lex) ?: return null
             val g = { i: Int -> groupOrNull(m, i) }
-            // XSD compares times as dateTimes on the reference date 1972-12-31.
+            // XSD compares times as dateTimes on the reference date 1972-12-31; the value of 24:00:00 is 00:00:00.
             val ref = BigDecimal(LocalDate.of(1972, 12, 31).toEpochDay()).multiply(SECONDS_PER_DAY)
-            TemporalFamily.TIME to moment(ref.add(timeSeconds(g(1), g(2), g(3), g(4), g(5))), g(6))
+            val seconds = if (g(4) != null) BigDecimal.ZERO else timeSeconds(g(1), g(2), g(3), null, null)
+            TemporalFamily.TIME to moment(ref.add(seconds), g(6))
         }
         else -> null
     }
@@ -259,8 +260,10 @@ private val normalizedStringForbidden = Regex("[\\r\\n\\t]")
  * XSD lexical validity for typed literals used by `sh:datatype`: an ill-formed literal fails even when the RDF
  * term carries the requested datatype IRI. Covers the commonly used XSD built-ins (string types, boolean,
  * decimal, integer and all derived integer types with range checks, float/double, date/time types, Gregorian
- * types, durations, language, hexBinary, base64Binary). Datatypes without a lexical-space check here
- * (e.g. xsd:anyURI, whose lexical space is effectively unrestricted, or non-XSD datatypes) are accepted.
+ * types, durations, language, hexBinary, base64Binary, the XML name and token types NCName / Name / NMTOKEN(S) /
+ * QName / ID / IDREF(S) / ENTITY / ENTITIES, and xsd:anyURI). xsd:normalizedString, xsd:token and xsd:anyURI
+ * additionally require every character to be a legal XML 1.0 character; plain xsd:string accepts any Unicode string
+ * (W3C SHACL singleLine-001). Non-XSD datatypes are accepted.
  */
 internal fun typedLiteralLexicallyValidForShaclDatatype(lit: TypedLiteral): Boolean = literalLexicallyValid(lit)
 
@@ -268,6 +271,8 @@ internal fun literalLexicallyValid(lit: Literal): Boolean {
     val lex = lit.lexical
     val dt = lit.datatype
     return when {
+        // RDF literals may hold any Unicode string; W3C SHACL singleLine-001 expects xsd:string values with control
+        // characters such as U+000B to conform to sh:datatype xsd:string, so the XML Char restriction is not applied.
         dt == XSD.string -> true
         dt == XSD.boolean -> booleanLexical.matches(lex)
         dt in integerRanges -> parseInteger(lex, dt) != null
@@ -287,8 +292,59 @@ internal fun literalLexicallyValid(lit: Literal): Boolean {
         dt == XSD.language -> languageRx.matches(lex)
         dt == XSD.hexBinary -> hexBinaryRx.matches(lex)
         dt == xsd("base64Binary") -> base64Rx.matches(lex)
-        dt == xsd("normalizedString") -> !normalizedStringForbidden.containsMatchIn(lex)
-        dt == xsd("token") -> !normalizedStringForbidden.containsMatchIn(lex) && !lex.startsWith(" ") && !lex.endsWith(" ") && !lex.contains("  ")
+        dt == xsd("normalizedString") -> allXmlChars(lex) && !normalizedStringForbidden.containsMatchIn(lex)
+        dt == xsd("token") -> allXmlChars(lex) && !normalizedStringForbidden.containsMatchIn(lex) && !lex.startsWith(" ") && !lex.endsWith(" ") && !lex.contains("  ")
+        dt == xsd("Name") -> isXmlName(lex, allowColon = true)
+        dt == xsd("NCName") || dt == xsd("ID") || dt == xsd("IDREF") || dt == xsd("ENTITY") -> isXmlName(lex, allowColon = false)
+        dt == xsd("NMTOKEN") -> isNmtoken(lex)
+        dt == xsd("NMTOKENS") -> isXmlList(lex, ::isNmtoken)
+        dt == xsd("IDREFS") || dt == xsd("ENTITIES") -> isXmlList(lex) { isXmlName(it, allowColon = false) }
+        dt == xsd("QName") -> lex.split(':').let { parts -> parts.size in 1..2 && parts.all { isXmlName(it, allowColon = false) } }
+        dt == XSD.anyURI -> allXmlChars(lex) && hasValidPercentEscapes(lex)
         else -> true
     }
 }
+
+// --- XML 1.0 (fifth edition) character classes ---------------------------------------------------------------------
+
+private fun isXmlChar(cp: Int): Boolean =
+    cp == 0x9 || cp == 0xA || cp == 0xD || cp in 0x20..0xD7FF || cp in 0xE000..0xFFFD || cp in 0x10000..0x10FFFF
+
+private fun allXmlChars(s: String): Boolean = s.codePoints().allMatch(::isXmlChar)
+
+private fun isNameStartChar(cp: Int, allowColon: Boolean): Boolean =
+    (allowColon && cp == ':'.code) || cp == '_'.code || cp in 'A'.code..'Z'.code || cp in 'a'.code..'z'.code ||
+        cp in 0xC0..0xD6 || cp in 0xD8..0xF6 || cp in 0xF8..0x2FF || cp in 0x370..0x37D || cp in 0x37F..0x1FFF ||
+        cp in 0x200C..0x200D || cp in 0x2070..0x218F || cp in 0x2C00..0x2FEF || cp in 0x3001..0xD7FF ||
+        cp in 0xF900..0xFDCF || cp in 0xFDF0..0xFFFD || cp in 0x10000..0xEFFFF
+
+private fun isNameChar(cp: Int, allowColon: Boolean): Boolean =
+    isNameStartChar(cp, allowColon) || cp == '-'.code || cp == '.'.code || cp in '0'.code..'9'.code || cp == 0xB7 ||
+        cp in 0x300..0x36F || cp in 0x203F..0x2040
+
+private fun isXmlName(s: String, allowColon: Boolean): Boolean {
+    if (s.isEmpty()) return false
+    val cps = s.codePoints().toArray()
+    return isNameStartChar(cps[0], allowColon) && (1 until cps.size).all { isNameChar(cps[it], allowColon) }
+}
+
+private fun isNmtoken(s: String): Boolean = s.isNotEmpty() && s.codePoints().allMatch { isNameChar(it, allowColon = true) }
+
+private val xmlWhitespaceRun = Regex("[\\u0020\\u0009\\u000A\\u000D]+")
+
+/** XSD list types: one or more items separated by XML whitespace. */
+private fun isXmlList(s: String, item: (String) -> Boolean): Boolean {
+    val items = s.split(xmlWhitespaceRun).filter { it.isNotEmpty() }
+    return items.isNotEmpty() && items.all(item)
+}
+
+private fun hasValidPercentEscapes(s: String): Boolean {
+    var i = s.indexOf('%')
+    while (i >= 0) {
+        if (i + 2 >= s.length || !s[i + 1].isHexDigitChar() || !s[i + 2].isHexDigitChar()) return false
+        i = s.indexOf('%', i + 3)
+    }
+    return true
+}
+
+private fun Char.isHexDigitChar(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'

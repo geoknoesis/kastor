@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.gen.gradle
 import com.geoknoesis.kastor.gen.gradle.tasks.OntologyGenerationTask
 import org.gradle.api.GradleException
 import org.gradle.api.Named
+import org.gradle.api.NamedDomainObjectCollection
 import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -17,8 +18,11 @@ import org.gradle.api.provider.Provider
  * from SHACL and JSON-LD context files without requiring annotations.
  * Supports both single and multiple ontology configurations.
  *
- * Generated sources are added to the `main` Kotlin source set of `org.jetbrains.kotlin.jvm` projects and to
- * `jvmMain` of `org.jetbrains.kotlin.multiplatform` projects (the generated code is JVM-only).
+ * Generated sources are added to the `main` Kotlin source set of `org.jetbrains.kotlin.jvm` projects and to the
+ * `main` compilation of every JVM target of `org.jetbrains.kotlin.multiplatform` projects (e.g. `jvm()` or
+ * `jvm("desktop")`; the generated code is JVM-only). Other project types (including Android) are not supported: a
+ * project that configures ontologies without one of those plugins fails at configuration time. The
+ * `generateOntology<Name>` tasks still work there; add their `outputDirectory` to a source set manually.
  */
 class OntoMapperPlugin : Plugin<Project> {
 
@@ -44,7 +48,8 @@ class OntoMapperPlugin : Plugin<Project> {
                 task.description = "Generate ontology ${config.name}"
                 task.ontologyName.set(config.name)
                 task.shaclPath.set(config.shaclPath)
-                task.contextPath.set(config.contextPath)
+                // The JSON-LD context is optional.
+                config.contextPath.takeIf { it.isNotBlank() }?.let { task.contextPath.set(it) }
                 // Only user-assigned values are forwarded, so the task's documented defaults apply otherwise.
                 config.interfacePackage?.let { task.interfacePackage.set(it) }
                 config.wrapperPackage?.let { task.wrapperPackage.set(it) }
@@ -68,52 +73,103 @@ class OntoMapperPlugin : Plugin<Project> {
             mainTask.configure { it.dependsOn(generation) }
             KotlinSourceSetWiring.wire(project, generation.flatMap { it.outputDirectory })
         }
-    }
-}
 
-/**
- * Adds generated directories to Kotlin source sets without linking against the Kotlin Gradle plugin, so this
- * plugin never ships (or clashes with) its own copy of KGP classes. Source sets are reached through the
- * `kotlin` extension's `getSourceSets()` / `getKotlin()` accessors, which both the JVM and multiplatform
- * extensions expose.
- */
-internal object KotlinSourceSetWiring {
-
-    fun wire(project: Project, generated: Provider<Directory>) {
-        project.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
-            addWhenPresent(project, "main", generated, required = true)
-        }
-        project.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
-            addWhenPresent(project, "jvmMain", generated, required = true)
-        }
-    }
-
-    private fun addWhenPresent(project: Project, sourceSetName: String, generated: Provider<Directory>, required: Boolean) {
-        var wired = false
-        sourceSets(project).all { sourceSet ->
-            if ((sourceSet as Named).name == sourceSetName) {
-                kotlinDirectories(sourceSet).srcDir(generated)
-                wired = true
-            }
-        }
-        if (required && !project.state.executed) {
+        // Without a supported Kotlin plugin the generated sources would silently not be compiled.
+        if (!project.state.executed) {
             project.afterEvaluate {
-                if (!wired) {
+                if (ontologyContainer.isNotEmpty() && !KotlinSourceSetWiring.hasSupportedKotlinPlugin(project)) {
                     throw GradleException(
-                        "kastor-gen: Kotlin source set '$sourceSetName' not found in ${project.path}. " +
-                            "Generated code is JVM-only; Kotlin Multiplatform projects must declare a jvm() target."
+                        "kastor-gen: ${project.path} configures kastorGen ontologies but applies neither " +
+                            "org.jetbrains.kotlin.jvm nor org.jetbrains.kotlin.multiplatform, so the generated sources " +
+                            "would not be compiled. Apply one of them (Android projects are not supported; add the " +
+                            "outputDirectory of the generateOntology<Name> tasks to a source set yourself)."
                     )
                 }
             }
         }
     }
+}
 
-    @Suppress("UNCHECKED_CAST")
-    private fun sourceSets(project: Project): NamedDomainObjectContainer<Any> {
-        val kotlin = project.extensions.getByName("kotlin")
-        return kotlin.javaClass.getMethod("getSourceSets").invoke(kotlin) as NamedDomainObjectContainer<Any>
+/**
+ * Adds generated directories to Kotlin source sets without linking against the Kotlin Gradle plugin, so this
+ * plugin never ships (or clashes with) its own copy of KGP classes. The JVM extension is reached through
+ * `getSourceSets()` / `getKotlin()`, the multiplatform extension through `getTargets()`, each target's
+ * `getPlatformType()` and `getCompilations()`, and each compilation's `getDefaultSourceSet()`.
+ */
+internal object KotlinSourceSetWiring {
+
+    private const val KOTLIN_JVM = "org.jetbrains.kotlin.jvm"
+    private const val KOTLIN_MULTIPLATFORM = "org.jetbrains.kotlin.multiplatform"
+
+    fun hasSupportedKotlinPlugin(project: Project): Boolean =
+        project.pluginManager.hasPlugin(KOTLIN_JVM) || project.pluginManager.hasPlugin(KOTLIN_MULTIPLATFORM)
+
+    fun wire(project: Project, generated: Provider<Directory>) {
+        project.pluginManager.withPlugin(KOTLIN_JVM) {
+            addToJvmMain(project, generated)
+        }
+        project.pluginManager.withPlugin(KOTLIN_MULTIPLATFORM) {
+            wireMultiplatform(project, project.extensions.getByName("kotlin"), generated)
+        }
     }
 
-    private fun kotlinDirectories(sourceSet: Any): SourceDirectorySet =
-        sourceSet.javaClass.getMethod("getKotlin").invoke(sourceSet) as SourceDirectorySet
+    private fun addToJvmMain(project: Project, generated: Provider<Directory>) {
+        var wired = false
+        sourceSets(project).all { sourceSet ->
+            if ((sourceSet as Named).name == "main") {
+                kotlinDirectories(sourceSet).srcDir(generated)
+                wired = true
+            }
+        }
+        failIfNotWired(project, { wired }, "Kotlin source set 'main' not found in ${project.path}.")
+    }
+
+    /**
+     * Adds [generated] to the default source set of the `main` compilation of every JVM target (platform type
+     * `jvm`) of the multiplatform extension [kotlin], including targets added later. Fails at the end of
+     * configuration when the project declares no JVM target.
+     */
+    fun wireMultiplatform(project: Project, kotlin: Any, generated: Provider<Directory>) {
+        var wired = false
+        targets(kotlin).all { target ->
+            if (platformTypeName(target) == "jvm") {
+                compilations(target).all { compilation ->
+                    if ((compilation as Named).name == "main") {
+                        kotlinDirectories(invoke(compilation, "getDefaultSourceSet")).srcDir(generated)
+                        wired = true
+                    }
+                }
+            }
+        }
+        failIfNotWired(
+            project, { wired },
+            "no JVM target found in ${project.path}. Generated code is JVM-only; Kotlin Multiplatform projects must " +
+                "declare a JVM target (jvm() or jvm(\"name\")).",
+        )
+    }
+
+    private fun failIfNotWired(project: Project, wired: () -> Boolean, message: String) {
+        if (project.state.executed) return
+        project.afterEvaluate {
+            if (!wired()) throw GradleException("kastor-gen: $message")
+        }
+    }
+
+    private fun invoke(target: Any, getter: String): Any = target.javaClass.getMethod(getter).invoke(target)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun sourceSets(project: Project): NamedDomainObjectContainer<Any> =
+        invoke(project.extensions.getByName("kotlin"), "getSourceSets") as NamedDomainObjectContainer<Any>
+
+    @Suppress("UNCHECKED_CAST")
+    private fun targets(kotlin: Any): NamedDomainObjectCollection<Any> =
+        invoke(kotlin, "getTargets") as NamedDomainObjectCollection<Any>
+
+    @Suppress("UNCHECKED_CAST")
+    private fun compilations(target: Any): NamedDomainObjectCollection<Any> =
+        invoke(target, "getCompilations") as NamedDomainObjectCollection<Any>
+
+    private fun platformTypeName(target: Any): String = (invoke(target, "getPlatformType") as Enum<*>).name
+
+    private fun kotlinDirectories(sourceSet: Any): SourceDirectorySet = invoke(sourceSet, "getKotlin") as SourceDirectorySet
 }

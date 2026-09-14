@@ -209,7 +209,7 @@ Values are **explicit triples only** unless a future phase adds optional reasoni
 | Consumer | Use |
 |----------|-----|
 | **LLM pipeline (§4)** | Hot-spot list + numbers embedded in prompts or capsule ordering. |
-| **`onto-qa` (future)** | Optional `metrics` subcommand that prints or writes JSON alongside `check`. |
+| **`onto-qa metrics`** | Available: the `metrics` subcommand prints or writes the metrics report (text/JSON/Turtle) alongside `check`; see [how-to-ontology-quality](../guides/how-to-ontology-quality.md). |
 | **`onto-quality`** | Optional dependency: metrics do not replace `QualityChecker`; they **complement** SHACL findings. |
 | **BOM / Maven** | Publish **`com.geoknoesis.kastor:onto-quality-metrics`** next to `onto-quality` when the module ships. |
 
@@ -257,7 +257,7 @@ Values are **explicit triples only** unless a future phase adds optional reasoni
 | **0** | Design freeze: taxonomy, JSON schema, evaluation plan (this doc). |
 | **0.5** | **`:tools:onto-quality-metrics`** — MVP report API, OWL + SKOS metric families (§7), unit tests on small Turtle fixtures. |
 | **1** | Offline CLI: ontology → capsules + prompt file + stub “model interface”; human runs model externally; **wire metrics report into capsule ordering**. |
-| **2** | **Koog**-backed wiring: configure cloud and/or local (e.g. Ollama) providers via Koog; ship `ModelingReviewReport`, merge into `onto-qa` as opt-in subcommand (`review` / `modeling-check` / `explain`); optional **`onto-qa metrics`**. |
+| **2** | **Koog**-backed wiring: configure cloud and/or local (e.g. Ollama) providers via Koog; ship `ModelingReviewReport`, merge into `onto-qa` as opt-in subcommand (`review` / `modeling-check` / `explain`); **`onto-qa metrics`** (shipped). |
 | **3** | RAG pack + calibration suite; tie hot-spot metrics to prioritization. |
 | **4** | Optional feedback loop: accepted/rejected findings logged to refine prompts and chunk boundaries (privacy permitting). |
 

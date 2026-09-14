@@ -32,28 +32,32 @@ enum class OntoQualityReasoningProfile {
     RDFS,
 
     /**
-     * Lightweight rule-based OWL via Jena's OWL rule reasoner (`ReasonerType.OWL_RL` binding).
-     * Close to, but not a complete implementation of, OWL 2 RL; not OWL 2 DL.
+     * Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO` binding): a fast, incomplete OWL fragment
+     * (RDFS plus property axioms, equality and simple class expressions). Faster and weaker than [OWL_RL].
      */
     OWL_MICRO,
 
     /** OWL 2 DL materialization via HermiT (slower; requires `:rdf:reasoning-hermit` on the classpath). */
     HERMIT,
+
+    /**
+     * Rule-based OWL via Jena's OWL rule reasoner (`ReasonerType.OWL_RL` binding).
+     * Close to, but not a complete implementation of, OWL 2 RL; not OWL 2 DL.
+     */
+    OWL_RL,
 }
 
 internal fun OntoQualityReasoningProfile.toReasonerConfigOrNull(): ReasonerConfig? =
     when (this) {
         OntoQualityReasoningProfile.NONE -> null
         OntoQualityReasoningProfile.RDFS -> ReasonerConfig.rdfs()
-        OntoQualityReasoningProfile.OWL_MICRO ->
-            ReasonerConfig(
-                reasonerType = ReasonerType.OWL_RL,
-            )
+        OntoQualityReasoningProfile.OWL_RL -> ReasonerConfig(reasonerType = ReasonerType.OWL_RL)
+        OntoQualityReasoningProfile.OWL_MICRO -> ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO)
         OntoQualityReasoningProfile.HERMIT -> ReasonerConfig.hermit()
     }
 
 /**
- * v0.4: expand a graph with optional RDFS / OWL-micro (Jena) or OWL DL (HermiT) before [QualityChecker.check].
+ * v0.4: expand a graph with optional RDFS / OWL RL rules (Jena) or OWL DL (HermiT) before [QualityChecker.check].
  */
 object OntoQualityReasoning {
     private val jena = JenaReasonerProvider()

@@ -110,18 +110,34 @@ class TermSemanticsRegressionTest {
     // --- Language tags ---
 
     @Test
-    fun `language tags are validated and normalised to lower case`() {
-        assertEquals("en-us", LangString("x", "en-US").lang)
+    fun `language tags are validated, preserved as given and compared case-insensitively`() {
+        val british = LangString("x", "en-GB")
+        assertEquals(british, LangString("x", "en-gb"))
+        assertEquals(british.hashCode(), LangString("x", "en-gb").hashCode())
+        assertEquals("en-GB", british.lang)
+        assertEquals("en-gb", british.normalizedLang)
+        assertEquals("\"x\"@en-GB", british.toString())
         assertEquals(LangString("x", "en-us"), LangString("x", "EN-US"))
-        assertEquals(LangString("x", "en-us").hashCode(), LangString("x", "EN-US").hashCode())
-        assertEquals("\"x\"@en-us", LangString("x", "en-US").toString())
-        assertThrows(IllegalArgumentException::class.java) { LangString("x", "") }
-        assertThrows(IllegalArgumentException::class.java) { LangString("x", "en US") }
-        assertThrows(IllegalArgumentException::class.java) { LangString("x", "en-") }
-        assertThrows(IllegalArgumentException::class.java) { LangString("x", "toolongtag") }
+        assertEquals("en-us", normalizeLanguageTag("EN-us"))
+
+        // Subtags are capped at 8 characters (BCP 47 well-formedness; W3C RDF 1.2 ntriples-langdir-bad-4).
+        assertEquals("abcdefgh", LangString("x", "abcdefgh").lang)
+        assertEquals("en-abcdefgh", LangString("x", "en-abcdefgh").lang)
+        assertEquals("abcdefgh", normalizeLanguageTag("ABCDEFGH"))
+        listOf("", "en US", "en-", "-en", "1en", "en_GB", "en--rtl", "e\"n", "\u00E9", "abcdefghi", "en-abcdefghijk", "cantbethislong").forEach { tag ->
+            assertThrows(IllegalArgumentException::class.java, { LangString("x", tag) }, tag)
+            assertThrows(IllegalArgumentException::class.java, { normalizeLanguageTag(tag) }, tag)
+        }
         assertThrows(IllegalArgumentException::class.java) { Literal("x", "e\"n") }
+
+        // Lexical form and direction still compare exactly.
+        assertNotEquals(LangString("x", "en"), LangString("X", "en"))
+        assertNotEquals(LangString("x", "en", Direction.LTR), LangString("x", "EN"))
+        assertEquals(LangString("x", "en", Direction.LTR), LangString("x", "EN", Direction.LTR))
         assertEquals(RDF.dirLangString, LangString("x", "ar", Direction.RTL).datatype)
-        assertEquals(LangString("x", "fr"), LangString("y", "FR").copy(lexical = "x"))
+        val copied = LangString("y", "FR").copy(lexical = "x")
+        assertEquals(LangString("x", "fr"), copied)
+        assertEquals("FR", copied.lang)
     }
 
     // --- toString escaping ---
@@ -159,7 +175,7 @@ class TermSemanticsRegressionTest {
             "http://example.org/a#b#c", // two fragments
             "1http://example.org/",   // scheme must start with a letter
             "ht_tp://example.org/",   // illegal scheme char
-            "http:",                  // nothing after scheme
+            // "http:" is NOT listed: scheme ":" path-empty is a valid absolute URI (RFC 3986 section 4.3).
             "relative/path",
             "",
         )

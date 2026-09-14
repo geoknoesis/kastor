@@ -30,6 +30,9 @@ public class OntologyFileReader(
     private val searchRoots: List<File> = emptyList(),
 ) {
 
+    /** Files (not class-path resources) read so far; KSP cannot track them, so the processor reports them. */
+    internal val resolvedFiles: MutableSet<File> = LinkedHashSet()
+
     private val shaclParser = ShaclParser(logger)
     private val contextParser = JsonLdContextParser(logger)
     private val ontologyExtractor = OntologyExtractor(logger)
@@ -98,6 +101,7 @@ public class OntologyFileReader(
         val tried = candidates(path, near)
         tried.firstOrNull { it.isFile }?.let {
             logger.info("Resolved $path to ${it.path}")
+            resolvedFiles += it.absoluteFile
             return it.inputStream()
         }
         javaClass.classLoader.getResourceAsStream(path)?.let { return it }

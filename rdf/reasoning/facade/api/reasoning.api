@@ -231,6 +231,7 @@ public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerType : java/lang/
 	public static final field HERMIT Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
 	public static final field OWL_DL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
 	public static final field OWL_EL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
+	public static final field OWL_MICRO Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
 	public static final field OWL_QL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
 	public static final field OWL_RL Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;
 	public static final field PELLET Lcom/geoknoesis/kastor/rdf/reasoning/ReasonerType;

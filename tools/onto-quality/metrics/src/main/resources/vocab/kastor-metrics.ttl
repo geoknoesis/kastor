@@ -100,7 +100,7 @@ kastor-m:moduleVersion
 kastor-m:depthOfInheritanceTree
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "depth of inheritance tree" ;
-    rdfs:comment   "Length (edges) of the longest acyclic path from a root class to a leaf class, over asserted named-IRI rdfs:subClassOf edges. Cycle participants are excluded from the path. Source: Duque-Ramos et al. 2014 (OQuaRE DITOnto)." ;
+    rdfs:comment   "Length (edges) of the longest acyclic path from owl:Thing to a leaf class, over asserted named-IRI rdfs:subClassOf edges; a root class has depth 1. Cycle participants are excluded from the path. Source: Duque-Ramos et al. 2014 (OQuaRE DITOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:integer ;
     skos:closeMatch kastor-m-oquare:DITOnto .
@@ -116,7 +116,7 @@ kastor-m:numberOfAncestorClasses
 kastor-m:numberOfChildren
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of children" ;
-    rdfs:comment   "Mean number of direct subclasses per non-root class. Formula: sum(|direct-subclasses(C)|) / (|classes| - |root classes|). Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
+    rdfs:comment   "Mean number of direct subclasses of the classes that have subclasses. Formula: sum(|direct-subclasses(C)|) / |classes with at least one direct subclass|. Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NOCOnto .
@@ -124,7 +124,7 @@ kastor-m:numberOfChildren
 kastor-m:couplingBetweenObjects
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "coupling between objects" ;
-    rdfs:comment   "Mean number of direct superclasses per non-root class. Formula: sum(|direct-superclasses(C)|) / (|classes| - |root classes|). Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
+    rdfs:comment   "Mean number of related classes per class: direct superclasses plus classes associated through a property (rdfs:range of a property whose rdfs:domain is C, or the class filler of a restriction on C). Formula: sum(|superclasses(C) union associated(C)|) / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:CBOOnto .
@@ -156,7 +156,7 @@ kastor-m:numberOfProperties
 kastor-m:lackOfCohesionInMethods
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "lack of cohesion in methods" ;
-    rdfs:comment   "Mean length of the root-to-leaf paths. Formula: sum(length(path)) / |paths| over all root-to-leaf paths of the acyclic asserted hierarchy. Source: Duque-Ramos et al. 2014 (OQuaRE LCOMOnto)." ;
+    rdfs:comment   "Mean length of the owl:Thing-to-leaf paths (the edge from owl:Thing counts; an isolated class is one path of length 1). Formula: sum(length(path)) / |paths| over all owl:Thing-to-leaf paths of the acyclic asserted hierarchy. Source: Duque-Ramos et al. 2014 (OQuaRE LCOMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:LCOMOnto .
@@ -212,7 +212,7 @@ kastor-m:propertiesRichness
 kastor-m:tangledness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "tangledness" ;
-    rdfs:comment   "Mean number of direct superclasses of the classes that have more than one direct superclass; 0 when there is no multiple inheritance. Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
+    rdfs:comment   "Mean number of direct superclasses of the classes that have more than one direct superclass; 0 when there is no multiple inheritance. Scored 0 -> 5, (0, 2] -> 4, (2, 4] -> 3, (4, 8] -> 2, > 8 -> 1. Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:TMOnto .
@@ -273,7 +273,7 @@ kastor-m:prefLabelCoverage
 kastor-m:definitionCoverage
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "definition coverage" ;
-    rdfs:comment   "Ratio of concepts with skos:definition or rdfs:comment to total concepts." ;
+    rdfs:comment   "Ratio of concepts with at least one skos:definition to total concepts (rdfs:comment does not count)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal .
 

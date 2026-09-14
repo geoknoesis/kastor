@@ -55,8 +55,8 @@ internal fun builtInPrefixes(): MutableMap<String, String> = mutableMapOf(
 abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> internal constructor() {
     private val collected = mutableListOf<RdfTriple>()
 
-    /** Read-only view of the triples collected so far. */
-    val triples: List<RdfTriple> get() = collected
+    /** Read-only live view of the triples collected so far; it cannot be modified, even through a cast. */
+    val triples: List<RdfTriple> get() = java.util.Collections.unmodifiableList(collected)
 
     /** Mutable sink for vocabulary DSL extensions in this module that emit triples directly. */
     internal val tripleSink: MutableList<RdfTriple> get() = collected
