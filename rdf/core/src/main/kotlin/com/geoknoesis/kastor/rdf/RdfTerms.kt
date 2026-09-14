@@ -311,8 +311,15 @@ value class BlankNode(val id: String) : RdfResource {
      * The N-Triples/Turtle/SPARQL form `_:label`.
      *
      * Ids are not restricted (stores such as Virtuoso report ids like `nodeID://b1`), so an id that is not a
-     * valid `BLANK_NODE_LABEL` is written as `ux_` followed by the lower-case hex of its UTF-8 bytes; valid ids
-     * that happen to start with `ux_` are encoded the same way, so distinct ids always get distinct labels.
+     * valid `BLANK_NODE_LABEL` is written as `ux_` followed by four lower-case hex digits per UTF-16 code unit.
+     * The encoding covers unpaired surrogates, so distinct invalid ids always get distinct labels.
+     *
+     * Valid ids, including ones that start with `ux_`, are written unchanged, so labels are stable across
+     * serialize/parse round trips and never grow. The one consequence: an id that is literally the encoded label of
+     * an invalid id (for example `ux_00610020` and `a b`) is written with the same label, which is what a parsed
+     * round trip of that invalid id produces anyway.
+     *
+     * Use this (not `"_:" + id`) whenever a blank node is written as N-Triples, Turtle or SPARQL text.
      */
     override fun toString(): String = "_:${blankNodeLabel(id)}"
 }
@@ -320,15 +327,15 @@ value class BlankNode(val id: String) : RdfResource {
 private const val ENCODED_BLANK_NODE_PREFIX = "ux_"
 private const val HEX_DIGITS = "0123456789abcdef"
 
-/** A `BLANK_NODE_LABEL` for [id]: the id itself when valid, otherwise an injective hex encoding. */
+/** A `BLANK_NODE_LABEL` for [id]: the id itself when valid, otherwise an injective UTF-16 hex encoding. */
 internal fun blankNodeLabel(id: String): String {
-    if (!id.startsWith(ENCODED_BLANK_NODE_PREFIX) && isValidBlankNodeLabel(id)) return id
-    val bytes = id.toByteArray(Charsets.UTF_8)
-    return buildString(ENCODED_BLANK_NODE_PREFIX.length + bytes.size * 2) {
+    if (isValidBlankNodeLabel(id)) return id
+    return buildString(ENCODED_BLANK_NODE_PREFIX.length + id.length * 4) {
         append(ENCODED_BLANK_NODE_PREFIX)
-        for (b in bytes) {
-            val v = b.toInt() and 0xFF
-            append(HEX_DIGITS[v shr 4]).append(HEX_DIGITS[v and 0xF])
+        for (unit in id) {
+            val v = unit.code
+            append(HEX_DIGITS[(v shr 12) and 0xF]).append(HEX_DIGITS[(v shr 8) and 0xF])
+                .append(HEX_DIGITS[(v shr 4) and 0xF]).append(HEX_DIGITS[v and 0xF])
         }
     }
 }
