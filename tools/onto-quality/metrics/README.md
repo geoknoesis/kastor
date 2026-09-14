@@ -34,19 +34,24 @@ named classes; `Root` = classes without a named (non-cycle) superclass;
 `Sup_C` / `Sub_C` = direct named superclasses / subclasses;
 `|SubClassOf|` = Σ|Sup_C|; `P_C` = declared object/datatype properties
 *used* by C (`rdfs:domain C` or an `owl:Restriction` on C, each pair
-counted once); paths run root → leaf over the acyclic hierarchy (cycle
-participants are excluded and reported separately).
+counted once); `Assoc_C` = named classes associated with C through a
+property (`rdfs:range` of a property whose `rdfs:domain` is C, or the
+`owl:someValuesFrom` / `owl:allValuesFrom` / `owl:onClass` filler of a
+restriction on C). Paths run from **owl:Thing** to a leaf over the acyclic
+hierarchy: owl:Thing has depth 0, every root has depth 1, and an isolated
+class (no superclass, no subclass) is one path of length 1. Cycle
+participants are excluded and reported separately.
 
 | Metric | Formula |
 |--------|---------|
-| DITOnto | longest root-to-leaf path (edges) |
+| DITOnto | longest owl:Thing-to-leaf path (edges); depth(Root) = 1 |
 | NACOnto | Σ\|Sup_leaf\| / \|leaves\| |
-| NOCOnto | Σ\|Sub_C\| / (\|C\| − \|Root\|) |
-| CBOOnto | Σ\|Sup_C\| / (\|C\| − \|Root\|) |
+| NOCOnto | Σ\|Sub_C\| / \|{C : Sub_C ≠ ∅}\| (fan-out of classes that have subclasses) |
+| CBOOnto | Σ\|Sup_C ∪ Assoc_C\| / \|C\| (related classes per class) |
 | WMCOnto | Σ(\|P_C\| + \|Sub_C\|) / \|C\| |
 | RFCOnto | Σ(\|P_C\| + \|Sup_C\|) / (\|C\| − \|Root\|) |
 | NOMOnto | Σ\|P_C\| / \|C\| |
-| LCOMOnto | Σ length(path) / \|paths\| (mean root-to-leaf path length) |
+| LCOMOnto | Σ length(path) / \|paths\| (mean owl:Thing-to-leaf path length) |
 | RROnto | Σ\|P_C\| / (\|SubClassOf\| + Σ\|P_C\|) — rdf:type, annotation and import triples are not relationships |
 | INROnto | \|SubClassOf\| / \|C\| |
 | AROnto | datatype-property `rdfs:domain` assertions on named classes / \|C\| |
@@ -56,12 +61,23 @@ participants are excluded and reported separately).
 | TMOnto | mean number of direct superclasses of classes with more than one direct superclass; 0 without multiple inheritance |
 
 Richness metrics are scored with the OQuaRE percentage bands (> 80 % → 5);
-per-class averages above 1 fall into the top band. Path counts and path
+per-class averages above 1 fall into the top band. TMOnto deviates from the
+published band (≤ 2 → 5), which could never see tangling because TMOnto is
+≥ 2 whenever a class has several parents: 0 → 5, (0, 2] → 4, (2, 4] → 3,
+(4, 8] → 2, > 8 → 1. Path counts and path
 lengths are computed with a memoized, iterative pass, so very deep
 (50k-class) or heavily tangled (2^40-path) hierarchies are handled
 without recursion or overflow.
 
 **Changed in this release** (previous values are not comparable):
+DITOnto and LCOMOnto were measured from root classes (depth 0) instead of
+owl:Thing, so both are now one higher; NOCOnto and CBOOnto were the same
+number (both Σ subclass edges / non-root classes) and now measure fan-out
+and coupling respectively; TMOnto scored a diamond like an untangled
+hierarchy; SKOS `definitionCoverage` counted `rdfs:comment`; VoID
+`distinctObjectCount` merged literals with the same lexical form but a
+different datatype or language; `MetricsConfig.useInferredGraph` is
+deprecated (it never had an effect). Earlier release:
 LCOMOnto was per-leaf max depth / paths; RROnto/INROnto counted every
 IRI-to-IRI triple as a relationship; NOC/CBO divided by `|C| − 1`;
 RFCOnto omitted superclasses; CROnto was the fraction of classes with

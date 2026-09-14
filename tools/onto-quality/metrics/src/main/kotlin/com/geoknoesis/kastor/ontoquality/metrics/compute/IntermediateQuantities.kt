@@ -30,11 +30,18 @@ internal data class IntermediateQuantities(
     val subClassEdgeCount: Long,
     /** Sum of |P_C| over named classes (property usages; OQuaRE RROnto numerator). */
     val propertyUsageCount: Long,
+    /** Depth below owl:Thing (roots are 1; cycle participants 0), capped at the configured maximum. */
     val ditDepthOf: Map<String, Int>,
-    /** Number of root-to-leaf paths over the acyclic part of the hierarchy; saturates at [Long.MAX_VALUE]. */
+    /** Number of owl:Thing-to-leaf paths over the acyclic part of the hierarchy; saturates at [Long.MAX_VALUE]. */
     val pathsFromThingToLeaves: Long,
     /** Same as [pathsFromThingToLeaves] as a double (does not saturate for very tangled hierarchies). */
     val pathCount: Double,
-    /** Sum of the edge lengths of all root-to-leaf paths (LCOMOnto numerator). */
+    /** Sum of the edge lengths of all owl:Thing-to-leaf paths, counting the owl:Thing edge (LCOMOnto numerator). */
     val totalPathLength: Double,
+    /**
+     * CBOOnto related classes per class: direct named superclasses plus classes associated through a property
+     * (named-class `rdfs:range` of a property whose `rdfs:domain` is C, or the named-class filler of a
+     * restriction on C). Classes with no related class are absent.
+     */
+    val couplingsOf: Map<String, Set<String>> = emptyMap(),
 )

@@ -44,8 +44,9 @@ internal fun computeImportance(
     val incomingSignal = entities.associateWith { ln(1.0 + incoming.getValue(it).toDouble()) }
     val shallowSignal =
         entities.associateWith {
+            // Depth is measured from owl:Thing (roots = 1; cycle participants 0), so roots score 1.
             val d = depthBy[it] ?: 0
-            1.0 / (1.0 + d)
+            1.0 / maxOf(1, d)
         }
     val labelSignal = entities.associateWith { if (it in labels) 1.0 else 0.0 }
 

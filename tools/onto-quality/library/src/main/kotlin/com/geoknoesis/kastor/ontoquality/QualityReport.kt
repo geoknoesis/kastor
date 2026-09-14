@@ -2,6 +2,9 @@ package com.geoknoesis.kastor.ontoquality
 
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeCatalog
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeMetadata
+import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
+import com.geoknoesis.kastor.ontoquality.explanation.escapeMarkdownInline
+import com.geoknoesis.kastor.ontoquality.explanation.sanitizeTerminalText
 import com.geoknoesis.kastor.ontoquality.integration.FindingPrioritizer
 import com.geoknoesis.kastor.ontoquality.integration.MetricsContext
 import com.geoknoesis.kastor.rdf.Iri
@@ -47,7 +50,7 @@ data class QualityReport(
             if (items.isEmpty()) continue
             appendLine("## ${cat.name.replace('_', ' ')} (${items.size})")
             for (f in items) {
-                appendLine(" - [${f.tier}] ${f.violation.severity}: ${f.violation.message}")
+                appendLine(" - [${f.tier}] ${f.violation.severity}: ${sanitizeTerminalText(f.violation.message)}")
                 f.pitfall?.let { appendLine("   Pitfall: ${it.shortLabel()}") }
             }
             appendLine()
@@ -62,6 +65,10 @@ data class QualityReport(
 
     /**
      * Human-readable Markdown report (default options: emoji severity markers, top-10 when metrics are on).
+     *
+     * Ontology-derived text (SHACL messages, which interpolate labels, and focus / shape IRIs) is untrusted and
+     * rendered as escaped inline Markdown, like LLM text in [ExplainedQualityReport]: links, images, raw HTML,
+     * headings and emphasis cannot form. The metrics summary and hints are tool-generated and kept as Markdown.
      *
      * Without [metricsContext], category sections list **VIOLATION** / **ERROR** rows only (executive-style digest).
      * With metrics, [topFindings] may surface warnings and info; per-category sections list **all** finding rows so
@@ -89,9 +96,9 @@ data class QualityReport(
             val topN = options.maxTopFindings.coerceAtLeast(0)
             for (f in findings.take(topN)) {
                 val focusIri = (f.violation.focusNode as? Iri)?.value
-                val focusLabel = focusIri?.let(::markdownShortIri) ?: "(non-IRI focus)"
+                val focusLabel = focusIri?.let { escapeMarkdownInline(markdownShortIri(it)) } ?: "(non-IRI focus)"
                 val marker = markdownSeverityMarker(f.violation.severity, options.useAsciiSeverityMarkers)
-                appendLine("### $marker $focusLabel — ${markdownHeadline(f.violation.message)}")
+                appendLine("### $marker $focusLabel — ${escapeMarkdownInline(markdownHeadline(f.violation.message))}")
                 val imp = focusIri?.let { ctx.entityImportance[it] ?: MetricsContext.DEFAULT_IMPORTANCE }
                     ?: MetricsContext.DEFAULT_IMPORTANCE
                 val hintParts = mutableListOf<String>()
@@ -100,8 +107,9 @@ data class QualityReport(
                 appendLine("*${hintParts.joinToString("; ")}*")
                 appendLine()
                 val pit = f.pitfall?.shortLabel()?.let { " [$it]" } ?: ""
-                appendLine("${f.violation.message.trimEnd()}$pit")
-                val shape = f.violation.shapeUri?.let(::markdownShortIri)?.let { "Source shape: **$it**" }
+                appendLine("${escapeMarkdownInline(f.violation.message.trimEnd())}$pit")
+                val shape =
+                    f.violation.shapeUri?.let { "Source shape: **${escapeMarkdownInline(markdownShortIri(it))}**" }
                 if (shape != null) {
                     appendLine(shape)
                 }
@@ -131,7 +139,7 @@ data class QualityReport(
             appendLine()
             for (f in items) {
                 val pit = f.pitfall?.shortLabel()?.let { " — **$it**" } ?: ""
-                appendLine("- ${f.violation.message}$pit")
+                appendLine("- ${escapeMarkdownInline(f.violation.message)}$pit")
             }
             appendLine()
         }

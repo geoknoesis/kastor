@@ -22,9 +22,12 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.ontoquality.embed.EnrichmentVocabulary
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
 import com.geoknoesis.kastor.ontoquality.embed.SemanticEnricher
-import com.geoknoesis.kastor.rdf.Rdf
+import com.geoknoesis.kastor.ontoquality.embed.SimilarityLimitsPolicy
+import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededException
+import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
@@ -36,9 +39,10 @@ import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import com.geoknoesis.kastor.rdf.shacl.toShaclValidationReportRdf
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.UsageError
-import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.groups.provideDelegate
@@ -49,6 +53,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.double
 import com.github.ajalt.clikt.parameters.types.int
+import com.github.ajalt.clikt.parameters.types.long
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.ajalt.clikt.parameters.types.restrictTo
 import kotlinx.coroutines.runBlocking
@@ -63,18 +68,41 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
+import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    ontoQualityApp().main(args)
+    exitProcess(runOntoQa(args.toList()))
 }
 
 private val logger = LoggerFactory.getLogger("onto-qa")
 
+/** Exit status: success, no findings at or above `--severity`. */
+internal const val EXIT_OK = 0
+
 /** Exit status when findings reach `--severity`. */
 internal const val EXIT_FINDINGS = 1
 
+/** Exit status when the input ontology cannot be parsed in the selected RDF syntax. */
+internal const val EXIT_INPUT_ERROR = 2
+
 /** Exit status when `--fail-on-explain-error` is set and LLM explanations failed (fully or partially). */
 internal const val EXIT_EXPLAIN_ERROR = 3
+
+/** Exit status for invalid command-line usage or inconsistent configuration (nothing was run). */
+internal const val EXIT_USAGE = 4
+
+/** Exit status for runtime failures: network / model download, model loading, similarity or LLM budgets, I/O, internal errors. */
+internal const val EXIT_RUNTIME_ERROR = 5
+
+private const val EXIT_STATUS_HELP =
+    "Exit status: 0 success; 1 findings at or above --severity; 2 the ontology could not be parsed; " +
+        "3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
+        "5 runtime error (model download or loading, similarity or LLM budget, I/O, internal). " +
+        "Use onto-qa --debug <command> for stack traces."
+
+private const val SIMILARITY_BUDGET_HINT =
+    "Re-run with a larger --similarity-max-work (distance evaluations) or --similarity-timeout (seconds), " +
+        "or use --similarity-mode approximate for large vocabularies."
 
 /** Upper bound for `--explain-max` (LLM cost / rate-limit guard). */
 internal const val MAX_EXPLAIN_FINDINGS = 500
@@ -97,7 +125,7 @@ internal const val LLM_EXPLAIN_ENV = "KASTOR_ONTO_QUALITY_LLM"
 
 private val FORMAT_CHOICES = arrayOf("text", "markdown", "json", "turtle")
 private val SEVERITY_CHOICES = arrayOf("violation", "warning", "info")
-private val REASONER_CHOICES = arrayOf("none", "off", "rdfs", "owl-micro", "owl_micro", "hermit")
+private val REASONER_CHOICES = arrayOf("none", "off", "rdfs", "owl-rl", "owl_rl", "owl-micro", "owl_micro", "hermit")
 private val PROVIDER_CHOICES = arrayOf("openai", "anthropic", "ollama")
 private val PRESET_CHOICES =
     arrayOf("auto", "gpt4o-mini", "gpt-4o-mini", "gpt4o", "gpt-4o", "sonnet", "sonnet-4-5", "claude-sonnet-4-5", "haiku", "haiku-4-5", "llama3.2", "llama-3.2")
@@ -115,7 +143,16 @@ internal data class EmbeddingCliOptions(
     val displayName: String?,
     val tokenizerNote: String?,
     val threshold: Double,
+    /** `--similarity-max-work`; null scales the budget with the number of labelled entities. */
+    val similarityMaxWork: Long? = null,
+    /** `--similarity-timeout`; null scales the deadline with the number of labelled entities. */
+    val similarityTimeout: Duration? = null,
+    val similarityMode: SimilaritySearchMode = SimilaritySearchMode.Exact,
 )
+
+/** Scaled similarity limits with the CLI overrides applied. */
+internal fun EmbeddingCliOptions.similarityLimitsPolicy(): SimilarityLimitsPolicy =
+    SimilarityLimitsPolicy.scaled(similarityMaxWork, similarityTimeout)
 
 /** Semantic enrichment step, owning any native resources until [close]. */
 internal interface PipelineEnricher : AutoCloseable {
@@ -131,7 +168,7 @@ internal object OnnxPipelineEnricherFactory : PipelineEnricherFactory {
     override fun open(options: EmbeddingCliOptions): PipelineEnricher {
         val model = loadOnnxEmbeddingModel(options)
         return try {
-            val enricher = SemanticEnricher(model = model, threshold = options.threshold)
+            val enricher = SemanticEnricher(model, options.threshold, options.similarityLimitsPolicy(), options.similarityMode)
             object : PipelineEnricher {
                 override fun enrich(ontology: RdfGraph): RdfGraph = enricher.enrich(ontology)
 
@@ -161,9 +198,80 @@ internal fun ontoQualityApp(environment: CliEnvironment = CliEnvironment()): Cli
         MetricsCommand(),
     )
 
-private class OntoQualityApp : CliktCommand(name = "onto-qa") {
-    override fun run() = Unit
+/**
+ * Runs `onto-qa` and returns the process exit status (see [EXIT_STATUS_HELP]) instead of exiting.
+ *
+ * Every failure path is mapped explicitly: Clikt usage errors (unknown option, bad value, missing argument, …) →
+ * [EXIT_USAGE]; errors raised by commands carry their own status; anything that escapes → [EXIT_RUNTIME_ERROR] with a
+ * one-line message. Stack traces are printed only with `onto-qa --debug`.
+ */
+internal fun runOntoQa(
+    argv: List<String>,
+    environment: CliEnvironment = CliEnvironment(),
+    err: (String) -> Unit = { System.err.println(it) },
+): Int {
+    val debug = argv.takeWhile { it != "--" }.contains("--debug")
+    val app = ontoQualityApp(environment)
+    return try {
+        app.parse(argv)
+        EXIT_OK
+    } catch (e: CliktError) {
+        app.getFormattedHelp(e)?.let { if (e.printError) err(it) else println(it) }
+        if (debug) e.cause?.let { err(it.stackTraceToString()) }
+        exitStatusFor(e)
+    } catch (e: Throwable) {
+        err("onto-qa: internal error: ${describeFailure(e)}")
+        if (debug) err(e.stackTraceToString())
+        EXIT_RUNTIME_ERROR
+    }
 }
+
+/** Clikt raises usage problems as [UsageError] (or help-on-error) with status 1; they map to [EXIT_USAGE]. */
+internal fun exitStatusFor(e: CliktError): Int =
+    when {
+        e is ProgramResult -> e.statusCode
+        e is UsageError -> EXIT_USAGE
+        e.statusCode == 1 -> EXIT_USAGE
+        else -> e.statusCode
+    }
+
+private fun describeFailure(e: Throwable): String = "${e.javaClass.simpleName}: ${e.message ?: "(no message)"}"
+
+private class OntoQualityApp : CliktCommand(name = "onto-qa") {
+    private val debug by option("--debug", help = "Print stack traces for runtime errors").flag(default = false)
+
+    override fun help(context: Context): String = "Ontology quality checks, OQuaRE metrics and semantic enrichment."
+
+    override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
+
+    override fun run() {
+        if (debug) logger.debug("onto-qa debug output enabled")
+    }
+}
+
+/**
+ * Base for subcommands: [execute] runs under a guard that turns unexpected exceptions into [EXIT_RUNTIME_ERROR]
+ * with a concise message (the cause is kept for `--debug`), so no failure falls back to the JVM's status 1.
+ */
+private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
+    override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
+
+    abstract fun execute()
+
+    final override fun run() {
+        try {
+            execute()
+        } catch (e: CliktError) {
+            throw e
+        } catch (e: SimilaritySearchBudgetExceededException) {
+            throw CliktError("Semantic enrichment failed: ${e.message}. $SIMILARITY_BUDGET_HINT", e, EXIT_RUNTIME_ERROR)
+        } catch (e: Exception) {
+            throw CliktError("onto-qa $commandName failed: ${describeFailure(e)}", e, EXIT_RUNTIME_ERROR)
+        }
+    }
+}
+
+private fun usageError(message: String): UsageError = UsageError(message, statusCode = EXIT_USAGE)
 
 /** Picks the RDF syntax from `--input-format` or the file extension. */
 internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
@@ -176,7 +284,7 @@ internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
                 "turtle", "ttl" -> RdfFormat.TURTLE
                 else -> null
             }
-        return normalized ?: throw UsageError("Unsupported --input-format $override (expected $INPUT_FORMAT_HELP)")
+        return normalized ?: throw usageError("Unsupported --input-format $override (expected $INPUT_FORMAT_HELP)")
     }
     val name = path.fileName?.toString()?.lowercase().orEmpty()
     return when {
@@ -187,24 +295,49 @@ internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
     }
 }
 
-private fun parseOntology(path: Path, format: RdfFormat): RdfGraph =
-    try {
-        Rdf.parseFromFile(path.toString(), format)
+/**
+ * Parses [path] with the file's URI as base IRI, so relative references (`<>`, `<#Foo>`, `rdf:about="#Foo"`)
+ * resolve against the document instead of being rejected. Uses the provider-level
+ * `RdfProvider.parseGraph(stream, format, baseIri)` overload, trying providers in registry priority order.
+ */
+internal fun parseOntology(path: Path, format: RdfFormat): RdfGraph {
+    val baseIri = path.toAbsolutePath().normalize().toUri().toString()
+    return try {
+        val providers = RdfProviderRegistry.discoverProviders().filter { it.supportsInputFormat(format.formatName) }
+        var parsed: RdfGraph? = null
+        for (provider in providers) {
+            try {
+                parsed = Files.newInputStream(path).use { provider.parseGraph(it, format.formatName, baseIri) }
+                break
+            } catch (_: UnsupportedOperationException) {
+                continue
+            }
+        }
+        parsed ?: throw IllegalStateException("no RDF provider can parse ${format.formatName}")
     } catch (e: Exception) {
-        throw CliktError("Failed to parse $path as ${format.formatName}: ${e.message}", cause = e, statusCode = 2)
+        throw CliktError("Failed to parse $path as ${format.formatName}: ${e.message}", e, EXIT_INPUT_ERROR)
     }
+}
 
-private class MetricsCommand : CliktCommand(name = "metrics") {
+private class MetricsCommand : OntoQaCommand(name = "metrics") {
     private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val formatOpt by option("--format", help = "text | markdown | json | turtle").choice(*FORMAT_CHOICES, ignoreCase = true).default("text")
     private val outputOpt by option("--output", help = "Write output to this file instead of stdout").path()
-    private val includeOpt by option("--include", help = "owl | skos | graph | all").choice("owl", "skos", "graph", "all", ignoreCase = true).default("all")
+    private val includeOpt by
+        option("--include", help = "owl | skos | graph | all (text and markdown only; json and turtle always include all)")
+            .choice("owl", "skos", "graph", "all", ignoreCase = true)
+            .default("all")
     private val topNOpt by option("--top-n").int().restrictTo(min = 0).default(20)
     private val maxDepthOpt by option("--max-depth").int().restrictTo(min = 1).default(50)
     private val noScoresOpt by option("--no-scores", help = "Disable OQuaRE 1–5 scores (raw metrics only)").flag(default = false)
 
-    override fun run() {
+    override fun execute() {
+        val format = formatOpt.lowercase()
+        val include = includeOpt.lowercase()
+        if (format in setOf("json", "turtle") && include != "all") {
+            throw usageError("--include $includeOpt is only supported with --format text or markdown ($format output always contains every section)")
+        }
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt))
         val cfg =
             MetricsConfig(
@@ -213,12 +346,7 @@ private class MetricsCommand : CliktCommand(name = "metrics") {
                 maxDepthCap = maxDepthOpt,
             )
         val report = VocabularyMetrics.compute(graph, cfg)
-        val text =
-            emitMetricsCliReport(
-                report,
-                formatOpt.lowercase(),
-                includeOpt.lowercase(),
-            )
+        val text = emitMetricsCliReport(report, format, include)
         writeOutput(text, outputOpt) { echo(it) }
     }
 }
@@ -227,30 +355,28 @@ private fun emitMetricsCliReport(
     report: VocabularyMetricsReport,
     format: String,
     include: String,
-): String {
-    val inc = include.lowercase()
-    return when (format) {
+): String =
+    when (format) {
         "json" -> report.toJson()
         "turtle" -> report.toTurtle()
         "text" ->
-            when (inc) {
+            when (include) {
                 "all" -> report.describeText()
                 "graph" -> sliceReport(report.describeText(), "[Graph]", "[Graph]", "[OQuaRE]", "\n")
                 "owl" -> sliceReport(report.describeText(), "[Graph]", "[OQuaRE]", "[SKOS]", "\n")
                 "skos" -> sliceReport(report.describeText(), "[Graph]", "[SKOS]", null, "\n")
-                else -> throw UsageError("Unknown --include $include (expected owl|skos|graph|all)")
+                else -> throw usageError("Unknown --include $include (expected owl|skos|graph|all)")
             }
         "markdown" ->
-            when (inc) {
+            when (include) {
                 "all" -> report.describeMarkdown()
                 "graph" -> sliceReport(report.describeMarkdown(), MD_GRAPH, MD_GRAPH, "### Structural", "\n\n")
                 "owl" -> sliceReport(report.describeMarkdown(), MD_GRAPH, "### Structural", "## SKOS extensions", "\n\n")
                 "skos" -> sliceReport(report.describeMarkdown(), MD_GRAPH, "## SKOS extensions", null, "\n\n")
-                else -> throw UsageError("Unknown --include $include (expected owl|skos|graph|all)")
+                else -> throw usageError("Unknown --include $include (expected owl|skos|graph|all)")
             }
-        else -> throw UsageError("Unknown --format $format (expected text|markdown|json|turtle)")
+        else -> throw usageError("Unknown --format $format (expected text|markdown|json|turtle)")
     }
-}
 
 private const val MD_GRAPH = "## VoID-style graph counts"
 
@@ -263,16 +389,27 @@ internal fun sliceReport(full: String, headerEnd: String, start: String, end: St
     return full.substring(0, headerIndex).trimEnd() + separator + full.substring(i0, i1).trimEnd()
 }
 
-private class EnrichCommand(private val environment: CliEnvironment) : CliktCommand(name = "enrich") {
+/** Opens the enrichment step; model download or loading failures are runtime errors, not usage errors. */
+private fun openEnricher(environment: CliEnvironment, options: EmbeddingCliOptions): PipelineEnricher =
+    try {
+        environment.enricherFactory.open(options)
+    } catch (e: CliktError) {
+        throw e
+    } catch (e: Exception) {
+        throw CliktError("Failed to load embedding model ${options.modelId}: ${describeFailure(e)}", e, EXIT_RUNTIME_ERROR)
+    }
+
+private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "enrich") {
     private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
     private val outputOpt by option("--output", help = "Output Turtle path").path()
 
-    override fun run() {
+    override fun execute() {
+        val options = embedding.toOptions()
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt))
-        environment.enricherFactory.open(embedding.toOptions()).use { enricher ->
-            echo("Embedding and building similarity index (threshold=${embedding.threshold})…", err = true)
+        openEnricher(environment, options).use { enricher ->
+            echo("Embedding and building similarity index (threshold=${embedding.threshold}, mode=${options.similarityMode.label})…", err = true)
             val enriched = enricher.enrich(graph)
 
             val out =
@@ -289,7 +426,7 @@ private class EnrichCommand(private val environment: CliEnvironment) : CliktComm
     }
 }
 
-/** Embedding options shared by `enrich` and `pipeline`; validated by Clikt before any model is loaded. */
+/** Embedding options shared by `enrich` and `pipeline`; validated before any model is loaded. */
 private class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.OptionGroup() {
     val model by
         option(
@@ -310,9 +447,29 @@ private class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.Op
     val displayName by option("--model-display-name", help = "Provenance id for the model (default: ONNX file stem)")
     val tokenizerNote by
         option("--tokenizer-note", help = "Provenance id for tokenizer, e.g. HuggingFace model id (default: display name)")
+    val similarityMaxWork by
+        option(
+            "--similarity-max-work",
+            help = "Max distance evaluations for the similarity search (default: scaled to the number of labelled entities, at least 50000000)",
+        ).long().restrictTo(min = 1L)
+    val similarityTimeout by
+        option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, at least 30)")
+            .int()
+            .restrictTo(1..86_400)
+    val similarityMode by
+        option(
+            "--similarity-mode",
+            help = "exact | approximate — approximate uses random-projection LSH: much faster on large vocabularies, " +
+                "but may miss some similar pairs (recorded in enrichment provenance)",
+        ).choice("exact", "approximate", ignoreCase = true).default("exact")
 
-    fun toOptions() =
-        EmbeddingCliOptions(
+    fun toOptions(): EmbeddingCliOptions {
+        try {
+            OnnxEmbeddingModel.validateCliOptions(model, onnx, tokenizer, embeddingDim, maxTokens)
+        } catch (e: IllegalArgumentException) {
+            throw usageError(e.message ?: "Invalid embedding options")
+        }
+        return EmbeddingCliOptions(
             modelId = model,
             cacheDir = cacheDir,
             onnx = onnx,
@@ -322,7 +479,12 @@ private class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.Op
             displayName = displayName,
             tokenizerNote = tokenizerNote,
             threshold = threshold,
+            similarityMaxWork = similarityMaxWork,
+            similarityTimeout = similarityTimeout?.let { Duration.ofSeconds(it.toLong()) },
+            similarityMode =
+                if (similarityMode.equals("approximate", ignoreCase = true)) SimilaritySearchMode.ApproximateLsh() else SimilaritySearchMode.Exact,
         )
+    }
 }
 
 /** Report / LLM options shared by `check` and `pipeline`. */
@@ -330,7 +492,7 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
     val catalog by option("--catalog", help = CATALOG_HELP).choice(*CATALOG_NAMES.toTypedArray(), ignoreCase = true).default("all")
     val format by option("--format", help = "text | markdown | json | turtle").choice(*FORMAT_CHOICES, ignoreCase = true).default("text")
     val severity by
-        option("--severity", help = "violation | warning | info — exit $EXIT_FINDINGS when findings reach this level")
+        option("--severity", help = "violation | warning | info — exit $EXIT_FINDINGS when any finding is at or above this level")
             .choice(*SEVERITY_CHOICES, ignoreCase = true)
             .default("violation")
     val output by option("--output", help = "Write output to this file instead of stdout").path()
@@ -361,11 +523,21 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
         option("--explain-min-severity", help = "violation | warning | info").choice(*SEVERITY_CHOICES, ignoreCase = true).default("warning")
     val llmTimeoutSeconds by
         option("--llm-timeout", help = "Per-request LLM timeout in seconds (default 60)").int().restrictTo(1..3600).default(60)
-    val llmRetries by option("--llm-retries", help = "Retries per failed LLM request (0–10, default 2)").int().restrictTo(0..10).default(2)
+    val llmRetries by
+        option(
+            "--llm-retries",
+            help = "Retries per LLM request for timeouts, HTTP 408/429/5xx and connection errors (0–10, default 2); other errors are not retried",
+        ).int().restrictTo(0..10).default(2)
+    val llmMaxDurationSeconds by
+        option(
+            "--llm-max-duration",
+            help = "Upper bound in seconds for all LLM explanation requests, retries and waits (default 600); unfinished batches are reported as failures",
+        ).int().restrictTo(1..86_400).default(600)
     val reasoner by
         option(
             "--reasoner",
-            help = "none | rdfs | owl-micro | hermit — materialize inferences before SHACL (v0.4; hermit = OWL DL via HermiT)",
+            help = "none | rdfs | owl-rl | hermit — materialize inferences before SHACL (owl-rl = Jena OWL rule reasoner; " +
+                "hermit = OWL DL via HermiT; owl-micro is a deprecated alias of owl-rl)",
         ).choice(*REASONER_CHOICES, ignoreCase = true).default("none")
     val markdownAscii by
         option(
@@ -388,11 +560,12 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
                 minSeverity = explainMinViolationSeverity(explainMinSeverity),
                 requestTimeout = Duration.ofSeconds(llmTimeoutSeconds.toLong()),
                 retries = llmRetries,
+                maxTotalDuration = Duration.ofSeconds(llmMaxDurationSeconds.toLong()),
             )
         }
 }
 
-private class PipelineCommand(private val environment: CliEnvironment) : CliktCommand(name = "pipeline") {
+private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline") {
     private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
@@ -401,16 +574,17 @@ private class PipelineCommand(private val environment: CliEnvironment) : CliktCo
         option("--keep-intermediate", help = "Write the enriched graph to a temporary Turtle file and keep it")
             .flag(default = false)
 
-    override fun run() {
-        // Every option is validated by Clikt at parse time; resolve the remaining inputs before loading a model.
+    override fun execute() {
+        // Resolve and validate every input before loading a model.
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
-        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
+        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner) { echo(it, err = true) }
         val llm = reportOptions.explainCli()
+        val embeddingOptions = embedding.toOptions()
         val ontology = parseOntology(ontologyArg, format)
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), withMetricsProvider = false)
 
         val exitCode =
-            environment.enricherFactory.open(embedding.toOptions()).use { enricher ->
+            openEnricher(environment, embeddingOptions).use { enricher ->
                 echo("Pipeline: enriching…", err = true)
                 val enriched = enricher.enrich(ontology)
 
@@ -449,11 +623,11 @@ private class PipelineCommand(private val environment: CliEnvironment) : CliktCo
                 exitStatus(report, reportOptions, outcome)
             }
         // Resources are closed before the process status is reported.
-        if (exitCode != 0) throw ProgramResult(exitCode)
+        if (exitCode != EXIT_OK) throw ProgramResult(exitCode)
     }
 }
 
-private class CheckCommand(private val environment: CliEnvironment) : CliktCommand(name = "check") {
+private class CheckCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "check") {
     private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val reportOptions by ReportOptionGroup()
@@ -466,9 +640,9 @@ private class CheckCommand(private val environment: CliEnvironment) : CliktComma
         option("--no-metrics", help = "Disable metrics integration even if --with-metrics was passed.")
             .flag(default = false)
 
-    override fun run() {
+    override fun execute() {
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
-        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
+        val reasoningProfile = parseReasonerProfile(reportOptions.reasoner) { echo(it, err = true) }
         val llm = reportOptions.explainCli()
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
@@ -499,7 +673,7 @@ private class CheckCommand(private val environment: CliEnvironment) : CliktComma
             MarkdownReportOptions(useAsciiSeverityMarkers = reportOptions.markdownAscii),
         ) { echo(it) }
         val exitCode = exitStatus(report, reportOptions, outcome)
-        if (exitCode != 0) throw ProgramResult(exitCode)
+        if (exitCode != EXIT_OK) throw ProgramResult(exitCode)
     }
 }
 
@@ -508,21 +682,31 @@ private fun exitStatus(report: QualityReport, options: ReportOptionGroup, outcom
     when {
         shouldFail(report, severityThreshold(options.severity)) -> EXIT_FINDINGS
         options.failOnExplainError && outcome.failed -> EXIT_EXPLAIN_ERROR
-        else -> 0
+        else -> EXIT_OK
     }
 
-private fun parseReasonerProfile(s: String): OntoQualityReasoningProfile =
+/** `owl-micro` is accepted for compatibility: it always ran Jena's OWL rule reasoner, now named `owl-rl`. */
+private fun parseReasonerProfile(s: String, warn: (String) -> Unit): OntoQualityReasoningProfile =
     when (s.lowercase()) {
         "none",
         "off",
         -> OntoQualityReasoningProfile.NONE
         "rdfs" -> OntoQualityReasoningProfile.RDFS
+        "owl-rl",
+        "owl_rl",
+        -> OntoQualityReasoningProfile.OWL_RL
         "owl-micro",
         "owl_micro",
-        -> OntoQualityReasoningProfile.OWL_MICRO
+        -> {
+            warn(
+                "Warning: --reasoner owl-micro is deprecated: it runs Jena's OWL rule reasoner (OWL RL rules), " +
+                    "not OWL Micro. Use --reasoner owl-rl.",
+            )
+            OntoQualityReasoningProfile.OWL_RL
+        }
         "hermit" -> OntoQualityReasoningProfile.HERMIT
         else ->
-            throw UsageError("Unknown --reasoner $s (expected none|rdfs|owl-micro|hermit)")
+            throw usageError("Unknown --reasoner $s (expected none|rdfs|owl-rl|hermit)")
     }
 
 internal data class LlmExplainCli(
@@ -536,6 +720,7 @@ internal data class LlmExplainCli(
     val minSeverity: ViolationSeverity,
     val requestTimeout: Duration,
     val retries: Int,
+    val maxTotalDuration: Duration,
 )
 
 private fun parseLlmProvider(s: String): LlmProvider =
@@ -543,7 +728,7 @@ private fun parseLlmProvider(s: String): LlmProvider =
         "openai" -> LlmProvider.OPENAI
         "anthropic" -> LlmProvider.ANTHROPIC
         "ollama" -> LlmProvider.OLLAMA
-        else -> throw UsageError("Unknown --llm-provider $s (expected openai|anthropic|ollama)")
+        else -> throw usageError("Unknown --llm-provider $s (expected openai|anthropic|ollama)")
     }
 
 private fun parseExplanationModelPreset(s: String): ExplanationModelPreset =
@@ -566,7 +751,7 @@ private fun parseExplanationModelPreset(s: String): ExplanationModelPreset =
         "llama-3.2",
         -> ExplanationModelPreset.OLLAMA_LLAMA_3_2
         else ->
-            throw UsageError(
+            throw usageError(
                 "Unknown --llm-model-preset $s (expected auto|gpt4o-mini|gpt4o|sonnet-4-5|haiku-4-5|llama3.2)",
             )
     }
@@ -576,7 +761,7 @@ private fun explainMinViolationSeverity(s: String): ViolationSeverity =
         "violation" -> ViolationSeverity.VIOLATION
         "warning" -> ViolationSeverity.WARNING
         "info" -> ViolationSeverity.INFO
-        else -> throw UsageError("Unknown --explain-min-severity $s (expected violation|warning|info)")
+        else -> throw usageError("Unknown --explain-min-severity $s (expected violation|warning|info)")
     }
 
 /** @param failed true when explanations were requested and the call threw or left findings unexplained. */
@@ -616,6 +801,7 @@ private fun maybeExplainReport(
                 baseUrl = llm.ollamaBase,
                 requestTimeout = llm.requestTimeout,
                 maxRetries = llm.retries,
+                maxTotalDuration = llm.maxTotalDuration,
             )
         val enricher = environment.explanationEnricherFactory(cfg)
         val opts =
@@ -637,21 +823,18 @@ private fun maybeExplainReport(
     }
 }
 
+/** Loads the ONNX model; options must already be validated with [OnnxEmbeddingModel.validateCliOptions]. */
 internal fun loadOnnxEmbeddingModel(options: EmbeddingCliOptions): OnnxEmbeddingModel =
-    try {
-        OnnxEmbeddingModel.fromCliOptions(
-            modelId = options.modelId,
-            cacheRoot = options.cacheDir?.toAbsolutePath(),
-            onnxPath = options.onnx?.toAbsolutePath(),
-            tokenizerPath = options.tokenizer?.toAbsolutePath(),
-            embeddingDim = options.embeddingDim,
-            maxTokens = options.maxTokens,
-            displayName = options.displayName,
-            tokenizerNote = options.tokenizerNote,
-        )
-    } catch (e: IllegalArgumentException) {
-        throw UsageError(e.message ?: "Invalid embedding options")
-    }
+    OnnxEmbeddingModel.fromCliOptions(
+        modelId = options.modelId,
+        cacheRoot = options.cacheDir?.toAbsolutePath(),
+        onnxPath = options.onnx?.toAbsolutePath(),
+        tokenizerPath = options.tokenizer?.toAbsolutePath(),
+        embeddingDim = options.embeddingDim,
+        maxTokens = options.maxTokens,
+        displayName = options.displayName,
+        tokenizerNote = options.tokenizerNote,
+    )
 
 private fun buildChecker(
     catalogOpt: String,
@@ -687,7 +870,7 @@ private fun buildChecker(
                     QualityChecker.builder(validator).addCatalogs(BundledCatalogs.SKOS_VOCABULARY_QC_WITH_EMBEDDING),
                 )
             else ->
-                throw UsageError(
+                throw usageError(
                     "Unknown --catalog $catalogOpt (expected $CATALOG_HELP)",
                 )
         }
@@ -716,7 +899,7 @@ private fun emitReport(
             "markdown" -> explained?.describeMarkdown(markdownOptions) ?: report.describeMarkdown(markdownOptions)
             "json" -> findingsToJson(report, explained)
             "turtle" -> JenaBridge.toString(report.underlying.toShaclValidationReportRdf(), "TURTLE")
-            else -> throw UsageError("Unknown --format $formatOpt (expected text|markdown|json|turtle)")
+            else -> throw usageError("Unknown --format $formatOpt (expected text|markdown|json|turtle)")
         }
     writeOutput(text, outputOpt, stdout)
 }
@@ -726,7 +909,7 @@ private fun severityThreshold(severityOpt: String): SeverityThreshold =
         "violation" -> SeverityThreshold.VIOLATION
         "warning" -> SeverityThreshold.WARNING
         "info" -> SeverityThreshold.INFO
-        else -> throw UsageError("Unknown --severity $severityOpt (expected violation|warning|info)")
+        else -> throw usageError("Unknown --severity $severityOpt (expected violation|warning|info)")
     }
 
 private enum class SeverityThreshold {
@@ -747,9 +930,11 @@ private fun ViolationSeverity.rank(): Int =
         -> 2
     }
 
+/** True when any finding is at or above [threshold]; with INFO every finding (including debug / trace rows) counts. */
 private fun shouldFail(report: QualityReport, threshold: SeverityThreshold): Boolean =
     when (threshold) {
-        SeverityThreshold.INFO -> false
+        SeverityThreshold.INFO ->
+            report.underlying.violations.isNotEmpty() || report.underlying.warnings.isNotEmpty()
         SeverityThreshold.WARNING ->
             report.underlying.violations.any { it.severity.rank() >= ViolationSeverity.WARNING.rank() } ||
                 report.underlying.warnings.isNotEmpty()

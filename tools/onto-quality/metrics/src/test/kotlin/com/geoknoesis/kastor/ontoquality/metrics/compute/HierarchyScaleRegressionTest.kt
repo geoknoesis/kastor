@@ -37,9 +37,9 @@ class HierarchyScaleRegressionTest {
         // Depth is capped at MetricsConfig.maxDepthCap (50) by design; the cap must not limit traversal.
         assertEquals(50.0, oq.depthOfInheritanceTree.rawValue)
         assertTrue(report.owl.extensions.classHierarchyDepth.depthCapHit)
-        // One path of n-1 edges: LCOMOnto is the mean path length, uncapped.
-        assertEquals((n - 1).toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
-        // n-1 subclass edges over n - 1 non-root classes.
+        // One path from owl:Thing of n edges (n-1 named edges plus Thing -> C0): LCOMOnto is uncapped.
+        assertEquals(n.toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
+        // n-1 parents with exactly one direct subclass each.
         assertEquals(1.0, oq.numberOfChildren.rawValue, 1e-9)
 
         // Importance scoring over the same chain must also finish (bottom-up descendant counts).
@@ -63,9 +63,10 @@ class HierarchyScaleRegressionTest {
         }
         val report = VocabularyMetrics.compute(MemoryGraph(triples))
         val oq = report.owl.oquare
-        assertEquals((layers - 1).toDouble(), oq.depthOfInheritanceTree.rawValue)
-        // Every one of the 2^40 paths has exactly 39 edges.
-        assertEquals((layers - 1).toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
+        // Roots are at depth 1 below owl:Thing.
+        assertEquals(layers.toDouble(), oq.depthOfInheritanceTree.rawValue)
+        // Every one of the 2^40 paths has exactly 40 edges from owl:Thing.
+        assertEquals(layers.toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
         // Every non-root class has exactly two direct parents.
         assertEquals(2.0, oq.tangledness.rawValue, 1e-9)
     }
@@ -87,6 +88,6 @@ class HierarchyScaleRegressionTest {
         assertEquals(Long.MAX_VALUE, bundle.intermediate.pathsFromThingToLeaves)
         val lcom = OquareCalculators.lackOfCohesionInMethods(bundle.intermediate, scores = true)
         assertTrue(lcom.computable)
-        assertEquals((layers - 1).toDouble(), lcom.rawValue, 1e-6)
+        assertEquals(layers.toDouble(), lcom.rawValue, 1e-6)
     }
 }

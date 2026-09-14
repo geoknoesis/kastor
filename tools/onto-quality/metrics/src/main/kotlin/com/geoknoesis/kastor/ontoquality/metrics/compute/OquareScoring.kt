@@ -29,15 +29,21 @@ internal object OquareScoring {
         }
     }
 
-    /** TMOnto: > 8 → 1, (6, 8] → 2, (4, 6] → 3, (2, 4] → 4, ≤ 2 (including no tangling) → 5. */
+    /**
+     * TMOnto: 0 (no multiple inheritance) → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1.
+     *
+     * Deviation from the published OQuaRE band (≤ 2 → 5): TMOnto is ≥ 2 whenever any class has several direct
+     * parents, so that band could never distinguish a tangled hierarchy (e.g. a diamond, value 2) from one
+     * without tangling. Here any tangling scores at most 4.
+     */
     fun scoreTM(v: Number): Int {
         val d = v.toDouble()
         return when {
-            d > 8.0 -> 1
-            d > 6.0 -> 2
-            d > 4.0 -> 3
-            d > 2.0 -> 4
-            else -> 5
+            d <= 0.0 -> 5
+            d <= 2.0 -> 4
+            d <= 4.0 -> 3
+            d <= 8.0 -> 2
+            else -> 1
         }
     }
 

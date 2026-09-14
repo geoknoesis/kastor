@@ -1,0 +1,55 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://example.org/cross/pizza#> .
+
+# Small pizza-like ontology. Expected OQuaRE values are derived BY HAND from the OQuaRE definitions
+# (Duque-Ramos et al. 2014) in CrossImplementationCalibrationTest - not by running the calculators.
+
+:Food a owl:Class ;
+    rdfs:label "Food" .
+
+:Pizza a owl:Class ;
+    rdfs:subClassOf :Food ;
+    rdfs:label "Pizza" ;
+    rdfs:comment "An Italian dish." .
+
+:PizzaBase a owl:Class ;
+    rdfs:subClassOf :Food .
+
+:PizzaTopping a owl:Class ;
+    rdfs:subClassOf :Food .
+
+:ThinBase a owl:Class ;
+    rdfs:subClassOf :PizzaBase .
+
+:CheeseTopping a owl:Class ;
+    rdfs:subClassOf :PizzaTopping .
+
+:VegetableTopping a owl:Class ;
+    rdfs:subClassOf :PizzaTopping .
+
+# Multiple inheritance (tangling).
+:CheesyVegetableTopping a owl:Class ;
+    rdfs:subClassOf :CheeseTopping , :VegetableTopping .
+
+:Margherita a owl:Class ;
+    rdfs:subClassOf :Pizza ,
+        [ a owl:Restriction ; owl:onProperty :hasTopping ; owl:someValuesFrom :CheeseTopping ] .
+
+# Isolated class: a direct child of owl:Thing with no subclasses.
+:Spiciness a owl:Class .
+
+:hasTopping a owl:ObjectProperty ;
+    rdfs:domain :Pizza ;
+    rdfs:range :PizzaTopping .
+
+:hasBase a owl:ObjectProperty ;
+    rdfs:domain :Pizza ;
+    rdfs:range :PizzaBase .
+
+:hasCalories a owl:DatatypeProperty ;
+    rdfs:domain :Pizza ;
+    rdfs:range xsd:integer .
+
+:myMargherita a :Margherita .

@@ -10,9 +10,6 @@ import java.time.Instant
 object VocabularyMetrics {
     fun compute(graph: RdfGraph, config: MetricsConfig = MetricsConfig.default()): VocabularyMetricsReport {
         val bundle = GraphScanner.scan(graph, config)
-        if (config.useInferredGraph) {
-            // Caller must supply an inferred graph; flag reserved for API clarity.
-        }
         val owl = computeOwl(graph, config, bundle)
         val skos = computeSkos(graph, config, bundle)
         return VocabularyMetricsReport(
