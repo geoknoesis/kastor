@@ -54,6 +54,11 @@ class KastorMetricsProvider(
                 "- Tangledness (TMOnto): ${formatDouble(oq.tangledness.rawValue)} " +
                     "(score ${oq.tangledness.score?.toString() ?: "-"})",
             )
+            val tmKastor = report.owl.kastorAdapted.tangledness
+            appendLine(
+                "- Tangledness, Kastor-adapted (TMOntoKastor, not OQuaRE): ${formatDouble(tmKastor.rawValue)} " +
+                    "(score ${tmKastor.score?.toString() ?: "-"})",
+            )
             appendLine(
                 "- Relationship richness (RROnto): ${formatPercent(oq.relationshipRichness.rawValue)} " +
                     "(score ${oq.relationshipRichness.score?.toString() ?: "-"})",

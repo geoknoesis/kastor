@@ -20,6 +20,11 @@ object KastorMetricsVocab {
     const val propertiesRichness = "${NS}propertiesRichness"
     const val tangledness = "${NS}tangledness"
 
+    /** Kastor-adapted variants (not OQuaRE); see [KastorAdaptedMetrics]. */
+    const val numberOfChildrenKastor = "${NS}numberOfChildrenKastor"
+    const val couplingBetweenObjectsKastor = "${NS}couplingBetweenObjectsKastor"
+    const val tanglednessKastor = "${NS}tanglednessKastor"
+
     const val conceptCount = "${NS}conceptCount"
     const val prefLabelCoverage = "${NS}prefLabelCoverage"
     const val definitionCoverage = "${NS}definitionCoverage"
@@ -44,4 +49,7 @@ object KastorMetricsVocab {
     const val oquareTMOnto = "${OQUARE_NS}TMOnto"
 
     const val oquareScoring = "${OQUARE_NS}DuqueRamos2014Scoring"
+
+    /** Score bands of the Kastor-adapted variants (documented in the module README and `kastor-metrics.ttl`). */
+    const val kastorAdaptedScoring = "${NS}KastorAdaptedScoring"
 }

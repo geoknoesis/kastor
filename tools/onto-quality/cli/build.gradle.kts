@@ -17,6 +17,8 @@ dependencies {
   implementation(libs.clikt)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.kotlinx.serialization.json)
+  // SLF4J binding for the application: library warnings (e.g. the model-cache self-heal notice) go to stderr at WARN.
+  runtimeOnly(libs.slf4j.simple)
 }
 
 publishing {

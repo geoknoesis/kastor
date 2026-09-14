@@ -25,7 +25,18 @@ Other: tangledness (TMOnto).
 
 Each metric is emitted with raw value, optional 1–5 score per the
 Duque-Ramos 2014 scoring scheme, and SKOS provenance to the OQuaRE
-concept.
+concept. Metrics reported under an OQuaRE name always use the
+**published** OQuaRE definition and bands, so their values are
+comparable with other OQuaRE tools.
+
+### Kastor-adapted variants (3, not OQuaRE)
+
+`numberOfChildrenKastor` (NOCOntoKastor), `couplingBetweenObjectsKastor`
+(CBOOntoKastor) and `tanglednessKastor` (TMOntoKastor) are reported
+separately (`OwlMetricsSection.kastorAdapted`; JSON `owl.kastorAdapted`;
+Turtle scores use `kastor-m:KastorAdaptedScoring`). They fix blind spots
+of the published formulas but are **not** OQuaRE metrics and must not be
+compared with OQuaRE scores.
 
 ### Formulas
 
@@ -46,8 +57,8 @@ participants are excluded and reported separately.
 |--------|---------|
 | DITOnto | longest owl:Thing-to-leaf path (edges); depth(Root) = 1 |
 | NACOnto | Σ\|Sup_leaf\| / \|leaves\| |
-| NOCOnto | Σ\|Sub_C\| / \|{C : Sub_C ≠ ∅}\| (fan-out of classes that have subclasses) |
-| CBOOnto | Σ\|Sup_C ∪ Assoc_C\| / \|C\| (related classes per class) |
+| NOCOnto | Σ\|Sub_C\| / (\|C\| − \|Root\|) |
+| CBOOnto | Σ\|Sup_C\| / (\|C\| − \|Root\|) |
 | WMCOnto | Σ(\|P_C\| + \|Sub_C\|) / \|C\| |
 | RFCOnto | Σ(\|P_C\| + \|Sup_C\|) / (\|C\| − \|Root\|) |
 | NOMOnto | Σ\|P_C\| / \|C\| |
@@ -58,18 +69,36 @@ participants are excluded and reported separately.
 | CROnto | distinct `rdf:type` assertions to named classes / \|C\| (instances per class) |
 | ANOnto | (rdfs:label + rdfs:comment + skos:definition values on classes) / \|C\| |
 | PROnto | declared object+datatype properties / (\|SubClassOf\| + that count) |
-| TMOnto | mean number of direct superclasses of classes with more than one direct superclass; 0 without multiple inheritance |
+| TMOnto | \|C_DP\| / \|C\|, C_DP = classes with more than one direct superclass |
 
 Richness metrics are scored with the OQuaRE percentage bands (> 80 % → 5);
-per-class averages above 1 fall into the top band. TMOnto deviates from the
-published band (≤ 2 → 5), which could never see tangling because TMOnto is
-≥ 2 whenever a class has several parents: 0 → 5, (0, 2] → 4, (2, 4] → 3,
-(4, 8] → 2, > 8 → 1. Path counts and path
+per-class averages above 1 fall into the top band. NOCOnto uses the
+published band > 12 → 1, (8, 12] → 2, (6, 8] → 3, (3, 6] → 4, ≤ 3 → 5;
+CBOOnto and TMOnto use > 8 → 1, (6, 8] → 2, (4, 6] → 3, (2, 4] → 4, ≤ 2 → 5.
+Because TMOnto never exceeds 1 it always scores 5; use TMOntoKastor to see
+tangling.
+
+| Kastor-adapted variant | Formula | Bands |
+|--------|---------|-------|
+| NOCOntoKastor | Σ\|Sub_C\| / \|{C : Sub_C ≠ ∅}\| (fan-out of classes that have subclasses) | NOCOnto bands |
+| CBOOntoKastor | Σ\|Sup_C ∪ Assoc_C\| / \|C\| (related classes per class) | CBOOnto bands |
+| TMOntoKastor | mean number of direct superclasses of classes with more than one direct superclass; 0 without multiple inheritance | 0 → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1 |
+
+Published NOCOnto and CBOOnto coincide whenever both only count subclass
+edges; NOCOntoKastor measures fan-out and CBOOntoKastor coupling instead.
+The reference implementation tecnomod-um/oquare-metrics differs from the
+published table in two denominators (NOCOnto divides by the non-leaf
+classes, which equals NOCOntoKastor; TMOnto divides by \|C\| − 1); Kastor
+follows the published table. Path counts and path
 lengths are computed with a memoized, iterative pass, so very deep
 (50k-class) or heavily tangled (2^40-path) hierarchies are handled
 without recursion or overflow.
 
 **Changed in this release** (previous values are not comparable):
+NOCOnto, CBOOnto and TMOnto again use the published OQuaRE definitions and
+bands; the Kastor formulas previously reported under those names are now
+NOCOntoKastor, CBOOntoKastor and TMOntoKastor (`owl.kastorAdapted` in JSON);
+VoID `distinctObjectCount` counts RDF 1.2 triple-term objects. Previously:
 DITOnto and LCOMOnto were measured from root classes (depth 0) instead of
 owl:Thing, so both are now one higher; NOCOnto and CBOOnto were the same
 number (both Σ subclass edges / non-root classes) and now measure fan-out

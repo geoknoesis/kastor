@@ -9,7 +9,7 @@ data class ImportanceWeights(
     val fanOutWeight: Double,
     /** Weight on log(1 + properties having this class as domain or range). */
     val incomingPropertiesWeight: Double,
-    /** Weight on (1 / (depth + 1)) — shallower is more central after normalization. */
+    /** Weight on 1 / depth below owl:Thing (roots = 1; cycle participants 0.5) — shallower is more central after normalization. */
     val shallowDepthWeight: Double,
     /** Small bonus for having an `rdfs:label`. */
     val labelPresenceWeight: Double,

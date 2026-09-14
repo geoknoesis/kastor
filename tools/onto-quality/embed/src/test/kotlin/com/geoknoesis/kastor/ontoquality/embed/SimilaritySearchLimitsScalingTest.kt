@@ -33,4 +33,13 @@ class SimilaritySearchLimitsScalingTest {
         assertTrue(huge.maxDistanceEvaluations > 50_000_000L)
         assertTrue(huge.timeout > Duration.ofSeconds(30))
     }
+
+    @Test
+    fun `scaled policy accepts a result-pair override`() {
+        assertEquals(1_000_000, SimilarityLimitsPolicy.scaled().limitsFor(10).maxPairs)
+        val limits = SimilarityLimitsPolicy.scaled(maxDistanceEvaluations = 7L, timeout = null, maxPairs = 5).limitsFor(10)
+        assertEquals(5, limits.maxPairs)
+        assertEquals(7L, limits.maxDistanceEvaluations)
+        assertEquals(java.time.Duration.ofSeconds(30), limits.timeout)
+    }
 }

@@ -98,6 +98,7 @@ public abstract interface class com/geoknoesis/kastor/ontoquality/embed/Similari
 	public static fun scaled ()Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 	public static fun scaled (Ljava/lang/Long;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 	public static fun scaled (Ljava/lang/Long;Ljava/time/Duration;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
+	public static fun scaled (Ljava/lang/Long;Ljava/time/Duration;Ljava/lang/Integer;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy$Companion {
@@ -105,11 +106,24 @@ public final class com/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolic
 	public final fun scaled ()Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 	public final fun scaled (Ljava/lang/Long;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 	public final fun scaled (Ljava/lang/Long;Ljava/time/Duration;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
-	public static synthetic fun scaled$default (Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy$Companion;Ljava/lang/Long;Ljava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
+	public final fun scaled (Ljava/lang/Long;Ljava/time/Duration;Ljava/lang/Integer;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
+	public static synthetic fun scaled$default (Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy$Companion;Ljava/lang/Long;Ljava/time/Duration;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilarityLimitsPolicy;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException : java/lang/IllegalStateException {
 	public fun <init> (Ljava/lang/String;)V
+	public fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getLimit ()Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit : java/lang/Enum {
+	public static final field DEADLINE Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
+	public static final field DISTANCE_EVALUATIONS Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
+	public static final field RESULT_PAIRS Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
+	public static fun values ()[Lcom/geoknoesis/kastor/ontoquality/embed/SimilaritySearchBudgetExceededException$Limit;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/embed/SimilaritySearchLimits {

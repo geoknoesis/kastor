@@ -474,6 +474,7 @@ org.reactivestreams:reactive-streams:1.0.4=runtimeClasspath,testRuntimeClasspath
 org.roaringbitmap:RoaringBitmap:1.6.15=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.slf4j:jcl-over-slf4j:2.0.18=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.slf4j:slf4j-api:2.0.18=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.slf4j:slf4j-simple:2.0.17=runtimeClasspath,testRuntimeClasspath
 org.tukaani:xz:1.6=runtimeClasspath,testRuntimeClasspath
 redis.clients.authentication:redis-authx-core:0.1.1-beta2=runtimeClasspath,testRuntimeClasspath
 empty=annotationProcessor,dokkaHtmlModuleOutputDirectoriesResolver~internal,dokkaHtmlPublicationPluginResolver~internal,implementationDependenciesMetadata,kotlinCompilerPluginClasspath,kotlinNativeCompilerPluginClasspath,kotlinScriptDefExtensions,testAnnotationProcessor,testImplementationDependenciesMetadata,testKotlinScriptDefExtensions

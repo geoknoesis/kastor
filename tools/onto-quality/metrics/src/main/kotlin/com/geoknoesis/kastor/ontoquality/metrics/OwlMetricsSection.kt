@@ -2,8 +2,11 @@ package com.geoknoesis.kastor.ontoquality.metrics
 
 data class OwlMetricsSection(
     val entityCounts: OwlEntityCounts,
+    /** The 15 OQuaRE metrics, computed with the published OQuaRE definitions and scored with the OQuaRE bands. */
     val oquare: OquareMetrics,
     val extensions: OwlExtensions,
+    /** Kastor-adapted variants of NOCOnto, CBOOnto and TMOnto. They are **not** OQuaRE metrics (see [KastorAdaptedMetrics]). */
+    val kastorAdapted: KastorAdaptedMetrics,
 )
 
 data class OwlEntityCounts(
@@ -54,6 +57,24 @@ data class OquareMetrics(
             propertiesRichness,
             tangledness,
         )
+}
+
+/**
+ * Kastor-adapted structural metrics, kept next to (not instead of) their OQuaRE counterparts. They use their own
+ * names (`NOCOntoKastor`, `CBOOntoKastor`, `TMOntoKastor`), IRIs and documented score bands, so their values are not
+ * comparable with OQuaRE scores from other tools.
+ *
+ * - [numberOfChildren] `NOCOntoKastor` = Σ|Sub_C| / |{C : Sub_C ≠ ∅}| — fan-out of the classes that have subclasses.
+ * - [couplingBetweenObjects] `CBOOntoKastor` = Σ|Sup_C ∪ Assoc_C| / |C| — superclasses plus property-associated classes.
+ * - [tangledness] `TMOntoKastor` = mean number of direct superclasses of classes with more than one; 0 without
+ *   multiple inheritance.
+ */
+data class KastorAdaptedMetrics(
+    val numberOfChildren: MetricValue,
+    val couplingBetweenObjects: MetricValue,
+    val tangledness: MetricValue,
+) {
+    fun toList(): List<MetricValue> = listOf(numberOfChildren, couplingBetweenObjects, tangledness)
 }
 
 data class OwlExtensions(

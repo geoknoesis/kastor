@@ -51,12 +51,15 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
         private fun elapsed(): Long = accumulated + if (paused) 0L else System.nanoTime() - runningSince
         fun check() {
             kotlin.check(!Thread.currentThread().isInterrupted) { "Similarity search interrupted" }
-            if (elapsed() >= timeout) throw SimilaritySearchBudgetExceededException("Similarity search deadline exceeded")
+            if (elapsed() >= timeout) throw SimilaritySearchBudgetExceededException("Similarity search deadline exceeded", SimilaritySearchBudgetExceededException.Limit.DEADLINE)
         }
         fun evaluate() {
             check()
             if (evaluations++ >= limits.maxDistanceEvaluations) {
-                throw SimilaritySearchBudgetExceededException("Similarity distance-evaluation limit exceeded")
+                throw SimilaritySearchBudgetExceededException(
+                    "Similarity distance-evaluation limit exceeded",
+                    SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS,
+                )
             }
         }
     }
@@ -98,6 +101,12 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
             return root
         } finally { treeLock.unlock() }
     }
+    private fun resultLimitExceeded(limits: SimilaritySearchLimits) =
+        SimilaritySearchBudgetExceededException(
+            "Similarity result limit exceeded (${limits.maxPairs} pairs)",
+            SimilaritySearchBudgetExceededException.Limit.RESULT_PAIRS,
+        )
+
     fun pairsAboveThreshold(threshold: Double): Sequence<Pair<Iri, Iri>> =
         pairsAboveThreshold(threshold, SimilaritySearchLimits())
 
@@ -164,7 +173,7 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
                             for (k in a.second.indices) dot += a.second[k].toDouble() * b.second[k]
                             if (dot >= threshold) {
                                 if (pairs++ >= limits.maxPairs) {
-                                    throw SimilaritySearchBudgetExceededException("Similarity result limit exceeded (${limits.maxPairs} pairs)")
+                                    throw resultLimitExceeded(limits)
                                 }
                                 budget.pause()
                                 yield(if (a.first.value < b.first.value) a.first to b.first else b.first to a.first)
@@ -203,7 +212,7 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
                         for (k in a.second.indices) dot += a.second[k].toDouble() * b.second[k]
                         if (dot >= threshold) {
                             if (pairs++ >= limits.maxPairs) {
-                                throw SimilaritySearchBudgetExceededException("Similarity result limit exceeded (${limits.maxPairs} pairs)")
+                                throw resultLimitExceeded(limits)
                             }
                             budget.pause()
                             yield(if (a.first.value < b.first.value) a.first to b.first else b.first to a.first)

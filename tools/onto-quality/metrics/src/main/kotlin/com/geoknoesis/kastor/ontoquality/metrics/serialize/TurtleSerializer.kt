@@ -20,7 +20,7 @@ internal object TurtleSerializer {
         props["void:classes"] = "${g.distinctClassesUsed}"
 
         val metrics =
-            (report.owl.oquare.toList() +
+            (report.owl.oquare.toList() + report.owl.kastorAdapted.toList() +
                 listOf(
                     report.skos.conceptCount,
                     report.skos.prefLabelCoverage,
@@ -51,16 +51,20 @@ internal object TurtleSerializer {
             inner.add("    $k ${props[k]}")
         }
 
-        val scored = report.owl.oquare.toList().filter { it.computable && it.score != null }.sortedBy { it.metricIri }
+        val scored =
+            (report.owl.oquare.toList().map { it to KastorMetricsVocab.oquareScoring } +
+                report.owl.kastorAdapted.toList().map { it to KastorMetricsVocab.kastorAdaptedScoring })
+                .filter { (m, _) -> m.computable && m.score != null }
+                .sortedBy { (m, _) -> m.metricIri }
         if (scored.isNotEmpty()) {
             val blocks =
-                scored.joinToString(" ,\n        ") { m ->
+                scored.joinToString(" ,\n        ") { (m, scheme) ->
                     """
                     [
                         a kastor-m:Score ;
                         kastor-m:onMetric <${m.metricIri}> ;
                         kastor-m:scoreValue ${m.score} ;
-                        kastor-m:scoringScheme <${KastorMetricsVocab.oquareScoring}> ;
+                        kastor-m:scoringScheme <$scheme> ;
                     ]
                     """.trimIndent().replace("\n", "\n        ")
                 }

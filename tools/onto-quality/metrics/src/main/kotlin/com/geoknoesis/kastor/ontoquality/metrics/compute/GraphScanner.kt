@@ -11,6 +11,8 @@ import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfResource
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.vocab.DCTERMS
 import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.RDF
@@ -53,7 +55,7 @@ internal object GraphScanner {
     private fun subjectKey(s: RdfResource): String =
         when (s) {
             is Iri -> s.value
-            is BlankNode -> "_:${s.id}"
+            is BlankNode -> s.toString()
         }
 
     private fun excluded(cfg: MetricsConfig, iri: String): Boolean = cfg.excludedNamespaces.any { iri.startsWith(it) }
@@ -68,6 +70,19 @@ internal object GraphScanner {
         val lang = (o as? LangString)?.let { "@${it.lang.lowercase()}${it.direction?.let { d -> "--$d" } ?: ""}" } ?: ""
         return "L${o.lexical.length}:${o.lexical}^^${o.datatype.value}$lang"
     }
+
+    /**
+     * VoID distinct-object key for any object term. RDF 1.2 triple terms are keyed by their components, so
+     * `<<( :a :b :c )>>` occurring twice is one distinct object and differs from `<<( :a :b "c" )>>`.
+     */
+    private fun objectKey(o: RdfTerm): String? =
+        when (o) {
+            is Iri -> o.value
+            is Literal -> literalKey(o)
+            is BlankNode -> o.toString()
+            is TripleTerm -> "T(${objectKey(o.triple.subject)} ${o.triple.predicate.value} ${objectKey(o.triple.obj)})"
+            else -> null
+        }
 
     private val OWL_SOME_VALUES_FROM = "${OWL.namespace}someValuesFrom"
     private val OWL_ALL_VALUES_FROM = "${OWL.namespace}allValuesFrom"
@@ -141,8 +156,8 @@ internal object GraphScanner {
                     literalObjects++
                     distinctObjects.add(literalKey(o))
                 }
-                is BlankNode -> distinctObjects.add("_:${o.id}")
-                else -> Unit // TripleTerm, Var, etc.
+                is BlankNode, is TripleTerm -> objectKey(o)?.let(distinctObjects::add)
+                else -> Unit // Var, etc.
             }
 
             val subIri = (t.subject as? Iri)?.value
@@ -178,7 +193,7 @@ internal object GraphScanner {
 
             if ((t.predicate == RDFS.subClassOf || t.predicate == OWL.equivalentClass) && subIri != null) {
                 val o = t.obj
-                if (o is BlankNode) classExpressionLinks.add(subIri to "_:${o.id}")
+                if (o is BlankNode) classExpressionLinks.add(subIri to o.toString())
             }
 
             if (t.predicate == OWL.onProperty && objIri != null) {

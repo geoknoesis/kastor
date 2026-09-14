@@ -9,6 +9,7 @@ import com.geoknoesis.kastor.ontoquality.explanation.FindingExplanation
 import com.geoknoesis.kastor.ontoquality.explanation.FindingRef
 import com.geoknoesis.kastor.ontoquality.explanation.QualityExplanationEnricher
 import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
+import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
@@ -51,6 +52,15 @@ class CliTest {
         :Animal a owl:Class .
         :Dog a owl:Class ; rdfs:subClassOf :Animal .
         :owns a owl:ObjectProperty .
+        """.trimIndent()
+
+    /** OOPS P26: an owl:SymmetricProperty with owl:inverseOf violates a `sh:Violation` shape of owl-quality. */
+    private val violationTtl =
+        """
+        @prefix : <http://example.org/sym#> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        :knows a owl:ObjectProperty , owl:SymmetricProperty ; owl:inverseOf :knownBy .
+        :knownBy a owl:ObjectProperty .
         """.trimIndent()
 
     /** No triples at all: no SHACL focus nodes, hence no findings in any catalog. */
@@ -99,7 +109,7 @@ class CliTest {
     // ---- P1: relative IRIs ------------------------------------------------------------------------------------
 
     @Test
-    fun `Turtle with relative IRIs is parsed against the file URI`() {
+    fun `Turtle with relative IRIs is parsed against a path-independent base IRI`() {
         val file =
             ontology(
                 "relative.ttl",
@@ -109,17 +119,58 @@ class CliTest {
                 <> a owl:Ontology ; rdfs:label "Relative" .
                 <#Foo> a owl:Class .
                 <#Bar> a owl:Class ; rdfs:subClassOf <#Foo> .
+                <Sub> a owl:Class ; rdfs:subClassOf <#Bar> .
                 """.trimIndent(),
             )
-        val base = file.toAbsolutePath().normalize().toUri().toString()
+        assertEquals("urn:onto-qa:input/relative.ttl", defaultBaseIri(file))
+        val base = "urn:onto-qa:input/relative.ttl"
         val triples = parseOntology(file, RdfFormat.TURTLE).getTriples()
         assertTrue(RdfTriple(Iri(base), RDF.type, OWL.Ontology) in triples, triples.toString())
         assertTrue(RdfTriple(Iri("$base#Bar"), RDFS.subClassOf, Iri("$base#Foo")) in triples, triples.toString())
+        assertTrue(RdfTriple(Iri("urn:onto-qa:input/Sub"), RDFS.subClassOf, Iri("$base#Bar")) in triples, triples.toString())
 
         val out = dir.resolve("relative-metrics.json")
         val result = run(listOf("metrics", file.toString(), "--format", "json", "--output", out.toString()))
         assertEquals(EXIT_OK, result.status, result.err)
-        assertTrue(Regex("\"totalNamedClasses\"\\s*:\\s*2").containsMatchIn(out.readText()), out.readText())
+        assertTrue(Regex("\"totalNamedClasses\"\\s*:\\s*3").containsMatchIn(out.readText()), out.readText())
+        assertFalse(out.readText().contains("file:"), out.readText())
+    }
+
+    @Test
+    fun `--base-iri overrides the default and must be absolute`() {
+        val file = ontology("named.ttl", "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n<#Foo> a owl:Class .\n")
+        val triples = parseOntology(file, RdfFormat.TURTLE, "https://example.org/onto").getTriples()
+        assertEquals(listOf(RdfTriple(Iri("https://example.org/onto#Foo"), RDF.type, OWL.Class)), triples.toList())
+        assertEquals("urn:onto-qa:input/my%20onto%C3%A9.ttl", defaultBaseIri(Path.of("some", "dir", "my onto\u00E9.ttl")))
+
+        val out = dir.resolve("named.json")
+        val ok = run(listOf("metrics", file.toString(), "--base-iri", "https://example.org/onto", "--format", "json", "--output", out.toString()))
+        assertEquals(EXIT_OK, ok.status, ok.err)
+        val bad = run(listOf("check", file.toString(), "--base-iri", "relative/path"))
+        assertEquals(EXIT_USAGE, bad.status, bad.err)
+        assertTrue(bad.err.contains("--base-iri must be an absolute IRI such as https://example.org/onto (got 'relative/path')"), bad.err)
+    }
+
+    @Test
+    fun `finding refs and IRIs are identical for the same file in two directories`() {
+        val content = "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n<#Undocumented> a owl:Class .\n<#Other> a owl:Class .\n"
+        fun check(sub: String): String {
+            val folder = Files.createDirectories(dir.resolve(sub).resolve("nested-$sub"))
+            val file = folder.resolve("onto.ttl").also { it.writeText(content) }
+            val out = dir.resolve("$sub.json")
+            val result = run(listOf("check", file.toString(), "--catalog", "owl-quality", "--severity", "info", "--format", "json", "--output", out.toString()))
+            assertEquals(EXIT_FINDINGS, result.status, result.err)
+            return out.readText()
+        }
+        val first = check("alice")
+        val second = check("bob")
+        fun refs(json: String) =
+            Json.parseToJsonElement(json).jsonObject.getValue("findings").jsonArray.map { it.jsonObject.getValue("findingRef").jsonPrimitive.content }
+        assertTrue(refs(first).isNotEmpty(), first)
+        assertEquals(refs(first), refs(second))
+        assertEquals(first, second)
+        assertTrue(first.contains("urn:onto-qa:input/onto.ttl#Undocumented"), first)
+        assertFalse(first.contains("alice") || first.contains("file:"), first)
     }
 
     @Test
@@ -140,13 +191,14 @@ class CliTest {
                 </rdf:RDF>
                 """.trimIndent(),
             )
-        val base = file.toAbsolutePath().normalize().toUri().toString()
+        val base = "urn:onto-qa:input/relative.owl"
         val triples = parseOntology(file, RdfFormat.RDF_XML).getTriples()
         assertTrue(RdfTriple(Iri(base), RDF.type, OWL.Ontology) in triples, triples.toString())
         assertTrue(RdfTriple(Iri("$base#Bar"), RDFS.subClassOf, Iri("$base#Foo")) in triples, triples.toString())
 
         val result = run(listOf("check", file.toString(), "--catalog", "rdf12-quality", "--severity", "violation", "--output", dir.resolve("x.txt").toString()))
-        assertTrue(result.status == EXIT_OK || result.status == EXIT_FINDINGS, "parse must succeed: ${result.status} ${result.err}")
+        // No RDF 1.2 constructs, so the rdf12-quality catalog reports nothing.
+        assertEquals(EXIT_OK, result.status, result.err)
     }
 
     // ---- P2: exit codes ---------------------------------------------------------------------------------------
@@ -161,17 +213,96 @@ class CliTest {
 
     @Test
     fun `exit 1 when findings reach --severity, including info`() {
-        val onto = ontology()
         val out = dir.resolve("report.json")
-        val strict = run(listOf("check", onto.toString(), "--catalog", "owl-quality", "--format", "json", "--output", out.toString()))
-        val severities = findingSeverities(out.readText())
-        assertTrue(severities.isNotEmpty(), "fixture must produce findings")
-        val blocking = severities.any { it == "VIOLATION" || it == "ERROR" }
-        assertEquals(if (blocking) EXIT_FINDINGS else EXIT_OK, strict.status, strict.err)
+        // P26 is a sh:Violation shape: the default --severity violation fails.
+        val strict = run(listOf("check", ontology("violation.ttl", violationTtl).toString(), "--catalog", "owl-quality", "--format", "json", "--output", out.toString()))
+        assertEquals(EXIT_FINDINGS, strict.status, strict.err)
+        assertTrue("VIOLATION" in findingSeverities(out.readText()), out.readText())
 
-        // --severity info fails on any finding at or above INFO.
-        val lenient = run(listOf("check", onto.toString(), "--catalog", "owl-quality", "--severity", "info", "--format", "json", "--output", out.toString()))
+        // --severity info fails on any finding at or above INFO (unlabelled classes in the default fixture).
+        val lenient = run(listOf("check", ontology().toString(), "--catalog", "owl-quality", "--severity", "info", "--output", dir.resolve("r.txt").toString()))
         assertEquals(EXIT_FINDINGS, lenient.status, lenient.err)
+    }
+
+    @Test
+    fun `--explain without the LLM opt-in warns, and fails with --fail-on-explain-error`() {
+        val env = { _: String -> null }
+        val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--explain", "--output", dir.resolve("o.txt").toString())
+
+        val lenient = ontoQualityApp(CliEnvironment(env = env)).test(argv)
+        assertEquals(EXIT_OK, lenient.statusCode, lenient.stderr)
+        assertEquals(
+            listOf("onto-qa: warning: LLM explanations skipped: KASTOR_ONTO_QUALITY_LLM is not set to true (required by --explain)."),
+            lenient.stderr.lines().filter { it.isNotEmpty() },
+        )
+
+        val strict = ontoQualityApp(CliEnvironment(env = env)).test(argv + "--fail-on-explain-error")
+        assertEquals(EXIT_EXPLAIN_ERROR, strict.statusCode, strict.stderr)
+        assertEquals(
+            listOf(
+                "onto-qa: error: LLM explanations skipped: KASTOR_ONTO_QUALITY_LLM is not set to true (required by --explain); " +
+                    "failing because of --fail-on-explain-error.",
+            ),
+            strict.stderr.lines().filter { it.isNotEmpty() },
+        )
+        assertEquals(EXIT_EXPLAIN_ERROR, run(argv + "--fail-on-explain-error", CliEnvironment(env = env)).status)
+    }
+
+    @Test
+    fun `LLM failure messages on stderr are sanitised`() {
+        val hostile = "down\u001B[2J\u202Eevil\u0007"
+        val visible = "down\\u001B[2J\\u202Eevil\\u0007"
+        val env = { name: String -> if (name == LLM_EXPLAIN_ENV) "true" else null }
+        val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--severity", "info", "--explain", "--output", dir.resolve("o.txt").toString())
+
+        val incomplete = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList(), listOf(ExplanationFailure(emptyList(), hostile))) }
+        val partial = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { incomplete }, env = env)).test(argv)
+        assertEquals(EXIT_OK, partial.statusCode, partial.stderr)
+        assertEquals(listOf("LLM explanations incomplete: 0 finding(s) not explained ($visible)"), partial.stderr.lines().filter { it.isNotEmpty() })
+
+        val throwing = QualityExplanationEnricher { _, _ -> throw IllegalStateException(hostile) }
+        val failed = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { throwing }, env = env)).test(argv)
+        assertEquals(EXIT_OK, failed.statusCode, failed.stderr)
+        assertEquals(listOf("LLM explanations failed: IllegalStateException: $visible"), failed.stderr.lines().filter { it.isNotEmpty() })
+        assertNoRawControls(partial.stderr + failed.stderr)
+    }
+
+    @Test
+    fun `parse errors on stderr are sanitised`() {
+        val file = ontology("evil\u202Eltt.owl", ontologyTtl)
+        val result = run(listOf("metrics", file.toString()))
+        assertEquals(EXIT_INPUT_ERROR, result.status, result.err)
+        assertTrue(result.err.contains("Failed to parse ${file.toString().replace("\u202E", "\\u202E")} as RDF/XML: "), result.err)
+        assertNoRawControls(result.err)
+    }
+
+    @Test
+    fun `embedding catalog without enrichment triples prints a visible warning`() {
+        val onto = ontology("empty.ttl", emptyTtl).toString()
+        val all = ontoQualityApp().test(listOf("check", onto, "--catalog", "all", "--output", dir.resolve("a.txt").toString()))
+        assertEquals(EXIT_OK, all.statusCode, all.stderr)
+        assertEquals(
+            listOf(
+                "onto-qa: warning: --catalog all includes embedding-quality shapes, but the ontology has no oqsh:semanticallyCloseTo " +
+                    "triples; run onto-qa enrich or onto-qa pipeline first, or those shapes produce no findings.",
+            ),
+            all.stderr.lines().filter { it.isNotEmpty() },
+        )
+        val owlOnly = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--output", dir.resolve("b.txt").toString()))
+        assertEquals("", owlOnly.stderr)
+    }
+
+    @Test
+    fun `an SLF4J binding prints library warnings to stderr at WARN level`() {
+        assertEquals("org.slf4j.simple.SimpleLoggerFactory", org.slf4j.LoggerFactory.getILoggerFactory().javaClass.name)
+        val log = org.slf4j.LoggerFactory.getLogger("com.geoknoesis.kastor.ontoquality.embed.ModelDownloader")
+        assertTrue(log.isWarnEnabled)
+        assertFalse(log.isInfoEnabled)
+    }
+
+    private fun assertNoRawControls(text: String) {
+        val bad = text.filter { (it.isISOControl() && it != '\n' && it != '\r' && it != '\t') || it.code in 0x202A..0x202E || it.code in 0x2066..0x2069 }
+        assertEquals("", bad, "raw control or bidi characters on stderr")
     }
 
     @Test
@@ -216,6 +347,12 @@ class CliTest {
                 listOf("check", onto, "--no-such-option"),
                 listOf("check"),
                 listOf("check", dir.resolve("missing.ttl").toString()),
+                listOf("check", dir.toString()),
+                listOf("pipeline", dir.toString()),
+                listOf("metrics", dir.toString()),
+                listOf("check", onto, "--base-iri", "no-scheme"),
+                listOf("pipeline", onto, "--base-iri", "not absolute"),
+                listOf("pipeline", onto, "--similarity-max-pairs", "0"),
                 listOf("enrich", onto, "--max-tokens", "0"),
                 listOf("enrich", onto, "--model", "custom"),
                 listOf("enrich", onto, "--max-tokens", "600"),
@@ -256,10 +393,13 @@ class CliTest {
         val harness = ontoQualityApp(CliEnvironment(enricherFactory = FakeEnricherFactory(failure = IllegalStateException("boom")))).test(listOf("pipeline", onto))
         assertEquals(EXIT_RUNTIME_ERROR, harness.statusCode)
 
-        // --debug adds the stack trace.
-        val debug = run(listOf("--debug", "pipeline", onto), CliEnvironment(enricherFactory = FakeEnricherFactory(failure = IllegalStateException("boom"))))
-        assertEquals(EXIT_RUNTIME_ERROR, debug.status)
-        assertTrue(debug.err.contains("\tat "), debug.err)
+        // --debug adds the stack trace, before or after the command name.
+        for (argv in listOf(listOf("--debug", "pipeline", onto), listOf("pipeline", onto, "--debug"), listOf("pipeline", "--debug", onto))) {
+            val debug = run(argv, CliEnvironment(enricherFactory = FakeEnricherFactory(failure = IllegalStateException("boom"))))
+            assertEquals(EXIT_RUNTIME_ERROR, debug.status, "$argv: ${debug.err}")
+            assertTrue(debug.err.contains("\tat "), debug.err)
+        }
+        assertEquals(EXIT_OK, run(listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--debug")).status)
 
         // Output that cannot be written is a runtime (IO) failure, after the model has been closed.
         val writeFailure = FakeEnricherFactory()
@@ -280,6 +420,49 @@ class CliTest {
     }
 
     @Test
+    fun `result-pair limit exhaustion suggests a higher threshold or --similarity-max-pairs`() {
+        val failure =
+            SimilaritySearchBudgetExceededException("Similarity result limit exceeded (5 pairs)", SimilaritySearchBudgetExceededException.Limit.RESULT_PAIRS)
+        val result = run(listOf("enrich", ontology().toString()), CliEnvironment(enricherFactory = FakeEnricherFactory(failure = failure)))
+        assertEquals(EXIT_RUNTIME_ERROR, result.status, result.err)
+        assertTrue(
+            result.err.contains(
+                "Semantic enrichment failed: Similarity result limit exceeded (5 pairs). " +
+                    "Too many similar pairs: re-run with a higher --threshold or a larger --similarity-max-pairs.",
+            ),
+            result.err,
+        )
+        assertFalse(result.err.contains("--similarity-mode approximate"), result.err)
+
+        val deadline =
+            SimilaritySearchBudgetExceededException("Similarity search deadline exceeded", SimilaritySearchBudgetExceededException.Limit.DEADLINE)
+        assertEquals(
+            "Re-run with a larger --similarity-timeout (seconds), or use --similarity-mode approximate for large vocabularies.",
+            similarityBudgetHint(deadline),
+        )
+    }
+
+    @Test
+    fun `--reasoner hermit without HermiT on the classpath is a usage error with guidance`() {
+        val onto = ontology().toString()
+        val environment = CliEnvironment(enricherFactory = FakeEnricherFactory(), reasonerAvailable = { it != OntoQualityReasoningProfile.HERMIT })
+        for (command in listOf("check", "pipeline")) {
+            val factory = FakeEnricherFactory()
+            val result = run(listOf(command, onto, "--reasoner", "hermit"), CliEnvironment(enricherFactory = factory, reasonerAvailable = environment.reasonerAvailable))
+            assertEquals(EXIT_USAGE, result.status, result.err)
+            assertTrue(
+                result.err.contains(
+                    "--reasoner hermit is not available: HermiT (:rdf:reasoning-hermit with the OWL API) is not on the classpath. " +
+                        "Add it to the classpath, or use --reasoner owl-rl, owl-micro or rdfs.",
+                ),
+                result.err,
+            )
+            assertEquals(0, factory.opened)
+        }
+        assertEquals(EXIT_OK, run(listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--reasoner", "rdfs"), environment).status)
+    }
+
+    @Test
     fun `similarity options map to scaled limits with overrides`() {
         fun options(maxWork: Long? = null, timeout: Duration? = null, mode: SimilaritySearchMode = SimilaritySearchMode.Exact) =
             EmbeddingCliOptions(
@@ -290,21 +473,24 @@ class CliTest {
         val scaled = options().similarityLimitsPolicy().limitsFor(20_000)
         assertEquals(200_290_000L, scaled.maxDistanceEvaluations)
         assertEquals(Duration.ofMillis(40_058), scaled.timeout)
+        assertEquals(1_000_000, scaled.maxPairs)
         val overridden = options(maxWork = 10, timeout = Duration.ofSeconds(3)).similarityLimitsPolicy().limitsFor(20_000)
         assertEquals(10L, overridden.maxDistanceEvaluations)
         assertEquals(Duration.ofSeconds(3), overridden.timeout)
+        assertEquals(42, options().copy(similarityMaxPairs = 42).similarityLimitsPolicy().limitsFor(20_000).maxPairs)
 
         val captured = mutableListOf<EmbeddingCliOptions>()
         val capture = PipelineEnricherFactory { opts -> captured += opts; FakeEnricherFactory().open(opts) }
         val result =
             run(
-                listOf("enrich", ontology().toString(), "--similarity-max-work", "1234", "--similarity-timeout", "7", "--similarity-mode", "approximate", "--output", dir.resolve("e.ttl").toString()),
+                listOf("enrich", ontology().toString(), "--similarity-max-work", "1234", "--similarity-timeout", "7", "--similarity-mode", "approximate", "--similarity-max-pairs", "99", "--output", dir.resolve("e.ttl").toString()),
                 CliEnvironment(enricherFactory = capture),
             )
         assertEquals(EXIT_OK, result.status, result.err)
         assertEquals(1234L, captured.single().similarityMaxWork)
         assertEquals(Duration.ofSeconds(7), captured.single().similarityTimeout)
         assertEquals(SimilaritySearchMode.ApproximateLsh(), captured.single().similarityMode)
+        assertEquals(99, captured.single().similarityMaxPairs)
     }
 
     @Test
@@ -323,19 +509,14 @@ class CliTest {
 
     @Test
     fun `owl-rl and owl-micro reasoners are both accepted without warnings`() {
-        val onto = ontology().toString()
-        fun expectedStatus(json: Path): Int =
-            if (findingSeverities(json.readText()).any { it == "VIOLATION" || it == "ERROR" }) EXIT_FINDINGS else EXIT_OK
-
-        // OWL RL materialisation adds axiomatic triples, so the status is derived from the reported findings.
-        val rlOut = dir.resolve("rl.json")
-        val rl = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "owl-rl", "--format", "json", "--output", rlOut.toString()))
-        assertEquals(expectedStatus(rlOut), rl.statusCode, rl.stderr)
+        // Materialisation only adds triples, so the asserted P26 violation is still reported: status 1 for both.
+        val onto = ontology("violation.ttl", violationTtl).toString()
+        val rl = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "owl-rl", "--output", dir.resolve("rl.txt").toString()))
+        assertEquals(EXIT_FINDINGS, rl.statusCode, rl.stderr)
         assertFalse(rl.stderr.contains("deprecated"), rl.stderr)
 
-        val microOut = dir.resolve("micro.json")
-        val micro = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "owl-micro", "--format", "json", "--output", microOut.toString()))
-        assertEquals(expectedStatus(microOut), micro.statusCode, micro.stderr)
+        val micro = ontoQualityApp().test(listOf("check", onto, "--catalog", "owl-quality", "--reasoner", "owl-micro", "--output", dir.resolve("micro.txt").toString()))
+        assertEquals(EXIT_FINDINGS, micro.statusCode, micro.stderr)
         // owl-micro is a first-class profile (Jena OWL Micro), no longer a deprecated alias of owl-rl.
         assertFalse(micro.stderr.contains("deprecated"), micro.stderr)
     }
@@ -367,14 +548,13 @@ class CliTest {
         val out = dir.resolve("pipeline.json")
         val result =
             ontoQualityApp(CliEnvironment(enricherFactory = factory)).test(
-                listOf("pipeline", ontology().toString(), "--catalog", "owl-quality", "--format", "json", "--output", out.toString(), "--severity", "warning"),
+                listOf("pipeline", ontology("violation.ttl", violationTtl).toString(), "--catalog", "owl-quality", "--format", "json", "--output", out.toString(), "--severity", "warning"),
             )
         assertEquals(1, factory.opened)
         assertEquals(1, factory.closed)
         assertEquals(before, tempIntermediates())
-        val severities = findingSeverities(out.readText())
-        val expected = if (severities.any { it != "INFO" && it != "DEBUG" && it != "TRACE" }) EXIT_FINDINGS else EXIT_OK
-        assertEquals(expected, result.statusCode, result.stderr)
+        // The P26 violation is at or above --severity warning.
+        assertEquals(EXIT_FINDINGS, result.statusCode, result.stderr)
     }
 
     @Test

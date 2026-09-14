@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.ontoquality.PitfallReference
 import com.geoknoesis.kastor.ontoquality.QualityChecker
 import com.geoknoesis.kastor.ontoquality.QualityReport
 import com.geoknoesis.kastor.ontoquality.MarkdownReportOptions
+import com.geoknoesis.kastor.ontoquality.OutputSanitizer
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
 import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
@@ -18,6 +19,7 @@ import com.geoknoesis.kastor.ontoquality.metrics.MetricsConfig
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetrics
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
 import com.geoknoesis.kastor.ontoquality.metrics.integration.KastorMetricsProvider
+import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoning
 import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 import com.geoknoesis.kastor.ontoquality.embed.EnrichmentVocabulary
 import com.geoknoesis.kastor.ontoquality.embed.OnnxEmbeddingModel
@@ -65,6 +67,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -98,11 +102,33 @@ private const val EXIT_STATUS_HELP =
     "Exit status: 0 success; 1 findings at or above --severity; 2 the ontology could not be parsed; " +
         "3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
         "5 runtime error (model download or loading, similarity or LLM budget, I/O, internal). " +
-        "Use onto-qa --debug <command> for stack traces."
+        "Use --debug (before or after the command) for stack traces."
 
 private const val SIMILARITY_BUDGET_HINT =
     "Re-run with a larger --similarity-max-work (distance evaluations) or --similarity-timeout (seconds), " +
         "or use --similarity-mode approximate for large vocabularies."
+
+/** Advice for an exhausted similarity budget, targeted at the limit that was hit. */
+internal fun similarityBudgetHint(e: SimilaritySearchBudgetExceededException): String =
+    when (e.limit) {
+        SimilaritySearchBudgetExceededException.Limit.RESULT_PAIRS ->
+            "Too many similar pairs: re-run with a higher --threshold or a larger --similarity-max-pairs."
+        SimilaritySearchBudgetExceededException.Limit.DISTANCE_EVALUATIONS ->
+            "Re-run with a larger --similarity-max-work (distance evaluations), or use --similarity-mode approximate for large vocabularies."
+        SimilaritySearchBudgetExceededException.Limit.DEADLINE ->
+            "Re-run with a larger --similarity-timeout (seconds), or use --similarity-mode approximate for large vocabularies."
+        null -> SIMILARITY_BUDGET_HINT
+    }
+
+/**
+ * Default base IRI prefix for relative references in the input. It is independent of the directory the file is in, so
+ * finding IRIs and `findingRef`s are identical on every machine and no absolute path (user names included) reaches
+ * reports or LLM prompts. The `/` makes relative paths resolve inside the prefix (`<Sub>` → `urn:onto-qa:input/Sub`).
+ */
+internal const val DEFAULT_BASE_IRI_PREFIX = "urn:onto-qa:input/"
+
+private const val BASE_IRI_HELP =
+    "Base IRI for relative references such as <#Foo> (default: $DEFAULT_BASE_IRI_PREFIX<file name>, independent of the directory)"
 
 /** Upper bound for `--explain-max` (LLM cost / rate-limit guard). */
 internal const val MAX_EXPLAIN_FINDINGS = 500
@@ -147,12 +173,14 @@ internal data class EmbeddingCliOptions(
     val similarityMaxWork: Long? = null,
     /** `--similarity-timeout`; null scales the deadline with the number of labelled entities. */
     val similarityTimeout: Duration? = null,
+    /** `--similarity-max-pairs`; null keeps the default result-pair limit. */
+    val similarityMaxPairs: Int? = null,
     val similarityMode: SimilaritySearchMode = SimilaritySearchMode.Exact,
 )
 
 /** Scaled similarity limits with the CLI overrides applied. */
 internal fun EmbeddingCliOptions.similarityLimitsPolicy(): SimilarityLimitsPolicy =
-    SimilarityLimitsPolicy.scaled(similarityMaxWork, similarityTimeout)
+    SimilarityLimitsPolicy.scaled(similarityMaxWork, similarityTimeout, similarityMaxPairs)
 
 /** Semantic enrichment step, owning any native resources until [close]. */
 internal interface PipelineEnricher : AutoCloseable {
@@ -188,7 +216,19 @@ internal class CliEnvironment(
     val enricherFactory: PipelineEnricherFactory = OnnxPipelineEnricherFactory,
     val explanationEnricherFactory: (LlmExplanationConfig) -> QualityExplanationEnricher = ::qualityExplanationEnricher,
     val env: (String) -> String? = System::getenv,
+    /** Whether a `--reasoner` profile can run here (HermiT needs its OWL API classes on the classpath). */
+    val reasonerAvailable: (OntoQualityReasoningProfile) -> Boolean = ::reasonerAvailableOnClasspath,
 )
+
+/** [OntoQualityReasoning.supports], treating missing reasoner classes (a [LinkageError]) as unavailable. */
+internal fun reasonerAvailableOnClasspath(profile: OntoQualityReasoningProfile): Boolean =
+    try {
+        OntoQualityReasoning.supports(profile)
+    } catch (_: LinkageError) {
+        false
+    } catch (_: Exception) {
+        false
+    }
 
 internal fun ontoQualityApp(environment: CliEnvironment = CliEnvironment()): CliktCommand =
     OntoQualityApp().subcommands(
@@ -235,7 +275,40 @@ internal fun exitStatusFor(e: CliktError): Int =
         else -> e.statusCode
     }
 
-private fun describeFailure(e: Throwable): String = "${e.javaClass.simpleName}: ${e.message ?: "(no message)"}"
+private fun describeFailure(e: Throwable): String = "${e.javaClass.simpleName}: ${sanitize(e.message ?: "(no message)")}"
+
+/** Untrusted text (exception messages, paths, ontology or LLM text) made safe for stderr: controls and bidi shown as \uXXXX. */
+private fun sanitize(text: String?): String = OutputSanitizer.terminal(text ?: "")
+
+/** `urn:onto-qa:input/` plus the percent-encoded file name of [path]. */
+internal fun defaultBaseIri(path: Path): String =
+    buildString {
+        append(DEFAULT_BASE_IRI_PREFIX)
+        for (byte in path.fileName?.toString().orEmpty().toByteArray(Charsets.UTF_8)) {
+            val code = byte.toInt() and 0xff
+            val ch = code.toChar()
+            if (ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' || ch == '-' || ch == '.' || ch == '_' || ch == '~') {
+                append(ch)
+            } else {
+                append('%').append("%02X".format(code))
+            }
+        }
+    }
+
+/** Returns [value] when it is an absolute IRI; a usage error otherwise. */
+internal fun validateBaseIri(value: String?): String? {
+    if (value == null) return null
+    val absolute =
+        try {
+            URI(value).isAbsolute
+        } catch (_: URISyntaxException) {
+            false
+        }
+    if (!absolute || value.any { it.isWhitespace() || it.isISOControl() }) {
+        throw usageError("--base-iri must be an absolute IRI such as https://example.org/onto (got '${sanitize(value)}')")
+    }
+    return value
+}
 
 private class OntoQualityApp : CliktCommand(name = "onto-qa") {
     private val debug by option("--debug", help = "Print stack traces for runtime errors").flag(default = false)
@@ -254,17 +327,24 @@ private class OntoQualityApp : CliktCommand(name = "onto-qa") {
  * with a concise message (the cause is kept for `--debug`), so no failure falls back to the JVM's status 1.
  */
 private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
+    /** Also accepted after the command name; [runOntoQa] reads it from argv in either position. */
+    private val debugOpt by option("--debug", help = "Print stack traces for runtime errors").flag(default = false)
+
+    /** `--base-iri`; resolve with [validateBaseIri] before loading anything. */
+    protected val baseIriOpt by option("--base-iri", help = BASE_IRI_HELP)
+
     override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
 
     abstract fun execute()
 
     final override fun run() {
+        if (debugOpt) logger.debug("onto-qa debug output enabled")
         try {
             execute()
         } catch (e: CliktError) {
             throw e
         } catch (e: SimilaritySearchBudgetExceededException) {
-            throw CliktError("Semantic enrichment failed: ${e.message}. $SIMILARITY_BUDGET_HINT", e, EXIT_RUNTIME_ERROR)
+            throw CliktError("Semantic enrichment failed: ${sanitize(e.message)}. ${similarityBudgetHint(e)}", e, EXIT_RUNTIME_ERROR)
         } catch (e: Exception) {
             throw CliktError("onto-qa $commandName failed: ${describeFailure(e)}", e, EXIT_RUNTIME_ERROR)
         }
@@ -296,18 +376,19 @@ internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
 }
 
 /**
- * Parses [path] with the file's URI as base IRI, so relative references (`<>`, `<#Foo>`, `rdf:about="#Foo"`)
- * resolve against the document instead of being rejected. Uses the provider-level
- * `RdfProvider.parseGraph(stream, format, baseIri)` overload, trying providers in registry priority order.
+ * Parses [path] with [baseIri] (default [defaultBaseIri], `urn:onto-qa:input/<file name>`), so relative references
+ * (`<>`, `<#Foo>`, `rdf:about="#Foo"`) resolve instead of being rejected, independently of where the file lives. Uses
+ * the provider-level `RdfProvider.parseGraph(stream, format, baseIri)` overload, trying providers in registry priority
+ * order.
  */
-internal fun parseOntology(path: Path, format: RdfFormat): RdfGraph {
-    val baseIri = path.toAbsolutePath().normalize().toUri().toString()
+internal fun parseOntology(path: Path, format: RdfFormat, baseIri: String? = null): RdfGraph {
+    val base = baseIri ?: defaultBaseIri(path)
     return try {
         val providers = RdfProviderRegistry.discoverProviders().filter { it.supportsInputFormat(format.formatName) }
         var parsed: RdfGraph? = null
         for (provider in providers) {
             try {
-                parsed = Files.newInputStream(path).use { provider.parseGraph(it, format.formatName, baseIri) }
+                parsed = Files.newInputStream(path).use { provider.parseGraph(it, format.formatName, base) }
                 break
             } catch (_: UnsupportedOperationException) {
                 continue
@@ -315,12 +396,12 @@ internal fun parseOntology(path: Path, format: RdfFormat): RdfGraph {
         }
         parsed ?: throw IllegalStateException("no RDF provider can parse ${format.formatName}")
     } catch (e: Exception) {
-        throw CliktError("Failed to parse $path as ${format.formatName}: ${e.message}", e, EXIT_INPUT_ERROR)
+        throw CliktError("Failed to parse ${sanitize(path.toString())} as ${format.formatName}: ${sanitize(e.message)}", e, EXIT_INPUT_ERROR)
     }
 }
 
 private class MetricsCommand : OntoQaCommand(name = "metrics") {
-    private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
+    private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val formatOpt by option("--format", help = "text | markdown | json | turtle").choice(*FORMAT_CHOICES, ignoreCase = true).default("text")
     private val outputOpt by option("--output", help = "Write output to this file instead of stdout").path()
@@ -338,7 +419,7 @@ private class MetricsCommand : OntoQaCommand(name = "metrics") {
         if (format in setOf("json", "turtle") && include != "all") {
             throw usageError("--include $includeOpt is only supported with --format text or markdown ($format output always contains every section)")
         }
-        val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt))
+        val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         val cfg =
             MetricsConfig(
                 emitOQuaREScores = !noScoresOpt,
@@ -400,14 +481,14 @@ private fun openEnricher(environment: CliEnvironment, options: EmbeddingCliOptio
     }
 
 private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "enrich") {
-    private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
+    private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
     private val outputOpt by option("--output", help = "Output Turtle path").path()
 
     override fun execute() {
         val options = embedding.toOptions()
-        val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt))
+        val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         openEnricher(environment, options).use { enricher ->
             echo("Embedding and building similarity index (threshold=${embedding.threshold}, mode=${options.similarityMode.label})…", err = true)
             val enriched = enricher.enrich(graph)
@@ -456,6 +537,11 @@ private class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.Op
         option("--similarity-timeout", help = "Similarity search deadline in seconds (default: scaled, at least 30)")
             .int()
             .restrictTo(1..86_400)
+    val similarityMaxPairs by
+        option(
+            "--similarity-max-pairs",
+            help = "Max similar pairs the search may return before failing (default: 1000000); raise --threshold instead when this is hit",
+        ).int().restrictTo(min = 1)
     val similarityMode by
         option(
             "--similarity-mode",
@@ -481,6 +567,7 @@ private class EmbeddingOptionGroup : com.github.ajalt.clikt.parameters.groups.Op
             threshold = threshold,
             similarityMaxWork = similarityMaxWork,
             similarityTimeout = similarityTimeout?.let { Duration.ofSeconds(it.toLong()) },
+            similarityMaxPairs = similarityMaxPairs,
             similarityMode =
                 if (similarityMode.equals("approximate", ignoreCase = true)) SimilaritySearchMode.ApproximateLsh() else SimilaritySearchMode.Exact,
         )
@@ -561,12 +648,13 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
                 requestTimeout = Duration.ofSeconds(llmTimeoutSeconds.toLong()),
                 retries = llmRetries,
                 maxTotalDuration = Duration.ofSeconds(llmMaxDurationSeconds.toLong()),
+                failOnError = failOnExplainError,
             )
         }
 }
 
 private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline") {
-    private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
+    private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
     private val reportOptions by ReportOptionGroup()
@@ -578,9 +666,11 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         // Resolve and validate every input before loading a model.
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
+        requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
+        val baseIri = validateBaseIri(baseIriOpt)
         val llm = reportOptions.explainCli()
         val embeddingOptions = embedding.toOptions()
-        val ontology = parseOntology(ontologyArg, format)
+        val ontology = parseOntology(ontologyArg, format, baseIri)
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), withMetricsProvider = false)
 
         val exitCode =
@@ -597,9 +687,11 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
                 if (reportOptions.catalog.lowercase() in CATALOGS_USING_EMBEDDING_SHAPES) {
                     val hasClose = enriched.getTriplesSequence().any { it.predicate == EnrichmentVocabulary.semanticallyCloseTo }
                     if (!hasClose) {
-                        logger.info(
-                            "Embedding-quality catalog selected but no {} enrichment triples were materialized; semantic similarity shapes will not fire.",
-                            EnrichmentVocabulary.semanticallyCloseTo,
+                        echo(
+                            "onto-qa: warning: --catalog ${reportOptions.catalog.lowercase()} includes embedding-quality shapes, but enrichment " +
+                                "produced no oqsh:semanticallyCloseTo triples (no labelled pair reached --threshold ${embedding.threshold}); " +
+                                "those shapes produce no findings.",
+                            err = true,
                         )
                     }
                 }
@@ -628,7 +720,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
 }
 
 private class CheckCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "check") {
-    private val ontologyArg by argument("ontology", help = "Path to the ontology").path(mustExist = true)
+    private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val reportOptions by ReportOptionGroup()
     private val withMetricsOpt by
@@ -643,19 +735,23 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
     override fun execute() {
         val format = resolveInputFormat(ontologyArg, inputFormatOpt)
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
+        requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
+        val baseIri = validateBaseIri(baseIriOpt)
         val llm = reportOptions.explainCli()
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
 
-        val graph = parseOntology(ontologyArg, format)
+        val graph = parseOntology(ontologyArg, format, baseIri)
 
         if (reportOptions.catalog.lowercase() in CATALOGS_USING_EMBEDDING_SHAPES) {
             val hasClose =
                 graph.getTriplesSequence().any { it.predicate == EnrichmentVocabulary.semanticallyCloseTo }
             if (!hasClose) {
-                logger.info(
-                    "Embedding-quality catalog selected but no {} triples found in the ontology; semantic similarity shapes will not produce findings.",
-                    EnrichmentVocabulary.semanticallyCloseTo,
+                echo(
+                    "onto-qa: warning: --catalog ${reportOptions.catalog.lowercase()} includes embedding-quality shapes, but the ontology " +
+                        "has no oqsh:semanticallyCloseTo triples; run onto-qa enrich or onto-qa pipeline first, or those shapes " +
+                        "produce no findings.",
+                    err = true,
                 )
             }
         }
@@ -684,6 +780,18 @@ private fun exitStatus(report: QualityReport, options: ReportOptionGroup, outcom
         options.failOnExplainError && outcome.failed -> EXIT_EXPLAIN_ERROR
         else -> EXIT_OK
     }
+
+/** Usage error with guidance when the selected reasoner cannot run (e.g. HermiT missing from the classpath). */
+private fun requireReasonerAvailable(environment: CliEnvironment, profile: OntoQualityReasoningProfile, option: String) {
+    if (profile == OntoQualityReasoningProfile.NONE || environment.reasonerAvailable(profile)) return
+    val guidance =
+        if (profile == OntoQualityReasoningProfile.HERMIT) {
+            "HermiT (:rdf:reasoning-hermit with the OWL API) is not on the classpath. Add it to the classpath, or use --reasoner owl-rl, owl-micro or rdfs."
+        } else {
+            "use another --reasoner (none, rdfs, owl-micro, owl-rl)."
+        }
+    throw usageError("--reasoner ${option.lowercase()} is not available: $guidance")
+}
 
 /** `owl-rl` runs Jena's OWL rule reasoner; `owl-micro` runs Jena's faster, less complete OWL Micro rule reasoner. */
 private fun parseReasonerProfile(s: String): OntoQualityReasoningProfile =
@@ -715,6 +823,8 @@ internal data class LlmExplainCli(
     val requestTimeout: Duration,
     val retries: Int,
     val maxTotalDuration: Duration,
+    /** `--fail-on-explain-error`. */
+    val failOnError: Boolean = false,
 )
 
 private fun parseLlmProvider(s: String): LlmProvider =
@@ -769,11 +879,16 @@ private fun maybeExplainReport(
 ): ExplainOutcome {
     if (llm == null) return ExplainOutcome(null, failed = false)
     if (!environment.env(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true)) {
-        logger.warn(
-            "{} is not set to true; skipping LLM explanations (Koog).",
-            LLM_EXPLAIN_ENV,
-        )
-        return ExplainOutcome(null, failed = false)
+        // --explain without the opt-in produced no explanations: a failure under --fail-on-explain-error.
+        if (llm.failOnError) {
+            err(
+                "onto-qa: error: LLM explanations skipped: $LLM_EXPLAIN_ENV is not set to true (required by --explain); " +
+                    "failing because of --fail-on-explain-error.",
+            )
+        } else {
+            err("onto-qa: warning: LLM explanations skipped: $LLM_EXPLAIN_ENV is not set to true (required by --explain).")
+        }
+        return ExplainOutcome(null, failed = true)
     }
     if (llm.dryRun) {
         val n =
@@ -807,12 +922,12 @@ private fun maybeExplainReport(
         val explained = runBlocking { enricher.enrich(report, opts) }
         if (explained.hasExplanationFailures) {
             val missing = explained.failures.sumOf { it.findingRefs.size }
-            err("LLM explanations incomplete: $missing finding(s) not explained (${explained.failures.first().reason})")
+            err("LLM explanations incomplete: $missing finding(s) not explained (${sanitize(explained.failures.first().reason)})")
         }
         ExplainOutcome(explained, failed = explained.hasExplanationFailures)
     } catch (e: Exception) {
-        logger.warn("LLM explanations failed", e)
-        err("LLM explanations failed: ${e::class.simpleName}: ${e.message}")
+        logger.debug("LLM explanations failed", e)
+        err("LLM explanations failed: ${e::class.simpleName}: ${sanitize(e.message)}")
         ExplainOutcome(null, failed = true)
     }
 }
@@ -1000,7 +1115,7 @@ internal fun findingsToJson(
 private fun focusNodeToString(term: RdfTerm): String =
     when (term) {
         is Iri -> term.value
-        is BlankNode -> "_:${term.id}"
+        is BlankNode -> term.toString()
         is Literal -> term.lexical
         else -> term.toString()
     }

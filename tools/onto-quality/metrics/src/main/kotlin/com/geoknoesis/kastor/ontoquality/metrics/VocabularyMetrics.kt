@@ -61,7 +61,18 @@ object VocabularyMetrics {
             )
         val extensions =
             HotSpotExtractor.buildOwlExtensions(iq, bundle.imports, bundle.ontologyHeaders, config)
-        return OwlMetricsSection(entityCounts = bundle.owlEntityCounts, oquare = oq, extensions = extensions)
+        val kastorAdapted =
+            KastorAdaptedMetrics(
+                numberOfChildren = OquareCalculators.numberOfChildrenKastor(iq, scores),
+                couplingBetweenObjects = OquareCalculators.couplingBetweenObjectsKastor(iq, scores),
+                tangledness = OquareCalculators.tanglednessKastor(iq, scores),
+            )
+        return OwlMetricsSection(
+            entityCounts = bundle.owlEntityCounts,
+            oquare = oq,
+            extensions = extensions,
+            kastorAdapted = kastorAdapted,
+        )
     }
 
     private fun computeSkos(
