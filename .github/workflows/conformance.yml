@@ -44,7 +44,7 @@ jobs:
         shell: bash
 
       - name: Require populated conformance suites
-        # Floors are ~90% of executed counts with the pinned corpora (RDF 1,898 of 2,108; SHACL module 282, of which W3C 166, on 2026-09-14).
+        # Floors are ~90% of executed counts with the pinned corpora (RDF 1,899 of 2,111; SHACL module 318, of which W3C 166, on 2026-09-14).
         run: |
           python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1700 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 250 --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 285 --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150 --skip-allowlist scripts/test-skip-allowlist.json
