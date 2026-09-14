@@ -5,8 +5,8 @@ package com.geoknoesis.kastor.rdf
  * not valid RDF (or cannot be represented by Kastor terms).
  *
  * Rules:
- * - a language tag must be BCP 47-shaped (the Turtle/SPARQL `LANGTAG` production: `[a-zA-Z]{1,8}` followed by
- *   `-[a-zA-Z0-9]{1,8}` subtags);
+ * - a language tag must match the Turtle/SPARQL `LANGTAG` production `[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`
+ *   (case-insensitive; subtags have no length limit - BCP 47 length and registry rules are not enforced);
  * - `rdf:langString` requires a language tag;
  * - `rdf:dirLangString` requires both a language tag and a base direction;
  * - a base direction is only valid together with a language tag.
@@ -18,7 +18,10 @@ object LiteralValidation {
     /** IRI of `rdf:dirLangString` (RDF 1.2). */
     const val RDF_DIR_LANG_STRING: String = "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"
 
-    /** True if [tag] is a non-empty, BCP 47-shaped language tag (case-insensitive). */
+    /**
+     * True if [tag] matches the Turtle/SPARQL `LANGTAG` grammar `[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*` (either case).
+     * This is the single language-tag rule used by [LangString] and [normalizeLanguageTag].
+     */
     fun isWellFormedLanguageTag(tag: String): Boolean {
         var segment = 0
         var first = true
@@ -30,7 +33,8 @@ object LiteralValidation {
                 continue
             }
             val ok = c in 'a'..'z' || c in 'A'..'Z' || (!first && c in '0'..'9')
-            if (!ok || ++segment > 8) return false
+            if (!ok) return false
+            segment++
         }
         return segment > 0
     }

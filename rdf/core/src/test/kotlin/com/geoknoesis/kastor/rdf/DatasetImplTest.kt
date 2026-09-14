@@ -76,7 +76,7 @@ class DatasetImplTest {
     }
 
     @Test
-    fun `dataset does not rewrite queries that already include FROM`() {
+    fun `dataset rejects queries that already include FROM`() {
         val repo = CapturingRepository()
         val dataset = Dataset {
             defaultGraph(repo)
@@ -86,10 +86,9 @@ class DatasetImplTest {
             PREFIX ex: <http://example.org/>
             SELECT * FROM <http://example.org/explicit> WHERE { ?s ?p ?o }
         """.trimIndent()
-        dataset.select(SparqlSelectQuery(queryText))
+        assertThrows(IllegalArgumentException::class.java) { dataset.select(SparqlSelectQuery(queryText)) }
 
-        val captured = repo.lastSelect?.sparql ?: error("Expected SELECT query to be captured")
-        assertEquals(queryText, captured)
+        assertEquals(null, repo.lastSelect, "the query must not reach the source repository")
 
         dataset.close()
         repo.close()
