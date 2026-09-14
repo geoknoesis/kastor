@@ -2,10 +2,14 @@ package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.RdfFormatException
 import com.geoknoesis.kastor.rdf.RdfResource
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.ByteArrayInputStream
+import java.io.FilterInputStream
 
 class JenaStreamingParseTest {
 
@@ -38,12 +42,38 @@ class JenaStreamingParseTest {
   }
 
   @Test
-  fun `parseStreaming is lazy - take(1) does not require consuming everything`() {
-    // A lazy Sequence lets callers stop early; just assert the first element is real.
-    val first =
-      JenaProvider()
-        .parseStreaming(turtle.byteInputStream(), "TURTLE")
-        .first()
-    assertTrue(first.subject is Iri)
+  fun `parseStreaming is eager - the result is detached from the input stream`() {
+    val input = turtle.byteInputStream()
+    val triples = JenaProvider().parseStreaming(input, "TURTLE")
+    input.close()
+    assertEquals(3, triples.count())
+    assertEquals(3, triples.count(), "a materialised sequence can be iterated again")
+  }
+
+  @Test
+  fun `openTripleStream is lazy - the first triple arrives before the input is read to the end`() {
+    val lines = (0 until 200_000).joinToString("\n") { "<http://example.org/s$it> <http://example.org/p> \"$it\" ." }.toByteArray()
+    var bytesRead = 0L
+    val counting = object : FilterInputStream(ByteArrayInputStream(lines)) {
+      override fun read(): Int = super.read().also { if (it >= 0) bytesRead++ }
+      override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead += it }
+    }
+    JenaProvider().openTripleStream(counting, "N-TRIPLES").use { stream ->
+      assertEquals(Iri("http://example.org/s0"), stream.iterator().next().subject)
+      Thread.sleep(300) // let the background parser read ahead as far as it will
+      assertTrue(bytesRead < lines.size / 2, "read-ahead must be bounded: read $bytesRead of ${lines.size} bytes")
+    }
+  }
+
+  @Test
+  fun `base IRI helpers resolve relative IRIs`() {
+    val relative = "<s> <p> <o> ."
+    val streamed = JenaProvider().openTripleStreamWithBase(relative.byteInputStream(), "TURTLE", "http://example.org/").use { it.toList() }
+    assertEquals(Iri("http://example.org/s"), streamed.single().subject)
+    val eager = JenaProvider().parseStreamingWithBase(relative.byteInputStream(), "TURTLE", "http://example.org/").toList()
+    assertEquals(Iri("http://example.org/o"), eager.single().obj)
+    assertThrows(RdfFormatException::class.java) {
+      JenaProvider().parseStreamingWithBase(relative.byteInputStream(), "TURTLE", null).toList()
+    }
   }
 }

@@ -110,12 +110,30 @@ class JenaProvider : RdfProvider {
 
     /** Compatibility API is eager so abandoning an ordinary Sequence cannot leak a producer. */
     override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
-        openTripleStream(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format)
+        parseStreamingWithBase(inputStream, format, null)
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream =
+        openTripleStreamWithBase(inputStream, format, null)
+
+    /**
+     * Eager compatibility parse with a base IRI; the caller's stream is not closed.
+     * Implementation target for the core `parseStreaming(inputStream, format, baseIri)` provider method.
+     */
+    internal fun parseStreamingWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        openTripleStreamWithBase(object : java.io.FilterInputStream(inputStream) { override fun close() = Unit }, format, baseIri)
             .use { it.toList().asSequence() }
 
-    override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream {
+    /**
+     * Lazy streaming parse resolving relative IRIs against [baseIri] (`null`: relative IRIs are a parse error).
+     * Jena parses on a background thread; read-ahead is bounded to [STREAM_CHUNK_SIZE] x [STREAM_QUEUE_SIZE] triples.
+     * Implementation target for the core `openTripleStream(inputStream, format, baseIri)` provider method.
+     */
+    internal fun openTripleStreamWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
         val lang = JenaParsing.graphLang(format)
-        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, null)).asyncParseTriples()
+        val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, baseIri))
+            .setChunkSize(STREAM_CHUNK_SIZE)
+            .setQueueSize(STREAM_QUEUE_SIZE)
+            .asyncParseTriples()
         return object : TripleStream {
             private var closed = false
             private val knownIris = HashSet<String>()
@@ -162,6 +180,14 @@ class JenaProvider : RdfProvider {
     }
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) =
         parseDataset(repository, inputStream, format, null)
+
+    private companion object {
+        /** Triples per batch handed from Jena's background parser to the consumer. */
+        const val STREAM_CHUNK_SIZE = 1_000
+
+        /** Batches buffered ahead of the consumer. */
+        const val STREAM_QUEUE_SIZE = 4
+    }
 }
 
 /** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */
