@@ -2,6 +2,7 @@ public final class com/geoknoesis/kastor/gen/validation/jena/JenaValidation : co
 	public static final field Companion Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation$Companion;
 	public fun <init> ()V
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;)V
+	public fun close ()V
 	public static final fun fromTurtle (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
 	public fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;
 }
