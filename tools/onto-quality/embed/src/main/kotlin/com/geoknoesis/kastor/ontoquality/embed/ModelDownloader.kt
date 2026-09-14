@@ -138,12 +138,16 @@ object ModelDownloader {
     internal fun ensureFile(target: Path, uri: URI, expectedSha256: String, label: String, budget: DownloadBudget = DownloadBudget(Duration.ofMinutes(10))) {
         budget.check()
         if (target.exists()) {
-            require(Files.size(target) <= 512L * 1024 * 1024) { "Cached model asset exceeds 512 MiB" }
-            val hash = sha256Hex(target, budget)
-            require(hash.equals(expectedSha256, ignoreCase = true)) {
-                "SHA-256 mismatch for cached $label at $target (got $hash, expected $expectedSha256). Delete the file to re-download."
-            }
-            return
+            val hash = if (Files.size(target) <= 512L * 1024 * 1024) sha256Hex(target, budget) else null
+            if (hash != null && hash.equals(expectedSha256, ignoreCase = true)) return
+            // A truncated or tampered cache entry must not block every later run: discard it and download once.
+            log.warn(
+                "Cached {} at {} is corrupt ({}); deleting it and downloading again",
+                label,
+                target,
+                if (hash == null) "larger than 512 MiB" else "SHA-256 $hash, expected $expectedSha256",
+            )
+            Files.deleteIfExists(target)
         }
         log.info("Downloading {} from {} …", label, uri)
         val request = HttpRequest.newBuilder(uri).timeout(budget.remaining()).GET().build()
