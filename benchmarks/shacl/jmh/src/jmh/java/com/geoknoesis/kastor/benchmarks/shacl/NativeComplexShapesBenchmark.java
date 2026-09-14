@@ -16,7 +16,8 @@ import org.openjdk.jmh.infra.Blackhole;
 
 /**
  * Native SHACL validation over non-trivial shapes: recursive {@code sh:node}, inline shapes, logical constraints,
- * disjoint qualified value shapes and complex property paths (see {@link ComplexShapesBenchmarkSupport}).
+ * disjoint qualified value shapes, complex property paths, recursion through {@code sh:or} and {@code sh:targetWhere}
+ * (see {@link ComplexShapesBenchmarkSupport}).
  *
  * <p>{@code validateWarm} reuses the compiled shapes cache; {@code validateCold} clears it first so shape
  * compilation (including every referenced inline shape) is part of the measurement.
@@ -28,7 +29,7 @@ import org.openjdk.jmh.infra.Blackhole;
 @State(Scope.Thread)
 public class NativeComplexShapesBenchmark {
 
-  @Param({"recursiveNode", "inlineShapes", "logical", "qualified", "complexPaths"})
+  @Param({"recursiveNode", "inlineShapes", "logical", "qualified", "complexPaths", "monotoneRecursion", "targetWhere"})
   public String workload;
 
   @Param({"1000"})
