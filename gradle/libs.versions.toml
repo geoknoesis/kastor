@@ -36,7 +36,7 @@ httpclient4 = "4.5.14"
 mime4j = "0.8.15"
 libthrift = "0.24.0"
 lz4Java = "1.11.3"
-# Gradle Plugin Portal publication for kastor-gen/gradle-plugin (not yet applied).
+# Gradle Plugin Portal publication plugin, applied by kastor-gen/gradle-plugin (marker + portal metadata).
 pluginPublish = "2.2.1"
 
 [libraries]
