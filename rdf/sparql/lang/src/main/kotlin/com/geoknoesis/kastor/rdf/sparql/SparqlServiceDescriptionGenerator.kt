@@ -3,12 +3,19 @@ package com.geoknoesis.kastor.rdf.sparql
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SPARQL_SD
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+import java.security.MessageDigest
 
 /**
  * SPARQL Service Description generator.
  * Creates machine-readable service descriptions following W3C SPARQL Service Description specification.
+ *
+ * Only terms that exist in the W3C `sd:` vocabulary are emitted in that namespace. Kastor capability
+ * flags that the standard cannot express (RDF-star, property paths, ...) use
+ * [KastorSparqlVocabulary]. SPARQL built-in functions are part of the query language and are not
+ * advertised; `sd:extensionFunction` lists only real extension functions
+ * ([SparqlExtensionFunction.isBuiltIn] `== false`). Federation is advertised with the standard
+ * `sd:feature sd:BasicFederatedQuery`.
  */
 class SparqlServiceDescriptionGenerator(
     private val serviceUri: String,
@@ -26,16 +33,18 @@ class SparqlServiceDescriptionGenerator(
 
         // Basic service information
         triples.add(RdfTriple(service, RDF.type, SPARQL_SD.Service))
-        triples.add(RdfTriple(service, RDF.type, SPARQL12.Sparql12Service))
+        if (capabilities.sparqlVersion.startsWith("1.2")) {
+            triples.add(RdfTriple(service, RDF.type, KastorSparqlVocabulary.Sparql12Service))
+        }
         triples.add(RdfTriple(service, SPARQL_SD.endpointProp, Iri("$serviceUri/sparql")))
         triples.add(RdfTriple(service, SPARQL_SD.updateEndpointProp, Iri("$serviceUri/update")))
 
         // SPARQL version support
-        triples.add(RdfTriple(service, SPARQL12.supportedSparqlVersion, string(capabilities.sparqlVersion)))
+        triples.add(RdfTriple(service, KastorSparqlVocabulary.supportedSparqlVersion, string(capabilities.sparqlVersion)))
 
         // Supported languages
         capabilities.supportedLanguages.forEach { lang ->
-            triples.add(RdfTriple(service, SPARQL_SD.supportedLanguageProp, Iri("${SPARQL_SD.namespace}$lang")))
+            triples.add(RdfTriple(service, SPARQL_SD.supportedLanguageProp, languageIri(lang)))
         }
 
         // Result formats
@@ -48,33 +57,33 @@ class SparqlServiceDescriptionGenerator(
             triples.add(RdfTriple(service, SPARQL_SD.inputFormatProp, iriOrLiteral(format)))
         }
 
-        // SPARQL 1.2 features
+        // Capability flags (Kastor vocabulary: sd: has no terms for them)
         if (capabilities.supportsRdfStar) {
-            triples.add(RdfTriple(service, SPARQL12.supportsRdfStar, boolean(true)))
+            triples.add(RdfTriple(service, KastorSparqlVocabulary.supportsRdfStar, boolean(true)))
         }
 
         if (capabilities.supportsPropertyPaths) {
-            triples.add(RdfTriple(service, SPARQL12.supportsPropertyPaths, boolean(true)))
+            triples.add(RdfTriple(service, KastorSparqlVocabulary.supportsPropertyPaths, boolean(true)))
         }
 
         if (capabilities.supportsAggregation) {
-            triples.add(RdfTriple(service, SPARQL12.supportsAggregation, boolean(true)))
+            triples.add(RdfTriple(service, KastorSparqlVocabulary.supportsAggregation, boolean(true)))
         }
 
         if (capabilities.supportsSubSelect) {
-            triples.add(RdfTriple(service, SPARQL12.supportsSubSelect, boolean(true)))
+            triples.add(RdfTriple(service, KastorSparqlVocabulary.supportsSubSelect, boolean(true)))
         }
 
         if (capabilities.supportsFederation) {
-            triples.add(RdfTriple(service, SPARQL12.supportsFederation, boolean(true)))
+            triples.add(RdfTriple(service, SD_FEATURE, SD_BASIC_FEDERATED_QUERY))
         }
 
         if (capabilities.supportsVersionDeclaration) {
-            triples.add(RdfTriple(service, SPARQL12.supportsVersionDeclaration, boolean(true)))
+            triples.add(RdfTriple(service, KastorSparqlVocabulary.supportsVersionDeclaration, boolean(true)))
         }
 
-        // Extension functions
-        capabilities.extensionFunctions.forEach { func ->
+        // Extension functions (built-ins are part of the language and are not advertised)
+        capabilities.extensionFunctions.filterNot { it.isBuiltIn }.forEach { func ->
             val functionUri = Iri(func.iri)
             triples.add(RdfTriple(service, SPARQL_SD.extensionFunction, functionUri))
             triples.add(RdfTriple(functionUri, SPARQL_SD.functionName, string(func.name)))
@@ -110,6 +119,16 @@ class SparqlServiceDescriptionGenerator(
         }
 
         return MemoryGraph(triples)
+    }
+
+    /**
+     * `sd:SPARQL10Query`, `sd:SPARQL11Query` and `sd:SPARQL11Update` are the only standard language
+     * instances; absolute IRIs are used as given and anything else goes to the Kastor namespace.
+     */
+    private fun languageIri(lang: String): Iri = when {
+        lang in STANDARD_LANGUAGES -> Iri("${SPARQL_SD.namespace}$lang")
+        ABSOLUTE_IRI.containsMatchIn(lang) -> Iri(lang)
+        else -> Iri("${KastorSparqlVocabulary.NAMESPACE}language-$lang")
     }
 
     private fun iriOrLiteral(value: String): RdfTerm {
@@ -166,7 +185,10 @@ class SparqlServiceDescriptionGenerator(
                 val id = if (term.id.startsWith("_:")) term.id else "_:${term.id}"
                 """{"@id":"${jsonEscape(id)}"}"""
             }
-            is LangString -> """{"@value":"${jsonEscape(term.lexical)}","@language":"${jsonEscape(term.lang)}"}"""
+            is LangString -> {
+                val direction = term.direction?.let { ""","@direction":"${jsonEscape(it.token)}"""" }.orEmpty()
+                """{"@value":"${jsonEscape(term.lexical)}","@language":"${jsonEscape(term.lang)}"$direction}"""
+            }
             is Literal -> {
                 val typeValue = jsonEscape(term.datatype.value)
                 """{"@value":"${jsonEscape(term.lexical)}","@type":"$typeValue"}"""
@@ -176,14 +198,25 @@ class SparqlServiceDescriptionGenerator(
     }
 
     /**
-     * SPARQL forbids blank nodes in `VALUES`, so they are replaced by RDF 1.1 skolem IRIs
-     * (`<scheme://authority/.well-known/genid/label>`) derived from the service URI.
+     * SPARQL forbids blank nodes in `VALUES`, so they are replaced by skolem IRIs. For hierarchical
+     * service URIs these are RDF 1.1 well-known IRIs (`<scheme://authority/.well-known/genid/label>`);
+     * opaque or authority-less URIs such as `urn:` get `urn:kastor:genid:<service hash>:<label>`.
      */
     private fun skolemize(term: RdfTerm): RdfTerm {
         if (term !is BlankNode) return term
-        val uri = java.net.URI(serviceUri)
-        return Iri("${uri.scheme}://${uri.rawAuthority}/.well-known/genid/${term.id.removePrefix("_:")}")
+        val label = term.id.removePrefix("_:")
+        val uri = runCatching { java.net.URI(serviceUri) }.getOrNull()
+        val authority = uri?.rawAuthority
+        return if (uri != null && !uri.isOpaque && !authority.isNullOrEmpty()) {
+            Iri("${uri.scheme}://$authority/.well-known/genid/$label")
+        } else {
+            Iri("urn:kastor:genid:${serviceHash()}:$label")
+        }
     }
+
+    private fun serviceHash(): String =
+        MessageDigest.getInstance("SHA-256").digest(serviceUri.toByteArray(Charsets.UTF_8))
+            .take(8).joinToString("") { "%02x".format(it) }
 
     /**
      * Generate service description as SPARQL query result.
@@ -220,7 +253,7 @@ class SparqlServiceDescriptionGenerator(
 
         return buildString {
             appendLine("@prefix sd: ${SparqlSyntax.iriRef(SPARQL_SD.namespace)} .")
-            appendLine("@prefix sparql: ${SparqlSyntax.iriRef(SPARQL12.namespace)} .")
+            appendLine("@prefix ${KastorSparqlVocabulary.PREFIX}: ${SparqlSyntax.iriRef(KastorSparqlVocabulary.NAMESPACE)} .")
             appendLine()
             triples.forEach { triple ->
                 appendLine("${toSparqlTerm(triple.subject)} ${toSparqlTerm(triple.predicate)} ${toSparqlTerm(triple.obj)} .")
@@ -240,7 +273,7 @@ class SparqlServiceDescriptionGenerator(
             appendLine("{")
             appendLine("  \"@context\": {")
             appendLine("    \"sd\": \"${SPARQL_SD.namespace}\",")
-            appendLine("    \"sparql\": \"${SPARQL12.namespace}\"")
+            appendLine("    \"${KastorSparqlVocabulary.PREFIX}\": \"${KastorSparqlVocabulary.NAMESPACE}\"")
             appendLine("  },")
             appendLine("  \"@graph\": [")
             subjectGroups.entries.forEachIndexed { subjectIndex, entry ->
@@ -264,5 +297,12 @@ class SparqlServiceDescriptionGenerator(
             appendLine("  ]")
             appendLine("}")
         }
+    }
+
+    private companion object {
+        val SD_FEATURE = Iri("${SPARQL_SD.namespace}feature")
+        val SD_BASIC_FEDERATED_QUERY = Iri("${SPARQL_SD.namespace}BasicFederatedQuery")
+        val STANDARD_LANGUAGES = setOf("SPARQL10Query", "SPARQL11Query", "SPARQL11Update")
+        val ABSOLUTE_IRI = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
     }
 }

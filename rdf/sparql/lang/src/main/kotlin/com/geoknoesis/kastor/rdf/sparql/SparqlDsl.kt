@@ -395,11 +395,15 @@ class PatternBuilder {
     }
     
     /**
-     * `{ previous } UNION { block }`: the pattern added immediately before this call
-     * becomes the left operand (a chain of `union {}` calls extends the same UNION).
-     * When nothing precedes it, the block starts a new group that a following
-     * `union {}` can combine with.
+     * `{ previous } UNION { block }`: only the single pattern added immediately before this call
+     * becomes the left operand, so in `triple(a); filter(f); union { b }` the filter, not the
+     * triple, is unioned and stops constraining `a`.
      */
+    @Deprecated(
+        "union { } captures only the immediately preceding pattern. Declare every branch explicitly: " +
+            "union({ ... }, { ... }) or unionOf { branch { ... }; branch { ... } }",
+        level = DeprecationLevel.WARNING,
+    )
     fun union(block: PatternBuilder.() -> Unit) {
         if (patterns.isEmpty()) {
             val builder = PatternBuilder()
@@ -412,7 +416,26 @@ class PatternBuilder {
             patterns.add(UnionPatternAst(last, builder.build()))
         }
     }
-    
+
+    /** `{ first } UNION { second } UNION { ... }` with every branch given explicitly. */
+    fun union(
+        first: PatternBuilder.() -> Unit,
+        second: PatternBuilder.() -> Unit,
+        vararg more: PatternBuilder.() -> Unit,
+    ) {
+        patterns.add(unionPattern(listOf(first, second) + more))
+    }
+
+    /** `{ b1 } UNION { b2 } UNION { ... }` built from `branch { ... }` calls (at least two). */
+    fun unionOf(block: UnionBuilder.() -> Unit) {
+        val branches = UnionBuilder().apply(block).branches
+        require(branches.size >= 2) { "unionOf { } needs at least two branch { } blocks, got ${branches.size}" }
+        patterns.add(unionPattern(branches))
+    }
+
+    private fun unionPattern(branches: List<PatternBuilder.() -> Unit>): GraphPatternAst =
+        branches.map { PatternBuilder().apply(it).build() }.reduce { left, right -> UnionPatternAst(left, right) }
+
     /**
      * `MINUS { block }`, applied (as in SPARQL) to everything that precedes it in the
      * current group. It is never turned into a plain group/join.
@@ -484,6 +507,16 @@ class PatternBuilder {
     }
     
     fun build(): GraphPatternAst = GroupPatternAst(patterns)
+}
+
+/** Collects the branches of [PatternBuilder.unionOf]. */
+@SparqlDslMarker
+class UnionBuilder {
+    internal val branches = mutableListOf<PatternBuilder.() -> Unit>()
+
+    fun branch(block: PatternBuilder.() -> Unit) {
+        branches.add(block)
+    }
 }
 
 // ============================================================================
@@ -864,27 +897,40 @@ class UpdateBuilder {
     fun clear(graph: Iri? = null, silent: Boolean = false) {
         operations.add(ClearOperationAst(graph, silent, emptyList(), emptyList(), null))
     }
-    
+
+    /** `CLEAR DEFAULT`, `CLEAR NAMED` or `CLEAR ALL`. */
+    fun clear(scope: GraphScope, silent: Boolean = false) {
+        operations.add(ClearOperationAst(graph = null, silent = silent, scope = scope))
+    }
+
     fun create(graph: Iri, silent: Boolean = false) {
         operations.add(CreateOperationAst(graph, silent, emptyList(), emptyList(), null))
     }
-    
+
     fun drop(graph: Iri? = null, silent: Boolean = false) {
         operations.add(DropOperationAst(graph, silent, emptyList(), emptyList(), null))
     }
-    
-    fun copy(source: Iri, destination: Iri, silent: Boolean = false) {
+
+    /** `DROP DEFAULT`, `DROP NAMED` or `DROP ALL`. */
+    fun drop(scope: GraphScope, silent: Boolean = false) {
+        operations.add(DropOperationAst(graph = null, silent = silent, scope = scope))
+    }
+
+    /** `COPY source TO destination`; `null` means the default graph. */
+    fun copy(source: Iri?, destination: Iri?, silent: Boolean = false) {
         operations.add(CopyOperationAst(source, destination, silent, emptyList(), emptyList(), null))
     }
-    
-    fun move(source: Iri, destination: Iri, silent: Boolean = false) {
+
+    /** `MOVE source TO destination`; `null` means the default graph. */
+    fun move(source: Iri?, destination: Iri?, silent: Boolean = false) {
         operations.add(MoveOperationAst(source, destination, silent, emptyList(), emptyList(), null))
     }
-    
-    fun add(source: Iri, destination: Iri, silent: Boolean = false) {
+
+    /** `ADD source TO destination`; `null` means the default graph. */
+    fun add(source: Iri?, destination: Iri?, silent: Boolean = false) {
         operations.add(AddOperationAst(source, destination, silent, emptyList(), emptyList(), null))
     }
-    
+
     fun build(): UpdateRequestAst = UpdateRequestAst(
         version = version,
         prefixes = prefixes,

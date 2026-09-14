@@ -278,8 +278,7 @@ class SparqlRendererGrammarTest {
         }
         val query = select("s") {
             where {
-                triple(s, a, o)
-                union { triple(s, b, o) }
+                union({ triple(s, a, o) }, { triple(s, b, o) })
             }
         }.sparql
         assertTrue(query.contains("} UNION {"), query)
@@ -287,16 +286,14 @@ class SparqlRendererGrammarTest {
 
         val chained = select("s") {
             where {
-                union { triple(s, a, o) }
-                union { triple(s, b, o) }
-                union { triple(s, c, o) }
+                union({ triple(s, a, o) }, { triple(s, b, o) }, { triple(s, c, o) })
             }
         }.sparql
         assertEquals(2, rowCount(model, chained))
     }
 
     @Test
-    fun `minus always excludes even when it is the first pattern`() {
+    fun `minus subtracts from the patterns before it and a leading minus excludes nothing`() {
         val model = ModelFactory.createDefaultModel().apply {
             add(createResource("urn:x"), createProperty("urn:a"), "1")
             add(createResource("urn:y"), createProperty("urn:a"), "2")
@@ -318,7 +315,9 @@ class SparqlRendererGrammarTest {
             }
         }.sparql
         assertTrue(leading.contains("MINUS {"), leading)
-        assertParsesQuery(leading)
+        // MINUS applies to what precedes it in the group; leading, that is the empty solution, so
+        // nothing is excluded and both urn:x and urn:y match.
+        assertEquals(2, rowCount(model, leading))
     }
 
     @Test

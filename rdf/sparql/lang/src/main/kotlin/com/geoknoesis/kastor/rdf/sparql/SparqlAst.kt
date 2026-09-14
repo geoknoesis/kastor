@@ -49,6 +49,12 @@ data class SelectQueryAst(
     init {
         require(limit == null || limit >= 0) { "LIMIT must not be negative: $limit" }
         require(offset == null || offset >= 0) { "OFFSET must not be negative: $offset" }
+        require(WildcardSelectItemAst !in selectItems || selectItems.size == 1) {
+            "SELECT * cannot be combined with other projection items"
+        }
+        require((groupBy.isEmpty() && having.isEmpty()) || (selectItems.isNotEmpty() && WildcardSelectItemAst !in selectItems)) {
+            "SELECT * (or an empty projection) is not legal with GROUP BY or HAVING; project the grouped variables and aggregates explicitly"
+        }
     }
 }
 
@@ -155,7 +161,11 @@ data class UnionPatternAst(
 ) : GraphPatternAst
 
 /**
- * MINUS pattern: pattern1 MINUS { pattern2 }
+ * MINUS pattern: `{ left MINUS { right } }`.
+ *
+ * [right] is subtracted from [left] only. A non-empty [left] is rendered as its own group so the
+ * MINUS never applies to patterns that precede it in the enclosing group; an empty [left] renders a
+ * bare `MINUS { right }`, which (as in SPARQL) applies to everything before it in the current group.
  */
 data class MinusPatternAst(
     val left: GraphPatternAst,
@@ -588,16 +598,21 @@ data class LoadOperationAst(
 }
 
 /**
- * CLEAR operation.
+ * CLEAR operation: `CLEAR GRAPH <g>` when [graph] is set, otherwise `CLEAR DEFAULT`, `CLEAR NAMED`
+ * or `CLEAR ALL` according to [scope].
  */
 data class ClearOperationAst(
     val graph: Iri? = null,
     val silent: Boolean = false,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
-    override val with: Iri? = null
+    override val with: Iri? = null,
+    val scope: GraphScope = GraphScope.DEFAULT,
 ) : UpdateOperationAst {
-    init { requireNoDatasetClauses(using, usingNamed, with) }
+    init {
+        requireNoDatasetClauses(using, usingNamed, with)
+        require(graph == null || scope == GraphScope.DEFAULT) { "CLEAR takes either a graph IRI or a scope, not both" }
+    }
 }
 
 /**
@@ -614,24 +629,29 @@ data class CreateOperationAst(
 }
 
 /**
- * DROP operation.
+ * DROP operation: `DROP GRAPH <g>` when [graph] is set, otherwise `DROP DEFAULT`, `DROP NAMED`
+ * or `DROP ALL` according to [scope].
  */
 data class DropOperationAst(
     val graph: Iri? = null,
     val silent: Boolean = false,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
-    override val with: Iri? = null
+    override val with: Iri? = null,
+    val scope: GraphScope = GraphScope.DEFAULT,
 ) : UpdateOperationAst {
-    init { requireNoDatasetClauses(using, usingNamed, with) }
+    init {
+        requireNoDatasetClauses(using, usingNamed, with)
+        require(graph == null || scope == GraphScope.DEFAULT) { "DROP takes either a graph IRI or a scope, not both" }
+    }
 }
 
 /**
- * COPY operation.
+ * COPY operation. A `null` [source] or [destination] means the default graph (`DEFAULT`).
  */
 data class CopyOperationAst(
-    val source: Iri,
-    val destination: Iri,
+    val source: Iri?,
+    val destination: Iri?,
     val silent: Boolean = false,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
@@ -641,11 +661,11 @@ data class CopyOperationAst(
 }
 
 /**
- * MOVE operation.
+ * MOVE operation. A `null` [source] or [destination] means the default graph (`DEFAULT`).
  */
 data class MoveOperationAst(
-    val source: Iri,
-    val destination: Iri,
+    val source: Iri?,
+    val destination: Iri?,
     val silent: Boolean = false,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
@@ -655,17 +675,24 @@ data class MoveOperationAst(
 }
 
 /**
- * ADD operation.
+ * ADD operation. A `null` [source] or [destination] means the default graph (`DEFAULT`).
  */
 data class AddOperationAst(
-    val source: Iri,
-    val destination: Iri,
+    val source: Iri?,
+    val destination: Iri?,
     val silent: Boolean = false,
     override val using: List<Iri> = emptyList(),
     override val usingNamed: List<Iri> = emptyList(),
     override val with: Iri? = null
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+}
+
+/** Target of `CLEAR`/`DROP` without a graph IRI (SPARQL 1.1 Update `GraphRefAll`). */
+enum class GraphScope(val keyword: String) {
+    DEFAULT("DEFAULT"),
+    NAMED("NAMED"),
+    ALL("ALL"),
 }
 
 /**

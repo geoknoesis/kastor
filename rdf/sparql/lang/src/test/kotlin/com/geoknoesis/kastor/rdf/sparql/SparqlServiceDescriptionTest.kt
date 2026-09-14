@@ -3,7 +3,6 @@ package com.geoknoesis.kastor.rdf.sparql
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SPARQL_SD
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
@@ -47,11 +46,11 @@ class SparqlServiceDescriptionTest {
         // Check that service description contains expected triples
         val serviceUri = Iri("https://example.com/sparql")
         assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, RDF.type, SPARQL_SD.Service)))
-        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, RDF.type, SPARQL12.Sparql12Service)))
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, RDF.type, KastorSparqlVocabulary.Sparql12Service)))
         // Class IRIs must never be used as predicates.
         assertFalse(serviceDescription.getTriples().any { it.predicate == SPARQL_SD.Service || it.predicate == SPARQL_SD.Dataset })
-        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportedSparqlVersion, string("1.2"))))
-        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, SPARQL12.supportsRdfStar, boolean(true))))
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, KastorSparqlVocabulary.supportedSparqlVersion, string("1.2"))))
+        assertTrue(serviceDescription.hasTriple(RdfTriple(serviceUri, KastorSparqlVocabulary.supportsRdfStar, boolean(true))))
         assertTrue(
             serviceDescription.hasTriple(
                 RdfTriple(
@@ -136,7 +135,9 @@ class SparqlServiceDescriptionTest {
         
         assertNotNull(turtle)
         assertTrue(turtle.contains("@prefix sd:"))
-        assertTrue(turtle.contains("@prefix sparql:"))
+        // Kastor capability flags live in the Kastor namespace, never in the W3C sparql# namespace.
+        assertTrue(turtle.contains("@prefix ksparql: <https://kastor.geoknoesis.com/ns/sparql#>"))
+        assertFalse(turtle.contains("http://www.w3.org/ns/sparql#"))
         assertTrue(turtle.contains("supportsRdfStar") && turtle.contains("true"))
     }
     
@@ -230,7 +231,7 @@ class SparqlServiceDescriptionTest {
         assertTrue(
             model.contains(
                 service,
-                model.createProperty(SPARQL12.supportsRdfStar.value),
+                model.createProperty(KastorSparqlVocabulary.supportsRdfStar.value),
                 model.createTypedLiteral(true)
             ),
             "booleans must be typed xsd:boolean literals"
