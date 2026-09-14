@@ -48,7 +48,7 @@ class IsomorphismReauditTest {
     }
 
     @Test
-    fun `default work budget scales with graph size and no wall-clock limit applies by default`() {
+    fun `default work budget scales with graph size and an explicit null timeout disables the wall clock`() {
         assertEquals(50_000_000L, defaultIsomorphismWorkBudget(10))
         assertEquals(4_000_000_000L, defaultIsomorphismWorkBudget(4_000_000))
         assertEquals(Long.MAX_VALUE, defaultIsomorphismWorkBudget(Long.MAX_VALUE))

@@ -64,6 +64,8 @@ class ParseBaseIriTest {
         assertEquals(expected, Rdf.parseFromInputStream(turtle.byteInputStream(), "TURTLE", base).getTriples().toSet())
         assertEquals(expected, Rdf.parseFromInputStream(turtle.byteInputStream(), RdfFormat.TURTLE, base).getTriples().toSet())
         assertEquals(expected, Rdf.parse(turtle, RdfFormat.TURTLE, base).getTriples().toSet())
+        assertEquals(expected, Rdf.parse(turtle, "TURTLE", base).getTriples().toSet())
+        assertEquals(expected, Rdf.parse(turtle, "ttl", base).getTriples().toSet())
         assertEquals(expected, Rdf.parseStreaming(turtle.byteInputStream(), RdfFormat.TURTLE, base).toSet())
         Rdf.openTripleStream(turtle.byteInputStream(), RdfFormat.TURTLE, base).use { assertEquals(expected, it.toSet()) }
     }

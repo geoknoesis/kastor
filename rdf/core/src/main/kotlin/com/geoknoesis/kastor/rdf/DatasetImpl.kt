@@ -10,7 +10,8 @@ import java.io.Closeable
  *    (default graphs are named graphs of that repository, named graphs keep their source name),
  *    queries are rewritten with dataset clauses and run in place (no materialization)
  * 2. A dataset whose only default graph is the repository's own default graph, with no named
- *    graphs, is queried unchanged
+ *    graphs, is queried unchanged - unless the query uses the `GRAPH` keyword: run in place it would
+ *    see the repository's named graphs, so it is materialized instead (and sees no named graphs)
  * 3. Everything else - graphs from different repositories, untracked graphs, or the store's
  *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it) -
  *    is materialized into a temporary repository
@@ -141,7 +142,12 @@ internal class DatasetImpl(
      * (the caller then materializes). Callers reject queries with their own dataset clauses first.
      */
     private fun rewrite(queryText: String, plan: QueryPlan): String? {
-        if (plan.from.isEmpty() && plan.fromNamed.isEmpty()) return queryText
+        if (plan.from.isEmpty() && plan.fromNamed.isEmpty()) {
+            // The dataset has no named graphs, but run in place GRAPH would read every named graph of the
+            // repository. There is no provider-portable way to empty the named-graph set without also replacing
+            // the store's default graph (FROM NAMED needs an IRI), so such queries are materialized.
+            return if (SparqlDatasetClauses.usesGraphPattern(queryText)) null else queryText
+        }
         val clauses = (plan.from.map { "FROM <${it.value}>" } + plan.fromNamed.map { "FROM NAMED <${it.value}>" })
             .joinToString("\n")
         return SparqlDatasetClauses.insert(queryText, clauses)
@@ -202,6 +208,16 @@ internal object SparqlDatasetClauses {
     fun declaresDataset(query: String): Boolean {
         val tokens = tokenize(query) ?: return false
         return tokens.any { it.kind == Kind.WORD && it.end - it.start == 4 && query.regionMatches(it.start, "FROM", 0, 4, ignoreCase = true) }
+    }
+
+    /**
+     * True if [query] contains the `GRAPH` keyword (a graph pattern, or a graph reference in an update).
+     * `GRAPH` inside strings, IRIs, comments, variables and prefixed names does not count. Unterminated
+     * strings make the query unanalysable, which counts as using `GRAPH`.
+     */
+    fun usesGraphPattern(query: String): Boolean {
+        val tokens = tokenize(query) ?: return true
+        return tokens.any { it.kind == Kind.WORD && it.end - it.start == 5 && query.regionMatches(it.start, "GRAPH", 0, 5, ignoreCase = true) }
     }
 
     /**

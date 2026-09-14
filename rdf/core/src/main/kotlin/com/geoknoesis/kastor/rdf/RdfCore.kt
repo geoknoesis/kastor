@@ -106,15 +106,27 @@ private fun parseXsdDouble(lexical: String): Double? = when (lexical) {
  * and `graph()` DSL are stable and part of the public API.
  */
 object Rdf {
+    /** Threads of the default [parseFromUrlAsync] executor. */
+    internal const val URL_IO_THREADS = 4
+
+    /** Pending loads the default [parseFromUrlAsync] executor queues before rejecting new ones. */
+    internal const val URL_IO_QUEUE_CAPACITY = 256
+
     /**
-     * Default executor for [parseFromUrlAsync]: 4 daemon threads and a queue of 64 pending loads. When both are
-     * full, the load runs on the calling thread ([java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy]), so a
-     * burst is throttled (the call blocks until that load finishes) instead of being rejected.
+     * Default executor for [parseFromUrlAsync]: 4 daemon threads and a queue of 256 pending loads. When both are
+     * full, a new load is rejected: its future completes exceptionally with
+     * [java.util.concurrent.RejectedExecutionException]. A load never runs on the calling thread.
      */
     private val urlIoExecutor: Executor = java.util.concurrent.ThreadPoolExecutor(
-        4, 4, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.ArrayBlockingQueue(64),
+        URL_IO_THREADS, URL_IO_THREADS, 30L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue(URL_IO_QUEUE_CAPACITY),
         java.util.concurrent.ThreadFactory { runnable -> Thread(runnable, "kastor-url-io").apply { isDaemon = true } },
-        java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy(),
+        java.util.concurrent.RejectedExecutionHandler { _, _ ->
+            throw java.util.concurrent.RejectedExecutionException(
+                "The default Rdf.parseFromUrlAsync executor is saturated ($URL_IO_THREADS loads running, " +
+                    "$URL_IO_QUEUE_CAPACITY queued); retry later or pass an executor sized for this workload"
+            )
+        },
     ).apply { allowCoreThreadTimeOut(true) }
     
     /**
@@ -135,15 +147,19 @@ object Rdf {
      * graph-only testing, opt in explicitly via [repository] with `providerId = "memory"`.
      *
      * The provider is the first registered provider, in registry order ([RdfProvider.priority], then
-     * registration order), that offers a `memory` variant - for example Jena (priority 50) before RDF4J
-     * (priority 40) when both are present.
+     * registration order), that offers a `memory` variant and declares SPARQL support for it - for example
+     * Jena (priority 50) before RDF4J (priority 40) when both are present. A provider declares SPARQL support when
+     * the capabilities of its `memory` variant list a [SparqlFeature], property paths, aggregation or sub-selects,
+     * or a supported language containing `SPARQL` ([ProviderCapabilities.sparqlVersion] has a default value and
+     * is therefore not a signal).
      *
      * @throws RdfProviderException if no SPARQL-capable provider with a `memory`
      * variant is registered.
      */
     fun memory(): RdfRepository {
         val provider = RdfProviderRegistry.discoverProviders().firstOrNull {
-            it !is com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider && it.supportsVariant("memory")
+            it !is com.geoknoesis.kastor.rdf.provider.MemoryRepositoryProvider && it.supportsVariant("memory") &&
+                runCatching { it.getCapabilities("memory").declaresSparqlSupport() }.getOrDefault(false)
         } ?: throw RdfProviderException(
             "Rdf.memory() requires a SPARQL-capable provider on the classpath. " +
                 "Add either 'com.geoknoesis.kastor:rdf-jena' or 'com.geoknoesis.kastor:rdf-rdf4j' " +
@@ -335,6 +351,16 @@ object Rdf {
      */
     fun parse(data: String, format: RdfFormat, baseIri: String?): MutableRdfGraph =
         parseFromInputStream(data.byteInputStream(), format.formatName, baseIri)
+
+    /**
+     * Parse RDF data from a string, resolving relative IRIs against [baseIri].
+     *
+     * @param format The RDF format name or alias (for example `"TURTLE"` or `"ttl"`)
+     * @param baseIri Absolute IRI for relative references; null keeps the provider's default
+     * @throws RdfFormatException if parsing fails or format is not supported
+     */
+    fun parse(data: String, format: String, baseIri: String?): MutableRdfGraph =
+        parseFromInputStream(data.byteInputStream(), format, baseIri)
     
     /**
      * Parse RDF data from a file into a graph.
@@ -426,10 +452,10 @@ object Rdf {
     /**
      * Parse RDF data from a URL asynchronously into a graph.
      *
-     * This runs the blocking network call on the provided executor. The default executor has 4 threads and
-     * queues up to 64 loads; beyond that the load runs on the calling thread, so this call blocks instead of
-     * failing with [java.util.concurrent.RejectedExecutionException]. A custom executor that rejects a task
-     * yields a future completed exceptionally with that exception.
+     * This runs the blocking network call on the provided executor and never on the calling thread. The default
+     * executor has 4 threads and queues up to 256 loads; beyond that this call returns at once with a future
+     * completed exceptionally with [java.util.concurrent.RejectedExecutionException]. A custom executor that
+     * rejects a task yields a future completed exceptionally with that exception.
      *
      * @param url The URL to load RDF data from
      * @param format The RDF format (default: "TURTLE")
@@ -992,6 +1018,10 @@ interface RdfRepository : Dataset, SparqlMutable {
     
     /**
      * Create a new named graph.
+     *
+     * Creating a graph is a write, even when the graph stays empty: it needs write access, so call it outside
+     * transactions or inside [transaction]. Inside [readTransaction] it is rejected (the bundled in-memory provider
+     * throws), and inside [transaction] it is undone on rollback.
      */
     fun createGraph(name: Iri): RdfGraph
     
@@ -1661,10 +1691,13 @@ interface RdfProvider {
      * [openTripleStream] with an explicit base IRI for relative references.
      *
      * The default implementation calls [openTripleStream] when [baseIri] is null, and otherwise materializes
-     * [parseGraph] with the base before returning. Providers with a streaming parser should override it.
+     * [parseGraph] with the base before returning, logging a one-time warning per provider class. Overriding this
+     * method is how a provider declares base-IRI streaming support; providers with a streaming parser should do so.
+     * Note that [Rdf.parseFromFile] and URL loading always pass a base IRI.
      */
     fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
         if (baseIri == null) return openTripleStream(inputStream, format)
+        EagerBaseIriFallback.record(this)
         val rows = inputStream.use { parseGraph(it, format, baseIri).getTriplesSequence().constrainOnce() }
         return object : TripleStream {
             override fun iterator(): Iterator<RdfTriple> = rows.iterator()
@@ -1682,10 +1715,14 @@ interface RdfProvider {
      * [parseStreaming] with an explicit base IRI for relative references.
      *
      * The default implementation calls [parseStreaming] when [baseIri] is null, and otherwise returns the
-     * triples of [parseGraph] with the base. Providers with a streaming parser should override it.
+     * triples of [parseGraph] with the base (eager), logging a one-time warning per provider class. Providers with a
+     * streaming parser should override it.
      */
-    fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
-        if (baseIri == null) parseStreaming(inputStream, format) else parseGraph(inputStream, format, baseIri).getTriplesSequence()
+    fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> {
+        if (baseIri == null) return parseStreaming(inputStream, format)
+        EagerBaseIriFallback.record(this)
+        return parseGraph(inputStream, format, baseIri).getTriplesSequence()
+    }
     
     /**
      * Parse RDF dataset (with named graphs) from an input stream into a repository.
@@ -1852,6 +1889,11 @@ enum class SparqlFeature {
     SERVICE_DESCRIPTION,
     VERSION_DECLARATION
 }
+
+/** True if these capabilities declare a SPARQL query engine (see [Rdf.memory]). */
+internal fun ProviderCapabilities.declaresSparqlSupport(): Boolean =
+    sparqlFeatures.isNotEmpty() || supportsPropertyPaths || supportsAggregation || supportsSubSelect ||
+        supportedLanguages.any { it.contains("SPARQL", ignoreCase = true) }
 
 /**
  * Map legacy booleans to a typed feature set.
