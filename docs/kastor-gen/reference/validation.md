@@ -82,6 +82,33 @@ Thrown by `ValidationResult.orThrow()`, `RdfHandle.validateOrThrow()` and `mater
 there are failing results (by default, results with severity `sh:Violation`). `violations` carries the
 structured results.
 
+### SharedValidators
+
+```kotlin
+object SharedValidators {
+    fun <V : ValidationContext> get(type: Class<V>, create: () -> V): V
+    fun close(type: Class<out ValidationContext>): Boolean
+    fun closeAll()
+}
+```
+
+Process-wide validators, one instance per validator class. Wrappers generated with
+`validationMode = EXTERNAL` name a `ValidationContext` class with a no-argument constructor and obtain it with
+`SharedValidators.get(Validator::class.java) { Validator() }`, so every wrapper type that names the same class
+uses one shared instance instead of one each. This matters for `Rdf4jValidation`, which keeps a copy of the
+last validated graph in an in-memory store.
+
+Lifecycle:
+
+- `get(type, create)` returns the shared validator of `type`, creating it with `create` on first use.
+- `close(type)` closes and removes the validator of `type`; it returns `false` when there was none. The next
+  `get` creates a fresh instance.
+- `closeAll()` closes and removes every shared validator. A failure to close one does not prevent closing the
+  others; the first failure is rethrown with the later ones suppressed.
+
+Call `closeAll()` when the application, a test or a reloadable module shuts down. Do not close a shared
+validator directly while wrappers may still use it; use `SharedValidators.close(type)` instead.
+
 ## Engine adapters
 
 Both adapters offer the same two ways of supplying shapes:
@@ -136,10 +163,16 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 - Backed by RDF4J's `ShaclSail`. A shapes graph is converted once at construction.
 - **One repository per validator.** ShaclSail validates data held in its own store, so the Kastor graph is
   converted to RDF4J statements and loaded into a single in-memory repository. It is reloaded only when
-  `validate` receives a different graph instance or the graph's content changed (detected with an
-  order-independent fingerprint of its triples: one pass over the triples, no conversion or store writes).
-  Validating many nodes of one graph therefore converts and loads it once. With the no-arg constructor the
-  embedded shapes are extracted at the same time.
+  `validate` receives a different graph instance or the graph's content changed. Changes are detected with
+  an order-independent digest of the triples: the SHA-256 of an unambiguous encoding of each triple, summed
+  modulo 2^256, together with the triple count. Computing it costs one pass over the triples but no
+  conversion or store writes, and unlike a sum of `hashCode()`s it does not miss changes such as a literal
+  `"Aa"` becoming `"BB"`. Validating many nodes of one graph therefore converts and loads it once. With the
+  no-arg constructor the embedded shapes are extracted at the same time.
+- **Reloads are atomic.** The statements and embedded shapes are prepared first, then the store content is
+  replaced in one transaction (rolled back on failure). The loaded graph, its digest and its embedded shapes
+  are updated together only after the commit, so a failed conversion or load leaves the previously loaded
+  state intact.
 - **Only shapes that target the focus node are evaluated.** The target declarations (`sh:targetClass`,
   including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`, `sh:targetSubjectsOf`,
   `sh:targetObjectsOf`) are resolved for the focus node, and only those shapes are validated, in a
