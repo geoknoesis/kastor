@@ -22,8 +22,13 @@ val platformProjects = setOf(":bom", ":build-platform")
 
 /**
  * Line-coverage floors enforced by `jacocoTestCoverageVerification` (wired into `check`).
- * Measured from a clean local run (2026-09-12) minus roughly ten points of headroom; ratchet
- * upwards as coverage improves. Modules without an entry are not gated.
+ * Measured from a clean local run (2026-09-12/13) minus roughly five to ten points of headroom;
+ * ratchet upwards as coverage improves. Every published module with unit tests has an entry, except:
+ *  - :rdf:sparql-contract: interfaces and value types only, no tests of its own (covered by providers).
+ *  - :kastor-gen:gradle-plugin: its tests run the plugin in out-of-process Gradle TestKit builds, which
+ *    the JaCoCo agent of the test JVM does not see (measured 0%). The plugin is gated by TestKit
+ *    behaviour tests and release-plugin-smoke instead.
+ * Non-published modules (examples, benchmarks, :rdf:conformance, :rdf:examples) are not gated.
  */
 val coverageFloors = mapOf(
   ":rdf:core" to "0.55",
@@ -36,13 +41,20 @@ val coverageFloors = mapOf(
   ":rdf:sparql-lang" to "0.35",
   ":rdf:sparql" to "0.55",
   ":rdf:testkit" to "0.75",
+  ":rdf:jena-reasoning" to "0.80", // measured 92.5%
+  ":rdf:rdf4j-reasoning" to "0.85", // measured 94.3%
+  ":rdf:cli" to "0.70", // measured 80.5%
   ":kastor-gen:processor" to "0.50",
   ":kastor-gen:runtime" to "0.35",
   ":kastor-gen:validation-jena" to "0.70",
   ":kastor-gen:validation-rdf4j" to "0.55",
   ":tools:onto-quality" to "0.75",
   ":tools:onto-quality-metrics" to "0.80",
-  ":tools:onto-quality-embed" to "0.15",
+  // Most of embed needs the ONNX model, whose tests are opt-in (KASTOR_RUN_EMBEDDING_TESTS); measured 26.5%.
+  ":tools:onto-quality-embed" to "0.20",
+  // Remote LLM calls are opt-in (KASTOR_SKIP_OPENAI_LLM_TESTS in CI); measured 9.4%. Floor guards against regression only.
+  ":tools:onto-quality-llm-koog" to "0.05",
+  ":tools:onto-quality-cli" to "0.65", // measured 76.0%
 )
 
 subprojects {
@@ -248,7 +260,8 @@ subprojects {
     }
     tasks.withType<PublishToMavenRepository>().configureEach { mustRunAfter(":cleanReleaseRepository") }
     // Signing is optional for local staging, but mandatory for :centralBundle (enforced below).
-    val signingKey = providers.environmentVariable("KASTOR_SIGNING_KEY")
+    // Blank values count as absent: GitHub Actions expands a missing secret to "".
+    val signingKey = providers.environmentVariable("KASTOR_SIGNING_KEY").filter { it.isNotBlank() }
     if (signingKey.isPresent) {
       apply(plugin = "signing")
       extensions.configure<SigningExtension> {
@@ -297,7 +310,7 @@ gradle.taskGraph.whenReady {
       "centralBundle publishes release versions only (current version: $releaseVersion). " +
         "Set version=X.Y.Z in gradle.properties in the release commit and tag it vX.Y.Z."
     }
-    check(providers.environmentVariable("KASTOR_SIGNING_KEY").isPresent) {
+    check(providers.environmentVariable("KASTOR_SIGNING_KEY").filter { it.isNotBlank() }.isPresent) {
       "Release publication must be signed: set KASTOR_SIGNING_KEY (ASCII-armored private key) " +
         "and KASTOR_SIGNING_PASSWORD. Unsigned artifacts are only allowed in the local staging repository."
     }

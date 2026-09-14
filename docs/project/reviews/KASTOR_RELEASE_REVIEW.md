@@ -88,4 +88,4 @@ Closed applicability question: the maintainer confirmed on 13 September that the
 
 Cooperative cancellation cannot preempt arbitrary blocking provider calls. Exact high-dimensional similarity remains worst-case quadratic, particularly for dense output. Local benchmark confidence intervals are wide and host load changed between runs; the measurements do not establish production SLOs. The bounded native soak is not a production endurance test. Some legacy deprecation/cast warnings remain, although processor explicit-API and unresolved documentation-link warnings were addressed.
 
-The complete implementation mapping is in [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md), with [compatibility evidence](../../../docs/kastor/compatibility-review.md) and [release acceptance conditions](../../../docs/kastor/release-acceptance.md).
+The complete implementation mapping is in [KASTOR_RELEASE_TASKS.md](KASTOR_RELEASE_TASKS.md), with [compatibility evidence](compatibility-review.md) and [release acceptance conditions](release-acceptance.md).

@@ -1,6 +1,8 @@
 """Stage with an ephemeral TEST key, verify every artifact, reject a tampered copy.
 
 Never publishes remotely. This validates mechanics, not ownership of a release key.
+The staging repository is cleaned first, so the evidence covers exactly the publications (artifact IDs,
+plugin marker, BOM) of the checked-out HEAD. Re-run it on the release commit: release-readiness.yml does.
 Requires gpg, JDK 21 and the repository's Gradle wrapper. Retains only public evidence.
 """
 import json
@@ -56,7 +58,7 @@ def main():
         env["KASTOR_SIGNING_PASSWORD"] = ""
         wrapper = str(root / ("gradlew.bat" if os.name == "nt" else "gradlew"))
         with (report / "local-signing.log").open("w", encoding="utf-8") as log:
-            subprocess.run([wrapper, "publishAllPublicationsToStagingRepository", "--no-daemon", "--no-configuration-cache", "--no-parallel", "--max-workers=1",
+            subprocess.run([wrapper, "cleanReleaseRepository", "publishAllPublicationsToStagingRepository", "--no-daemon", "--no-configuration-cache", "--no-parallel", "--max-workers=1",
                             "-Dorg.gradle.jvmargs=-Xmx1024m -XX:MaxMetaspaceSize=768m -XX:ActiveProcessorCount=2 -Dfile.encoding=UTF-8",
                             "-Pkotlin.compiler.execution.strategy=in-process"], cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         repository = root / "build/release-repository"

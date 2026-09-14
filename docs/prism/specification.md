@@ -3,7 +3,7 @@
 
 **Namespace:** `https://spec.prism.dev/ns#`  
 **Prefix:** `prism:`  
-**Vocabulary:** [prism/vocab/prism.ttl](../../prism/vocab/prism.ttl)  
+**Vocabulary:** [vocab/prism.ttl](vocab/prism.ttl)  
 **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)  
 **Status:** Working Draft — 2026-05-25
 

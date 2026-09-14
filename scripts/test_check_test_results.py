@@ -34,10 +34,10 @@ class TestReportGate(unittest.TestCase):
                                str(self.directory), "--minimum", "13", "--require-suite", "NativeSuite", *extra],
                               capture_output=True, text=True)
 
-    def allowlist(self, *entries):
+    def allowlist(self, *entries, reason="environment-gated test"):
         path = self.directory / "allowlist.json"
-        path.write_text(json.dumps({"entries": [{"class": c, "test": t, "count": n} for c, t, n in entries]}),
-                        encoding="utf-8")
+        path.write_text(json.dumps({"entries": [{"class": c, "test": t, "count": n, "reason": reason}
+                                                for c, t, n in entries]}), encoding="utf-8")
         return str(path)
 
     def test_valid_native_and_ordinary_results_pass(self):
@@ -96,11 +96,59 @@ class TestReportGate(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("now execute", result.stdout)
 
+    def test_allowlist_entry_without_reason_fails(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("NativeSuite", 1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "0", 1), reason="  "))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("non-empty reason", result.stderr)
+
+    def test_allowlist_reason_with_machine_path_fails(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("NativeSuite", 1)
+        for reason in ("not approved: file:///D:/work/kastor/manifest.ttl#x", r"see C:\work\x.ttl",
+                       "see /home/runner/work/kastor/x.ttl"):
+            result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "0", 1), reason=reason))
+            self.assertNotEqual(0, result.returncode, reason)
+
+    def test_allowlist_reason_with_web_url_passes(self):
+        self.report("OrdinarySuite", 14, skipped=1)
+        self.report("NativeSuite", 1)
+        reason = "not approved: https://w3c.github.io/rdf-tests/rdf/rdf12/manifest#x"
+        result = self.run_gate("--skip-allowlist", self.allowlist(("OrdinarySuite", "0", 1), reason=reason))
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_required_suite_with_allowlisted_skip_passes(self):
+        self.report("OrdinarySuite", 12)
+        self.report("NativeSuite", 3, skipped=1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("NativeSuite", "0", 1)))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_required_suite_with_only_allowlisted_skips_fails(self):
+        self.report("OrdinarySuite", 20)
+        self.report("NativeSuite", 1, skipped=1)
+        result = self.run_gate("--skip-allowlist", self.allowlist(("NativeSuite", "0", 1)))
+        self.assertNotEqual(0, result.returncode)
+
+    def test_required_suite_below_its_minimum_fails(self):
+        # e.g. the W3C harness silently falling back to its small bundled fixture
+        self.report("OrdinarySuite", 20)
+        self.report("NativeSuite", 4)
+        self.assertNotEqual(0, self.run_gate("--require-suite", "NativeSuite=10").returncode)
+        self.assertEqual(0, self.run_gate("--require-suite", "NativeSuite=4").returncode)
+
+    def test_invalid_required_suite_minimum_is_rejected(self):
+        self.report("NativeSuite", 13)
+        self.assertNotEqual(0, self.run_gate("--require-suite", "NativeSuite=many").returncode)
+        self.assertNotEqual(0, self.run_gate("--require-suite", "NativeSuite=0").returncode)
+
     def test_committed_allowlist_is_well_formed(self):
         document = json.loads((ROOT / "scripts/test-skip-allowlist.json").read_text(encoding="utf-8"))
         keys = [(e["class"], e["test"]) for e in document["entries"]]
         self.assertEqual(len(keys), len(set(keys)))
         self.assertTrue(all(int(e["count"]) >= 1 for e in document["entries"]))
+        self.assertTrue(all(str(e.get("reason", "")).strip() for e in document["entries"]))
+        self.assertFalse([e for e in document["entries"] if "file:/" in e["reason"]])
 
 
 if __name__ == "__main__":

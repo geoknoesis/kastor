@@ -1,5 +1,9 @@
+// Imported explicitly: inside a build script `java` resolves to the `java {}` extension, so a
+// fully qualified `java.util.Properties` does not compile.
+import java.util.Properties
+
 plugins {
-    kotlin("jvm") version "2.4.20"
+    kotlin("jvm") // version from settings.gradle.kts (../gradle/libs.versions.toml)
     application
 }
 
@@ -10,7 +14,7 @@ repositories {
 kotlin { jvmToolchain(21) }
 // Defaults to the single version in the root gradle.properties; override with -PkastorVersion=X.Y.Z.
 val kastorVersion = providers.gradleProperty("kastorVersion").getOrElse(
-    java.util.Properties().apply { rootDir.resolve("../gradle.properties").reader().use(::load) }.getProperty("version")
+    Properties().apply { rootDir.resolve("../gradle.properties").reader().use { load(it) } }.getProperty("version")
 )
 dependencies {
     implementation(platform("com.geoknoesis.kastor:kastor-bom:$kastorVersion"))

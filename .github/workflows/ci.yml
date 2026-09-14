@@ -63,9 +63,9 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        # Floor is ~90% of the executed count on a clean build (1,280 on 2026-09-12); raise it as
-        # tests are added. New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 1150 --skip-allowlist scripts/test-skip-allowlist.json
+        # Floor is ~90% of the executed count on a clean build (1,592 without the RDF corpus on
+        # 2026-09-13); raise it as tests are added. New skips must be listed in scripts/test-skip-allowlist.json.
+        run: python scripts/check-test-results.py build/modules --minimum 1450 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -82,6 +82,48 @@ jobs:
         # JMH + ERA CLI are not pulled in by `test`; compile explicitly so they do not rot.
         run: ./gradlew :benchmarks:shacl:jmhCompileGeneratedClasses :benchmarks:shacl-era-cli:classes --no-daemon
         shell: bash
+
+  shacl-w3c-suite:
+    # The `build` job only sees the 4-case bundled SHACL fixture. Run the pinned W3C SHACL 1.2 corpus on
+    # every PR (Linux only, for cost); the RDF 1.2 corpus stays in conformance.yml / release-readiness.
+    name: shacl-w3c-suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KASTOR_SKIP_EMBEDDING_TESTS: "1"
+      KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Fetch pinned SHACL corpus
+        run: python scripts/fetch-conformance-data.py --only shacl
+
+      - name: SHACL validation tests with the W3C SHACL 1.2 suite
+        run: ./gradlew :rdf:shacl-validation:test --no-daemon
+        shell: bash
+
+      - name: Require the full W3C suite, not the bundled fixture
+        # 163 W3C cases (154 executed, 9 allowlisted known deviations) on 2026-09-13.
+        run: >-
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test
+          --minimum 200
+          --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=140
+          --skip-allowlist scripts/test-skip-allowlist.json
+
+      - name: Upload SHACL test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: shacl-w3c-suite-reports
+          path: build/modules/rdf/shacl-validation/reports/
 
   macos:
     # Full check on macOS for pushes to main and the weekly schedule (saves PR minutes).
@@ -107,7 +149,7 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 1150 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 1450 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload verification reports
         if: always()

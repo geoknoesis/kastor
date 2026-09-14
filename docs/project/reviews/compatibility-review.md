@@ -1,5 +1,7 @@
 # Candidate compatibility review
 
+> Internal review record (not user documentation). Moved from `docs/kastor/` during the re-audit.
+
 This compares the pre-hardening local staging build with the current candidate. It is **not** a comparison against a confirmed previous public release. The repository tag alone does not establish which binary artifacts users consumed.
 
 ## Reviewed changes
