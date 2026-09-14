@@ -41,12 +41,22 @@ Shape sources live in the repository as Turtle:
 - **LLM explanations (v0.3)** — Optional **Koog** layer: advisory text for existing findings (`ExplainedQualityReport`). Does not change SHACL outcomes. Each request has a timeout. Only timeouts, HTTP 408/429/5xx and connection errors are retried, with jittered exponential backoff. OpenAI `insufficient_quota` and TLS / certificate errors are not retried. The whole run is bounded (`maxTotalDuration`, CLI `--llm-max-duration`, default 600 s). A circuit breaker stops after repeated identical batch failures, counting both non-retryable failures and retryable ones whose retries ran out. Failed or skipped batches are recorded in `ExplainedQualityReport.failures` while successful batches are kept. Finding text, and the previous reply in the JSON repair request, is framed as untrusted JSON data. In reports, LLM output and ontology-derived text are Markdown-escaped, including `@`, so there are no links, autolinks, images or HTML. Control characters (text output) and bidi controls are shown as `\uXXXX`. `OutputSanitizer` exposes the same rules to callers.
 - **Metrics (OQuaRE)** — `onto-qa --with-metrics` computes structural metrics on the **asserted** graph, even when `--reasoner` is set. `onto-qa metrics` prints the same report on its own (`--format text|markdown|json|turtle`; `--include owl|skos|graph` only with text or markdown). Formula and scoring tables are in the [metrics module README](../../../tools/onto-quality/metrics/README.md#formulas).
   **Changed in this release** (values are not comparable with earlier releases):
-  - **NOCOnto** is the mean number of direct subclasses per class *that has subclasses*.
-  - **CBOOnto** counts, per class, its direct superclasses plus the classes associated with it through property ranges (`rdfs:range` of a property whose domain is the class) or restriction fillers (`owl:someValuesFrom` / `owl:allValuesFrom` / `owl:onClass`), divided by **all** classes. NOCOnto and CBOOnto were previously the same number.
-  - Hierarchy paths are measured from **owl:Thing**: roots have depth 1, and an isolated class forms one path of length 1. **DITOnto** and **LCOMOnto** are therefore one higher than before.
-  - **TMOnto** scores use the bands 0 → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1. This is a documented deviation from the published OQuaRE band (≤ 2 → 5), which could never detect tangling because TMOnto is ≥ 2 whenever a class has several parents.
+  - **NOCOnto**, **CBOOnto** and **TMOnto** follow the published OQuaRE definitions and bands (Duque-Ramos et al., 2014, as reproduced in Duque-Ramos et al., 2016, *J. Biomed. Semantics* 7:63, Tables 2 and 4). NOCOnto = Σ|Sub_C| / (|C| − |Root|), CBOOnto = Σ|Sup_C| / (|C| − |Root|), and TMOnto = |C_DP| / |C|, where C_DP is the set of classes with more than one direct superclass. TMOnto never exceeds 1, so its published band always scores 5.
+  - The formulas previously reported under those names are now **Kastor-adapted metrics** with their own names and bands. They are **not** OQuaRE metrics and must not be compared with OQuaRE scores:
+    - `numberOfChildrenKastor` (NOCOntoKastor): mean direct subclasses of classes that have subclasses.
+    - `couplingBetweenObjectsKastor` (CBOOntoKastor): direct superclasses plus property-associated classes, per class.
+    - `tanglednessKastor` (TMOntoKastor): mean direct superclasses of multiply-inheriting classes. Its bands are 0 → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1.
+
+    Where they appear:
+    - JSON: under `owl.kastorAdapted`.
+    - Turtle: scored with `kastor-m:KastorAdaptedScoring` instead of the OQuaRE scoring scheme.
+    - Text and Markdown: in their own "Kastor-adapted (not OQuaRE)" section.
+    - The Markdown metrics summary (`check --with-metrics`) adds a TMOntoKastor line next to TMOnto.
+  - Kastor follows the published table. The tecnomod-um/oquare-metrics reference implementation differs in two denominators: its NOCOnto divides by the non-leaf classes (equal to NOCOntoKastor), and its TMOnto divides by |C| − 1. See [CALIBRATION.md](../../../tools/onto-quality/metrics/CALIBRATION.md).
+  - Classes in a subclass cycle have no defined depth. When findings are prioritised, they get a neutral shallow-depth importance signal of 0.5, so they no longer rank as central as a root.
+  - Hierarchy paths are measured from **owl:Thing**: roots have depth 1, and an isolated class forms one path of length 1. **DITOnto** and **LCOMOnto** are therefore one higher than in earlier releases.
   - SKOS **definitionCoverage** counts only `skos:definition` (no longer `rdfs:comment`).
-  - VoID **distinctObjectCount** keys literals by lexical form, datatype and language tag, so `"1"`, `"1"^^xsd:integer` and `"1"@en` are distinct objects.
+  - VoID **distinctObjectCount** keys literals by lexical form, datatype and language tag, so `"1"`, `"1"^^xsd:integer` and `"1"@en` are distinct objects. It also counts RDF 1.2 triple terms: identical triple terms are one object.
 
 Validation still runs entirely through the same **`ShaclValidator`** stack as the rest of Kastor; see [SHACL validation architecture](../design/shacl-validation-architecture.md).
 
