@@ -81,7 +81,25 @@ and is kept as is; it was never published to Maven Central.
   - OWL Micro and OWL RL profiles are distinguished by tests.
 - **Added:** `--base-iri`, `--similarity-max-pairs`, `--debug` accepted after the subcommand, `OutputSanitizer`, `KastorAdaptedMetrics`, `SimilaritySearchBudgetExceededException.limit`.
 
-<!-- providers, SHACL and kastor-gen entries pending -->
+#### SHACL (`rdf-shacl-validation`, `rdf-shacl-dsl`)
+
+- **Breaking:**
+  - Recursive shapes that depend on themselves only through monotone operators (`sh:node`, `sh:and`, `sh:property`, `sh:or`, `sh:someValue`, `sh:qualifiedMinCount`) now conform under a greatest fixpoint. Only cycles through `sh:not`, `sh:xone`, `sh:qualifiedMaxCount` or disjoint qualified siblings are undefined.
+  - A `sh:targetWhere` that cannot be decided now produces a blocking `sh:Warning` result (or throws in strict mode) instead of an informational warning.
+  - `ValidationConfig` gained `conformanceDisallows: Set<Iri>?`. This is source-compatible, but the constructor and `copy` have new binary signatures.
+  - Deprecated DSL digit setters (`totalDigits`, `fractionDigits`) throw `UnsupportedOperationException` instead of doing nothing.
+- **Fixed:**
+  - Conformance uses three-valued logic, so results no longer depend on operand or constraint order.
+  - Definite violations are kept when other values are undefined, and qualified counts use lower and upper bounds.
+  - Dependencies for the recursion solver are recorded during evaluation; an unrecorded read restarts the solve instead of defaulting to "conforms".
+  - Unsupported-feature detection only inspects nodes reachable from shapes, so `validate(g, g)` with blank-node targets no longer fails.
+  - SHACL-SPARQL runs in place only when the dataset lists no named graphs; otherwise it uses a copy.
+  - Fewer re-evaluations for recursive shapes, structured memo keys, and `sh:targetWhere` skips candidates excluded by `sh:class`, `sh:nodeKind` or `sh:datatype`.
+  - `sh:lessThan` / `sh:lessThanOrEquals` sort values once when they are totally ordered.
+  - The W3C harness requires the expected failure category for known deviations and `sht:Failure` cases, uses the engine's conformance for `conformanceDisallows` cases, and enforces required suites for manifest overrides.
+- **Added:** `UnsupportedShaclFeatureException` (with `features`), the `UnsupportedShaclFeature` enum, `SparqlPreBindingRestrictionException`, and JMH workloads for monotone recursion and `sh:targetWhere`.
+
+<!-- providers and kastor-gen entries pending -->
 
 ### Fixed (re-audit)
 
