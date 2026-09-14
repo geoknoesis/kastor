@@ -134,6 +134,7 @@ Central materializer populated by generated registration code.
 ```kotlin
 object OntoMapper {
     fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T)
+    fun <T : Any> register(type: Class<T>, replace: Boolean, factory: (RdfHandle) -> T)
     fun unregister(type: Class<*>): Boolean
     fun isRegistered(type: Class<*>): Boolean
     fun registeredTypes(): Set<Class<*>>
@@ -147,7 +148,8 @@ object OntoMapper {
 The factory registry itself is private (a `ConcurrentHashMap`); use the functions below.
 
 **Registration:**
-- `register(type, factory)` — registers or replaces the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation.
+- `register(type, factory)` — registers the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation. Registering the *same* factory instance again is a no-op; registering a *different* factory for a type that already has one throws `IllegalStateException` (for example when two generated modules claim the same interface), because it would silently change how the whole application materializes that type.
+- `register(type, replace = true, factory)` — replaces an existing factory deliberately (tests, plugins). With `replace = false` it behaves like the two-argument form.
 - `unregister(type)` — removes a factory; returns `true` if one was registered.
 - `isRegistered(type)` / `registeredTypes()` — inspect the registry (a snapshot copy).
 
@@ -247,6 +249,9 @@ object KastorGraphOps {
     fun getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<Literal>
     fun getRequiredLiteralValue(graph: RdfGraph, subj: RdfTerm, pred: Iri): Literal
     fun <T: Any> getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, factory: (RdfTerm) -> T): List<T>
+    fun getValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<RdfTerm>
+    fun hasNodeKind(term: RdfTerm, nodeKind: Iri): Boolean
+    fun isInstanceOf(graph: RdfGraph, term: RdfTerm, cls: Iri): Boolean
 }
 ```
 
@@ -255,6 +260,11 @@ object KastorGraphOps {
 - `getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<Literal>` - Get literal values
 - `getRequiredLiteralValue(graph: RdfGraph, subj: RdfTerm, pred: Iri): Literal` - Get required literal value
 - `getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, factory: (RdfTerm) -> T): List<T>` - Materialize IRI and blank-node objects (literal objects are skipped). Failures are never silently dropped: `Error`, `ValidationException` and `MaterializationException` from `factory` propagate unchanged; any other exception is rethrown as a `MaterializationException` naming the subject, predicate and object
+- `getValues(graph, subj, pred): List<RdfTerm>` - All objects (IRIs, blank nodes, literals, triple terms)
+- `hasNodeKind(term, nodeKind): Boolean` - SHACL `sh:nodeKind` test (`sh:IRI`, `sh:BlankNode`, `sh:Literal`, `sh:BlankNodeOrIRI`, `sh:BlankNodeOrLiteral`, `sh:IRIOrLiteral`); any other IRI throws `IllegalArgumentException`
+- `isInstanceOf(graph, term, cls): Boolean` - SHACL `sh:class` test: an `rdf:type` equal to `cls` or a transitive `rdfs:subClassOf` of it; literals are never instances
+
+The last three are used by generated embedded validation.
 
 **Usage:**
 ```kotlin
@@ -441,8 +451,31 @@ class MaterializationException(message: String, cause: Throwable? = null) : Ille
 
 Thrown when materializing a domain object fails: a nested value could not be converted, a factory threw
 (wrapped by `KastorGraphOps.getObjectValues`), or an eagerly-loaded `NestedMode.DATA_CLASS` snapshot graph
-is cyclic (the message names the cycle). Earlier versions silently dropped nested values that failed to
-materialize; they now surface as this exception.
+is cyclic (the message names the cycle), or a literal value is ill-typed for its property (see
+[MaterializationPolicy](#materializationpolicy)). Earlier versions silently dropped nested values that
+failed to materialize, and ill-typed literal values; they now surface as this exception.
+
+### MaterializationPolicy
+
+```kotlin
+enum class IllTypedValueHandling { THROW, SKIP }
+
+object MaterializationPolicy {
+    @JvmStatic @Volatile var illTypedValues: IllTypedValueHandling = IllTypedValueHandling.THROW
+}
+```
+
+Process-wide policy for literal values whose lexical form is not valid for the property's Kotlin type
+(e.g. `"abc"^^xsd:integer` on an `xsd:integer` property), applied by generated SHACL wrappers and
+data-class factories while reading:
+
+- `THROW` (default) — reading fails with a `MaterializationException` naming the value, its datatype, the
+  property and the expected type.
+- `SKIP` — the value is left out of the result and a warning is logged; the remaining values are read.
+
+```kotlin
+MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP  // e.g. at startup, for messy data
+```
 
 ## Type System
 
@@ -473,11 +506,26 @@ object XsdLiterals {
     fun localDate(literal: Literal): LocalDate?  // optional timezone suffix accepted and dropped
     fun langString(literal: Literal): LangString?
     fun encode(value: Any, datatype: Iri): Literal
+
+    fun isWellFormed(literal: Literal): Boolean          // lexical form valid for the literal's own datatype
+    fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean // SHACL sh:datatype
+    fun compareNumeric(term: RdfTerm, bound: String): Int? // exact comparison for sh:minInclusive & co.
 }
 ```
 
 - Decoders return `null` for ill-typed lexical forms and follow XML Schema lexical rules rather than
-  Kotlin's.
+  Kotlin's:
+  - integers (`int`, `long`, `bigInteger`) accept `[+-]?digits`, so a leading `+` is valid; `int`/`long`
+    are range-checked;
+  - `bigDecimal` accepts `[+-]?(digits[.digits] | .digits)`; exponents (`1e3`) are not decimal syntax and
+    are rejected;
+  - `localDate` accepts years with more than four digits (`12345-06-07`, without the `+` ISO-8601 would
+    require) and negative years (`-0044-03-15`); `encode` writes such dates back in the same form, so
+    years above 9999 round-trip.
+- `isWellFormed` checks XSD numeric, boolean and date datatypes, including the ranges of the derived integer
+  types; other datatypes are accepted. `hasDatatype` requires a literal of exactly that datatype with a
+  well-formed lexical form. `compareNumeric` returns the sign of `value - bound`, or `null` when the value
+  is not a well-formed numeric literal or is `NaN`. Generated embedded validation uses these three.
 - `encode` always produces a literal with the **declared** datatype (literals such as `LangString` are
   returned unchanged), so values round-trip: a `String` property declared `xsd:dateTime` is written back
   as `"…"^^xsd:dateTime`, not as a plain string.
