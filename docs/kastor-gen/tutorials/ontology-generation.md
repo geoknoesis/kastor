@@ -220,15 +220,30 @@ internal class CatalogWrapper private constructor(
 
 ### Reading values
 
-- **Ill-typed literals fail by default.** A value whose lexical form is not valid for the property's type
-  (e.g. `"abc"^^xsd:integer`) makes the wrapper or data-class factory throw a `MaterializationException`
-  naming the value, datatype and property, including for list-valued properties (where such values used to
-  disappear silently). Set `MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP` to leave them
-  out with a logged warning instead (see the [runtime reference](../reference/runtime.md#materializationpolicy)).
-- **Missing values are never replaced by invented defaults** (`""`, `0`, `false`): a required
-  single-valued (non-null) member throws when its value is missing, an optional (nullable) member returns
-  `null`, and a list without values is empty (live wrappers throw instead when the path has
-  `sh:minCount` ≥ 1).
+The same rules apply to every generated reader: SHACL live wrappers, SHACL data-class factories, and
+wrappers generated for hand-written `@Rdf` interfaces.
+
+- **Missing required values always throw.** Reading a required member without a value throws a
+  `MaterializationException` with the message `Required value missing for <member> <path>`, followed by
+  `of shape <shapeIri>` for SHACL-generated types. A member is required when it is:
+  - a single-valued member with `sh:minCount` ≥ 1;
+  - a list member with `sh:minCount` ≥ 1 that has no values (data-class factories used to return an
+    empty list here);
+  - a non-null member of a hand-written `@Rdf` interface.
+
+  There is no lenient option for this. Missing values are never replaced by invented defaults (`""`, `0`,
+  `false`): an optional (nullable) member reads `null`, and an optional list reads empty.
+- **Values that fail to decode follow `MaterializationPolicy.illTypedValues`.** A value whose lexical form
+  is not valid for the member's type (e.g. `"abc"^^xsd:integer` read as a number):
+  - `THROW` (default): reading throws a `MaterializationException` naming the value, its datatype, the
+    member and the expected type;
+  - `SKIP`: the value is left out and a warning is logged.
+
+  This covers list, nullable and non-null members alike, including read-only members and mutable getters
+  of hand-written `@Rdf` wrappers (which used to skip such values silently). See the
+  [runtime reference](../reference/runtime.md#materializationpolicy).
+- **The two rules combine under `SKIP`.** If every value of a required member was skipped, the member counts
+  as missing and reading it throws.
 
 ### Generated validation
 

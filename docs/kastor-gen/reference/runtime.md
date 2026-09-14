@@ -449,11 +449,13 @@ See the [Validation API Reference](validation.md).
 class MaterializationException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 ```
 
-Thrown when materializing a domain object fails: a nested value could not be converted, a factory threw
-(wrapped by `KastorGraphOps.getObjectValues`), or an eagerly-loaded `NestedMode.DATA_CLASS` snapshot graph
-is cyclic (the message names the cycle), or a literal value is ill-typed for its property (see
-[MaterializationPolicy](#materializationpolicy)). Earlier versions silently dropped nested values that
-failed to materialize, and ill-typed literal values; they now surface as this exception.
+Thrown when materializing a domain object fails: a required value is missing, a literal value is ill-typed
+for its member under `IllTypedValueHandling.THROW` (see [MaterializationPolicy](#materializationpolicy)), a
+nested value could not be converted, a factory threw (wrapped by `KastorGraphOps.getObjectValues`), or an
+eagerly-loaded `NestedMode.DATA_CLASS` snapshot graph is cyclic (the message names the cycle). Because it
+extends `IllegalStateException`, existing `catch (e: IllegalStateException)` blocks still catch it. Earlier
+versions silently dropped nested values that failed to materialize and ill-typed literal values; they now
+surface as this exception.
 
 ### MaterializationPolicy
 
@@ -462,20 +464,43 @@ enum class IllTypedValueHandling { THROW, SKIP }
 
 object MaterializationPolicy {
     @JvmStatic @Volatile var illTypedValues: IllTypedValueHandling = IllTypedValueHandling.THROW
+
+    @JvmStatic fun illTyped(literal: Literal, property: String, expected: String): Nothing?  // called by generated code
+    @JvmStatic fun missingRequired(property: String): Nothing                              // called by generated code
 }
 ```
 
-Process-wide policy for literal values whose lexical form is not valid for the property's Kotlin type
-(e.g. `"abc"^^xsd:integer` on an `xsd:integer` property), applied by generated SHACL wrappers and
-data-class factories while reading:
+Rules applied by every generated reader: SHACL live wrappers, SHACL data-class factories, and wrappers
+generated for hand-written `@Rdf` interfaces.
 
-- `THROW` (default) — reading fails with a `MaterializationException` naming the value, its datatype, the
-  property and the expected type.
-- `SKIP` — the value is left out of the result and a warning is logged; the remaining values are read.
+1. **Missing required values always throw** a `MaterializationException` with the message
+   `Required value missing for <member> <path>`, followed by `of shape <shapeIri>` for SHACL-generated types.
+   A member is required when it is a single-valued member with `sh:minCount >= 1`, a list member with
+   `sh:minCount >= 1` that is empty, or a non-null member of a hand-written `@Rdf` interface. There is no
+   lenient option. A nullable member without a value reads `null`; an optional list reads empty.
+2. **Values that fail to decode** (e.g. `"abc"^^xsd:integer` read as a number) follow `illTypedValues`:
+   - `THROW` (default): reading fails with a `MaterializationException` naming the value, its datatype, the
+     member and the expected type.
+   - `SKIP`: the value is left out of the result and a warning is logged; the remaining values are read.
+
+   For hand-written `@Rdf` wrappers this covers read-only decoded lists, nullable members, non-null members
+   and mutable getters, which used to skip such values silently.
+3. **Under `SKIP` the rules combine:** if every value of a required member was skipped, the member counts as
+   missing and rule 1 throws.
 
 ```kotlin
 MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP  // e.g. at startup, for messy data
 ```
+
+The generic literal delegates in `com.geoknoesis.kastor.gen.runtime.delegates` apply the same policy:
+
+- `rdfLiteral(predicate, decoder)`: the first decoded value; throws `MaterializationException` when no value
+  (remains) to return.
+- `rdfLiteralOrNull(predicate, decoder)`: the first decoded value or `null`.
+- `rdfLiterals(predicate, decoder)`: all decoded values as a list.
+
+A value the `decoder` rejects (returns `null` for) follows `illTypedValues`. The older fixed-type delegates
+(`rdfInt`, `rdfInts`, …) are unchanged, but generated code no longer uses them.
 
 ## Type System
 
