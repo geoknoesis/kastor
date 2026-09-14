@@ -84,3 +84,21 @@ public final class com/geoknoesis/kastor/rdf/UpdateQuery {
 	public final synthetic fun unbox-impl ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical;
+	public final fun blankNode (Ljava/lang/String;)Ljava/lang/String;
+	public final fun escapeString (Ljava/lang/String;)Ljava/lang/String;
+	public final fun functionName (Ljava/lang/String;)Ljava/lang/String;
+	public final fun iriRef (Ljava/lang/String;)Ljava/lang/String;
+	public final fun langLiteral (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public static synthetic fun langLiteral$default (Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+	public final fun langTag (Ljava/lang/String;)Ljava/lang/String;
+	public final fun prefixLabel (Ljava/lang/String;)Ljava/lang/String;
+	public final fun quoted (Ljava/lang/String;)Ljava/lang/String;
+	public final fun requireWellFormedUtf16 (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun typedLiteral (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public final fun varName (Ljava/lang/String;)Ljava/lang/String;
+	public final fun versionDecl (Ljava/lang/String;)Ljava/lang/String;
+	public final fun xsdLexical (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+}
+

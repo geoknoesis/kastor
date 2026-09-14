@@ -16,6 +16,7 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 object SparqlRenderer {
 
     fun render(query: SparqlQueryAst): String = buildString {
+        BlankNodeScopes().checkQuery(query)
         when (query) {
             is SelectQueryAst -> renderSelect(query, subQuery = false)
             is AskQueryAst -> renderAsk(query)
@@ -25,6 +26,7 @@ object SparqlRenderer {
     }
 
     fun render(update: UpdateRequestAst): String = buildString {
+        BlankNodeScopes().checkUpdate(update)
         renderPrologue(update.version, update.prefixes)
         append(update.operations.joinToString(" ;\n") { renderUpdateOperation(it) })
         if (update.operations.isNotEmpty()) append("\n")
@@ -166,7 +168,10 @@ object SparqlRenderer {
             if (left is GroupPatternAst && left.patterns.isEmpty()) {
                 minus
             } else {
-                "${renderElement(left, depth)}\n${INDENT.repeat(depth)}$minus"
+                // `{ left MINUS { right } }`: rendered inline, MINUS would also subtract from every
+                // pattern that precedes it in the enclosing group.
+                val leftElements = if (left is GroupPatternAst) left.patterns else listOf(left)
+                renderGroup(GroupPatternAst(leftElements + MinusPatternAst(EMPTY_GROUP, pattern.right)), depth)
             }
         }
         is GraphPatternAstImpl -> "GRAPH ${renderGraphName(pattern.graphName, "GRAPH")} ${renderGroup(pattern.pattern, depth)}"
@@ -234,7 +239,13 @@ object SparqlRenderer {
 
     private fun renderDataBlockValue(term: RdfTerm?): String = when (term) {
         null -> "UNDEF"
-        is Iri, is Literal, is TripleTerm -> renderTerm(term)
+        is Iri, is Literal -> renderTerm(term)
+        is TripleTerm -> {
+            require(!containsBlankNodeOrVariable(term)) {
+                "A triple term in VALUES may not contain blank nodes or variables: blank nodes are not allowed in data blocks"
+            }
+            renderTerm(term)
+        }
         is Var, is BlankNode -> throw IllegalArgumentException("VALUES may only contain IRIs, literals, triple terms or UNDEF")
     }
 
@@ -322,7 +333,13 @@ object SparqlRenderer {
     // ============================================================================
 
     private fun renderExpression(expr: ExpressionAst): String = when (expr) {
-        is TermExpressionAst -> renderTerm(expr.term)
+        is TermExpressionAst -> {
+            require(!containsBlankNode(expr.term)) {
+                "Blank nodes cannot be used in SPARQL expressions (FILTER, BIND, SELECT, ORDER BY, HAVING); " +
+                    "use a variable or the BNODE() function instead"
+            }
+            renderTerm(expr.term)
+        }
         is ComparisonExpressionAst ->
             "${renderComparisonOperand(expr.left)} ${expr.operator.symbol} ${renderComparisonOperand(expr.right)}"
         is AndExpressionAst -> "(${renderExpression(expr.left)} && ${renderExpression(expr.right)})"
@@ -434,7 +451,7 @@ object SparqlRenderer {
             is ClearOperationAst -> {
                 append("CLEAR")
                 if (op.silent) append(" SILENT")
-                append(op.graph?.let { " GRAPH ${renderTerm(it)}" } ?: " DEFAULT")
+                append(op.graph?.let { " GRAPH ${renderTerm(it)}" } ?: " ${op.scope.keyword}")
             }
             is CreateOperationAst -> {
                 append("CREATE")
@@ -444,22 +461,22 @@ object SparqlRenderer {
             is DropOperationAst -> {
                 append("DROP")
                 if (op.silent) append(" SILENT")
-                append(op.graph?.let { " GRAPH ${renderTerm(it)}" } ?: " DEFAULT")
+                append(op.graph?.let { " GRAPH ${renderTerm(it)}" } ?: " ${op.scope.keyword}")
             }
             is CopyOperationAst -> {
                 append("COPY")
                 if (op.silent) append(" SILENT")
-                append(" ${renderTerm(op.source)} TO ${renderTerm(op.destination)}")
+                append(" ${graphOrDefault(op.source)} TO ${graphOrDefault(op.destination)}")
             }
             is MoveOperationAst -> {
                 append("MOVE")
                 if (op.silent) append(" SILENT")
-                append(" ${renderTerm(op.source)} TO ${renderTerm(op.destination)}")
+                append(" ${graphOrDefault(op.source)} TO ${graphOrDefault(op.destination)}")
             }
             is AddOperationAst -> {
                 append("ADD")
                 if (op.silent) append(" SILENT")
-                append(" ${renderTerm(op.source)} TO ${renderTerm(op.destination)}")
+                append(" ${graphOrDefault(op.source)} TO ${graphOrDefault(op.destination)}")
             }
         }
     }
@@ -542,6 +559,113 @@ object SparqlRenderer {
         is BlankNode -> true
         is TripleTerm -> term.triple.subject is BlankNode || containsBlankNode(term.triple.obj)
         else -> false
+    }
+
+    private fun containsBlankNodeOrVariable(term: RdfTerm): Boolean = containsBlankNode(term) || containsVariable(term)
+
+    /** `GraphOrDefault`: `DEFAULT` for `null`, otherwise the graph IRI. */
+    private fun graphOrDefault(graph: Iri?): String = graph?.let { renderTerm(it) } ?: "DEFAULT"
+
+    /**
+     * Enforces SPARQL 1.1 §4.1.4 / Update §3.1.1: a blank node label may not be used in two different
+     * basic graph patterns of one query, nor in two operations of one update request. As in ARQ,
+     * FILTER, BIND and VALUES do not end a basic graph pattern; any other non-triple element does.
+     */
+    private class BlankNodeScopes {
+        private val owner = HashMap<String, Int>()
+        private var nextScope = 0
+
+        private fun newScope(): Int = nextScope++
+
+        fun checkQuery(query: SparqlQueryAst) {
+            query.whereClause()?.let { walk(it) }
+        }
+
+        fun checkUpdate(update: UpdateRequestAst) {
+            update.operations.forEach { op ->
+                val scope = newScope()
+                when (op) {
+                    is InsertDataOperationAst -> (op.data + op.graphData.flatMap { it.triples }).forEach { record(it, scope) }
+                    is ModifyOperationAst -> {
+                        (op.insert + op.insertGraphs.flatMap { it.triples }).forEach { record(it, scope) }
+                        op.where?.let { walk(it) }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+
+        private fun SparqlQueryAst.whereClause(): GraphPatternAst? = when (this) {
+            is SelectQueryAst -> where
+            is AskQueryAst -> where
+            is ConstructQueryAst -> where
+            is DescribeQueryAst -> where
+        }
+
+        private fun walk(pattern: GraphPatternAst) {
+            if (pattern is GroupPatternAst) walkGroup(pattern.patterns) else walkGroup(listOf(pattern))
+        }
+
+        @Suppress("DEPRECATION")
+        private fun walkGroup(elements: List<GraphPatternAst>) {
+            var scope = newScope()
+            for (element in elements) {
+                when (element) {
+                    is TriplePatternAst -> record(element, scope)
+                    is PropertyPathPatternAst -> { term(element.subject, scope); term(element.obj, scope) }
+                    is TripleTermObjectPatternAst -> { term(element.subject, scope); tripleTerm(element.tripleTerm, scope) }
+                    is ReifierPatternAst -> { term(element.reifier, scope); tripleTerm(element.tripleTerm, scope) }
+                    is QuotedTriplePatternAst -> { term(element.subject, scope); term(element.obj, scope) }
+                    is RdfStarTriplePatternAst -> {
+                        term(element.quotedTriple.subject, scope); term(element.quotedTriple.obj, scope); term(element.obj, scope)
+                    }
+                    is TripleTermPatternAst -> tripleTerm(element, scope)
+                    is FilterPatternAst, is BindPatternAst, is ValuesPatternAst -> Unit
+                    else -> {
+                        nested(element)
+                        scope = newScope()
+                    }
+                }
+            }
+        }
+
+        private fun nested(element: GraphPatternAst) {
+            when (element) {
+                is GroupPatternAst -> walkGroup(element.patterns)
+                is OptionalPatternAst -> walk(element.pattern)
+                is UnionPatternAst -> { walk(element.left); walk(element.right) }
+                is MinusPatternAst -> { walk(element.left); walk(element.right) }
+                is GraphPatternAstImpl -> walk(element.pattern)
+                is ServicePatternAst -> walk(element.pattern)
+                is SubSelectPatternAst -> element.query.where?.let { walk(it) }
+                else -> Unit
+            }
+        }
+
+        private fun record(triple: TriplePatternAst, scope: Int) {
+            term(triple.subject, scope)
+            term(triple.obj, scope)
+        }
+
+        private fun tripleTerm(t: TripleTermPatternAst, scope: Int) {
+            term(t.subject, scope)
+            term(t.obj, scope)
+        }
+
+        private fun term(term: RdfTerm, scope: Int) {
+            when (term) {
+                is BlankNode -> {
+                    val label = term.id.removePrefix("_:")
+                    val first = owner.getOrPut(label) { scope }
+                    require(first == scope) {
+                        "Blank node label '_:$label' is used in more than one basic graph pattern (or update operation); " +
+                            "SPARQL scopes blank node labels to a single basic graph pattern. Use a variable to join across patterns"
+                    }
+                }
+                is TripleTerm -> { term(term.triple.subject, scope); term(term.triple.obj, scope) }
+                else -> Unit
+            }
+        }
     }
 
     // ============================================================================

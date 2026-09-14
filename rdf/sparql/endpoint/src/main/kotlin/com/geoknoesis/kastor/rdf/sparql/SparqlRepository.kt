@@ -5,12 +5,16 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpConnectTimeoutException
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.net.http.HttpTimeoutException
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -21,11 +25,20 @@ import kotlinx.serialization.json.jsonPrimitive
 private const val RESULTS_JSON = "application/sparql-results+json"
 private const val FORM_ENCODED = "application/x-www-form-urlencoded"
 private const val MAX_ERROR_BODY_BYTES = 4096
+private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
 
-/** Disconnects requests that outlive their overall deadline. Daemon thread; cancelled tasks are purged. */
+/**
+ * Closes response streams whose read stalls past the read timeout or the request deadline. Closing
+ * a `java.net.http` response stream from this thread unblocks a blocked read immediately (unlike
+ * `HttpURLConnection.disconnect()`, which waits for the reading thread's stream lock). Daemon
+ * thread; cancelled tasks are purged.
+ */
 private val DEADLINE_WATCHDOG = ScheduledThreadPoolExecutor(1) { runnable ->
     Thread(runnable, "kastor-sparql-deadline").apply { isDaemon = true }
 }.apply { removeOnCancelPolicy = true }
+
+private val LOGGER: System.Logger = System.getLogger(SparqlRepository::class.java.name)
+private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
 
 /**
  * [RdfRepository] over a remote SPARQL 1.1 Protocol endpoint.
@@ -33,11 +46,18 @@ private val DEADLINE_WATCHDOG = ScheduledThreadPoolExecutor(1) { runnable ->
  * - SELECT/ASK results are read as `application/sparql-results+json`. [select] buffers all rows and
  *   is capped by [SparqlEndpointConfig.maxResponseBytes]; [withSelectRows] streams rows to the
  *   consumer and is capped by [SparqlEndpointConfig.maxStreamedResponseBytes] (unbounded by default).
- * - Each request has a connect timeout, a per-read timeout and an overall deadline
- *   ([SparqlEndpointConfig.requestTimeout]) enforced by a watchdog that disconnects the request.
- * - Connections are not force-closed, so the JDK keep-alive pool reuses them.
+ * - Timeouts: connect timeout, per-read timeout, [SparqlEndpointConfig.requestTimeout] (whole
+ *   exchange for buffered calls, time to response headers for streams) and the optional
+ *   [SparqlEndpointConfig.streamingRequestTimeout] for streams.
+ * - Requests are never retried automatically, so a failed UPDATE is not re-sent.
+ * - Redirects are handled explicitly: `307`/`308` keep method and body; `301`/`302`/`303` are only
+ *   followed for GET queries (a redirected POST would otherwise silently lose its body). Other
+ *   origins are only followed with [SparqlEndpointConfig.followCrossOriginRedirects], and never
+ *   receive custom headers or credentials.
+ * - Connections are pooled and reused (HTTP/1.1 keep-alive).
  * - Exceptions thrown by a [withSelectRows] consumer propagate unchanged; transport, HTTP and
- *   result-format failures surface as [RdfQueryException] (HTTP error bodies are included).
+ *   result-format failures surface as [RdfQueryException] (HTTP error bodies are included). Using a
+ *   closed repository throws [IllegalStateException] from every operation.
  * - No transactions; CONSTRUCT/DESCRIBE are unsupported (this module has no RDF parser).
  */
 class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
@@ -61,6 +81,19 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     private val updateTarget = config.updateEndpoint?.let(HttpTarget::parse) ?: queryTarget
     private val configuredAuthorization =
         config.username?.let { HttpTarget.basicAuthorization(it, config.password.orEmpty()) }
+    private val client: HttpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .connectTimeout(config.connectTimeout)
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .build()
+
+    init {
+        insecureAuthorizationWarning(config)?.let { warning ->
+            if (INSECURE_AUTH_WARNED.add(HttpTarget.redact(config.endpoint) + " " + config.updateEndpoint?.let(HttpTarget::redact))) {
+                LOGGER.log(System.Logger.Level.WARNING, warning)
+            }
+        }
+    }
 
     override val defaultGraph: RdfGraph = SparqlGraph(this)
 
@@ -99,17 +132,26 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     }
 
     override fun select(query: SparqlSelect): SparqlQueryResult =
-        selectRows(query.sparql, config.maxResponseBytes, config.requestTimeout) { ListSparqlQueryResult(it.toList()) }
-
-    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
-        selectRows(query.sparql, config.maxStreamedResponseBytes, config.requestTimeout, consume)
+        selectRows(query.sparql, config.maxResponseBytes, Timeouts.buffered(config.requestTimeout)) { ListSparqlQueryResult(it.toList()) }
 
     /**
-     * Streams rows with [bindings] applied and [timeout] as the overall request deadline.
+     * Streams rows to [consume]. [SparqlEndpointConfig.requestTimeout] limits the wait for the
+     * response headers; time spent consuming rows is only limited by
+     * [SparqlEndpointConfig.streamingRequestTimeout] (and the per-read timeout).
+     */
+    override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
+        selectRows(query.sparql, config.maxStreamedResponseBytes, Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
+
+    /**
+     * Streams rows with [bindings] as initial bindings and [timeout] as the deadline for the response
+     * headers ([SparqlEndpointConfig.streamingRequestTimeout] still bounds the whole stream).
      *
-     * SPARQL 1.1 Protocol has no initial-bindings parameter, so the bindings are sent as a trailing
-     * `VALUES` block, i.e. joined with the query's solutions. Queries that already end with a
-     * `VALUES` clause cannot take additional bindings.
+     * SPARQL 1.1 Protocol has no initial-bindings parameter, so the bindings are substituted into the
+     * query text with the same rules as the Jena provider (see [InitialBindings]): the constants
+     * restrict the WHERE clause before aggregation, LIMIT, FILTER and sub-selects, and projected
+     * bound variables stay in the results. Queries that assign a bound variable (BIND/AS/VALUES) or
+     * use it inside a sub-select that does not project it are rejected with
+     * [IllegalArgumentException]. Blank nodes cannot be used as bindings.
      */
     override fun <T> withSelectRows(
         query: SparqlSelect,
@@ -118,23 +160,19 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         consume: (Sequence<BindingSet>) -> T,
     ): T {
         require(!timeout.isNegative && !timeout.isZero) { "timeout must be positive" }
-        val sparql = if (bindings.isEmpty()) {
-            query.sparql
-        } else {
-            val names = bindings.keys.joinToString(" ") { "?${SparqlTermFormat.varName(it)}" }
-            val values = bindings.values.joinToString(" ") { term ->
-                SparqlTermFormat.term(term) { throw IllegalArgumentException("Blank nodes cannot be used as query bindings") }
-            }
-            "${query.sparql.trimEnd()}\nVALUES ($names) { ($values) }\n"
+        val rendered = bindings.mapValues { (_, term) ->
+            SparqlTermFormat.term(term) { throw IllegalArgumentException("Blank nodes cannot be used as query bindings") }
         }
-        return selectRows(sparql, config.maxStreamedResponseBytes, timeout, consume)
+        val sparql = InitialBindings.apply(query.sparql, rendered)
+        return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(timeout, config.streamingRequestTimeout), consume)
     }
 
-    private fun <T> selectRows(sparql: String, byteLimit: Long?, timeout: Duration?, consume: (Sequence<BindingSet>) -> T): T {
+    private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: Timeouts, consume: (Sequence<BindingSet>) -> T): T {
+        ensureOpen()
         val startTime = System.currentTimeMillis()
         var rows = 0
         try {
-            val result = exchange(sparql, update = false, byteLimit = byteLimit, timeout = timeout) { input ->
+            val result = exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input ->
                 val sequence = JsonBindingRows(input).rows()
                     .map(SparqlJsonResults::row)
                     .guarded(sparql)
@@ -150,9 +188,10 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     }
 
     override fun ask(query: SparqlAsk): Boolean {
+        ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeout = config.requestTimeout) { input ->
+            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input ->
                 readResponse(query.sparql) { input.reader(Charsets.UTF_8).readText() }
             }
             // Parse the SPARQL Results JSON `{ "boolean": true }` form; fall back to
@@ -191,9 +230,10 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         )
 
     override fun update(query: UpdateQuery) {
+        ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeout = config.requestTimeout) { input ->
+            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input ->
                 readResponse(query.sparql) { input.readAllBytes() }
             }
             val executionTime = System.currentTimeMillis() - startTime
@@ -229,95 +269,174 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     /** What this adapter supports; identical to [SparqlProvider.getCapabilities]. */
     override fun getCapabilities(): ProviderCapabilities = SPARQL_ENDPOINT_CAPABILITIES
 
+    /** Marks the repository closed and releases the connection pool; in-flight requests may complete. */
     override fun close() {
         closed = true
+        client.shutdown()
     }
+
+    private fun ensureOpen() = check(!closed) { "Repository is closed" }
 
     // ------------------------------------------------------------------------ HTTP
 
-    private class Request(val url: URL, val contentType: String?, val body: ByteArray?)
+    /**
+     * [headers] limits the wait for response headers (all redirect hops included); [overall] limits
+     * the whole exchange including reading the body. Both are measured from the start of the call.
+     */
+    private class Timeouts(val headers: Duration?, val overall: Duration?) {
+        companion object {
+            fun buffered(timeout: Duration?) = Timeouts(timeout, timeout)
+        }
+    }
+
+    private class Request(val uri: URI, val contentType: String?, val body: ByteArray?)
 
     private fun request(sparql: String, update: Boolean): Request {
         val target = if (update) updateTarget else queryTarget
+        val url = target.url.toURI()
         return if (update) when (config.updateMethod) {
-            SparqlUpdateMethod.POST -> Request(target.url, "application/sparql-update", sparql.toByteArray(Charsets.UTF_8))
-            SparqlUpdateMethod.POST_FORM -> Request(target.url, FORM_ENCODED, "update=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
+            SparqlUpdateMethod.POST -> Request(url, "application/sparql-update", sparql.toByteArray(Charsets.UTF_8))
+            SparqlUpdateMethod.POST_FORM -> Request(url, FORM_ENCODED, "update=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
         } else when (config.queryMethod) {
-            SparqlQueryMethod.POST -> Request(target.url, "application/sparql-query", sparql.toByteArray(Charsets.UTF_8))
-            SparqlQueryMethod.POST_FORM -> Request(target.url, FORM_ENCODED, "query=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
-            SparqlQueryMethod.GET -> Request(target.withParameter("query", sparql), null, null)
+            SparqlQueryMethod.POST -> Request(url, "application/sparql-query", sparql.toByteArray(Charsets.UTF_8))
+            SparqlQueryMethod.POST_FORM -> Request(url, FORM_ENCODED, "query=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
+            SparqlQueryMethod.GET -> {
+                val get = target.withParameter("query", sparql).toURI()
+                if (get.toString().length <= config.maxGetUrlLength) Request(get, null, null)
+                else Request(url, FORM_ENCODED, "query=${HttpTarget.formEncode(sparql)}".toByteArray(Charsets.US_ASCII))
+            }
         }
     }
 
     /**
-     * Perform one request and hand the (bounded) response body to [handle]. Exceptions thrown by
-     * [handle] propagate unchanged; [RdfQueryException]s raised after the deadline fired are
-     * reported as a deadline failure.
+     * Perform one request (following permitted redirects) and hand the (bounded) response body to
+     * [handle]. Exceptions thrown by [handle] propagate unchanged; [RdfQueryException]s raised after
+     * a timeout closed the stream are reported as that timeout.
      */
     private fun <T> exchange(
         sparql: String,
         update: Boolean,
         byteLimit: Long?,
-        timeout: Duration?,
+        timeouts: Timeouts,
         handle: (InputStream) -> T,
     ): T {
-        check(!closed) { "Repository is closed" }
+        val startNanos = System.nanoTime()
         val target = if (update) updateTarget else queryTarget
-        val request = request(sparql, update)
-        val connection = (request.url.openConnection() as HttpURLConnection).apply {
-            requestMethod = if (request.body == null) "GET" else "POST"
-            connectTimeout = config.connectTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            readTimeout = config.readTimeout.toMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            useCaches = false
-            if (!update) setRequestProperty("Accept", RESULTS_JSON)
-            request.contentType?.let { setRequestProperty("Content-Type", it) }
-            config.headers.forEach { (name, value) -> setRequestProperty(name, value) }
-            (configuredAuthorization ?: target.userInfoAuthorization)?.let { setRequestProperty("Authorization", it) }
-            doOutput = request.body != null
-        }
-        val timedOut = AtomicBoolean(false)
-        val watchdog = timeout?.let { limit ->
-            DEADLINE_WATCHDOG.schedule({
-                timedOut.set(true)
-                connection.disconnect()
-            }, limit.toMillis(), TimeUnit.MILLISECONDS)
-        }
-        try {
-            val status = try {
-                request.body?.let { body -> connection.outputStream.use { it.write(body) } }
-                connection.responseCode
-            } catch (e: IOException) {
-                connection.disconnect()
-                throw RdfQueryException("SPARQL request failed: ${e.message}", query = sparql, cause = e)
+        var request = request(sparql, update)
+        var authorization = configuredAuthorization ?: target.userInfoAuthorization
+        var sendCustomHeaders = true
+        var redirects = 0
+        while (true) {
+            val builder = HttpRequest.newBuilder(request.uri)
+            timeouts.headers?.let { limit ->
+                val remaining = limit.minusNanos(System.nanoTime() - startNanos)
+                if (remaining.isNegative || remaining.isZero) throw deadlineExceeded(sparql, limit)
+                builder.timeout(remaining)
             }
+            if (!update) builder.setHeader("Accept", RESULTS_JSON)
+            request.contentType?.let { builder.setHeader("Content-Type", it) }
+            if (sendCustomHeaders) config.headers.forEach { (name, value) -> builder.setHeader(name, value) }
+            authorization?.let { builder.setHeader("Authorization", it) }
+            val body = request.body
+            if (body == null) builder.GET() else builder.POST(HttpRequest.BodyPublishers.ofByteArray(body))
+
+            val response = send(builder.build(), sparql, timeouts.headers)
+            val status = response.statusCode()
+            if (status in REDIRECT_STATUSES) {
+                val location = response.headers().firstValue("Location").orElse(null)
+                closeQuietly(response.body())
+                val next = redirectTarget(request, status, location, sparql)
+                if (++redirects > config.maxRedirects) {
+                    throw RdfQueryException("SPARQL endpoint redirected more than ${config.maxRedirects} times", query = sparql)
+                }
+                if (!sameOrigin(request.uri, next)) {
+                    if (!config.followCrossOriginRedirects) {
+                        throw RdfQueryException(
+                            "SPARQL endpoint redirected (HTTP $status) to another origin (${origin(next)}); " +
+                                "configure that endpoint URL directly or enable followCrossOriginRedirects",
+                            query = sparql,
+                        )
+                    }
+                    sendCustomHeaders = false
+                    authorization = null
+                }
+                request = Request(next, request.contentType, request.body)
+                continue
+            }
+            val deadlineNanos = timeouts.overall?.let { startNanos + it.toNanos() }
+            val input = GuardedInputStream(response.body(), config.readTimeout, deadlineNanos, timeouts.overall)
             if (status !in 200..299) {
-                val detail = readErrorBody(connection)
+                val detail = input.use { readErrorBody(it) }
                 throw RdfQueryException(
                     "SPARQL endpoint returned HTTP $status${if (detail.isEmpty()) "" else ": $detail"}",
                     query = sparql,
                 )
             }
-            val input = try {
-                connection.inputStream
-            } catch (e: IOException) {
-                connection.disconnect()
-                throw RdfQueryException("SPARQL response failed: ${e.message}", query = sparql, cause = e)
+            try {
+                return input.use { guarded -> handle(if (byteLimit == null) guarded else BoundedInputStream(guarded, byteLimit)) }
+            } catch (e: RdfQueryException) {
+                input.failure?.let { throw RdfQueryException(it, query = sparql, cause = e) }
+                throw e
             }
-            return input.use { raw -> handle(if (byteLimit == null) raw else BoundedInputStream(raw, byteLimit)) }
-        } catch (e: RdfQueryException) {
-            if (timedOut.get()) {
-                throw RdfQueryException("SPARQL request exceeded its ${timeout?.toMillis()} ms deadline", query = sparql, cause = e)
-            }
-            throw e
-        } finally {
-            watchdog?.cancel(false)
         }
     }
 
-    private fun readErrorBody(connection: HttpURLConnection): String = try {
-        connection.errorStream?.use { String(it.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8) }.orEmpty().trim()
+    private fun send(request: HttpRequest, sparql: String, headerTimeout: Duration?): HttpResponse<InputStream> = try {
+        client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+    } catch (e: HttpConnectTimeoutException) {
+        throw RdfQueryException("SPARQL request failed: connect timed out after ${config.connectTimeout.toMillis()} ms", query = sparql, cause = e)
+    } catch (e: HttpTimeoutException) {
+        throw RdfQueryException(
+            "SPARQL request exceeded its ${headerTimeout?.toMillis()} ms deadline waiting for the response",
+            query = sparql,
+            cause = e,
+        )
+    } catch (e: IOException) {
+        throw RdfQueryException("SPARQL request failed: ${e.message}", query = sparql, cause = e)
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw RdfQueryException("SPARQL request was interrupted", query = sparql, cause = e)
+    }
+
+    private fun redirectTarget(current: Request, status: Int, location: String?, sparql: String): URI {
+        if (location.isNullOrBlank()) throw RdfQueryException("SPARQL endpoint returned HTTP $status without a Location header", query = sparql)
+        if (current.body != null && status !in setOf(307, 308)) {
+            throw RdfQueryException(
+                "SPARQL endpoint answered a POST with HTTP $status; following it would silently turn the request into a GET " +
+                    "without the query. Configure the redirect target ($location) as the endpoint URL",
+                query = sparql,
+            )
+        }
+        val next = try {
+            current.uri.resolve(URI(location))
+        } catch (e: Exception) {
+            throw RdfQueryException("SPARQL endpoint returned an invalid redirect Location: $location", query = sparql, cause = e)
+        }
+        val scheme = next.scheme?.lowercase()
+        if ((scheme != "http" && scheme != "https") || next.host.isNullOrEmpty() || next.rawUserInfo != null) {
+            throw RdfQueryException("SPARQL endpoint redirected to an unsupported URL: ${origin(next)}", query = sparql)
+        }
+        return next
+    }
+
+    private fun origin(uri: URI) = "${uri.scheme}://${uri.host}:${effectivePort(uri)}"
+
+    private fun effectivePort(uri: URI) = if (uri.port >= 0) uri.port else if (uri.scheme.equals("https", true)) 443 else 80
+
+    private fun sameOrigin(a: URI, b: URI) =
+        a.scheme.equals(b.scheme, ignoreCase = true) && a.host.equals(b.host, ignoreCase = true) && effectivePort(a) == effectivePort(b)
+
+    private fun deadlineExceeded(sparql: String, limit: Duration) =
+        RdfQueryException("SPARQL request exceeded its ${limit.toMillis()} ms deadline", query = sparql)
+
+    private fun readErrorBody(input: InputStream): String = try {
+        String(input.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8).trim()
     } catch (_: IOException) {
         ""
+    }
+
+    private fun closeQuietly(input: InputStream) {
+        try { input.close() } catch (_: IOException) { }
     }
 
     /** Run an internal response reader, reporting I/O and format problems as [RdfQueryException]. */
@@ -344,6 +463,62 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         }
     }
 
+    /**
+     * Enforces the per-read timeout and the overall deadline on a response body: a watchdog closes
+     * the underlying stream when one read waits too long, which unblocks the reader. Time between
+     * reads (the consumer's own work) only counts towards the overall deadline, checked on the next
+     * read.
+     */
+    private class GuardedInputStream(
+        private val raw: InputStream,
+        readTimeout: Duration,
+        private val deadlineNanos: Long?,
+        private val overall: Duration?,
+    ) : InputStream() {
+        private val readTimeoutNanos = readTimeout.toNanos()
+        private val readTimeoutMessage = "SPARQL response read timed out after ${readTimeout.toMillis()} ms"
+        private val deadlineMessage = "SPARQL request exceeded its ${overall?.toMillis()} ms deadline"
+
+        @Volatile var failure: String? = null
+            private set
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) <= 0) -1 else one[0].toInt() and 0xFF
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            failure?.let { throw IOException(it) }
+            val untilDeadline = deadlineNanos?.let { it - System.nanoTime() }
+            if (untilDeadline != null && untilDeadline <= 0) {
+                failure = deadlineMessage
+                closeRaw()
+                throw IOException(deadlineMessage)
+            }
+            val byDeadline = untilDeadline != null && untilDeadline < readTimeoutNanos
+            val wait = if (byDeadline) untilDeadline!! else readTimeoutNanos
+            val message = if (byDeadline) deadlineMessage else readTimeoutMessage
+            val watchdog = DEADLINE_WATCHDOG.schedule({
+                failure = message
+                closeRaw()
+            }, wait, TimeUnit.NANOSECONDS)
+            try {
+                return raw.read(b, off, len)
+            } catch (e: IOException) {
+                failure?.let { throw IOException(it, e) }
+                throw e
+            } finally {
+                watchdog.cancel(false)
+            }
+        }
+
+        private fun closeRaw() {
+            try { raw.close() } catch (_: IOException) { }
+        }
+
+        override fun close() = raw.close()
+    }
+
     private class BoundedInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
         private var count = 0L
 
@@ -365,6 +540,20 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
 
         override fun skip(n: Long): Long = counted(`in`.skip(n))
     }
+
+    internal companion object {
+        /** The warning logged (once per endpoint) when Basic credentials would travel over plain http, or `null`. */
+        fun insecureAuthorizationWarning(config: SparqlEndpointConfig): String? {
+            val query = HttpTarget.parse(config.endpoint)
+            val update = config.updateEndpoint?.let(HttpTarget::parse) ?: query
+            val exposed = listOf(query, update).filter { target ->
+                target.isPlainHttp && (config.username != null || target.userInfoAuthorization != null)
+            }
+            if (exposed.isEmpty()) return null
+            return "SPARQL endpoint ${exposed.joinToString { HttpTarget.redact(it.url.toString()) }} uses HTTP Basic " +
+                "authentication over plain http; credentials are sent unencrypted. Use https."
+        }
+    }
 }
 
 /**
@@ -372,10 +561,14 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
  *
  * ## Blank nodes
  * Blank-node labels in SPARQL Update are scoped to a single request, so:
- * - [addTriple]/[addTriples] accept blank nodes. A call containing blank nodes is sent as one
- *   request (never split into batches) and its labels are re-issued, so every call creates fresh
- *   blank nodes on the endpoint. Endpoint-assigned identifiers read back from results (for example
- *   Virtuoso's `nodeID://b1`) can therefore be copied into another graph.
+ * - [addTriple]/[addTriples] accept blank nodes. Triples connected through blank nodes form a
+ *   component that is always sent in one request (never split); components and triples without
+ *   blank nodes are packed into requests of up to [SparqlEndpointConfig.insertBatchSize] triples (a
+ *   larger component is sent alone). Components larger than
+ *   [SparqlEndpointConfig.maxBlankNodeComponentTriples] are rejected before anything is sent. Labels
+ *   are re-issued per request, so every call creates fresh blank nodes on the endpoint.
+ *   Endpoint-assigned identifiers read back from results (for example Virtuoso's `nodeID://b1`) can
+ *   therefore be copied into another graph.
  * - [hasTriple], [find], [removeTriple] and [removeTriples] cannot address an existing blank node
  *   by label and throw [IllegalArgumentException]; use an explicit `DELETE WHERE` pattern instead.
  */
@@ -388,12 +581,14 @@ class SparqlGraph(
         get() = repository as? RdfRepository
     override val sourceGraphName: Iri? = graphName
 
+    private val endpointConfig: SparqlEndpointConfig?
+        get() = (repository as? SparqlRepository)?.config
+
     private val batchSize: Int
-        get() = (repository as? SparqlRepository)?.config?.insertBatchSize ?: SparqlEndpointConfig.DEFAULT_INSERT_BATCH_SIZE
+        get() = endpointConfig?.insertBatchSize ?: SparqlEndpointConfig.DEFAULT_INSERT_BATCH_SIZE
 
     private fun pattern(body: String): String =
         if (graphName == null) body else "GRAPH ${SparqlTermFormat.iriRef(graphName.value)} { $body }"
-    private fun hasBlank(t: RdfTriple): Boolean = t.subject is BlankNode || t.obj is BlankNode
     private fun rendered(t: RdfTriple, blankNode: (BlankNode) -> String): String =
         "${SparqlTermFormat.term(t.subject, blankNode)} ${SparqlTermFormat.iriRef(t.predicate.value)} ${SparqlTermFormat.term(t.obj, blankNode)} ."
 
@@ -402,22 +597,68 @@ class SparqlGraph(
         addTriples(listOf(triple))
     }
 
-    /**
-     * `INSERT DATA`. Triples without blank nodes are sent in batches of
-     * [SparqlEndpointConfig.insertBatchSize]; see the class documentation for blank nodes.
-     */
+    /** `INSERT DATA` in batches; see the class documentation for blank nodes. */
     override fun addTriples(triples: Collection<RdfTriple>) {
         if (triples.isEmpty()) return
-        if (triples.any(::hasBlank)) {
-            val labels = HashMap<String, String>()
-            insertData(triples) { node -> "_:" + labels.getOrPut(node.id) { "b${labels.size}" } }
-        } else {
-            triples.chunked(batchSize).forEach { batch -> insertData(batch, ::rejectBlankNode) }
+        val maxComponent = endpointConfig?.maxBlankNodeComponentTriples ?: SparqlEndpointConfig.DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES
+        val units = blankNodeComponents(triples)
+        units.firstOrNull { it.size > maxComponent }?.let { component ->
+            throw IllegalArgumentException(
+                "${component.size} triples are connected through blank nodes and must be sent in one request, " +
+                    "which exceeds maxBlankNodeComponentTriples ($maxComponent); nothing was inserted"
+            )
         }
+        val batch = ArrayList<RdfTriple>()
+        for (unit in units) {
+            if (batch.isNotEmpty() && batch.size + unit.size > batchSize) {
+                insertData(batch)
+                batch.clear()
+            }
+            batch.addAll(unit)
+        }
+        if (batch.isNotEmpty()) insertData(batch)
     }
 
-    private fun insertData(triples: Collection<RdfTriple>, blankNode: (BlankNode) -> String) {
-        val body = triples.joinToString("\n") { rendered(it, blankNode) }
+    /**
+     * Groups [triples] into units that must travel together: each connected component of triples
+     * sharing blank nodes, and each triple without blank nodes on its own. Order of first occurrence
+     * is kept.
+     */
+    private fun blankNodeComponents(triples: Collection<RdfTriple>): List<List<RdfTriple>> {
+        val parent = HashMap<String, String>()
+        fun find(id: String): String {
+            var root = id
+            while (parent.getValue(root) != root) root = parent.getValue(root)
+            var node = id
+            while (parent.getValue(node) != root) {
+                val next = parent.getValue(node)
+                parent[node] = root
+                node = next
+            }
+            return root
+        }
+        fun blankIds(t: RdfTriple) = listOfNotNull((t.subject as? BlankNode)?.id, (t.obj as? BlankNode)?.id)
+        for (t in triples) {
+            val ids = blankIds(t)
+            ids.forEach { parent.putIfAbsent(it, it) }
+            if (ids.size == 2) {
+                val a = find(ids[0])
+                val b = find(ids[1])
+                if (a != b) parent[b] = a
+            }
+        }
+        val components = LinkedHashMap<Any, MutableList<RdfTriple>>()
+        for (t in triples) {
+            val ids = blankIds(t)
+            val key: Any = if (ids.isEmpty()) Any() else find(ids[0])
+            components.getOrPut(key) { ArrayList() }.add(t)
+        }
+        return components.values.toList()
+    }
+
+    private fun insertData(triples: Collection<RdfTriple>) {
+        val labels = HashMap<String, String>()
+        val body = triples.joinToString("\n") { t -> rendered(t) { node -> "_:" + labels.getOrPut(node.id) { "b${labels.size}" } } }
         repository.update(UpdateQuery("INSERT DATA { ${pattern(body)} }"))
     }
 

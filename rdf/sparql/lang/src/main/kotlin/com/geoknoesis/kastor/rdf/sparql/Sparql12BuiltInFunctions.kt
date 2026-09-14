@@ -1,10 +1,14 @@
 package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.SparqlExtensionFunction
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
+import com.geoknoesis.kastor.rdf.sparql.KastorSparqlVocabulary.function
 
 /**
- * Built-in SPARQL 1.2 functions for service description.
+ * Built-in SPARQL 1.2 functions known to the extension registry.
+ *
+ * Their [SparqlExtensionFunction.iri]s are Kastor identifiers in
+ * [KastorSparqlVocabulary.FUNCTION_NAMESPACE] (SPARQL built-ins are keywords, not IRIs). Being part
+ * of the language, they are not advertised as `sd:extensionFunction` in service descriptions.
  *
  * [SparqlExtensionFunctionRegistry] registers these on first use.
  */
@@ -13,7 +17,7 @@ object Sparql12BuiltInFunctions {
     val functions = listOf(
         // RDF-star functions
         SparqlExtensionFunction(
-            iri = SPARQL12.TRIPLE.value,
+            iri = function("TRIPLE").value,
             name = "TRIPLE",
             description = "Creates a triple term from subject, predicate, and object",
             argumentTypes = listOf("rdf:Resource", "rdf:Property", "rdf:Resource"),
@@ -21,7 +25,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.isTRIPLE.value,
+            iri = function("isTRIPLE").value,
             name = "isTRIPLE",
             description = "Tests if a term is a triple term",
             argumentTypes = listOf("rdf:Resource"),
@@ -29,7 +33,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.SUBJECT.value,
+            iri = function("SUBJECT").value,
             name = "SUBJECT",
             description = "Extracts the subject from a triple term",
             argumentTypes = listOf("rdf:TripleTerm"),
@@ -37,7 +41,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.PREDICATE.value,
+            iri = function("PREDICATE").value,
             name = "PREDICATE",
             description = "Extracts the predicate from a triple term",
             argumentTypes = listOf("rdf:TripleTerm"),
@@ -45,7 +49,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.OBJECT.value,
+            iri = function("OBJECT").value,
             name = "OBJECT",
             description = "Extracts the object from a triple term",
             argumentTypes = listOf("rdf:TripleTerm"),
@@ -55,7 +59,7 @@ object Sparql12BuiltInFunctions {
         
         // String functions
         SparqlExtensionFunction(
-            iri = SPARQL12.encodeForUri.value,
+            iri = function("encodeForUri").value,
             name = "encodeForUri",
             description = "Encodes a string for use in URIs",
             argumentTypes = listOf("xsd:string"),
@@ -65,7 +69,7 @@ object Sparql12BuiltInFunctions {
         
         // RDF 1.2 / SPARQL 1.2 language and direction functions
         SparqlExtensionFunction(
-            iri = SPARQL12.LANGDIR.value,
+            iri = function("LANGDIR").value,
             name = "LANGDIR",
             description = "Returns the base direction of a directional language-tagged string (rdf:dirLangString)",
             argumentTypes = listOf("rdf:dirLangString"),
@@ -73,7 +77,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.hasLANG.value,
+            iri = function("hasLANG").value,
             name = "hasLANG",
             description = "Tests if a literal has a language tag",
             argumentTypes = listOf("rdf:langString"),
@@ -81,7 +85,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.hasLANGDIR.value,
+            iri = function("hasLANGDIR").value,
             name = "hasLANGDIR",
             description = "Tests if a literal has a base direction",
             argumentTypes = listOf("rdf:dirLangString"),
@@ -89,7 +93,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.STRLANGDIR.value,
+            iri = function("STRLANGDIR").value,
             name = "STRLANGDIR",
             description = "Constructs an rdf:dirLangString from lexical, language, and direction (RDF 1.2)",
             argumentTypes = listOf("xsd:string", "xsd:string", "xsd:string"),
@@ -99,7 +103,7 @@ object Sparql12BuiltInFunctions {
         
         // Date/time functions
         SparqlExtensionFunction(
-            iri = SPARQL12.now.value,
+            iri = function("now").value,
             name = "now",
             description = "Returns the current date and time",
             argumentTypes = emptyList(),
@@ -107,7 +111,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.timezone.value,
+            iri = function("timezone").value,
             name = "timezone",
             description = "Returns the timezone of a dateTime value",
             argumentTypes = listOf("xsd:dateTime"),
@@ -115,7 +119,7 @@ object Sparql12BuiltInFunctions {
             isBuiltIn = true
         ),
         SparqlExtensionFunction(
-            iri = SPARQL12.tz.value,
+            iri = function("tz").value,
             name = "tz",
             description = "Extracts the timezone from a dateTime",
             argumentTypes = listOf("xsd:dateTime"),
@@ -125,7 +129,7 @@ object Sparql12BuiltInFunctions {
         
         // Random functions
         SparqlExtensionFunction(
-            iri = SPARQL12.rand.value,
+            iri = function("rand").value,
             name = "rand",
             description = "Returns a random number between 0 and 1",
             argumentTypes = emptyList(),

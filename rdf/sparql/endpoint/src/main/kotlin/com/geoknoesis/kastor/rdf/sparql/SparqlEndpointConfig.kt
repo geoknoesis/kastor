@@ -13,7 +13,10 @@ enum class SparqlQueryMethod {
     POST,
     /** `POST` with an `application/x-www-form-urlencoded` body (`query=...`). */
     POST_FORM,
-    /** `GET` with a `query=...` URL parameter. */
+    /**
+     * `GET` with a `query=...` URL parameter. Requests whose URL would exceed
+     * [SparqlEndpointConfig.maxGetUrlLength] are sent as [POST_FORM] instead.
+     */
     GET,
 }
 
@@ -37,13 +40,29 @@ enum class SparqlUpdateMethod {
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout.
- * @property readTimeout maximum wait for any single read from the socket.
- * @property requestTimeout overall deadline for one request, including reading/consuming the
- *   whole response; a watchdog disconnects requests that exceed it. `null` disables the deadline.
- * @property headers extra HTTP headers sent with every request (e.g. API keys).
- * @property username HTTP Basic user; requires [password].
- * @property insertBatchSize maximum triples per `INSERT DATA`/`DELETE DATA` request for data without
- *   blank nodes.
+ * @property readTimeout maximum wait for any single read of the response body.
+ * @property requestTimeout deadline for one request. For buffered calls (select, ASK, UPDATE) it
+ *   covers the whole exchange including reading the response. For streamed rows
+ *   ([SparqlRepository.withSelectRows]) it only covers the time until the response headers arrive,
+ *   so a slow row consumer is never cut off by it. `null` disables the deadline.
+ * @property headers extra HTTP headers sent with every request (e.g. API keys). Never sent to a
+ *   different origin after a redirect.
+ * @property username HTTP Basic user; requires [password]. A warning is logged once per endpoint
+ *   when Basic credentials would be sent over plain `http`.
+ * @property insertBatchSize maximum triples per `INSERT DATA`/`DELETE DATA` request. Triples joined
+ *   by blank nodes are never split across requests; see [SparqlGraph].
+ * @property streamingRequestTimeout optional overall deadline for a streamed
+ *   [SparqlRepository.withSelectRows] call, including the time the consumer spends on rows. `null`
+ *   (default) means only [requestTimeout] (until headers) and [readTimeout] (per read) apply.
+ * @property followCrossOriginRedirects follow `307`/`308` (and, for GET, `301`/`302`/`303`)
+ *   redirects to a different scheme, host or port. Custom [headers] and credentials are never sent
+ *   to the other origin. Default `false`: such redirects fail with a clear error.
+ * @property maxRedirects maximum redirects followed per request.
+ * @property maxGetUrlLength longest request URL sent with [SparqlQueryMethod.GET]; longer queries
+ *   are sent as a form-encoded POST instead (many servers and proxies reject long URLs).
+ * @property maxBlankNodeComponentTriples largest group of triples connected through blank nodes that
+ *   [SparqlGraph.addTriples] accepts. Such a group must be sent in one request because blank-node
+ *   labels are scoped to a request; larger groups are rejected before anything is sent.
  */
 data class SparqlEndpointConfig(
     val endpoint: String,
@@ -59,6 +78,11 @@ data class SparqlEndpointConfig(
     val queryMethod: SparqlQueryMethod = SparqlQueryMethod.POST,
     val updateMethod: SparqlUpdateMethod = SparqlUpdateMethod.POST,
     val insertBatchSize: Int = DEFAULT_INSERT_BATCH_SIZE,
+    val streamingRequestTimeout: Duration? = null,
+    val followCrossOriginRedirects: Boolean = false,
+    val maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
+    val maxGetUrlLength: Int = DEFAULT_MAX_GET_URL_LENGTH,
+    val maxBlankNodeComponentTriples: Int = DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES,
 ) {
     init {
         HttpTarget.parse(endpoint)
@@ -68,10 +92,15 @@ data class SparqlEndpointConfig(
         requirePositive(connectTimeout, "connectTimeout")
         requirePositive(readTimeout, "readTimeout")
         requestTimeout?.let { requirePositive(it, "requestTimeout") }
+        streamingRequestTimeout?.let { requirePositive(it, "streamingRequestTimeout") }
         require(insertBatchSize > 0) { "insertBatchSize must be positive" }
+        require(maxRedirects >= 0) { "maxRedirects must not be negative" }
+        require(maxGetUrlLength > 0) { "maxGetUrlLength must be positive" }
+        require(maxBlankNodeComponentTriples > 0) { "maxBlankNodeComponentTriples must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
         headers.forEach { (name, value) ->
             require(HEADER_NAME.matches(name)) { "Invalid HTTP header name: '$name'" }
+            require(name.lowercase() !in RESTRICTED_HEADERS) { "HTTP header '$name' is managed by the HTTP client and cannot be set" }
             require(value.none { it == '\r' || it == '\n' }) { "HTTP header '$name' must not contain line breaks" }
         }
     }
@@ -82,7 +111,9 @@ data class SparqlEndpointConfig(
             "maxResponseBytes=$maxResponseBytes, maxStreamedResponseBytes=$maxStreamedResponseBytes, " +
             "connectTimeout=$connectTimeout, readTimeout=$readTimeout, requestTimeout=$requestTimeout, " +
             "headers=${headers.keys}, username=$username, password=${password?.let { "***" }}, " +
-            "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize)"
+            "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize, " +
+            "streamingRequestTimeout=$streamingRequestTimeout, followCrossOriginRedirects=$followCrossOriginRedirects, " +
+            "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples)"
 
     companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024 * 1024
@@ -90,16 +121,23 @@ data class SparqlEndpointConfig(
         const val DEFAULT_READ_TIMEOUT_MILLIS: Int = 60_000
         const val DEFAULT_REQUEST_TIMEOUT_MINUTES: Long = 5
         const val DEFAULT_INSERT_BATCH_SIZE: Int = 5_000
+        const val DEFAULT_MAX_REDIRECTS: Int = 5
+        const val DEFAULT_MAX_GET_URL_LENGTH: Int = 2_000
+        const val DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES: Int = 100_000
 
         private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+        private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade")
 
         /**
          * Build a configuration from provider options ([com.geoknoesis.kastor.rdf.RdfConfig.options]):
          * `location` (required), `updateLocation`, `maxResponseBytes`, `maxStreamedResponseBytes`,
-         * `connectTimeoutMillis`, `readTimeoutMillis`, `requestTimeoutMillis`, `username`, `password`,
-         * `queryMethod` (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`),
-         * `insertBatchSize`, and `header.<Name>` for custom headers. `maxStreamedResponseBytes` and
-         * `requestTimeoutMillis` accept `none` for unbounded.
+         * `connectTimeoutMillis`, `readTimeoutMillis`, `requestTimeoutMillis`,
+         * `streamingRequestTimeoutMillis`, `username`, `password`, `queryMethod`
+         * (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`), `insertBatchSize`,
+         * `followCrossOriginRedirects` (`true`/`false`), `maxRedirects`, `maxGetUrlLength`,
+         * `maxBlankNodeComponentTriples`, and `header.<Name>` for custom headers.
+         * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
+         * accept `none` for unbounded.
          */
         fun fromOptions(options: Map<String, String>): SparqlEndpointConfig {
             val endpoint = options["location"] ?: throw IllegalArgumentException("SPARQL endpoint URL required (option 'location')")
@@ -111,6 +149,13 @@ data class SparqlEndpointConfig(
             fun <E : Enum<E>> enum(key: String, values: Array<E>, default: E): E = options[key]?.let { raw ->
                 values.firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) }
                     ?: throw IllegalArgumentException("Option '$key' must be one of ${values.joinToString()}, got '$raw'")
+            } ?: default
+            fun boolean(key: String, default: Boolean): Boolean = options[key]?.trim()?.let { raw ->
+                when (raw.lowercase()) {
+                    "true" -> true
+                    "false" -> false
+                    else -> throw IllegalArgumentException("Option '$key' must be true or false, got '$raw'")
+                }
             } ?: default
 
             val defaults = SparqlEndpointConfig(endpoint)
@@ -128,6 +173,12 @@ data class SparqlEndpointConfig(
                 queryMethod = enum("queryMethod", SparqlQueryMethod.values(), defaults.queryMethod),
                 updateMethod = enum("updateMethod", SparqlUpdateMethod.values(), defaults.updateMethod),
                 insertBatchSize = long("insertBatchSize")?.let(Math::toIntExact) ?: defaults.insertBatchSize,
+                streamingRequestTimeout = optionalLong("streamingRequestTimeoutMillis", null)?.let(Duration::ofMillis),
+                followCrossOriginRedirects = boolean("followCrossOriginRedirects", defaults.followCrossOriginRedirects),
+                maxRedirects = long("maxRedirects")?.let(Math::toIntExact) ?: defaults.maxRedirects,
+                maxGetUrlLength = long("maxGetUrlLength")?.let(Math::toIntExact) ?: defaults.maxGetUrlLength,
+                maxBlankNodeComponentTriples = long("maxBlankNodeComponentTriples")?.let(Math::toIntExact)
+                    ?: defaults.maxBlankNodeComponentTriples,
             )
         }
 
@@ -169,6 +220,8 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
         val separator = if (url.query == null) "?" else "&"
         return URI("$base$separator$name=${formEncode(value)}").toURL()
     }
+
+    val isPlainHttp: Boolean get() = url.protocol.equals("http", ignoreCase = true)
 
     companion object {
         fun parse(endpoint: String): HttpTarget {
