@@ -11,8 +11,8 @@ import org.apache.jena.vocabulary.RDF
  * and projects the resulting RDF validation report into [ExpectedConformanceReport] using the same
  * normalization as manifest `mf:result` rows ([Shacl12ExpectedReport]).
  *
- * This is the reference path for **full conformance parity**. The Kastor native validator remains
- * exercised by unit tests and can be compared by passing `-Dshacl.w3c.useNative=true` to the harness.
+ * Reference comparison path. The harness validates with the **Kastor native** engine by default; pass
+ * `-Dshacl.w3c.useNative=false` to run the manifests through Apache Jena SHACL instead.
  */
 internal object JenaShacl12Conformance {
 

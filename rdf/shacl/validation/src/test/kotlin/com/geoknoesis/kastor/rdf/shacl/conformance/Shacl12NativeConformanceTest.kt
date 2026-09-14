@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.DynamicContainer
 import org.junit.jupiter.api.DynamicNode
 import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.TestFactory
 
 /**
@@ -19,9 +20,14 @@ import org.junit.jupiter.api.TestFactory
  * 3. Otherwise a small bundled fixture under `src/test/resources/w3c-shacl12-fixture/` so `./gradlew test`
  *    stays meaningful without cloning the suite.
  *
- * Non-approved manifest rows are skipped unless `-Dshacl.w3c.includeNonApproved=true`. Known deviations are
- * skipped only through the explicit, justified list in [W3cKnownDeviations].
+ * Non-approved manifest rows are skipped unless `-Dshacl.w3c.includeNonApproved=true`. Cases listed in
+ * [W3cKnownDeviations] use features the native engine does not implement: they are **executed** and must fail
+ * explicitly with "Unsupported SHACL feature" (never pass silently, never be skipped).
+ *
+ * Tagged `w3c`: `./gradlew :rdf:shacl-validation:w3cConformanceTest` runs only this suite and fails (instead of
+ * falling back to the bundled fixture) when the upstream checkout is missing.
  */
+@Tag("w3c")
 class Shacl12NativeConformanceTest {
 
     @TestFactory
@@ -61,9 +67,6 @@ class Shacl12NativeConformanceTest {
                                     if (!case.approved && !includeNonApproved) {
                                         Assumptions.assumeTrue(false, "not approved: ${case.entryUri}")
                                     }
-                                    W3cKnownDeviations.reasonFor(case.manifestPath)?.let { reason ->
-                                        Assumptions.assumeTrue(false, "known deviation: $reason")
-                                    }
                                     Shacl12W3cCaseRunner.run(case)
                                 }
                             },
@@ -81,6 +84,9 @@ class Shacl12NativeConformanceTest {
         val checkout =
             Path.of("test-data/w3c-shacl12/tests/manifest.ttl").toAbsolutePath().normalize()
         if (Files.isRegularFile(checkout)) return checkout
+        check(System.getProperty("shacl.w3c.requireSuite") != "true") {
+            "shacl.w3c.requireSuite=true but the W3C SHACL test suite is missing at $checkout (see test-data/README.md)"
+        }
 
         val resource = Shacl12NativeConformanceTest::class.java.getResource("/w3c-shacl12-fixture/manifest.ttl")
             ?: error("bundled W3C fixture missing from test classpath")
@@ -89,9 +95,10 @@ class Shacl12NativeConformanceTest {
 }
 
 /**
- * Explicit, reviewed list of W3C SHACL 1.2 cases the native engine does not (yet) pass. Every entry is matched
- * against the end of the path of the manifest file containing the case (`.../dir/file.ttl`) and must carry a
- * justification. Nothing else may be skipped silently.
+ * Explicit, reviewed list of W3C SHACL 1.2 cases that use features the native engine does not implement. Every entry
+ * is matched against the end of the path of the manifest file containing the case (`.../dir/file.ttl`) and carries a
+ * justification. The harness runs these cases and asserts that validation fails with an explicit
+ * "Unsupported SHACL feature" error ([com.geoknoesis.kastor.rdf.shacl.ValidationConfig.unsupportedFeatures]).
  */
 internal object W3cKnownDeviations {
     private const val SPARQL_COMPONENTS =
@@ -99,11 +106,14 @@ internal object W3cKnownDeviations {
             "sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine " +
             "(ValidatorCapabilities.supportsCustomConstraints = false)"
     private const val NODE_EXPRESSIONS =
-        "SHACL 1.2 node expressions (sh:expression, sh:nodeByExpression over computed nodes) are not " +
-            "implemented by the native engine"
+        "SHACL 1.2 node expression constraints (sh:expression) are not implemented by the native engine"
     private const val SPARQL_EXPRESSIONS =
         "SHACL 1.2 SPARQL node expressions (sh:select / sh:sparqlExpr as sh:targetNode or sh:property values) are " +
             "not implemented by the native engine"
+
+    private const val SPARQL_FUNCTIONS =
+        "SHACL 1.2 expression functions (sh:ListParameterExpressionFunction with sh:bodyExpression) called from " +
+            "SPARQL are not implemented by the native engine"
 
     private val deviations: Map<String, String> = linkedMapOf(
         "sparql/component/optional-001.ttl" to SPARQL_COMPONENTS,
@@ -112,10 +122,12 @@ internal object W3cKnownDeviations {
         // The expected sht:Failure stems from an sh:SPARQLAskValidator re-binding ?value inside a constraint component.
         "sparql/pre-binding/unsupported-sparql-006.ttl" to SPARQL_COMPONENTS,
         "node-expr/constraints/expression-001.ttl" to NODE_EXPRESSIONS,
-        "node-expr/constraints/nodeByExpression-001.ttl" to NODE_EXPRESSIONS,
         "sparql/property/property-select-001.ttl" to SPARQL_EXPRESSIONS,
         "sparql/property/property-sparqlExpr-001.ttl" to SPARQL_EXPRESSIONS,
         "sparql/targets/targetNode-select-001.ttl" to SPARQL_EXPRESSIONS,
+        "sparql/functions/instanceCount-example.ttl" to SPARQL_FUNCTIONS,
+        "sparql/functions/langLabelCount-example.ttl" to SPARQL_FUNCTIONS,
+        "sparql/functions/spacedConcat-example.ttl" to SPARQL_FUNCTIONS,
     )
 
     fun reasonFor(manifestPath: Path): String? {
