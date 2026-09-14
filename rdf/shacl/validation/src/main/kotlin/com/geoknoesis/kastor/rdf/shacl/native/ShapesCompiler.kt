@@ -16,6 +16,7 @@ import com.geoknoesis.kastor.rdf.vocab.XSD
 import com.geoknoesis.kastor.rdf.shacl.ConstraintType
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 import com.geoknoesis.kastor.rdf.shacl.ShaclConstraint
+import com.geoknoesis.kastor.rdf.shacl.UnsupportedFeatureHandling
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 
@@ -71,6 +72,8 @@ internal sealed class PropertyConstraint {
     data class LanguageIn(val langs: List<String>) : PropertyConstraint()
     data class UniqueLang(val enabled: Boolean) : PropertyConstraint()
     data class Node(val nestedShape: RdfResource) : PropertyConstraint()
+    /** SHACL 1.2 `sh:nodeByExpression` on a property shape whose value is a shape IRI (a constant node expression). */
+    data class NodeByExpression(val nestedShape: RdfResource) : PropertyConstraint()
     data class EqualsPath(val otherPath: ShaclPath) : PropertyConstraint()
     data class DisjointPath(val otherPath: ShaclPath) : PropertyConstraint()
     data class LessThanPath(val otherPath: ShaclPath) : PropertyConstraint()
@@ -80,8 +83,9 @@ internal sealed class PropertyConstraint {
     data class MinExclusive(val bound: RdfTerm) : PropertyConstraint()
     data class MaxExclusive(val bound: RdfTerm) : PropertyConstraint()
     /**
-     * `sh:qualifiedValueShape`. [siblings] are the `sh:qualifiedValueShape` values of the other property shapes of
-     * the same parent shape(s), used when [disjoint] is true.
+     * `sh:qualifiedValueShape`. [siblings] are the sibling shapes of SHACL §4.7.3 used when [disjoint] is true: all
+     * values of `sh:property/sh:qualifiedValueShape` of the parent shape(s), minus this constraint's own
+     * `sh:qualifiedValueShape` value.
      */
     data class Qualified(
         val shape: RdfResource,
@@ -100,17 +104,19 @@ internal sealed class PropertyConstraint {
     data class RootClass(val roots: List<Iri>) : PropertyConstraint()
     data class Shape(val nestedShape: RdfResource) : PropertyConstraint()
     /**
-     * SHACL-SPARQL constraint (`sh:sparql`). [query] has `sh:prefixes` declarations prepended and `$PATH`
-     * substituted; [preBound] lists the pre-bound variables it references (`this`, `currentShape`, `shapesGraph`).
+     * SHACL-SPARQL constraint (`sh:sparql`). [template] holds the query with `sh:prefixes` declarations prepended
+     * and `$PATH` substituted; pre-binding is applied by the engine through [SparqlQueryTemplate.bind].
      */
     data class Sparql(
         val constraintNode: RdfResource,
-        val query: String,
+        val template: SparqlQueryTemplate,
         val messages: List<Literal>,
         val severity: ViolationSeverity?,
         val severityCustomIri: Iri?,
-        val preBound: Set<String>,
-    ) : PropertyConstraint()
+    ) : PropertyConstraint() {
+        /** Pre-bound variables the query references (`this`, `currentShape`, `shapesGraph`). */
+        val preBound: Set<String> get() = template.preBound
+    }
     /** SHACL 1.2: validate resources that reify triples matching this property shape. */
     data class ReifierShape(val nestedShape: RdfResource) : PropertyConstraint()
     /** SHACL 1.2: asserted triples matching the path must have at least one `rdf:reifies` reifier. */
@@ -157,6 +163,11 @@ internal data class CompiledNodeShape(
     val uniqueValuesForProps: List<Iri> = emptyList(),
     /** `sh:deactivated true`: every node conforms. */
     val deactivated: Boolean = false,
+    /**
+     * Predicates allowed by `sh:closed true` (SHACL §4.8.1): the IRI `sh:path` values of **all** `sh:property`
+     * values, including deactivated property shapes.
+     */
+    val closedAllowedPredicates: Set<Iri> = emptySet(),
 )
 
 /**
@@ -172,6 +183,14 @@ internal data class CompiledShapeGraph(
     val referencedNodeShapes: Map<RdfResource, CompiledNodeShape> = emptyMap(),
     val referencedPropertyShapes: Map<RdfResource, CompiledPropertyShape> = emptyMap(),
     val index: ShapeGraphIndex = ShapeGraphIndex(emptyList()),
+    /**
+     * Shapes that can reach themselves through shape references (a strongly connected component of the static
+     * shape dependency graph, or a self-reference), mapped to their component id. Only these shapes can recurse
+     * over data; all other nested checks are bounded by the static nesting depth of the shapes graph.
+     */
+    val recursiveComponents: Map<RdfResource, Int> = emptyMap(),
+    /** Descriptions of unsupported constructs that were ignored ([UnsupportedFeatureHandling.IGNORE_WITH_WARNING]). */
+    val unsupportedFeatureWarnings: List<String> = emptyList(),
 ) {
     /** True when some SHACL-SPARQL constraint references `$shapesGraph`. */
     val sparqlUsesShapesGraph: Boolean by lazy {
@@ -189,6 +208,13 @@ internal object ShapesCompiler {
 
     fun compile(shapesTriples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget = ValidationBudget.NONE): CompiledShapeGraph {
         val index = ShapeGraphIndex(shapesTriples, budget)
+        val unsupported = detectUnsupportedFeatures(index, budget)
+        if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
+            throw ShapeCompileException(
+                "Unsupported SHACL feature(s) for the native engine: ${unsupported.joinToString("; ")}. " +
+                    "Set ValidationConfig.unsupportedFeatures = IGNORE_WITH_WARNING to skip these constructs.",
+            )
+        }
         val nodeShapeSubjects = findNodeShapes(index, budget)
         val compiled = mutableListOf<CompiledNodeShape>()
         val byNode = LinkedHashMap<RdfResource, CompiledNodeShape>()
@@ -230,12 +256,133 @@ internal object ShapesCompiler {
                 visitNode(cn)
             }
         }
-        return CompiledShapeGraph(byNode, compiled, refNodes, refProps, index)
+        return CompiledShapeGraph(
+            byNode, compiled, refNodes, refProps, index,
+            recursiveComponents(refNodes, refProps, budget),
+            unsupported.map { "Unsupported SHACL feature ignored: $it" },
+        )
     }
 
-    private fun constraintRefs(c: PropertyConstraint): List<RdfResource> =
+    /** Static shape dependency graph → shapes that belong to a recursive strongly connected component. */
+    private fun recursiveComponents(
+        refNodes: Map<RdfResource, CompiledNodeShape>,
+        refProps: Map<RdfResource, CompiledPropertyShape>,
+        budget: ValidationBudget,
+    ): Map<RdfResource, Int> {
+        val successors = HashMap<RdfResource, List<RdfResource>>()
+        for ((node, ps) in refProps) {
+            successors[node] = ps.constraints.flatMap { constraintRefs(it) } +
+                ps.logicalParts.flatMap { it.operandRefs() } + ps.nestedPropertyShapes.map { it.shapeNode }
+        }
+        // A shape node that is also a property shape is always checked as a property shape (see conformance checks).
+        for ((node, cn) in refNodes) {
+            if (node in refProps) continue
+            successors[node] = cn.nodeRefs + cn.nodeByExpressionRefs + cn.logicalParts.flatMap { it.operandRefs() } +
+                cn.nodeConstraints.flatMap { constraintRefs(it) } + cn.propertyShapes.map { it.shapeNode }
+        }
+        val components = stronglyConnectedComponents(successors.keys.toList(), budget) { v -> successors[v].orEmpty().filter { it in successors } }
+        val out = HashMap<RdfResource, Int>()
+        var id = 0
+        for (component in components) {
+            if (component.size > 1 || successors[component[0]].orEmpty().contains(component[0])) {
+                component.forEach { out[it] = id }
+                id++
+            }
+        }
+        return out
+    }
+
+    // --- unsupported features -------------------------------------------------------------------------------------
+
+    private val shValues = Iri(SHACL.namespace + "values")
+    private val shExpression = Iri(SHACL.namespace + "expression")
+    private val shTarget = Iri(SHACL.namespace + "target")
+    private val shSparqlExpr = Iri(SHACL.namespace + "sparqlExpr")
+    private val shOptional = Iri(SHACL.namespace + "optional")
+    private val shBodyExpression = Iri(SHACL.namespace + "bodyExpression")
+    private val shShapesGraph = Iri(SHACL.namespace + "ShapesGraph")
+    private val validatorPredicates = setOf(
+        Iri(SHACL.namespace + "validator"), Iri(SHACL.namespace + "nodeValidator"), Iri(SHACL.namespace + "propertyValidator"),
+    )
+
+    /** True for SHACL 1.2 SPARQL node expressions (`sh:SelectExpression`, `sh:SPARQLExprExpression`, `sh:select`, `sh:sparqlExpr`). */
+    private fun isNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean {
+        val node = term as? RdfResource ?: return false
+        val types = index.objects(node, RDF.type)
+        return SHACL.SelectExpression in types || SHACL.SPARQLExprExpression in types ||
+            listOf(SHACL.selectExpression, SHACL.exprExpression, SHACL.select, shSparqlExpr).any { index.objects(node, it).isNotEmpty() }
+    }
+
+    /** A blank node `sh:targetNode` value with its own triples is a node expression, not a literal target. */
+    private fun isTargetNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean =
+        term is BlankNode && index.hasSubject(term)
+
+    /**
+     * Recognised SHACL constructs the native engine cannot evaluate. They are reported instead of silently
+     * compiling to something that always conforms (or targets every node): SHACL-SPARQL constraint components that
+     * some shape uses, SHACL 1.2 node expressions (`sh:values`, `sh:expression`, SPARQL expressions as
+     * `sh:targetWhere` / `sh:targetNode` values, computed `sh:nodeByExpression` values) and `sh:target`.
+     */
+    private fun detectUnsupportedFeatures(index: ShapeGraphIndex, budget: ValidationBudget): List<String> {
+        val out = LinkedHashSet<String>()
+        val components = LinkedHashSet<RdfResource>()
+        val functions = LinkedHashSet<Iri>()
+        for (t in index.triples) {
+            budget.tick("feature detection")
+            when {
+                t.predicate == shBodyExpression && t.subject is Iri -> functions.add(t.subject as Iri)
+                t.predicate == shValues -> out.add("sh:values node expression on ${t.subject}")
+                t.predicate == shExpression -> out.add("sh:expression constraint on ${t.subject}")
+                t.predicate == shTarget -> out.add("sh:target (SPARQL-based or custom target) on ${t.subject}")
+                t.predicate in validatorPredicates -> components.add(t.subject)
+                t.predicate == SHACL.targetWhere && isNodeExpression(t.obj, index) ->
+                    out.add("sh:targetWhere with a SPARQL node expression on ${t.subject}")
+                t.predicate == SHACL.targetNode && isTargetNodeExpression(t.obj, index) ->
+                    out.add("sh:targetNode with a node expression on ${t.subject}")
+                t.predicate == SHACL.nodeByExpression && t.obj is BlankNode ->
+                    out.add("sh:nodeByExpression with a computed node expression on ${t.subject}")
+                t.predicate == RDF.type && t.obj != SHACL.NodeShape && index.isInstanceOf(t.subject, SHACL.ConstraintComponent) ->
+                    components.add(t.subject)
+            }
+        }
+        for (component in components) {
+            if (constraintComponentUsed(component, index)) {
+                out.add("SPARQL-based constraint component $component (sh:validator / sh:nodeValidator / sh:propertyValidator)")
+            }
+        }
+        if (functions.isNotEmpty()) {
+            // A declared function library is harmless; calling one of its functions from SPARQL is not evaluable.
+            val sparqlTexts = index.triples
+                .filter { it.predicate == SHACL.select || it.predicate == SHACL.ask || it.predicate == shSparqlExpr }
+                .mapNotNull { (it.obj as? Literal)?.lexical }
+            for (function in functions) {
+                val localName = function.value.substringAfterLast('#').substringAfterLast('/')
+                val call = Regex("(?<![A-Za-z0-9_])" + Regex.escape(localName) + "[ ]*[(]")
+                if (sparqlTexts.any { it.contains(function.value) || (localName.isNotEmpty() && call.containsMatchIn(it)) }) {
+                    out.add("SHACL 1.2 function $function (sh:bodyExpression) called from a SPARQL query")
+                }
+            }
+        }
+        return out.toList()
+    }
+
+    /** Whether some node of the shapes graph has values for every mandatory parameter of [component]. */
+    private fun constraintComponentUsed(component: RdfResource, index: ShapeGraphIndex): Boolean {
+        val parameters = index.objects(component, SHACL.parameter).filterIsInstance<RdfResource>()
+        val mandatory = parameters.mapNotNull { parameter ->
+            if (index.objects(parameter, shOptional).any { isLexicallyTrue(it) }) null else index.objects(parameter, SHACL.path).singleOrNull() as? Iri
+        }
+        if (mandatory.isEmpty()) return true
+        val declarations = parameters.toSet()
+        return index.triples.any { t ->
+            t.predicate == mandatory[0] && t.subject !in declarations && mandatory.all { index.objects(t.subject, it).isNotEmpty() }
+        }
+    }
+
+    internal fun constraintRefs(c: PropertyConstraint): List<RdfResource> =
         when (c) {
             is PropertyConstraint.Node -> listOf(c.nestedShape)
+            is PropertyConstraint.NodeByExpression -> listOf(c.nestedShape)
             is PropertyConstraint.Qualified -> listOf(c.shape) + c.siblings
             is PropertyConstraint.MemberShape -> listOf(c.nestedShape)
             is PropertyConstraint.SomeValue -> listOf(c.nestedShape)
@@ -329,13 +476,35 @@ internal object ShapesCompiler {
             }
         val targets = Targets(
             targetClasses = (explicitTargetClasses + implicitClassTargets).distinct(),
-            targetNodes = index.objects(subject, SHACL.targetNode).onEach { ensureShapeTermAllowed(it, config) },
+            targetNodes = index.objects(subject, SHACL.targetNode)
+                .filterNot { isTargetNodeExpression(it, index) }
+                .onEach { ensureShapeTermAllowed(it, config) },
             targetSubjectsOf = index.objects(subject, SHACL.targetSubjectsOf).filterIsInstance<Iri>(),
             targetObjectsOf = index.objects(subject, SHACL.targetObjectsOf).filterIsInstance<Iri>(),
         )
 
         val nodeSev =
             parseSeverityValues(index.objects(subject, SHACL.severity).filterIsInstance<Iri>(), ViolationSeverity.VIOLATION)
+        val targetWhereRefs =
+            index.objects(subject, SHACL.targetWhere).filterIsInstance<RdfResource>().filterNot { isNodeExpression(it, index) }
+
+        if (index.objects(subject, SHACL.path).isNotEmpty()) {
+            // A shape with sh:path is a property shape even when it declares targets: its sh:property values apply to
+            // each value node (nested property shapes) and node-shape-only parameters such as sh:closed are ignored.
+            return CompiledNodeShape(
+                shapeNode = subject,
+                targets = targets,
+                targetWhereRefs = targetWhereRefs,
+                propertyShapes = listOf(compilePropertyShape(subject, index, config)),
+                severity = nodeSev.level,
+                severityCustomIri = nodeSev.customIri,
+                messages = index.objects(subject, SHACL.message).filterIsInstance<Literal>(),
+                closed = ClosedMode.NONE,
+                ignoredProperties = emptySet(),
+                logicalParts = emptyList(),
+                nodeRefs = emptyList(),
+            )
+        }
 
         // Property shapes have their own severity (default sh:Violation); they never inherit the node shape's.
         val linkedPropShapes =
@@ -347,14 +516,9 @@ internal object ShapesCompiler {
                     compilePropertyShape(node, index, config)
                 }
 
-        val parametersOnShapeNode = index.objects(subject, SHACL.path).isNotEmpty()
-        val selfAsPropertyShape =
-            if (parametersOnShapeNode) {
-                compilePropertyShape(subject, index, config)
-            } else {
-                null
-            }
-        val propShapes = linkedPropShapes + listOfNotNull(selfAsPropertyShape)
+        val closedAllowedPredicates =
+            index.objects(subject, SHACL.`property`).filterIsInstance<RdfResource>()
+                .flatMap { index.objects(it, SHACL.path) }.filterIsInstance<Iri>().toSet()
 
         val closedTerms = index.objects(subject, SHACL.closed)
         val closedMode =
@@ -371,24 +535,18 @@ internal object ShapesCompiler {
             }
         }.toSet()
 
-        val logicalParts = if (parametersOnShapeNode) mutableListOf() else compileLogicalParts(subject, index)
-
-        val nodeRefsOnShape =
-            if (parametersOnShapeNode) emptyList() else index.objects(subject, SHACL.node).filterIsInstance<RdfResource>()
-        val nodeByExpressionRefs =
-            if (parametersOnShapeNode) emptyList() else index.objects(subject, SHACL.nodeByExpression).filterIsInstance<RdfResource>()
-        val nodeConstraints =
-            if (parametersOnShapeNode) emptyList() else compileConstraints(subject, index, config, ConstraintFlavor.NODE_SCALAR, null)
-        val uniqueValuesForProps =
-            if (parametersOnShapeNode) emptyList() else parseUniqueValuesFor(subject, index)
-        val targetWhereRefs =
-            if (parametersOnShapeNode) emptyList() else index.objects(subject, SHACL.targetWhere).filterIsInstance<RdfResource>()
+        val logicalParts = compileLogicalParts(subject, index)
+        val nodeRefsOnShape = index.objects(subject, SHACL.node).filterIsInstance<RdfResource>()
+        // Blank node values are computed node expressions (reported as unsupported); IRIs are constant shape references.
+        val nodeByExpressionRefs = index.objects(subject, SHACL.nodeByExpression).filterIsInstance<Iri>()
+        val nodeConstraints = compileConstraints(subject, index, config, ConstraintFlavor.NODE_SCALAR, null)
+        val uniqueValuesForProps = parseUniqueValuesFor(subject, index)
 
         return CompiledNodeShape(
             shapeNode = subject,
             targets = targets,
             targetWhereRefs = targetWhereRefs,
-            propertyShapes = propShapes,
+            propertyShapes = linkedPropShapes,
             severity = nodeSev.level,
             severityCustomIri = nodeSev.customIri,
             messages = index.objects(subject, SHACL.message).filterIsInstance<Literal>(),
@@ -399,6 +557,7 @@ internal object ShapesCompiler {
             nodeByExpressionRefs = nodeByExpressionRefs,
             nodeConstraints = nodeConstraints,
             uniqueValuesForProps = uniqueValuesForProps,
+            closedAllowedPredicates = closedAllowedPredicates,
         )
     }
 
@@ -476,21 +635,18 @@ internal object ShapesCompiler {
                 else -> Unit
             }
         }
-        val nodeKindKinds = mutableListOf<Iri>()
+        // Every sh:nodeKind value is its own constraint (all must hold); an RDF list value allows any listed kind.
         for (nk in index.objects(subject, SHACL.nodeKind)) {
-            when (nk) {
-                is Iri -> nodeKindKinds.add(nk)
-                is BlankNode ->
-                    nodeKindKinds.addAll(
+            val kinds =
+                when (nk) {
+                    is Iri -> listOf(nk)
+                    is BlankNode ->
                         index.parseRdfList(nk).map {
                             it as? Iri ?: throw ShapeCompileException("sh:nodeKind list entries must be IRIs: $it")
-                        },
-                    )
-                else -> Unit
-            }
-        }
-        if (nodeKindKinds.isNotEmpty()) {
-            constraints.add(PropertyConstraint.NodeKind(nodeKindKinds.distinct()))
+                        }
+                    else -> emptyList()
+                }
+            if (kinds.isNotEmpty()) constraints.add(PropertyConstraint.NodeKind(kinds.distinct()))
         }
         val flags = atMostOne(SHACL.flags)?.let { literalString(it) ?: throw ShapeCompileException("sh:flags must be a string literal") }
         for (p in index.objects(subject, SHACL.pattern)) {
@@ -546,6 +702,9 @@ internal object ShapesCompiler {
         if (flavor == ConstraintFlavor.PROPERTY_SHAPE) {
             index.objects(subject, SHACL.node).filterIsInstance<RdfResource>().forEach {
                 constraints.add(PropertyConstraint.Node(it))
+            }
+            index.objects(subject, SHACL.nodeByExpression).filterIsInstance<Iri>().forEach {
+                constraints.add(PropertyConstraint.NodeByExpression(it))
             }
             index.objects(subject, SHACL.lessThan).forEach {
                 constraints.add(PropertyConstraint.LessThanPath(ShaclPathParser.parse(it, index)))
@@ -661,39 +820,40 @@ internal object ShapesCompiler {
 
     // --- SHACL-SPARQL ---------------------------------------------------------------------------------------------
 
-    private val preBoundNames = listOf("this", "currentShape", "shapesGraph")
-    private val pathToken = Regex("\\\$PATH\\b")
-
     private fun compileSparqlConstraint(node: RdfResource, index: ShapeGraphIndex, path: ShaclPath?): PropertyConstraint.Sparql? {
         if (isDeactivated(node, index)) return null
         val text = (index.objects(node, SHACL.select).singleOrNull() as? Literal)?.lexical
             ?: throw ShapeCompileException("SPARQL constraint $node must have exactly one sh:select string literal")
-        val body =
-            if (pathToken.containsMatchIn(text)) {
-                val p = path ?: throw ShapeCompileException("SPARQL constraint $node uses \$PATH but is not attached to a property shape")
-                text.replace(pathToken, Regex.escapeReplacement(renderSparqlPath(p)))
-            } else {
-                text
-            }
-        val stripped = stripSparqlLexicalNoise(body)
-        validatePreBinding(stripped, node)
+        // $PATH is replaced only as a variable token, never inside strings, IRIs or comments.
+        val body = SparqlQueryTemplate.substitutePath(text) {
+            val p = path ?: throw ShapeCompileException("SPARQL constraint $node uses \$PATH but is not attached to a property shape")
+            renderSparqlPath(p)
+        }
+        SparqlQueryTemplate.restrictionViolation(body)?.let { what ->
+            throw ShapeCompileException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
+        }
         val prefixes = collectPrefixDeclarations(node, index)
-        val query = prefixes.entries.joinToString("") { (p, ns) -> "PREFIX $p: <$ns>\n" } + body
+        val query = prefixes.entries.joinToString("") { (p, ns) ->
+            val namespace = SparqlQueryTemplate.renderIri(ns)
+                ?: throw ShapeCompileException("sh:namespace <$ns> of prefix '$p' is not a valid SPARQL IRI")
+            "PREFIX $p: $namespace\n"
+        } + body
         val severityIris = index.objects(node, SHACL.severity).filterIsInstance<Iri>()
         val sev = if (severityIris.isEmpty()) null else parseSeverityValues(severityIris, ViolationSeverity.VIOLATION)
         return PropertyConstraint.Sparql(
             constraintNode = node,
-            query = query,
+            template = SparqlQueryTemplate.compile(query),
             messages = index.objects(node, SHACL.message).filterIsInstance<Literal>(),
             severity = sev?.level,
             severityCustomIri = sev?.customIri,
-            preBound = preBoundNames.filter { variableRegex(it).containsMatchIn(stripped) }.toSet(),
         )
     }
 
-    private fun variableRegex(name: String) = Regex("[?\$]$name\\b")
-
-    /** `sh:prefixes` → `sh:declare [ sh:prefix; sh:namespace ]`, following `owl:imports` of the prefix holders. */
+    /**
+     * `sh:prefixes` → `sh:declare [ sh:prefix; sh:namespace ]`, following `owl:imports` of the prefix holders. The
+     * prefix declarations of `sh:ShapesGraph` nodes (SHACL 1.2) apply to every query for prefixes not declared
+     * through `sh:prefixes`; a `PREFIX` written in the query text itself still takes precedence.
+     */
     private fun collectPrefixDeclarations(node: RdfResource, index: ShapeGraphIndex): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         val visited = HashSet<RdfTerm>()
@@ -714,79 +874,25 @@ internal object ShapesCompiler {
             }
             queue.addAll(index.objects(holder, OWL.imports))
         }
+        for (shapesGraph in index.subjects(RDF.type, shShapesGraph)) {
+            for (decl in index.objects(shapesGraph, SHACL.declare)) {
+                val d = decl as? RdfResource ?: throw ShapeCompileException("sh:declare value must be a resource: $decl")
+                val prefix = (index.objectSingle(d, SHACL.prefixProperty) as? Literal)?.lexical
+                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:prefix literal")
+                val namespace = (index.objectSingle(d, SHACL.namespaceProperty) as? Literal)?.lexical
+                    ?: throw ShapeCompileException("sh:declare $d must have exactly one sh:namespace literal")
+                out.putIfAbsent(prefix, namespace)
+            }
+        }
         return out
-    }
-
-    /**
-     * SHACL-SPARQL pre-binding restrictions: queries must not use MINUS, SERVICE or VALUES, must not re-bind a
-     * pre-bound variable with `AS`, and sub-queries must project every pre-bound variable the query references.
-     */
-    private fun validatePreBinding(stripped: String, node: RdfResource) {
-        fun fail(what: String): Nothing =
-            throw ShapeCompileException("SPARQL constraint $node uses $what, which is not supported with pre-bound variables")
-        for (keyword in listOf("MINUS", "SERVICE", "VALUES")) {
-            if (Regex("\\b$keyword\\b", RegexOption.IGNORE_CASE).containsMatchIn(stripped)) fail(keyword)
-        }
-        if (Regex("\\bAS\\s*[?\$](this|currentShape|shapesGraph)\\b", RegexOption.IGNORE_CASE).containsMatchIn(stripped)) {
-            fail("AS to re-bind a pre-bound variable")
-        }
-        val used = preBoundNames.filter { variableRegex(it).containsMatchIn(stripped) }
-        val selects = Regex("\\bSELECT\\b", RegexOption.IGNORE_CASE).findAll(stripped).toList()
-        for (m in selects.drop(1)) {
-            val rest = stripped.substring(m.range.last + 1)
-            val end = Regex("\\bWHERE\\b|\\{", RegexOption.IGNORE_CASE).find(rest)?.range?.first ?: rest.length
-            val projection = rest.substring(0, end)
-            for (v in used) {
-                if (!variableRegex(v).containsMatchIn(projection)) fail("a sub-query that does not project \$$v")
-            }
-        }
-    }
-
-    private val iriRef = java.util.regex.Pattern.compile("<[^<>\"{}|^`\\\\\\u0000-\\u0020]*>")
-
-    /** Blanks out string literals, IRI references and comments so keyword checks only see query syntax. */
-    private fun stripSparqlLexicalNoise(q: String): String {
-        val sb = StringBuilder(q.length)
-        var i = 0
-        val matcher = iriRef.matcher(q)
-        while (i < q.length) {
-            val c = q[i]
-            when {
-                q.startsWith("\"\"\"", i) || q.startsWith("'''", i) -> {
-                    val end = q.indexOf(q.substring(i, i + 3), i + 3)
-                    i = if (end < 0) q.length else end + 3
-                    sb.append(" \"\" ")
-                }
-                c == '"' || c == '\'' -> {
-                    var j = i + 1
-                    while (j < q.length && q[j] != c && q[j] != '\n') {
-                        if (q[j] == '\\') j++
-                        j++
-                    }
-                    i = j + 1
-                    sb.append(" \"\" ")
-                }
-                c == '<' && matcher.region(i, q.length).lookingAt() -> {
-                    i = matcher.end()
-                    sb.append(" <> ")
-                }
-                c == '#' -> {
-                    val end = q.indexOf('\n', i)
-                    i = if (end < 0) q.length else end
-                }
-                else -> {
-                    sb.append(c)
-                    i++
-                }
-            }
-        }
-        return sb.toString()
     }
 
     /** Renders a SHACL property path as a SPARQL 1.1 property path (for `$PATH` substitution). */
     internal fun renderSparqlPath(path: ShaclPath): String =
         when (path) {
-            is ShaclPath.Predicate -> "<${path.iri.value}>"
+            is ShaclPath.Predicate ->
+                SparqlQueryTemplate.renderIri(path.iri.value)
+                    ?: throw ShapeCompileException("IRI <${path.iri.value}> cannot be written as a SPARQL IRI reference in \$PATH")
             is ShaclPath.Inverse -> "^(${renderSparqlPath(path.child)})"
             is ShaclPath.Sequence -> path.segments.joinToString("/", "(", ")") { renderSparqlPath(it) }
             is ShaclPath.Alternative -> path.options.joinToString("|", "(", ")") { renderSparqlPath(it) }

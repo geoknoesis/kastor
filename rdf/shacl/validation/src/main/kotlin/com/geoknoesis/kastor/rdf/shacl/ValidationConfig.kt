@@ -44,6 +44,18 @@ data class ValidationConfig(
      * to bound memory; enforced by the RDF4J bridge, native engine, and memory provider.
      */
     val maxCombinedGraphTriples: Long = Long.MAX_VALUE,
+    /**
+     * What the native engine does with SHACL features it recognises but cannot evaluate (SHACL-SPARQL constraint
+     * components, SHACL 1.2 node expressions such as `sh:values` / `sh:expression` / SPARQL expressions used as
+     * targets). [UnsupportedFeatureHandling.FAIL] (default) rejects the shapes graph so such constraints are never
+     * silently skipped.
+     */
+    val unsupportedFeatures: UnsupportedFeatureHandling = UnsupportedFeatureHandling.FAIL,
+    /**
+     * Maximum number of nodes in any intermediate or final node set of one SHACL property path evaluation (native
+     * engine). Exceeding it fails validation instead of exhausting memory.
+     */
+    val maxPathValueNodes: Int = 1_000_000,
 ) {
     
     companion object {

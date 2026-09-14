@@ -10,6 +10,14 @@ enum class ShapesDigestMode {
     SHAPES_RDF_CANONICAL_DIGEST,
 }
 
+/** Handling of recognised SHACL features that the native engine cannot evaluate (see [ValidationConfig.unsupportedFeatures]). */
+enum class UnsupportedFeatureHandling {
+    /** Fail with [ShaclValidationException] ("Unsupported SHACL feature ..."). */
+    FAIL,
+    /** Ignore the construct and add a [ValidationWarning] to the report. */
+    IGNORE_WITH_WARNING,
+}
+
 /** Policy when per-focus buffers overflow in streaming mode (architecture §9.4). */
 enum class StreamingBufferPolicy {
     BATCH_FALLBACK,

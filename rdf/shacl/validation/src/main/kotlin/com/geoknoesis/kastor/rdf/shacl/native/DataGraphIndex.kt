@@ -16,7 +16,12 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
  * (target subjects/objects of), (predicate, object) → subjects (inverse paths, class instances), plus
  * `rdf:type` and `rdfs:subClassOf` edges. Deadline checks are amortized via [ValidationBudget.tick].
  */
-internal class DataGraphIndex(graph: RdfGraph, private val budget: ValidationBudget = ValidationBudget.NONE) {
+internal class DataGraphIndex(
+    graph: RdfGraph,
+    val budget: ValidationBudget = ValidationBudget.NONE,
+    /** Cap on node sets produced while evaluating one property path ([com.geoknoesis.kastor.rdf.shacl.ValidationConfig.maxPathValueNodes]). */
+    val maxPathValueNodes: Int = Int.MAX_VALUE,
+) {
 
     /** Source graph (used for SHACL-SPARQL sessions, which query the data graph only). */
     val graph: RdfGraph = graph
@@ -47,6 +52,19 @@ internal class DataGraphIndex(graph: RdfGraph, private val budget: ValidationBud
     }
 
     fun distinctResourceSubjects(): Set<RdfResource> = bySubject.keys
+
+    private val allNodesView: Set<RdfTerm> by lazy {
+        val nodes = LinkedHashSet<RdfTerm>()
+        for ((subject, byPredicateObjects) in bySubject) {
+            budget.tick("node enumeration")
+            nodes.add(subject)
+            for (objects in byPredicateObjects.values) nodes.addAll(objects)
+        }
+        nodes
+    }
+
+    /** Every node of the data graph: subjects and objects (including literals), in first-occurrence order. */
+    fun allNodes(): Set<RdfTerm> = allNodesView
 
     // Session-local and bounded: large class hierarchies cannot retain every transitive closure.
     private val superclassCache = object : LinkedHashMap<Iri, Set<Iri>>(16, 0.75f, true) {

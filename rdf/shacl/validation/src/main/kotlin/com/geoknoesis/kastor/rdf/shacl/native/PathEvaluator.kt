@@ -2,149 +2,92 @@ package com.geoknoesis.kastor.rdf.shacl.native
 
 import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.shacl.ShaclValidationException
 
 /**
- * Evaluates SHACL property paths over a [DataGraphIndex].
+ * Evaluates SHACL property paths over a [DataGraphIndex] with **set semantics** (SHACL §2.3.2: value nodes are a
+ * set).
  *
- * **Multiset expansion.** Predicate walks preserve duplicate objects — parallel triples yield duplicate
- * elements — and sequence segments concatenate those lists so bindings multiply accordingly.
+ * Every step maps a frontier *set* of nodes to the set of nodes reachable from it, so sequences whose segments
+ * reach the same node in several ways (e.g. nested `sh:zeroOrOnePath` over a self-loop) stay linear in the number
+ * of distinct nodes instead of multiplying bindings. Transitive closures expand only newly discovered nodes.
  *
- * **Cardinality vs multiplicity.** `sh:minCount` / `sh:maxCount` (native validator) count values
- * distinct under [shaclRdfTermFingerprint]; multiset duplicates collapse once validated,
- * matching tests such as W3C `path-sequence-duplicate-001`.
- *
- * **Transitive closures.** `sh:zeroOrMorePath` / `sh:oneOrMorePath` accumulate reachable endpoints
- * uniquely under the same fingerprint (rather than plain Kotlin `Set` hash/`equals` alone), so literals
- * that differ only by canonical encoding still collapse consistently with cardinality dedup.
+ * Every loop consults the validation deadline through [ValidationBudget.tick], and every node set is capped by
+ * [DataGraphIndex.maxPathValueNodes]. From a literal, predicate steps yield nothing but zero-length paths
+ * (`sh:zeroOrMorePath`, `sh:zeroOrOnePath`) include the literal itself. Results keep discovery order and are
+ * distinct under [shaclRdfTermFingerprint].
  */
 internal object PathEvaluator {
 
     fun evaluate(focus: RdfTerm, path: ShaclPath, graph: DataGraphIndex): List<RdfTerm> =
-        if (focus is RdfResource) evaluate(focus, path, graph) else emptyList()
+        distinctShaclTerms(step(linkedSetOf(focus), path, forward = true, graph).toList())
 
-    fun evaluate(focus: RdfResource, path: ShaclPath, graph: DataGraphIndex): List<RdfTerm> =
-        expandForwardList(focus, path, graph)
+    private fun add(out: LinkedHashSet<RdfTerm>, term: RdfTerm, graph: DataGraphIndex): Boolean {
+        graph.budget.tick("path evaluation")
+        val added = out.add(term)
+        if (added && out.size > graph.maxPathValueNodes) {
+            throw ShaclValidationException(
+                "SHACL property path evaluation exceeded ValidationConfig.maxPathValueNodes=${graph.maxPathValueNodes}",
+            )
+        }
+        return added
+    }
 
-    private fun expandForwardList(start: RdfResource, path: ShaclPath, graph: DataGraphIndex): List<RdfTerm> =
+    private fun step(frontier: Set<RdfTerm>, path: ShaclPath, forward: Boolean, graph: DataGraphIndex): LinkedHashSet<RdfTerm> =
         when (path) {
-            is ShaclPath.Predicate -> graph.objects(start, path.iri)
-            is ShaclPath.Inverse -> expandBackwardList(start, path.child, graph)
-            is ShaclPath.Sequence -> expandSequenceForwardList(start, path.segments, graph)
-            is ShaclPath.Alternative -> path.options.flatMap { expandForwardList(start, it, graph) }
-            is ShaclPath.ZeroOrMore -> zeroOrMoreForwardList(start, path.child, graph)
-            is ShaclPath.OneOrMore -> oneOrMoreForwardList(start, path.child, graph)
-            is ShaclPath.ZeroOrOne ->
-                expandForwardList(start, path.child, graph) + listOf<RdfTerm>(start)
-        }
-
-    private fun expandBackwardList(end: RdfResource, path: ShaclPath, graph: DataGraphIndex): List<RdfTerm> =
-        when (path) {
-            is ShaclPath.Predicate -> graph.subjectsWith(path.iri, end).map { it as RdfTerm }
-            is ShaclPath.Inverse -> expandForwardList(end, path.child, graph)
-            is ShaclPath.Sequence -> expandSequenceBackwardList(end, path.segments, graph)
-            is ShaclPath.Alternative -> path.options.flatMap { expandBackwardList(end, it, graph) }
-            is ShaclPath.ZeroOrMore -> zeroOrMoreBackwardList(end, path.child, graph)
-            is ShaclPath.OneOrMore -> oneOrMoreBackwardList(end, path.child, graph)
-            is ShaclPath.ZeroOrOne ->
-                expandBackwardList(end, path.child, graph) + listOf<RdfTerm>(end)
-        }
-
-    private fun expandSequenceForwardList(start: RdfResource, segments: List<ShaclPath>, graph: DataGraphIndex): List<RdfTerm> {
-        if (segments.isEmpty()) return emptyList()
-        var frontier: List<RdfResource> = listOf(start)
-        for (i in segments.indices) {
-            val seg = segments[i]
-            if (i == segments.lastIndex) {
-                return frontier.flatMap { node -> expandForwardList(node, seg, graph) }
+            is ShaclPath.Predicate -> {
+                val out = LinkedHashSet<RdfTerm>()
+                for (node in frontier) {
+                    graph.budget.tick("path evaluation")
+                    if (forward) {
+                        if (node is RdfResource) for (o in graph.objects(node, path.iri)) add(out, o, graph)
+                    } else {
+                        for (s in graph.subjectsWith(path.iri, node)) add(out, s, graph)
+                    }
+                }
+                out
             }
-            frontier = frontier.flatMap { node -> expandForwardList(node, seg, graph).filterIsInstance<RdfResource>() }
-        }
-        return emptyList()
-    }
-
-    private fun expandSequenceBackwardList(end: RdfResource, segments: List<ShaclPath>, graph: DataGraphIndex): List<RdfTerm> {
-        if (segments.isEmpty()) return emptyList()
-        if (segments.size == 1) return expandBackwardList(end, segments.single(), graph)
-        val last = segments.last()
-        val prefix = segments.dropLast(1)
-        return expandBackwardList(end, last, graph).filterIsInstance<RdfResource>().flatMap { mid ->
-            expandSequenceBackwardList(mid, prefix, graph)
-        }
-    }
-
-    private fun zeroOrMoreForwardList(start: RdfResource, child: ShaclPath, graph: DataGraphIndex): List<RdfTerm> {
-        val results = linkedMapOf<String, RdfTerm>()
-        fun bind(term: RdfTerm) {
-            results.putIfAbsent(shaclRdfTermFingerprint(term), term)
-        }
-        val visited = mutableSetOf<RdfResource>()
-        val queue = ArrayDeque<RdfResource>()
-        queue.add(start)
-        visited.add(start)
-        bind(start)
-        while (queue.isNotEmpty()) {
-            val x = queue.removeFirst()
-            for (t in expandForwardList(x, child, graph)) {
-                bind(t)
-                if (t is RdfResource && visited.add(t)) queue.add(t)
+            is ShaclPath.Inverse -> step(frontier, path.child, !forward, graph)
+            is ShaclPath.Sequence -> {
+                var current = LinkedHashSet<RdfTerm>()
+                if (path.segments.isNotEmpty()) {
+                    current.addAll(frontier)
+                    for (segment in if (forward) path.segments else path.segments.asReversed()) {
+                        current = step(current, segment, forward, graph)
+                        if (current.isEmpty()) break
+                    }
+                }
+                current
             }
-        }
-        return results.values.toList()
-    }
-
-    private fun zeroOrMoreBackwardList(end: RdfResource, child: ShaclPath, graph: DataGraphIndex): List<RdfTerm> {
-        val results = linkedMapOf<String, RdfTerm>()
-        fun bind(term: RdfTerm) {
-            results.putIfAbsent(shaclRdfTermFingerprint(term), term)
-        }
-        val visited = mutableSetOf<RdfResource>()
-        val queue = ArrayDeque<RdfResource>()
-        queue.add(end)
-        visited.add(end)
-        bind(end)
-        while (queue.isNotEmpty()) {
-            val x = queue.removeFirst()
-            for (t in expandBackwardList(x, child, graph)) {
-                bind(t)
-                if (t is RdfResource && visited.add(t)) queue.add(t)
+            is ShaclPath.Alternative -> {
+                val out = LinkedHashSet<RdfTerm>()
+                for (option in path.options) {
+                    for (t in step(frontier, option, forward, graph)) add(out, t, graph)
+                }
+                out
             }
-        }
-        return results.values.toList()
-    }
-
-    private fun oneOrMoreForwardList(start: RdfResource, child: ShaclPath, graph: DataGraphIndex): List<RdfTerm> {
-        val results = linkedMapOf<String, RdfTerm>()
-        fun bind(term: RdfTerm) =
-            results.putIfAbsent(shaclRdfTermFingerprint(term), term)
-        val queue = ArrayDeque<RdfResource>()
-        val first = expandForwardList(start, child, graph)
-        for (t in first) {
-            if (bind(t) == null && t is RdfResource) queue.add(t)
-        }
-        while (queue.isNotEmpty()) {
-            val x = queue.removeFirst()
-            for (t in expandForwardList(x, child, graph)) {
-                if (bind(t) == null && t is RdfResource) queue.add(t)
+            is ShaclPath.ZeroOrOne -> {
+                val out = LinkedHashSet<RdfTerm>()
+                for (t in frontier) add(out, t, graph)
+                for (t in step(frontier, path.child, forward, graph)) add(out, t, graph)
+                out
             }
+            is ShaclPath.ZeroOrMore -> closure(frontier, path.child, forward, graph)
+            is ShaclPath.OneOrMore -> closure(step(frontier, path.child, forward, graph), path.child, forward, graph)
         }
-        return results.values.toList()
-    }
 
-    private fun oneOrMoreBackwardList(end: RdfResource, child: ShaclPath, graph: DataGraphIndex): List<RdfTerm> {
-        val results = linkedMapOf<String, RdfTerm>()
-        fun bind(term: RdfTerm) =
-            results.putIfAbsent(shaclRdfTermFingerprint(term), term)
-        val queue = ArrayDeque<RdfResource>()
-        val first = expandBackwardList(end, child, graph)
-        for (t in first) {
-            if (bind(t) == null && t is RdfResource) queue.add(t)
-        }
-        while (queue.isNotEmpty()) {
-            val x = queue.removeFirst()
-            for (t in expandBackwardList(x, child, graph)) {
-                if (bind(t) == null && t is RdfResource) queue.add(t)
+    /** [start] plus every node reachable from it by one or more [child] steps (breadth-first over new nodes). */
+    private fun closure(start: Set<RdfTerm>, child: ShaclPath, forward: Boolean, graph: DataGraphIndex): LinkedHashSet<RdfTerm> {
+        val result = LinkedHashSet<RdfTerm>()
+        var level = LinkedHashSet<RdfTerm>()
+        for (t in start) if (add(result, t, graph)) level.add(t)
+        while (level.isNotEmpty()) {
+            val next = LinkedHashSet<RdfTerm>()
+            for (t in step(level, child, forward, graph)) {
+                if (add(result, t, graph)) next.add(t)
             }
+            level = next
         }
-        return results.values.toList()
+        return result
     }
 }
