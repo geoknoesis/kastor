@@ -42,7 +42,7 @@ and is kept as is; it was never published to Maven Central.
 - **`rdf-shacl-dsl`:** `totalDigits`, `fractionDigits`, `targetWhereSelect` and `targetWhereExpr` are deprecated at `ERROR` level.
 - **`onto-quality-cli`:**
   - Exit codes are distinct: 0 ok, 1 findings, 2 parse error, 3 explanation failure, 4 usage/configuration error, 5 runtime error.
-  - `--reasoner owl-micro` is a deprecated alias of `owl-rl`.
+  - `--reasoner owl-micro` / `OntoQualityReasoningProfile.OWL_MICRO` now run Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`) instead of the OWL rule reasoner; use `owl-rl` / `OWL_RL` for the previous behaviour.
   - NOCOnto, CBOOnto, DIT/LCOMOnto (paths now measured from `owl:Thing`) and TMOnto banding values change.
 
 #### Fixed
@@ -116,7 +116,30 @@ and is kept as is; it was never published to Maven Central.
   - XSD integer/decimal parsing follows the lexical rules, and dates with years above 9999 round-trip.
 - **Added:** `MaterializationPolicy`, `IllTypedValueHandling`, `register(type, replace, factory)`, `orThrow(ShaclSeverity)`, and the KSP options `kastor.gen.projectDir` and `kastor.gen.resources.tracked`.
 
-<!-- providers/reasoning entries pending -->
+#### Providers and reasoning (`rdf-jena`, `rdf-rdf4j`, reasoning, testkit, CLI, conformance)
+
+- **Breaking:**
+  - `rdf-jena-reasoning` and `rdf-rdf4j-reasoning` now honour `ReasonerConfig`: Jena runs exactly the selected RDFS rules for a rule subset and rejects rule selections for its OWL reasoners, RDF4J rejects rule subsets its inferencer cannot apply, and both enforce `timeout` and `materializationThreshold`. Axiomatic `rdf:`/`rdfs:`/`owl:`/`xsd:` vocabulary triples are dropped from the inferred triples by default; set `parameters["includeAxiomaticTriples"] = true` to keep them.
+  - RDF4J NativeStore variants no longer advertise triple-term / RDF-star support, and repositories report the capabilities of the variant they were created as.
+  - `JenaBridge` throws `RdfFormatException.UnsupportedFormat` for unsupported formats instead of `IllegalArgumentException`.
+  - Graphs wrapped with `JenaBridge.fromJenaModel(model)` read leniently: statements Kastor cannot represent are skipped with one warning. Use `fromJenaModel(model, strictRead = true)` for strict reads. Parsed graphs stay strict.
+  - `JenaBridgeDemoKt` is no longer part of the `rdf-jena` artifact; the demo lives in `rdf/examples`.
+  - Conformance allowlist rows need a fourth column: a regex for the expected failure signature. A test is skipped only when its failure matches.
+- **Fixed:**
+  - RDF4J reads map RDF-star quoted-triple subjects to a deterministic reifier blank node plus `rdf:reifies`, for store reads, CONSTRUCT/DESCRIBE, `parseGraph` and streaming parses, so one such statement no longer makes the whole graph unreadable.
+  - The Jena inference cache is keyed by the read snapshot, so a reader can no longer cache stale inferences after a concurrent commit, and readers share the materialised closure without a lock.
+  - The HermiT deadline is enforced: interrupts are repeated until the reasoner returns, every reasoner call checks the remaining budget, and ontology loading is only awaited until the deadline.
+  - Conformance eval expectations are parsed by an independent Jena RIOT oracle and compared with the provider output as datasets, so a provider parser bug cannot cancel out on both sides.
+  - RDF4J triple streams: `close()` from another thread wakes a blocked consumer, a `Cleaner` closes abandoned streams so their producer thread exits, and read-ahead is bounded (also for Jena).
+  - SPARQL text with RDF 1.2 direction-tagged literals (`"x"@ar--rtl`) on RDF4J fails with an explicit `RdfQueryException`. CONSTRUCT/DESCRIBE failures are wrapped as `RdfQueryException`.
+  - Jena graph serialisation supports the advertised TriG and N-Quads formats, `JenaBridge` file, URL and dataset loaders use the strict validating parser, and `parseDataset` streams into a Jena repository in one write transaction.
+  - CLI `diff` compares datasets with one isomorphism across all graphs, so blank nodes shared between graphs must correspond.
+  - The memory reasoner accepts valid XSD 1.1 lexical forms (`24:00:00`, years beyond 9999, collapsed whitespace).
+- **Added:**
+  - `ReasonerType.OWL_MICRO` (Jena's OWL Micro rule reasoner; other providers reject it).
+  - `RdfDatasetIsomorphism` in `rdf-testkit`.
+  - `JenaBridge.fromJenaModel(model, strictRead)`.
+  - Jena and RDF4J providers override `openTripleStream(inputStream, format, baseIri)` and `parseStreaming(inputStream, format, baseIri)`, so relative IRIs resolve without materialising the graph.
 
 ### Breaking changes (Maven `artifactId`s)
 
