@@ -6,6 +6,8 @@ import com.geoknoesis.kastor.rdf.`var`
 import com.geoknoesis.kastor.rdf.toLiteral
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /** `sh:closed`, `sh:severity` and `sh:deactivated` allow a single value: repeated DSL calls replace it. */
@@ -29,6 +31,18 @@ class ShaclDslSingleValueParametersTest {
         assertEquals(listOf(false.toLiteral()), triples.valuesOf(shape, SHACL.closed))
         assertEquals(listOf(SHACL.Info), triples.valuesOf(shape, SHACL.severity))
         assertEquals(listOf(false.toLiteral()), triples.valuesOf(shape, SHACL.deactivated))
+    }
+
+    @Test
+    @Suppress("DEPRECATION_ERROR")
+    fun `deprecated digit setters fail loudly instead of silently dropping the limit`() {
+        val total = assertThrows(UnsupportedOperationException::class.java) {
+            shacl { nodeShape("http://example.org/S") { property("http://example.org/p") { totalDigits = 3 } } }
+        }
+        val fraction = assertThrows(UnsupportedOperationException::class.java) {
+            shacl { nodeShape("http://example.org/S") { property("http://example.org/p") { fractionDigits = 2 } } }
+        }
+        for (error in listOf(total, fraction)) assertTrue(error.message.orEmpty().contains("pattern"), error.message)
     }
 
     @Test

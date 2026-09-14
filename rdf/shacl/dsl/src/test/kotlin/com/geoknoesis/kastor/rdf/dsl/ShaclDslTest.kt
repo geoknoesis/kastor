@@ -103,16 +103,14 @@ class ShaclDslTest {
                     datatype = XSD.decimal
                     minExclusive = 0.0
                     maxInclusive = 1000.0
-                    totalDigits = 10
-                    fractionDigits = 2
                 }
             }
         }
-        
+
         val triples = shapesGraph.getTriples().toList()
         assertTrue(triples.any { it.predicate == SHACL.minExclusive })
         assertTrue(triples.any { it.predicate == SHACL.maxInclusive })
-        // Not SHACL constraints: the deprecated properties no longer emit triples.
+        // Not SHACL constraints: never emitted (the deprecated setters throw, see ShaclDslSingleValueParametersTest).
         assertFalse(triples.any { it.predicate == SHACL.totalDigits })
         assertFalse(triples.any { it.predicate == SHACL.fractionDigits })
     }
@@ -771,19 +769,15 @@ class ShaclDslTest {
                     minInclusive = 0.0
                     maxExclusive = 100.0
                 }
-                property("http://example.org/precision") {
-                    totalDigits = 10
-                    fractionDigits = 2
-                }
             }
         }
-        
+
         val triples = shapesGraph.getTriples().toList()
         assertTrue(triples.any { it.predicate == SHACL.minInclusive })
         assertTrue(triples.any { it.predicate == SHACL.maxInclusive })
         assertTrue(triples.any { it.predicate == SHACL.minExclusive })
         assertTrue(triples.any { it.predicate == SHACL.maxExclusive })
-        // Not SHACL constraints: the deprecated properties no longer emit triples.
+        // Not SHACL constraints: never emitted (the deprecated setters throw, see ShaclDslSingleValueParametersTest).
         assertFalse(triples.any { it.predicate == SHACL.totalDigits })
         assertFalse(triples.any { it.predicate == SHACL.fractionDigits })
     }
