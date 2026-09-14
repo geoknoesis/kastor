@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test
 
 /**
  * Recursive shapes: data recursion must not consume JVM stack proportional to the data depth, positive recursion is
- * a greatest fixpoint, and recursion through negation / disjunction is reported as undefined instead of being
- * silently assumed to conform.
+ * a greatest fixpoint, and recursion through non-monotone operators (negation, exactly-one, maximum counts) is
+ * reported as undefined instead of being silently assumed to conform.
  */
 class RecursiveShapeSemanticsTest {
 
@@ -110,11 +110,11 @@ class RecursiveShapeSemanticsTest {
         assertThrows(ShaclValidationException::class.java) { validate(data, shapes, ValidationConfig(strictMode = true)) }
     }
 
-    @Test fun `self-referential sh or does not silently make the target conform`() {
+    @Test fun `self-referential sh or is monotone and gets its greatest fixpoint`() {
+        // S = or(S, class Missing): sh:or is monotone, so the greatest fixpoint (S conforms) is well defined.
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:x ; sh:or ( [ sh:node ex:S ] [ sh:class ex:Missing ] ) ."
-        val report = validate(g("ex:x ex:p 1 ."), shapes)
-        assertFalse(report.isValid)
-        assertTrue(report.violations.any { it.message.contains("undefined") }, report.violations.toString())
+        val report = validate(g("ex:x ex:p 1 ."), shapes, ValidationConfig(strictMode = true))
+        assertTrue(report.isValid, report.violations.toString())
     }
 
     @Test fun `positive recursion over cyclic data is a greatest fixpoint`() {
