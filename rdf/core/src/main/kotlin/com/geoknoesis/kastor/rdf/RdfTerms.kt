@@ -154,20 +154,21 @@ value class Iri(val value: String) : RdfResource {
 }
 
 /**
- * Validates an absolute IRI with an allocation-free, single-pass scanner modelled on RFC 3987.
+ * Validates an absolute IRI with an allocation-free, single-pass scanner modelled on RFC 3986 / RFC 3987.
  *
  * **Checks:**
- * - `scheme ":"` prefix with an ASCII scheme (`ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`) and a
- *   non-empty remainder (relative references are rejected)
- * - No whitespace, control characters, or the RFC 3987-excluded delimiters `< > " { } | \ ^ ``
- *   (these enable SPARQL/Turtle injection when an IRI is interpolated into `<...>`)
+ * - `scheme ":"` prefix with an ASCII scheme (`ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`); the
+ *   hier-part may be empty (`urn:` and `about:` are valid absolute IRIs), relative references are rejected
+ * - No ASCII space or control characters (U+0000-U+0020, U+007F-U+009F), no Unicode non-characters
+ *   (U+FDD0-U+FDEF and U+xxFFFE / U+xxFFFF), no unpaired surrogates, and none of the delimiters
+ *   `< > " { } | \ ^ `` (these enable SPARQL/Turtle injection when an IRI is interpolated into `<...>`)
  * - Percent-encodings are `%` followed by two hex digits; at most one `#`
- * - When an authority (`//...`) is present: an optional userinfo, a host that is either a closed
- *   IP literal (`[...]`) or a reg-name without brackets, and an all-digit port
+ * - When an authority (`//...`) is present: an optional userinfo (a single `@`), a host that is either a
+ *   closed IP literal (`[...]`) or a reg-name without brackets, and an all-digit port
  *
- * Non-ASCII characters are accepted anywhere after the scheme (IRIs are a superset of URIs); IDN
- * and IP-address semantics are not validated. Square brackets are tolerated outside the authority
- * for compatibility with real-world data.
+ * All other non-ASCII characters - RFC 3987 `ucschar` and `iprivate`, including U+00A0 NO-BREAK SPACE and
+ * U+3000 IDEOGRAPHIC SPACE - are accepted anywhere after the scheme; IDN and IP-address semantics are not
+ * validated. Square brackets are tolerated outside the authority for compatibility with real-world data.
  */
 private fun isValidIri(value: String): Boolean {
     val length = value.length
@@ -179,7 +180,8 @@ private fun isValidIri(value: String): Boolean {
         if (!(c.isAsciiLetter() || c in '0'..'9' || c == '+' || c == '-' || c == '.')) return false
         i++
     }
-    if (i >= length - 1) return false // no scheme separator, or nothing after it
+    if (i >= length) return false // no scheme separator
+    if (!hasValidCodePoints(value)) return false
     var pos = i + 1
     if (pos + 1 < length && value[pos] == '/' && value[pos + 1] == '/') {
         pos = scanAuthority(value, pos + 2)
@@ -209,7 +211,12 @@ private fun scanAuthority(value: String, start: Int): Int {
     var end = start
     while (end < value.length && value[end] != '/' && value[end] != '?' && value[end] != '#') end++
     var hostStart = start
-    for (k in start until end) if (value[k] == '@') hostStart = k + 1
+    for (k in start until end) {
+        if (value[k] == '@') {
+            if (hostStart != start) return -1 // '@' may only separate userinfo from host (RFC 3986 3.2.1)
+            hostStart = k + 1
+        }
+    }
     for (k in start until hostStart) {
         val c = value[k]
         if (c == '[' || c == ']' || c.isForbiddenIriChar()) return -1
@@ -246,9 +253,28 @@ private fun Char.isAsciiLetter(): Boolean = this in 'a'..'z' || this in 'A'..'Z'
 
 private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 
+/** BMP characters that are neither `ucschar`, `iprivate` nor an allowed ASCII character (RFC 3987 section 2.2). */
 private fun Char.isForbiddenIriChar(): Boolean = when (this) {
     '<', '>', '"', '{', '}', '|', '\\', '^', '`' -> true
-    else -> isWhitespace() || isISOControl()
+    in ' '..' ', in ''..'', in '﷐'..'﷯', '￾', '￿' -> true
+    else -> false
+}
+
+/** Rejects unpaired surrogates and supplementary-plane non-characters (U+xxFFFE / U+xxFFFF). */
+private fun hasValidCodePoints(value: String): Boolean {
+    var i = 0
+    while (i < value.length) {
+        val c = value[i]
+        if (c.isHighSurrogate()) {
+            if (i + 1 >= value.length || !value[i + 1].isLowSurrogate()) return false
+            if ((Character.toCodePoint(c, value[i + 1]) and 0xFFFE) == 0xFFFE) return false
+            i += 2
+            continue
+        }
+        if (c.isLowSurrogate()) return false
+        i++
+    }
+    return true
 }
 
 /**
@@ -280,8 +306,58 @@ private fun Char.isForbiddenIriChar(): Boolean = when (this) {
 @JvmInline
 value class BlankNode(val id: String) : RdfResource {
     init { require(id.isNotBlank()) { "Blank node id must not be blank" } }
-    override fun toString(): String = "_:$id"
+
+    /**
+     * The N-Triples/Turtle/SPARQL form `_:label`.
+     *
+     * Ids are not restricted (stores such as Virtuoso report ids like `nodeID://b1`), so an id that is not a
+     * valid `BLANK_NODE_LABEL` is written as `ux_` followed by the lower-case hex of its UTF-8 bytes; valid ids
+     * that happen to start with `ux_` are encoded the same way, so distinct ids always get distinct labels.
+     */
+    override fun toString(): String = "_:${blankNodeLabel(id)}"
 }
+
+private const val ENCODED_BLANK_NODE_PREFIX = "ux_"
+private const val HEX_DIGITS = "0123456789abcdef"
+
+/** A `BLANK_NODE_LABEL` for [id]: the id itself when valid, otherwise an injective hex encoding. */
+internal fun blankNodeLabel(id: String): String {
+    if (!id.startsWith(ENCODED_BLANK_NODE_PREFIX) && isValidBlankNodeLabel(id)) return id
+    val bytes = id.toByteArray(Charsets.UTF_8)
+    return buildString(ENCODED_BLANK_NODE_PREFIX.length + bytes.size * 2) {
+        append(ENCODED_BLANK_NODE_PREFIX)
+        for (b in bytes) {
+            val v = b.toInt() and 0xFF
+            append(HEX_DIGITS[v shr 4]).append(HEX_DIGITS[v and 0xF])
+        }
+    }
+}
+
+/** True if [label] matches `(PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?` (RDF 1.1 N-Triples / Turtle). */
+internal fun isValidBlankNodeLabel(label: String): Boolean {
+    if (label.isEmpty()) return false
+    var i = 0
+    var last = -1
+    while (i < label.length) {
+        val cp = label.codePointAt(i)
+        val ok = if (i == 0) isPnCharsU(cp) || cp in 0x30..0x39 else isPnChars(cp) || cp == '.'.code
+        if (!ok) return false
+        last = cp
+        i += Character.charCount(cp)
+    }
+    return last != '.'.code
+}
+
+private fun isPnCharsBase(cp: Int): Boolean =
+    cp in 0x41..0x5A || cp in 0x61..0x7A || cp in 0xC0..0xD6 || cp in 0xD8..0xF6 || cp in 0xF8..0x2FF ||
+        cp in 0x370..0x37D || cp in 0x37F..0x1FFF || cp in 0x200C..0x200D || cp in 0x2070..0x218F ||
+        cp in 0x2C00..0x2FEF || cp in 0x3001..0xD7FF || cp in 0xF900..0xFDCF || cp in 0xFDF0..0xFFFD ||
+        cp in 0x10000..0xEFFFF
+
+private fun isPnCharsU(cp: Int): Boolean = isPnCharsBase(cp) || cp == '_'.code
+
+private fun isPnChars(cp: Int): Boolean =
+    isPnCharsU(cp) || cp == '-'.code || cp in 0x30..0x39 || cp == 0xB7 || cp in 0x300..0x36F || cp in 0x203F..0x2040
 
 /**
  * Represents a literal value in RDF.
@@ -493,12 +569,16 @@ enum class Direction(val token: String) {
  * val spanish = lang("Hola", "es")                              // "Hola"@es
  * ```
  *
- * Language tags must match the BCP 47 shape used by Turtle/SPARQL
- * (`[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*`) and are normalised to lower case, since
- * RDF compares language tags case-insensitively.
+ * Language tags must match the Turtle/SPARQL `LANGTAG` grammar
+ * (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`; subtags have no length limit). The tag is kept exactly as
+ * given - `LangString("x", "en-GB").lang` is `"en-GB"` - and serialised that way. Because RDF
+ * compares language tags case-insensitively, [equals] and [hashCode] use [normalizedLang], so
+ * `LangString("x", "en-GB") == LangString("x", "en-gb")`. The lexical form and the direction
+ * are still compared exactly.
  *
  * @property lexical The string content of the literal
- * @property lang The language tag, normalised to lower case (e.g., "en", "en-us")
+ * @property lang The language tag exactly as given (e.g., "en", "en-US")
+ * @property normalizedLang The language tag in lower case, as used for comparison (e.g., "en-us")
  * @property direction Optional base direction (RDF 1.2). null means the
  *   literal is a plain `rdf:langString`.
  * @throws IllegalArgumentException if [lang] is not a well-formed language tag
@@ -511,7 +591,11 @@ class LangString(
     lang: String,
     val direction: Direction? = null,
 ) : Literal {
-    val lang: String = normalizeLanguageTag(lang)
+    val lang: String = lang.also {
+        require(LiteralValidation.isWellFormedLanguageTag(it)) { "Invalid language tag: '$it'" }
+    }
+
+    val normalizedLang: String = lang.lowercase(java.util.Locale.ROOT)
 
     override val datatype: Iri
         get() = if (direction == null) RDF.langString else RDF.dirLangString
@@ -524,9 +608,9 @@ class LangString(
         LangString(lexical, lang, direction)
 
     override fun equals(other: Any?): Boolean =
-        other is LangString && lexical == other.lexical && lang == other.lang && direction == other.direction
+        other is LangString && lexical == other.lexical && normalizedLang == other.normalizedLang && direction == other.direction
 
-    override fun hashCode(): Int = (lexical.hashCode() * 31 + lang.hashCode()) * 31 + (direction?.hashCode() ?: 0)
+    override fun hashCode(): Int = (lexical.hashCode() * 31 + normalizedLang.hashCode()) * 31 + (direction?.hashCode() ?: 0)
 
     override fun toString(): String = when (direction) {
         null -> "\"${escapeLiteralLexical(lexical)}\"@$lang"
@@ -535,24 +619,16 @@ class LangString(
 }
 
 /**
- * Validates a language tag against the Turtle/SPARQL `LANGTAG` shape and returns it in lower case.
+ * Validates a language tag against the Turtle/SPARQL `LANGTAG` grammar
+ * (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`) and returns it in lower case, the form RDF uses to compare tags.
+ *
+ * [LangString] does not apply this to its tag (it keeps the tag as given); use it, or
+ * [LangString.normalizedLang], when a canonical key is needed.
  *
  * @throws IllegalArgumentException if the tag is empty or malformed
  */
 fun normalizeLanguageTag(tag: String): String {
-    var segment = 0
-    var first = true
-    for (c in tag) {
-        if (c == '-') {
-            require(segment > 0) { "Invalid language tag: '$tag'" }
-            segment = 0
-            first = false
-            continue
-        }
-        val ok = c in 'a'..'z' || c in 'A'..'Z' || (!first && c in '0'..'9')
-        require(ok && ++segment <= 8) { "Invalid language tag: '$tag'" }
-    }
-    require(segment > 0) { "Invalid language tag: '$tag'" }
+    require(LiteralValidation.isWellFormedLanguageTag(tag)) { "Invalid language tag: '$tag'" }
     return tag.lowercase(java.util.Locale.ROOT)
 }
 
