@@ -2,10 +2,10 @@ package com.geoknoesis.kastor.rdf
 
 /**
  * Graph isomorphism utilities for RDF graphs with blank nodes.
- * 
+ *
  * This implementation uses the Weisfeiler-Lehman algorithm for graph isomorphism
  * testing, which is particularly effective for graphs with labeled nodes and edges.
- * 
+ *
  * The algorithm works by iteratively refining node labels based on their neighborhood
  * structure until either a stable labeling is reached or differences are detected.
  */
@@ -30,20 +30,20 @@ data class GraphNode(
 class GraphIsomorphismStructure {
     private val nodes = mutableMapOf<String, GraphNode>()
     var edgeCounts: Map<String, Int> = emptyMap()
-    
+
     fun addNode(id: String, label: String): GraphNode {
         return nodes.getOrPut(id) { GraphNode(id, label) }
     }
-    
+
     fun getNode(id: String): GraphNode? = nodes[id]
-    
+
     fun getAllNodes(): Collection<GraphNode> = nodes.values
-    
+
     fun addEdge(fromId: String, edgeLabel: String, toId: String) {
         val fromNode = nodes[fromId] ?: throw IllegalArgumentException("Node $fromId not found")
         fromNode.addNeighbor(edgeLabel, toId)
     }
-    
+
     fun size(): Int = nodes.size
 }
 
@@ -57,15 +57,23 @@ class GraphIsomorphismStructure {
  * - `maxWork` caps abstract work units (terms inspected, signatures built, candidates tried). `null`, the default,
  *   scales with the input: `max(50,000,000, 1,000 x (triples in both graphs))`, so large but easy graphs (long
  *   lists, many independent blank nodes) complete, while pathological symmetric inputs still stop.
- * - `timeout` is a wall-clock limit; `null`, the default, means no limit. Thread interruption is always honoured.
+ * - `timeout` is a wall-clock limit. The default is 60 seconds; pass an explicit `timeout` to the three-argument
+ *   constructor (or to the [isIsomorphicTo] / [findBlankNodeMapping] overloads with limits) to change it, or `null`
+ *   for no limit. Thread interruption is always honoured.
+ *
+ * Matching is near-linear on lists, chains and high-degree (star-shaped) nodes: candidates are bucketed by
+ * neighbour, predicate, direction and refined colour, and every candidate scan is charged to the work budget.
  *
  * The same limits are available on [isIsomorphicTo] and [findBlankNodeMapping].
  */
 class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) {
     private var maxWork: Long? = null
-    private var timeout: java.time.Duration? = null
+    private var timeout: java.time.Duration? = DEFAULT_ISOMORPHISM_TIMEOUT
 
     init { require(maxSearchStates > 0) { "maxSearchStates must be positive" } }
+
+    /** The wall-clock limit in effect, for tests. */
+    internal val effectiveTimeout: java.time.Duration? get() = timeout
 
     /** Explicit work and wall-clock limits (see the class documentation). */
     constructor(maxSearchStates: Int, maxWork: Long, timeout: java.time.Duration) :
@@ -73,7 +81,7 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
 
     /**
      * Explicit limits: [maxWork] `null` scales the work budget with the input size, [timeout] `null` disables the
-     * wall-clock limit.
+     * wall-clock limit (the other constructors use a 60 second limit).
      */
     constructor(maxSearchStates: Int, maxWork: Long?, timeout: java.time.Duration?) : this(maxSearchStates) {
         require(maxWork == null || maxWork > 0) { "maxWork must be positive" }
@@ -166,6 +174,18 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         return search(right, li, ri, lc, rc, ::nodes, budget)
     }
 
+    /**
+     * Blank nodes adjacent to [anchor] through [predicate] with refined colour [color]: objects of `anchor predicate ?`
+     * when [anchorIsSubject], otherwise subjects of `? predicate anchor`.
+     */
+    private data class Adjacency(val anchor: RdfTerm, val predicate: Iri, val color: Int, val anchorIsSubject: Boolean)
+
+    /** The right-graph candidates of one [Adjacency]; every item below [hint] is currently used. */
+    private class CandidateList {
+        val items = ArrayList<BlankNode>(1)
+        var hint = 0
+    }
+
     private fun search(right: Set<RdfTriple>, li: Map<BlankNode, List<RdfTriple>>,
         ri: Map<BlankNode, List<RdfTriple>>, lc: Map<BlankNode, Int>, rc: Map<BlankNode, Int>,
         blankNodesOf: (RdfTriple) -> Set<BlankNode>, budget: WorkBudget): Map<BlankNode, BlankNode>? {
@@ -173,15 +193,47 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         val indexInGroup = HashMap<BlankNode, Int>().apply { groups.values.forEach { nodes -> nodes.forEachIndexed { i, b -> put(b, i) } } }
         val available = groups.mapValues { (_, nodes) -> java.util.TreeSet(nodes.indices.toList()) }
         val map = linkedMapOf<BlankNode, BlankNode>()
-        val used = mutableSetOf<BlankNode>()
+        val used = HashSet<BlankNode>()
         val byPredicate = right.groupBy { budget.check(); it.predicate }
         val bySubjectPredicate = right.groupBy { budget.check(); it.subject to it.predicate }
         val byPredicateObject = right.groupBy { budget.check(); it.predicate to it.obj }
 
+        // Candidate buckets: a high-degree node's neighbours of one colour are found without scanning the others,
+        // and a shared scan hint skips candidates already used, so stars are matched in near-linear time.
+        val adjacency = HashMap<Adjacency, CandidateList>()
+        val memberships = HashMap<BlankNode, MutableList<Pair<CandidateList, Int>>>()
+        fun index(key: Adjacency, node: BlankNode) {
+            val list = adjacency.getOrPut(key) { CandidateList() }
+            memberships.getOrPut(node) { ArrayList(2) }.add(list to list.items.size)
+            list.items.add(node)
+        }
+        for (t in right) {
+            budget.check()
+            (t.obj as? BlankNode)?.let { index(Adjacency(t.subject, t.predicate, rc.getValue(it), true), it) }
+            (t.subject as? BlankNode)?.let { index(Adjacency(t.obj, t.predicate, rc.getValue(it), false), it) }
+        }
+        /** Index of the first unused candidate at or after [from]; every skipped candidate is charged. */
+        fun firstUnused(list: CandidateList, from: Int): Int {
+            var i = maxOf(from, list.hint)
+            while (i < list.items.size && list.items[i] in used) {
+                budget.check()
+                if (i == list.hint) list.hint++
+                i++
+            }
+            return i
+        }
+        fun release(candidate: BlankNode) {
+            used.remove(candidate)
+            memberships[candidate]?.forEach { (list, position) ->
+                budget.check()
+                if (position < list.hint) list.hint = position
+            }
+        }
+
         // Breadth-first order over blank nodes that share a triple, each component starting from its most
         // constrained node. A node reached through a triple that directly links it to an earlier node gets that
-        // triple as its anchor: once the earlier node is mapped, only blank nodes adjacent to its image are
-        // candidates, so chains and lists are matched in linear time.
+        // triple as its anchor: once the earlier node is mapped, only blank nodes of the node's colour adjacent to
+        // its image are candidates, so chains, lists and stars are matched in near-linear time.
         val roots = li.keys.sortedWith(compareBy<BlankNode> { groups.getValue(lc.getValue(it)).size }.thenByDescending { li.getValue(it).size })
         val order = ArrayList<BlankNode>(li.size)
         val anchors = HashMap<BlankNode, Pair<RdfTriple, BlankNode>>()
@@ -194,6 +246,7 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
             while (queue.isNotEmpty()) {
                 val current = queue.removeFirst()
                 for (t in li.getValue(current)) {
+                    budget.check()
                     for (next in blankNodesOf(t)) {
                         if (!placed.add(next)) continue
                         order.add(next)
@@ -203,16 +256,14 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
                 }
             }
         }
-        fun anchoredCandidates(node: BlankNode): List<BlankNode>? {
+        val noCandidates = CandidateList()
+        fun anchoredCandidates(node: BlankNode): CandidateList? {
             val (t, anchor) = anchors[node] ?: return null
             val image = map.getValue(anchor)
-            val adjacent = if (t.subject == node) byPredicateObject[t.predicate to image].orEmpty().map { it.subject }
-                else bySubjectPredicate[image to t.predicate].orEmpty().map { it.obj }
-            val color = lc.getValue(node)
-            return adjacent.filterIsInstance<BlankNode>().filter { rc[it] == color }.distinct()
+            return adjacency[Adjacency(image, t.predicate, lc.getValue(node), anchorIsSubject = t.subject != node)] ?: noCandidates
         }
         val positions = IntArray(order.size)
-        val anchored = arrayOfNulls<List<BlankNode>>(order.size)
+        val anchored = arrayOfNulls<CandidateList>(order.size)
         fun mapped(term: RdfTerm, depth: Int = 0): RdfTerm? {
             budget.check(depth)
             return when (term) {
@@ -234,12 +285,21 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
                 else -> a == b
             }
         }
+        /** Same answer as scanning the anchor's neighbours with [matches] for the unmapped blank node [node]. */
+        fun hasUnusedNeighbour(anchor: RdfTerm, predicate: Iri, node: BlankNode, anchorIsSubject: Boolean): Boolean {
+            val list = adjacency[Adjacency(anchor, predicate, lc.getValue(node), anchorIsSubject)] ?: return false
+            return firstUnused(list, 0) < list.items.size
+        }
         fun consistent(node: BlankNode) = li.getValue(node).all { t ->
             val subject = mapped(t.subject) as? RdfResource
             val obj = mapped(t.obj)
+            val blankObject = t.obj as? BlankNode
+            val blankSubject = t.subject as? BlankNode
             when {
                 subject != null && obj != null -> RdfTriple(subject, t.predicate, obj) in right
+                subject != null && blankObject != null -> hasUnusedNeighbour(subject, t.predicate, blankObject, true)
                 subject != null -> bySubjectPredicate[subject to t.predicate].orEmpty().any { matches(t.obj, it.obj) }
+                obj != null && blankSubject != null -> hasUnusedNeighbour(obj, t.predicate, blankSubject, false)
                 obj != null -> byPredicateObject[t.predicate to obj].orEmpty().any { matches(t.subject, it.subject) }
                 else -> byPredicate[t.predicate].orEmpty().any { matches(t.subject, it.subject) && matches(t.obj, it.obj) }
             }
@@ -251,7 +311,8 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
             used.add(candidate)
             map[node] = candidate
             if (consistent(node)) return true
-            map.remove(node); used.remove(candidate)
+            map.remove(node)
+            release(candidate)
             remaining.add(indexInGroup.getValue(candidate))
             return false
         }
@@ -263,14 +324,16 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
             val node = order[depth]
             val remaining = available.getValue(lc.getValue(node))
             if (entering) { anchored[depth] = anchoredCandidates(node); positions[depth] = 0 }
-            map.remove(node)?.let { used.remove(it); remaining.add(indexInGroup.getValue(it)) }
+            map.remove(node)?.let { release(it); remaining.add(indexInGroup.getValue(it)) }
             val fixed = anchored[depth]
             var advanced = false
             if (fixed != null) {
-                while (positions[depth] < fixed.size) {
+                while (true) {
                     budget.check()
-                    val candidate = fixed[positions[depth]++]
-                    if (candidate !in used && assign(node, candidate, remaining)) { advanced = true; break }
+                    val i = firstUnused(fixed, positions[depth])
+                    if (i >= fixed.items.size) break
+                    positions[depth] = i + 1
+                    if (assign(node, fixed.items[i], remaining)) { advanced = true; break }
                 }
             } else {
                 val candidates = groups.getValue(lc.getValue(node))
@@ -290,6 +353,10 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         const val MAX_REFINEMENT_ROUNDS = 16
     }
 }
+
+/** Wall-clock limit used unless a timeout is passed explicitly: 60 seconds. */
+internal val DEFAULT_ISOMORPHISM_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(60)
+
 /** Default work budget for graphs with [tripleCount] triples in total: `max(50,000,000, 1,000 x tripleCount)`. */
 internal fun defaultIsomorphismWorkBudget(tripleCount: Long): Long =
     maxOf(50_000_000L, if (tripleCount > Long.MAX_VALUE / 1_000) Long.MAX_VALUE else tripleCount * 1_000)
@@ -307,22 +374,25 @@ private fun groundTermToken(term: RdfTerm): String = when (term) {
     else -> term.toString().let { "X${term.javaClass.name}:${it.length}:$it" }
 }
 
-/** True if the graphs are equal up to blank-node renaming, with the default limits of [WeisfeilerLehmanIsomorphism]. */
+/**
+ * True if the graphs are equal up to blank-node renaming, with the default limits of [WeisfeilerLehmanIsomorphism]
+ * (including its 60 second wall-clock limit).
+ */
 fun RdfGraph.isIsomorphicTo(other: RdfGraph): Boolean = WeisfeilerLehmanIsomorphism().areIsomorphic(this, other)
 
-/** A blank-node bijection making the graphs equal, or null; default limits of [WeisfeilerLehmanIsomorphism]. */
+/** A blank-node bijection making the graphs equal, or null; default limits of [WeisfeilerLehmanIsomorphism] (60 s). */
 fun RdfGraph.findBlankNodeMapping(other: RdfGraph): Map<BlankNode, BlankNode>? = WeisfeilerLehmanIsomorphism().mapping(this, other)
 
 /**
  * [isIsomorphicTo] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means no
- * wall-clock limit.
+ * wall-clock limit (the overload without limits uses 60 seconds).
  */
 fun RdfGraph.isIsomorphicTo(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Boolean =
     WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).areIsomorphic(this, other)
 
 /**
  * [findBlankNodeMapping] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means
- * no wall-clock limit.
+ * no wall-clock limit (the overload without limits uses 60 seconds).
  */
 fun RdfGraph.findBlankNodeMapping(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Map<BlankNode, BlankNode>? =
     WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).mapping(this, other)
