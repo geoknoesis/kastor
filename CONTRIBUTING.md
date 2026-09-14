@@ -19,7 +19,7 @@ From the repository root:
 ./gradlew conformanceSmokeTest
 ```
 
-- **`check`** runs tests, ABI checks (`checkKotlinAbi`), per-module coverage floors (`jacocoTestCoverageVerification`) and BOM completeness (`:bom:verifyBomCoverage`). The heavy RDF 1.2 corpus (`:rdf:conformance:test`) is excluded here.
+- **`check`** runs tests, ABI checks (`checkKotlinAbi`, wired into `check` by the Kotlin Gradle plugin's `abiValidation {}` for published modules), per-module coverage floors (`jacocoTestCoverageVerification`) and BOM completeness (`:bom:verifyBomCoverage`). The heavy RDF 1.2 corpus (`:rdf:conformance:test`) is excluded here.
 - **`conformanceSmokeTest`** — a fast RDF harness check that uses a **bundled fixture** in `:rdf:conformance`.
 
 **Full W3C RDF 1.2 and SHACL 1.2 suites.** Fetch the pinned corpora (the same commits CI uses) into their git-ignored locations:
@@ -52,20 +52,32 @@ All versions live in [`gradle/libs.versions.toml`](gradle/libs.versions.toml). E
 ./gradlew --write-verification-metadata sha256 resolveAndLockAll
 ```
 
-Review both diffs in the same pull request. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
+Review both diffs in the same pull request.
+
+**Dependabot Gradle PRs.** Dependabot bumps `gradle/libs.versions.toml` but cannot refresh the lockfiles or `verification-metadata.xml`, so its Gradle PRs fail CI until a maintainer runs the refresh on the PR branch:
+
+```bash
+git fetch origin && git switch dependabot/gradle/<branch>
+scripts/refresh-dependency-locks.sh --commit    # resolveAndLockAll --write-locks + --write-verification-metadata sha256
+git push
+```
+
+Check that new checksums belong to the artifacts the PR updates. This step is deliberately not automated: a `pull_request_target` job would run Gradle from the PR with a write-scoped token. Minor and patch bumps are grouped into one weekly PR (`.github/dependabot.yml`); major upgrades follow the upgrade plan. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
 
 ### Tests that skip
 
-Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json). CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
+Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json), keyed by test class and test name. CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. Every entry needs a non-empty reason without absolute machine paths (`file:///`, `C:\`, `/home/...`); `scripts/check-test-results.py` enforces this. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
+
+Suites that must never disappear are named with `--require-suite CLASS=MIN`. The suite must execute at least `MIN` tests, and only allowlisted skips are tolerated. This is how CI detects the W3C SHACL harness silently falling back to its 4-case bundled fixture (`Shacl12NativeConformanceTest=140`).
 
 ### Automation reference
 
 | Workflow | When it runs | Role |
 |----------|----------------|------|
-| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` (Linux, Windows; macOS on push/schedule) |
+| [`ci.yml`](.github/workflows/ci.yml) | Push & PR to `main` / `master`; weekly | `check`, conformance smoke, test-count/skip gate, docs version check, `buildHealth` (Linux, Windows; macOS on push/schedule); `shacl-w3c-suite` runs the pinned W3C SHACL 1.2 corpus (Linux) |
 | [`conformance.yml`](.github/workflows/conformance.yml) | Weekly + manual | Full upstream RDF 1.2 and SHACL 1.2 corpora |
-| [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, signing check, dependency audit |
-| [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment |
+| [`release-readiness.yml`](.github/workflows/release-readiness.yml) | Manual; called by `publish.yml` | Staging, metadata inspection, independent consumer builds, dependency audit (Linux, Windows); `local-signing` restages HEAD with an ephemeral key and verifies every signature |
+| [`publish.yml`](.github/workflows/publish.yml) | Tag `vX.Y.Z` | Release readiness, then signed Maven Central Portal upload from the protected `release` environment; waits for Central validation |
 | [`dependency-review.yml`](.github/workflows/dependency-review.yml) | Pull requests | OSV audit of dependencies introduced by the PR, secret-pattern scan, GitHub dependency review |
 | [`native-lifecycle.yml`](.github/workflows/native-lifecycle.yml) | Manual | Opt-in ONNX embedding lifecycle and soak tests |
 | [`wrapper-validation.yml`](.github/workflows/wrapper-validation.yml) | When `gradle/wrapper/**` changes | Validates official `gradle-wrapper.jar` checksums |
@@ -98,12 +110,14 @@ Useful variants:
 ## Releases
 
 - The version lives only in [`gradle.properties`](gradle.properties) (`version=`). `main` always carries the next `-SNAPSHOT`. **A released version is never reused:** fixes after a release go into a new version.
-- Tags use the form **`vX.Y.Z`**. Historical tags `v0.2.0` and `0.2.1` predate this convention.
+- Tags use the form **`vX.Y.Z`**. The historical tag `0.2.1` (no `v`) predates this convention; it is kept, never moved or reused.
+- Follow the [release checklist](docs/reference/release-checklist.md) for the first CI run, GitHub configuration and tagging.
+- **GitHub settings** (release environment, secrets, tag and branch rulesets, Pages source) are applied by [`scripts/configure-github-release.sh`](scripts/configure-github-release.sh). It prints every call by default; pass `--apply` to change the repository.
 - To release:
   1. Commit `version=X.Y.Z` and the dated `CHANGELOG.md` section.
-  2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, builds the signed Central Portal bundle (`./gradlew centralBundle`) and uploads it for manual release once the `release` environment is approved.
+  2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, refuses versions already on Maven Central, builds the signed Central Portal bundle (`./gradlew centralBundle`), uploads it once the `release` environment is approved, and waits until the Central Portal reports it `VALIDATED` (or fails with the portal's errors). Release the validated deployment manually in the portal.
   3. Bump `main` to the next `-SNAPSHOT`.
-- The build refuses `centralBundle` for `-SNAPSHOT` versions or without `KASTOR_SIGNING_KEY`.
+- The build refuses `centralBundle` for `-SNAPSHOT` versions or without a non-blank `KASTOR_SIGNING_KEY`.
 
 ## Code of conduct
 

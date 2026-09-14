@@ -26,7 +26,7 @@ Staging-gate follow-up: validate nonblank nested publication metadata, main libr
 Performance-gate follow-up: require allocation profiling and complete comparable JMH settings, including batch sizes and harness/VM versions. Eight CLI regression tests pass and run in release/performance CI. That earlier tooling-only iteration retained a 93.15/100 score; the subsequent platform verification raised it to 94.15.
 
 - [Fresh candidate self-review](KASTOR_RELEASE_REVIEW.md)
-- [Release acceptance, compatibility and supported limits](../../../docs/kastor/release-acceptance.md)
+- [Release acceptance, compatibility and supported limits](release-acceptance.md)
 - [Performance measurements and retained reports](../../../docs/kastor/performance/README.md)
 - Local detailed logs and JSON reports: `build/review/` (ignored build evidence).
 - CI gates: `.github/workflows/release-readiness.yml`, `performance-regression.yml`, `native-lifecycle.yml` and `dependency-review.yml`.

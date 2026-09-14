@@ -39,6 +39,8 @@ No artifacts have been published to Maven Central yet. Use `./gradlew publishToM
 
 ## Local release checks
 
+The step-by-step procedure for the first CI run, GitHub configuration and tagging is the [release checklist](release-checklist.md).
+
 1. Install JDK 21. Run `./gradlew check conformanceSmokeTest` with `KASTOR_SKIP_EMBEDDING_TESTS=1` and `KASTOR_SKIP_OPENAI_LLM_TESTS=1` for deterministic offline-service tests.
 2. Run `./gradlew jacocoTestReport`; XML and HTML reports are under each module's build reports directory. `check` enforces per-module line-coverage floors (`coverageFloors` in the root `build.gradle.kts`), set about ten points below measured coverage and ratcheted upwards over time.
 3. Run `./gradlew cleanReleaseRepository publishAllPublicationsToStagingRepository`. It writes only `build/release-repository`. Published Kotlin modules include Dokka HTML in their documentation jars and shared POM metadata. Staging may be unsigned; set `KASTOR_SIGNING_KEY` and `KASTOR_SIGNING_PASSWORD` to sign it. `./gradlew centralBundle` builds the Maven Central Portal bundle. It refuses `-SNAPSHOT` versions and fails without a signing key. Only `.github/workflows/publish.yml` uploads it: it runs on a `vX.Y.Z` tag matching `version` in `gradle.properties`, reruns release readiness and requires approval on the protected `release` environment.

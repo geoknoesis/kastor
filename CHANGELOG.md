@@ -9,6 +9,13 @@ version while we are in 0.x.
 
 Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been published yet.
 
+Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
+and is kept as is; it was never published to Maven Central.
+
+### Fixed (re-audit)
+
+<!-- entries pending -->
+
 ### Breaking changes (Maven `artifactId`s)
 
 Six artifacts that kept bare Gradle project names in 0.2.x now follow the `rdf-*` scheme used by every other RDF module. Gradle project paths are unchanged:
