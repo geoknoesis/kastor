@@ -2,6 +2,8 @@ package com.geoknoesis.kastor.ontoquality.metrics
 
 import com.geoknoesis.kastor.rdf.Rdf
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.apache.jena.rdf.model.ModelFactory
 import java.io.StringReader
 import org.junit.jupiter.api.Test
@@ -31,17 +33,22 @@ class VocabularyMetricsTest {
     fun `empty graph - all OQuaRE metrics not computable`() {
         val g = Rdf.graph {}
         val r = VocabularyMetrics.compute(g)
-        for (m in r.owl.oquare.toList()) {
+        for (m in r.owl.oquare.toList() + r.owl.kastorAdapted.toList()) {
             assertFalse(m.computable, m.metricIri)
         }
     }
 
     @Test
-    fun `single class - NOC not computable, CBO zero, depth one below owl Thing`() {
+    fun `single class - NOC and CBO not computable, CBOOntoKastor zero, depth one below owl Thing`() {
         val r = VocabularyMetrics.compute(parse(loadFixture("single-class.ttl")))
+        // Published NOCOnto / CBOOnto divide by |C| - |Root| = 0.
         assertFalse(r.owl.oquare.numberOfChildren.computable)
-        assertTrue(r.owl.oquare.couplingBetweenObjects.computable)
-        assertEquals(0.0, r.owl.oquare.couplingBetweenObjects.rawValue, EPS)
+        assertFalse(r.owl.oquare.couplingBetweenObjects.computable)
+        assertEquals("no non-root classes", r.owl.oquare.couplingBetweenObjects.notes)
+        assertFalse(r.owl.kastorAdapted.numberOfChildren.computable)
+        assertTrue(r.owl.kastorAdapted.couplingBetweenObjects.computable)
+        assertEquals(0.0, r.owl.kastorAdapted.couplingBetweenObjects.rawValue, EPS)
+        assertEquals(0.0, r.owl.oquare.tangledness.rawValue, EPS)
         assertTrue(r.owl.oquare.depthOfInheritanceTree.computable)
         // An isolated class is a direct child of owl:Thing: depth 1, one path of length 1.
         assertEquals(1.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
@@ -55,12 +62,16 @@ class VocabularyMetricsTest {
         // Thing -> A (1) -> B (2) -> C (3) -> D (4).
         assertEquals(4.0, oq.depthOfInheritanceTree.rawValue, EPS)
         assertEquals(1.0, oq.numberOfAncestorClasses.rawValue, EPS)
+        // 3 subclass edges over |C| - |Root| = 3 non-root classes.
         assertEquals(1.0, oq.numberOfChildren.rawValue, EPS)
-        // Couplings: A 0, B {A}, C {B}, D {C} = 3 / 4 classes.
-        assertEquals(0.75, oq.couplingBetweenObjects.rawValue, EPS)
-        // No multiple inheritance: TMOnto is 0 (best band).
+        assertEquals(1.0, oq.couplingBetweenObjects.rawValue, EPS)
+        // Kastor couplings: A 0, B {A}, C {B}, D {C} = 3 / 4 classes.
+        assertEquals(0.75, r.owl.kastorAdapted.couplingBetweenObjects.rawValue, EPS)
+        // No multiple inheritance: TMOnto is 0 (best band) in both definitions.
         assertEquals(0.0, oq.tangledness.rawValue, EPS)
         assertEquals(5, oq.tangledness.score)
+        assertEquals(0.0, r.owl.kastorAdapted.tangledness.rawValue, EPS)
+        assertEquals(5, r.owl.kastorAdapted.tangledness.score)
         // One path Thing-A-B-C-D of length 4.
         assertEquals(4.0, oq.lackOfCohesionInMethods.rawValue, EPS)
     }
@@ -70,10 +81,13 @@ class VocabularyMetricsTest {
         val r = VocabularyMetrics.compute(parse(wideTreeTtl(50)))
         val oq = r.owl.oquare
         assertEquals(2.0, oq.depthOfInheritanceTree.rawValue, EPS)
-        // A is the only class with subclasses and has 50 of them.
-        assertEquals(50.0, oq.numberOfChildren.rawValue, EPS)
-        // 50 superclass links over 51 classes: NOC and CBO are no longer identical.
-        assertEquals(50.0 / 51.0, oq.couplingBetweenObjects.rawValue, EPS)
+        // Published: 50 subclass / superclass links over 51 - 1 non-root classes.
+        assertEquals(1.0, oq.numberOfChildren.rawValue, EPS)
+        assertEquals(1.0, oq.couplingBetweenObjects.rawValue, EPS)
+        // Kastor-adapted: A is the only class with subclasses and has 50 of them; 50 couplings over 51 classes.
+        assertEquals(50.0, r.owl.kastorAdapted.numberOfChildren.rawValue, EPS)
+        assertEquals(1, r.owl.kastorAdapted.numberOfChildren.score)
+        assertEquals(50.0 / 51.0, r.owl.kastorAdapted.couplingBetweenObjects.rawValue, EPS)
         assertEquals(1.0, oq.numberOfAncestorClasses.rawValue, EPS)
     }
 
@@ -82,18 +96,61 @@ class VocabularyMetricsTest {
         val r = VocabularyMetrics.compute(parse(loadFixture("diamond.ttl")))
         assertEquals(2.0, r.owl.oquare.numberOfAncestorClasses.rawValue, EPS)
         assertEquals(3.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
-        assertEquals(2.0, r.owl.oquare.tangledness.rawValue, EPS)
-        assertEquals(4, r.owl.oquare.tangledness.score)
+        // Published TMOnto: |{D}| / 4 classes.
+        assertEquals(0.25, r.owl.oquare.tangledness.rawValue, EPS)
+        assertEquals(5, r.owl.oquare.tangledness.score)
+        assertEquals(2.0, r.owl.kastorAdapted.tangledness.rawValue, EPS)
+        assertEquals(4, r.owl.kastorAdapted.tangledness.score)
     }
 
     @Test
-    fun `TMOnto bands distinguish two-parent tangling from no tangling`() {
-        assertEquals(5, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(0.0))
-        assertEquals(4, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(2.0))
-        assertEquals(3, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(3.0))
-        assertEquals(3, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(4.0))
-        assertEquals(2, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(8.0))
-        assertEquals(1, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(8.5))
+    fun `TMOntoKastor bands distinguish two-parent tangling from no tangling`() {
+        val scoring = com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring
+        assertEquals(listOf(5, 4, 3, 3, 2, 1), listOf(0.0, 2.0, 3.0, 4.0, 8.0, 8.5).map { scoring.scoreTMKastor(it) })
+    }
+
+    @Test
+    fun `published TMOnto band - at most 2 scores 5`() {
+        val scoring = com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring
+        assertEquals(listOf(5, 5, 4, 4, 3, 2, 1), listOf(0.0, 2.0, 3.0, 4.0, 6.0, 8.0, 8.5).map { scoring.scoreTM(it) })
+    }
+
+    @Test
+    fun `distinct object count includes RDF 1_2 triple terms`() {
+        val ttl =
+            """
+            @prefix : <http://example.org/tt#> .
+            :s :p <<( :a :b :c )>> , :o .
+            :t :p <<( :a :b :c )>> , <<( :a :b :d )>> , <<( :a :b "c" )>> .
+            """.trimIndent()
+        val r = VocabularyMetrics.compute(parse(ttl))
+        assertEquals(5L, r.graph.tripleCount)
+        // <<( :a :b :c )>> (twice), <<( :a :b :d )>>, <<( :a :b "c" )>> and :o.
+        assertEquals(4L, r.graph.distinctObjectCount)
+    }
+
+    @Test
+    fun `Kastor-adapted variants are serialised under their own names`() {
+        val r = VocabularyMetrics.compute(parse(loadFixture("diamond.ttl")))
+        val json = Json.parseToJsonElement(r.toJson()).jsonObject.getValue("owl").jsonObject
+        val adapted = json.getValue("kastorAdapted").jsonObject
+        assertEquals(setOf("couplingBetweenObjectsKastor", "numberOfChildrenKastor", "tanglednessKastor"), adapted.keys)
+        assertEquals("TMOntoKastor", adapted.getValue("tanglednessKastor").jsonObject.getValue("oquareName").jsonPrimitive.content)
+        assertEquals("2.0", adapted.getValue("tanglednessKastor").jsonObject.getValue("rawValue").jsonPrimitive.content)
+        assertEquals("0.25", json.getValue("oquare").jsonObject.getValue("tangledness").jsonObject.getValue("rawValue").jsonPrimitive.content)
+
+        val m = ModelFactory.createDefaultModel()
+        m.read(StringReader(r.toTurtle()), null, "TTL")
+        val ns = "https://w3id.org/kastor/metrics#"
+        val report = m.listSubjectsWithProperty(m.createProperty("${ns}tanglednessKastor")).toList().single()
+        assertEquals(2L, report.getProperty(m.createProperty("${ns}tanglednessKastor")).long)
+        val schemes =
+            m.listStatements(null, m.createProperty("${ns}onMetric"), m.createResource("${ns}tanglednessKastor")).toList()
+                .map { it.subject.getProperty(m.createProperty("${ns}scoringScheme")).resource.uri }
+        assertEquals(listOf("${ns}KastorAdaptedScoring"), schemes)
+
+        assertTrue(r.describeText().contains("[Kastor-adapted (not OQuaRE)]"), r.describeText())
+        assertTrue(r.describeMarkdown().contains("### Kastor-adapted (not OQuaRE)"), r.describeMarkdown())
     }
 
     @Test

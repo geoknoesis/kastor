@@ -95,7 +95,7 @@ private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoes
     return copy(root, emptySet())
 }
 
-private fun ViolationSeverity.toShaclSeverityIri(): Iri =
+internal fun ViolationSeverity.toShaclSeverityIri(): Iri =
     when (this) {
         ViolationSeverity.INFO -> SHACL.Info
         ViolationSeverity.WARNING -> SHACL.Warning

@@ -153,7 +153,8 @@ class SparqlServiceDescriptionGenerator(
     private fun toSparqlTerm(term: RdfTerm): String {
         return when (term) {
             is Iri -> SparqlSyntax.iriRef(term.value)
-            is BlankNode -> SparqlSyntax.blankNode(term.id)
+            // Core renders every id (including store ids such as `nodeID://b1`) as a valid label.
+            is BlankNode -> term.toString()
             is Literal -> SparqlSyntax.literal(term)
             is TripleTerm -> "<<( ${toSparqlTerm(term.triple.subject)} ${toSparqlTerm(term.triple.predicate)} ${toSparqlTerm(term.triple.obj)} )>>"
             is Var -> throw IllegalArgumentException("A service description cannot contain variables")
@@ -174,17 +175,14 @@ class SparqlServiceDescriptionGenerator(
     private fun resourceId(resource: RdfResource): String {
         return when (resource) {
             is Iri -> resource.value
-            is BlankNode -> if (resource.id.startsWith("_:")) resource.id else "_:${resource.id}"
+            is BlankNode -> resource.toString()
         }
     }
 
     private fun toJsonLdObject(term: RdfTerm): String {
         return when (term) {
             is Iri -> """{"@id":"${jsonEscape(term.value)}"}"""
-            is BlankNode -> {
-                val id = if (term.id.startsWith("_:")) term.id else "_:${term.id}"
-                """{"@id":"${jsonEscape(id)}"}"""
-            }
+            is BlankNode -> """{"@id":"${jsonEscape(term.toString())}"}"""
             is LangString -> {
                 val direction = term.direction?.let { ""","@direction":"${jsonEscape(it.token)}"""" }.orEmpty()
                 """{"@value":"${jsonEscape(term.lexical)}","@language":"${jsonEscape(term.lang)}"$direction}"""
@@ -204,7 +202,7 @@ class SparqlServiceDescriptionGenerator(
      */
     private fun skolemize(term: RdfTerm): RdfTerm {
         if (term !is BlankNode) return term
-        val label = term.id.removePrefix("_:")
+        val label = term.toString().removePrefix("_:")
         val uri = runCatching { java.net.URI(serviceUri) }.getOrNull()
         val authority = uri?.rawAuthority
         return if (uri != null && !uri.isOpaque && !authority.isNullOrEmpty()) {

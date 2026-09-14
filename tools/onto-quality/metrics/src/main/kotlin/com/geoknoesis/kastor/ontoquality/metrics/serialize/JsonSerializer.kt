@@ -69,6 +69,7 @@ internal object JsonSerializer {
             mapOf(
                 "entityCounts" to entity,
                 "extensions" to extensionSection(r.owl.extensions),
+                "kastorAdapted" to oquareMetrics(r.owl.kastorAdapted.toList()),
                 "oquare" to oquareMetrics(r.owl.oquare.toList()),
             ),
         )

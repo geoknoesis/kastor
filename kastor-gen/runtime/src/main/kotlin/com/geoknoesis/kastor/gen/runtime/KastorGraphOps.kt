@@ -115,6 +115,61 @@ object KastorGraphOps {
     graph.find(subj as? RdfResource ?: return emptyList(), pred).map { it.obj }
 
   /**
+   * IRI values of [pred] for [subj]. Any other value (blank node, literal, triple term) follows
+   * [MaterializationPolicy.unexpectedTerm] for [property]: throws by default, skipped under `SKIP`.
+   */
+  fun getIriValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<Iri> =
+    getValues(graph, subj, pred).mapNotNull { value ->
+      value as? Iri ?: MaterializationPolicy.unexpectedTerm(value, property, "an IRI")
+    }
+
+  /**
+   * IRI and blank-node values of [pred] for [subj] (`sh:BlankNodeOrIRI`). Literals and triple terms follow
+   * [MaterializationPolicy.unexpectedTerm] for [property].
+   */
+  fun getResourceValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<RdfResource> =
+    getValues(graph, subj, pred).mapNotNull { value ->
+      value as? RdfResource ?: MaterializationPolicy.unexpectedTerm(value, property, "an IRI or blank node")
+    }
+
+  /**
+   * Literal values of [pred] for [subj]. IRIs, blank nodes and triple terms follow
+   * [MaterializationPolicy.unexpectedTerm] for [property].
+   */
+  fun getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<Literal> =
+    getValues(graph, subj, pred).mapNotNull { value ->
+      value as? Literal ?: MaterializationPolicy.unexpectedTerm(value, property, "a literal")
+    }
+
+  /**
+   * Like [getObjectValues], but literals and triple terms follow [MaterializationPolicy.unexpectedTerm] for [property]
+   * instead of being skipped silently.
+   */
+  fun <T : Any> getObjectValues(
+    graph: RdfGraph,
+    subj: RdfTerm,
+    pred: Iri,
+    property: String,
+    factory: (RdfTerm) -> T,
+  ): List<T> = getResourceValues(graph, subj, pred, property).map { obj -> materializeWith(factory, subj, pred, obj) }
+
+  private fun <T : Any> materializeWith(factory: (RdfTerm) -> T, subj: RdfTerm, pred: Iri, obj: RdfTerm): T =
+    try {
+      factory(obj)
+    } catch (e: Error) {
+      throw e
+    } catch (e: ValidationException) {
+      throw e
+    } catch (e: MaterializationException) {
+      throw e
+    } catch (e: Exception) {
+      throw MaterializationException(
+        "Failed to materialize value of <${pred.value}> for $subj (object $obj): ${e.message ?: e::class.java.name}",
+        e,
+      )
+    }
+
+  /**
    * SHACL `sh:nodeKind`: whether [term] is of [nodeKind] (`sh:IRI`, `sh:BlankNode`, `sh:Literal`,
    * `sh:BlankNodeOrIRI`, `sh:BlankNodeOrLiteral`, `sh:IRIOrLiteral`).
    *

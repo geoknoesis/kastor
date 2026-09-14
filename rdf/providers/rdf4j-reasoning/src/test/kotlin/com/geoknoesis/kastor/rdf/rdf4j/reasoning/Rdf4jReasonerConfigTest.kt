@@ -40,15 +40,46 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
-    fun `axiomatic vocabulary triples are dropped by default`() {
-        val inferred = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema)
+    fun `exactly the axiomatic triples are dropped by default`() {
+        val inferred = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
         assertTrue(RdfTriple(iri("x"), type, iri("B")) in inferred)
         assertTrue(RdfTriple(iri("x"), type, iri("D")) in inferred)
-        assertTrue(inferred.none { (it.subject as? Iri)?.value?.startsWith("http://www.w3.org/") == true }, "$inferred")
-        assertTrue(inferred.containsAll(MemoryReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema)))
 
-        val withAxioms = Rdf4jReasoner(ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))).getInferredTriples(schema)
-        assertTrue(withAxioms.any { (it.subject as? Iri)?.value?.startsWith("http://www.w3.org/") == true })
+        val includeAxioms = ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))
+        val withAxioms = Rdf4jReasoner(includeAxioms).getInferredTriples(schema).toSet()
+        val axioms = Rdf4jReasoner(includeAxioms).getInferredTriples(MemoryGraph(emptyList())).toSet()
+        assertTrue(axioms.isNotEmpty())
+        assertEquals(withAxioms - axioms, inferred, "only the closure of the empty store is filtered")
+
+        // Parity with the memory reasoner: every memory entailment is produced; RDF4J's inferencer adds only the RDFS
+        // typing and reflexive entailments that the memory reasoner does not implement.
+        val memory = MemoryReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
+        assertTrue(inferred.containsAll(memory), "missing: ${memory - inferred}")
+        val rdfsTyping = setOf(
+            "http://www.w3.org/2000/01/rdf-schema#Resource", "http://www.w3.org/2000/01/rdf-schema#Class",
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property", "http://www.w3.org/2000/01/rdf-schema#Datatype",
+            "http://www.w3.org/2000/01/rdf-schema#Literal",
+        )
+        val reflexive = setOf(subClassOf, Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf"))
+        val unexplained = (inferred - memory).filterNot { t ->
+            (t.predicate == type && (t.obj as? Iri)?.value in rdfsTyping) ||
+                (t.predicate in reflexive && (t.subject == t.obj || (t.obj as? Iri)?.value in rdfsTyping))
+        }
+        assertTrue(unexplained.isEmpty(), "RDF4J-only entailments beyond RDFS typing: $unexplained")
+    }
+
+    @Test
+    fun `inferences about vocabulary terms are kept`() {
+        val seeAlso = Iri("http://www.w3.org/2000/01/rdf-schema#seeAlso")
+        val subPropertyOf = Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf")
+        val graph = MemoryGraph(listOf(
+            RdfTriple(seeAlso, subPropertyOf, iri("link")),
+            RdfTriple(iri("link"), subPropertyOf, iri("related")),
+            RdfTriple(iri("a"), seeAlso, iri("b")),
+        ))
+        val inferred = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(graph).toSet()
+        assertTrue(RdfTriple(seeAlso, subPropertyOf, iri("related")) in inferred, "$inferred")
+        assertTrue(RdfTriple(iri("a"), iri("related"), iri("b")) in inferred, "$inferred")
     }
 
     @Test
@@ -60,13 +91,13 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
-    fun `timeout is enforced`() {
-        val start = System.nanoTime()
+    fun `timeout uses the injected clock`() {
+        val now = java.util.concurrent.atomic.AtomicLong()
+        val clock = { now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1)) }
         val error = assertThrows(IllegalStateException::class.java) {
-            Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(30), materializationThreshold = Long.MAX_VALUE)).reason(chain(300, 300))
+            Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(30), materializationThreshold = Long.MAX_VALUE), clock).reason(chain(300, 300))
         }
         assertTrue(error.message!!.contains("timed out"), error.message)
-        assertTrue((System.nanoTime() - start) / 1_000_000 < 15_000)
     }
 
     @Test

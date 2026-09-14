@@ -9,6 +9,13 @@ import com.geoknoesis.kastor.rdf.vocab.RDFS
 import java.util.BitSet
 import kotlin.math.ln
 
+/**
+ * Shallow-depth signal for classes that participate in a subclass cycle. Their depth below owl:Thing is undefined
+ * (the metrics report them with depth 0), and `1 / max(1, depth)` would rank them as central as a root; they get the
+ * neutral value of a depth-2 class instead.
+ */
+internal const val CYCLE_PARTICIPANT_SHALLOW_SIGNAL = 0.5
+
 internal data class ImportanceComputation(
     val importance: Map<String, Double>,
     val hints: Map<String, String>,
@@ -39,14 +46,18 @@ internal fun computeImportance(
     val descendantCounts = countTransitiveDescendants(entities, children)
     val directCounts = entities.associateWith { fan.fullFanOutMap[it] ?: 0 }
     val depthBy = report.owl.extensions.classHierarchyDepth.depthByClass
+    val cycleParticipants = report.owl.extensions.classHierarchyDepth.cycleParticipants.toHashSet()
 
     val fanOutSignal = entities.associateWith { ln(1.0 + descendantCounts.getValue(it).toDouble()) }
     val incomingSignal = entities.associateWith { ln(1.0 + incoming.getValue(it).toDouble()) }
     val shallowSignal =
         entities.associateWith {
-            // Depth is measured from owl:Thing (roots = 1; cycle participants 0), so roots score 1.
-            val d = depthBy[it] ?: 0
-            1.0 / maxOf(1, d)
+            // Depth is measured from owl:Thing (roots = 1), so roots score 1; cycle participants have no defined depth.
+            if (it in cycleParticipants) {
+                CYCLE_PARTICIPANT_SHALLOW_SIGNAL
+            } else {
+                1.0 / maxOf(1, depthBy[it] ?: 0)
+            }
         }
     val labelSignal = entities.associateWith { if (it in labels) 1.0 else 0.0 }
 

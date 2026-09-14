@@ -103,9 +103,9 @@ class MemoryShaclValidator(private val config: ValidationConfig) : ShaclValidato
             val constraintSlots = shaclShapes.sumOf { it.constraints.size }
 
             return ValidationReport(
-                // SHACL sh:conforms: any result (including sh:Warning / sh:Info) is non-conforming, except the
-                // SHACL 1.2 diagnostic severities sh:Debug / sh:Trace.
-                isValid = violations.none { it.severity != ViolationSeverity.DEBUG && it.severity != ViolationSeverity.TRACE },
+                // SHACL sh:conforms under sh:conformanceDisallows (default: any result except sh:Debug / sh:Trace is
+                // non-conforming), decided on every result before maxViolations truncation.
+                isValid = violations.none { config.disallowsConformance(it) },
                 violations = cappedViolations,
                 warnings = warnings,
                 statistics = statistics,

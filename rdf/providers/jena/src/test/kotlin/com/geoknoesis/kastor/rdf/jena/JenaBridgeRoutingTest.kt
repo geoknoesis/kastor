@@ -110,18 +110,22 @@ class JenaBridgeRoutingTest {
     }
 
     @Test
-    fun `wrapped foreign models read leniently by default and strictly on request`() {
+    fun `wrapped foreign models read strictly by default and leniently on request`() {
         val model = ModelFactory.createDefaultModel()
         val subject = model.createResource("http://example.org/s")
         model.add(subject, model.createProperty("http://example.org/p"), model.createLiteral("hello", "en_US"))
         model.add(subject, model.createProperty("http://example.org/q"), "ok")
 
-        val lenient = JenaBridge.fromJenaModel(model)
+        // Default: a copy must never silently drop data.
+        assertFailsWith<IllegalArgumentException> { JenaBridge.fromJenaModel(model).getTriples() }
+        assertFailsWith<IllegalArgumentException> { model.toKastorGraph().getTriples() }
+        assertFailsWith<IllegalArgumentException> { model.graph.toKastorGraph().getTriples() }
+        assertFailsWith<IllegalArgumentException> { MemoryGraph(JenaBridge.fromJenaModel(model).getTriples()) }
+
+        val lenient = JenaBridge.fromJenaModel(model, strictRead = false)
         assertEquals(listOf(Iri("http://example.org/q")), lenient.getTriples().map { it.predicate })
         assertEquals(1, lenient.find(subject = s).size)
-        assertEquals(2, lenient.size(), "size counts every statement of the model")
-
-        assertFailsWith<IllegalArgumentException> { JenaBridge.fromJenaModel(model, strictRead = true).getTriples() }
-        assertEquals(1, model.graph.toKastorGraph().getTriples().size)
+        assertEquals(lenient.getTriples().size, lenient.size(), "lenient size() agrees with what reads return")
+        assertEquals(1, JenaBridge.fromJenaGraph(model.graph, strictRead = false).size())
     }
 }

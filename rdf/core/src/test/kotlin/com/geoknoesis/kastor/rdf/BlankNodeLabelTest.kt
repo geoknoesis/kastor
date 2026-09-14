@@ -1,0 +1,45 @@
+package com.geoknoesis.kastor.rdf
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+/** Blank node labels: injective for unpaired surrogates, stable across serialize/parse round trips. */
+class BlankNodeLabelTest {
+    private fun label(id: String) = BlankNode(id).toString().removePrefix("_:")
+
+    @Test
+    fun `ids with unpaired surrogates do not collide with each other or with question marks`() {
+        val ids = listOf(
+            "a\uD800", "a?", "a\uDBFF", "a\uDC00", "a\uDC00\uD800", "a\uD800?", "a??",
+            "a b", "a_b", "a\u0000b", "nodeID://b1", "-x", "x.", "\uD800", "\uDFFF", "?",
+        )
+        val labels = ids.map(::label)
+        assertEquals(ids.size, labels.toSet().size, labels.toString())
+        labels.forEach { assertTrue(isValidBlankNodeLabel(it), it) }
+        // A properly paired surrogate is a valid supplementary code point and stays readable.
+        assertEquals("a𐀀", label("a𐀀"))
+    }
+
+    @Test
+    fun `labels are idempotent, including already encoded ux forms`() {
+        val ids = listOf("b1", "a b", "a\uD800", "nodeID://b1", "ux_", "ux_zz", "ux_0061", "été", "x.")
+        ids.forEach { id ->
+            val once = label(id)
+            assertEquals(once, label(once), "re-encoding $id")
+            assertEquals(once, label(label(once)), "re-encoding $id twice")
+        }
+        // Valid labels, including ux_ forms, are written unchanged.
+        assertEquals("ux_0061", label("ux_0061"))
+        assertEquals("b1", label("b1"))
+    }
+
+    @Test
+    fun `encoded labels survive a parse and serialize round trip without growing`() {
+        val node = BlankNode("nodeID://b1\uD800")
+        val first = node.toString()
+        val parsed = Rdf.parse("$first <urn:p> <urn:o> .", RdfFormat.N_TRIPLES).getTriples().single().subject as BlankNode
+        assertEquals(1, Rdf.parse("${parsed} <urn:p> <urn:o> .", RdfFormat.N_TRIPLES).size())
+        assertEquals(first, BlankNode(first.removePrefix("_:")).toString())
+    }
+}

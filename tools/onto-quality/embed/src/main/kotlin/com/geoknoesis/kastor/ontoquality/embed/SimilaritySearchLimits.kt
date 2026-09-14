@@ -44,14 +44,18 @@ fun interface SimilarityLimitsPolicy {
     fun limitsFor(entityCount: Int): SimilaritySearchLimits
 
     companion object {
-        /** [SimilaritySearchLimits.forEntityCount], with optional fixed overrides for the work budget and the deadline. */
+        /**
+         * [SimilaritySearchLimits.forEntityCount], with optional fixed overrides for the work budget, the deadline and
+         * the maximum number of result pairs.
+         */
         @JvmStatic
         @JvmOverloads
-        fun scaled(maxDistanceEvaluations: Long? = null, timeout: Duration? = null): SimilarityLimitsPolicy =
+        fun scaled(maxDistanceEvaluations: Long? = null, timeout: Duration? = null, maxPairs: Int? = null): SimilarityLimitsPolicy =
             SimilarityLimitsPolicy { entityCount ->
                 val base = SimilaritySearchLimits.forEntityCount(entityCount)
                 base.copy(
                     maxDistanceEvaluations = maxDistanceEvaluations ?: base.maxDistanceEvaluations,
+                    maxPairs = maxPairs ?: base.maxPairs,
                     timeout = timeout ?: base.timeout,
                 )
             }

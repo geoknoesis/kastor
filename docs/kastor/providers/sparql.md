@@ -109,11 +109,12 @@ When HTTP Basic credentials would be sent over plain `http` (for the query or th
 | Setting | Buffered calls (`select`, ASK, update) | Streamed rows (`withSelectRows`) |
 |---------|-----------------------------------------|----------------------------------|
 | `connectTimeout` | TCP connect | TCP connect |
-| `readTimeout` | each read of the response body | each read of the response body |
+| `readTimeout` | each read of the response body; also the wait for the response headers when `requestTimeout` is null | each read of the response body; also the wait for the response headers when `requestTimeout` is null |
 | `requestTimeout` | whole exchange, including reading the response | only until the response headers arrive (all redirect hops included) |
 | `streamingRequestTimeout` | not used | whole call, including the time your consumer spends on rows |
+| per-call `timeout` of `withSelectRows(query, bindings, timeout)` | not applicable | whole call: headers, every read and the time your consumer spends on rows (the shorter of this and `streamingRequestTimeout` applies) |
 
-Because `requestTimeout` stops at the response headers for streams, a slow row consumer is never cut off by it. Set `streamingRequestTimeout` if a stream must finish within a fixed time. Time between reads counts towards `streamingRequestTimeout` and is checked on the next read.
+Because `requestTimeout` stops at the response headers for untimed streams, a slow row consumer is never cut off by it. Set `streamingRequestTimeout` if a stream must finish within a fixed time, or use the timed `withSelectRows` overload. Time between reads counts towards the whole-call deadline and is checked on the next read and before each buffered row is handed to the consumer. With `requestTimeout = null`, a server that accepts the connection but never answers is still bounded by `readTimeout`.
 
 ## Redirects
 
@@ -128,12 +129,13 @@ The client follows redirects itself (up to `maxRedirects`):
 
 `withSelectRows(query) { rows -> … }` streams rows to the consumer. Consume them inside the block and do not keep the sequence.
 
-`withSelectRows(query, bindings, timeout) { rows -> … }` runs the query with initial bindings, and `timeout` is the response-header deadline for that call. `streamingRequestTimeout` still bounds the whole stream. The SPARQL 1.1 Protocol has no initial-bindings parameter, so the adapter substitutes the bound constants into the query text. It follows the same rules as the Jena provider, which uses Jena's query substitution:
+`withSelectRows(query, bindings, timeout) { rows -> … }` runs the query with initial bindings, and `timeout` bounds the whole call, including your consumer. A shorter `streamingRequestTimeout` still applies. The SPARQL 1.1 Protocol has no initial-bindings parameter, so the adapter substitutes the bound constants into the query text. It follows the same rules as the Jena provider, which uses Jena's query substitution:
 
 - Every use of a bound variable in the WHERE clause is replaced by the constant, including FILTER, BIND expressions, OPTIONAL, MINUS, EXISTS / NOT EXISTS and sub-selects. The same applies to HAVING. The binding therefore restricts the query *before* aggregation, LIMIT and filtering.
 - A bound variable in the projection stays in the results as `(constant AS ?var)`.
 - `GROUP BY ?var` becomes `GROUP BY (constant AS ?var)`, and the projection keeps `?var`.
 - `ORDER BY ?var` becomes `ORDER BY (constant)`.
+- `BOUND(?var)` becomes `(true)`, because `BOUND(constant)` is not legal SPARQL.
 - `SELECT *` does not return bound variables.
 - Because the variable is replaced, a `MINUS` whose only shared variable is bound no longer shares a variable and removes nothing (the same as with Jena).
 - Comments, string literals and IRIs are never rewritten.

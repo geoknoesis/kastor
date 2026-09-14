@@ -186,7 +186,8 @@ person.addProperty(nameProp, "Alice")
 
 **With Kastor:**
 ```kotlin
-// Wrap existing Jena Model
+// Wrap existing Jena Model (strict reads: a statement Kastor cannot represent fails the read;
+// JenaBridge.fromJenaModel(model, strictRead = false) skips it instead)
 val model: Model = // ... existing Jena Model
 val graph = model.toKastorGraph()
 

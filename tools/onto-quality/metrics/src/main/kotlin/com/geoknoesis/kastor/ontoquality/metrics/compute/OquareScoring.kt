@@ -1,7 +1,8 @@
 package com.geoknoesis.kastor.ontoquality.metrics.compute
 
 /**
- * OQuaRE 1–5 scoring bands (Duque-Ramos et al. 2014, scale table; 5 = best).
+ * OQuaRE 1–5 scoring bands (Duque-Ramos et al. 2014, scale table; reproduced in Duque-Ramos et al. 2016, Table 4;
+ * 5 = best), plus the documented bands of the Kastor-adapted variants (`*Kastor`).
  */
 internal object OquareScoring {
     fun scoreDIT(v: Number): Int = scoreOver8Pattern(v.toDouble())
@@ -29,14 +30,22 @@ internal object OquareScoring {
         }
     }
 
+    /** Published TMOnto band: > 8 → 1, (6, 8] → 2, (4, 6] → 3, (2, 4] → 4, ≤ 2 → 5. */
+    fun scoreTM(v: Number): Int = scoreOver8Pattern(v.toDouble())
+
+    /** NOCOntoKastor uses the NOCOnto bands: > 12 → 1, (8, 12] → 2, (6, 8] → 3, (3, 6] → 4, ≤ 3 → 5. */
+    fun scoreNOCKastor(v: Number): Int = scoreNOCRFC(v.toDouble())
+
+    /** CBOOntoKastor uses the CBOOnto bands: > 8 → 1, (6, 8] → 2, (4, 6] → 3, (2, 4] → 4, ≤ 2 → 5. */
+    fun scoreCBOKastor(v: Number): Int = scoreOver8Pattern(v.toDouble())
+
     /**
-     * TMOnto: 0 (no multiple inheritance) → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1.
+     * TMOntoKastor: 0 (no multiple inheritance) → 5, (0, 2] → 4, (2, 4] → 3, (4, 8] → 2, > 8 → 1.
      *
-     * Deviation from the published OQuaRE band (≤ 2 → 5): TMOnto is ≥ 2 whenever any class has several direct
-     * parents, so that band could never distinguish a tangled hierarchy (e.g. a diamond, value 2) from one
-     * without tangling. Here any tangling scores at most 4.
+     * Not an OQuaRE band: TMOntoKastor is ≥ 2 whenever any class has several direct parents, so the OQuaRE band
+     * (≤ 2 → 5) could never distinguish a tangled hierarchy (e.g. a diamond, value 2) from one without tangling.
      */
-    fun scoreTM(v: Number): Int {
+    fun scoreTMKastor(v: Number): Int {
         val d = v.toDouble()
         return when {
             d <= 0.0 -> 5

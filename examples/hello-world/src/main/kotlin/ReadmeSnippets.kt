@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.repository.Repository
 // README: "Example: Using Existing Jena Infrastructure"
 fun readmeJenaInterop() {
     val jenaModel: Model = ModelFactory.createDefaultModel()
+    // Reads are strict: a statement Kastor cannot represent (e.g. xml:lang="en_US") fails the read.
+    // Use JenaBridge.fromJenaModel(jenaModel, strictRead = false) to skip such statements instead.
     val graph: MutableRdfGraph = jenaModel.toKastorGraph()
     graph.add {
         val person = iri("http://example.org/alice")
@@ -41,6 +43,8 @@ fun readmeJenaInterop() {
 
 // README: "Example: Using Existing RDF4J Repository"
 fun readmeRdf4jInterop(rdf4jRepo: Repository) {
+    // Graph reads are strict; pass Rdf4jRepository(rdf4jRepo, inference = false, lenientRead = true)
+    // to skip statements Kastor cannot represent instead of failing.
     val repo = com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository(rdf4jRepo)
     repo.add {
         val person = iri("http://example.org/alice")

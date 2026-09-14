@@ -136,9 +136,9 @@ internal object Cardinality {
     /** Multi-valued unless `sh:maxCount` is 0 or 1 (`maxCount 0` = always absent → nullable single). */
     fun isList(property: ShaclProperty): Boolean = property.maxCount == null || property.maxCount > 1
 
-    /** Single-valued and `sh:minCount >= 1`. */
-    fun isRequiredSingle(property: ShaclProperty): Boolean = !isList(property) && (property.minCount ?: 0) > 0
+    /** Single-valued and `sh:minCount >= 1` (a deactivated property shape imposes no cardinality). */
+    fun isRequiredSingle(property: ShaclProperty): Boolean = !isList(property) && isRequired(property)
 
-    /** Any cardinality with `sh:minCount >= 1`. */
-    fun isRequired(property: ShaclProperty): Boolean = (property.minCount ?: 0) > 0
+    /** Any cardinality with `sh:minCount >= 1`, unless the property shape is `sh:deactivated`. */
+    fun isRequired(property: ShaclProperty): Boolean = !property.deactivated && (property.minCount ?: 0) > 0
 }

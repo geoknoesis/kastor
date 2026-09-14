@@ -1,4 +1,9 @@
 # Flags vulnerable dependencies introduced on pull requests.
+#
+# The job name `dependency-review` is a required check when scripts/configure-github-release.sh detects the
+# Dependency graph. GitHub's dependency-review-action needs that graph (Settings > Code security >
+# Dependency graph). When it is disabled the action step is skipped with a notice instead of failing every
+# PR; the OSV lockfile audit and credential scan below still run and still gate the PR.
 name: Dependency review
 
 on:
@@ -13,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -27,12 +32,37 @@ jobs:
 
       - name: Retain redacted audit evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dependency-and-credential-audit
           path: build/review/*audit.json
 
+      - name: Detect the dependency graph
+        id: graph
+        # The SBOM export exists only when the dependency graph is enabled; GitHub answers 404 otherwise.
+        # Any other failure (rate limit, outage) runs the review anyway so it fails loudly, not silently.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          body="$(gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" --jq '.sbom.SPDXID' 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$body" | grep -q 'HTTP 404'; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            msg="Dependency review skipped: the Dependency graph is not enabled for $GITHUB_REPOSITORY (Settings > Code security > Dependency graph). The OSV lockfile audit and credential scan above still ran."
+            echo "::notice title=Dependency review skipped::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not determine dependency graph status ($body); running dependency review anyway"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Dependency review
+        if: steps.graph.outputs.enabled == 'true'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate

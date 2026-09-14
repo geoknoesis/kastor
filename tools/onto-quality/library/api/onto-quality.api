@@ -13,6 +13,12 @@ public final class com/geoknoesis/kastor/ontoquality/MarkdownReportOptions {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/ontoquality/OutputSanitizer {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/ontoquality/OutputSanitizer;
+	public static final fun markdownInline (Ljava/lang/String;)Ljava/lang/String;
+	public static final fun terminal (Ljava/lang/String;)Ljava/lang/String;
+}
+
 public abstract class com/geoknoesis/kastor/ontoquality/PitfallReference {
 	public final fun shortLabel ()Ljava/lang/String;
 }

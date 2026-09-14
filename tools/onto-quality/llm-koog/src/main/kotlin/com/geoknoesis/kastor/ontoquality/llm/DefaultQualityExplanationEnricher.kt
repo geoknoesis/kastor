@@ -39,11 +39,14 @@ import java.util.concurrent.ThreadLocalRandom
  * - Only transient failures are retried — timeouts, HTTP 408 / 429 / 5xx and connection errors — up to
  *   [LlmExplanationConfig.maxRetries] times, waiting [LlmExplanationConfig.retryBackoff] × 2^attempt with equal
  *   jitter, or the provider's `Retry-After` when the error carries one. Other failures (HTTP 400 / 401 / 403 /
- *   404, malformed responses, unknown errors) fail the batch at once.
+ *   404, OpenAI `insufficient_quota`, TLS / certificate errors, malformed responses, unknown errors) fail the batch
+ *   at once.
  * - The whole run is bounded by [LlmExplanationConfig.maxTotalDuration]: batches that cannot start in time, and
  *   retries whose delay would overrun it, are recorded as failures.
- * - After [LlmExplanationConfig.circuitBreakerThreshold] consecutive identical non-retryable failures (for example
- *   HTTP 401 for a bad key) the remaining batches are not sent and are recorded as failures.
+ * - After [LlmExplanationConfig.circuitBreakerThreshold] consecutive batches failing with the same failure — a
+ *   non-retryable one (for example HTTP 401 for a bad key) or a retryable one whose retries were exhausted (for
+ *   example a provider answering HTTP 503 throughout) — the remaining batches are not sent and are recorded as
+ *   failures.
  *
  * Prompt safety: finding text originates from the ontology and is untrusted. It is sent as a JSON-encoded
  * array inside explicit data tags, with an instruction to treat it as data only; the JSON repair request frames
@@ -106,7 +109,7 @@ class DefaultQualityExplanationEnricher internal constructor(
                             requestExplanations(session, userMessage, budget)
                         } catch (e: BatchFailure) {
                             failures += ExplanationFailure(refs, e.message ?: "LLM request failed")
-                            val signature = e.nonRetryableSignature
+                            val signature = e.circuitSignature
                             if (signature == null) {
                                 lastSignature = null
                                 identicalFailures = 0
@@ -116,7 +119,7 @@ class DefaultQualityExplanationEnricher internal constructor(
                                 if (identicalFailures >= config.circuitBreakerThreshold) {
                                     circuitOpenReason =
                                         "Skipped: circuit breaker opened after $identicalFailures consecutive identical " +
-                                        "non-retryable LLM failures ($signature)"
+                                        "LLM failures ($signature)"
                                 }
                             }
                             continue
@@ -201,11 +204,15 @@ class DefaultQualityExplanationEnricher internal constructor(
                 throw BatchFailure(
                     "LLM request failed (not retryable: ${kind.signature}) after $attempts attempt(s): $detail",
                     failure,
-                    nonRetryableSignature = kind.signature,
+                    circuitSignature = kind.signature,
                 )
             }
             if (attempt >= config.maxRetries) {
-                throw BatchFailure("LLM request failed after $attempts attempt(s) (${kind.signature}): $detail", failure)
+                throw BatchFailure(
+                    "LLM request failed after $attempts attempt(s) (${kind.signature}): $detail",
+                    failure,
+                    circuitSignature = kind.signature,
+                )
             }
             val wait = kind.retryAfter ?: jitter(config.retryBackoff.multipliedBy(1L shl attempt.coerceAtMost(20)))
             if (wait.toMillis() >= budget.remainingMillis()) {
@@ -213,6 +220,7 @@ class DefaultQualityExplanationEnricher internal constructor(
                     "LLM request failed after $attempts attempt(s); retrying in $wait would exceed the run budget " +
                         "(maxTotalDuration ${config.maxTotalDuration}): $detail",
                     failure,
+                    circuitSignature = kind.signature,
                 )
             }
             sleeper(wait)
@@ -235,8 +243,11 @@ class DefaultQualityExplanationEnricher internal constructor(
     private class BatchFailure(
         message: String,
         cause: Throwable? = null,
-        /** Set when the failure is not retryable; identical consecutive signatures open the circuit breaker. */
-        val nonRetryableSignature: String? = null,
+        /**
+         * Failure signature for the circuit breaker: set for non-retryable failures and for retryable failures whose
+         * retries are exhausted. Identical consecutive signatures open the breaker.
+         */
+        val circuitSignature: String? = null,
     ) : Exception(message, cause)
 
     internal companion object {
@@ -270,7 +281,7 @@ class DefaultQualityExplanationEnricher internal constructor(
         fun focusString(t: RdfTerm): String =
             when (t) {
                 is Iri -> t.value
-                is BlankNode -> "_:${t.id}"
+                is BlankNode -> t.toString()
                 is Literal -> t.lexical
                 else -> t.toString()
             }

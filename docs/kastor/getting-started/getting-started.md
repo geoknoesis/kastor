@@ -85,7 +85,8 @@ import org.apache.jena.rdf.model.ModelFactory
 // Your existing Jena Model
 val jenaModel: Model = ModelFactory.createDefaultModel()
 
-// Wrap it with Kastor
+// Wrap it with Kastor. Reads are strict: a statement Kastor cannot represent
+// (e.g. xml:lang="en_US") fails the read; JenaBridge.fromJenaModel(jenaModel, strictRead = false) skips it instead.
 val graph = jenaModel.toKastorGraph()
 
 // Now use Kastor's DSL

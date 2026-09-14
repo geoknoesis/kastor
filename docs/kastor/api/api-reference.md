@@ -423,7 +423,10 @@ RdfConfig(
 RdfConfig(
     providerId = "rdf4j",
     variantId = "native",
-    options = mapOf("location" to "/path/to/storage")   // the only option read by the RDF4J provider
+    options = mapOf(
+        "location" to "/path/to/storage",
+        "lenientRead" to "true"   // optional: skip statements Kastor cannot represent on graph reads (default: strict)
+    )
 )
 ```
 

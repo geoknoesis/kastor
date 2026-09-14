@@ -67,8 +67,10 @@ class HierarchyScaleRegressionTest {
         assertEquals(layers.toDouble(), oq.depthOfInheritanceTree.rawValue)
         // Every one of the 2^40 paths has exactly 40 edges from owl:Thing.
         assertEquals(layers.toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
-        // Every non-root class has exactly two direct parents.
-        assertEquals(2.0, oq.tangledness.rawValue, 1e-9)
+        // Every non-root class has exactly two direct parents: published TMOnto = 78 tangled / 80 classes,
+        // Kastor-adapted TMOntoKastor = mean parents of tangled classes = 2.
+        assertEquals(78.0 / 80.0, oq.tangledness.rawValue, 1e-9)
+        assertEquals(2.0, report.owl.kastorAdapted.tangledness.rawValue, 1e-9)
     }
 
     @Test

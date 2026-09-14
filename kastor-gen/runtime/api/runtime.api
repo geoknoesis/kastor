@@ -120,9 +120,13 @@ public final class com/geoknoesis/kastor/gen/runtime/KastorGraphOps {
 	public final fun countLiteralValues-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)I
 	public final fun countObjectValues-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)I
 	public final fun extras (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/util/Set;)Lcom/geoknoesis/kastor/gen/runtime/PropertyBag;
+	public final fun getIriValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
 	public final fun getLiteralValues-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Ljava/util/List;
+	public final fun getLiteralValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
+	public final fun getObjectValues--O23zC0 (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Ljava/util/List;
 	public final fun getObjectValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Ljava/util/List;
 	public final fun getRequiredLiteralValue-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/Literal;
+	public final fun getResourceValues-K9UTxE8 (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/util/List;
 	public final fun getValues-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Ljava/util/List;
 	public final fun hasNodeKind-AqFvXrU (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Z
 	public final fun isInstanceOf-Jp1kQnw (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;)Z
@@ -150,6 +154,8 @@ public final class com/geoknoesis/kastor/gen/runtime/MaterializationPolicy {
 	public static final fun illTyped (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Void;
 	public static final fun missingRequired (Ljava/lang/String;)Ljava/lang/Void;
 	public static final fun setIllTypedValues (Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;)V
+	public static final fun unexpectedTerm (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Void;
+	public static final fun withIllTypedValues (Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/OntoMapper {
@@ -367,6 +373,13 @@ public final class com/geoknoesis/kastor/gen/runtime/ShaclViolation {
 	public final fun getShapeIri-tqZU9bw ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/SharedValidators {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/SharedValidators;
+	public static final fun close (Ljava/lang/Class;)Z
+	public static final fun closeAll ()V
+	public static final fun get (Ljava/lang/Class;Lkotlin/jvm/functions/Function0;)Lcom/geoknoesis/kastor/gen/runtime/ValidationContext;
 }
 
 public abstract interface class com/geoknoesis/kastor/gen/runtime/ValidationContext : java/lang/AutoCloseable {

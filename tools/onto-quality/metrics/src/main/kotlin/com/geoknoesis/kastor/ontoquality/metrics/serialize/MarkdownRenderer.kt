@@ -62,6 +62,7 @@ internal object MarkdownRenderer {
             ),
         )
         table("Other", listOf(om.tangledness))
+        table("Kastor-adapted (not OQuaRE)", report.owl.kastorAdapted.toList())
 
         sb.appendLine("## SKOS extensions")
         sb.appendLine()

@@ -177,11 +177,23 @@ added later). Because the source directory is the task's output, compiling Kotli
      escapes the output directory fails the task before anything is deleted;
   2. the complete new output is written to a staging directory, so an I/O failure leaves the previous
      output and manifest untouched;
-  3. the files listed in the old manifest are deleted, the staged files are moved in, and the manifest is
-     written last.
+  3. the manifest is first rewritten to list the previous **and** the new files; then the files listed in
+     the old manifest are deleted, the staged files are moved in, and the manifest is rewritten to list only
+     the new files once every move has succeeded.
 
   Renamed shapes therefore never leave stale files, including case-only renames on case-insensitive file
-  systems.
+  systems. Replacing the output is also robust against failures:
+
+  - Deletes and moves that fail with a transient lock (`AccessDeniedException`, or a
+    `FileSystemException` such as "being used by another process" when an IDE, indexer or virus scanner holds
+    a file on Windows) are retried with exponential backoff. Missing files are not retried.
+  - Because the manifest lists the previous and the new files until every move succeeds, a failure part-way
+    never leaves an untracked generated file: the next run deletes everything the manifest lists.
+  - When the staging directory and the output directory are on different file stores (for example different
+    drives), each file is copied next to its target and then renamed over it, so the target is never left
+    half-written and the previous target stays intact on failure; the staged source is deleted last.
+  - An I/O failure while replacing fails the task with a message explaining how to recover (see
+    [Troubleshooting](#troubleshooting)).
 
 See [Incremental Builds](../guides/incremental-builds.md).
 
@@ -285,6 +297,11 @@ directory was edited or corrupted; nothing was deleted. Remove the output direct
 
 **`cannot write generated files: …`** — writing to the staging directory failed; the previous output is
 unchanged.
+
+**`cannot replace the generated files in … (…); the output may be incomplete`** — deleting or moving a
+generated file failed, even after retries (typically a file locked by another program on Windows). Close
+the programs holding the files and run the task again: every file written so far is listed in the manifest
+and will be replaced.
 
 ## Related Documentation
 

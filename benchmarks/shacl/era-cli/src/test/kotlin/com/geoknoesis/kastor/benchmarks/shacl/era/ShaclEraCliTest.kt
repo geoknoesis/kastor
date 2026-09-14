@@ -7,33 +7,47 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ShaclEraCliTest {
     @TempDir lateinit var dir: Path
 
+    private val shapesTtl =
+        """
+        @prefix sh: <http://www.w3.org/ns/shacl#> .
+        @prefix ex: <http://example.org/> .
+        ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ;
+          sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+        """.trimIndent()
+
+    private fun data(): Path = dir.resolve("data.ttl").also { Files.writeString(it, "@prefix ex: <http://example.org/> .\nex:a a ex:Thing .\n") }
+
+    private fun shapes(name: String = "shapes.ttl", content: String = shapesTtl): Path = dir.resolve(name).also { Files.writeString(it, content) }
+
+    private class Result(val status: Int, val out: List<String>, val err: List<String>)
+
+    private fun run(vararg args: String): Result {
+        val out = ByteArrayOutputStream()
+        val err = ByteArrayOutputStream()
+        val status =
+            PrintStream(out, true, Charsets.UTF_8).use { o ->
+                PrintStream(err, true, Charsets.UTF_8).use { e -> runEraCli(args.toList(), o, e) }
+            }
+        fun lines(buffer: ByteArrayOutputStream) = buffer.toString(Charsets.UTF_8).lines().map { it.trimEnd('\r') }.filter { it.isNotEmpty() }
+        return Result(status, lines(out), lines(err))
+    }
+
     @Test
     fun `stdout contains exactly the two ERA timing lines with sub-millisecond precision`() {
-        val data = dir.resolve("data.ttl")
-        Files.writeString(data, "@prefix ex: <http://example.org/> .\nex:a a ex:Thing .\n")
-        val shapes = dir.resolve("shapes.ttl")
-        Files.writeString(
-            shapes,
-            """
-            @prefix sh: <http://www.w3.org/ns/shacl#> .
-            @prefix ex: <http://example.org/> .
-            ex:ThingShape a sh:NodeShape ; sh:targetClass ex:Thing ;
-              sh:property [ sh:path ex:name ; sh:minCount 1 ] .
-            """.trimIndent(),
-        )
         val report = dir.resolve("report.ttl")
-        val buffer = ByteArrayOutputStream()
-        PrintStream(buffer, true, Charsets.UTF_8).use { runEraBenchmark(data.toString(), shapes.toString(), report.toString(), it) }
+        val result = run(data().toString(), shapes().toString(), report.toString())
 
-        val lines = buffer.toString(Charsets.UTF_8).lines().filter { it.isNotEmpty() }
-        assertEquals(2, lines.size, "unexpected stdout: $lines")
-        assertTrue(Regex("""Load time: \d+\.\d{6}""").matches(lines[0]), lines[0])
-        assertTrue(Regex("""Validation time: \d+\.\d{6}""").matches(lines[1]), lines[1])
+        assertEquals(EXIT_OK, result.status, result.err.toString())
+        assertEquals(emptyList(), result.err)
+        assertEquals(2, result.out.size, "unexpected stdout: ${result.out}")
+        assertTrue(Regex("""Load time: \d+\.\d{6}""").matches(result.out[0]), result.out[0])
+        assertTrue(Regex("""Validation time: \d+\.\d{6}""").matches(result.out[1]), result.out[1])
         assertTrue(Files.readString(report).contains("ValidationReport"))
     }
 
@@ -41,5 +55,54 @@ class ShaclEraCliTest {
     fun `seconds keep microsecond precision`() {
         assertEquals("0.000250", formatSeconds(250_000))
         assertEquals("1.234568", formatSeconds(1_234_567_890))
+    }
+
+    @Test
+    fun `wrong argument count is a usage error`() {
+        val result = run(data().toString(), shapes().toString())
+        assertEquals(EXIT_USAGE, result.status)
+        assertEquals(listOf("Usage: shacl-era-cli <data.ttl> <shapes.ttl> <report.ttl>"), result.err)
+        assertEquals(emptyList(), result.out)
+    }
+
+    @Test
+    fun `missing input file or a directory is a usage error without a stack trace`() {
+        val missing = dir.resolve("missing.ttl")
+        val result = run(missing.toString(), shapes().toString(), dir.resolve("r.ttl").toString())
+        assertEquals(EXIT_USAGE, result.status)
+        assertEquals(listOf("shacl-era-cli: data file not found or not a regular file: $missing"), result.err)
+        assertEquals(emptyList(), result.out)
+
+        val directory = run(data().toString(), dir.toString(), dir.resolve("r.ttl").toString())
+        assertEquals(EXIT_USAGE, directory.status)
+        assertEquals(listOf("shacl-era-cli: shapes file not found or not a regular file: $dir"), directory.err)
+    }
+
+    @Test
+    fun `unparseable input is exit 2 with a sanitised one-line message`() {
+        val bad = shapes("bad\u202Eltt.ttl", "@prefix ex: <http://example.org/> .\nex:a ex:b")
+        val result = run(data().toString(), bad.toString(), dir.resolve("r.ttl").toString())
+        assertEquals(EXIT_INPUT_ERROR, result.status, result.err.toString())
+        val visiblePath = bad.toString().replace("\u202E", "\\u202E")
+        assertTrue(result.err.first().startsWith("shacl-era-cli: failed to parse shapes file $visiblePath as Turtle: "), result.err.toString())
+        assertFalse(result.err.any { it.startsWith("\tat ") }, result.err.toString())
+        assertFalse(result.err.joinToString("\n").any { it == '\u202E' || (it.isISOControl() && it != '\n' && it != '\t') })
+        // Nothing is timed when loading fails.
+        assertEquals(emptyList(), result.out)
+    }
+
+    @Test
+    fun `unwritable report is a runtime error after the timing lines`() {
+        val result = run(data().toString(), shapes().toString(), dir.toString())
+        assertEquals(EXIT_RUNTIME_ERROR, result.status, result.err.toString())
+        assertEquals(1, result.err.size, result.err.toString())
+        assertTrue(result.err.single().startsWith("shacl-era-cli: failed to write report $dir: "), result.err.toString())
+        assertEquals(2, result.out.size, result.out.toString())
+    }
+
+    @Test
+    fun `sanitize renders control and bidi characters visibly`() {
+        assertEquals("a\\u001B[31m\\u202Eb\\u2066c\n\td", sanitize("a\u001B[31m\u202Eb\u2066c\n\td"))
+        assertEquals("(no message)", sanitize(null))
     }
 }

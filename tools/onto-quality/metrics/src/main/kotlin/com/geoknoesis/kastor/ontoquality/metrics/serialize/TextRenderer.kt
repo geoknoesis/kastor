@@ -19,6 +19,11 @@ internal object TextRenderer {
             line(sb, m)
         }
         sb.appendLine()
+        sb.appendLine("[Kastor-adapted (not OQuaRE)]")
+        for (m in report.owl.kastorAdapted.toList().sortedBy { it.metricIri }) {
+            line(sb, m)
+        }
+        sb.appendLine()
         sb.appendLine("[SKOS]")
         for (m in
             listOf(

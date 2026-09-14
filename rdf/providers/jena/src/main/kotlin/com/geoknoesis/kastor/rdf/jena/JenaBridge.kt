@@ -29,35 +29,39 @@ import java.io.StringWriter
 object JenaBridge {
 
     /**
-     * Converts a Jena Model to a Kastor RdfGraph.
+     * Converts a Jena Model to a Kastor RdfGraph with **strict** reads.
+     *
+     * A read that meets a statement Kastor cannot represent (e.g. `xml:lang="en_US"` or an IRI that RFC 3987
+     * rejects) fails with [IllegalArgumentException] instead of silently dropping data. Use
+     * `fromJenaModel(model, strictRead = false)` to skip such statements.
      *
      * @param model The Jena Model to convert
      * @return A Kastor RdfGraph that wraps the Jena Model
      */
-    fun fromJenaModel(model: Model): MutableRdfGraph {
-        return JenaGraph(model, lenientRead = true)
-    }
+    fun fromJenaModel(model: Model): MutableRdfGraph = fromJenaModel(model, strictRead = true)
 
     /**
      * Wraps a Jena Model as a Kastor RdfGraph with an explicit read policy.
      *
      * A wrapped model may contain statements Kastor cannot represent (e.g. `xml:lang="en_US"` or an IRI that
-     * RFC 3987 rejects). With [strictRead] `false` (the default of [fromJenaModel]) reads skip such statements
-     * and log one warning per read; with `true` a read fails with [IllegalArgumentException].
-     * [RdfGraph.size] always counts every statement of the model.
+     * RFC 3987 rejects). With [strictRead] `true` (the default of [fromJenaModel]) a read fails with
+     * [IllegalArgumentException]. With `false` (opt-in lenient mode) reads skip such statements and log one warning
+     * per read, and [RdfGraph.size] counts only the statements reads return, so it always agrees with
+     * [RdfGraph.getTriples] (which makes `size()` a full scan in lenient mode).
      */
     fun fromJenaModel(model: Model, strictRead: Boolean): MutableRdfGraph = JenaGraph(model, lenientRead = !strictRead)
 
     /**
-     * Converts a Jena Graph to a Kastor RdfGraph (lenient reads, see [fromJenaModel]).
+     * Converts a Jena Graph to a Kastor RdfGraph with strict reads (see [fromJenaModel]).
      *
      * @param graph The Jena Graph to convert
      * @return A Kastor RdfGraph that wraps the Jena Graph
      */
-    fun fromJenaGraph(graph: Graph): MutableRdfGraph {
-        val model = ModelFactory.createModelForGraph(graph)
-        return JenaGraph(model, lenientRead = true)
-    }
+    fun fromJenaGraph(graph: Graph): MutableRdfGraph = fromJenaGraph(graph, strictRead = true)
+
+    /** Wraps a Jena Graph with an explicit read policy (see `fromJenaModel(model, strictRead)`). */
+    fun fromJenaGraph(graph: Graph, strictRead: Boolean): MutableRdfGraph =
+        JenaGraph(ModelFactory.createModelForGraph(graph), lenientRead = !strictRead)
 
     /**
      * Converts a Kastor RdfGraph to a Jena Model.

@@ -385,7 +385,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(resourceWrapper.contains("override val requiredContact: Agent by lazy {"))
 
         // Verify object materialization
-        assertTrue(resourceWrapper.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"))"))
+        assertTrue(resourceWrapper.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"), \""))
         assertTrue(resourceWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
         assertTrue(resourceWrapper.contains(".firstOrNull() ?: MaterializationPolicy.missingRequired(\"requiredContact <"), resourceWrapper)
     }

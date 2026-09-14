@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.runtime.delegates
 
 import com.geoknoesis.kastor.gen.runtime.KastorGraphOps
+import com.geoknoesis.kastor.gen.runtime.MaterializationPolicy
 import com.geoknoesis.kastor.gen.runtime.OntoMapper
 import com.geoknoesis.kastor.gen.runtime.RdfBacked
 import com.geoknoesis.kastor.gen.runtime.RdfRef
@@ -15,7 +16,7 @@ fun <T : Any> rdfObject(predicate: Iri, type: KClass<T>): ReadOnlyProperty<RdfBa
   rdfLazy { ref ->
     KastorGraphOps.getObjectValues(ref.rdf.graph, ref.rdf.node, predicate) { child ->
       OntoMapper.materialize(RdfRef(child, ref.rdf.graph), type.java)
-    }.firstOrNull() ?: error("Required object of type ${type.simpleName} for predicate $predicate missing")
+    }.firstOrNull() ?: MaterializationPolicy.missingRequired("object of type ${type.simpleName} <${predicate.value}>")
   }
 
 inline fun <reified T : Any> rdfObjectOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, T?> =

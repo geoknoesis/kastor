@@ -148,7 +148,7 @@ object OntoMapper {
 The factory registry itself is private (a `ConcurrentHashMap`); use the functions below.
 
 **Registration:**
-- `register(type, factory)` — registers the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation. Registering the *same* factory instance again is a no-op; registering a *different* factory for a type that already has one throws `IllegalStateException` (for example when two generated modules claim the same interface), because it would silently change how the whole application materializes that type.
+- `register(type, factory)` — registers the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation. Registering the *same* factory instance again is a no-op; registering a *different* factory for a type that already has one throws `IllegalStateException` (for example when two generated modules claim the same interface), because it would silently change how the whole application materializes that type. **Class reloading:** when the already registered factory was defined by a *different* class loader than the new one (a hot-reload or plugin framework re-defined the wrapper in a new child class loader while `type` stays in a shared parent loader), the new factory replaces the stale one instead of throwing; the replacement is logged at debug level and the old factory, and with it its class loader, is no longer reachable from the registry.
 - `register(type, replace = true, factory)` — replaces an existing factory deliberately (tests, plugins). With `replace = false` it behaves like the two-argument form.
 - `unregister(type)` — removes a factory; returns `true` if one was registered.
 - `isRegistered(type)` / `registeredTypes()` — inspect the registry (a snapshot copy).
@@ -250,6 +250,13 @@ object KastorGraphOps {
     fun getRequiredLiteralValue(graph: RdfGraph, subj: RdfTerm, pred: Iri): Literal
     fun <T: Any> getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, factory: (RdfTerm) -> T): List<T>
     fun getValues(graph: RdfGraph, subj: RdfTerm, pred: Iri): List<RdfTerm>
+
+    // Policy-aware readers: values of an unexpected term kind follow MaterializationPolicy.unexpectedTerm
+    fun getIriValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<Iri>
+    fun getResourceValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<RdfResource>
+    fun getLiteralValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String): List<Literal>
+    fun <T : Any> getObjectValues(graph: RdfGraph, subj: RdfTerm, pred: Iri, property: String, factory: (RdfTerm) -> T): List<T>
+
     fun hasNodeKind(term: RdfTerm, nodeKind: Iri): Boolean
     fun isInstanceOf(graph: RdfGraph, term: RdfTerm, cls: Iri): Boolean
 }
@@ -265,6 +272,18 @@ object KastorGraphOps {
 - `isInstanceOf(graph, term, cls): Boolean` - SHACL `sh:class` test: an `rdf:type` equal to `cls` or a transitive `rdfs:subClassOf` of it; literals are never instances
 
 The last three are used by generated embedded validation.
+
+The overloads taking a `property` label (used in error messages) never drop values silently: a value of an
+unexpected term kind is passed to [`MaterializationPolicy.unexpectedTerm`](#materializationpolicy), which
+throws `MaterializationException` by default and skips the value under `IllTypedValueHandling.SKIP`.
+
+- `getIriValues(graph, subj, pred, property): List<Iri>` - IRI values; blank nodes, literals and triple terms are unexpected
+- `getResourceValues(graph, subj, pred, property): List<RdfResource>` - IRI and blank-node values (`sh:BlankNodeOrIRI`); literals and triple terms are unexpected
+- `getLiteralValues(graph, subj, pred, property): List<Literal>` - literal values; IRIs, blank nodes and triple terms are unexpected
+- `getObjectValues(graph, subj, pred, property, factory): List<T>` - like `getObjectValues` above, but literals and triple terms are unexpected instead of skipped
+
+Generated SHACL wrappers and data-class factories, and wrappers for hand-written `Iri` / `RdfResource`
+members, read through these overloads.
 
 **Usage:**
 ```kotlin
@@ -451,6 +470,7 @@ class MaterializationException(message: String, cause: Throwable? = null) : Ille
 
 Thrown when materializing a domain object fails: a required value is missing, a literal value is ill-typed
 for its member under `IllTypedValueHandling.THROW` (see [MaterializationPolicy](#materializationpolicy)), a
+value has an unexpected term kind (for example a literal where an IRI is expected) under the same policy, a
 nested value could not be converted, a factory threw (wrapped by `KastorGraphOps.getObjectValues`), or an
 eagerly-loaded `NestedMode.DATA_CLASS` snapshot graph is cyclic (the message names the cycle). Because it
 extends `IllegalStateException`, existing `catch (e: IllegalStateException)` blocks still catch it. Earlier
@@ -463,10 +483,12 @@ surface as this exception.
 enum class IllTypedValueHandling { THROW, SKIP }
 
 object MaterializationPolicy {
-    @JvmStatic @Volatile var illTypedValues: IllTypedValueHandling = IllTypedValueHandling.THROW
+    @JvmStatic var illTypedValues: IllTypedValueHandling      // default THROW; see "Scope" below
+    @JvmStatic fun <T> withIllTypedValues(handling: IllTypedValueHandling, block: () -> T): T
 
-    @JvmStatic fun illTyped(literal: Literal, property: String, expected: String): Nothing?  // called by generated code
-    @JvmStatic fun missingRequired(property: String): Nothing                              // called by generated code
+    @JvmStatic fun illTyped(literal: Literal, property: String, expected: String): Nothing?   // called by generated code
+    @JvmStatic fun unexpectedTerm(value: RdfTerm, property: String, expected: String): Nothing? // called by generated code
+    @JvmStatic fun missingRequired(property: String): Nothing                               // called by generated code
 }
 ```
 
@@ -485,12 +507,37 @@ generated for hand-written `@Rdf` interfaces.
 
    For hand-written `@Rdf` wrappers this covers read-only decoded lists, nullable members, non-null members
    and mutable getters, which used to skip such values silently.
-3. **Under `SKIP` the rules combine:** if every value of a required member was skipped, the member counts as
+3. **Values of an unexpected term kind** (a literal for an IRI or object member, an IRI for a literal member)
+   go through `unexpectedTerm` and follow the same handling: `THROW` (default) raises a
+   `MaterializationException` naming the value, the member and the expected kind; `SKIP` leaves the value out
+   and logs a warning. This applies to SHACL-generated wrappers and data-class factories, and to `Iri`,
+   `RdfResource` and IRI-valued `sh:in` enum members of hand-written `@Rdf` interfaces. Literal members of
+   hand-written interfaces (including `String`) read literals only.
+4. **Under `SKIP` the rules combine:** if every value of a required member was skipped, the member counts as
    missing and rule 1 throws.
 
 ```kotlin
 MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP  // e.g. at startup, for messy data
 ```
+
+#### Scope
+
+`illTypedValues` is the process-wide default. `withIllTypedValues(handling) { … }` overrides it for the
+**current thread only** while the block runs, then restores the previous handling; nested scopes restore
+the enclosing value. Tests and request handlers can therefore use a different policy without racing other
+threads.
+
+```kotlin
+val catalog = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+    graph.materialize<Catalog>(node).also { it.title }   // read inside the block: wrappers read lazily
+}
+```
+
+The override is thread-local: it does **not** propagate to other threads or coroutines. Work handed to an
+executor, or a coroutine that resumes on another thread, sees the process-wide default. Because wrapper
+members are read lazily, a value read after the block ends also uses the handling in effect at that time.
+Assigning `illTypedValues` changes the process-wide default; a scope running on the current thread still
+wins.
 
 The generic literal delegates in `com.geoknoesis.kastor.gen.runtime.delegates` apply the same policy:
 
@@ -499,15 +546,40 @@ The generic literal delegates in `com.geoknoesis.kastor.gen.runtime.delegates` a
 - `rdfLiteralOrNull(predicate, decoder)`: the first decoded value or `null`.
 - `rdfLiterals(predicate, decoder)`: all decoded values as a list.
 
-A value the `decoder` rejects (returns `null` for) follows `illTypedValues`. The older fixed-type delegates
-(`rdfInt`, `rdfInts`, …) are unchanged, but generated code no longer uses them.
+A value the `decoder` rejects (returns `null` for) follows `illTypedValues`. Decoders from `XsdLiterals`
+fit directly, e.g. `rdfLiteral(DCTERMS.title, XsdLiterals::string)`.
+
+The fixed-type delegates `rdfString`, `rdfInt`, `rdfDouble` and `rdfBoolean` are **deprecated**: they invent
+a default (`""`, `0`, `0.0`, `false`) when the value is missing instead of throwing. So are `rdfIntOrNull`,
+`rdfDoubleOrNull`, `rdfBooleanOrNull` and the list variants `rdfInts`, `rdfDoubles` and `rdfBooleans`, which
+silently drop values they cannot decode instead of following `MaterializationPolicy`. Each deprecation
+carries a replacement:
+
+| Deprecated | Replacement |
+|---|---|
+| `rdfString(p)` | `rdfLiteral(p, XsdLiterals::string)` |
+| `rdfInt(p)` / `rdfIntOrNull(p)` / `rdfInts(p)` | `rdfLiteral` / `rdfLiteralOrNull` / `rdfLiterals` with `XsdLiterals::int` |
+| `rdfDouble(p)` / `rdfDoubleOrNull(p)` / `rdfDoubles(p)` | `rdfLiteral` / `rdfLiteralOrNull` / `rdfLiterals` with `XsdLiterals::double` |
+| `rdfBoolean(p)` / `rdfBooleanOrNull(p)` / `rdfBooleans(p)` | `rdfLiteral` / `rdfLiteralOrNull` / `rdfLiterals` with `XsdLiterals::boolean` |
+
+Generated code does not use the deprecated delegates. `rdfObject` and `rdfIri` throw
+`MaterializationException` when the required value is missing.
 
 ## Type System
 
 ### Supported Types
 
-- **Hand-written domain interfaces** (`@Rdf(iri = …)`, no `shacl`): `String`, `Int`, `Double`, `Boolean`,
-  `List` of those, a single `@Rdf` domain interface, or `List` of domain interfaces.
+- **Hand-written domain interfaces** (`@Rdf(iri = …)`, no `shacl`), single, nullable or `List` members of:
+  - literal types `String`, `Int`, `Long`, `Float`, `Double`, `Boolean`, `java.math.BigInteger`,
+    `java.math.BigDecimal`, `java.time.LocalDate` and `com.geoknoesis.kastor.rdf.LangString`, read through
+    the policy-aware `XsdLiterals` decoders (`String` members read literals only);
+  - Kotlin `enum class` types, read by constant name, and enums generated from `sh:in`, read through their
+    `from` factory (literal codes or IRIs);
+  - the RDF terms `Iri` and `RdfResource` (IRI or blank node);
+  - other `@Rdf` domain interfaces.
+
+  A missing value of a non-null member throws `MaterializationException`. See the
+  [annotations reference](annotations.md#processing-rules).
 - **SHACL-generated types**: literal types follow the shape's `sh:datatype` — see the
   [type-mapping table](../tutorials/ontology-generation.md#type-mapping) (`xsd:integer` → `BigInteger`,
   `xsd:decimal` → `BigDecimal`, `xsd:date` → `LocalDate`, `rdf:langString` → `LangString`, …).

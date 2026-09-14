@@ -147,6 +147,12 @@ enum class NestedMode {
 | `DATA_CLASS` | `DatasetRecord` (the generated data class) | When you want a fully recursive, self-contained snapshot with no live wrappers anywhere in the object graph. |
 | `IRI_ONLY` | `String` (IRI value) | When you only need the IRI of the related resource, not a materialised sub-object. Avoids recursive loading. |
 
+`NestedMode.IRI_ONLY` cannot be combined with `dataClassImplementsInterface = true` when a shape has object
+members (properties the generated interface types with another generated interface): the data class would
+have to override those members with `String`. Generation fails with an `InvalidConfigurationException` naming
+the members. Use `INTERFACE` or `DATA_CLASS` with `dataClassImplementsInterface = true`, or set
+`dataClassImplementsInterface = false` to keep `IRI_ONLY`.
+
 ### `Prefix`
 
 ```kotlin
@@ -159,7 +165,7 @@ Used inside `@Rdf(prefixes = [Prefix("dcat", "http://www.w3.org/ns/dcat#"), …]
 
 - Put **`@Rdf(iri = …)` on the property line** (preferred). You may still use **`@get:Rdf(iri = …)`** or **`@set:Rdf(iri = …)`** if you need use-site targets; the processor resolves `iri` from **property, then getter, then setter**.
 - **`iri`** may be an absolute IRI or a **QName** (`prefix:local`) when the prefix is bound on **`@file:Rdf`** or on the **interface** `@Rdf(prefixes = …)`.
-- Use **`val`** for read-only generated accessors (delegates). Use **`var`** only when you need a **mutable** wrapper: supported for scalar literals (`String`, `Int`, `Double`, `Boolean`) and a **single object** reference; **`List<…>` stays read-only** even with `var`. Mutation requires a **`MutableRdfGraph`** backing the same handle the wrapper reads from.
+- Use **`val`** for read-only generated accessors (delegates). Use **`var`** only when you need a **mutable** wrapper: supported for single-valued literal members of every [supported literal type](#processing-rules) except enums, and a **single object** reference; **`List<…>`, enum and `Iri` / `RdfResource` members stay read-only** even with `var` (the processor warns and generates a read-only accessor). Mutation requires a **`MutableRdfGraph`** backing the same handle the wrapper reads from.
 
 **Class example:**
 
@@ -230,10 +236,21 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 
 2. **Property processing**
    - Mapped properties are those carrying `@Rdf` with an **`iri`** on the **property**, **getter**, or **setter** (checked in that order).
-   - Supported shapes: literals and literal lists (`String`, `Int`, `Double`, `Boolean`), single object references, and lists of domain objects (`List<YourInterface>`).
+   - Supported shapes: single, nullable or `List` members of the types below.
 
 3. **Type support**
-   - Literals: `String`, `Int`, `Double`, `Boolean` (and `List` of those for multi-valued literals).
+   - Literals: `String`, `Int`, `Long`, `Float`, `Double`, `Boolean`, `java.math.BigInteger`,
+     `java.math.BigDecimal`, `java.time.LocalDate` and `com.geoknoesis.kastor.rdf.LangString`. They are read
+     through the same policy-aware `XsdLiterals` decoders as SHACL-generated code (`rdfLiteral`,
+     `rdfLiteralOrNull`, `rdfLiterals`), so ill-typed values follow `MaterializationPolicy`. `String` members
+     read literals only (their lexical form); IRIs and blank nodes are not read as strings. Mutable
+     accessors write `Long`, `Float`, `BigInteger`, `BigDecimal` and `LocalDate` values with their XSD
+     datatype (`xsd:long`, `xsd:float`, `xsd:integer`, `xsd:decimal`, `xsd:date`).
+   - Enums: a Kotlin `enum class` is read by constant name (a literal whose lexical form is not a constant
+     name is ill-typed); an enum generated from `sh:in` is read through its `from` factory, from literal codes
+     or from IRIs.
+   - RDF terms: `Iri` reads IRI values and `RdfResource` reads IRI and blank-node values; a value of another
+     term kind follows `MaterializationPolicy.unexpectedTerm` (throws by default).
    - Objects: other `@Rdf` domain interfaces.
    - Single values may be declared nullable (`String?`, `Int?`, `Organization?`).
 

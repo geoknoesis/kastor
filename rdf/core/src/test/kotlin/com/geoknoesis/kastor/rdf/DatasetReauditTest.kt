@@ -108,4 +108,26 @@ class DatasetReauditTest {
         assertEquals(1, counting.transactions)
         assertTrue(counting.closed)
     }
+
+    @Test
+    fun `a dataset with only the repository default graph does not expose the repository named graphs through GRAPH`() {
+        val repo = Rdf.memory()
+        try {
+            repo.editDefaultGraph().addTriple(RdfTriple(s, p, string("default")))
+            repo.editGraph(g1).addTriple(RdfTriple(s, p, string("secret")))
+            val dataset = Dataset { defaultGraph(repo) }
+
+            assertEquals(emptyList<String>(), dataset.select(SparqlSelectQuery("SELECT ?o { GRAPH ?g { ?s ?p ?o } }")).map { it.getString("o") })
+            assertEquals(false, dataset.ask(SparqlAskQuery("ask { graph <urn:g1> { ?s ?p ?o } }")))
+            assertEquals(0, dataset.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ?g { ?s ?p ?o } }")).count())
+            // Queries without GRAPH still run against the repository's default graph.
+            assertEquals(listOf("default"), dataset.select(SparqlSelectQuery("SELECT ?o { ?s ?p ?o }")).map { it.getString("o") })
+            // GRAPH inside strings, IRIs and prefixed names is not the keyword.
+            assertTrue(SparqlDatasetClauses.usesGraphPattern("SELECT ?o { GRAPH ?g { ?s ?p ?o } }"))
+            assertTrue(SparqlDatasetClauses.usesGraphPattern("ask{graph<urn:g>{?s ?p ?o}}"))
+            assertEquals(false, SparqlDatasetClauses.usesGraphPattern("PREFIX ex: <urn:GRAPH> SELECT ?graph { ?s ex:GRAPH \"GRAPH\" }"))
+        } finally {
+            repo.close()
+        }
+    }
 }

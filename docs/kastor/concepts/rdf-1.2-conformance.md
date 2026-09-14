@@ -32,10 +32,10 @@ Each row runs against **both** providers, so reports show labels such as `[Jena/
 
 With the pinned corpus (approved rows only):
 
-| Provider | Executed | Skipped | Failed |
-|----------|----------|---------|--------|
-| Jena | 1038 | 32 (unapproved rows) | 0 |
-| RDF4J | 1038 | 187 (155 allowlisted upstream Rio gaps + 32 unapproved rows) | 0 |
+| Provider | Tests | Skipped | Failed |
+|----------|-------|---------|--------|
+| Jena | 1050 | 37 (5 allowlisted, including Jena's `en-us` → `en-US` tag rewrite, + 32 unapproved rows) | 0 |
+| RDF4J | 1050 | 175 (143 allowlisted upstream Rio gaps + 32 unapproved rows) | 0 |
 
 Known provider gaps are listed with a justification per row in `rdf/conformance/src/test/resources/conformance-allowlist.tsv`. Only listed tests may be skipped: an unlisted failure fails the build, and so does a listed test that starts passing.
 

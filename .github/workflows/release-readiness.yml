@@ -24,14 +24,14 @@ jobs:
       KASTOR_SKIP_EMBEDDING_TESTS: "1"
       KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test the report gate
         run: python scripts/test_check_test_results.py
       - name: Test the performance report gate
         run: python scripts/test_check_performance.py
       - name: Test the staged publication gate
         run: python scripts/test_check_staged_publications.py
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -58,18 +58,18 @@ jobs:
       - name: Audit pinned dependency versions
         run: python scripts/audit-dependencies.py
       - name: Verify executed test counts and skips
-        # Floors: ~90% of executed counts with the pinned corpora (overall ~3,750, RDF corpus 1,898, SHACL module 282 on 2026-09-14);
+        # Floors: ~90% of executed counts with the pinned corpora (overall ~3,910, RDF corpus 1,899, SHACL module 318 on 2026-09-14);
         # the W3C SHACL suite must run from the pinned corpus (166 cases, all executed on 2026-09-14), not the 4-case bundled fixture.
         shell: bash
         run: |
-          python scripts/check-test-results.py build/modules --minimum 3350 --skip-allowlist scripts/test-skip-allowlist.json
+          python scripts/check-test-results.py build/modules --minimum 3500 --skip-allowlist scripts/test-skip-allowlist.json
           python scripts/check-test-results.py build/modules/rdf/conformance/test-results/test --minimum 1700 --skip-allowlist scripts/test-skip-allowlist.json
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 250 \
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test --minimum 285 \
             --require-suite "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150" \
             --skip-allowlist scripts/test-skip-allowlist.json
       - name: Retain staged artifacts and reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: staged-release-${{ matrix.os }}
           path: |
@@ -85,8 +85,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -97,7 +97,7 @@ jobs:
         run: python scripts/check-staged-publications.py
       - name: Retain signing evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: local-signing-evidence
           path: |

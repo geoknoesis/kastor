@@ -39,7 +39,8 @@ enum class ExplanationModelPreset {
  * Reliability: every LLM request is bounded by [requestTimeout]; transient failures (timeouts, HTTP 408 / 429 / 5xx,
  * connection errors) are retried up to [maxRetries] times, waiting [retryBackoff] × 2^attempt with jitter (or the
  * provider's `Retry-After`). Other failures are not retried. A whole enrichment run is bounded by
- * [maxTotalDuration], and [circuitBreakerThreshold] consecutive identical non-retryable failures stop the run.
+ * [maxTotalDuration], and [circuitBreakerThreshold] consecutive identical failures (non-retryable, or retryable with
+ * retries exhausted) stop the run.
  */
 data class LlmExplanationConfig @JvmOverloads constructor(
     val provider: LlmProvider,
@@ -59,7 +60,10 @@ data class LlmExplanationConfig @JvmOverloads constructor(
     val retryBackoff: Duration = Duration.ofSeconds(1),
     /** Upper bound for a whole enrichment run (all batches, retries and waits); later batches are recorded as failures. */
     val maxTotalDuration: Duration = Duration.ofMinutes(10),
-    /** Consecutive identical non-retryable failures (e.g. HTTP 401) after which the remaining batches are not sent. */
+    /**
+     * Consecutive identical batch failures — non-retryable (e.g. HTTP 401, `insufficient_quota`) or retryable with retries
+     * exhausted (e.g. HTTP 503 throughout) — after which the remaining batches are not sent.
+     */
     val circuitBreakerThreshold: Int = 3,
 ) {
     init {

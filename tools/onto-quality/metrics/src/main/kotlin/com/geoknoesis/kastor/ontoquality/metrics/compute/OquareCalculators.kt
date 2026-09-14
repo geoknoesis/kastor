@@ -4,13 +4,15 @@ import com.geoknoesis.kastor.ontoquality.metrics.KastorMetricsVocab
 import com.geoknoesis.kastor.ontoquality.metrics.MetricValue
 
 /**
- * OQuaRE structural metrics.
+ * OQuaRE structural metrics and the Kastor-adapted variants of three of them.
  *
  * **Source.** Formulas follow the OQuaRE metric table of Duque-Ramos et al. (2014), *Evaluating the Good
  * Ontology Design Guideline (GoodOD) with the ontology quality requirements and evaluation method and
- * metrics (OQuaRE)*, PLoS ONE 9(8), https://doi.org/10.1371/journal.pone.0104463, as operationalised by
- * the reference implementation [tecnomod-um/oquare-metrics](https://github.com/tecnomod-um/oquare-metrics).
- * Where the paper leaves an RDF-level choice open, the interpretation used here is stated per metric.
+ * metrics (OQuaRE)*, PLoS ONE 9(8), https://doi.org/10.1371/journal.pone.0104463 (table and scale reproduced in
+ * Duque-Ramos et al. 2016, J. Biomed. Semantics 7:63, Tables 2 and 4). Where the paper leaves an RDF-level choice
+ * open, the interpretation used here is stated per metric. Metrics reported under an OQuaRE name use the published
+ * definition; `NOCOntoKastor`, `CBOOntoKastor` and `TMOntoKastor` are Kastor adaptations with their own names and
+ * bands, and are not OQuaRE metrics.
  *
  * **Notation** (all over the *asserted* graph, after namespace exclusion):
  * - `C` named classes; `Root` classes with no named (non-cycle) superclass, i.e. direct children of owl:Thing;
@@ -61,15 +63,11 @@ internal object OquareCalculators {
         )
     }
 
-    /**
-     * NOCOnto = Σ|Sub_C| / |{C : Sub_C ≠ ∅}| — mean number of direct subclasses of the classes that have
-     * subclasses (the class fan-out). Dividing by the non-root classes, as a literal reading of the OQuaRE table
-     * does, makes NOCOnto identical to CBOOnto whenever both only count subclass edges.
-     */
+    /** NOCOnto = Σ|Sub_C| / (|C| − |Root|) — published OQuaRE: direct subclasses per class, excluding owl:Thing's children. */
     fun numberOfChildren(q: IntermediateQuantities, scores: Boolean): MetricValue {
-        val parents = q.subClassChildrenOf.values.filter { it.isNotEmpty() }
-        if (parents.isEmpty()) return notComputable("numberOfChildren", "NOCOnto", "no class has subclasses")
-        val mean = parents.sumOf { it.size }.toDouble() / parents.size
+        val denom = nonRootClasses(q)
+        if (denom <= 0) return notComputable("numberOfChildren", "NOCOnto", "no non-root classes")
+        val mean = q.subClassChildrenOf.values.sumOf { it.size }.toDouble() / denom
         return MetricValue(
             metricIri = KastorMetricsVocab.numberOfChildren,
             oquareName = "NOCOnto",
@@ -80,19 +78,54 @@ internal object OquareCalculators {
         )
     }
 
-    /**
-     * CBOOnto = Σ|Sup_C ∪ Assoc_C| / |C| — mean number of classes each class is coupled to: its direct
-     * superclasses plus the classes it is associated with through properties (`Assoc_C` in the notation above).
-     */
+    /** CBOOnto = Σ|Sup_C| / (|C| − |Root|) — published OQuaRE: direct superclasses per class, excluding owl:Thing's children. */
     fun couplingBetweenObjects(q: IntermediateQuantities, scores: Boolean): MetricValue {
-        if (q.namedClasses.isEmpty()) return notComputable("couplingBetweenObjects", "CBOOnto", "no classes")
-        val related = q.namedClasses.sumOf { q.couplingsOf[it]?.size ?: 0 }
-        val mean = related.toDouble() / q.namedClasses.size
+        val denom = nonRootClasses(q)
+        if (denom <= 0) return notComputable("couplingBetweenObjects", "CBOOnto", "no non-root classes")
+        val mean = q.superClassesOf.values.sumOf { it.size }.toDouble() / denom
         return MetricValue(
             metricIri = KastorMetricsVocab.couplingBetweenObjects,
             oquareName = "CBOOnto",
             rawValue = mean,
             score = if (scores) OquareScoring.scoreCBO(mean) else null,
+            computable = true,
+            notes = null,
+        )
+    }
+
+    /**
+     * NOCOntoKastor = Σ|Sub_C| / |{C : Sub_C ≠ ∅}| — Kastor adaptation (not OQuaRE): mean number of direct subclasses
+     * of the classes that have subclasses (the class fan-out). Published NOCOnto divides by the non-root classes, which
+     * makes it equal to CBOOnto whenever both count only subclass edges. Scored with the NOCOnto bands.
+     */
+    fun numberOfChildrenKastor(q: IntermediateQuantities, scores: Boolean): MetricValue {
+        val parents = q.subClassChildrenOf.values.filter { it.isNotEmpty() }
+        if (parents.isEmpty()) return notComputable("numberOfChildrenKastor", "NOCOntoKastor", "no class has subclasses")
+        val mean = parents.sumOf { it.size }.toDouble() / parents.size
+        return MetricValue(
+            metricIri = KastorMetricsVocab.numberOfChildrenKastor,
+            oquareName = "NOCOntoKastor",
+            rawValue = mean,
+            score = if (scores) OquareScoring.scoreNOCKastor(mean) else null,
+            computable = true,
+            notes = null,
+        )
+    }
+
+    /**
+     * CBOOntoKastor = Σ|Sup_C ∪ Assoc_C| / |C| — Kastor adaptation (not OQuaRE): mean number of classes each class is
+     * coupled to, its direct superclasses plus the classes it is associated with through properties (`Assoc_C`).
+     * Scored with the CBOOnto bands.
+     */
+    fun couplingBetweenObjectsKastor(q: IntermediateQuantities, scores: Boolean): MetricValue {
+        if (q.namedClasses.isEmpty()) return notComputable("couplingBetweenObjectsKastor", "CBOOntoKastor", "no classes")
+        val related = q.namedClasses.sumOf { q.couplingsOf[it]?.size ?: 0 }
+        val mean = related.toDouble() / q.namedClasses.size
+        return MetricValue(
+            metricIri = KastorMetricsVocab.couplingBetweenObjectsKastor,
+            oquareName = "CBOOntoKastor",
+            rawValue = mean,
+            score = if (scores) OquareScoring.scoreCBOKastor(mean) else null,
             computable = true,
             notes = null,
         )
@@ -266,19 +299,38 @@ internal object OquareCalculators {
     }
 
     /**
-     * TMOnto = Σ|Sup_C| / |C_DP| over classes C_DP with more than one direct superclass (mean number of
-     * direct parents of multiply-inheriting classes; ≥ 2 whenever defined). A hierarchy without multiple
-     * inheritance yields 0, the only value scored 5 — see [OquareScoring.scoreTM].
+     * TMOnto = |C_DP| / |C| — published OQuaRE: the share of classes with more than one direct superclass. The value
+     * is at most 1, so the published band (≤ 2 → 5) always scores 5; see [tanglednessKastor] for a variant that
+     * separates tangled from untangled hierarchies.
      */
     fun tangledness(q: IntermediateQuantities, scores: Boolean): MetricValue {
         if (q.namedClasses.isEmpty()) return notComputable("tangledness", "TMOnto", "no classes")
-        val tangled = q.superClassesOf.values.filter { it.size > 1 }
-        val value = if (tangled.isEmpty()) 0.0 else tangled.sumOf { it.size }.toDouble() / tangled.size
+        val tangled = q.superClassesOf.values.count { it.size > 1 }
+        val value = tangled.toDouble() / q.namedClasses.size
         return MetricValue(
             metricIri = KastorMetricsVocab.tangledness,
             oquareName = "TMOnto",
             rawValue = value,
             score = if (scores) OquareScoring.scoreTM(value) else null,
+            computable = true,
+            notes = if (tangled == 0) "no classes with multiple direct superclasses" else null,
+        )
+    }
+
+    /**
+     * TMOntoKastor = Σ|Sup_C| / |C_DP| over classes C_DP with more than one direct superclass — Kastor adaptation
+     * (not OQuaRE): mean number of direct parents of multiply-inheriting classes (≥ 2 whenever defined). A hierarchy
+     * without multiple inheritance yields 0, the only value scored 5 — see [OquareScoring.scoreTMKastor].
+     */
+    fun tanglednessKastor(q: IntermediateQuantities, scores: Boolean): MetricValue {
+        if (q.namedClasses.isEmpty()) return notComputable("tanglednessKastor", "TMOntoKastor", "no classes")
+        val tangled = q.superClassesOf.values.filter { it.size > 1 }
+        val value = if (tangled.isEmpty()) 0.0 else tangled.sumOf { it.size }.toDouble() / tangled.size
+        return MetricValue(
+            metricIri = KastorMetricsVocab.tanglednessKastor,
+            oquareName = "TMOntoKastor",
+            rawValue = value,
+            score = if (scores) OquareScoring.scoreTMKastor(value) else null,
             computable = true,
             notes = if (tangled.isEmpty()) "no classes with multiple direct superclasses" else null,
         )

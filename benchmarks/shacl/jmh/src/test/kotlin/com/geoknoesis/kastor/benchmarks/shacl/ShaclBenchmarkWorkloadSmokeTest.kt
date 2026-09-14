@@ -28,6 +28,16 @@ class ShaclBenchmarkWorkloadSmokeTest {
     }
 
     @Test
+    fun `monotone recursion and targetWhere workloads conform`() {
+        val validator = ShaclBenchmarkSupport.nativeValidator()
+        val data = ComplexShapesBenchmarkSupport.data(1000)
+        for (workload in listOf("monotoneRecursion", "targetWhere")) {
+            val report = validator.validate(data, ComplexShapesBenchmarkSupport.shapes(workload))
+            assertTrue(report.isValid, "$workload: ${report.violations.take(3)}")
+        }
+    }
+
+    @Test
     fun `core scaling and bundled workloads validate`() {
         val validator = ShaclBenchmarkSupport.nativeValidator()
         validator.validate(CoreBenchmarkSupport.validationData(1000), CoreBenchmarkSupport.validationShapes())

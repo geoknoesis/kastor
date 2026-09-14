@@ -590,6 +590,7 @@ public final class com/geoknoesis/kastor/rdf/Rdf {
 	public final fun parse (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parse (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parse (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun parse (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public static synthetic fun parse$default (Lcom/geoknoesis/kastor/rdf/Rdf;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Lcom/geoknoesis/kastor/rdf/RdfFormat;)V
 	public final fun parseDataset (Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/io/InputStream;Lcom/geoknoesis/kastor/rdf/RdfFormat;Ljava/lang/String;)V

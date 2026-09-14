@@ -222,6 +222,7 @@ public object GenerationNames {
     private fun valueKey(p: ShaclProperty): List<Any?> = when {
         p.enumName != null -> listOf("enum", p.enumName)
         p.targetClass != null -> listOf("class", p.targetClass)
+        TypeMapper.isResourceReference(p) -> listOf("resource")
         TypeMapper.isIriReference(p) -> listOf("iri")
         else -> listOf("literal", TypeMapper.literalMapping(p.datatype).type.toString())
     }
@@ -230,8 +231,10 @@ public object GenerationNames {
     private fun conjoin(a: ShaclProperty, b: ShaclProperty): ShaclProperty {
         fun hi(x: Int?, y: Int?): Int? = if (x == null) y else if (y == null) x else kotlin.comparisons.maxOf(x, y)
         fun lo(x: Int?, y: Int?): Int? = if (x == null) y else if (y == null) x else kotlin.comparisons.minOf(x, y)
-        fun hi(x: Double?, y: Double?): Double? = if (x == null) y else if (y == null) x else kotlin.comparisons.maxOf(x, y)
-        fun lo(x: Double?, y: Double?): Double? = if (x == null) y else if (y == null) x else kotlin.comparisons.minOf(x, y)
+        fun hi(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =
+            if (x == null) y else if (y == null) x else if (x >= y) x else y
+        fun lo(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =
+            if (x == null) y else if (y == null) x else if (x <= y) x else y
         val inValues = when {
             a.inValues == null -> b.inValues
             b.inValues == null -> a.inValues
@@ -259,6 +262,10 @@ public object GenerationNames {
             qualifiedValueShape = a.qualifiedValueShape ?: b.qualifiedValueShape,
             qualifiedMinCount = a.qualifiedMinCount ?: b.qualifiedMinCount,
             qualifiedMaxCount = a.qualifiedMaxCount ?: b.qualifiedMaxCount,
+            severity = a.severity ?: b.severity,
+            message = a.message ?: b.message,
+            // The conjunction is only switched off when every declaration is.
+            deactivated = a.deactivated && b.deactivated,
         )
     }
 

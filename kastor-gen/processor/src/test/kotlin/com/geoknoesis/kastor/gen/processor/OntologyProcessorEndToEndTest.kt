@@ -255,8 +255,8 @@ class OntologyProcessorEndToEndTest {
         assertTrue(simpleCatalogWrapper.contains("Iri(\"http://purl.org/dc/terms/description\")"))
 
         // Verify that generated wrapper uses correct KastorGraphOps methods
-        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
-        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"))"))
+        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"), \""))
+        assertTrue(simpleCatalogWrapper.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"), \""))
     }
 
     @Test

@@ -12,28 +12,9 @@ PowerShell:
 .\gradlew.bat :tools:onto-quality:test
 ```
 
-Gradle HTML summary (machine-local): [`build/modules/tools/onto-quality/reports/tests/test/index.html`](../../../build/modules/tools/onto-quality/reports/tests/test/index.html) (path relative to repo root).
+The Gradle HTML report is not checked in (it lives under the git-ignored build directory). After running the task above, open `build/modules/tools/onto-quality/reports/tests/test/index.html` (path relative to the repository root); JUnit XML results are in `build/modules/tools/onto-quality/test-results/test/`.
 
-## Last verified run
-
-| Field | Value |
-|--------|--------|
-| Timestamp (build) | **2026-05-16T00:16:29Z–00:16:37Z** (UTC, from JUnit XML `timestamp`) |
-| Task | `:tools:onto-quality:test` |
-| Gradle | `--rerun-tasks` + `--no-daemon` |
-| Overall | **PASS** (`BUILD SUCCESSFUL`) |
-
-### Aggregates (from JUnit `testsuite`)
-
-| Suite | Tests | Failures | Errors | Skipped |
-|-------|------:|---------:|-------:|--------:|
-| `ModernEngineeringTest` | 12 | 0 | 0 | 0 |
-| `ModernRdf12Test` | 3 | 0 | 0 | 0 |
-| `OopsCalibrationTest` | 25 | 0 | 0 | 1 |
-| `OopsCalibrationTest.SemanticTierAfterEnrichment` | 4 | 0 | 0 | 0 |
-| `QualityCheckerTest` | 1 | 0 | 0 | 0 |
-| `OopsBenchmarkTest` | 2 | 0 | 0 | 2 |
-| **Totals** | **47** | **0** | **0** | **3** |
+This file does not record per-run test counts; they change as tests are added, so read them from the generated report.
 
 ## Suite notes
 

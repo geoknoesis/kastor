@@ -106,18 +106,20 @@ data class ExplainedQualityReport @JvmOverloads constructor(
         }
 }
 
-private val MARKDOWN_SPECIAL = setOf('\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '!', '|', '~', '>', '<', '&', '"')
+private val MARKDOWN_SPECIAL = setOf('\\', '`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '!', '|', '~', '>', '<', '&', '"', '@')
 
 /**
  * Renders untrusted text as a single inline Markdown run: every CommonMark-significant ASCII punctuation
  * character is backslash-escaped (so `[x](y)`, `![x](y)`, `<a>`, `<http://…>`, emphasis and headings cannot
- * form), line breaks and other control characters become spaces, and bare-URL autolinks (`http://`, `www.`)
- * are broken so GFM does not linkify them.
+ * form), line breaks and other control characters become spaces, bare-URL autolinks (`http://`, `www.`) are broken
+ * and `@` is escaped so GFM does not linkify URLs or e-mail addresses, and bidirectional-text controls are rendered
+ * visibly as `\uXXXX` (see [isBidiControl]).
  */
 internal fun escapeMarkdownInline(text: String): String {
     val sb = StringBuilder(text.length + 16)
     for (ch in text) {
         when {
+            isBidiControl(ch) -> sb.append(visibleEscape(ch))
             ch == '\r' || ch == '\n' || ch == '\u2028' || ch == '\u2029' -> sb.append(' ')
             ch.isISOControl() -> sb.append(' ')
             ch in MARKDOWN_SPECIAL -> sb.append('\\').append(ch)
@@ -134,19 +136,30 @@ internal fun escapeMarkdownInline(text: String): String {
 
 /**
  * Makes untrusted text safe to print on a terminal: C0 and C1 control characters (U+0000–U+001F, U+007F–U+009F)
- * other than newline and tab — ESC, CSI, BEL, CR, … — are rendered visibly as `\uXXXX`, so ANSI / OSC escape
- * sequences cannot recolour, clear, retitle or overwrite terminal output.
+ * other than newline and tab — ESC, CSI, BEL, CR, … — and bidirectional-text controls ([isBidiControl]) are rendered
+ * visibly as `\uXXXX`, so ANSI / OSC escape sequences cannot recolour, clear, retitle or overwrite terminal output and
+ * bidi overrides cannot visually reorder it.
  */
 internal fun sanitizeTerminalText(text: String): String {
     if (text.none(::isUnsafeTerminalChar)) return text
     val sb = StringBuilder(text.length + 16)
     for (ch in text) {
-        if (isUnsafeTerminalChar(ch)) sb.append("\\u").append("%04X".format(ch.code)) else sb.append(ch)
+        if (isUnsafeTerminalChar(ch)) sb.append(visibleEscape(ch)) else sb.append(ch)
     }
     return sb.toString()
 }
 
-private fun isUnsafeTerminalChar(ch: Char): Boolean = ch.isISOControl() && ch != '\n' && ch != '\t'
+private fun isUnsafeTerminalChar(ch: Char): Boolean = (ch.isISOControl() && ch != '\n' && ch != '\t') || isBidiControl(ch)
 
-/** Code spans cannot contain backticks or line breaks; strip them. */
-private fun codeSpanSafe(text: String): String = text.filter { it != '`' && !it.isISOControl() }
+/**
+ * Unicode bidirectional formatting characters that can reorder how surrounding text is displayed ("Trojan Source"):
+ * embeddings and overrides U+202A–U+202E, isolates U+2066–U+2069, and the implicit marks LRM U+200E, RLM U+200F
+ * and ALM U+061C.
+ */
+internal fun isBidiControl(ch: Char): Boolean =
+    ch in '\u202A'..'\u202E' || ch in '\u2066'..'\u2069' || ch == '\u200E' || ch == '\u200F' || ch == '\u061C'
+
+private fun visibleEscape(ch: Char): String = "\\u" + "%04X".format(ch.code)
+
+/** Code spans cannot contain backticks, line breaks or bidi controls; strip them. */
+private fun codeSpanSafe(text: String): String = text.filter { it != '`' && !it.isISOControl() && !isBidiControl(it) }

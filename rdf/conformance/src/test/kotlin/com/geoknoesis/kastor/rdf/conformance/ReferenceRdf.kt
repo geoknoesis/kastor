@@ -36,6 +36,27 @@ data class KastorQuad(val graph: String?, val triple: RdfTriple)
  */
 object ReferenceRdf {
 
+    /**
+     * Datatype prefix standing in for a language tag. Jena canonicalises tag case whenever it creates a
+     * language-tagged node (`en-gb` becomes `en-GB`), which would hide tag-case bugs on both sides of the
+     * comparison, so language-tagged literals are compared as typed literals whose datatype spells the tag (and
+     * base direction) exactly as written.
+     */
+    private const val LANG_TAG_DATATYPE = "urn:kastor:conformance:langtag:"
+
+    /** Language-tagged literal with its tag (and direction) spelled exactly, see [LANG_TAG_DATATYPE]. */
+    fun exactLangLiteral(lexical: String, tag: String, direction: String?): Node =
+        NodeFactory.createLiteralDT(
+            lexical,
+            TypeMapper.getInstance().getSafeTypeByName(LANG_TAG_DATATYPE + tag + (direction?.let { "--$it" } ?: "")),
+        )
+
+    /** RIOT node factory that keeps language tags exactly as they appear in the expected file. */
+    private class ExactLangTagFactory : org.apache.jena.riot.system.FactoryRDFStd() {
+        override fun createLangLiteral(lexical: String, langTag: String): Node = exactLangLiteral(lexical, langTag, null)
+        override fun createLangDirLiteral(lexical: String, langTag: String, direction: String): Node = exactLangLiteral(lexical, langTag, direction)
+    }
+
     /** Parses [path] with Jena RIOT into a dataset of raw nodes. Triple formats fill the default graph. */
     fun parse(path: Path, format: TestFormat, base: String?): DatasetGraph {
         val lang = when (format) {
@@ -45,10 +66,33 @@ object ReferenceRdf {
             TestFormat.N_QUADS -> Lang.NQUADS
         }
         val dataset = DatasetGraphFactory.create()
-        val builder = RDFParser.source(path).lang(lang)
+        val builder = RDFParser.source(path).lang(lang).factory(ExactLangTagFactory())
         if (base != null) builder.base(base)
         builder.parse(dataset)
         return dataset
+    }
+
+    /**
+     * Stable fingerprint of how [actual] differs from [expected]: the quads only in one of them, with blank nodes
+     * anonymised, as a multiset difference in both directions, hashed. Independent of blank-node labels and quad order.
+     */
+    fun mismatchFingerprint(expected: DatasetGraph, actual: DatasetGraph): String {
+        fun lines(dataset: DatasetGraph): Map<String, Int> {
+            val out = StringWriter()
+            RDFDataMgr.write(out, dataset, Lang.NQUADS)
+            return out.toString().lineSequence().filter { it.isNotBlank() }
+                .map { it.replace(Regex("_:[A-Za-z0-9_.\\-]+"), "_:b") }
+                .groupingBy { it }.eachCount()
+        }
+        val want = lines(expected)
+        val got = lines(actual)
+        val diff = StringBuilder()
+        for (line in (want.keys + got.keys).sorted()) {
+            val delta = (got[line] ?: 0) - (want[line] ?: 0)
+            if (delta != 0) diff.append(if (delta < 0) "-" else "+").append(Math.abs(delta)).append(' ').append(line).append('\n')
+        }
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(diff.toString().toByteArray(Charsets.UTF_8))
+        return digest.take(8).joinToString("") { "%02x".format(it) }
     }
 
     /** Builds a dataset of Jena nodes from provider output. */
@@ -79,8 +123,8 @@ object ReferenceRdf {
             NodeFactory.createURI(term.triple.predicate.value),
             node(term.triple.obj),
         )
-        is LangString -> term.direction?.let { NodeFactory.createLiteralDirLang(term.lexical, term.lang, TextDirection.create(it.token)) }
-            ?: NodeFactory.createLiteralLang(term.lexical, term.lang)
+        // Tag spelled exactly as the provider produced it (Jena's lang-literal factory would canonicalise its case).
+        is LangString -> exactLangLiteral(term.lexical, term.lang, term.direction?.token)
         is Literal -> NodeFactory.createLiteralDT(term.lexical, TypeMapper.getInstance().getSafeTypeByName(term.datatype.value))
         else -> throw IllegalArgumentException("Unsupported term ${term.javaClass}")
     }

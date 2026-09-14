@@ -116,7 +116,7 @@ kastor-m:numberOfAncestorClasses
 kastor-m:numberOfChildren
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of children" ;
-    rdfs:comment   "Mean number of direct subclasses of the classes that have subclasses. Formula: sum(|direct-subclasses(C)|) / |classes with at least one direct subclass|. Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
+    rdfs:comment   "Mean number of direct subclasses per non-root class (published OQuaRE definition). Formula: sum(|direct-subclasses(C)|) / (|classes| - |root classes|). Scored > 12 -> 1, (8, 12] -> 2, (6, 8] -> 3, (3, 6] -> 4, <= 3 -> 5. Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NOCOnto .
@@ -124,7 +124,7 @@ kastor-m:numberOfChildren
 kastor-m:couplingBetweenObjects
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "coupling between objects" ;
-    rdfs:comment   "Mean number of related classes per class: direct superclasses plus classes associated through a property (rdfs:range of a property whose rdfs:domain is C, or the class filler of a restriction on C). Formula: sum(|superclasses(C) union associated(C)|) / |classes|. Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
+    rdfs:comment   "Mean number of direct superclasses per non-root class (published OQuaRE definition). Formula: sum(|direct-superclasses(C)|) / (|classes| - |root classes|). Scored > 8 -> 1, (6, 8] -> 2, (4, 6] -> 3, (2, 4] -> 4, <= 2 -> 5. Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:CBOOnto .
@@ -212,10 +212,39 @@ kastor-m:propertiesRichness
 kastor-m:tangledness
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "tangledness" ;
-    rdfs:comment   "Mean number of direct superclasses of the classes that have more than one direct superclass; 0 when there is no multiple inheritance. Scored 0 -> 5, (0, 2] -> 4, (2, 4] -> 3, (4, 8] -> 2, > 8 -> 1. Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
+    rdfs:comment   "Share of classes with more than one direct superclass (published OQuaRE definition). Formula: |classes with more than one direct superclass| / |classes|. Scored > 8 -> 1, (6, 8] -> 2, (4, 6] -> 3, (2, 4] -> 4, <= 2 -> 5; the value never exceeds 1, so it always scores 5 (see kastor-m:tanglednessKastor). Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:TMOnto .
+
+# -----------------------------------------------------------------------------
+# Kastor-adapted variants. NOT OQuaRE metrics: own IRIs, names and score bands
+# (kastor-m:KastorAdaptedScoring); only skos:related to the OQuaRE concept.
+# -----------------------------------------------------------------------------
+
+kastor-m:numberOfChildrenKastor
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "number of children (Kastor-adapted, NOCOntoKastor)" ;
+    rdfs:comment   "Kastor adaptation, not OQuaRE. Mean number of direct subclasses of the classes that have subclasses (class fan-out). Formula: sum(|direct-subclasses(C)|) / |classes with at least one direct subclass|. Scored with the NOCOnto bands: > 12 -> 1, (8, 12] -> 2, (6, 8] -> 3, (3, 6] -> 4, <= 3 -> 5." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:related   kastor-m-oquare:NOCOnto .
+
+kastor-m:couplingBetweenObjectsKastor
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "coupling between objects (Kastor-adapted, CBOOntoKastor)" ;
+    rdfs:comment   "Kastor adaptation, not OQuaRE. Mean number of related classes per class: direct superclasses plus classes associated through a property (rdfs:range of a property whose rdfs:domain is C, or the class filler of a restriction on C). Formula: sum(|superclasses(C) union associated(C)|) / |classes|. Scored with the CBOOnto bands: > 8 -> 1, (6, 8] -> 2, (4, 6] -> 3, (2, 4] -> 4, <= 2 -> 5." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:related   kastor-m-oquare:CBOOnto .
+
+kastor-m:tanglednessKastor
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "tangledness (Kastor-adapted, TMOntoKastor)" ;
+    rdfs:comment   "Kastor adaptation, not OQuaRE. Mean number of direct superclasses of the classes that have more than one direct superclass; 0 when there is no multiple inheritance. Scored 0 -> 5, (0, 2] -> 4, (2, 4] -> 3, (4, 8] -> 2, > 8 -> 1." ;
+    rdfs:domain    kastor-m:MetricsReport ;
+    rdfs:range     xsd:decimal ;
+    skos:related   kastor-m-oquare:TMOnto .
 
 # =============================================================================
 #                  OQuaRE PROVENANCE CONCEPTS
@@ -307,3 +336,12 @@ kastor-m-oquare:DuqueRamos2014Scoring
     rdfs:label   "OQuaRE 1–5 scoring (Duque-Ramos 2014)" ;
     rdfs:comment "Maps OQuaRE metric values to 1–5 scores per Duque-Ramos et al. 2014, Table 3. 1 = not acceptable, 3 = minimally acceptable, 5 = exceeds requirements. Calibrated for biomedical ontologies; may misfire on very small or foundational ontologies." ;
     dct:source   <https://doi.org/10.1371/journal.pone.0104463> .
+
+# =============================================================================
+#                  KASTOR-ADAPTED SCORING SCHEME
+# =============================================================================
+
+kastor-m:KastorAdaptedScoring
+    a            kastor-m:ScoringScheme ;
+    rdfs:label   "Kastor-adapted 1–5 scoring" ;
+    rdfs:comment "Score bands of the Kastor-adapted variants NOCOntoKastor and CBOOntoKastor (the OQuaRE NOCOnto / CBOOnto bands applied to the adapted formulas) and TMOntoKastor (0 -> 5, (0, 2] -> 4, (2, 4] -> 3, (4, 8] -> 2, > 8 -> 1). Not comparable with OQuaRE scores." .

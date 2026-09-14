@@ -20,7 +20,8 @@ object ComplexShapesBenchmarkSupport {
 
   /** Workload names accepted by [shapes]. */
   @JvmField
-  val WORKLOADS = listOf("recursiveNode", "inlineShapes", "logical", "qualified", "complexPaths")
+  val WORKLOADS =
+      listOf("recursiveNode", "inlineShapes", "logical", "qualified", "complexPaths", "monotoneRecursion", "targetWhere")
 
   /** People linked by `ex:knows` chains, `ex:parent` trees and typed digits. */
   @JvmStatic
@@ -76,6 +77,20 @@ object ComplexShapesBenchmarkSupport {
                 sh:property [ sh:path [ sh:oneOrMorePath ex:parent ] ; sh:class ex:Person ] ;
                 sh:property [ sh:path ( ex:knows [ sh:zeroOrOnePath ex:knows ] ) ; sh:nodeKind sh:IRI ] ;
                 sh:property [ sh:path [ sh:alternativePath ( ex:name ex:email ) ] ; sh:minCount 1 ] .
+              """
+          // Recursion through sh:or on every person: solved as a greatest fixpoint from recorded dependencies.
+          "monotoneRecursion" ->
+              """
+              ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
+                sh:property [ sh:path ex:knows ;
+                              sh:or ( [ sh:property [ sh:path ex:phone ; sh:minCount 1 ] ] ex:PersonShape ) ] .
+              """
+          // sh:targetWhere over every data node; the membership shape's sh:nodeKind excludes literal candidates.
+          "targetWhere" ->
+              """
+              ex:ContactShape a sh:NodeShape ; sh:targetWhere ex:NamedResource ;
+                sh:property [ sh:path ex:email ; sh:minCount 1 ] .
+              ex:NamedResource a sh:NodeShape ; sh:nodeKind sh:IRI ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .
               """
           else -> error("Unknown workload '$workload'; expected one of $WORKLOADS")
         }

@@ -392,7 +392,7 @@ property("http://example.org/score") {
 
 #### Precision Constraints
 
-> **Not available.** `totalDigits` and `fractionDigits` are deprecated at `ERROR` level and emit nothing: `sh:totalDigits` / `sh:fractionDigits` are not defined by SHACL 1.0 or SHACL 1.2, so no SHACL validator enforces them.
+> **Not available.** `totalDigits` and `fractionDigits` are deprecated at `ERROR` level: `sh:totalDigits` / `sh:fractionDigits` are not defined by SHACL 1.0 or SHACL 1.2, so no SHACL validator enforces them. They are kept only for binary compatibility. The getters return `null`, and **setting either one throws `UnsupportedOperationException`**, so code compiled against an older version fails loudly instead of silently losing the limit.
 
 To limit digits, constrain the lexical form with `pattern` (or use a SPARQL constraint):
 
@@ -1080,7 +1080,7 @@ if (!report.isValid) {
 }
 ```
 
-`report.isValid` follows SHACL `sh:conforms`: it is `false` as soon as **any** result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists. Use `report.hasViolations` when warnings and info results should not block (it is `true` only for Violation/Error severities).
+`report.isValid` follows SHACL `sh:conforms`: it is `false` as soon as **any** result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists. Use `report.hasViolations` when warnings and info results should not block (it is `true` only for Violation/Error severities). With the native engine you can also choose which severities block conformance with `ValidationConfig.conformanceDisallows` (SHACL 1.2 `sh:conformanceDisallows`), for example `setOf(SHACL.Violation)`; see [Conformance semantics](../features/shacl-validation.md#conformance-semantics).
 
 **DSL behaviour notes:**
 - Single-valued properties (`minCount`, `datatype`, `pattern`, `in`, …) **replace** the previously emitted triple when assigned again; assigning `null` removes it. Use the additive `class(...)` / `hasValue(...)` functions to emit several values.

@@ -222,6 +222,97 @@ class DefaultQualityExplanationEnricherTest {
         }
 
     @Test
+    fun `exhausted retryable failures count toward the circuit breaker`() =
+        runBlocking {
+            val session = FakeSession { _, _ -> throw FakeHttpException(503) }
+            val config =
+                LlmExplanationConfig(provider = LlmProvider.OLLAMA, maxRetries = 1, retryBackoff = Duration.ofMillis(1), circuitBreakerThreshold = 2)
+            val explained = enricher(session, config).enrich(report("a", "b", "c", "d"), ExplanationOptions(batchSize = 1))
+            // Two batches of two attempts each, then the breaker skips the rest.
+            assertEquals(4, session.messages.size)
+            assertEquals(4, explained.failures.size)
+            val skipped = explained.failures.drop(2)
+            assertTrue(skipped.all { it.reason.contains("circuit breaker") && it.reason.contains("HTTP 503") }, skipped.toString())
+            assertEquals(2, explained.failures.take(2).count { it.reason.contains("2 attempt(s) (HTTP 503)") }, explained.failures.toString())
+        }
+
+    @Test
+    fun `OpenAI insufficient_quota is not retried and opens the circuit breaker`() =
+        runBlocking {
+            val body = "Status code: 429\nError body: {\"error\":{\"message\":\"You exceeded your current quota\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}"
+            val session = FakeSession { _, _ -> throw FakeHttpException(429, body) }
+            val sleeps = mutableListOf<Duration>()
+            val config = LlmExplanationConfig(provider = LlmProvider.OPENAI, maxRetries = 3, circuitBreakerThreshold = 2)
+            val explained = enricher(session, config, sleeps).enrich(report("a", "b", "c"), ExplanationOptions(batchSize = 1))
+            assertEquals(2, session.messages.size)
+            assertEquals(emptyList(), sleeps)
+            assertTrue(explained.failures[0].reason.contains("not retryable: HTTP 429 insufficient_quota"), explained.failures[0].reason)
+            assertTrue(explained.failures[2].reason.contains("circuit breaker"), explained.failures[2].reason)
+            assertEquals(LlmFailureKind(false, "HTTP 429 insufficient_quota"), LlmFailureClassifier.classify(FakeHttpException(429, body)))
+        }
+
+    @Test
+    fun `status is recovered from HTTP status lines and ktor response exceptions`() {
+        assertEquals(
+            LlmFailureKind(true, "HTTP 503"),
+            LlmFailureClassifier.classify(IllegalStateException("Unexpected response HTTP/1.1 503 Service Unavailable")),
+        )
+        assertEquals(LlmFailureKind(true, "HTTP 502"), LlmFailureClassifier.classify(RuntimeException("HTTP/2 502 Bad Gateway")))
+        // The port in the URL must not be mistaken for the status.
+        val ktor = RuntimeException("Server error(POST https://api.openai.com:443/v1/chat/completions: 503 Service Unavailable. Text: \"overloaded\")")
+        assertEquals(LlmFailureKind(true, "HTTP 503"), LlmFailureClassifier.classify(ktor))
+        val client = RuntimeException("Client error(POST https://api.openai.com:443/v1/chat/completions: 401 Unauthorized. Text: \"bad key\")")
+        assertEquals(LlmFailureKind(false, "HTTP 401"), LlmFailureClassifier.classify(client))
+    }
+
+    /** An application exception whose name merely contains "Timeout" is not a transport failure. */
+    class SchemaTimeoutFieldMissingException(message: String) : Exception(message)
+
+    @Test
+    fun `only real timeout and connection failures are transport errors`() {
+        assertEquals(
+            LlmFailureKind(false, "SchemaTimeoutFieldMissingException: reply lacks field"),
+            LlmFailureClassifier.classify(SchemaTimeoutFieldMissingException("reply lacks field")),
+        )
+        assertEquals(
+            LlmFailureKind(true, "connection error (TimeoutException)"),
+            LlmFailureClassifier.classify(RuntimeException("wrapped", java.util.concurrent.TimeoutException("deadline"))),
+        )
+        assertEquals(
+            LlmFailureKind(true, "connection error (SocketTimeoutException)"),
+            LlmFailureClassifier.classify(java.net.SocketTimeoutException("read timed out")),
+        )
+    }
+
+    @Test
+    fun `TLS and certificate failures are not retried`() =
+        runBlocking {
+            val cases =
+                listOf(
+                    javax.net.ssl.SSLHandshakeException("PKIX path building failed") to "TLS/certificate error (SSLHandshakeException)",
+                    RuntimeException("wrapped", java.security.cert.CertificateException("bad certificate")) to
+                        "TLS/certificate error (CertificateException)",
+                    javax.net.ssl.SSLPeerUnverifiedException("peer not verified") to "TLS/certificate error (SSLPeerUnverifiedException)",
+                )
+            for ((failure, signature) in cases) {
+                assertEquals(LlmFailureKind(false, signature), LlmFailureClassifier.classify(failure))
+                val session = FakeSession { _, _ -> throw failure }
+                val sleeps = mutableListOf<Duration>()
+                val config = LlmExplanationConfig(provider = LlmProvider.OLLAMA, maxRetries = 3)
+                val explained = enricher(session, config, sleeps).enrich(report("x"), ExplanationOptions())
+                assertEquals(1, session.messages.size, "$failure must not be retried")
+                assertEquals(emptyList(), sleeps)
+                assertTrue(explained.failures.single().reason.contains("not retryable: $signature"), explained.failures.single().reason)
+            }
+        }
+
+    @Test
+    fun `blank-node focus nodes use the core blank-node rendering`() {
+        val node = com.geoknoesis.kastor.rdf.BlankNode("b1")
+        assertEquals(node.toString(), DefaultQualityExplanationEnricher.focusString(node))
+    }
+
+    @Test
     fun `different non-retryable failures do not open the circuit breaker`() =
         runBlocking {
             val session = FakeSession { call, _ -> throw FakeHttpException(if (call % 2 == 0) 400 else 404) }

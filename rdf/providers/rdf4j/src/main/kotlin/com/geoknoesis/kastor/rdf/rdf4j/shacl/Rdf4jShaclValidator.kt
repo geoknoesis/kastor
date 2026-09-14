@@ -60,8 +60,9 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
    * results for that focus node are reported (the whole data graph is still validated, so targets
    * reached through `rdfs:subClassOf` and nested blank-node values are evaluated correctly).
    *
-   * Validity follows SHACL: the report conforms only if there is no validation result at all
-   * (`sh:conforms`), regardless of severity and independent of [ValidationConfig.maxViolations] truncation.
+   * Validity follows SHACL 1.2 `sh:conforms` under [ValidationConfig.conformanceDisallows]: by default any
+   * result except `sh:Debug` / `sh:Trace` makes the report non-conforming. It is decided on every result,
+   * independent of [ValidationConfig.maxViolations] truncation.
    */
   private fun runValidation(graph: RdfGraph, shapes: RdfGraph, focus: RdfResource?): ValidationReport {
     val start = System.currentTimeMillis()
@@ -98,13 +99,15 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
             val model = cause.validationReportAsModel()
             val reported = violationsFromReport(model)
             val allViolations = if (focus == null) reported else reported.filter { it.focusNode == focus }
-            // Validity is decided on the complete result set, before maxViolations truncation.
+            // Validity is decided on the complete result set, before maxViolations truncation, under
+            // ValidationConfig.conformanceDisallows (the same rule as the native engine).
+            // A report whose results could not be read (no focus node) falls back to RDF4J's own sh:conforms flag.
             val conforms =
-                if (focus == null) {
+                if (focus == null && reported.isEmpty()) {
                   val flag = model.filter(null, SHACL.CONFORMS, null).objects().asSequence().firstOrNull() as? Rdf4jLiteral
-                  (flag?.booleanValue() ?: false) && allViolations.isEmpty()
+                  flag?.booleanValue() ?: false
                 } else {
-                  allViolations.isEmpty()
+                  allViolations.none { config.disallowsConformance(it) }
                 }
             if (focus != null && conforms) return emptyReport(dataTriples, shapeTriples, elapsed)
             val cap = config.maxViolations.coerceAtLeast(1)
@@ -287,6 +290,8 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
       SHACL.INFO.stringValue() -> ViolationSeverity.INFO
       SHACL.WARNING.stringValue() -> ViolationSeverity.WARNING
       SHACL.VIOLATION.stringValue() -> ViolationSeverity.VIOLATION
+      SHACL.NAMESPACE + "Debug" -> ViolationSeverity.DEBUG
+      SHACL.NAMESPACE + "Trace" -> ViolationSeverity.TRACE
       else -> ViolationSeverity.VIOLATION
     }
   }

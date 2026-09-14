@@ -29,13 +29,23 @@ fun rdf4jResourceOf(resource: RdfResource): Resource = Rdf4jTerms.toRdf4jResourc
  * Converts an RDF4J [Statement] (its context is ignored) to a Kastor [RdfTriple].
  *
  * An RDF-star quoted-triple subject (not representable in RDF 1.2) becomes its deterministic reifier blank
- * node; the matching `_:r rdf:reifies <<( s p o )>>` triple is not part of this single-triple result.
+ * node; the matching `_:r rdf:reifies <<( s p o )>>` triple is **dropped** by this single-triple form.
  */
-fun rdfTripleFromRdf4j(statement: Statement): RdfTriple = RdfTriple(
-    Rdf4jTerms.fromRdf4jResource(statement.subject),
-    Rdf4jTerms.fromRdf4jIri(statement.predicate),
-    Rdf4jTerms.fromRdf4jValue(statement.`object`),
+@Deprecated(
+    "Drops the rdf:reifies triples of RDF-star subjects; use rdfTriplesFromRdf4j, which returns the complete RDF 1.2 form",
+    ReplaceWith("rdfTriplesFromRdf4j(statement)"),
+    level = DeprecationLevel.WARNING,
 )
+fun rdfTripleFromRdf4j(statement: Statement): RdfTriple = Rdf4jTerms.triplesOf(statement).first()
+
+/**
+ * Converts an RDF4J [Statement] (its context is ignored) to its complete RDF 1.2 form.
+ *
+ * Without RDF-star subjects this is a single triple. Every quoted triple in subject position (also nested inside
+ * triple terms) is replaced by its deterministic reifier `_:r`, and `_:r rdf:reifies <<( s p o )>>` is added for
+ * each of them. The converted statement itself is always the first element.
+ */
+fun rdfTriplesFromRdf4j(statement: Statement): List<RdfTriple> = Rdf4jTerms.triplesOf(statement)
 
 /** Converts a Kastor [RdfTriple] to a context-less RDF4J [Statement]. */
 fun rdf4jStatementOf(triple: RdfTriple): Statement = SimpleValueFactory.getInstance().createStatement(

@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.sparql
 
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.io.FilterInputStream
 import java.io.IOException
@@ -13,8 +14,9 @@ import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.LockSupport
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -28,14 +30,97 @@ private const val MAX_ERROR_BODY_BYTES = 4096
 private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
 
 /**
- * Closes response streams whose read stalls past the read timeout or the request deadline. Closing
- * a `java.net.http` response stream from this thread unblocks a blocked read immediately (unlike
- * `HttpURLConnection.disconnect()`, which waits for the reading thread's stream lock). Daemon
- * thread; cancelled tasks are purged.
+ * Closes response streams whose current read has passed its deadline (the read timeout or the
+ * request deadline). Closing a `java.net.http` response stream from another thread unblocks a
+ * blocked read immediately (unlike `HttpURLConnection.disconnect()`, which waits for the reading
+ * thread's stream lock).
+ *
+ * A read only publishes its deadline in an atomic field of its stream, so reads take no lock and
+ * schedule no task. One daemon thread sleeps until the earliest published deadline and is woken
+ * when a read publishes an earlier one.
  */
-private val DEADLINE_WATCHDOG = ScheduledThreadPoolExecutor(1) { runnable ->
-    Thread(runnable, "kastor-sparql-deadline").apply { isDaemon = true }
-}.apply { removeOnCancelPolicy = true }
+private object ReadWatchdog {
+    interface Watched {
+        /** Expire the pending read if its deadline is at or before [now]; returns the pending deadline, or [Long.MAX_VALUE]. */
+        fun expireIfDue(now: Long): Long
+    }
+
+    private val streams: MutableSet<Watched> = ConcurrentHashMap.newKeySet()
+
+    /** When the watchdog wakes up next; [Long.MAX_VALUE] while it scans or has nothing to wait for. */
+    @Volatile private var nextWakeNanos = Long.MAX_VALUE
+
+    private val thread = Thread(::watch, "kastor-sparql-deadline").apply {
+        isDaemon = true
+        start()
+    }
+
+    fun register(stream: Watched) {
+        streams.add(stream)
+    }
+
+    fun unregister(stream: Watched) {
+        streams.remove(stream)
+    }
+
+    /** Called after a read published [deadline]; wakes the watchdog if it would sleep past it. */
+    fun published(deadline: Long) {
+        if (deadline < nextWakeNanos) LockSupport.unpark(thread)
+    }
+
+    private fun watch() {
+        while (true) {
+            // A read publishing during the scan sees MAX_VALUE and unparks, so the park below returns at once.
+            nextWakeNanos = Long.MAX_VALUE
+            val now = System.nanoTime()
+            var next = Long.MAX_VALUE
+            for (stream in streams) {
+                next = minOf(next, stream.expireIfDue(now))
+            }
+            nextWakeNanos = next
+            if (next == Long.MAX_VALUE) LockSupport.park(this) else LockSupport.parkNanos(this, next - now)
+        }
+    }
+}
+
+/**
+ * One [HttpClient] (connection pool and selector thread) per connect timeout, shared by the open
+ * repositories that use it and shut down when the last of them is closed.
+ */
+private object SharedHttpClients {
+    private class Entry(val client: HttpClient) {
+        var references = 0
+    }
+
+    private val entries = HashMap<Duration, Entry>()
+
+    @Synchronized
+    fun acquire(connectTimeout: Duration): HttpClient {
+        val entry = entries.getOrPut(connectTimeout) {
+            Entry(
+                HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(connectTimeout)
+                    .followRedirects(HttpClient.Redirect.NEVER)
+                    .build()
+            )
+        }
+        entry.references++
+        return entry.client
+    }
+
+    @Synchronized
+    fun release(connectTimeout: Duration) {
+        val entry = entries[connectTimeout] ?: return
+        if (--entry.references == 0) {
+            entries.remove(connectTimeout)
+            entry.client.shutdown()
+        }
+    }
+
+    @Synchronized
+    fun size(): Int = entries.size
+}
 
 private val LOGGER: System.Logger = System.getLogger(SparqlRepository::class.java.name)
 private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
@@ -47,14 +132,18 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   is capped by [SparqlEndpointConfig.maxResponseBytes]; [withSelectRows] streams rows to the
  *   consumer and is capped by [SparqlEndpointConfig.maxStreamedResponseBytes] (unbounded by default).
  * - Timeouts: connect timeout, per-read timeout, [SparqlEndpointConfig.requestTimeout] (whole
- *   exchange for buffered calls, time to response headers for streams) and the optional
- *   [SparqlEndpointConfig.streamingRequestTimeout] for streams.
+ *   exchange for buffered calls, time to response headers for streams; without it the read timeout
+ *   bounds the wait for headers), the optional [SparqlEndpointConfig.streamingRequestTimeout] for
+ *   streams, and the per-call timeout of `withSelectRows(query, bindings, timeout)`, which bounds
+ *   the whole call.
  * - Requests are never retried automatically, so a failed UPDATE is not re-sent.
  * - Redirects are handled explicitly: `307`/`308` keep method and body; `301`/`302`/`303` are only
  *   followed for GET queries (a redirected POST would otherwise silently lose its body). Other
  *   origins are only followed with [SparqlEndpointConfig.followCrossOriginRedirects], and never
  *   receive custom headers or credentials.
- * - Connections are pooled and reused (HTTP/1.1 keep-alive).
+ * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
+ *   timeout share one HTTP client, which is shut down when the last of them is closed, so always
+ *   [close] repositories you no longer use.
  * - Exceptions thrown by a [withSelectRows] consumer propagate unchanged; transport, HTTP and
  *   result-format failures surface as [RdfQueryException] (HTTP error bodies are included). Using a
  *   closed repository throws [IllegalStateException] from every operation.
@@ -76,16 +165,12 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         )
     )
 
-    @Volatile private var closed = false
+    private val closed = AtomicBoolean(false)
     private val queryTarget = HttpTarget.parse(config.endpoint)
     private val updateTarget = config.updateEndpoint?.let(HttpTarget::parse) ?: queryTarget
     private val configuredAuthorization =
         config.username?.let { HttpTarget.basicAuthorization(it, config.password.orEmpty()) }
-    private val client: HttpClient = HttpClient.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1)
-        .connectTimeout(config.connectTimeout)
-        .followRedirects(HttpClient.Redirect.NEVER)
-        .build()
+    private val client: HttpClient = SharedHttpClients.acquire(config.connectTimeout)
 
     init {
         insecureAuthorizationWarning(config)?.let { warning ->
@@ -143,11 +228,13 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         selectRows(query.sparql, config.maxStreamedResponseBytes, Timeouts(config.requestTimeout, config.streamingRequestTimeout), consume)
 
     /**
-     * Streams rows with [bindings] as initial bindings and [timeout] as the deadline for the response
-     * headers ([SparqlEndpointConfig.streamingRequestTimeout] still bounds the whole stream).
+     * Streams rows with [bindings] as initial bindings. [timeout] bounds the whole call, like the
+     * Jena and RDF4J providers: the wait for the response and every row, including time the consumer
+     * spends between rows; exceeding it fails with [RdfQueryException]. A shorter
+     * [SparqlEndpointConfig.streamingRequestTimeout] still applies.
      *
      * SPARQL 1.1 Protocol has no initial-bindings parameter, so the bindings are substituted into the
-     * query text with the same rules as the Jena provider (see [InitialBindings]): the constants
+     * query text with the same rules as the Jena provider (see [com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]): the constants
      * restrict the WHERE clause before aggregation, LIMIT, FILTER and sub-selects, and projected
      * bound variables stay in the results. Queries that assign a bound variable (BIND/AS/VALUES) or
      * use it inside a sub-select that does not project it are rejected with
@@ -163,8 +250,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         val rendered = bindings.mapValues { (_, term) ->
             SparqlTermFormat.term(term) { throw IllegalArgumentException("Blank nodes cannot be used as query bindings") }
         }
-        val sparql = InitialBindings.apply(query.sparql, rendered)
-        return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(timeout, config.streamingRequestTimeout), consume)
+        val sparql = SparqlInitialBindings.apply(query.sparql, rendered)
+        val overall = config.streamingRequestTimeout?.let { minOf(it, timeout) } ?: timeout
+        return selectRows(sparql, config.maxStreamedResponseBytes, Timeouts(timeout, overall), consume)
     }
 
     private fun <T> selectRows(sparql: String, byteLimit: Long?, timeouts: Timeouts, consume: (Sequence<BindingSet>) -> T): T {
@@ -172,10 +260,10 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         val startTime = System.currentTimeMillis()
         var rows = 0
         try {
-            val result = exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input ->
+            val result = exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
                 val sequence = JsonBindingRows(input).rows()
                     .map(SparqlJsonResults::row)
-                    .guarded(sparql)
+                    .guarded(sparql, checkDeadline)
                     .onEach { rows++ }
                 consume(sequence)
             }
@@ -191,7 +279,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input ->
+            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input, _ ->
                 readResponse(query.sparql) { input.reader(Charsets.UTF_8).readText() }
             }
             // Parse the SPARQL Results JSON `{ "boolean": true }` form; fall back to
@@ -233,7 +321,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input ->
+            exchange(query.sparql, update = true, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input, _ ->
                 readResponse(query.sparql) { input.readAllBytes() }
             }
             val executionTime = System.currentTimeMillis() - startTime
@@ -264,24 +352,28 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         return existed
     }
 
-    override fun isClosed(): Boolean = closed
+    override fun isClosed(): Boolean = closed.get()
 
     /** What this adapter supports; identical to [SparqlProvider.getCapabilities]. */
     override fun getCapabilities(): ProviderCapabilities = SPARQL_ENDPOINT_CAPABILITIES
 
-    /** Marks the repository closed and releases the connection pool; in-flight requests may complete. */
+    /**
+     * Marks the repository closed and releases its share of the HTTP client; the client and its
+     * connection pool are shut down when no open repository uses them. In-flight requests may
+     * complete. Idempotent.
+     */
     override fun close() {
-        closed = true
-        client.shutdown()
+        if (closed.compareAndSet(false, true)) SharedHttpClients.release(config.connectTimeout)
     }
 
-    private fun ensureOpen() = check(!closed) { "Repository is closed" }
+    private fun ensureOpen() = check(!closed.get()) { "Repository is closed" }
 
     // ------------------------------------------------------------------------ HTTP
 
     /**
-     * [headers] limits the wait for response headers (all redirect hops included); [overall] limits
-     * the whole exchange including reading the body. Both are measured from the start of the call.
+     * [headers] limits the wait for response headers (all redirect hops included); when it is `null`
+     * the read timeout bounds that wait. [overall] limits the whole exchange including reading the
+     * body. Both are measured from the start of the call.
      */
     private class Timeouts(val headers: Duration?, val overall: Duration?) {
         companion object {
@@ -310,15 +402,16 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
 
     /**
      * Perform one request (following permitted redirects) and hand the (bounded) response body to
-     * [handle]. Exceptions thrown by [handle] propagate unchanged; [RdfQueryException]s raised after
-     * a timeout closed the stream are reported as that timeout.
+     * [handle], with a function that fails once the overall deadline has passed (for work that does
+     * not read from the stream). Exceptions thrown by [handle] propagate unchanged;
+     * [RdfQueryException]s raised after a timeout closed the stream are reported as that timeout.
      */
     private fun <T> exchange(
         sparql: String,
         update: Boolean,
         byteLimit: Long?,
         timeouts: Timeouts,
-        handle: (InputStream) -> T,
+        handle: (InputStream, checkDeadline: () -> Unit) -> T,
     ): T {
         val startNanos = System.nanoTime()
         val target = if (update) updateTarget else queryTarget
@@ -328,10 +421,14 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         var redirects = 0
         while (true) {
             val builder = HttpRequest.newBuilder(request.uri)
-            timeouts.headers?.let { limit ->
-                val remaining = limit.minusNanos(System.nanoTime() - startNanos)
-                if (remaining.isNegative || remaining.isZero) throw deadlineExceeded(sparql, limit)
+            val headerLimit = timeouts.headers
+            if (headerLimit != null) {
+                val remaining = headerLimit.minusNanos(System.nanoTime() - startNanos)
+                if (remaining.isNegative || remaining.isZero) throw deadlineExceeded(sparql, headerLimit)
                 builder.timeout(remaining)
+            } else {
+                // Without a request deadline, waiting for the response is bounded like any read.
+                builder.timeout(config.readTimeout)
             }
             if (!update) builder.setHeader("Accept", RESULTS_JSON)
             request.contentType?.let { builder.setHeader("Content-Type", it) }
@@ -373,7 +470,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
                 )
             }
             try {
-                return input.use { guarded -> handle(if (byteLimit == null) guarded else BoundedInputStream(guarded, byteLimit)) }
+                return input.use { guarded ->
+                    handle(if (byteLimit == null) guarded else BoundedInputStream(guarded, byteLimit), guarded::checkDeadline)
+                }
             } catch (e: RdfQueryException) {
                 input.failure?.let { throw RdfQueryException(it, query = sparql, cause = e) }
                 throw e
@@ -387,7 +486,8 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         throw RdfQueryException("SPARQL request failed: connect timed out after ${config.connectTimeout.toMillis()} ms", query = sparql, cause = e)
     } catch (e: HttpTimeoutException) {
         throw RdfQueryException(
-            "SPARQL request exceeded its ${headerTimeout?.toMillis()} ms deadline waiting for the response",
+            if (headerTimeout != null) "SPARQL request exceeded its ${headerTimeout.toMillis()} ms deadline waiting for the response"
+            else "SPARQL request timed out after ${config.readTimeout.toMillis()} ms waiting for the response",
             query = sparql,
             cause = e,
         )
@@ -452,71 +552,109 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
      * Wrap failures while producing rows (I/O, size cap, malformed JSON) as [RdfQueryException],
      * without touching exceptions thrown by the code consuming the rows.
      */
-    private fun <R> Sequence<R>.guarded(sparql: String): Sequence<R> {
+    private fun <R> Sequence<R>.guarded(sparql: String, checkDeadline: () -> Unit): Sequence<R> {
         val source = this
         return Sequence {
             val iterator = source.iterator()
             object : Iterator<R> {
-                override fun hasNext(): Boolean = readResponse(sparql) { iterator.hasNext() }
+                // Rows already buffered are served without a read, so check the deadline per row too.
+                override fun hasNext(): Boolean = readResponse(sparql) { checkDeadline(); iterator.hasNext() }
                 override fun next(): R = readResponse(sparql) { iterator.next() }
             }
         }
     }
 
     /**
-     * Enforces the per-read timeout and the overall deadline on a response body: a watchdog closes
-     * the underlying stream when one read waits too long, which unblocks the reader. Time between
-     * reads (the consumer's own work) only counts towards the overall deadline, checked on the next
-     * read.
+     * Enforces the per-read timeout and the overall deadline on a response body: every read
+     * publishes its deadline and [ReadWatchdog] closes the underlying stream when the read waits
+     * past it, which unblocks the reader. Time between reads (the consumer's own work) counts
+     * towards the overall deadline, checked on every read and by [checkDeadline].
      */
     private class GuardedInputStream(
         private val raw: InputStream,
         readTimeout: Duration,
         private val deadlineNanos: Long?,
-        private val overall: Duration?,
-    ) : InputStream() {
+        overall: Duration?,
+    ) : InputStream(), ReadWatchdog.Watched {
         private val readTimeoutNanos = readTimeout.toNanos()
         private val readTimeoutMessage = "SPARQL response read timed out after ${readTimeout.toMillis()} ms"
         private val deadlineMessage = "SPARQL request exceeded its ${overall?.toMillis()} ms deadline"
 
+        /** Deadline of the read in progress: [IDLE] between reads, [EXPIRED] once the watchdog claimed it. */
+        private val readDeadline = AtomicLong(IDLE)
+        @Volatile private var readMessage = readTimeoutMessage
+
         @Volatile var failure: String? = null
             private set
+
+        init {
+            ReadWatchdog.register(this)
+        }
 
         override fun read(): Int {
             val one = ByteArray(1)
             return if (read(one, 0, 1) <= 0) -1 else one[0].toInt() and 0xFF
         }
 
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
+        /** Throws if the stream already failed or the overall deadline has passed. */
+        fun checkDeadline() {
             failure?.let { throw IOException(it) }
-            val untilDeadline = deadlineNanos?.let { it - System.nanoTime() }
-            if (untilDeadline != null && untilDeadline <= 0) {
+            if (deadlineNanos != null && deadlineNanos - System.nanoTime() <= 0) {
                 failure = deadlineMessage
                 closeRaw()
                 throw IOException(deadlineMessage)
             }
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            checkDeadline()
+            val now = System.nanoTime()
+            val untilDeadline = deadlineNanos?.let { it - now }
             val byDeadline = untilDeadline != null && untilDeadline < readTimeoutNanos
-            val wait = if (byDeadline) untilDeadline!! else readTimeoutNanos
-            val message = if (byDeadline) deadlineMessage else readTimeoutMessage
-            val watchdog = DEADLINE_WATCHDOG.schedule({
-                failure = message
-                closeRaw()
-            }, wait, TimeUnit.NANOSECONDS)
+            readMessage = if (byDeadline) deadlineMessage else readTimeoutMessage
+            val deadline = saturatedAdd(now, if (byDeadline) untilDeadline!! else readTimeoutNanos)
+            readDeadline.set(deadline)
+            ReadWatchdog.published(deadline)
             try {
                 return raw.read(b, off, len)
             } catch (e: IOException) {
                 failure?.let { throw IOException(it, e) }
                 throw e
             } finally {
-                watchdog.cancel(false)
+                readDeadline.set(IDLE)
             }
+        }
+
+        override fun expireIfDue(now: Long): Long {
+            val deadline = readDeadline.get()
+            if (deadline == IDLE || deadline == EXPIRED) return Long.MAX_VALUE
+            if (now < deadline) return deadline
+            if (readDeadline.compareAndSet(deadline, EXPIRED)) {
+                failure = readMessage
+                closeRaw()
+            }
+            return Long.MAX_VALUE
         }
 
         private fun closeRaw() {
             try { raw.close() } catch (_: IOException) { }
         }
 
-        override fun close() = raw.close()
+        override fun close() {
+            ReadWatchdog.unregister(this)
+            raw.close()
+        }
+
+        private companion object {
+            const val IDLE = Long.MAX_VALUE
+            const val EXPIRED = Long.MIN_VALUE
+
+            /** [a] + [b] without wrapping; stays below [IDLE]. */
+            fun saturatedAdd(a: Long, b: Long): Long {
+                val sum = a + b
+                return if (((a xor sum) and (b xor sum)) < 0 || sum == IDLE) IDLE - 1 else sum
+            }
+        }
     }
 
     private class BoundedInputStream(input: InputStream, private val limit: Long) : FilterInputStream(input) {
@@ -542,6 +680,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     }
 
     internal companion object {
+        /** Number of live shared HTTP clients (one per connect timeout in use by open repositories). */
+        fun sharedHttpClientCount(): Int = SharedHttpClients.size()
+
         /** The warning logged (once per endpoint) when Basic credentials would travel over plain http, or `null`. */
         fun insecureAuthorizationWarning(config: SparqlEndpointConfig): String? {
             val query = HttpTarget.parse(config.endpoint)
@@ -571,6 +712,12 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
  *   therefore be copied into another graph.
  * - [hasTriple], [find], [removeTriple] and [removeTriples] cannot address an existing blank node
  *   by label and throw [IllegalArgumentException]; use an explicit `DELETE WHERE` pattern instead.
+ *
+ * ## Batched writes are not atomic
+ * [addTriples] and [removeTriples] send one request per batch. Every triple is validated and
+ * rendered before the first request, so an invalid term never leaves earlier batches applied. A
+ * transport or server failure after earlier batches succeeded cannot be undone; it is reported as
+ * an [RdfQueryException] that states how many triples the earlier requests wrote.
  */
 class SparqlGraph(
     private val repository: SparqlMutable,
@@ -608,15 +755,39 @@ class SparqlGraph(
                     "which exceeds maxBlankNodeComponentTriples ($maxComponent); nothing was inserted"
             )
         }
+        validate(triples) { "_:b" }
+        var written = 0
         val batch = ArrayList<RdfTriple>()
+        fun send() {
+            reportingProgress("INSERT DATA", written, triples.size) { insertData(batch) }
+            written += batch.size
+            batch.clear()
+        }
         for (unit in units) {
-            if (batch.isNotEmpty() && batch.size + unit.size > batchSize) {
-                insertData(batch)
-                batch.clear()
-            }
+            if (batch.isNotEmpty() && batch.size + unit.size > batchSize) send()
             batch.addAll(unit)
         }
-        if (batch.isNotEmpty()) insertData(batch)
+        if (batch.isNotEmpty()) send()
+    }
+
+    /** Render every triple (and the graph name) once, so invalid terms fail before any request. */
+    private fun validate(triples: Collection<RdfTriple>, blankNode: (BlankNode) -> String) {
+        pattern("")
+        triples.forEach { rendered(it, blankNode) }
+    }
+
+    /** Run one batch request; a failure after earlier batches succeeded says how much was written. */
+    private inline fun reportingProgress(operation: String, written: Int, total: Int, request: () -> Unit) {
+        try {
+            request()
+        } catch (e: RdfQueryException) {
+            if (written == 0) throw e
+            throw RdfQueryException(
+                "SPARQL $operation failed after earlier requests had written $written of $total triples: ${e.message}",
+                query = e.query,
+                cause = e,
+            )
+        }
     }
 
     /**
@@ -672,11 +843,16 @@ class SparqlGraph(
      */
     override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
         if (triples.isEmpty()) return false
+        validate(triples, ::rejectBlankNode)
         var existed = false
+        var written = 0
         triples.chunked(batchSize).forEach { batch ->
             val body = batch.joinToString("\n") { rendered(it, ::rejectBlankNode) }
-            if (!existed) existed = anyExists(batch)
-            repository.update(UpdateQuery("DELETE DATA { ${pattern(body)} }"))
+            reportingProgress("DELETE DATA", written, triples.size) {
+                if (!existed) existed = anyExists(batch)
+                repository.update(UpdateQuery("DELETE DATA { ${pattern(body)} }"))
+            }
+            written += batch.size
         }
         return existed
     }

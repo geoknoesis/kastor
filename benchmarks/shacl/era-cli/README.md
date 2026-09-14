@@ -16,6 +16,17 @@ Load time: 0.012
 Validation time: 0.034
 ```
 
+## Exit status
+
+Same convention as `onto-qa`. Errors are a single line on stderr prefixed with `shacl-era-cli:`; paths and parser messages have control and bidi characters rendered as `\uXXXX`, and no stack trace is printed. Standard output only ever contains the timing lines.
+
+| Status | Meaning |
+|--------|---------|
+| **0** | Report written. |
+| **2** | The data or shapes file could not be parsed as Turtle. |
+| **4** | Usage error: not exactly three arguments, or an input file that does not exist or is not a regular file. |
+| **5** | Runtime error: validation failed unexpectedly, the report could not be written, or an internal error. |
+
 ## Docker (ERA-SHACL-Benchmark)
 
 After `installDist`, from repo root:

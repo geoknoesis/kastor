@@ -139,4 +139,32 @@ class OntoQualityReasoningTest {
         assertTrue(RdfTriple(Iri(ns + "i"), type, Iri(ns + "B")) in triples, "Expected ex:i a ex:B; triples: $triples")
         assertTrue(RdfTriple(Iri(ns + "j"), Iri(ns + "q"), Iri(ns + "i")) in triples, "Expected ex:j ex:q ex:i; triples: $triples")
     }
+
+    /**
+     * Jena's OWL Micro rule set (`etc/owl-fb-micro.rules`) states "no equality reasoning (sameAs, FunctionalProperty
+     * ...)": it has no `fp1` rule. The full OWL rule set behind [OntoQualityReasoningProfile.OWL_RL]
+     * (`etc/owl-fb.rules`, `ReasonerRegistry.getOWLReasoner()`) derives `?B owl:sameAs ?C` from a functional property
+     * with two values. The same input therefore distinguishes the two profiles, proving OWL_MICRO is not an alias of
+     * OWL_RL.
+     */
+    @Test
+    fun owlRlDerivesFunctionalPropertyEqualityButOwlMicroDoesNot() {
+        val turtle =
+            """
+            @prefix owl:  <http://www.w3.org/2002/07/owl#> .
+            @prefix ex:   <http://example.org/ns#> .
+
+            ex:hasMother a owl:ObjectProperty , owl:FunctionalProperty .
+            ex:alice ex:hasMother ex:carol , ex:caroline .
+            """.trimIndent()
+        val base = Rdf.parse(turtle, RdfFormat.TURTLE)
+        val ns = "http://example.org/ns#"
+        val sameAs = RdfTriple(Iri(ns + "carol"), Iri("http://www.w3.org/2002/07/owl#sameAs"), Iri(ns + "caroline"))
+
+        val rl = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_RL).getTriples()
+        val micro = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_MICRO).getTriples()
+
+        org.junit.jupiter.api.Assertions.assertEquals(true, sameAs in rl, "OWL_RL must derive ex:carol owl:sameAs ex:caroline")
+        org.junit.jupiter.api.Assertions.assertEquals(false, sameAs in micro, "OWL_MICRO has no equality rules; triples: $micro")
+    }
 }

@@ -74,6 +74,38 @@ class ReportOutputSanitizationTest {
         assertNoRawControls(text)
     }
 
+    @Test
+    fun `markdown neutralises GFM email autolinks`() {
+        val md = report("contact admin@evil.example or mailto:x@evil.example").describeMarkdown()
+        assertTrue(md.lines().contains("- contact admin\\@evil.example or mailto:x\\@evil.example"), md)
+        assertFalse(md.replace("\\@", "").contains('@'), md)
+    }
+
+    @Test
+    fun `bidi controls are rendered visibly in markdown and text output`() {
+        // RLO / LRE / PDF / LRI / RLI / FSI / PDI and LRM / RLM / ALM can visually reorder text (Trojan Source).
+        val bidi = "a\u202Eb\u202Ac\u202Cd\u2066e\u2067f\u2068g\u2069h\u200Ei\u200Fj\u061Ck"
+        val visible = "a\\u202Eb\\u202Ac\\u202Cd\\u2066e\\u2067f\\u2068g\\u2069h\\u200Ei\\u200Fj\\u061Ck"
+
+        val md = report(bidi).describeMarkdown()
+        assertTrue(md.lines().contains("- $visible"), md)
+        assertNoBidi(md)
+
+        val text = report(bidi).describeText()
+        assertTrue(text.lines().contains(" - [STRUCTURAL] VIOLATION: $visible"), text)
+        assertNoBidi(text)
+
+        assertEquals(visible, OutputSanitizer.terminal(bidi))
+        assertEquals("x\\u001B[1m ok\n\tnext", OutputSanitizer.terminal("x\u001B[1m ok\n\tnext"))
+        assertEquals(visible, OutputSanitizer.markdownInline(bidi))
+        assertEquals("\\[a\\]\\(b\\) user\\@host", OutputSanitizer.markdownInline("[a](b) user@host"))
+    }
+
+    private fun assertNoBidi(out: String) {
+        val bad = out.filter { it.code in 0x202A..0x202E || it.code in 0x2066..0x2069 || it.code == 0x200E || it.code == 0x200F || it.code == 0x061C }
+        assertEquals("", bad, "raw bidi controls in output")
+    }
+
     /** Backslash-escaped punctuation (`\<img`, `\]\(`) renders literally; only unescaped syntax is dangerous. */
     private fun assertNoRawInjection(md: String) {
         listOf("""(?<!\\)<img""", """(?<!\\)<b>""", """(?<!\\)\]\(""", "https://evil", "\u001B").forEach {

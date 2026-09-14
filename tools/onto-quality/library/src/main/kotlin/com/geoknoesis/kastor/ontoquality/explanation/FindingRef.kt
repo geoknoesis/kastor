@@ -70,7 +70,7 @@ value class FindingRef(val hexSha256: String) {
         private fun termKey(term: RdfTerm): String =
             when (term) {
                 is Iri -> term.value
-                is BlankNode -> "_:${term.id}"
+                is BlankNode -> term.toString()
                 is Literal -> term.lexical
                 else -> term.toString()
             }

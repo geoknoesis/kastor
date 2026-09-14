@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.vocab.SHACL
 import java.time.Duration
 
 /**
@@ -56,7 +58,29 @@ data class ValidationConfig(
      * engine). Exceeding it fails validation instead of exhausting memory.
      */
     val maxPathValueNodes: Int = 1_000_000,
+    /**
+     * SHACL 1.2 `sh:conformanceDisallows` (native, RDF4J and memory validators): the result severities — `sh:Violation`, `sh:Warning`,
+     * `sh:Info`, `sh:Debug`, `sh:Trace` or a custom severity IRI — whose results make [ValidationReport.isValid]
+     * false. `null` (default) applies the SHACL default: every severity except `sh:Debug` and `sh:Trace`. Results of
+     * other severities are still reported. Results about undefined recursive dependencies have severity `sh:Warning`.
+     */
+    val conformanceDisallows: Set<Iri>? = null,
 ) {
+
+    /**
+     * Whether [violation] makes a report non-conforming under [conformanceDisallows]. Its severity is the
+     * violation's `sh:resultSeverity` IRI ([ValidationViolation.resultSeverityIri]) when set, otherwise the IRI of
+     * its [ValidationViolation.severity]. Every validator (native, RDF4J, memory) decides
+     * [ValidationReport.isValid] with this rule.
+     */
+    fun disallowsConformance(violation: ValidationViolation): Boolean =
+        disallowsSeverity(violation.severity, violation.resultSeverityIri?.let { Iri(it) })
+
+    internal fun disallowsSeverity(severity: ViolationSeverity, resultSeverityIri: Iri?): Boolean {
+        val iri = resultSeverityIri ?: severity.toShaclSeverityIri()
+        val disallowed = conformanceDisallows ?: return iri != SHACL.Debug && iri != SHACL.Trace
+        return iri in disallowed
+    }
     
     companion object {
         /**

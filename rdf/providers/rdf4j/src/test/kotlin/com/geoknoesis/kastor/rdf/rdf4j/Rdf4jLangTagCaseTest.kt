@@ -79,4 +79,51 @@ class Rdf4jLangTagCaseTest {
         assertTrue(graph.removeTriples(listOf(directional)), name)
         assertTrue(graph.find(s, q, null).isEmpty(), name)
     }
+
+    /**
+     * NativeStore resolves a literal to its stored id through a small value-id cache whose keys ignore tag
+     * case, but falls back to the on-disk store (exact bytes) on a miss. Reopening the store empties the
+     * cache, so the case-insensitive lookup must not depend on it.
+     */
+    @Test
+    fun `native store lookup with a differently cased tag works with a cold value cache`() {
+        for (variant in listOf("native", "native-rdfs")) {
+            val location = tmp.resolve("cold-$variant").toString()
+            fun open() = if (variant == "native") Rdf4jRepository.NativeRepository(location) else Rdf4jRepository.NativeRdfsRepository(location)
+            open().use { Rdf4jProvider().parseDataset(it, doc.byteInputStream(), "TURTLE") }
+            open().use { repo ->
+                val graph = repo.editDefaultGraph()
+                val lower = RdfTriple(s, p, LangString("x", "en-gb"))
+                assertTrue(graph.hasTriple(lower), "$variant: hasTriple after reopen")
+                assertEquals(1, graph.find(s, p, LangString("x", "EN-gb")).size, "$variant: find after reopen")
+                assertFalse(graph.hasTriple(RdfTriple(s, p, LangString("x", "en-us"))), variant)
+            }
+            open().use { repo ->
+                val graph = repo.editDefaultGraph()
+                val q = Iri("http://example.org/q")
+                assertTrue(graph.removeTriple(RdfTriple(s, p, LangString("x", "en-gb"))), "$variant: removeTriple after reopen")
+                assertTrue(graph.find(s, p, null).isEmpty(), variant)
+                assertTrue(graph.removeTriples(listOf(RdfTriple(s, q, LangString("y", "ar-eg", Direction.RTL)))), "$variant: removeTriples after reopen")
+                assertTrue(graph.find(s, q, null).isEmpty(), variant)
+            }
+            open().use {
+                // Inference variants also count RDFS entailments; the asserted statements themselves must be gone.
+                assertTrue(it.defaultGraph.find(s, null, null).none { t -> t.obj is LangString }, "$variant: removals persisted")
+            }
+        }
+    }
+
+    @Test
+    fun `native store lookup with a differently cased tag works after the value cache evicts`() {
+        Rdf4jRepository.NativeRepository(tmp.resolve("evicted").toString()).use { repo ->
+            val graph = repo.editDefaultGraph()
+            graph.addTriple(RdfTriple(s, p, LangString("x", "en-GB")))
+            // Touch far more distinct values than the 128-entry value-id cache holds.
+            graph.addTriples((0 until 2_000).map { RdfTriple(Iri("http://example.org/s$it"), Iri("http://example.org/p$it"), LangString("v$it", "de-AT")) })
+            (0 until 2_000).forEach { graph.hasTriple(RdfTriple(Iri("http://example.org/s$it"), Iri("http://example.org/p$it"), LangString("v$it", "de-AT"))) }
+            assertTrue(graph.hasTriple(RdfTriple(s, p, LangString("x", "en-gb"))))
+            assertTrue(graph.removeTriple(RdfTriple(s, p, LangString("x", "EN-GB".lowercase()))))
+            assertTrue(graph.find(s, p, null).isEmpty())
+        }
+    }
 }

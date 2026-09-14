@@ -857,22 +857,24 @@ class PropertyShapeDsl(
     fun setMaxExclusiveDouble(value: Double?) { maxExclusive = value }
 
     /**
-     * No longer emits anything. `sh:totalDigits` is **not a SHACL constraint** (neither SHACL 1.0 nor 1.2 Core
-     * defines it; it is an XSD facet), so emitting it would suggest a limit no validator enforces.
-     * Kept for binary compatibility only; enforce digit limits with `pattern` or a SPARQL constraint.
+     * `sh:totalDigits` is **not a SHACL constraint** (neither SHACL 1.0 nor 1.2 Core defines it; it is an XSD facet),
+     * so emitting it would suggest a limit no validator enforces. Kept for binary compatibility only: the getter
+     * returns null and the setter throws [UnsupportedOperationException] so previously compiled callers do not lose
+     * the limit silently. Enforce digit limits with `pattern` or a SPARQL constraint.
      */
     @Deprecated(DIGITS_DEPRECATION, level = DeprecationLevel.ERROR)
     var totalDigits: Int?
-        set(@Suppress("UNUSED_PARAMETER") value) = Unit
+        set(@Suppress("UNUSED_PARAMETER") value) = throw UnsupportedOperationException(DIGITS_DEPRECATION)
         get() = null
 
     /**
-     * No longer emits anything. `sh:fractionDigits` is **not a SHACL constraint** (see [totalDigits]).
-     * Kept for binary compatibility only; enforce digit limits with `pattern` or a SPARQL constraint.
+     * `sh:fractionDigits` is **not a SHACL constraint** (see [totalDigits]). Kept for binary compatibility only: the
+     * getter returns null and the setter throws [UnsupportedOperationException]. Enforce digit limits with `pattern`
+     * or a SPARQL constraint.
      */
     @Deprecated(DIGITS_DEPRECATION, level = DeprecationLevel.ERROR)
     var fractionDigits: Int?
-        set(@Suppress("UNUSED_PARAMETER") value) = Unit
+        set(@Suppress("UNUSED_PARAMETER") value) = throw UnsupportedOperationException(DIGITS_DEPRECATION)
         get() = null
 
     // Value constraints

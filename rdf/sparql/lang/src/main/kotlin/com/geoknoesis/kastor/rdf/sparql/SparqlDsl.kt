@@ -931,6 +931,18 @@ class UpdateBuilder {
         operations.add(AddOperationAst(source, destination, silent, emptyList(), emptyList(), null))
     }
 
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-JZ4Kbmc")
+    fun copyNotNull(source: Iri, destination: Iri, silent: Boolean = false) = copy(source, destination, silent)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("move-JZ4Kbmc")
+    fun moveNotNull(source: Iri, destination: Iri, silent: Boolean = false) = move(source, destination, silent)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("add-JZ4Kbmc")
+    fun addNotNull(source: Iri, destination: Iri, silent: Boolean = false) = add(source, destination, silent)
+
     fun build(): UpdateRequestAst = UpdateRequestAst(
         version = version,
         prefixes = prefixes,

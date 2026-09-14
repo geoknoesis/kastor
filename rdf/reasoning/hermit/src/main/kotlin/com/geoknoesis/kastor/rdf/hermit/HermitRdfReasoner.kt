@@ -19,10 +19,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * HermiT (OWL 2 DL) reasoning with explicit engine disposal and bounded serialization/materialization.
  *
  * **Timeout:** [ReasonerConfig.timeout] is a wall-clock budget for the whole call, enforced at every stage:
- * - serialization and OWL API loading run on a daemon loader thread that the caller waits for only until the
- *   deadline (OWL API loading cannot be interrupted; an abandoned load finishes in the background and is discarded);
- * - once the deadline passes, a watchdog calls [OWLReasoner.interrupt] **repeatedly** until the reasoner call
- *   returns, because HermiT clears a pending interrupt whenever it starts a new internal task;
+ * - OWL API loading **and engine creation** (HermiT's preprocessing, which ignores interrupts) run on a daemon
+ *   loader thread that the caller waits for only until the deadline; a load that misses it is abandoned, finishes in
+ *   the background, disposes the engine it created and is discarded;
+ * - at most [MAX_IN_FLIGHT_LOADS] loads may run at once, abandoned ones included, so timed-out callers cannot make
+ *   background work pile up: a call that cannot start a load before its deadline fails with a clear "too many HermiT
+ *   loads in progress" error;
+ * - a watchdog runs from the start of the call; once the deadline passes it calls [OWLReasoner.interrupt]
+ *   **repeatedly** on the engine (as soon as one exists) until the reasoner call returns, because HermiT clears a
+ *   pending interrupt whenever it starts a new internal task;
  * - every call into the reasoner, including the many per-entity calls made inside OWL API inferred-axiom
  *   generators, first checks the remaining budget, and materialization checks it per axiom.
  *
@@ -39,9 +44,27 @@ class HermitRdfReasoner internal constructor(
     private val config: ReasonerConfig,
     /** Creates the engine; replaceable in tests. */
     private val engineFactory: (OWLOntology, org.semanticweb.HermiT.Configuration) -> OWLReasoner,
+    /** Limits background loads in flight, abandoned ones included; replaceable in tests. */
+    private val loadPermits: java.util.concurrent.Semaphore,
 ) : RdfReasoner {
 
-    constructor(config: ReasonerConfig) : this(config, { ontology, options -> ReasonerFactory().createReasoner(ontology, options) })
+    internal constructor(
+        config: ReasonerConfig,
+        engineFactory: (OWLOntology, org.semanticweb.HermiT.Configuration) -> OWLReasoner,
+    ) : this(config, engineFactory, Loads.PERMITS)
+
+    constructor(config: ReasonerConfig) : this(config, { ontology, options -> ReasonerFactory().createReasoner(ontology, options) }, Loads.PERMITS)
+
+    /** Shared limit on background loads (OWL API loading plus engine creation). */
+    private object Loads {
+        val PERMITS = java.util.concurrent.Semaphore(MAX_IN_FLIGHT_LOADS)
+        const val RUNNING = 0
+        const val FINISHED = 1
+        const val ABANDONED = 2
+    }
+
+    /** Thrown when a load is abandoned at the deadline; the loader thread then owns the manager and the engine. */
+    private class LoadAbandoned(cause: Throwable) : IllegalStateException(TIMEOUT_MESSAGE, cause)
 
     init {
         require(!config.enableIncrementalReasoning && !config.cacheResults && !config.streamingMode) { "HermiT does not support incremental, cached, or streaming reasoning" }
@@ -67,20 +90,24 @@ class HermitRdfReasoner internal constructor(
         require(graph.size().toLong() <= config.maxMemoryUsage / 512) { "Input exceeds HermiT memory admission budget" }
         val manager = OWLManager.createOWLOntologyManager()
         var reasoner: OWLReasoner? = null
-        var watchdog: ScheduledExecutorService? = null
+        var ownsResources = true
+        val engineRef = java.util.concurrent.atomic.AtomicReference<OWLReasoner?>()
+        val watchdog: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "kastor-hermit-watchdog").apply { isDaemon = true } }
         try {
-            val ontology = loadWithinDeadline(graph, manager, deadline, timedOut)
-            checkBudget()
-            val options = org.semanticweb.HermiT.Configuration().apply { individualTaskTimeout = remainingMillis() }
-            val engine = engineFactory(ontology, options)
-            reasoner = engine
-            checkBudget()
-            watchdog = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "kastor-hermit-watchdog").apply { isDaemon = true } }
-            // Keep interrupting until the call returns: HermiT resets a pending interrupt when a new task starts.
+            // Started before the engine exists: once the deadline passes, keep interrupting whichever engine is live,
+            // because HermiT resets a pending interrupt when a new task starts.
             watchdog.scheduleWithFixedDelay({
                 timedOut.set(true)
-                engine.interrupt()
+                engineRef.get()?.interrupt()
             }, remainingMillis(), INTERRUPT_REPEAT_MILLIS, TimeUnit.MILLISECONDS)
+            val (ontology, engine) = try {
+                loadWithinDeadline(graph, manager, deadline, timedOut, engineRef)
+            } catch (abandoned: LoadAbandoned) {
+                ownsResources = false // the loader thread disposes the engine and releases the manager
+                throw IllegalStateException(TIMEOUT_MESSAGE, abandoned.cause)
+            }
+            reasoner = engine
+            checkBudget()
             val budgeted = budgeted(engine, ::checkBudget)
 
             return try {
@@ -107,9 +134,11 @@ class HermitRdfReasoner internal constructor(
             }
         } finally {
             try {
-                watchdog?.shutdownNow()
+                watchdog.shutdownNow()
             } finally {
-                try { reasoner?.dispose() } finally { manager.ontologies.toList().forEach { manager.removeOntology(it) } }
+                if (ownsResources) {
+                    try { reasoner?.dispose() } finally { manager.ontologies.toList().forEach { manager.removeOntology(it) } }
+                }
             }
         }
     }
@@ -140,39 +169,93 @@ class HermitRdfReasoner internal constructor(
     }
 
     /**
-     * Serializes [graph] (on the caller's thread, so an enclosing transaction's view is used) and loads it with
-     * the OWL API on a daemon thread, waiting at most until [deadline]. OWL API loading is not interruptible:
-     * a load that misses the deadline is abandoned, finishes in the background and is discarded.
+     * Serializes [graph] (on the caller's thread, so an enclosing transaction's view is used), then loads it with the
+     * OWL API **and creates the engine** on a daemon loader thread, waiting at most until [deadline]. Neither step is
+     * interruptible. A load that misses the deadline is abandoned ([LoadAbandoned]): it keeps its permit until it
+     * finishes, then disposes the engine it created and releases the manager's ontologies itself.
+     *
+     * The created engine is published to [engineRef] as soon as it exists, so the watchdog can interrupt it.
      */
-    private fun loadWithinDeadline(graph: RdfGraph, manager: OWLOntologyManager, deadline: Long, timedOut: AtomicBoolean): OWLOntology {
+    private fun loadWithinDeadline(
+        graph: RdfGraph,
+        manager: OWLOntologyManager,
+        deadline: Long,
+        timedOut: AtomicBoolean,
+        engineRef: java.util.concurrent.atomic.AtomicReference<OWLReasoner?>,
+    ): Pair<OWLOntology, OWLReasoner> {
         val turtle = graph.serialize(RdfFormat.TURTLE)
         require(turtle.length.toLong() * 2 <= config.maxMemoryUsage / 2) { "Serialized ontology exceeds memory budget" }
-        if (System.nanoTime() - deadline >= 0) {
+        fun remainingNanos() = deadline - System.nanoTime()
+        if (remainingNanos() <= 0) {
             timedOut.set(true)
             throw IllegalStateException(TIMEOUT_MESSAGE)
         }
-        val load = java.util.concurrent.CompletableFuture<OWLOntology>()
+        val acquired = try {
+            loadPermits.tryAcquire(remainingNanos().coerceAtLeast(0), TimeUnit.NANOSECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException(TIMEOUT_MESSAGE, e)
+        }
+        if (!acquired) {
+            timedOut.set(true)
+            throw IllegalStateException(
+                "$TIMEOUT_MESSAGE: too many HermiT loads in progress (at most $MAX_IN_FLIGHT_LOADS, including abandoned ones " +
+                    "that are still finishing); retry later or raise ReasonerConfig.timeout",
+            )
+        }
+        val state = java.util.concurrent.atomic.AtomicInteger(Loads.RUNNING)
+        val load = java.util.concurrent.CompletableFuture<Pair<OWLOntology, OWLReasoner>>()
         val loader = Thread({
+            var engine: OWLReasoner? = null
             try {
-                load.complete(manager.loadOntologyFromOntologyDocument(StringDocumentSource(turtle, IRI.create("urn:kastor:hermit-input"))))
+                val ontology = manager.loadOntologyFromOntologyDocument(StringDocumentSource(turtle, IRI.create("urn:kastor:hermit-input")))
+                val options = org.semanticweb.HermiT.Configuration().apply {
+                    individualTaskTimeout = TimeUnit.NANOSECONDS.toMillis(remainingNanos()).coerceAtLeast(1)
+                }
+                engine = engineFactory(ontology, options)
+                engineRef.set(engine)
+                load.complete(ontology to engine)
             } catch (t: Throwable) {
                 load.completeExceptionally(t)
+            } finally {
+                try {
+                    if (!state.compareAndSet(Loads.RUNNING, Loads.FINISHED)) {
+                        // Abandoned by a timed-out caller: this thread owns the engine and the manager now.
+                        try { engine?.dispose() } finally { manager.ontologies.toList().forEach { manager.removeOntology(it) } }
+                    }
+                } finally {
+                    loadPermits.release()
+                }
             }
         }, "kastor-hermit-loader").apply { isDaemon = true }
         loader.start()
         return try {
-            load.get((deadline - System.nanoTime()).coerceAtLeast(1), TimeUnit.NANOSECONDS)
+            load.get(remainingNanos().coerceAtLeast(1), TimeUnit.NANOSECONDS)
         } catch (e: java.util.concurrent.TimeoutException) {
             timedOut.set(true)
-            loader.interrupt()
-            throw IllegalStateException(TIMEOUT_MESSAGE, e)
+            abandonOrFail(state, load, e)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            loader.interrupt()
-            throw IllegalStateException(TIMEOUT_MESSAGE, e)
+            abandonOrFail(state, load, e)
         } catch (e: java.util.concurrent.ExecutionException) {
             throw e.cause ?: e
         }
+    }
+
+    /**
+     * Hands the load to the still-running loader thread ([LoadAbandoned]). If the loader finished in the meantime it
+     * did not see the abandonment, so the caller keeps ownership: the engine it created is disposed here (compute()
+     * never received it), the manager is released by compute()'s `finally`, and the call reports the timeout.
+     */
+    private fun abandonOrFail(
+        state: java.util.concurrent.atomic.AtomicInteger,
+        load: java.util.concurrent.CompletableFuture<Pair<OWLOntology, OWLReasoner>>,
+        cause: Exception,
+    ): Nothing {
+        if (state.compareAndSet(Loads.RUNNING, Loads.ABANDONED)) throw LoadAbandoned(cause)
+        // Finished concurrently: dispose here, since compute() never received the engine.
+        runCatching { load.join() }.getOrNull()?.second?.dispose()
+        throw IllegalStateException(TIMEOUT_MESSAGE, cause)
     }
 
     /** [engine] behind a proxy that checks the budget before every call (except `interrupt`/`dispose`). */
@@ -333,6 +416,8 @@ class HermitRdfReasoner internal constructor(
     private companion object {
         val LOG: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(HermitRdfReasoner::class.java)
         const val TIMEOUT_MESSAGE = "HermiT reasoning timed out or was cancelled"
+        /** Upper bound on background loads (OWL API loading plus engine creation) in flight, abandoned ones included. */
+        val MAX_IN_FLIGHT_LOADS: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
         /** Interval at which the watchdog re-issues `interrupt()` after the deadline. */
         const val INTERRUPT_REPEAT_MILLIS = 25L
         const val OWL = "http://www.w3.org/2002/07/owl#"

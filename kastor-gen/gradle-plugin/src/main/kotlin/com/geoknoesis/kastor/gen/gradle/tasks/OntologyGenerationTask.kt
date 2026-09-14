@@ -26,8 +26,8 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 /**
  * Gradle task for generating domain interfaces and wrappers from SHACL and JSON-LD context files.
@@ -258,14 +258,11 @@ abstract class OntologyGenerationTask : DefaultTask() {
         val manifest = File(outputDir, MANIFEST)
 
         // 1. Validate every entry of the previous manifest before deleting anything.
-        val previous = if (manifest.exists()) {
-            manifest.readLines().filter { it.isNotBlank() }.map { relative ->
-                root.resolve(relative).normalize().also {
-                    if (!it.startsWith(root) || it == root) fail("generated-files manifest escapes the output directory: $relative")
-                }
+        val previousEntries = if (manifest.exists()) manifest.readLines().filter { it.isNotBlank() } else emptyList()
+        val previous = previousEntries.map { relative ->
+            root.resolve(relative).normalize().also {
+                if (!it.startsWith(root) || it == root) fail("generated-files manifest escapes the output directory: $relative")
             }
-        } else {
-            emptyList()
         }
 
         // 2. Write the complete new output to a staging directory: an IO failure here leaves the previous output
@@ -285,20 +282,37 @@ abstract class OntologyGenerationTask : DefaultTask() {
             fail("cannot write generated files: ${e.message}", e)
         }
 
-        // 3. Replace: delete what the previous run wrote BEFORE moving the new files in, so a case-only rename
-        //    (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file systems; then moves (renames
-        //    within one file system) and the manifest last.
-        previous.forEach { Files.deleteIfExists(it) }
-        outputDir.mkdirs()
-        generated.forEach { relative ->
-            val target = File(outputDir, relative)
-            target.parentFile.mkdirs()
-            Files.move(File(staging, relative).toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        // 3. Replace. Until every new file is in place the manifest lists the previous AND the new files, so a failure
+        //    part-way (e.g. a file locked on Windows past the retries) never leaves an untracked generated file: the
+        //    next run deletes everything the manifest lists. Previous files are deleted BEFORE the new ones are moved
+        //    in, so a case-only rename (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file
+        //    systems. Deletes and moves retry transient locks; cross-drive moves copy and then rename.
+        try {
+            outputDir.mkdirs()
+            manifest.writeText((previousEntries + generated).distinct().sorted().joinToString("\n"))
+            previous.forEach { fileReplacement.delete(it) }
+            generated.forEach { relative ->
+                val target = File(outputDir, relative).toPath()
+                Files.createDirectories(target.parent)
+                fileReplacement.move(File(staging, relative).toPath(), target)
+            }
+            manifest.writeText(generated.joinToString("\n"))
+        } catch (e: IOException) {
+            fail(
+                "cannot replace the generated files in ${outputDir.path} (${e.javaClass.simpleName}: ${e.message}); " +
+                    "the output may be incomplete. Close programs holding the files and re-run the task: every file " +
+                    "written so far is tracked and will be replaced.",
+                e,
+            )
+        } finally {
+            staging.deleteRecursively()
         }
-        manifest.writeText(generated.joinToString("\n"))
-        staging.deleteRecursively()
         logger.info("Ontology generation completed: ${generated.size} files")
     }
+
+    /** Deletes and moves generated files, retrying transient locks (test hook). */
+    @get:Internal
+    internal var fileReplacement: FileReplacement = FileReplacement()
 
     private companion object {
         const val MANIFEST = ".kastor-generated-files"

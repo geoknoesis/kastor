@@ -33,10 +33,10 @@ jobs:
       KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -46,19 +46,42 @@ jobs:
         run: |
           python scripts/test_check_test_results.py
           python scripts/test_check_staged_publications.py
+          python scripts/test_check_build_pins.py
+          python scripts/test_check_readme_imports.py
 
       - name: Documentation version references
         run: python scripts/check-doc-versions.py
+
+      - name: Build pins match the version catalog
+        # e.g. the kotlin-metadata-jvm buildscript pin in build.gradle.kts must equal `kotlin` in libs.versions.toml.
+        run: python scripts/check-build-pins.py
+
+      - name: README samples import what they use
+        run: python scripts/check-readme-imports.py
 
       - name: Gradle check (tests, ABI, BOM coverage, coverage floors)
         run: ./gradlew check --no-daemon -x :rdf:conformance:test
         shell: bash
 
       - name: Dependency health (advisory)
+        id: build-health
         # Advisory only: a failure here must not skip the conformance, test-count and coverage gates below.
         continue-on-error: true
         run: ./gradlew buildHealth --no-daemon
         shell: bash
+
+      - name: Report advisory dependency health failure
+        # continue-on-error turns the step green in the UI; surface the failure as a warning and in the summary.
+        if: steps.build-health.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::warning title=buildHealth failed::Dependency health (advisory) failed on ${{ matrix.os }}. The job continues; see the 'Dependency health (advisory)' step log and build/reports/dependency-analysis."
+          {
+            echo "### :warning: buildHealth failed (advisory)"
+            echo
+            echo "\`./gradlew buildHealth\` failed on \`${{ matrix.os }}\`. The build continued because the step is advisory;"
+            echo "check the *Dependency health (advisory)* step log."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: RDF 1.2 conformance smoke
         run: ./gradlew :rdf:conformance:conformanceSmokeTest --no-daemon
@@ -66,9 +89,9 @@ jobs:
 
       - name: Verify executed test counts and skips
         # Floor is ~90% of the executed count without the RDF corpus and with the bundled SHACL fixture
-        # (~1,690 on 2026-09-14: 1,292 outside kastor-gen plus 396 kastor-gen/codegen examples); raise it as tests
-        # are added. New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 1500 --skip-allowlist scripts/test-skip-allowlist.json
+        # (~1,850 on 2026-09-14 after the round-three merges); raise it as tests are added.
+        # New skips must be listed in scripts/test-skip-allowlist.json.
+        run: python scripts/check-test-results.py build/modules --minimum 1650 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -76,7 +99,7 @@ jobs:
 
       - name: Upload verification reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verification-${{ matrix.os }}
           path: build/modules/**/reports/
@@ -97,10 +120,10 @@ jobs:
       KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -124,7 +147,7 @@ jobs:
 
       - name: Upload SHACL test reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: shacl-w3c-suite-reports
           path: build/modules/rdf/shacl-validation/reports/
@@ -139,10 +162,10 @@ jobs:
       KASTOR_SKIP_OPENAI_LLM_TESTS: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
@@ -153,11 +176,11 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 1500 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 1650 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload verification reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verification-macos
           path: build/modules/**/reports/

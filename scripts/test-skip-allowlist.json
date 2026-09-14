@@ -1,5 +1,5 @@
 {
- "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 143 allowlisted upstream gaps; SHACL: known deviations now execute and must fail with an explicit unsupported-feature error); other entries are environment-gated. 219 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
+ "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 143 allowlisted upstream gaps; SHACL: known deviations now execute and must fail with an explicit unsupported-feature error); other entries are environment-gated. 221 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
  "entries": [
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
@@ -219,6 +219,12 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TRIG] lantag_with_subtag",
+   "count": 1,
+   "reason": "Jena 6 canonicalises language-tag case when it creates literals (NodeFactory.createLiteralLang turns en-us into en-US); RDF Concepts permits this normalisation and Jena offers no way to keep the written case (upstream limitation, rdf/conformance/src/test/resources/conformance-allowlist.tsv)"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TURTLE] IRI-resolution-01",
    "count": 1,
    "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#IRI-resolution-01"
@@ -252,6 +258,12 @@
    "test": "[Jena/TURTLE] comment_following_localName",
    "count": 1,
    "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#comment_following_localName"
+  },
+  {
+   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
+   "test": "[Jena/TURTLE] lantag_with_subtag",
+   "count": 1,
+   "reason": "Jena 6 canonicalises language-tag case when it creates literals (NodeFactory.createLiteralLang turns en-us into en-US); RDF Concepts permits this normalisation and Jena offers no way to keep the written case (upstream limitation, rdf/conformance/src/test/resources/conformance-allowlist.tsv)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
