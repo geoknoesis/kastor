@@ -123,7 +123,19 @@ internal class JenaGraph(
     override fun clear(): Boolean = write { val changed = !model.isEmpty; model.removeAll(); changed }
 
     override fun size(): Int = read { view ->
-        if (view is org.apache.jena.rdf.model.InfModel) {
+        if (lenientRead) {
+            // Lenient reads skip unrepresentable statements; count exactly what find() returns.
+            val iterator = view.graph.find()
+            try {
+                var count = 0
+                iterator.forEachRemaining { triple ->
+                    if (runCatching { JenaTerms.fromJenaTriple(triple) }.exceptionOrNull() !is IllegalArgumentException) count++
+                }
+                count
+            } finally {
+                iterator.close()
+            }
+        } else if (view is org.apache.jena.rdf.model.InfModel || view.graph is org.apache.jena.reasoner.InfGraph) {
             // InfModel.size() does not count every entailed statement; count what find() exposes
             // so size() always agrees with getTriples().
             val iterator = view.graph.find()

@@ -135,37 +135,87 @@ class JenaProvider : RdfProvider {
      * Jena parses on a background thread; read-ahead is bounded to [STREAM_CHUNK_SIZE] x [STREAM_QUEUE_SIZE] triples.
      * Implementation target for the core `openTripleStream(inputStream, format, baseIri)` provider method.
      */
-    internal fun openTripleStreamWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
+    internal fun openTripleStreamWithBase(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        openTripleStreamWithBase(inputStream, format, baseIri, STREAM_CLEANER::register)
+
+    /**
+     * [openTripleStreamWithBase] with an injectable cleanup registrar, so tests can trigger the cleanup of an
+     * abandoned stream deterministically instead of waiting for garbage collection.
+     */
+    internal fun openTripleStreamWithBase(
+        inputStream: java.io.InputStream,
+        format: String,
+        baseIri: String?,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+    ): TripleStream {
         val lang = JenaParsing.graphLang(format)
         val parser = org.apache.jena.riot.system.AsyncParser.of(JenaParsing.parser(inputStream, lang, baseIri))
             .setChunkSize(STREAM_CHUNK_SIZE)
             .setQueueSize(STREAM_QUEUE_SIZE)
             .asyncParseTriples()
-        return object : TripleStream {
-            private var closed = false
-            private val knownIris = HashSet<String>()
-            private val rows = Sequence {
-                object : Iterator<RdfTriple> {
-                    override fun hasNext(): Boolean {
-                        check(!closed) { "Triple stream is closed" }
-                        return JenaParsing.parseWithFormatErrors(format) { parser.hasNext() }
-                    }
-                    override fun next(): RdfTriple {
-                        check(!closed) { "Triple stream is closed" }
-                        return JenaTerms.fromJenaTriple(JenaParsing.parseWithFormatErrors(format) { parser.next().also { JenaParsing.validateTriple(it, knownIris) } })
-                    }
-                }
-            }.constrainOnce()
-            override fun iterator(): Iterator<RdfTriple> { check(!closed); return rows.iterator() }
-            override fun close() {
-                if (!closed) {
-                    closed = true
-                    try { inputStream.close() } finally { parser.close() }
-                }
-            }
+        return JenaTripleStream(StreamResources(inputStream, parser), format, registerCleanup)
+    }
+
+    /**
+     * What an open stream holds: the caller's input and Jena's background parser (thread `AsyncParser`, blocked on a
+     * bounded queue while nobody reads). Closing it stops and joins that thread. It must never reference the
+     * [JenaTripleStream] itself, so an abandoned stream stays collectable and its cleaner can run.
+     */
+    internal class StreamResources(
+        private val input: java.io.InputStream,
+        val parser: org.apache.jena.atlas.iterator.IteratorCloseable<org.apache.jena.graph.Triple>,
+    ) : Runnable {
+        @Volatile var closed = false
+            private set
+
+        override fun run() {
+            if (closed) return
+            closed = true
+            try { input.close() } catch (_: java.io.IOException) { } finally { parser.close() }
         }
     }
 
+    /**
+     * Lazy Jena triple stream. [close] stops the parser thread and closes the input; a stream abandoned without
+     * [close] is closed by a [java.lang.ref.Cleaner] once it becomes unreachable, so its parser thread cannot stay
+     * blocked forever.
+     */
+    internal class JenaTripleStream(
+        internal val resources: StreamResources,
+        private val format: String,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+    ) : TripleStream {
+        private val cleanable = registerCleanup(this, resources)
+        private val knownIris = HashSet<String>()
+        private val rows = Sequence {
+            object : Iterator<RdfTriple> {
+                override fun hasNext(): Boolean {
+                    check(!resources.closed) { "Triple stream is closed" }
+                    return JenaParsing.parseWithFormatErrors(format) { resources.parser.hasNext() }
+                }
+                override fun next(): RdfTriple {
+                    check(!resources.closed) { "Triple stream is closed" }
+                    return JenaTerms.fromJenaTriple(JenaParsing.parseWithFormatErrors(format) { resources.parser.next().also { JenaParsing.validateTriple(it, knownIris) } })
+                }
+            }
+        }.constrainOnce()
+
+        override fun iterator(): Iterator<RdfTriple> {
+            check(!resources.closed) { "Triple stream is closed" }
+            return rows.iterator()
+        }
+
+        override fun close() = cleanable.clean()
+    }
+
+    /**
+     * Parses a dataset into [repository].
+     *
+     * - Jena repositories: streamed straight into one write transaction on the store (joining an enclosing transaction).
+     * - Other repositories that support transactions: streamed in batches of [DATASET_BATCH_SIZE] triples per graph
+     *   into one `transaction { }` of the target, so memory stays bounded and a parse failure rolls the load back.
+     * - Repositories without transactions: parsed completely first, so a syntax error never leaves partial data.
+     */
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
         val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
             ?: throw RdfFormatException.UnsupportedFormat(format, JenaParsing.FORMATS)
@@ -181,7 +231,15 @@ class JenaProvider : RdfProvider {
             }
             return
         }
-        // Foreign repositories: parse fully first, so a syntax error never leaves partial data behind.
+        if (repository.getCapabilities().supportsTransactions) {
+            repository.transaction {
+                val sink = BatchingDatasetSink(this)
+                JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(sink)) }
+                sink.flushAll()
+            }
+            return
+        }
+        // Repositories without transactions: parse fully first, so a syntax error never leaves partial data behind.
         val parsed = org.apache.jena.query.DatasetFactory.create()
         try {
             JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
@@ -194,12 +252,44 @@ class JenaProvider : RdfProvider {
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String) =
         parseDataset(repository, inputStream, format, null)
 
-    private companion object {
+    /**
+     * Parser sink that converts quads as they are parsed and adds them to [target] (inside its transaction) in
+     * batches of [DATASET_BATCH_SIZE] triples per graph, so a load never buffers a copy of the whole dataset.
+     */
+    private class BatchingDatasetSink(private val target: RdfRepository) : org.apache.jena.riot.system.StreamRDFBase() {
+        private val pending = LinkedHashMap<String?, MutableList<RdfTriple>>()
+
+        override fun triple(triple: org.apache.jena.graph.Triple) = add(null, triple)
+
+        override fun quad(quad: org.apache.jena.sparql.core.Quad) =
+            add(if (quad.isDefaultGraph) null else quad.graph.uri, quad.asTriple())
+
+        private fun add(graph: String?, triple: org.apache.jena.graph.Triple) {
+            val batch = pending.getOrPut(graph) { ArrayList(DATASET_BATCH_SIZE) }
+            batch.add(JenaTerms.fromJenaTriple(triple))
+            if (batch.size >= DATASET_BATCH_SIZE) flush(graph)
+        }
+
+        private fun flush(graph: String?) {
+            val batch = pending.remove(graph) ?: return
+            if (graph == null) target.editDefaultGraph().addTriples(batch) else target.editGraph(Iri(graph)).addTriples(batch)
+        }
+
+        fun flushAll() = pending.keys.toList().forEach(::flush)
+    }
+
+    internal companion object {
         /** Triples per batch handed from Jena's background parser to the consumer. */
         const val STREAM_CHUNK_SIZE = 1_000
 
         /** Batches buffered ahead of the consumer. */
         const val STREAM_QUEUE_SIZE = 4
+
+        /** Triples per graph added to a foreign repository at a time by [parseDataset]. */
+        const val DATASET_BATCH_SIZE = 1_000
+
+        /** Closes triple streams that were abandoned without `close()`. */
+        val STREAM_CLEANER: java.lang.ref.Cleaner = java.lang.ref.Cleaner.create()
     }
 }
 

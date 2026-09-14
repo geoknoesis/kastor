@@ -8,6 +8,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaBridge {
 	public final fun fromFile (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public static synthetic fun fromFile$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromJenaGraph (Lorg/apache/jena/graph/Graph;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromJenaGraph (Lorg/apache/jena/graph/Graph;Z)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromJenaModel (Lorg/apache/jena/rdf/model/Model;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromJenaModel (Lorg/apache/jena/rdf/model/Model;Z)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromString (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;

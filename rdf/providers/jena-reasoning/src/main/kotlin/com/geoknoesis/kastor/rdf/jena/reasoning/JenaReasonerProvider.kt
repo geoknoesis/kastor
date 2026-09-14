@@ -78,17 +78,35 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   rdfs5/rdfs7 for [ReasoningRule.RDFS_SUBPROPERTY], rdfs2 for [ReasoningRule.RDFS_DOMAIN], rdfs3 for
  *   [ReasoningRule.RDFS_RANGE]), the same rules as the memory reasoner. Jena's OWL reasoners cannot select
  *   rules, so OWL_MICRO / OWL_RL reject any rule set other than the type's default.
- * - [ReasonerConfig.timeout] is a wall-clock budget checked before each phase and for every inferred statement
- *   read from the inference model (Jena's forward-rule preparation itself cannot be interrupted); a timed-out
- *   call fails with [IllegalStateException].
+ * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. Jena's rule preparation (`prepare()`, which
+ *   runs the forward/RETE rules over the data) cannot be interrupted, so it runs on a daemon worker thread that the
+ *   caller waits for only until the deadline; a preparation that misses it is abandoned, finishes in the background
+ *   and releases its models itself. At most [MAX_ABANDONED_PREPARATIONS] preparations may run at once: a call that
+ *   cannot start one before its deadline fails with a clear "too many rule preparations in progress" error instead
+ *   of piling up background work. After preparation the budget is checked for every inferred statement read. A
+ *   timed-out call fails with [IllegalStateException].
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
+ *   It is checked right after preparation against the forward deductions (so an oversized forward closure fails
+ *   before being read) and then incrementally for every inferred triple. The forward closure built by preparation
+ *   itself cannot be bounded by count; only the timeout limits it.
  *
  * **Axiomatic triples:** the full RDFS and OWL rule sets also entail axioms about the RDF/RDFS/OWL vocabulary
- * itself (e.g. `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner, inferred triples whose
- * subject is an `rdf:`, `rdfs:`, `owl:` or `xsd:` term are dropped unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`.
+ * itself (e.g. `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner these are dropped unless
+ * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Exactly the axioms are dropped: the triples the
+ * same reasoner entails from an **empty** graph (computed once per rule set). Real inferences about vocabulary terms,
+ * such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
  */
-class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
+class JenaReasoner internal constructor(
+    private val config: ReasonerConfig,
+    /** Monotonic clock in nanoseconds; replaceable in tests. */
+    private val clock: () -> Long,
+    /** Runs Jena's rule preparation; replaceable in tests. */
+    private val prepare: (InfModel) -> Unit,
+    /** Limits concurrently running (including abandoned) preparations; replaceable in tests. */
+    private val preparations: java.util.concurrent.Semaphore,
+) : RdfReasoner {
+
+    constructor(config: ReasonerConfig) : this(config, System::nanoTime, { it.prepare() }, PREPARATIONS)
 
     init {
         require(config.timeout.toNanos() > 0) { "ReasonerConfig.timeout must be positive" }
@@ -134,29 +152,125 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
     }
 
     /** Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted. */
-    private class Budget(timeout: java.time.Duration) {
-        private val deadline = System.nanoTime() + timeout.toNanos()
+    private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
+        private val deadline = clock() + timeout.toNanos()
+        fun remainingNanos(): Long = deadline - clock()
         fun check() {
-            check(System.nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Jena reasoning timed out or was cancelled" }
+            check(remainingNanos() > 0 && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
         }
     }
 
+    /** Thrown when a preparation is abandoned at the deadline; the worker then owns (and closes) the models. */
+    private class PreparationAbandoned : IllegalStateException(TIMEOUT_MESSAGE)
+
     private fun <T> withInference(graph: RdfGraph, block: (Model, InfModel, Budget) -> T): T {
-        val budget = Budget(config.timeout)
+        val budget = Budget(config.timeout, clock)
         val base = JenaBridge.copyToJenaModel(graph)
+        var inf: InfModel? = null
+        var ownsModels = true
         try {
             budget.check()
-            val inf = ModelFactory.createInfModel(reasoner, base)
-            try {
-                inf.prepare()
-                budget.check()
-                return block(base, inf, budget)
-            } finally {
-                inf.close()
-            }
+            inf = ModelFactory.createInfModel(reasoner, base)
+            prepareWithinDeadline(inf, base, budget)
+            budget.check()
+            checkForwardDeductions(inf, base)
+            return block(base, inf, budget)
+        } catch (abandoned: PreparationAbandoned) {
+            ownsModels = false // the preparation worker closes both models when it finishes
+            throw IllegalStateException(TIMEOUT_MESSAGE, abandoned)
         } finally {
-            base.close()
+            if (ownsModels) {
+                try { inf?.close() } finally { base.close() }
+            }
         }
+    }
+
+    /**
+     * Runs [prepare] on a daemon worker and waits at most until the budget's deadline. On timeout the preparation is
+     * abandoned: it keeps its [preparations] permit until it finishes, and then closes [inf] and [base] itself.
+     */
+    private fun prepareWithinDeadline(inf: InfModel, base: Model, budget: Budget) {
+        val acquired = try {
+            preparations.tryAcquire(budget.remainingNanos().coerceAtLeast(0), java.util.concurrent.TimeUnit.NANOSECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException(TIMEOUT_MESSAGE, e)
+        }
+        check(acquired) {
+            "Jena reasoning timed out: too many rule preparations in progress (at most $MAX_ABANDONED_PREPARATIONS, " +
+                "including abandoned ones that are still finishing); retry later or raise ReasonerConfig.timeout"
+        }
+        val state = java.util.concurrent.atomic.AtomicInteger(RUNNING)
+        val outcome = java.util.concurrent.CompletableFuture<Unit>()
+        val worker = Thread({
+            try {
+                prepare(inf)
+                outcome.complete(Unit)
+            } catch (t: Throwable) {
+                outcome.completeExceptionally(t)
+            } finally {
+                preparations.release()
+                if (!state.compareAndSet(RUNNING, FINISHED)) {
+                    // Abandoned by a timed-out caller: this worker owns the models now.
+                    try { inf.close() } catch (_: Exception) { } finally { base.close() }
+                }
+            }
+        }, PREPARE_THREAD)
+        worker.isDaemon = true
+        worker.start()
+        try {
+            outcome.get(budget.remainingNanos().coerceAtLeast(1), java.util.concurrent.TimeUnit.NANOSECONDS)
+        } catch (e: java.util.concurrent.TimeoutException) {
+            abandonOrFail(state, cause = e)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            abandonOrFail(state, cause = e)
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+    }
+
+    /**
+     * Hands the models to the still-running worker ([PreparationAbandoned]). If the worker finished in the meantime
+     * it did not see the abandonment, so the caller keeps ownership and simply reports the timeout.
+     */
+    private fun abandonOrFail(state: java.util.concurrent.atomic.AtomicInteger, cause: Exception): Nothing {
+        if (state.compareAndSet(RUNNING, ABANDONED)) throw PreparationAbandoned().also { it.initCause(cause) }
+        throw IllegalStateException(TIMEOUT_MESSAGE, cause)
+    }
+
+    /**
+     * Fails fast when the forward deductions alone prove the inferred triples exceed the threshold: every deduction
+     * that is neither asserted nor axiomatic is an inferred triple.
+     */
+    private fun checkForwardDeductions(inf: InfModel, base: Model) {
+        val deductions = (inf.graph as? org.apache.jena.reasoner.InfGraph)?.deductionsGraph?.size()?.toLong() ?: return
+        val lowerBound = deductions - base.size() - (if (includeAxiomatic) 0 else axiomatic.size)
+        require(lowerBound <= config.materializationThreshold) {
+            "Inferred triples exceed materializationThreshold (${config.materializationThreshold}): " +
+                "the forward closure alone adds at least $lowerBound triples"
+        }
+    }
+
+    /** Triples this reasoner entails from an empty graph (the RDF/RDFS/OWL axioms of its rule set). */
+    private val axiomatic: Set<org.apache.jena.graph.Triple> by lazy {
+        AXIOMS.computeIfAbsent(axiomKey()) {
+            val empty = ModelFactory.createDefaultModel()
+            val closure = ModelFactory.createInfModel(reasoner, empty)
+            try {
+                val iterator = closure.graph.find()
+                try { iterator.toSet() } finally { iterator.close() }
+            } finally {
+                closure.close()
+                empty.close()
+            }
+        }
+    }
+
+    private fun axiomKey(): String = when (config.reasonerType) {
+        ReasonerType.CUSTOM -> "CUSTOM:" + config.customRules.joinToString("\n") { "${it.name}|${it.pattern}|${it.conclusion}" }
+        ReasonerType.RDFS -> "RDFS:" + config.enabledRules.intersect(RDFS_RULE_GROUPS.keys).map { it.name }.sorted()
+        else -> config.reasonerType.name
     }
 
     override fun reason(graph: RdfGraph): ReasoningResult {
@@ -267,7 +381,7 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 budget.check()
                 val triple = iterator.next()
                 if (!(triple.subject.isURI || triple.subject.isBlank) || !triple.predicate.isURI || asserted.contains(triple)) continue
-                if (!includeAxiomatic && triple.subject.isURI && isVocabularyTerm(triple.subject.uri)) continue
+                if (!includeAxiomatic && triple in axiomatic) continue
                 result.add(
                     RdfTriple(
                         rdfTermFromJena(infModel.asRDFNode(triple.subject)) as RdfResource,
@@ -323,14 +437,23 @@ class JenaReasoner(private val config: ReasonerConfig) : RdfReasoner {
         const val SUB_CLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf"
         const val SUB_PROPERTY_OF = "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"
 
-        private val VOCABULARY_NAMESPACES = listOf(
-            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "http://www.w3.org/2000/01/rdf-schema#",
-            "http://www.w3.org/2002/07/owl#",
-            "http://www.w3.org/2001/XMLSchema#",
-        )
+        const val TIMEOUT_MESSAGE = "Jena reasoning timed out or was cancelled"
 
-        fun isVocabularyTerm(iri: String): Boolean = VOCABULARY_NAMESPACES.any { iri.startsWith(it) }
+        /** Name of the daemon threads that run Jena's (uninterruptible) rule preparation. */
+        const val PREPARE_THREAD = "kastor-jena-prepare"
+
+        /** Upper bound on rule preparations running at once, abandoned ones included. */
+        val MAX_ABANDONED_PREPARATIONS: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
+
+        /** Shared by every [JenaReasoner] of this class loader. */
+        val PREPARATIONS = java.util.concurrent.Semaphore(MAX_ABANDONED_PREPARATIONS)
+
+        const val RUNNING = 0
+        const val FINISHED = 1
+        const val ABANDONED = 2
+
+        /** Axioms (closure of the empty graph) per rule set, computed once. */
+        val AXIOMS = java.util.concurrent.ConcurrentHashMap<String, Set<org.apache.jena.graph.Triple>>()
 
         /** RDFS entailment rules (RDF 1.1 Semantics) per rule group, identical to the memory reasoner. */
         val RDFS_RULE_GROUPS: Map<ReasoningRule, List<String>> = mapOf(

@@ -25,17 +25,107 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * This is an implementation detail and does not leak into the public API. All public methods
  * return Kastor types only.
  * 
+ * **Lenient reads** (opt-in, [lenientRead]): a wrapped store may hold statements Kastor cannot represent (e.g. a
+ * malformed language tag written by other RDF4J code). By default a graph read that meets one fails with
+ * [IllegalArgumentException]; with `lenientRead = true` such statements are skipped with a logged warning and
+ * `size()` counts only the statements reads return, like the Jena provider's lenient wrapped models. SPARQL results
+ * are not affected.
+ *
+ * **RDF-star subject tracking:** repositories created through the factory methods track whether quoted-triple
+ * subjects may exist, so `size()` and reifier lookups can use RDF4J's counts and indexes. SPARQL `UPDATE` makes the
+ * state unknown until the next read re-derives it with one scan. Repositories wrapping an externally created store
+ * (whose content other code may change) are never tracked and always use the scanning paths.
+ *
  * @param repository RDF4J Repository instance (internal implementation detail)
  * @param inference Whether the wrapped store provides inferred statements
+ * @param lenientRead skip statements that are not valid Kastor terms on graph reads instead of failing
  */
 class Rdf4jRepository(
     private val repository: Repository,
-    internal val inference: Boolean = false,
+    internal val inference: Boolean,
+    lenientRead: Boolean,
 ) : RdfRepository {
+
+    /** Wraps [repository]; graph reads are strict (see [lenientRead]). */
+    constructor(repository: Repository, inference: Boolean = false) : this(repository, inference, false)
+
+    /** Skip statements that are not valid Kastor terms on graph reads (with a warning) instead of failing. */
+    @Volatile internal var lenientRead: Boolean = lenientRead
+        private set
+
+    /** Switches graph reads to lenient mode (used for the provider's `lenientRead` option). */
+    internal fun lenient(): Rdf4jRepository = also { lenientRead = true }
 
     /** Connection pinned to the current thread's active `transaction { }`, if any. */
     private val txConnection = ThreadLocal<RepositoryConnection?>()
     private val readOnly = ThreadLocal<Boolean>()
+
+    /**
+     * True when the store is (or wraps) a `NativeStore`: it cannot hold RDF-star triples, and it resolves literals to
+     * stored ids by exact language-tag bytes once its value cache misses.
+     */
+    internal val nativeBase: Boolean = run {
+        val base = generateSequence(repository) { (it as? org.eclipse.rdf4j.repository.DelegatingRepository)?.delegate }.last()
+        val sail = (base as? SailRepository)?.sail
+        generateSequence(sail) { (it as? org.eclipse.rdf4j.sail.helpers.SailWrapper)?.baseSail }.any { it is NativeStore }
+    }
+
+    /** Whether writes may store RDF-star quoted triples (memory stores). */
+    internal val starCapable: Boolean get() = !nativeBase
+
+    /** Trusted knowledge about quoted-triple subjects; only lowered by a scan when [trackQuotedSubjects] is set. */
+    @Volatile private var quotedState: QuotedLevel = if (nativeBase) QuotedLevel.NONE else QuotedLevel.UNKNOWN
+    @Volatile private var trackQuotedSubjects = false
+    private val quotedLock = Any()
+    private val quotedModifications = java.util.concurrent.atomic.AtomicLong()
+    private val quotedWritersInFlight = java.util.concurrent.atomic.AtomicInteger()
+
+    /** Highest quoted-subject level written by the current thread's outermost transaction, if any. */
+    private val quotedWrittenInTransaction = ThreadLocal<QuotedLevel?>()
+
+    /**
+     * Records a write that may add quoted-triple subjects at [level]. The state is raised immediately (for reads in the
+     * same transaction) and again when the transaction ends, and a concurrent scan cannot lower it meanwhile.
+     */
+    internal fun noteQuotedWrite(level: QuotedLevel) {
+        if (nativeBase || level == QuotedLevel.NONE) return
+        val previous = quotedWrittenInTransaction.get()
+        if (previous == null) quotedWritersInFlight.incrementAndGet()
+        if (previous == null || level.ordinal > previous.ordinal) quotedWrittenInTransaction.set(level)
+        raiseQuoted(level)
+    }
+
+    private fun raiseQuoted(level: QuotedLevel) = synchronized(quotedLock) {
+        quotedModifications.incrementAndGet()
+        if (level.ordinal > quotedState.ordinal) quotedState = level
+    }
+
+    /**
+     * Where quoted-triple subjects may occur. For tracked repositories an unknown state is re-derived with one scan
+     * (and remembered when no write raced with it); untracked repositories report [QuotedLevel.UNKNOWN].
+     */
+    internal fun quotedSubjects(conn: RepositoryConnection): QuotedLevel {
+        val state = quotedState
+        if (state != QuotedLevel.UNKNOWN || !trackQuotedSubjects) return state
+        val start = quotedModifications.get()
+        var level = QuotedLevel.NONE
+        conn.getStatements(null, null, null, false).use { result ->
+            for (statement in result) {
+                val found = Rdf4jTerms.quotedLevel(statement.subject, statement.`object`)
+                if (found.ordinal > level.ordinal) level = found
+                if (level == QuotedLevel.NESTED) break
+            }
+        }
+        // A scan inside a transaction may see uncommitted changes; only remember results over committed data.
+        if (txConnection.get() == null) {
+            synchronized(quotedLock) {
+                if (quotedModifications.get() == start && quotedWritersInFlight.get() == 0 && quotedState == QuotedLevel.UNKNOWN) {
+                    quotedState = level
+                }
+            }
+        }
+        return level
+    }
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
         var result: Any? = null
@@ -144,7 +234,17 @@ class Rdf4jRepository(
     /** Provider variant this repository was created as (null for a wrapped, externally created repository). */
     private var variantId: String? = null
 
-    private fun withVariant(id: String): Rdf4jRepository = also { variantId = id }
+    /**
+     * Marks a repository created by a factory method: its store was empty when created and is only changed through
+     * this repository, so quoted-subject tracking starts from [QuotedLevel.NONE] and can be trusted.
+     */
+    internal fun withVariant(id: String): Rdf4jRepository = also {
+        variantId = id
+        synchronized(quotedLock) {
+            trackQuotedSubjects = true
+            if (quotedState == QuotedLevel.UNKNOWN) quotedState = QuotedLevel.NONE
+        }
+    }
 
     /**
      * Error message for a failed query. RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language
@@ -344,6 +444,8 @@ class Rdf4jRepository(
     override fun update(query: UpdateQuery) {
         withWriteConnection { conn ->
             val startTime = System.currentTimeMillis()
+            // An update may create quoted-triple subjects (RDF-star syntax, TRIPLE(), or moving triple terms).
+            noteQuotedWrite(QuotedLevel.UNKNOWN)
             try {
                 conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).execute()
                 RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
@@ -391,6 +493,12 @@ class Rdf4jRepository(
             } finally {
                 txConnection.remove()
                 readOnly.remove()
+                quotedWrittenInTransaction.get()?.let { level ->
+                    // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
+                    quotedWrittenInTransaction.remove()
+                    raiseQuoted(level)
+                    quotedWritersInFlight.decrementAndGet()
+                }
             }
         }
     }

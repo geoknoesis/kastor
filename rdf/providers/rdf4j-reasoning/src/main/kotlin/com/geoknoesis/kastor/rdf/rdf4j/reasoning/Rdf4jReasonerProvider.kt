@@ -3,10 +3,11 @@ package com.geoknoesis.kastor.rdf.rdf4j.reasoning
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.rdf4j.rdf4jStatementOf
 import com.geoknoesis.kastor.rdf.rdf4j.rdfTermFromRdf4j
-import com.geoknoesis.kastor.rdf.rdf4j.rdfTripleFromRdf4j
+import com.geoknoesis.kastor.rdf.rdf4j.rdfTriplesFromRdf4j
 import com.geoknoesis.kastor.rdf.reasoning.*
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Model
+import org.eclipse.rdf4j.model.Statement
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
 import org.eclipse.rdf4j.model.vocabulary.RDF
@@ -68,15 +69,25 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   rules, so a configuration that does not enable all four RDFS rule groups is rejected (use the Jena or memory
  *   reasoner for a subset). Non-RDFS rules in the set are ignored, as by every RDFS reasoner.
  * - [ReasonerConfig.timeout] is a wall-clock budget checked before and after the inferencer runs and for every
- *   statement read from the closure (the inferencer's own commit cannot be interrupted); a timed-out call fails
- *   with [IllegalStateException].
+ *   statement read from the closure. The inferencer's own commit (which computes the closure) cannot be interrupted,
+ *   so the timeout only takes effect once it returns; a timed-out call fails with [IllegalStateException].
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
+ *   It is checked incrementally while the closure is read back from the inferencer, so an oversized closure fails
+ *   before it is copied. The closure computed inside the inferencer's commit cannot be bounded by count.
  *
  * **Axiomatic triples:** the inferencer also materialises RDF/RDFS axioms about the vocabulary itself (e.g.
- * `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner, inferred triples whose subject is an
- * `rdf:`, `rdfs:`, `owl:` or `xsd:` term are dropped unless `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`.
+ * `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner these are dropped unless
+ * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Exactly the axioms are dropped: the statements the
+ * inferencer produces for an **empty** store (computed once). Real inferences about vocabulary terms, such as
+ * `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
  */
-class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
+class Rdf4jReasoner internal constructor(
+    private val config: ReasonerConfig,
+    /** Monotonic clock in nanoseconds; replaceable in tests. */
+    private val clock: () -> Long,
+) : RdfReasoner {
+
+    constructor(config: ReasonerConfig) : this(config, System::nanoTime)
 
     init {
         require(config.reasonerType == ReasonerType.RDFS) {
@@ -93,18 +104,18 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     private val includeAxiomatic = config.parameters["includeAxiomaticTriples"] == true
 
     /** Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted. */
-    private class Budget(timeout: java.time.Duration) {
-        private val deadline = System.nanoTime() + timeout.toNanos()
+    private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
+        private val deadline = clock() + timeout.toNanos()
         fun check() {
-            check(System.nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "RDF4J reasoning timed out or was cancelled" }
+            check(clock() - deadline < 0 && !Thread.currentThread().isInterrupted) { "RDF4J reasoning timed out or was cancelled" }
         }
     }
 
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()
-        val budget = Budget(config.timeout)
+        val budget = Budget(config.timeout, clock)
         val rdf4jModel = convertToRdf4jModel(graph)
-        val infModel = runRdfsInference(rdf4jModel, budget)
+        val infModel = runRdfsInference(rdf4jModel, budget, thresholdAgainst = rdf4jModel)
         val inferredTriples = inferredTriples(rdf4jModel, infModel, budget)
         val consistencyResult = checkConsistency(rdf4jModel)
         val classificationResult = if (config.includeAxioms) performClassification(infModel) else null
@@ -133,13 +144,13 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     override fun isConsistent(graph: RdfGraph): Boolean = checkConsistency(convertToRdf4jModel(graph)).isConsistent
 
     override fun getInferredTriples(graph: RdfGraph): List<RdfTriple> {
-        val budget = Budget(config.timeout)
+        val budget = Budget(config.timeout, clock)
         val model = convertToRdf4jModel(graph)
-        return inferredTriples(model, runRdfsInference(model, budget), budget)
+        return inferredTriples(model, runRdfsInference(model, budget, thresholdAgainst = model), budget)
     }
 
     override fun classify(graph: RdfGraph): ClassificationResult =
-        performClassification(runRdfsInference(convertToRdf4jModel(graph), Budget(config.timeout)))
+        performClassification(runRdfsInference(convertToRdf4jModel(graph), Budget(config.timeout, clock), thresholdAgainst = null))
 
     override fun validateOntology(graph: RdfGraph): ValidationReport {
         val startTime = System.currentTimeMillis()
@@ -165,14 +176,17 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
         )
     }
 
+    /** True when [statement] is reported as inferred: not asserted and (by default) not one of the RDFS axioms. */
+    private fun isInferred(statement: Statement, asserted: Model): Boolean =
+        statement !in asserted && (includeAxiomatic || statement !in AXIOMS)
+
     /** Closure statements that are neither asserted nor (by default) axiomatic, bounded by the threshold. */
     private fun inferredTriples(asserted: Model, closure: Model, budget: Budget): List<RdfTriple> {
         val result = ArrayList<RdfTriple>()
         for (statement in closure) {
             budget.check()
-            if (statement in asserted) continue
-            if (!includeAxiomatic && (statement.subject as? IRI)?.let { isVocabularyTerm(it.stringValue()) } == true) continue
-            result.add(rdfTripleFromRdf4j(statement))
+            if (!isInferred(statement, asserted)) continue
+            result.addAll(rdfTriplesFromRdf4j(statement))
             require(result.size.toLong() <= config.materializationThreshold) {
                 "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
             }
@@ -183,9 +197,10 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     /**
      * Materialize RDFS entailments by loading the data into a forward-chaining
      * [SchemaCachingRDFSInferencer]-backed store and reading back the closure
-     * (base + inferred statements).
+     * (base + inferred statements). With [thresholdAgainst], the inferred statements are counted while reading
+     * the closure back, so an oversized closure fails before it is copied.
      */
-    private fun runRdfsInference(model: Model, budget: Budget): Model {
+    private fun runRdfsInference(model: Model, budget: Budget, thresholdAgainst: Model?): Model {
         budget.check()
         val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
         repository.init()
@@ -196,10 +211,17 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
                 connection.commit()
                 budget.check()
                 val closure = LinkedHashModel()
+                var inferred = 0L
                 connection.getStatements(null, null, null, true).use { statements ->
-                    statements.forEach {
+                    statements.forEach { statement ->
                         budget.check()
-                        closure.add(it)
+                        if (thresholdAgainst != null && isInferred(statement, thresholdAgainst)) {
+                            inferred++
+                            require(inferred <= config.materializationThreshold) {
+                                "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
+                            }
+                        }
+                        closure.add(statement)
                     }
                 }
                 return closure
@@ -249,13 +271,17 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
     private companion object {
         val RDFS_RULES = setOf(ReasoningRule.RDFS_SUBCLASS, ReasoningRule.RDFS_SUBPROPERTY, ReasoningRule.RDFS_DOMAIN, ReasoningRule.RDFS_RANGE)
 
-        private val VOCABULARY_NAMESPACES = listOf(
-            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "http://www.w3.org/2000/01/rdf-schema#",
-            "http://www.w3.org/2002/07/owl#",
-            "http://www.w3.org/2001/XMLSchema#",
-        )
-
-        fun isVocabularyTerm(iri: String): Boolean = VOCABULARY_NAMESPACES.any { iri.startsWith(it) }
+        /** The statements the inferencer produces for an empty store: the RDF/RDFS axioms. */
+        val AXIOMS: Set<Statement> by lazy {
+            val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
+            repository.init()
+            try {
+                repository.connection.use { connection ->
+                    connection.getStatements(null, null, null, true).use { statements -> statements.toHashSet() }
+                }
+            } finally {
+                repository.shutDown()
+            }
+        }
     }
 }

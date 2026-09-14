@@ -4,6 +4,18 @@ import com.geoknoesis.kastor.rdf.*
 
 /**
  * RDF4J provider implementation for the RDF API.
+ *
+ * **Base direction** ([ProviderCapabilities.supportsBaseDirection] is `false`): RDF4J 5.3 literals have no
+ * base-direction field, so a directional [LangString] is stored with the combined language tag `lang--dir`
+ * (e.g. `ar--rtl`), which Rio reads and writes unchanged. Kastor graph reads decode it back, but inside RDF4J
+ * itself the combined tag is visible:
+ * - SPARQL `LANG(?o)` returns `"ar--rtl"` and `LANGMATCHES` sees the combined tag (there is no fix inside RDF4J);
+ * - RDF4J's SPARQL 1.1 parser rejects the literal syntax `"x"@ar--rtl` (reported as an explicit
+ *   [RdfQueryException]; pass such literals as query bindings instead);
+ * - RDF4J SHACL validation sees the values as plain `rdf:langString` literals.
+ *
+ * **Configuration options** ([RdfConfig.options]): `location` (native variants, default `data`) and `lenientRead`
+ * (`"true"` to skip statements that are not valid Kastor terms on graph reads, see [Rdf4jRepository]).
  */
 class Rdf4jProvider : RdfProvider {
     
@@ -25,6 +37,11 @@ class Rdf4jProvider : RdfProvider {
     }
     
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
+        val repository = createVariant(variantId, config)
+        return if (config.options["lenientRead"]?.toBoolean() == true) repository.lenient() else repository
+    }
+
+    private fun createVariant(variantId: String, config: RdfConfig): Rdf4jRepository {
         return when (variantId) {
             "memory" -> Rdf4jRepository.MemoryRepository()
             "native" -> {

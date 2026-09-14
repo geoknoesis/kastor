@@ -273,7 +273,9 @@ object Rdf12ConformanceRunner {
         val actualDataset = ReferenceRdf.dataset(actual)
         if (!ReferenceRdf.isomorphic(expected, actualDataset)) {
             val details = "expected ${ReferenceRdf.size(expected)} quads, actual ${ReferenceRdf.size(actualDataset)}"
-            skipIfAllowlistedOr(conformer, case, "$EVAL_MISMATCH: $details") {
+            // The fingerprint pins the allowlisted mismatch: a different wrong result no longer matches the row.
+            val signature = "$EVAL_MISMATCH: $details, difference ${ReferenceRdf.mismatchFingerprint(expected, actualDataset)}"
+            skipIfAllowlistedOr(conformer, case, signature) {
                 throw AssertionError(
                     "FAILED ${case.iri}: eval mismatch ($details)\n  expected: $expectedPath\n" +
                         "  expected quads:\n${ReferenceRdf.preview(expected)}\n  actual quads:\n${ReferenceRdf.preview(actualDataset)}",
@@ -314,15 +316,27 @@ object Rdf12ConformanceRunner {
         }
     }
 
-    /** Regex matching the deepest cause of [signature], without source positions. */
+    /**
+     * Regex matching the deepest cause of [signature], without source positions.
+     *
+     * - An eval mismatch is pinned to its full signature, including the fingerprint of the difference, so a
+     *   different wrong result is not skipped by the same row.
+     * - The throwing frame is required whenever the message alone does not identify the failure: when there is no
+     *   message, and for JDK exception classes (`java.*`, e.g. `NullPointerException: statement may not be null`),
+     *   which can be thrown by any code, including Kastor's own adapters.
+     */
     fun proposedPattern(signature: String): String {
-        if (signature.startsWith(EVAL_MISMATCH)) return EVAL_MISMATCH
+        if (signature.startsWith(EVAL_MISMATCH)) return Regex.escape(signature)
         if (signature == ACCEPTED_INVALID) return ACCEPTED_INVALID
         val deepest = signature.lines().last()
         val (head, frame) = deepest.substringBefore(" @ ") to deepest.substringAfter(" @ ", "")
         val withoutPosition = head.replace(Regex("\\s*\\[line [0-9]+(, column [0-9]+)?]"), "")
         val message = withoutPosition.substringAfter(": ", "")
-        val stable = if (message.isEmpty() || message == "null") "$withoutPosition @ $frame" else withoutPosition
-        return Regex.escape(stable)
+        val jdkException = withoutPosition.startsWith("java.")
+        if (message.isEmpty() || message == "null" || jdkException) {
+            // The observed line may carry a source position between the message and the frame.
+            return Regex.escape(withoutPosition) + "(?:\\s*\\[line [0-9]+(?:, column [0-9]+)?])?" + Regex.escape(" @ $frame")
+        }
+        return Regex.escape(withoutPosition)
     }
 }

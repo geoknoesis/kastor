@@ -49,17 +49,32 @@ class JenaReasonerConfigTest {
     }
 
     @Test
-    fun `full RDFS drops axiomatic vocabulary triples by default`() {
-        val inferred = JenaReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema)
+    fun `full RDFS drops exactly the axiomatic triples by default`() {
+        val inferred = JenaReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
         assertTrue(RdfTriple(iri("x"), type, iri("C")) in inferred)
         assertTrue(RdfTriple(iri("x"), type, iri("D")) in inferred)
         assertTrue(RdfTriple(iri("y"), type, iri("R")) in inferred)
-        assertTrue(inferred.none { (it.subject as? Iri)?.value?.startsWith("http://www.w3.org/") == true }, "$inferred")
-        // Every memory-reasoner entailment is also produced by Jena's full RDFS reasoner.
-        assertTrue(inferred.containsAll(MemoryReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema)))
 
-        val withAxioms = JenaReasoner(ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))).getInferredTriples(schema)
-        assertTrue(withAxioms.any { (it.subject as? Iri)?.value?.startsWith("http://www.w3.org/") == true })
+        val withAxioms = JenaReasoner(ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))).getInferredTriples(schema).toSet()
+        val axioms = JenaReasoner(ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))).getInferredTriples(turtle(prefixes)).toSet()
+        assertTrue(axioms.isNotEmpty())
+        assertEquals(withAxioms - axioms, inferred, "only the closure of the empty graph is filtered")
+
+        // Parity with the memory reasoner: every memory entailment is produced, and Jena's full RDFS rule set adds only
+        // the RDFS typing entailments the memory reasoner does not implement (rdfs1/4a/4b/6/8/10/12/13 style).
+        val memory = MemoryReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
+        assertTrue(inferred.containsAll(memory), "missing: ${memory - inferred}")
+        val rdfsTyping = setOf(
+            "http://www.w3.org/2000/01/rdf-schema#Resource", "http://www.w3.org/2000/01/rdf-schema#Class",
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property", "http://www.w3.org/2000/01/rdf-schema#Datatype",
+            "http://www.w3.org/2000/01/rdf-schema#Literal",
+        )
+        val reflexive = setOf(Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf"), Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf"))
+        val unexplained = (inferred - memory).filterNot { t ->
+            (t.predicate == type && (t.obj as? Iri)?.value in rdfsTyping) ||
+                (t.predicate in reflexive && (t.subject == t.obj || (t.obj as? Iri)?.value in rdfsTyping))
+        }
+        assertTrue(unexplained.isEmpty(), "Jena-only entailments beyond RDFS typing: $unexplained")
     }
 
     @Test
@@ -83,13 +98,15 @@ class JenaReasonerConfigTest {
 
     @Test
     fun `timeout is enforced`() {
-        val graph = chain(300, 300)
-        val start = System.nanoTime()
-        val error = assertThrows(IllegalStateException::class.java) {
-            JenaReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(50), materializationThreshold = Long.MAX_VALUE)).reason(graph)
-        }
+        // Deterministic: a fake clock advancing 1 ms per budget check exhausts a 50 ms budget after 50 checks.
+        val now = java.util.concurrent.atomic.AtomicLong()
+        val clock = { now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1)) }
+        val reasoner = JenaReasoner(
+            ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(50), materializationThreshold = Long.MAX_VALUE),
+            clock, { it.prepare() }, java.util.concurrent.Semaphore(4),
+        )
+        val error = assertThrows(IllegalStateException::class.java) { reasoner.reason(chain(300, 300)) }
         assertTrue(error.message!!.contains("timed out"), error.message)
-        assertTrue((System.nanoTime() - start) / 1_000_000 < 10_000)
     }
 
     @Test
