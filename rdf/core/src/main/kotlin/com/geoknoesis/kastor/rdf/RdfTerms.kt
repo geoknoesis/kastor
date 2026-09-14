@@ -570,7 +570,7 @@ enum class Direction(val token: String) {
  * ```
  *
  * Language tags must match the Turtle/SPARQL `LANGTAG` grammar
- * (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`; subtags have no length limit). The tag is kept exactly as
+ * (`[a-zA-Z]+ ('-' [a-zA-Z0-9]+)*`) with subtags of at most 8 characters (BCP 47). The tag is kept exactly as
  * given - `LangString("x", "en-GB").lang` is `"en-GB"` - and serialised that way. Because RDF
  * compares language tags case-insensitively, [equals] and [hashCode] use [normalizedLang], so
  * `LangString("x", "en-GB") == LangString("x", "en-gb")`. The lexical form and the direction

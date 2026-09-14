@@ -120,11 +120,11 @@ class TermSemanticsRegressionTest {
         assertEquals(LangString("x", "en-us"), LangString("x", "EN-US"))
         assertEquals("en-us", normalizeLanguageTag("EN-us"))
 
-        // LANGTAG has no subtag length cap.
-        assertEquals("abcdefghi", LangString("x", "abcdefghi").lang)
-        assertEquals("en-abcdefghijk", LangString("x", "en-abcdefghijk").lang)
-        assertEquals("abcdefghi", normalizeLanguageTag("ABCDEFGHI"))
-        listOf("", "en US", "en-", "-en", "1en", "en_GB", "en--rtl", "e\"n", "\u00E9").forEach { tag ->
+        // Subtags are capped at 8 characters (BCP 47 well-formedness; W3C RDF 1.2 ntriples-langdir-bad-4).
+        assertEquals("abcdefgh", LangString("x", "abcdefgh").lang)
+        assertEquals("en-abcdefgh", LangString("x", "en-abcdefgh").lang)
+        assertEquals("abcdefgh", normalizeLanguageTag("ABCDEFGH"))
+        listOf("", "en US", "en-", "-en", "1en", "en_GB", "en--rtl", "e\"n", "\u00E9", "abcdefghi", "en-abcdefghijk", "cantbethislong").forEach { tag ->
             assertThrows(IllegalArgumentException::class.java, { LangString("x", tag) }, tag)
             assertThrows(IllegalArgumentException::class.java, { normalizeLanguageTag(tag) }, tag)
         }

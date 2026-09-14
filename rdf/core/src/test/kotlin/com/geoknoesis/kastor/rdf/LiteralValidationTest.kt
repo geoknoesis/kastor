@@ -13,10 +13,10 @@ class LiteralValidationTest {
 
     @Test
     fun `language tags must be BCP 47 shaped`() {
-        listOf("en", "en-GB", "zh-Hant-TW", "de-CH-1996", "x-private1", "abcdefghi", "en-abcdefghi").forEach {
+        listOf("en", "en-GB", "zh-Hant-TW", "de-CH-1996", "x-private1", "abcdefgh", "en-abcdefgh").forEach {
             assertTrue(LiteralValidation.isWellFormedLanguageTag(it), it)
         }
-        listOf("", "en-", "-en", "1en", "en_GB", "en--rtl", "en US", "\u00E9").forEach {
+        listOf("", "en-", "-en", "1en", "abcdefghi", "en_GB", "en--rtl", "en-abcdefghi", "en US", "\u00E9").forEach {
             assertFalse(LiteralValidation.isWellFormedLanguageTag(it), it)
         }
     }
