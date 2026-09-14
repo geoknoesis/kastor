@@ -137,8 +137,8 @@ shells like:
 internal class CatalogWrapper(input: RdfHandle) : Catalog, RdfBacked {
     override val rdf: RdfHandle = input.scopedTo(KNOWN_PREDS)
 
-    override val title: String        by rdfString(DCTERMS.title)
-    override val description: String? by rdfStringOrNull(DCTERMS.description)
+    override val title: String        by rdfLiteral(DCTERMS.title, XsdLiterals::string)
+    override val description: String? by rdfLiteralOrNull(DCTERMS.description, XsdLiterals::string)
     override val datasets: List<Dataset> by rdfObjects(DCAT.dataset)
 
     private companion object {
@@ -256,22 +256,17 @@ A new `kastor-gen-runtime` package
 `com.geoknoesis.kastor.gen.runtime.delegates`:
 
 ```kotlin
-// Literals
-fun rdfString(predicate: Iri): ReadOnlyProperty<RdfBacked, String>
-fun rdfStringOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, String?>
-fun rdfStrings(predicate: Iri): ReadOnlyProperty<RdfBacked, List<String>>
-
-fun rdfInt(predicate: Iri): ReadOnlyProperty<RdfBacked, Int>
-fun rdfIntOrNull(predicate: Iri): ReadOnlyProperty<RdfBacked, Int?>
-fun rdfInts(predicate: Iri): ReadOnlyProperty<RdfBacked, List<Int>>
-// ... double, boolean, BigDecimal, LocalDate, Instant, etc.
-
-// Generic typed literals: the decoder returns null for a value it cannot decode.
+// Typed literals: the decoder (e.g. XsdLiterals::string, XsdLiterals::int, XsdLiterals::bigDecimal,
+// XsdLiterals::localDate) returns null for a value it cannot decode.
 // Undecodable values follow MaterializationPolicy.illTypedValues (THROW by default, or SKIP);
 // a required value that is missing throws MaterializationException.
 fun <T : Any> rdfLiteral(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, T>
 fun <T : Any> rdfLiteralOrNull(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, T?>
 fun <T : Any> rdfLiterals(predicate: Iri, decoder: (Literal) -> T?): ReadOnlyProperty<RdfBacked, List<T>>
+
+// Deprecated fixed-type literal delegates: rdfString, rdfInt, rdfDouble and rdfBoolean invent a default
+// when the value is missing; rdfIntOrNull, rdfInts, rdfDoubleOrNull, rdfDoubles, rdfBooleanOrNull and
+// rdfBooleans silently drop undecodable values. Use rdfLiteral / rdfLiteralOrNull / rdfLiterals instead.
 
 // IRIs (raw)
 fun rdfIri(predicate: Iri): ReadOnlyProperty<RdfBacked, Iri>
@@ -345,7 +340,7 @@ flowchart LR
   one line per property:
 
   ```kotlin
-  override val title: String by rdfString(DCTERMS.title)
+  override val title: String by rdfLiteral(DCTERMS.title, XsdLiterals::string)
   ```
 
 ## File layout
@@ -359,7 +354,7 @@ kastor-gen/
       DefaultRdfHandle.kt               # implementation
       Materialization.kt                # OntoMapper, materialize, asType
       delegates/
-        Literals.kt                     # rdfString, rdfInt, ...
+        Literals.kt                     # rdfLiteral, rdfLiteralOrNull, rdfLiterals
         Iris.kt                         # rdfIri, rdfIris
         Objects.kt                      # rdfObject<T>, rdfObjects<T>
         LangStrings.kt                  # rdfLangString, rdfLangStringMap
@@ -427,8 +422,8 @@ internal class CatalogWrapper private constructor(input: RdfHandle) : Catalog, R
 internal class CatalogWrapper(input: RdfHandle) : Catalog, RdfBacked {
     override val rdf: RdfHandle = input.scopedTo(KNOWN)
 
-    override val title: String           by rdfString(DCTERMS.title)
-    override val description: String?    by rdfStringOrNull(DCTERMS.description)
+    override val title: String           by rdfLiteral(DCTERMS.title, XsdLiterals::string)
+    override val description: String?    by rdfLiteralOrNull(DCTERMS.description, XsdLiterals::string)
     override val datasets: List<Dataset> by rdfObjects(DCAT.dataset)
 
     private companion object {
@@ -493,7 +488,7 @@ The current test suite has good coverage of generator output through
   shape changes, but `MaterializationTest` /
   `OntologyProcessorIntegrationTest` only assert behaviour (a wrapper
   produces correct values from a graph), not structure.
-- **Add `delegates/` unit tests** for each `rdfString`, `rdfInt`, ... helper,
+- **Add `delegates/` unit tests** for `rdfLiteral`, `rdfLiteralOrNull`, `rdfLiterals` and the other helpers,
   covering: present value, absent value, multiple values, type coercion,
   blank-node handling, RDF 1.2 directional language string fallback.
 - **Add a `LegacyAnnotationCompatibilityTest`** (if shims exist) that pins the

@@ -242,8 +242,17 @@ wrappers generated for hand-written `@Rdf` interfaces.
   This covers list, nullable and non-null members alike, including read-only members and mutable getters
   of hand-written `@Rdf` wrappers (which used to skip such values silently). See the
   [runtime reference](../reference/runtime.md#materializationpolicy).
-- **The two rules combine under `SKIP`.** If every value of a required member was skipped, the member counts
+- **Values of an unexpected term kind follow the same policy.** A literal where an IRI, blank node or object
+  is expected, or an IRI or blank node where a literal is expected, goes through
+  `MaterializationPolicy.unexpectedTerm`: `THROW` (default) raises a `MaterializationException` naming the
+  value, the member and the expected kind; `SKIP` leaves it out and logs a warning. Values are never dropped
+  silently.
+- **The rules combine under `SKIP`.** If every value of a required member was skipped, the member counts
   as missing and reading it throws.
+
+`MaterializationPolicy.withIllTypedValues(handling) { … }` overrides the handling for the current thread
+only; it does not propagate to other threads or coroutines (see the
+[runtime reference](../reference/runtime.md#scope)).
 
 ### Generated validation
 
@@ -256,9 +265,22 @@ transitive `rdfs:subClassOf` of it); `sh:pattern`; string lengths; `sh:in`; and 
 `sh:pattern` regex is compiled lazily on first use, so an unusual pattern can never break class
 initialisation.
 
-With `validationMode = EXTERNAL` the wrapper creates **one** instance of `externalValidatorClass` per
-wrapper class, lazily on the first `validate()` call, and reuses it; validators that parse shapes or hold a
-repository are not recreated per call.
+- **Cardinality counts every value.** `sh:minCount`/`sh:maxCount` count all values of the path whatever
+  their term kind (IRIs, blank nodes, literals), including literal `sh:in` enum values. Checking the kind is
+  left to `sh:datatype`, `sh:nodeKind` and `sh:class`.
+- **Numeric bounds are exact.** Bounds are held as `BigDecimal` values in the model, so a bound such as
+  `9223372036854775807` is not rounded. Wrapper `validate()`, instance-DSL setters and the DSL's `validate()`
+  all compare values exactly against the bound's decimal form; `NaN` is never within bounds.
+- **Shape parameters are honoured.** A property shape's `sh:severity` sets the generated
+  `ShaclViolation.severity` (`sh:Warning` → `Warning`, `sh:Info` → `Info`, anything else → `Violation`), and
+  its `sh:message` replaces the generated message. A node shape with `sh:deactivated true` validates nothing
+  (its types are still generated); a property shape with `sh:deactivated true` contributes no constraints
+  and does not make its member required, so the member is typed as optional.
+
+With `validationMode = EXTERNAL` the wrapper's `validate()` uses the process-wide instance of
+`externalValidatorClass` from `SharedValidators`: one instance per validator class, created on first use
+and shared by every wrapper type that names that class. It lives until `SharedValidators.close(type)` or
+`SharedValidators.closeAll()` (see the [validation reference](../reference/validation.md#sharedvalidators)).
 
 Embedded validation covers the constraints above only; use a `ValidationContext`
 (`JenaValidation`/`Rdf4jValidation`) for full SHACL semantics.
@@ -293,7 +315,8 @@ Non-literal properties:
 | `sh:class C` where `C` has a shape | the generated interface for `C` |
 | `sh:class C` where `C` has no shape | `String` (the IRI) |
 | `sh:node S` (S has one `sh:targetClass`) | the generated interface for S's target class |
-| `sh:nodeKind sh:IRI` / `sh:BlankNodeOrIRI` / `sh:BlankNode` only | `String` (the IRI) |
+| `sh:nodeKind sh:IRI` only | `String` (the IRI) |
+| `sh:nodeKind sh:BlankNodeOrIRI` / `sh:BlankNode` only | `com.geoknoesis.kastor.rdf.RdfResource` (IRI or blank node; blank nodes are kept) |
 | `sh:nodeKind sh:Literal` only | `String` (lexical form) |
 | `sh:or` / `sh:xone` whose members agree on one `sh:class` or one `sh:datatype` | that class / datatype |
 | `sh:or` / `sh:xone` over several classes | `String` (the IRI), with a warning |
@@ -357,11 +380,24 @@ always compiles:
 - When one node shape lists **the same path in several property shapes**, one member is generated, named
   after the alphabetically first `sh:name`, with the constraints of all declarations combined (highest
   `sh:minCount`, lowest `sh:maxCount`, …); a warning names the shape and path.
-- `sh:pattern` values are XPath regular expressions and are translated for `java.util.regex`: `\i`/`\I`
-  and `\c`/`\C` (XML name characters, approximated with Unicode letter/digit classes plus `_ : . -` and
-  U+00B7), character-class subtraction `[base-[excluded]]`, and Unicode block escapes `\p{IsBlock}`
-  (to `\p{InBlock}`). The `q` flag disables translation. A pattern that is still not a valid regular
-  expression **fails generation**, naming the shape, path and pattern.
+- `sh:pattern` values are XPath regular expressions and are translated for `java.util.regex`, following
+  XPath semantics:
+  - `\d`/`\D` are Unicode decimal digits (`\p{Nd}`); `\w`/`\W` use XPath's definition (every character
+    except punctuation, separators and "other" characters, so `_` is not a word character but symbols
+    such as `$` are); `\s`/`\S` are exactly space, tab, newline and carriage return. Java's defaults are
+    ASCII-only or wider.
+  - `\i`/`\I` and `\c`/`\C` (XML name characters) are approximated with Unicode letter/digit classes plus
+    `_ : . -` and U+00B7.
+  - Character-class subtraction `[base-[excluded]]` is translated with XPath precedence, including inside
+    negated classes: `[^a-z-[0-9]]` means "not a-z, minus digits".
+  - Unicode block escapes `\p{IsBlock}` become `\p{InBlock}`.
+  - The `x` flag strips whitespace outside character classes during translation itself; it is not mapped
+    to Java's `COMMENTS` mode, which would also treat `#` as a comment and drop whitespace inside classes.
+  - The `q` flag (literal pattern) disables translation; with `q` the `m`, `s` and `x` flags are ignored and
+    only `i` still applies.
+
+  A pattern that is still not a valid regular expression **fails generation**, naming the shape, path and
+  pattern.
 - Blank-node node shapes are supported, as are implicit class targets (a shape that is also an
   `rdfs:Class`/`owl:Class`).
 - Constructs that cannot be represented are **skipped with a warning** naming the shape and property:
