@@ -22,7 +22,7 @@ import java.time.Duration
  * Markdown (link / image / HTML injection) and in terminal text (ANSI escape injection).
  */
 class ReportOutputSanitizationTest {
-    private val hostile = "[verify](https://evil) <img src=x> [31mred"
+    private val hostile = "[verify](https://evil) <img src=x> \u001B[31mred"
     private val escapedHostile = "\\[verify\\]\\(https:\\/\\/evil\\) \\<img src=x\\>  \\[31mred"
 
     @Test
@@ -49,7 +49,7 @@ class ReportOutputSanitizationTest {
 
     @Test
     fun `text output renders control characters visibly but keeps newlines and tabs`() {
-        val text = report("bad[2J\rover\n\tnext").describeText()
+        val text = report("bad\u001B[2J\u0007\u009B\u007F\rover\n\tnext").describeText()
         assertTrue(text.contains(" - [STRUCTURAL] VIOLATION: bad\\u001B[2J\\u0007\\u009B\\u007F\\u000Dover\n\tnext"), text)
         assertNoRawControls(text)
     }
@@ -58,11 +58,11 @@ class ReportOutputSanitizationTest {
     fun `explained text output renders LLM control characters visibly`() {
         val report = report("plain")
         val ref = FindingRef.from(report.findings.single())
-        val evil = "ok]0;pwnedX"
+        val evil = "ok\u001B]0;pwned\u0007\u009BX"
         val explained =
             ExplainedQualityReport(
                 report,
-                listOf(FindingExplanation(ref, evil, evil, listOf(evil), evil, "m", "p", "r")),
+                listOf(FindingExplanation(ref, evil, evil, listOf(evil), evil, "m\u001B", "p\u001B", "r")),
             )
         val text = explained.describeText()
         val visible = "ok\\u001B]0;pwned\\u0007\\u009BX"
@@ -76,7 +76,7 @@ class ReportOutputSanitizationTest {
 
     /** Backslash-escaped punctuation (`\<img`, `\]\(`) renders literally; only unescaped syntax is dangerous. */
     private fun assertNoRawInjection(md: String) {
-        listOf("""(?<!\\)<img""", """(?<!\\)<b>""", """(?<!\\)\]\(""", "https://evil", "").forEach {
+        listOf("""(?<!\\)<img""", """(?<!\\)<b>""", """(?<!\\)\]\(""", "https://evil", "\u001B").forEach {
             assertFalse(Regex(it).containsMatchIn(md), "unescaped '$it' in Markdown:\n$md")
         }
     }

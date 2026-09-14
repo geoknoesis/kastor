@@ -344,13 +344,13 @@ class CliTest {
 
     @Test
     fun `JSON report escapes every control character`() {
-        val nasty = "bell formfeed nul  quote\" backslash\\ newline\n tab\t unit"
+        val nasty = "bell\u0007 formfeed\u000C nul\u0000 quote\" backslash\\ newline\n tab\t unit\u001F"
         val report = report(nasty)
         val ref = FindingRef.from(report.findings.single())
         val explained =
             ExplainedQualityReport(
                 report,
-                listOf(FindingExplanation(ref, nasty, nasty, listOf(nasty), nasty, "m", "p", "r")),
+                listOf(FindingExplanation(ref, nasty, nasty, listOf(nasty), nasty, "m\u0001", "p", "r")),
                 listOf(ExplanationFailure(listOf(ref), nasty)),
             )
         val json = findingsToJson(report, explained)

@@ -118,7 +118,7 @@ internal fun escapeMarkdownInline(text: String): String {
     val sb = StringBuilder(text.length + 16)
     for (ch in text) {
         when {
-            ch == '\r' || ch == '\n' || ch == ' ' || ch == ' ' -> sb.append(' ')
+            ch == '\r' || ch == '\n' || ch == '\u2028' || ch == '\u2029' -> sb.append(' ')
             ch.isISOControl() -> sb.append(' ')
             ch in MARKDOWN_SPECIAL -> sb.append('\\').append(ch)
             else -> sb.append(ch)
