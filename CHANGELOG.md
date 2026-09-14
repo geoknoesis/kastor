@@ -141,7 +141,35 @@ and is kept as is; it was never published to Maven Central.
   - `KastorGraphOps.getIriValues` / `getResourceValues`
   - `SharedValidators`
 
-<!-- providers entries pending -->
+#### Providers and reasoning (`rdf-jena`, `rdf-rdf4j`, `rdf-*-reasoning`, `rdf-reasoning-hermit`)
+
+- **Breaking:**
+  - Graph reads on wrapped stores are strict by default. `JenaBridge.fromJenaModel` / `fromJenaGraph` and `Rdf4jRepository` throw `IllegalArgumentException` on statements Kastor cannot represent (e.g. a malformed language tag) unless lenient reads are opted into.
+  - RDF4J reifier blank nodes use a reversible, checksummed id format: `kastor-star-<base64url(encoded triple)>-<8 hex digits of its SHA-256>`, so the id encodes its quoted triple. Ids with the `kastor-star-` prefix that do not decode and match the checksum are ordinary blank nodes.
+  - `Rdf4jRepository.withSelectRows(query, bindings, timeout, consume)` now applies IRI and literal bindings by syntactic substitution shared with the Jena provider and the SPARQL endpoint adapter (`SparqlInitialBindings`), so results match Jena. Queries that assign a bound variable (`BIND ... AS`, `(expr AS ?v)`, `VALUES`), or use it locally inside a sub-select that does not project it, now throw `IllegalArgumentException`. Blank-node and triple-term bindings still use RDF4J's native binding.
+  - Deprecated (WARNING): `rdfTripleFromRdf4j`, in favour of `rdfTriplesFromRdf4j`.
+- **Fixed:**
+  - RDF4J `NativeStore`: `hasTriple`, `find` and `remove` match language tags case-insensitively even when the value-id cache misses.
+  - RDF4J `size()` uses the store's own count when quoted-triple subjects cannot exist or are tracked as absent. Otherwise it counts in one pass without materialising. Reifier lookups use store indexes instead of scans.
+  - Writing the reified view back into an RDF-star store stores the RDF-star form again, so round trips add no duplicate statements.
+  - Jena inference repositories no longer copy the RDFS closure onto the heap. A lazy inference graph is prepared once per graph and snapshot, and readers share it under a per-graph lock. Consumers never run under the lock.
+  - Jena TDB2 inference views are keyed by the transaction's data version, so commits through another `JenaRepository` or TDB2 client on the same location invalidate them.
+  - Abandoned Jena `openTripleStream` streams are closed by a `Cleaner`, which stops the parser thread.
+  - Jena `parseDataset` streams into other transactional repositories in bounded batches.
+  - Jena and RDF4J reasoners drop only the axiomatic triples, meaning the closure of the empty graph computed once per rule set. Real inferences about vocabulary terms, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link`, are kept.
+  - Jena rule preparation (`prepare()`) is bounded by the call's deadline. Abandoned preparations are capped, and callers that hit the cap get a "too many rule preparations in progress" error. The materialization threshold is checked right after preparation.
+  - The RDF4J reasoner counts inferred statements against the threshold while reading them, and keeps `rdf:reifies` triples.
+  - HermiT: OWL API loading and engine creation run together on the loader thread, bounded by the deadline. The watchdog starts before the engine exists and interrupts it as soon as it is created. In-flight loads, abandoned ones included, are capped at `MAX_IN_FLIGHT_LOADS`, and a call that cannot start a load before its deadline fails with "too many HermiT loads in progress".
+  - Initial bindings applied by substitution (`SparqlInitialBindings`, used by the SPARQL endpoint adapter and now RDF4J) rewrite `BOUND(?v)` of a bound variable to `(true)` instead of the illegal `BOUND(<constant>)`, matching Jena.
+  - The RDF4J and memory SHACL validators honour `ValidationConfig.conformanceDisallows` like the native engine (default: every severity except `sh:Debug` / `sh:Trace` makes the report non-conforming).
+  - RDF 1.2 conformance harness:
+    - Allowlist signatures keep the throwing frame for JDK exceptions.
+    - `EVAL-MISMATCH` signatures include a fingerprint of the expected-vs-actual difference, with blank nodes anonymised.
+    - The reference side keeps language tags exactly as written. Jena always rewrites tags such as `en-us` to `en-US`, so `lantag_with_subtag` (Turtle, TriG) is allowlisted as an upstream limitation.
+- **Added:**
+  - `rdfTriplesFromRdf4j(Statement): List<RdfTriple>` (full RDF 1.2 form, including `rdf:reifies` triples).
+  - `Rdf4jRepository(Repository, Boolean, Boolean)` (`inference`, `lenientRead`) and the RDF4J provider option `lenientRead`.
+  - `JenaBridge.fromJenaGraph(graph, strictRead)`.
 
 ### Fixed (re-audit)
 
