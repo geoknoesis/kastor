@@ -204,8 +204,8 @@ class Rdf4jRepository(
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).evaluate() }
         result.use {
-            consume(it.iterator().asSequence().map { statement -> RdfTriple(Rdf4jTerms.fromRdf4jResource(statement.subject),
-                Rdf4jTerms.fromRdf4jIri(statement.predicate), Rdf4jTerms.fromRdf4jValue(statement.`object`)) }.guardedBy(query.sparql))
+            val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
+            consume(it.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.guardedBy(query.sparql))
         }
     }
 
@@ -303,13 +303,8 @@ class Rdf4jRepository(
             )
         }
         prepared.evaluate().use { graphResult ->
-            val triples = graphResult.iterator().asSequence().map { statement ->
-                RdfTriple(
-                    Rdf4jTerms.fromRdf4jResource(statement.subject),
-                    Rdf4jTerms.fromRdf4jIri(statement.predicate),
-                    Rdf4jTerms.fromRdf4jValue(statement.`object`)
-                )
-            }.toList()
+            val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
+            val triples = graphResult.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.toList()
             RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
             triples.asSequence()
         }

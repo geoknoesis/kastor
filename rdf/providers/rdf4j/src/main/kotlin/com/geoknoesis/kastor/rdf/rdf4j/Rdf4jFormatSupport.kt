@@ -125,11 +125,12 @@ internal object Rdf4jFormatSupport {
     fun parseGraph(inputStream: InputStream, format: String, baseIri: String): MutableRdfGraph {
         val rdf4jFormat = graphFormat(format)
         val triples = mutableListOf<RdfTriple>()
+        val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
             val parser = Rio.createParser(rdf4jFormat)
             parser.setRDFHandler(object : AbstractRDFHandler() {
                 override fun handleStatement(statement: Statement) {
-                    triples.add(checkedTriple(statement))
+                    triples.addAll(checkedTriples(statement, seen))
                 }
             })
             parser.parse(inputStream, baseIri)
@@ -137,18 +138,17 @@ internal object Rdf4jFormatSupport {
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
 
-    /** Converts and validates a parsed statement; terms Kastor cannot represent become Rio parse errors. */
-    private fun checkedTriple(statement: Statement): RdfTriple = try {
-        toTriple(statement).also { Rdf4jTerms.requireWellFormed(it.obj) }
+    /**
+     * Converts and validates a parsed statement; terms Kastor cannot represent become Rio parse errors.
+     * Rio reads RDF 1.2 reified-triple syntax (`<< s p o >> :q :z`, annotations) as RDF-star quoted-triple
+     * subjects; those map to the RDF 1.2 reified form (see [Rdf4jTerms.triplesOf]), with each `rdf:reifies`
+     * triple emitted once per [seen] set.
+     */
+    private fun checkedTriples(statement: Statement, seen: MutableSet<org.eclipse.rdf4j.model.Triple>?): List<RdfTriple> = try {
+        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj) }
     } catch (e: IllegalArgumentException) {
         throw RDFParseException("Invalid RDF term: ${e.message}").also { it.initCause(e) }
     }
-
-    private fun toTriple(statement: Statement) = RdfTriple(
-        Rdf4jTerms.fromRdf4jResource(statement.subject),
-        Rdf4jTerms.fromRdf4jIri(statement.predicate),
-        Rdf4jTerms.fromRdf4jValue(statement.`object`),
-    )
 
     /**
      * Opens a streaming parse: Rio runs on a daemon thread and hands triples over through a bounded
@@ -178,8 +178,9 @@ internal object Rdf4jFormatSupport {
         private val producer = Thread({
             try {
                 val parser = Rio.createParser(rdf4jFormat)
+                val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
                 parser.setRDFHandler(object : AbstractRDFHandler() {
-                    override fun handleStatement(statement: Statement) = offer(checkedTriple(statement))
+                    override fun handleStatement(statement: Statement) = checkedTriples(statement, seen).forEach(::offer)
                 })
                 parser.parse(input, "")
                 offer(End)
@@ -282,7 +283,7 @@ internal object Rdf4jFormatSupport {
                 val parser = Rio.createParser(rdf4jFormat)
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
-                        checkedTriple(statement)
+                        checkedTriples(statement, null)
                         val context = statement.context
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)
