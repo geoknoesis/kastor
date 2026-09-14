@@ -74,7 +74,9 @@ import org.apache.jena.rdf.model.ModelFactory
 // Your existing Jena Model
 val jenaModel: Model = ModelFactory.createDefaultModel()
 
-// Wrap it with Kastor for easier Kotlin development
+// Wrap it with Kastor for easier Kotlin development.
+// Reads are strict: a statement Kastor cannot represent (e.g. xml:lang="en_US") fails the read.
+// Use JenaBridge.fromJenaModel(jenaModel, strictRead = false) to skip such statements instead.
 val graph = jenaModel.toKastorGraph()
 
 // Now use Kastor's DSL
@@ -100,6 +102,8 @@ import org.eclipse.rdf4j.repository.Repository
 val rdf4jRepo: Repository = // ... your existing setup
 
 // Wrap the initialized repository. Closing the adapter also shuts down rdf4jRepo.
+// Graph reads are strict; pass Rdf4jRepository(rdf4jRepo, inference = false, lenientRead = true)
+// to skip statements Kastor cannot represent instead of failing.
 val repo = com.geoknoesis.kastor.rdf.rdf4j.Rdf4jRepository(rdf4jRepo)
 
 // Now write cleaner Kotlin code
