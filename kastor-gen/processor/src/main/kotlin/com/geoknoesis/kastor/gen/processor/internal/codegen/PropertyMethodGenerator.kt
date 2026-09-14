@@ -183,8 +183,14 @@ public sealed class PropertyTypeStrategy {
         ): List<FunSpec> {
             val enumName = requireNotNull(property.enumName) { "EnumStrategy requires enumName" }
             val memberKind = requireNotNull(property.enumMemberKind) { "EnumStrategy requires enumMemberKind" }
-            // InstanceDslGenerator passes the qualified enum name; a simple name is taken as-is.
-            val enumType = if ('.' in enumName) ClassName.bestGuess(enumName) else ClassName("", enumName)
+            // InstanceDslGenerator passes "<package>.<EnumName>" for a top-level generated enum; a simple name is taken
+            // as-is. Split at the last dot rather than ClassName.bestGuess, which reads a package segment that starts
+            // with an upper-case letter (e.g. `com.Acme.model`) as a class name.
+            val enumType = if ('.' in enumName) {
+                ClassName(enumName.substringBeforeLast('.'), enumName.substringAfterLast('.'))
+            } else {
+                ClassName("", enumName)
+            }
             val methods = mutableListOf<FunSpec>()
 
             fun term(v: String) = when (memberKind) {
@@ -335,21 +341,24 @@ private fun addImmediateValidation(
         functionBuilder.addStatement("require(%L == %S) { %S }", lexical, it, "$name must equal: $it")
     }
 
-    val primitiveNumbers = setOf(Int::class.asTypeName(), Long::class.asTypeName(), Float::class.asTypeName(), Double::class.asTypeName())
-    val bigInteger = ClassName("java.math", "BigInteger")
-    val bigDecimal = ClassName("java.math", "BigDecimal")
-    val comparable: CodeBlock? = when (valueType) {
-        in primitiveNumbers -> CodeBlock.of("%L", valueVar)
-        bigInteger -> CodeBlock.of("%L.toBigDecimal()", valueVar)
-        bigDecimal -> CodeBlock.of("%L", valueVar)
+    // Numeric bounds compare exactly: the value is encoded as an XSD numeric literal and compared with the bound's
+    // decimal lexical form (NaN is never within bounds; infinities lie beyond every bound).
+    val numericDatatype: String? = when (valueType) {
+        Int::class.asTypeName(), Long::class.asTypeName(), ClassName("java.math", "BigInteger") -> "integer"
+        ClassName("java.math", "BigDecimal") -> "decimal"
+        Float::class.asTypeName() -> "float"
+        Double::class.asTypeName() -> "double"
         else -> null
     }
-    if (comparable != null) {
-        fun bound(value: Double?, op: String, text: String) {
+    if (numericDatatype != null) {
+        fun bound(value: java.math.BigDecimal?, op: String, text: String) {
             if (value == null) return
-            val boundExpr = if (valueType in primitiveNumbers) CodeBlock.of("%L", value)
-            else CodeBlock.of("%T(%S)", bigDecimal, value.toBigDecimal().toPlainString())
-            functionBuilder.addStatement("require(%L %L %L) { %S }", comparable, op, boundExpr, "$name must be $text $value")
+            val lexical = value.toPlainString()
+            functionBuilder.addStatement(
+                "require(%T.compareNumeric(%T.encode(%L, %T(%S)), %S).let { it != null && it %L 0 }) { %S }",
+                XSD_LITERALS, XSD_LITERALS, valueVar, IRI, "http://www.w3.org/2001/XMLSchema#$numericDatatype", lexical, op,
+                "$name must be $text $lexical",
+            )
         }
         bound(c.minInclusive, ">=", ">=")
         bound(c.maxInclusive, "<=", "<=")

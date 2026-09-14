@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
 import java.lang.ref.WeakReference
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
@@ -51,9 +53,10 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
  * validator keeps one in-memory repository and loads a graph into it only when the graph passed to [validate] is a
- * different instance or its content changed (detected with an order-independent fingerprint of its triples, which
- * costs one pass over the triples but no conversion or store writes). Validating many nodes of one graph therefore
- * converts and loads it once.
+ * different instance or its content changed (detected with an order-independent SHA-256-based digest of its triples,
+ * which costs one pass over the triples but no conversion or store writes). Validating many nodes of one graph
+ * therefore converts and loads it once. A reload is atomic: the data, the digest and the embedded shapes are replaced
+ * together after the store transaction commits, so a failed conversion or load leaves the previous state intact.
  *
  * Each [validate] call evaluates only the shapes that target the focus node: the target declarations
  * (`sh:targetClass` including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`,
@@ -86,9 +89,12 @@ class Rdf4jValidation private constructor(
   private val lock = Any()
   private var repository: SailRepository? = null
   private var loadedGraph: WeakReference<RdfGraph>? = null
-  private var loadedFingerprint = 0L
+  private var loadedDigest: GraphDigest? = null
   private var embeddedShapes: ShapeIndex? = null
   private var closed = false
+
+  /** Test hook: runs inside the load transaction, before commit (to simulate a store failure). */
+  internal var beforeLoadCommit: (() -> Unit)? = null
   private val fixedShapeIndex: ShapeIndex? by lazy(LazyThreadSafetyMode.PUBLICATION) {
     fixedShapes?.let { ShapeIndex(it) }
   }
@@ -137,22 +143,64 @@ class Rdf4jValidation private constructor(
       else -> throw IllegalStateException("Unsupported RDF4J value in SHACL report: $value")
     }
 
-    /** Order-independent content fingerprint: mixed triple hashes summed, combined with the triple count. */
-    private fun fingerprint(graph: RdfGraph): Long {
-      var sum = 0L
+    /**
+     * Order-independent, collision-resistant digest of [graph]'s content: the SHA-256 of an unambiguous encoding of
+     * each triple (term kind tags, length-prefixed UTF-8 values), added up modulo 2^256, plus the triple count.
+     * Unlike a sum of `hashCode()`s, distinct contents (e.g. literals `"Aa"` and `"BB"`, which share a String hash
+     * code) never produce the same digest in practice.
+     */
+    private fun digest(graph: RdfGraph): GraphDigest {
+      val sha = MessageDigest.getInstance("SHA-256")
+      val sum = LongArray(4)
       var count = 0L
       for (triple in graph.getTriples()) {
-        sum += mix(triple.hashCode().toLong())
+        encodeTerm(sha, triple.subject)
+        encodeTerm(sha, triple.predicate)
+        encodeTerm(sha, triple.obj)
+        addModulo(sum, sha.digest())
         count++
       }
-      return mix(sum) * 31 + count
+      return GraphDigest(sum.toList(), count)
     }
 
-    private fun mix(input: Long): Long {
-      var z = input + -0x61c8864680b583ebL
-      z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
-      z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
-      return z xor (z ushr 31)
+    private fun encodeTerm(sha: MessageDigest, term: RdfTerm) {
+      fun field(value: String?) {
+        if (value == null) {
+          sha.update(0)
+          return
+        }
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        sha.update(1)
+        sha.update(ByteBuffer.allocate(4).putInt(bytes.size).array())
+        sha.update(bytes)
+      }
+      when (term) {
+        is Iri -> { sha.update('I'.code.toByte()); field(term.value) }
+        is BlankNode -> { sha.update('B'.code.toByte()); field(term.id) }
+        is LangString -> {
+          sha.update('L'.code.toByte()); field(term.lexical); field(term.lang); field(term.direction?.toString())
+        }
+        is Literal -> { sha.update('T'.code.toByte()); field(term.lexical); field(term.datatype.value) }
+        is TripleTerm -> {
+          sha.update('R'.code.toByte())
+          encodeTerm(sha, term.triple.subject); encodeTerm(sha, term.triple.predicate); encodeTerm(sha, term.triple.obj)
+        }
+        else -> { sha.update('?'.code.toByte()); field(term.toString()) }
+      }
+    }
+
+    /** [sum] += [digest] (32 bytes, big-endian) modulo 2^256; [sum] holds four big-endian 64-bit words. */
+    private fun addModulo(sum: LongArray, digest: ByteArray) {
+      val words = ByteBuffer.wrap(digest)
+      val add = LongArray(4) { words.long }
+      var carry = 0L
+      for (i in 3 downTo 0) {
+        val a = sum[i]
+        val b = add[i]
+        val s = a + b + carry
+        carry = if (java.lang.Long.compareUnsigned(s, a) < 0 || (carry == 1L && s == a)) 1L else 0L
+        sum[i] = s
+      }
     }
 
     private fun newRepository(): SailRepository {
@@ -193,6 +241,9 @@ class Rdf4jValidation private constructor(
     }
   }
 
+  /** Content digest of a graph: four 64-bit words of a sum of SHA-256 triple digests, plus the triple count. */
+  private data class GraphDigest(val words: List<Long>, val count: Long)
+
   /** Shapes with their target declarations, indexed once. */
   private class ShapeIndex(val statements: List<Statement>) {
     val model: Model = LinkedHashModel(statements)
@@ -219,20 +270,30 @@ class Rdf4jValidation private constructor(
     val focusValue = toResource(focus)
     synchronized(lock) {
       check(!closed) { "Rdf4jValidation has been closed" }
-      val fingerprint = fingerprint(data)
-      val stale = loadedGraph?.get() !== data || loadedFingerprint != fingerprint
+      val digest = digest(data)
+      val stale = loadedGraph?.get() !== data || loadedDigest != digest
       val repo = repository ?: newRepository().also { repository = it }
       if (stale) {
+        // Convert and index first, then replace the store content in one transaction; the loaded graph, its digest
+        // and its embedded shapes change together only after the commit, so a failure at any step leaves the
+        // previously loaded data and shapes in place.
         val statements = toStatements(data)
-        if (fixedShapes == null) embeddedShapes = ShapeIndex(extractEmbeddedShapes(statements))
+        val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
         repo.connection.use { connection ->
           connection.begin()
-          connection.clear()
-          connection.add(statements)
-          connection.commit()
+          try {
+            connection.clear()
+            connection.add(statements)
+            beforeLoadCommit?.invoke()
+            connection.commit()
+          } catch (e: Throwable) {
+            if (connection.isActive) connection.rollback()
+            throw e
+          }
         }
+        embeddedShapes = newShapes
         loadedGraph = WeakReference(data)
-        loadedFingerprint = fingerprint
+        loadedDigest = digest
       }
       val shapes = fixedShapeIndex ?: embeddedShapes ?: return ValidationResult.Ok
       if (shapes.statements.isEmpty()) return ValidationResult.Ok

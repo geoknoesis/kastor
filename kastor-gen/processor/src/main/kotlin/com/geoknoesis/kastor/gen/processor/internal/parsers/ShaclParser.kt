@@ -14,6 +14,7 @@ import org.apache.jena.rdf.model.Resource
 import org.apache.jena.vocabulary.RDF
 import org.apache.jena.vocabulary.RDFS
 import java.io.InputStream
+import java.math.BigDecimal
 import java.io.StringReader
 
 /**
@@ -141,7 +142,10 @@ public class ShaclParser(private val logger: KSPLogger) {
                     .mapNotNull { it.`object`.takeIf { n -> n.isURIResource }?.asResource()?.uri }
                 val parents = (parentsFromNode + parentsFromSubclass).filter { it != targetClass }.distinct().sorted()
                 logger.info("Extracted shape: $shapeIri -> $targetClass with ${properties.size} properties")
-                ShaclShape(shapeIri = shapeIri, targetClass = targetClass, properties = properties, parentClasses = parents)
+                ShaclShape(
+                    shapeIri = shapeIri, targetClass = targetClass, properties = properties, parentClasses = parents,
+                    deactivated = deactivated(shapeResource, "Shape ${label(shapeResource)}"),
+                )
             }
         }
 
@@ -167,12 +171,24 @@ public class ShaclParser(private val logger: KSPLogger) {
             return value
         }
 
-        private fun number(node: RDFNode?, what: String, context: String): Double? {
+        /** Exact decimal value of a numeric bound (integers beyond the `Double` range keep every digit). */
+        private fun number(node: RDFNode?, what: String, context: String): BigDecimal? {
             if (node == null) return null
-            val value = node.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm?.trim()?.toDoubleOrNull()
+            val value = node.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm?.trim()?.let { lexical ->
+                try {
+                    BigDecimal(lexical)
+                } catch (_: NumberFormatException) {
+                    null
+                }
+            }
             if (value == null) logger.warn("$context: $what value $node is not numeric; not generated (SHACL validation still applies)")
             return value
         }
+
+        /** `sh:deactivated`: a literal `true` (or `1`). */
+        private fun deactivated(shape: Resource, context: String): Boolean =
+            single(shape, p("deactivated"), "sh:deactivated", context)
+                ?.takeIf { it.isLiteral }?.asLiteral()?.lexicalForm?.trim() in setOf("true", "1")
 
         private fun iri(node: RDFNode?): String? = node?.takeIf { it.isURIResource }?.asResource()?.uri
 
@@ -310,6 +326,9 @@ public class ShaclParser(private val logger: KSPLogger) {
                 qualifiedValueShape = iri(single(propertyShape, p("qualifiedValueShape"), "sh:qualifiedValueShape", context)),
                 qualifiedMinCount = int(single(propertyShape, p("qualifiedMinCount"), "sh:qualifiedMinCount", context), "sh:qualifiedMinCount", context),
                 qualifiedMaxCount = int(single(propertyShape, p("qualifiedMaxCount"), "sh:qualifiedMaxCount", context), "sh:qualifiedMaxCount", context),
+                severity = iri(single(propertyShape, p("severity"), "sh:severity", context)),
+                message = text(propertyShape, p("message")),
+                deactivated = deactivated(propertyShape, context),
             )
         }
     }

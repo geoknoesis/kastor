@@ -3,9 +3,11 @@ package com.geoknoesis.kastor.gen.processor.internal.core
 import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.processor.internal.model.ClassModel
 import com.geoknoesis.kastor.gen.processor.internal.model.PropertyModel
-import com.geoknoesis.kastor.gen.processor.internal.model.PropertyType
+import com.geoknoesis.kastor.gen.processor.internal.model.RdfEnumKind
+import com.geoknoesis.kastor.gen.processor.internal.model.RdfMemberTypes
 import com.geoknoesis.kastor.gen.processor.internal.codegen.WrapperGenerator
 import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
+import com.google.devtools.ksp.getDeclaredFunctions
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
@@ -186,45 +188,22 @@ public class OntoMapperProcessor(
       predicateIriRaw
     }
 
+    // Literal member types follow the SHACL generators (XsdLiterals codecs): String, Int, Long, Float, Double,
+    // Boolean, BigInteger, BigDecimal, LocalDate, LangString and enums. Iri / RdfResource members read RDF terms.
     val returnType = property.type.resolve()
-    val kotlinType = when {
-      returnType.declaration.qualifiedName?.asString() == "kotlin.String" -> "String"
-      returnType.declaration.qualifiedName?.asString() == "kotlin.Int" -> "Int"
-      returnType.declaration.qualifiedName?.asString() == "kotlin.Boolean" -> "Boolean"
-      returnType.declaration.qualifiedName?.asString() == "kotlin.Double" -> "Double"
-      returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List" -> {
-        val typeArg = returnType.arguments.firstOrNull()?.type?.resolve()
-        val elementType = typeArg?.declaration?.qualifiedName?.asString()
-        "List<${normalizeKotlinType(elementType)}>"
-      }
-      else -> returnType.declaration.qualifiedName?.asString() ?: "Any"
-    }
-
-    val propertyType = when {
-      kotlinType == "List<String>" || kotlinType == "List<Int>" || kotlinType == "List<Double>" || kotlinType == "List<Boolean>" ->
-        PropertyType.LITERAL
-      kotlinType.startsWith("List<") -> PropertyType.OBJECT_LIST
-      kotlinType == "String" || kotlinType == "Int" || kotlinType == "Double" || kotlinType == "Boolean" ->
-        PropertyType.LITERAL
-      else -> PropertyType.OBJECT
-    }
+    val isList = returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List"
+    val elementDeclaration = (if (isList) returnType.arguments.firstOrNull()?.type?.resolve() else returnType)?.declaration
+    val elementName = RdfMemberTypes.normalize(elementDeclaration?.qualifiedName?.asString())
+    val kotlinType = if (isList) "List<$elementName>" else elementName
+    val enumKind = (elementDeclaration as? KSClassDeclaration)?.let(::enumKindOf)
+    val propertyType = RdfMemberTypes.propertyType(kotlinType, enumKind)
 
     val wantsMutable = property.isMutable
-    val effectiveMutable =
-      wantsMutable &&
-        when (propertyType) {
-          PropertyType.LITERAL ->
-            kotlinType == "String" ||
-              kotlinType == "Int" ||
-              kotlinType == "Double" ||
-              kotlinType == "Boolean"
-          PropertyType.OBJECT -> true
-          PropertyType.OBJECT_LIST -> false
-        }
+    val effectiveMutable = wantsMutable && RdfMemberTypes.supportsMutation(kotlinType, propertyType, enumKind)
     if (wantsMutable && !effectiveMutable) {
       logger.warn(
         "var property '${property.simpleName.asString()}' is not supported for generated mutation " +
-          "(lists and literal collections are read-only in wrappers); generating a read-only accessor.",
+          "(lists, enums and RDF term members are read-only in wrappers); generating a read-only accessor.",
         property,
       )
     }
@@ -236,7 +215,27 @@ public class OntoMapperProcessor(
       type = propertyType,
       mutable = effectiveMutable,
       nullable = returnType.isMarkedNullable,
+      enumKind = enumKind,
+      typePackage = elementDeclaration?.packageName?.asString()?.takeIf { it.isNotEmpty() && elementName.startsWith("$it.") },
     )
+  }
+
+  /**
+   * [RdfEnumKind.NAME] for a Kotlin `enum class`; for a sealed type with a companion `from(code: String)` or
+   * `from(iri: Iri)` (enums generated from `sh:in`), [RdfEnumKind.CODE] or [RdfEnumKind.IRI]; otherwise `null`.
+   */
+  private fun enumKindOf(declaration: KSClassDeclaration): RdfEnumKind? {
+    if (declaration.classKind == ClassKind.ENUM_CLASS) return RdfEnumKind.NAME
+    if (Modifier.SEALED !in declaration.modifiers) return null
+    val from = declaration.declarations.filterIsInstance<KSClassDeclaration>().firstOrNull { it.isCompanionObject }
+      ?.getDeclaredFunctions()
+      ?.firstOrNull { it.simpleName.asString() == "from" && it.parameters.size == 1 }
+      ?: return null
+    return when (from.parameters.single().type.resolve().declaration.qualifiedName?.asString()) {
+      "kotlin.String" -> RdfEnumKind.CODE
+      "com.geoknoesis.kastor.rdf.Iri" -> RdfEnumKind.IRI
+      else -> null
+    }
   }
 
   private fun generateWrapper(classModel: ClassModel, sources: Array<KSFile>) {
@@ -252,17 +251,6 @@ public class OntoMapperProcessor(
     writer.close()
     file.close()
     processedClasses.add(classModel.qualifiedName)
-  }
-
-  private fun normalizeKotlinType(typeName: String?): String {
-    return when (typeName) {
-      "kotlin.String" -> "String"
-      "kotlin.Int" -> "Int"
-      "kotlin.Boolean" -> "Boolean"
-      "kotlin.Double" -> "Double"
-      null -> "Any"
-      else -> typeName
-    }
   }
 }
 

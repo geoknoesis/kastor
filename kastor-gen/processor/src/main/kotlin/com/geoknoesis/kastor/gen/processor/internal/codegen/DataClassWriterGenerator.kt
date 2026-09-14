@@ -117,7 +117,8 @@ public class DataClassWriterGenerator(
                     CodeBlock.of("%T.encode(it.code, %T(%S))", xsdLiterals, iriClass, datatype)
                 }
             }
-            ValueKind.IRI -> CodeBlock.of("%T(it)", iriClass)
+            // RdfResource members (sh:BlankNodeOrIRI) already hold the term; IRI members hold the IRI string.
+            ValueKind.IRI -> if (TypeMapper.isResourceReference(property)) CodeBlock.of("it") else CodeBlock.of("%T(it)", iriClass)
             ValueKind.OBJECT -> when (nestedMode) {
                 NestedMode.DATA_CLASS -> return buildDataClassSkip(name, property)
                 // Live wrappers expose their node. Any other implementation has no subject: silently dropping the

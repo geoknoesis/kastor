@@ -112,6 +112,14 @@ internal object TypeMapper {
             property.nodeKind in setOf("${SH}IRI", "${SH}BlankNodeOrIRI", "${SH}BlankNode")
 
     /**
+     * The [isIriReference] properties whose values may be blank nodes (`sh:BlankNodeOrIRI`, `sh:BlankNode`): exposed as
+     * the core `RdfResource` term so blank nodes are kept, whereas `sh:IRI` properties are IRI strings.
+     */
+    fun isResourceReference(property: ShaclProperty): Boolean =
+        property.targetClass == null && property.datatype == null &&
+            property.nodeKind in setOf("${SH}BlankNodeOrIRI", "${SH}BlankNode")
+
+    /**
      * Maps a SHACL property to a Kotlin TypeName.
      *
      * [nestedMode] and [dataClassSuffix] only affect object properties and are ignored for literals.
@@ -143,6 +151,7 @@ internal object TypeMapper {
                     mapObjectProperty(property, nestedMode, dataClassSuffix, objectPackage, context)
                 }
             }
+            isResourceReference(property) -> applyCardinality(ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"), property)
             isIriReference(property) -> applyCardinality(String::class.asTypeName(), property)
             else -> applyCardinality(literalMapping(property.datatype).type, property)
         }

@@ -126,13 +126,7 @@ class ReaderConsistencyTest {
                 return outcome { m.counts } + "," + outcome { m.maybe } + "," + outcome { m.must }
             }
             val strict = read()
-            val previous = MaterializationPolicy.illTypedValues
-            MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP
-            try {
-                return strict + "|" + read()
-            } finally {
-                MaterializationPolicy.illTypedValues = previous
-            }
+            return MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) { strict + "|" + read() }
         }
     """.trimIndent()
 

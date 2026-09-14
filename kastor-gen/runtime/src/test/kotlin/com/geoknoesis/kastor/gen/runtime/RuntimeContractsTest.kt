@@ -54,12 +54,8 @@ class RuntimeContractsTest {
             MaterializationPolicy.illTyped(bad, "age <https://example.test/age>", "BigInteger")
         }
         assertTrue(e.message!!.contains("abc") && e.message!!.contains(XSD.integer.value) && e.message!!.contains("age"), e.message)
-        val previous = MaterializationPolicy.illTypedValues
-        try {
-            MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP
+        MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
             assertNull(MaterializationPolicy.illTyped(bad, "age", "BigInteger"))
-        } finally {
-            MaterializationPolicy.illTypedValues = previous
         }
     }
 
@@ -67,12 +63,8 @@ class RuntimeContractsTest {
     fun `missing required values always throw a materialization exception naming the member`() {
         val e = assertFailsWith<MaterializationException> { MaterializationPolicy.missingRequired("title <https://example.test/title>") }
         assertTrue(e.message!!.contains("title <https://example.test/title>"), e.message)
-        val previous = MaterializationPolicy.illTypedValues
-        try {
-            MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP
+        MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
             assertFailsWith<MaterializationException> { MaterializationPolicy.missingRequired("title") }
-        } finally {
-            MaterializationPolicy.illTypedValues = previous
         }
     }
 
