@@ -55,6 +55,8 @@ jobs:
         shell: bash
 
       - name: Dependency health (advisory)
+        # Advisory only: a failure here must not skip the conformance, test-count and coverage gates below.
+        continue-on-error: true
         run: ./gradlew buildHealth --no-daemon
         shell: bash
 

@@ -1,6 +1,15 @@
 import java.nio.file.Files
 import java.util.Comparator
 
+buildscript {
+  dependencies {
+    // dependency-analysis 3.12.0 brings kotlin-metadata-jvm 2.2.x, which cannot read Kotlin 2.4 class
+    // metadata ("maximum supported version is 2.3.0"), so buildHealth fails. Keep this in step with the
+    // `kotlin` version in gradle/libs.versions.toml (version catalogs are not available in buildscript {}).
+    classpath("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20")
+  }
+}
+
 plugins {
   alias(libs.plugins.kotlin.jvm) apply false
   alias(libs.plugins.ksp) apply false
