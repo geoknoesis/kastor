@@ -28,11 +28,13 @@ object SparqlLexical {
      * Escape a lexical form for a `STRING_LITERAL2` (`"..."`).
      *
      * - `\t \b \n \r \f " \` use the `ECHAR` escapes; other C0 controls and DEL use `\u00XX`.
-     * - A `u`/`U` that directly follows a backslash in the text is written as `u`/`U`.
+     * - A `u`/`U` that directly follows a backslash in the text is written as a SPARQL codepoint
+     *   escape of that letter (backslash, `u`, `0075` or `0055`).
      *   SPARQL 1.1 (§19.2) lets servers decode `\uXXXX` sequences over the whole query text
      *   *before* tokenizing, and some implementations do so without looking at preceding
-     *   backslashes. With plain doubling, the text `"` would be sent as `\\u0022` and such a
-     *   pre-pass would turn it into `\"`, silently changing the value. The encoded form decodes to
+     *   backslashes. With plain doubling, the text backslash-u-0022 would be sent as two backslashes
+     *   followed by u0022, and such a pre-pass would turn it into an escaped quote, silently changing
+     *   the value. The encoded form decodes to
      *   the same text under every reading: no pre-pass (SPARQL 1.2 `UCHAR`), a Java-style pre-pass
      *   that honours escaped backslashes, and a naive pre-pass.
      *

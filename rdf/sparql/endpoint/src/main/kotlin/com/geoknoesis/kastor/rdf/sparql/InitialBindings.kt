@@ -232,7 +232,7 @@ internal object InitialBindings {
     private const val WORD_BREAK = "{}()[],;\"'<?$#"
 
     private fun isVarChar(c: Char) =
-        c == '_' || c.isLetterOrDigit() || c == '·' || c in '̀'..'ͯ' || c in '‿'..'⁀' ||
+        c == '_' || c.isLetterOrDigit() || c == '\u00B7' || c in '\u0300'..'\u036F' || c in '\u203F'..'\u2040' ||
             Character.isSurrogate(c)
 
     private fun tokenize(text: String): List<Token> {
