@@ -44,6 +44,23 @@ class KastorRdfCliTest {
     }
 
     @Test
+    fun `diff compares blank nodes shared across graphs as one dataset`() {
+        val shared = file("shared.trig", "<http://e/g1> { _:x <http://e/p> \"1\" } <http://e/g2> { _:x <http://e/q> \"2\" }\n")
+        val relabelled = file("relabelled.trig", "<http://e/g1> { _:y <http://e/p> \"1\" } <http://e/g2> { _:y <http://e/q> \"2\" }\n")
+        val separate = file("separate.trig", "<http://e/g1> { _:y <http://e/p> \"1\" } <http://e/g2> { _:z <http://e/q> \"2\" }\n")
+
+        val same = run("diff", shared, relabelled)
+        assertEquals(0, same.code, same.err)
+        assertTrue(same.out.contains("ISOMORPHIC"), same.out)
+
+        // Each named graph is isomorphic on its own; only the cross-graph blank node identity differs.
+        val different = run("diff", shared, separate)
+        assertEquals(2, different.code, different.out)
+        assertTrue(different.err.contains("NOT ISOMORPHIC") && different.err.contains("shared across graphs"), different.err)
+        assertEquals(2, run("diff", separate, shared).code)
+    }
+
+    @Test
     fun `diff detects a triple moved between the default and a named graph`() {
         val a = file("a.nq", "<http://e/s> <http://e/p> <http://e/o> .\n<http://e/s> <http://e/p> <http://e/x> <http://e/g> .\n")
         val b = file("b.nq", "<http://e/s> <http://e/p> <http://e/x> .\n<http://e/s> <http://e/p> <http://e/o> <http://e/g> .\n")
