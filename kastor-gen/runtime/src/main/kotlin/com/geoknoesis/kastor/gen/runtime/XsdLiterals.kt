@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.gen.runtime
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.RdfTerm
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.time.DateTimeException
@@ -86,6 +87,72 @@ object XsdLiterals {
 
   /** rdf:langString values are exposed as the core [LangString] term. */
   fun langString(literal: Literal): LangString? = literal as? LangString
+
+  private const val XSD = "http://www.w3.org/2001/XMLSchema#"
+
+  private fun integerIn(literal: Literal, min: BigInteger?, max: BigInteger?): Boolean {
+    val value = bigInteger(literal) ?: return false
+    return (min == null || value >= min) && (max == null || value <= max)
+  }
+
+  /**
+   * Whether [literal]'s lexical form is valid for its own datatype. XSD numeric, boolean and date datatypes are
+   * checked (including the ranges of the derived integer types); other datatypes are accepted.
+   */
+  fun isWellFormed(literal: Literal): Boolean = when (literal.datatype.value) {
+    "${XSD}boolean" -> boolean(literal) != null
+    "${XSD}integer" -> integerIn(literal, null, null)
+    "${XSD}nonNegativeInteger" -> integerIn(literal, BigInteger.ZERO, null)
+    "${XSD}positiveInteger" -> integerIn(literal, BigInteger.ONE, null)
+    "${XSD}nonPositiveInteger" -> integerIn(literal, null, BigInteger.ZERO)
+    "${XSD}negativeInteger" -> integerIn(literal, null, BigInteger.ONE.negate())
+    "${XSD}long" -> long(literal) != null
+    "${XSD}int" -> int(literal) != null
+    "${XSD}short" -> integerIn(literal, BigInteger.valueOf(Short.MIN_VALUE.toLong()), BigInteger.valueOf(Short.MAX_VALUE.toLong()))
+    "${XSD}byte" -> integerIn(literal, BigInteger.valueOf(Byte.MIN_VALUE.toLong()), BigInteger.valueOf(Byte.MAX_VALUE.toLong()))
+    "${XSD}unsignedLong" -> integerIn(literal, BigInteger.ZERO, BigInteger("18446744073709551615"))
+    "${XSD}unsignedInt" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(4294967295L))
+    "${XSD}unsignedShort" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(65535L))
+    "${XSD}unsignedByte" -> integerIn(literal, BigInteger.ZERO, BigInteger.valueOf(255L))
+    "${XSD}decimal" -> bigDecimal(literal) != null
+    "${XSD}float" -> float(literal) != null
+    "${XSD}double" -> double(literal) != null
+    "${XSD}date" -> localDate(literal) != null
+    else -> true
+  }
+
+  /** SHACL `sh:datatype`: [term] is a literal of exactly [datatype] whose lexical form is well formed. */
+  fun hasDatatype(term: RdfTerm, datatype: Iri): Boolean =
+    term is Literal && term.datatype == datatype && isWellFormed(term)
+
+  private val NUMERIC_DATATYPES = setOf(
+    "integer", "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
+    "long", "int", "short", "byte", "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte",
+    "decimal", "float", "double",
+  ).map { XSD + it }.toSet()
+
+  /**
+   * Exact comparison of a numeric literal with [bound] (a decimal lexical form), for `sh:minInclusive` and friends.
+   * Returns the sign of `value - bound`, or `null` when the comparison is undefined: [term] is not a well-formed
+   * XSD numeric literal, or is `NaN`. Infinite values compare beyond every bound.
+   */
+  fun compareNumeric(term: RdfTerm, bound: String): Int? {
+    val literal = term as? Literal ?: return null
+    if (literal.datatype.value !in NUMERIC_DATATYPES || !isWellFormed(literal)) return null
+    val lexical = literal.lexical.trim()
+    val value = when (literal.datatype.value) {
+      "${XSD}float", "${XSD}double" -> {
+        val d = double(literal) ?: return null
+        when {
+          d.isNaN() -> return null
+          d.isInfinite() -> return if (d > 0) 1 else -1
+          else -> BigDecimal(lexical)
+        }
+      }
+      else -> BigDecimal(lexical)
+    }
+    return value.compareTo(BigDecimal(bound)).coerceIn(-1, 1)
+  }
 
   /**
    * Encodes [value] as a literal of [datatype]. Literals (e.g. [LangString]) are returned unchanged.

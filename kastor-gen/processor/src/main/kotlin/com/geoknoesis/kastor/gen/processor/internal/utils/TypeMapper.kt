@@ -32,6 +32,9 @@ internal data class LiteralMapping(
     /** `XsdLiterals.<decoder>(<literalExpr>)` (nullable result). */
     fun decode(literalExpr: CodeBlock): CodeBlock = CodeBlock.of("%T.%N(%L)", XSD_LITERALS, decoder, literalExpr)
 
+    /** Human-readable target of [decode] for diagnostics, e.g. `BigInteger (xsd:integer)`. */
+    fun expectedDescription(): String = "${type.simpleName} (<$writeDatatype>)"
+
     companion object {
         internal val STRING = String::class.asTypeName()
         private val NUMERIC_TYPES = setOf(

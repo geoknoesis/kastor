@@ -45,6 +45,8 @@ public class OntologyWrapperGenerator(
     private val runtime = CodegenConstants.RUNTIME_PACKAGE
     private val iriClass = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
     private val graphOps = ClassName(runtime, "KastorGraphOps")
+    private val xsdLiterals = ClassName(runtime, "XsdLiterals")
+    private val materializationPolicy = ClassName(runtime, "MaterializationPolicy")
 
     /**
      * Generates Kotlin wrapper code from SHACL shapes.
@@ -137,7 +139,7 @@ public class OntologyWrapperGenerator(
                 require(externalValidatorClass != null) {
                     "EXTERNAL validation mode requires externalValidatorClass to be specified"
                 }
-                classBuilder.addFunction(generateExternalValidation())
+                classBuilder.addFunction(generateExternalValidation(companionBuilder))
             }
             ValidationMode.EMBEDDED -> {
                 classBuilder.addFunction(generateEmbeddedValidation(shape, members.filter { it.primaryForPath }, ctx, companionBuilder))
@@ -176,13 +178,22 @@ public class OntologyWrapperGenerator(
         return fileBuilder.build()
     }
 
-    private fun generateExternalValidation(): FunSpec {
+    private fun generateExternalValidation(companion: TypeSpec.Builder): FunSpec {
         val validatorRef = externalValidatorClass?.takeIf { it.isNotBlank() }
         val functionBuilder = FunSpec.builder("validate")
             .returns(ClassName(runtime, "ValidationResult"))
 
         if (validatorRef != null) {
-            functionBuilder.addStatement("return %T().validate(rdf.graph, rdf.node)", ClassName.bestGuess(validatorRef))
+            val validatorType = ClassName.bestGuess(validatorRef)
+            // One validator per wrapper class, created on first use: validators parse shapes or hold a repository,
+            // so creating one per validate() call is slow and leaks resources.
+            companion.addProperty(
+                PropertySpec.builder("VALIDATOR", validatorType)
+                    .addModifiers(PRIVATE)
+                    .delegate(CodeBlock.of("lazy { %T() }", validatorType))
+                    .build()
+            )
+            functionBuilder.addStatement("return VALIDATOR.validate(rdf.graph, rdf.node)")
         } else {
             functionBuilder.addStatement("return rdf.validate()")
         }
@@ -207,7 +218,11 @@ public class OntologyWrapperGenerator(
                 .add("%T(\n", violationClass).indent()
                 .add("focusNode = rdf.node as RdfResource,\n")
                 .add("shapeIri = Iri(%S),\n", shape.shapeIri)
-                .add("constraintIri = %T.%N,\n", shaclCn, constraintTerm)
+                .apply {
+                    // `class` has no usable vocabulary member; spell its IRI out.
+                    if (constraintTerm == "class") add("constraintIri = Iri(%S),\n", "http://www.w3.org/ns/shacl#class")
+                    else add("constraintIri = %T.%N,\n", shaclCn, constraintTerm)
+                }
                 .add("path = Iri(%S),\n", pathPred)
                 .apply { if (value != null) add("actualValue = %L,\n", value) }
                 .add("message = %S,\n", message)
@@ -237,6 +252,33 @@ public class OntologyWrapperGenerator(
                 functionBuilder.endControlFlow()
             }
 
+            // Value-type constraints apply to every value of the path, whatever its term type.
+            val values = CodeBlock.of("%T.getValues(rdf.graph, rdf.node, Iri(%S))", graphOps, pred)
+            property.datatype?.takeIf { kind == ValueKind.LITERAL || kind == ValueKind.ENUM }?.let { datatype ->
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                check(
+                    CodeBlock.of("!%T.hasDatatype(value, Iri(%S))", xsdLiterals, datatype),
+                    "datatype", pred, "sh:datatype <$datatype> violated for $pred", CodeBlock.of("value"),
+                )
+                functionBuilder.endControlFlow()
+            }
+            property.nodeKind?.let { nodeKind ->
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                check(
+                    CodeBlock.of("!%T.hasNodeKind(value, Iri(%S))", graphOps, nodeKind),
+                    "nodeKind", pred, "sh:nodeKind <$nodeKind> violated for $pred", CodeBlock.of("value"),
+                )
+                functionBuilder.endControlFlow()
+            }
+            property.targetClass?.let { cls ->
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                check(
+                    CodeBlock.of("!%T.isInstanceOf(rdf.graph, value, Iri(%S))", graphOps, cls),
+                    "class", pred, "sh:class <$cls> violated for $pred", CodeBlock.of("value"),
+                )
+                functionBuilder.endControlFlow()
+            }
+
             if (kind == ValueKind.LITERAL || (kind == ValueKind.ENUM && property.inValuesTyped?.none { it.isIri } != false)) {
                 val literals = CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", graphOps, pred)
 
@@ -263,14 +305,21 @@ public class OntologyWrapperGenerator(
                 if (property.minInclusive != null || property.maxInclusive != null ||
                     property.minExclusive != null || property.maxExclusive != null
                 ) {
-                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
-                    functionBuilder.addStatement("val num = lit.lexical.trim().toDoubleOrNull()")
-                    functionBuilder.beginControlFlow("if (num != null)")
-                    property.minInclusive?.let { check(CodeBlock.of("num < %L", it), "minInclusive", pred, "minInclusive $it violated for $pred", CodeBlock.of("lit")) }
-                    property.maxInclusive?.let { check(CodeBlock.of("num > %L", it), "maxInclusive", pred, "maxInclusive $it violated for $pred", CodeBlock.of("lit")) }
-                    property.minExclusive?.let { check(CodeBlock.of("num <= %L", it), "minExclusive", pred, "minExclusive $it violated for $pred", CodeBlock.of("lit")) }
-                    property.maxExclusive?.let { check(CodeBlock.of("num >= %L", it), "maxExclusive", pred, "maxExclusive $it violated for $pred", CodeBlock.of("lit")) }
-                    functionBuilder.endControlFlow()
+                    // Exact comparison (BigDecimal); a value that is not a well-formed numeric literal cannot be compared,
+                    // which SHACL reports as a violation.
+                    functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                    fun bound(limit: Double?, term: String, violatedWhen: String) {
+                        if (limit == null) return
+                        val lexical = java.math.BigDecimal(limit.toString()).toPlainString()
+                        check(
+                            CodeBlock.of("%T.compareNumeric(value, %S).let { it == null || %L }", xsdLiterals, lexical, violatedWhen),
+                            term, pred, "$term $lexical violated for $pred", CodeBlock.of("value"),
+                        )
+                    }
+                    bound(property.minInclusive, "minInclusive", "it < 0")
+                    bound(property.maxInclusive, "maxInclusive", "it > 0")
+                    bound(property.minExclusive, "minExclusive", "it <= 0")
+                    bound(property.maxExclusive, "maxExclusive", "it >= 0")
                     functionBuilder.endControlFlow()
                 }
 
@@ -354,7 +403,11 @@ public class OntologyWrapperGenerator(
                 val mapping = TypeMapper.literalMapping(property.datatype)
                 val values = CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", graphOps, path)
                 val base = if (mapping.isString) CodeBlock.of("%L.map { it.lexical }", values)
-                else CodeBlock.of("%L.mapNotNull { %L }", values, mapping.decode(CodeBlock.of("it")))
+                // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
+                else CodeBlock.of(
+                    "%L.mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+                    values, mapping.decode(CodeBlock.of("lit")), materializationPolicy, "$label <$path>", mapping.expectedDescription(),
+                )
                 when {
                     Cardinality.isList(property) && Cardinality.isRequired(property) ->
                         CodeBlock.of("%L.ifEmpty { error(%S) }", base, "Required literal $label missing")

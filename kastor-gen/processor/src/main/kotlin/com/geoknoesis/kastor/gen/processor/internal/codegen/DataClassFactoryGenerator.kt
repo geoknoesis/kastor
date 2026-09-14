@@ -212,9 +212,11 @@ public class DataClassFactoryGenerator(
             }
             ValueKind.LITERAL -> {
                 val mapping = TypeMapper.literalMapping(property.datatype)
+                // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
                 CodeBlock.of(
-                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { %L }",
-                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("it")),
+                    "%T.getLiteralValues(handle.graph, handle.node, %T(%S)).mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+                    graphOps, iriClass, pred, mapping.decode(CodeBlock.of("lit")),
+                    ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy"), label, mapping.expectedDescription(),
                 )
             }
         }

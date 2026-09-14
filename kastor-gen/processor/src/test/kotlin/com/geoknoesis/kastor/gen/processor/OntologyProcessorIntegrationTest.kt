@@ -297,10 +297,10 @@ class OntologyProcessorIntegrationTest {
         // Verify type conversions
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
-        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.double(it) }.firstOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.double(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
         assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
         assertTrue(complexWrapper.contains("XsdLiterals.boolean("))
-        assertTrue(complexWrapper.contains(".mapNotNull { XsdLiterals.int(it) }.firstOrNull()"))
+        assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.int(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
     }
 
     @Test

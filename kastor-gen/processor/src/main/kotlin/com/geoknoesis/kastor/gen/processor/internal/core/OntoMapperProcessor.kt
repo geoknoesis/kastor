@@ -33,7 +33,7 @@ public class OntoMapperProcessor(
       return emptyList()
     }
 
-    val classModels = mutableListOf<ClassModel>()
+    val classModels = mutableListOf<Pair<ClassModel, KSClassDeclaration>>()
 
     symbols.forEach { symbol ->
       if (!symbol.validate() || symbol !is KSClassDeclaration) {
@@ -58,12 +58,13 @@ public class OntoMapperProcessor(
 
       val classModel = analyzeClass(symbol, prefixMappings, rdfAnn)
       if (classModel != null) {
-        classModels.add(classModel)
+        classModels.add(classModel to symbol)
       }
     }
 
-    val sources = resolver.getAllFiles().toList().toTypedArray()
-    classModels.forEach { generateWrapper(it, sources) }
+    // Each wrapper depends only on its interface's file and its supertypes' files (whose properties it implements),
+    // so editing an unrelated source does not invalidate every wrapper.
+    classModels.forEach { (model, declaration) -> generateWrapper(model, originatingFiles(declaration).toTypedArray()) }
 
     return symbols.filterNot { it.validate() }.toList()
   }
@@ -241,7 +242,7 @@ public class OntoMapperProcessor(
   private fun generateWrapper(classModel: ClassModel, sources: Array<KSFile>) {
     val fileSpec = wrapperGenerator.generateWrapper(classModel)
     val file = codeGenerator.createNewFile(
-      dependencies = Dependencies(true, *sources),
+      dependencies = Dependencies(false, *sources),
       packageName = classModel.packageName,
       fileName = fileSpec.name.removeSuffix(".kt"),
     )
@@ -263,6 +264,25 @@ public class OntoMapperProcessor(
       else -> typeName
     }
   }
+}
+
+/**
+ * Source files a wrapper for [declaration] is generated from: the declaration's own file and, transitively, the
+ * files of its supertypes (library supertypes without a source file are skipped). Order: declaration first, then
+ * supertypes depth-first, without duplicates.
+ */
+internal fun originatingFiles(declaration: KSClassDeclaration): List<KSFile> {
+  val files = LinkedHashSet<KSFile>()
+  val seen = HashSet<KSClassDeclaration>()
+  fun visit(current: KSClassDeclaration) {
+    if (!seen.add(current)) return
+    current.containingFile?.let(files::add)
+    current.superTypes.forEach { reference ->
+      (reference.resolve().declaration as? KSClassDeclaration)?.let(::visit)
+    }
+  }
+  visit(declaration)
+  return files.toList()
 }
 
 public class OntoMapperProcessorProvider : SymbolProcessorProvider {
