@@ -13,11 +13,15 @@ enum class IllTypedValueHandling {
 }
 
 /**
- * Process-wide policy applied by generated wrappers and data-class factories while reading values.
+ * Rules applied by every generated reader: live wrappers and data-class factories generated from SHACL, and
+ * wrappers generated for hand-written `@Rdf` interfaces.
  *
- * Ill-typed values (e.g. `"abc"^^xsd:integer` on an `xsd:integer` property) used to disappear silently from
- * list-valued properties. By default they now fail loudly; set [illTypedValues] to [IllTypedValueHandling.SKIP]
- * to keep reading the remaining values (each skipped value is logged).
+ * - **Ill-typed values** (e.g. `"abc"^^xsd:integer` read as a number) throw [MaterializationException] by default;
+ *   set [illTypedValues] to [IllTypedValueHandling.SKIP] to leave them out (each skipped value is logged).
+ * - **Missing required values** (a single-valued member with `sh:minCount >= 1` or a non-null `@Rdf` member without
+ *   a value, or a list member with `sh:minCount >= 1` and no values) always throw [MaterializationException] naming
+ *   the member, path and (for SHACL-generated types) shape. With [IllTypedValueHandling.SKIP] a required member
+ *   whose only values were skipped is missing, so it throws too.
  */
 object MaterializationPolicy {
 
@@ -43,4 +47,13 @@ object MaterializationPolicy {
     }
     return null
   }
+
+  /**
+   * Called by generated code when a required member ([property] describes member, path and shape) has no value.
+   *
+   * @throws MaterializationException always
+   */
+  @JvmStatic
+  fun missingRequired(property: String): Nothing =
+    throw MaterializationException("Required value missing for $property")
 }

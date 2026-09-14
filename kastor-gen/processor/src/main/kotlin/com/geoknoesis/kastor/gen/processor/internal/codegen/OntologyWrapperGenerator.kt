@@ -130,7 +130,7 @@ public class OntologyWrapperGenerator(
         )
 
         members.forEach { member ->
-            classBuilder.addProperty(generatePropertyImplementation(member.typing, ctx))
+            classBuilder.addProperty(generatePropertyImplementation(member.typing, ctx, shape.shapeIri))
         }
 
         when (validationMode) {
@@ -345,7 +345,7 @@ public class OntologyWrapperGenerator(
         return functionBuilder.build()
     }
 
-    private fun generatePropertyImplementation(property: ShaclProperty, ctx: Ctx): PropertySpec {
+    private fun generatePropertyImplementation(property: ShaclProperty, ctx: Ctx, shapeIri: String): PropertySpec {
         val context = ctx.model.context
         val propertyName = NamingUtils.propertyName(property)
         val kotlinType = TypeMapper.toKotlinType(property, context, objectPackage = ctx.domainPackage, knownTypes = ctx.knownTypes)
@@ -354,7 +354,7 @@ public class OntologyWrapperGenerator(
             .addModifiers(OVERRIDE)
             .addKdoc("%L", kdocText("${property.description}\nPath: ${property.path}"))
 
-        val initializer = valuesInitializer(property, ctx)
+        val initializer = valuesInitializer(property, ctx, shapeIri)
 
         propertyBuilder.delegate(
             CodeBlock.builder()
@@ -367,10 +367,10 @@ public class OntologyWrapperGenerator(
         return propertyBuilder.build()
     }
 
-    private fun valuesInitializer(property: ShaclProperty, ctx: Ctx): CodeBlock {
+    private fun valuesInitializer(property: ShaclProperty, ctx: Ctx, shapeIri: String): CodeBlock {
         val context = ctx.model.context
         val path = property.path
-        val label = NamingUtils.propertyName(property)
+        val label = "${NamingUtils.propertyName(property)} <$path> of shape <$shapeIri>"
         return when (TypeMapper.valueKind(property, context, ctx.knownTypes)) {
             ValueKind.ENUM -> {
                 val enum = ctx.enumsByName.getValue(property.enumName!!)
@@ -383,11 +383,11 @@ public class OntologyWrapperGenerator(
                 } else {
                     CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S)).map { %T.from(it.lexical) }", graphOps, path, enumType)
                 }
-                cardinalityWrap(base, property, "Required enum $label missing")
+                cardinalityWrap(base, property, label)
             }
             ValueKind.IRI -> cardinalityWrap(
                 CodeBlock.of("%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { it }.filterIsInstance<Iri>().map { it.value }", graphOps, path),
-                property, "Required IRI $label missing",
+                property, label,
             )
             ValueKind.OBJECT -> {
                 val target = ClassName(ctx.domainPackage, NamingUtils.domainName(property.targetClass!!, context))
@@ -396,7 +396,7 @@ public class OntologyWrapperGenerator(
                         "%T.getObjectValues(rdf.graph, rdf.node, Iri(%S)) { child ->\n⇥OntoMapper.materialize(RdfRef(child, rdf.graph), %T::class.java)\n⇤}",
                         graphOps, path, target,
                     ),
-                    property, "Required object $label missing",
+                    property, label,
                 )
             }
             ValueKind.LITERAL -> {
@@ -406,30 +406,24 @@ public class OntologyWrapperGenerator(
                 // Ill-typed values follow MaterializationPolicy (throw by default) instead of disappearing.
                 else CodeBlock.of(
                     "%L.mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
-                    values, mapping.decode(CodeBlock.of("lit")), materializationPolicy, "$label <$path>", mapping.expectedDescription(),
+                    values, mapping.decode(CodeBlock.of("lit")), materializationPolicy, label, mapping.expectedDescription(),
                 )
-                when {
-                    Cardinality.isList(property) && Cardinality.isRequired(property) ->
-                        CodeBlock.of("%L.ifEmpty { error(%S) }", base, "Required literal $label missing")
-                    Cardinality.isRequiredSingle(property) -> {
-                        val required = CodeBlock.of("%T.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(%S))", graphOps, path)
-                        if (mapping.isString) CodeBlock.of("%L.lexical", required)
-                        else CodeBlock.of(
-                            "%L ?: error(%S)",
-                            mapping.decode(required),
-                            "Literal $label is not a valid ${property.datatype}",
-                        )
-                    }
-                    else -> cardinalityWrap(base, property, "Required literal $label missing")
-                }
+                cardinalityWrap(base, property, label)
             }
         }
     }
 
-    private fun cardinalityWrap(base: CodeBlock, property: ShaclProperty, missingMessage: String): CodeBlock =
+    /**
+     * Applies the member's cardinality to the list of decoded values. Required members (`sh:minCount >= 1`) without
+     * a value throw `MaterializationException` via `MaterializationPolicy.missingRequired`, for lists and singles.
+     */
+    private fun cardinalityWrap(base: CodeBlock, property: ShaclProperty, label: String): CodeBlock =
         when {
+            Cardinality.isList(property) && Cardinality.isRequired(property) ->
+                CodeBlock.of("%L.ifEmpty { %T.missingRequired(%S) }", base, materializationPolicy, label)
             Cardinality.isList(property) -> base
-            Cardinality.isRequiredSingle(property) -> CodeBlock.of("%L.firstOrNull() ?: error(%S)", base, missingMessage)
+            Cardinality.isRequiredSingle(property) ->
+                CodeBlock.of("%L.firstOrNull() ?: %T.missingRequired(%S)", base, materializationPolicy, label)
             else -> CodeBlock.of("%L.firstOrNull()", base)
         }
 
