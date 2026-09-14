@@ -173,14 +173,8 @@ internal class CatalogWrapper private constructor(
   input: RdfHandle,
 ) : Catalog, RdfBacked {
 
-  private val known: Set<Iri> = setOf(
-    Iri("http://purl.org/dc/terms/description"),
-    Iri("http://purl.org/dc/terms/title"),
-    Iri("http://www.w3.org/ns/dcat#dataset"),
-  )
-
   override val rdf: RdfHandle by lazy(LazyThreadSafetyMode.PUBLICATION) {
-    if (input is DefaultRdfHandle) input.withKnownPredicates(known) else input
+    if (input is DefaultRdfHandle) input.withKnownPredicates(KNOWN) else input
   }
 
   /**
@@ -211,12 +205,48 @@ internal class CatalogWrapper private constructor(
   }
 
   companion object {
+    private val KNOWN: Set<Iri> = setOf(
+      Iri("http://purl.org/dc/terms/description"),
+      Iri("http://purl.org/dc/terms/title"),
+      Iri("http://www.w3.org/ns/dcat#dataset"),
+    )
+
     init {
       OntoMapper.register(Catalog::class.java) { handle -> CatalogWrapper(handle) }
     }
   }
 }
 ```
+
+### Reading values
+
+- **Ill-typed literals fail by default.** A value whose lexical form is not valid for the property's type
+  (e.g. `"abc"^^xsd:integer`) makes the wrapper or data-class factory throw a `MaterializationException`
+  naming the value, datatype and property, including for list-valued properties (where such values used to
+  disappear silently). Set `MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP` to leave them
+  out with a logged warning instead (see the [runtime reference](../reference/runtime.md#materializationpolicy)).
+- **Missing values are never replaced by invented defaults** (`""`, `0`, `false`): a required
+  single-valued (non-null) member throws when its value is missing, an optional (nullable) member returns
+  `null`, and a list without values is empty (live wrappers throw instead when the path has
+  `sh:minCount` ≥ 1).
+
+### Generated validation
+
+With `validationMode = EMBEDDED` the wrapper's `validate()` checks, for every path of the shape
+(inherited paths included): `sh:minCount`/`sh:maxCount`; `sh:datatype` (a literal of exactly that datatype
+with a well-formed lexical form); `sh:nodeKind`; `sh:class` (an `rdf:type` equal to the class or a
+transitive `rdfs:subClassOf` of it); `sh:pattern`; string lengths; `sh:in`; and the numeric bounds
+`sh:minInclusive`/`sh:maxInclusive`/`sh:minExclusive`/`sh:maxExclusive`, compared **exactly** (as
+`BigDecimal`), with a value that is not a well-formed numeric literal reported as a violation. Each
+`sh:pattern` regex is compiled lazily on first use, so an unusual pattern can never break class
+initialisation.
+
+With `validationMode = EXTERNAL` the wrapper creates **one** instance of `externalValidatorClass` per
+wrapper class, lazily on the first `validate()` call, and reuses it; validators that parse shapes or hold a
+repository are not recreated per call.
+
+Embedded validation covers the constraints above only; use a `ValidationContext`
+(`JenaValidation`/`Rdf4jValidation`) for full SHACL semantics.
 
 ## Type Mapping
 
@@ -229,11 +259,11 @@ Literal properties are typed from `sh:datatype`; values are decoded with `XsdLit
 | `xsd:boolean` | `Boolean` | accepts `true`/`false` and `1`/`0` |
 | `xsd:int`, `xsd:short`, `xsd:byte`, `xsd:unsignedShort`, `xsd:unsignedByte` | `Int` | |
 | `xsd:long`, `xsd:unsignedInt` | `Long` | |
-| `xsd:integer`, `xsd:nonNegativeInteger`, `xsd:positiveInteger`, `xsd:nonPositiveInteger`, `xsd:negativeInteger`, `xsd:unsignedLong` | `java.math.BigInteger` | exact, unbounded |
-| `xsd:decimal` | `java.math.BigDecimal` | exact |
+| `xsd:integer`, `xsd:nonNegativeInteger`, `xsd:positiveInteger`, `xsd:nonPositiveInteger`, `xsd:negativeInteger`, `xsd:unsignedLong` | `java.math.BigInteger` | exact, unbounded; XSD lexical rules (a leading `+` is accepted) |
+| `xsd:decimal` | `java.math.BigDecimal` | exact; exponents (`1e3`) are not decimal syntax and are rejected |
 | `xsd:float` | `Float` | accepts `INF`, `-INF`, `NaN` |
 | `xsd:double` | `Double` | accepts `INF`, `-INF`, `NaN` |
-| `xsd:date` | `java.time.LocalDate` | an optional timezone is accepted and **dropped** on read |
+| `xsd:date` | `java.time.LocalDate` | an optional timezone is accepted and **dropped** on read; years above 9999 (`12345-06-07`) and negative years round-trip |
 | `rdf:langString` | `com.geoknoesis.kastor.rdf.LangString` | value and language tag |
 | `xsd:dateTime`, `xsd:time`, `xsd:duration` | `String` | lexical form; no single `java.time` type represents their optional timezones losslessly |
 | any other datatype (e.g. `xsd:anyURI`) | `String` | lexical form |
@@ -252,12 +282,23 @@ Non-literal properties:
 | `sh:nodeKind sh:Literal` only | `String` (lexical form) |
 | `sh:or` / `sh:xone` whose members agree on one `sh:class` or one `sh:datatype` | that class / datatype |
 | `sh:or` / `sh:xone` over several classes | `String` (the IRI), with a warning |
-| `sh:in` | a generated enum |
+| `sh:in` | a generated enum (see below) |
 
 Cardinality:
 - `sh:maxCount 1` with `sh:minCount 1` → non-null value
 - `sh:maxCount 1` without `sh:minCount` → nullable value
 - no `sh:maxCount`, or `sh:maxCount > 1` → `List<T>`
+
+### `sh:in` enums
+
+Interfaces, wrappers and data classes expose an `sh:in` value set as a generated enum. When distinct values
+map to the same constant name (`"in-progress"` and `"in_progress"`, `"Draft"` and `"draft"`, or equal local
+names in different namespaces), later members in `sh:in` order get `_2`, `_3`, … suffixes (with a
+warning), each keeping its own value.
+
+The instance DSL keeps **`String` setters** for `sh:in` properties, checked against the allowed values,
+because the DSL can be generated without the enums; where it refers to an enum it uses the enum's
+package-qualified name, so the DSL compiles when it is generated into a different package.
 
 ## Naming
 
@@ -278,12 +319,34 @@ Cardinality:
 ## Inheritance
 
 A node shape with `sh:node <OtherShape>`, or a target class that is `rdfs:subClassOf` another shaped
-class, produces an interface that **extends** the parent's generated interface; inherited properties are
-not redeclared.
+class, produces an interface that **extends** the parent's generated interface. Every generator
+(interfaces, wrappers, data classes, factories, writers, DSL) uses the same member list, so the output
+always compiles:
+
+- Inherited properties are not redeclared unless the child shape restates the path.
+- A **restated path keeps the parent's member name**; a different `sh:name` on the child is ignored with a
+  warning.
+- The restated signature must be a valid Kotlin override: a nullable single value may become **non-null**
+  (child adds `sh:minCount 1`), but a `List` stays a `List` and the value type stays the parent's.
+- Stricter child constraints that a signature cannot express (e.g. `sh:maxCount 1` on a path the parent
+  exposes as a `List`, a narrower `sh:datatype`/`sh:class`, tighter bounds or patterns) are combined with the
+  parent's and **enforced by generated validation**.
+- When two parents expose the same path under different names, the child has both members.
+- Parents that declare one path both as a list and as a single value, or with different value types,
+  **fail generation** with a message naming the shape and path (align their `sh:maxCount`,
+  `sh:datatype`/`sh:class`).
 
 ## Parser behaviour
 
 - A SHACL file that is not valid Turtle **fails the build**; it is never treated as "no shapes".
+- When one node shape lists **the same path in several property shapes**, one member is generated, named
+  after the alphabetically first `sh:name`, with the constraints of all declarations combined (highest
+  `sh:minCount`, lowest `sh:maxCount`, …); a warning names the shape and path.
+- `sh:pattern` values are XPath regular expressions and are translated for `java.util.regex`: `\i`/`\I`
+  and `\c`/`\C` (XML name characters, approximated with Unicode letter/digit classes plus `_ : . -` and
+  U+00B7), character-class subtraction `[base-[excluded]]`, and Unicode block escapes `\p{IsBlock}`
+  (to `\p{InBlock}`). The `q` flag disables translation. A pattern that is still not a valid regular
+  expression **fails generation**, naming the shape, path and pattern.
 - Blank-node node shapes are supported, as are implicit class targets (a shape that is also an
   `rdfs:Class`/`owl:Class`).
 - Constructs that cannot be represented are **skipped with a warning** naming the shape and property:

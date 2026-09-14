@@ -235,6 +235,15 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 3. **Type support**
    - Literals: `String`, `Int`, `Double`, `Boolean` (and `List` of those for multi-valued literals).
    - Objects: other `@Rdf` domain interfaces.
+   - Single values may be declared nullable (`String?`, `Int?`, `Organization?`).
+
+4. **Missing values**
+   - Missing values are never replaced by invented defaults (`""`, `0`, `false`).
+   - A **non-null** single-valued property throws `IllegalStateException` when its value is missing or
+     cannot be decoded (e.g. `"abc"` for an `Int`).
+   - A **nullable** property returns `null` when the value is missing; assigning `null` to a nullable `var`
+     removes the triples for that predicate.
+   - Lists are empty when there are no values.
 
 ## Common Patterns
 
