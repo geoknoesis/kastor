@@ -1,5 +1,5 @@
 {
- "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: 9 known deviations); other entries are environment-gated. 233 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
+ "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: known deviations now execute and must fail with an explicit unsupported-feature error); other entries are environment-gated. 224 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
  "entries": [
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
@@ -1344,60 +1344,6 @@
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-10",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of ASK trying to reassign ?value",
-   "count": 1,
-   "reason": "known deviation: SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine (ValidatorCapabilities.supportsCustomConstraints = false)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of a sh:property with a sh:select expression 001",
-   "count": 1,
-   "reason": "known deviation: SHACL 1.2 SPARQL node expressions (sh:select / sh:sparqlExpr as sh:targetNode or sh:property values) are not implemented by the native engine"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of a sh:property with a sh:sparqlExpr expression 001",
-   "count": 1,
-   "reason": "known deviation: SHACL 1.2 SPARQL node expressions (sh:select / sh:sparqlExpr as sh:targetNode or sh:property values) are not implemented by the native engine"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:expression at node shape 001",
-   "count": 1,
-   "reason": "known deviation: SHACL 1.2 node expressions (sh:expression, sh:nodeByExpression over computed nodes) are not implemented by the native engine"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:nodeByExpression at property shape 001",
-   "count": 1,
-   "reason": "known deviation: SHACL 1.2 node expressions (sh:expression, sh:nodeByExpression over computed nodes) are not implemented by the native engine"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:optional 001",
-   "count": 1,
-   "reason": "known deviation: SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine (ValidatorCapabilities.supportsCustomConstraints = false)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:propertyValidator with SELECT 001",
-   "count": 1,
-   "reason": "known deviation: SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine (ValidatorCapabilities.supportsCustomConstraints = false)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:targetNode with a sh:select expression 001",
-   "count": 1,
-   "reason": "known deviation: SHACL 1.2 SPARQL node expressions (sh:select / sh:sparqlExpr as sh:targetNode or sh:property values) are not implemented by the native engine"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest",
-   "test": "Test of sh:validator 001",
-   "count": 1,
-   "reason": "known deviation: SHACL-SPARQL constraint components (sh:ConstraintComponent with sh:validator / sh:nodeValidator / sh:propertyValidator / sh:SPARQLAskValidator) are not supported by the native engine (ValidatorCapabilities.supportsCustomConstraints = false)"
   }
  ]
 }

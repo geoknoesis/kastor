@@ -392,30 +392,16 @@ property("http://example.org/score") {
 
 #### Precision Constraints
 
-> **Deprecated.** `totalDigits` and `fractionDigits` emit `sh:totalDigits` / `sh:fractionDigits`, which are **not SHACL Core constraints**. The native validator does not enforce them and other SHACL Core validators ignore them, so the DSL marks both properties `@Deprecated`. Use `pattern` or a SPARQL constraint to limit digits.
+> **Not available.** `totalDigits` and `fractionDigits` are deprecated at `ERROR` level and emit nothing: `sh:totalDigits` / `sh:fractionDigits` are not defined by SHACL 1.0 or SHACL 1.2, so no SHACL validator enforces them.
 
-Precision constraints control the number of digits in numeric values.
+To limit digits, constrain the lexical form with `pattern` (or use a SPARQL constraint):
 
 ```kotlin
 property("http://example.org/amount") {
     datatype = XSD.decimal
-    totalDigits = 10
-    fractionDigits = 2
+    // At most 8 integer digits and exactly 2 fraction digits
+    pattern = "^-?\\d{1,8}\\.\\d{2}$"
 }
-```
-
-**What they do:**
-- `totalDigits`: Maximum total number of digits (including both integer and fractional parts)
-- `fractionDigits`: Maximum number of digits after the decimal point
-- Useful for currency, measurements, and other values requiring specific precision
-
-**Example validation:**
-```kotlin
-// Shape: totalDigits = 10, fractionDigits = 2
-// Valid: 12345678.90 (10 total digits, 2 fractional)
-// Valid: 123.45 (5 total digits, 2 fractional)
-// Invalid: 12345678901.23 (12 total digits, exceeds totalDigits)
-// Invalid: 123.456 (3 fractional digits, exceeds fractionDigits)
 ```
 
 ### Value Constraints

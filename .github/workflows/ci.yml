@@ -78,9 +78,9 @@ jobs:
           name: verification-${{ matrix.os }}
           path: build/modules/**/reports/
 
-      - name: Compile SHACL benchmark modules
-        # JMH + ERA CLI are not pulled in by `test`; compile explicitly so they do not rot.
-        run: ./gradlew :benchmarks:shacl:jmhCompileGeneratedClasses :benchmarks:shacl-era-cli:classes --no-daemon
+      - name: Compile SHACL benchmark modules and smoke-test workloads
+        # JMH + ERA CLI are not pulled in by `test`; compile explicitly and run every workload once so they do not rot.
+        run: ./gradlew :benchmarks:shacl:jmhCompileGeneratedClasses :benchmarks:shacl:test :benchmarks:shacl-era-cli:classes --no-daemon
         shell: bash
 
   shacl-w3c-suite:
@@ -107,15 +107,16 @@ jobs:
         run: python scripts/fetch-conformance-data.py --only shacl
 
       - name: SHACL validation tests with the W3C SHACL 1.2 suite
-        run: ./gradlew :rdf:shacl-validation:test --no-daemon
+        run: ./gradlew :rdf:shacl-validation:w3cConformanceTest --no-daemon
         shell: bash
 
       - name: Require the full W3C suite, not the bundled fixture
-        # 163 W3C cases (154 executed, 9 allowlisted known deviations) on 2026-09-13.
+        # data-shapes 94d8bc2: 166 W3C cases, all executed (known deviations run and must fail with an
+        # explicit unsupported-feature error), measured 2026-09-13.
         run: >-
-          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/test
-          --minimum 200
-          --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=140
+          python scripts/check-test-results.py build/modules/rdf/shacl-validation/test-results/w3cConformanceTest
+          --minimum 150
+          --require-suite com.geoknoesis.kastor.rdf.shacl.conformance.Shacl12NativeConformanceTest=150
           --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload SHACL test reports
