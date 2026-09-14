@@ -398,6 +398,7 @@ public final class com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReason
 	public static final field HERMIT Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;
 	public static final field NONE Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;
 	public static final field OWL_MICRO Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;
+	public static final field OWL_RL Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;
 	public static final field RDFS Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoningProfile;

@@ -62,9 +62,19 @@ class OntoQualityReasoningTest {
             """.trimIndent()
 
         val base = Rdf.parse(turtle, RdfFormat.TURTLE)
-        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_MICRO))
-        // OWL_MICRO binds to Jena's ReasonerType.OWL_RL rule reasoner; it must not throw.
-        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_MICRO)
+        assertTrue(OntoQualityReasoning.supports(OntoQualityReasoningProfile.OWL_RL))
+        // OWL_RL binds to Jena's ReasonerType.OWL_RL rule reasoner; the deprecated OWL_MICRO name is an alias for it.
+        org.junit.jupiter.api.Assertions.assertEquals(
+            com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_RL,
+            OntoQualityReasoningProfile.OWL_RL.toReasonerConfigOrNull()?.reasonerType,
+        )
+        @Suppress("DEPRECATION")
+        val alias = OntoQualityReasoningProfile.OWL_MICRO
+        org.junit.jupiter.api.Assertions.assertEquals(
+            com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_RL,
+            alias.toReasonerConfigOrNull()?.reasonerType,
+        )
+        val expanded = OntoQualityReasoning.expand(base, OntoQualityReasoningProfile.OWL_RL)
 
         val type = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
         val ns = "http://example.org/ns#"
@@ -72,11 +82,11 @@ class OntoQualityReasoningTest {
         assertTrue(triples.containsAll(base.getTriples()), "Asserted triples must be kept")
         assertTrue(
             RdfTriple(Iri(ns + "i"), type, Iri(ns + "B")) in triples,
-            "Expected OWL_MICRO to entail ex:i a ex:B; triples: $triples",
+            "Expected OWL_RL to entail ex:i a ex:B; triples: $triples",
         )
         assertTrue(
             RdfTriple(Iri(ns + "j"), Iri(ns + "q"), Iri(ns + "i")) in triples,
-            "Expected OWL_MICRO to entail ex:j ex:q ex:i via owl:inverseOf; triples: $triples",
+            "Expected OWL_RL to entail ex:j ex:q ex:i via owl:inverseOf; triples: $triples",
         )
     }
 
