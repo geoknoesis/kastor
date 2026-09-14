@@ -67,15 +67,15 @@ class Rdf4jRepository(
         fun MemoryRepository(): Rdf4jRepository {
             val repository = SailRepository(MemoryStore())
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("memory")
         }
-        
+
         fun NativeRepository(location: String): Rdf4jRepository {
             val repository = SailRepository(NativeStore(java.io.File(location)))
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("native")
         }
-        
+
         /**
          * In-memory store with RDF-star explicitly enabled.
          *
@@ -85,18 +85,19 @@ class Rdf4jRepository(
         fun MemoryStarRepository(): Rdf4jRepository {
             val repository = SailRepository(MemoryStore())
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("memory-star")
         }
-        
+
         /**
-         * Native (persistent) store with RDF-star explicitly enabled.
+         * Native (persistent) store; alias of [NativeRepository]. RDF4J's `NativeStore` cannot store
+         * RDF-star triple terms, so this variant does not advertise them.
          */
         fun NativeStarRepository(location: String): Rdf4jRepository {
             val repository = SailRepository(NativeStore(java.io.File(location)))
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("native-star")
         }
-        
+
         /**
          * In-memory store wrapped with [SchemaCachingRDFSInferencer] so that RDFS
          * entailment is materialized at query time.
@@ -104,18 +105,18 @@ class Rdf4jRepository(
         fun MemoryRdfsRepository(): Rdf4jRepository {
             val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
             repository.init()
-            return Rdf4jRepository(repository, true)
+            return Rdf4jRepository(repository, true).withVariant("memory-rdfs")
         }
-        
+
         /**
          * Native (persistent) store wrapped with [SchemaCachingRDFSInferencer].
          */
         fun NativeRdfsRepository(location: String): Rdf4jRepository {
             val repository = SailRepository(SchemaCachingRDFSInferencer(NativeStore(java.io.File(location))))
             repository.init()
-            return Rdf4jRepository(repository, true)
+            return Rdf4jRepository(repository, true).withVariant("native-rdfs")
         }
-        
+
         /**
          * In-memory [ShaclSail] that validates writes against shapes loaded into the
          * `RDF4J.SHACL_SHAPE_GRAPH` named graph. SHACL violations surface as
@@ -124,16 +125,38 @@ class Rdf4jRepository(
         fun MemoryShaclRepository(): Rdf4jRepository {
             val repository = SailRepository(ShaclSail(MemoryStore()))
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("memory-shacl")
         }
-        
+
         /**
          * Native (persistent) [ShaclSail] backed by [NativeStore].
          */
         fun NativeShaclRepository(location: String): Rdf4jRepository {
             val repository = SailRepository(ShaclSail(NativeStore(java.io.File(location))))
             repository.init()
-            return Rdf4jRepository(repository)
+            return Rdf4jRepository(repository).withVariant("native-shacl")
+        }
+
+        /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
+        private val DIRECTIONAL_LITERAL = Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
+    }
+
+    /** Provider variant this repository was created as (null for a wrapped, externally created repository). */
+    private var variantId: String? = null
+
+    private fun withVariant(id: String): Rdf4jRepository = also { variantId = id }
+
+    /**
+     * Error message for a failed query. RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language
+     * literals (`"x"@ar--rtl`); that case gets an explicit explanation instead of a bare lexer error.
+     */
+    private fun failureMessage(prefix: String, query: String, e: Exception): String {
+        val malformed = generateSequence<Throwable>(e) { it.cause }.any { it is org.eclipse.rdf4j.query.MalformedQueryException }
+        return if (malformed && DIRECTIONAL_LITERAL.containsMatchIn(query)) {
+            "$prefix: RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language literals (\"...\"@lang--dir). " +
+                "Pass such literals as query bindings (withSelectRows(query, bindings, timeout)) or use the graph API. (${e.message})"
+        } else {
+            "$prefix: ${e.message}"
         }
     }
     
@@ -236,7 +259,7 @@ class Rdf4jRepository(
     } catch (e: RdfException) {
         throw e
     } catch (e: Exception) {
-        throw RdfQueryException("SPARQL execution failed: ${e.message}", query = query, cause = e)
+        throw RdfQueryException(failureMessage("SPARQL execution failed", query, e), query = query, cause = e)
     }
 
     /** Engine failures raised while iterating results become [RdfQueryException]; consumer code is not wrapped. */
@@ -258,7 +281,7 @@ class Rdf4jRepository(
         } catch (e: Exception) {
             RdfDebug.logQueryError("ASK", query.sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
-                message = "Failed to prepare SPARQL ASK query: ${e.message}",
+                message = failureMessage("Failed to prepare SPARQL ASK query", query.sparql, e),
                 query = query.sparql,
                 cause = e
             )
@@ -288,7 +311,8 @@ class Rdf4jRepository(
      * the connection scope because the borrowed connection (and its GraphQueryResult
      * cursor) is closed as soon as [withConnection] returns — a lazy sequence over a
      * closed connection would fail. Callers that need lazy streaming over large graphs
-     * should use a scoped query API.
+     * should use a scoped query API. Failures while preparing, evaluating or iterating
+     * the result surface as [RdfQueryException].
      */
     private fun graphQuery(kind: String, sparql: String): Sequence<RdfTriple> = withConnection { conn ->
         val startTime = System.currentTimeMillis()
@@ -297,17 +321,24 @@ class Rdf4jRepository(
         } catch (e: Exception) {
             RdfDebug.logQueryError(kind, sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
-                message = "Failed to prepare SPARQL $kind query: ${e.message}",
+                message = failureMessage("Failed to prepare SPARQL $kind query", sparql, e),
                 query = sparql,
                 cause = e
             )
         }
-        prepared.evaluate().use { graphResult ->
-            val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-            val triples = graphResult.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.toList()
-            RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
-            triples.asSequence()
+        val triples = try {
+            prepared.evaluate().use { graphResult ->
+                val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
+                graphResult.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.toList()
+            }
+        } catch (e: RdfException) {
+            throw e
+        } catch (e: Exception) {
+            RdfDebug.logQueryError(kind, sparql, "Failed to execute: ${e.message}")
+            throw RdfQueryException(message = "Failed to execute SPARQL $kind query: ${e.message}", query = sparql, cause = e)
         }
+        RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
+        triples.asSequence()
     }
     
     override fun update(query: UpdateQuery) {
@@ -319,7 +350,7 @@ class Rdf4jRepository(
             } catch (e: Exception) {
                 RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
                 throw RdfQueryException(
-                    message = "Failed to execute SPARQL UPDATE: ${e.message}",
+                    message = failureMessage("Failed to execute SPARQL UPDATE", query.sparql, e),
                     query = query.sparql,
                     cause = e
                 )
@@ -372,11 +403,16 @@ class Rdf4jRepository(
 
     override fun isClosed(): Boolean = closed.get() || !repository.isInitialized
     
+    /** Capabilities of the variant this repository was created as; wrapped repositories are classified by their Sail. */
     override fun getCapabilities(): ProviderCapabilities = Rdf4jProvider().getCapabilities(
-        when {
-            inference -> "memory-rdfs"
-            (repository as? SailRepository)?.sail is ShaclSail -> "memory-shacl"
-            else -> "memory"
+        variantId ?: run {
+            val sail = (repository as? SailRepository)?.sail
+            val base = if (generateSequence(sail) { (it as? org.eclipse.rdf4j.sail.helpers.SailWrapper)?.baseSail }.any { it is NativeStore }) "native" else "memory"
+            when {
+                inference -> "$base-rdfs"
+                sail is ShaclSail -> "$base-shacl"
+                else -> base
+            }
         }
     )
 
