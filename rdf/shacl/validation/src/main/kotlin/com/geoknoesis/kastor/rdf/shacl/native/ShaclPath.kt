@@ -33,6 +33,9 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
 
     fun hasSubject(sub: RdfResource): Boolean = bySubject.containsKey(sub)
 
+    /** Predicates of the triples whose subject is [sub]. */
+    fun predicates(sub: RdfResource): Set<Iri> = bySubject[sub]?.keys ?: emptySet()
+
     fun subjects(pred: Iri, obj: RdfTerm): List<RdfResource> = byPredicateObject[pred]?.get(obj) ?: emptyList()
 
     fun objectSingle(sub: RdfResource, pred: Iri): RdfTerm? = objects(sub, pred).singleOrNull()
