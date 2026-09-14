@@ -64,7 +64,24 @@ and is kept as is; it was never published to Maven Central.
 - `rdf-sparql-contract`: `com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings`, shared Jena-style initial-binding substitution (non-API).
 - `scripts/check-build-pins.py`, `scripts/check-readme-imports.py`, `scripts/regenerate-verification-metadata.sh`.
 
-<!-- providers, SHACL, kastor-gen and onto-quality entries pending -->
+#### Ontology quality (`onto-quality-*`)
+
+- **Breaking:**
+  - The default base IRI for CLI input is `urn:onto-qa:input/<file name>` instead of the file URI, so finding IRIs and `findingRef` values no longer depend on the checkout location. Use `--base-iri` to override.
+  - NOCOnto, CBOOnto and TMOnto now follow the published OQuaRE definitions (Duque-Ramos et al., 2016); their values and scores change. The previous formulas remain available as clearly labelled Kastor-adapted metrics (`owl.kastorAdapted` in JSON, `kastor-m:KastorAdaptedScoring` in Turtle).
+  - Exit codes: a directory argument and an unavailable HermiT reasoner are usage errors (4). `benchmarks/shacl/era-cli` follows the 0/2/4/5 convention.
+- **Fixed:**
+  - CLI warnings are visible: user-facing warnings print sanitised on stderr, and the CLI ships an SLF4J binding (WARN, stderr).
+  - `--explain` without the LLM environment flag warns, and fails with exit 3 under `--fail-on-explain-error`.
+  - LLM circuit breaker: exhausted retries count toward the breaker, `insufficient_quota` and TLS/certificate errors are not retried, and HTTP status codes are read from more message formats.
+  - Output sanitising: stderr messages are sanitised, Markdown escapes `@` to prevent email autolinks, and bidi controls are shown as visible escapes.
+  - Similarity-limit errors say which limit was reached and suggest the matching option.
+  - Cycle participants no longer rank as highly as roots in importance.
+  - VoID `distinctObjectCount` counts RDF 1.2 triple terms.
+  - OWL Micro and OWL RL profiles are distinguished by tests.
+- **Added:** `--base-iri`, `--similarity-max-pairs`, `--debug` accepted after the subcommand, `OutputSanitizer`, `KastorAdaptedMetrics`, `SimilaritySearchBudgetExceededException.limit`.
+
+<!-- providers, SHACL and kastor-gen entries pending -->
 
 ### Fixed (re-audit)
 
