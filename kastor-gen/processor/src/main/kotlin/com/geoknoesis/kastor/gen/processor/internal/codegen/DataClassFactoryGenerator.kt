@@ -115,7 +115,7 @@ public class DataClassFactoryGenerator(
                 .build()
         )
 
-        objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes))
+        objectBuilder.addFunction(buildFromFunction(properties, context, packageName, dcClassName, enumsByName, knownTypes, shape.shapeIri))
 
         // toTriples(record, subject): List<RdfTriple>  — only when write support is enabled
         // One write per path: members that alias a path (same path under two inherited names) hold the same values.
@@ -137,6 +137,7 @@ public class DataClassFactoryGenerator(
         dcClassName: ClassName,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
+        shapeIri: String,
     ): FunSpec {
         val handleType = ClassName(CodegenConstants.RUNTIME_PACKAGE, "RdfHandle")
         val fn = FunSpec.builder("from")
@@ -145,7 +146,7 @@ public class DataClassFactoryGenerator(
 
         // One local val per property, then the constructor call
         properties.forEach { property ->
-            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName, knownTypes))
+            fn.addCode(buildPropertyLoad(property, context, packageName, enumsByName, knownTypes, shapeIri))
         }
 
         // Constructor call: DataClass(prop1 = _prop1, ...). Local names derive from the unescaped identifier.
@@ -172,10 +173,12 @@ public class DataClassFactoryGenerator(
         packageName: String,
         enumsByName: Map<String, EnumModel>,
         knownTypes: Set<String>?,
+        shapeIri: String,
     ): CodeBlock {
         val name = NamingUtils.propertyName(property)
         val pred = property.path
-        val label = "$name <$pred>"
+        val label = "$name <$pred> of shape <$shapeIri>"
+        val policy = ClassName(CodegenConstants.RUNTIME_PACKAGE, "MaterializationPolicy")
         val kind = TypeMapper.valueKind(property, context, knownTypes, nestedMode)
 
         val listExpr: CodeBlock = when (kind) {
@@ -221,11 +224,15 @@ public class DataClassFactoryGenerator(
             }
         }
 
+        // Same cardinality rule as the live wrappers: a required member without a value throws MaterializationException.
         val local = "_$name"
         return when {
+            Cardinality.isList(property) && Cardinality.isRequired(property) -> CodeBlock.builder()
+                .addStatement("val %N = %L.ifEmpty { %T.missingRequired(%S) }", local, listExpr, policy, label)
+                .build()
             Cardinality.isList(property) -> CodeBlock.builder().addStatement("val %N = %L", local, listExpr).build()
             Cardinality.isRequiredSingle(property) -> CodeBlock.builder()
-                .addStatement("val %N = %L.firstOrNull() ?: error(%S)", local, listExpr, "Required value $label missing or invalid")
+                .addStatement("val %N = %L.firstOrNull() ?: %T.missingRequired(%S)", local, listExpr, policy, label)
                 .build()
             else -> CodeBlock.builder().addStatement("val %N = %L.firstOrNull()", local, listExpr).build()
         }

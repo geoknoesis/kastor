@@ -295,10 +295,10 @@ class OntologyProcessorIntegrationTest {
         assertTrue(complexWrapper.contains("override val itemCount: Int? by lazy {"))
 
         // Verify type conversions
-        assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"))"))
+        assertTrue(complexWrapper.contains("MaterializationPolicy.missingRequired(\"title <http://purl.org/dc/terms/title>"), complexWrapper)
         assertTrue(complexWrapper.contains(".map { it.lexical }"))
         assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.double(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
-        assertTrue(complexWrapper.contains("KastorGraphOps.getRequiredLiteralValue(rdf.graph, rdf.node, Iri(\"http://example.org/isActive\"))"))
+        assertTrue(complexWrapper.contains("MaterializationPolicy.missingRequired(\"isActive <http://example.org/isActive>"), complexWrapper)
         assertTrue(complexWrapper.contains("XsdLiterals.boolean("))
         assertTrue(complexWrapper.contains(".mapNotNull { lit -> XsdLiterals.int(lit) ?: MaterializationPolicy.illTyped(lit,"), complexWrapper)
     }
@@ -387,7 +387,7 @@ class OntologyProcessorIntegrationTest {
         // Verify object materialization
         assertTrue(resourceWrapper.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"))"))
         assertTrue(resourceWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
-        assertTrue(resourceWrapper.contains(".firstOrNull() ?: error(\"Required object requiredContact missing\")"))
+        assertTrue(resourceWrapper.contains(".firstOrNull() ?: MaterializationPolicy.missingRequired(\"requiredContact <"), resourceWrapper)
     }
 
     @Test

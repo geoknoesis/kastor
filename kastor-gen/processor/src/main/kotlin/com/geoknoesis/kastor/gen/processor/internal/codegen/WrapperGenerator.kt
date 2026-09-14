@@ -16,6 +16,7 @@ private val RDF_REF = ClassName(RUNTIME, "RdfRef")
 private val RDF_HANDLE = ClassName(RUNTIME, "RdfHandle")
 private val RDF_BACKED = ClassName(RUNTIME, "RdfBacked")
 private val XSD_LITERALS = ClassName(RUNTIME, "XsdLiterals")
+private val MATERIALIZATION_POLICY = ClassName(RUNTIME, "MaterializationPolicy")
 private val RDF_LITERAL = ClassName("com.geoknoesis.kastor.rdf", "Literal")
 private val IRI = ClassName("com.geoknoesis.kastor.rdf", "Iri")
 private val WITH_KNOWN_PREDICATES = MemberName(RUNTIME, "withKnownPredicates")
@@ -29,8 +30,9 @@ private val CLEAR_OBJECTS = MemberName(RUNTIME, "clearPredicateObjects")
  * Generates RDF-backed wrappers for hand-written `@Rdf` interfaces.
  *
  * Every ontology-derived value (predicate IRIs, names in messages) is passed to KotlinPoet as an argument, never
- * spliced into a format string. Missing values are never replaced by defaults: a non-null member throws
- * [IllegalStateException] when its value is missing or ill-typed, a nullable member returns `null` when missing.
+ * spliced into a format string. Readers follow `MaterializationPolicy` like the SHACL-generated ones: ill-typed
+ * values throw `MaterializationException` (or are skipped under `IllTypedValueHandling.SKIP`), a non-null member
+ * without a value throws `MaterializationException`, a nullable member without a value reads `null`.
  */
 internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger: KSPLogger) {
 
@@ -109,13 +111,12 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     val typeName = if (property.nullable && !isList) baseType.copy(nullable = true) else baseType
     if (!property.mutable) {
       val delegateExpr = if (isList) {
-        val delegate = when (property.kotlinType) {
-          "List<Int>" -> "rdfInts"
-          "List<Double>" -> "rdfDoubles"
-          "List<Boolean>" -> "rdfBooleans"
-          else -> "rdfStrings"
+        if (property.kotlinType == "List<String>") {
+          CodeBlock.of("%M(%L)", MemberName(DELEGATES, "rdfStrings"), pred)
+        } else {
+          // Decoded lists apply MaterializationPolicy to ill-typed values, like the SHACL-generated readers.
+          CodeBlock.of("%M(%L, %T::%N)", MemberName(DELEGATES, "rdfLiterals"), pred, XSD_LITERALS, decoder(property.kotlinType))
         }
-        CodeBlock.of("%M(%L)", MemberName(DELEGATES, delegate), pred)
       } else {
         val delegate = if (property.nullable) "rdfLiteralOrNull" else "rdfLiteral"
         CodeBlock.of("%M(%L, %T::%N)", MemberName(DELEGATES, delegate), pred, XSD_LITERALS, decoder(property.kotlinType))
@@ -129,8 +130,11 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .addCode(
         CodeBlock.builder()
           .add("return %T.getLiteralValues(rdf.graph, rdf.node, %L).firstOrNull()", KASTOR_GRAPH_OPS, pred)
-          .add("?.let { %T.%N(it) ?: error(%S) }", XSD_LITERALS, decoder(property.kotlinType), "Value of ${label(property)} is not a valid ${property.kotlinType}")
-          .apply { if (!property.nullable) add(" ?: error(%S)", "Required value of ${label(property)} is missing") }
+          .add(
+            "?.let { %T.%N(it) ?: %T.illTyped(it, %S, %S) }",
+            XSD_LITERALS, decoder(property.kotlinType), MATERIALIZATION_POLICY, label(property), property.kotlinType,
+          )
+          .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
           .add("\n")
           .build(),
       )
@@ -164,7 +168,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
       .addStatement("%T.materialize(%T(child, rdf.graph), %T::class.java)", ONTO_MAPPER, RDF_REF, elementTypeName)
       .unindent()
       .add("}.firstOrNull()")
-      .apply { if (!property.nullable) add(" ?: error(%S)", "Required object of ${label(property)} is missing") }
+      .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
       .add("\n")
       .build()
     val setterBody = if (property.nullable) {

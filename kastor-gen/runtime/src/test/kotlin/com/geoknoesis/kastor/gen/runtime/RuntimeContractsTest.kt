@@ -63,6 +63,19 @@ class RuntimeContractsTest {
         }
     }
 
+    @Test
+    fun `missing required values always throw a materialization exception naming the member`() {
+        val e = assertFailsWith<MaterializationException> { MaterializationPolicy.missingRequired("title <https://example.test/title>") }
+        assertTrue(e.message!!.contains("title <https://example.test/title>"), e.message)
+        val previous = MaterializationPolicy.illTypedValues
+        try {
+            MaterializationPolicy.illTypedValues = IllTypedValueHandling.SKIP
+            assertFailsWith<MaterializationException> { MaterializationPolicy.missingRequired("title") }
+        } finally {
+            MaterializationPolicy.illTypedValues = previous
+        }
+    }
+
     private fun violation(message: String, severity: ShaclSeverity) = ShaclViolation(
         focusNode = Iri("urn:focus"), shapeIri = Iri("urn:shape"), constraintIri = Iri("urn:component"),
         message = message, severity = severity,
