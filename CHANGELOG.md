@@ -14,7 +14,84 @@ and is kept as is; it was never published to Maven Central.
 
 ### Fixed (re-audit)
 
-<!-- entries pending -->
+#### Security
+
+- `rdf-sparql`: redirects are handled manually.
+  - 307/308 keep method and body; 301/302/303 are followed only for GET; a redirected POST is an error.
+  - Cross-origin redirects are refused unless `followCrossOriginRedirects` is set, and custom headers and credentials are stripped when followed.
+  - Reserved headers such as `Host` and `Content-Length` are rejected.
+- `rdf-sparql-lang`: a `u`/`U` after a backslash in a literal is sent as `u`/`U`, so SPARQL 1.1 codepoint-escape pre-passes cannot alter literal text.
+- `onto-quality`: ontology-derived text in Markdown reports is escaped, and control characters in text output appear as visible `\uXXXX`.
+
+#### Breaking changes
+
+- **`rdf-core`:**
+  - `LangString.lang` keeps the tag as given; use `normalizedLang` for the lower-case form. Equality and hashing still ignore tag case.
+  - A `Dataset` rejects queries that declare their own `FROM` / `FROM NAMED`.
+- **`rdf-sparql-lang`:**
+  - `ClearOperationAst` / `DropOperationAst` take a `GraphScope`, and COPY/MOVE/ADD source and destination are nullable (`null` = `DEFAULT`).
+  - Invalid projections and blank-node label reuse across patterns are rejected.
+  - `union {}` is deprecated; use `union({..},{..})` / `unionOf { branch {} }`.
+- **`rdf-sparql`:**
+  - The transport is `java.net.http.HttpClient`.
+  - For streamed rows, `requestTimeout` covers only the wait for response headers; `streamingRequestTimeout` bounds the whole stream.
+  - Non-standard service-description terms moved to `https://kastor.geoknoesis.com/ns/sparql#`.
+- **`rdf-shacl-validation`:**
+  - Unsupported SHACL features fail with an unsupported-feature error by default (`ValidationConfig.unsupportedFeatures`). This covers SPARQL constraint components, `sh:expression`, `sh:values` and SPARQL expressions used as targets.
+  - `sh:uniqueValuesFor` reports one result per duplicate target.
+- **`rdf-shacl-dsl`:** `totalDigits`, `fractionDigits`, `targetWhereSelect` and `targetWhereExpr` are deprecated at `ERROR` level.
+- **`onto-quality-cli`:**
+  - Exit codes are distinct: 0 ok, 1 findings, 2 parse error, 3 explanation failure, 4 usage/configuration error, 5 runtime error.
+  - `--reasoner owl-micro` is a deprecated alias of `owl-rl`.
+  - NOCOnto, CBOOnto, DIT/LCOMOnto (paths now measured from `owl:Thing`) and TMOnto banding values change.
+
+#### Fixed
+
+- `rdf-core`:
+  - File and URL parsing pass a base IRI, so relative IRIs resolve.
+  - Isomorphism treats equal literals as equal (`TrueLiteral` vs `"true"^^xsd:boolean`, and tags differing only in case) and scales its work budget with graph size.
+  - URL loading checks HTTP status, sends `Accept`, and applies a total timeout.
+  - Memory rollback runs every undo action, and empty created graphs are listed.
+  - Dataset parse failures no longer leak repositories.
+  - The IRI scanner follows RFC 3987 `ucschar`.
+  - `Rdf.memory()` honours provider priority.
+- `rdf-sparql`:
+  - Bound `withSelectRows` substitutes values Jena-style instead of appending `VALUES`, so aggregates, FILTER and sub-selects return correct results.
+  - Triples connected through blank nodes are never split across batches.
+  - Long GET URLs fall back to POST.
+  - A stalled read is interrupted promptly, and UPDATE requests are never re-sent.
+- `rdf-sparql-lang`: MINUS with a non-empty left side renders `{ left MINUS { right } }`.
+- `rdf-shacl-validation`:
+  - Recursive shapes are evaluated without a stack-depth limit (10,000-node chains validate).
+  - Recursion through negation reports a warning instead of assuming conformance.
+  - Property shapes with targets no longer apply their child shapes twice.
+  - Closed shapes allow the paths of deactivated property shapes.
+  - Paths use sets, respect the deadline and are capped (`maxPathValueNodes`).
+  - `sh:targetWhere` also considers object nodes.
+  - SPARQL pre-binding is provider-independent.
+  - Language tags compare case-insensitively, and `"24:00:00"^^xsd:time` equals `00:00:00`.
+  - More XSD lexical-form checks.
+- `onto-quality`:
+  - The CLI parses with the file URI as base IRI.
+  - LLM calls are retried only on timeouts, 408/429/5xx and connection errors, with a total-duration bound and a circuit breaker.
+  - Similarity limits scale with entity count.
+  - A corrupted cached model is downloaded again once.
+- CI: pull requests run the pinned W3C SHACL 1.2 suite (`w3cConformanceTest`) and execute every SHACL benchmark workload. The weekly Conformance workflow no longer tracks the unpinned upstream branch.
+
+#### Added
+
+- `rdf-core`:
+  - `LangString.normalizedLang`
+  - `baseIri` parse overloads and isomorphism limit overloads
+  - `RdfHttpStatusException`, `RdfLoadTimeoutException`, `UrlLoadOptions.totalTimeoutMillis`
+- `rdf-sparql` config options: `streamingRequestTimeout`, `maxGetUrlLength`, `maxBlankNodeComponentTriples`, `followCrossOriginRedirects`, `maxRedirects`.
+- `rdf-shacl-validation`: `UnsupportedFeatureHandling`, `ValidationConfig.maxPathValueNodes`, and the `w3cConformanceTest` Gradle task.
+- `onto-quality-cli` options: `--debug`, `--llm-max-duration`, `--similarity-max-work`, `--similarity-timeout`, `--similarity-mode exact|approximate`.
+- Release tooling:
+  - `scripts/configure-github-release.sh` applies the release environment, rulesets and Pages settings (dry run by default).
+  - `publish.yml` polls Maven Central validation.
+
+<!-- providers/reasoning and kastor-gen entries pending -->
 
 ### Breaking changes (Maven `artifactId`s)
 
