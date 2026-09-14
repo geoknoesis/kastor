@@ -151,7 +151,7 @@ class ValidationCodeGeneratorTest {
         val method = generator.generateValidationMethod(classBuilder)
 
         val code = method.toString()
-        assertTrue(code.contains("Regex"))
+        assertTrue(code.contains("PATTERN_"), code)
         assertTrue(code.contains("containsMatchIn(value)"))
         assertTrue(code.contains("email must match pattern"))
     }

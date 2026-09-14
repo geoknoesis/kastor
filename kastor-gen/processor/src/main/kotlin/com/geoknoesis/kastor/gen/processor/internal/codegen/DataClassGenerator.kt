@@ -41,12 +41,13 @@ public class DataClassGenerator(
     public fun generateDataClasses(model: OntologyModel, packageName: String, fallbackUnshapedToIri: Boolean = false): Map<String, FileSpec> {
         GenerationNames.checkCollisions(model)
         val knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(model) else null
-        val supers = GenerationNames.superTypes(model)
+        val members = GenerationNames.effectiveMembers(model, GenerationNames.superTypes(model))
         return model.shapes
             .sortedBy { it.targetClass }
             .associateTo(sortedMapOf()) { shape ->
                 val name = dataClassName(shape.targetClass, model.context)
-                name to generateDataClass(shape, GenerationNames.effectiveProperties(shape, supers), model.context, packageName, knownTypes)
+                val properties = members[shape.targetClass].orEmpty().map { it.typing }
+                name to generateDataClass(shape, properties, model.context, packageName, knownTypes)
             }
     }
 

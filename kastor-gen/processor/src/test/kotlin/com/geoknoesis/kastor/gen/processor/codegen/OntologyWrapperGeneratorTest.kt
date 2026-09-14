@@ -112,7 +112,7 @@ class OntologyWrapperGeneratorTest {
         assertTrue(catalogCode.contains("Catalog") && catalogCode.contains("RdfBacked"))
         
         // Check known predicates
-        assertTrue(catalogCode.contains("private val known: Set<Iri>"))
+        assertTrue(catalogCode.contains("private val KNOWN: Set<Iri>"))
         assertTrue(catalogCode.contains("setOf"))
         assertTrue(catalogCode.contains("Iri(\"http://purl.org/dc/terms/title\")"))
         assertTrue(catalogCode.contains("Iri(\"http://purl.org/dc/terms/description\")"))
@@ -402,7 +402,7 @@ class OntologyWrapperGeneratorTest {
         assertTrue(emptyCode.contains("internal class EmptyWrapper"))
         assertTrue(emptyCode.contains("override val rdf: RdfHandle"))
         assertTrue(emptyCode.contains("Empty") && emptyCode.contains("RdfBacked"))
-        assertTrue(emptyCode.contains("private val known: Set<Iri>"))
+        assertTrue(emptyCode.contains("private val KNOWN: Set<Iri>"))
         assertTrue(emptyCode.contains("setOf"))
         assertTrue(emptyCode.contains(")"))
         assertTrue(emptyCode.contains("companion object {"))

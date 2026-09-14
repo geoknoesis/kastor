@@ -8,72 +8,73 @@ import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
 
-private val KASTOR_GRAPH_OPS = ClassName("com.geoknoesis.kastor.gen.runtime", "KastorGraphOps")
-private val ONTO_MAPPER = ClassName("com.geoknoesis.kastor.gen.runtime", "OntoMapper")
-private val RDF_REF = ClassName("com.geoknoesis.kastor.gen.runtime", "RdfRef")
+private const val RUNTIME = "com.geoknoesis.kastor.gen.runtime"
+private const val DELEGATES = "com.geoknoesis.kastor.gen.runtime.delegates"
+private val KASTOR_GRAPH_OPS = ClassName(RUNTIME, "KastorGraphOps")
+private val ONTO_MAPPER = ClassName(RUNTIME, "OntoMapper")
+private val RDF_REF = ClassName(RUNTIME, "RdfRef")
+private val RDF_HANDLE = ClassName(RUNTIME, "RdfHandle")
+private val RDF_BACKED = ClassName(RUNTIME, "RdfBacked")
+private val XSD_LITERALS = ClassName(RUNTIME, "XsdLiterals")
 private val RDF_LITERAL = ClassName("com.geoknoesis.kastor.rdf", "Literal")
+private val IRI = ClassName("com.geoknoesis.kastor.rdf", "Iri")
+private val WITH_KNOWN_PREDICATES = MemberName(RUNTIME, "withKnownPredicates")
+private val AS_RDF = MemberName(RUNTIME, "asRdf")
+private val REPLACE_LITERALS = MemberName(RUNTIME, "replacePredicateLiterals")
+private val REPLACE_OBJECT = MemberName(RUNTIME, "replacePredicateObjectTerm")
+private val CLEAR_LITERALS = MemberName(RUNTIME, "clearPredicateLiterals")
+private val CLEAR_OBJECTS = MemberName(RUNTIME, "clearPredicateObjects")
 
+/**
+ * Generates RDF-backed wrappers for hand-written `@Rdf` interfaces.
+ *
+ * Every ontology-derived value (predicate IRIs, names in messages) is passed to KotlinPoet as an argument, never
+ * spliced into a format string. Missing values are never replaced by defaults: a non-null member throws
+ * [IllegalStateException] when its value is missing or ill-typed, a nullable member returns `null` when missing.
+ */
 internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger: KSPLogger) {
 
   fun generateWrapper(classModel: ClassModel): FileSpec {
     val wrapperName = "${classModel.simpleName}Wrapper"
+    val properties = classModel.properties.sortedBy { it.predicateIri }
 
     val fileBuilder = FileSpec.builder(classModel.packageName, wrapperName)
       .addFileComment("GENERATED FILE - DO NOT EDIT")
 
-    fileBuilder.addImport("com.geoknoesis.kastor.gen.runtime", "RdfBacked", "OntoMapper", "RdfHandle", "withKnownPredicates")
-    fileBuilder.addImport("com.geoknoesis.kastor.gen.runtime.delegates", *delegateImportsFor(classModel).sorted().toTypedArray())
-    fileBuilder.addImport("com.geoknoesis.kastor.rdf", "Iri")
-    if (classModel.properties.any { it.mutable }) {
-      fileBuilder.addImport(
-        "com.geoknoesis.kastor.gen.runtime",
-        "asRdf",
-        "replacePredicateLiterals",
-        "replacePredicateObjectTerm",
-      )
-      fileBuilder.addImport("com.geoknoesis.kastor.rdf", "Literal")
-    }
-
-    val knownIris = classModel.properties
-      .sortedBy { it.predicateIri }
-      .map { CodeBlock.of("Iri(%S)", it.predicateIri) }
-    val knownIrisCode = knownIris.joinToString(", ") { it.toString() }
-    val setType = KotlinPoetUtils.setOf(ClassName("com.geoknoesis.kastor.rdf", "Iri"))
-
+    val knownIris = properties.map { it.predicateIri }.distinct().map { CodeBlock.of("%T(%S)", IRI, it) }.joinToCode(", ")
     val domainInterface = ClassName(classModel.packageName, classModel.simpleName)
     val classBuilder = TypeSpec.classBuilder(wrapperName)
       .addModifiers(INTERNAL)
       .primaryConstructor(
         FunSpec.constructorBuilder()
-          .addParameter("input", ClassName("com.geoknoesis.kastor.gen.runtime", "RdfHandle"))
+          .addParameter("input", RDF_HANDLE)
           .addModifiers(PRIVATE)
           .build(),
       )
       .addSuperinterface(domainInterface)
-      .addSuperinterface(ClassName("com.geoknoesis.kastor.gen.runtime", "RdfBacked"))
+      .addSuperinterface(RDF_BACKED)
       .addProperty(
-        PropertySpec.builder("rdf", ClassName("com.geoknoesis.kastor.gen.runtime", "RdfHandle"))
+        PropertySpec.builder("rdf", RDF_HANDLE)
           .addModifiers(OVERRIDE)
-          .initializer("input.withKnownPredicates(KNOWN)")
+          .initializer("input.%M(KNOWN)", WITH_KNOWN_PREDICATES)
           .build(),
       )
 
-    classModel.properties
-      .sortedBy { it.predicateIri }
-      .forEach { property ->
-        classBuilder.addProperty(generatePropertyImplementation(classModel.packageName, property))
-      }
+    properties.forEach { property ->
+      classBuilder.addProperty(generatePropertyImplementation(classModel.packageName, property))
+    }
 
     val companion = TypeSpec.companionObjectBuilder()
       .addProperty(
-        PropertySpec.builder("KNOWN", setType)
+        PropertySpec.builder("KNOWN", KotlinPoetUtils.setOf(IRI))
           .addModifiers(PRIVATE)
-          .initializer("setOf(%L)", CodeBlock.of(knownIrisCode))
+          .initializer("setOf(%L)", knownIris)
           .build(),
       )
       .addInitializerBlock(
         CodeBlock.of(
-          "OntoMapper.register(%T::class.java) { handle -> %T(handle) }",
+          "%T.register(%T::class.java) { handle -> %T(handle) }\n",
+          ONTO_MAPPER,
           domainInterface,
           ClassName(classModel.packageName, wrapperName),
         ),
@@ -84,34 +85,8 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     return fileBuilder.build()
   }
 
-  private fun delegateImportsFor(classModel: ClassModel): Set<String> {
-    val names = mutableSetOf<String>()
-    classModel.properties.forEach { p ->
-      names.addAll(delegateNamesForProperty(p))
-    }
-    return names
-  }
-
-  private fun delegateNamesForProperty(property: PropertyModel): Set<String> {
-    return when (property.type) {
-      PropertyType.LITERAL -> when (property.kotlinType) {
-        "String" -> setOf("rdfString")
-        "Int" -> setOf("rdfInt")
-        "Double" -> setOf("rdfDouble")
-        "Boolean" -> setOf("rdfBoolean")
-        "List<String>" -> setOf("rdfStrings")
-        "List<Int>" -> setOf("rdfInts")
-        "List<Double>" -> setOf("rdfDoubles")
-        "List<Boolean>" -> setOf("rdfBooleans")
-        else -> setOf("rdfString")
-      }
-      PropertyType.OBJECT -> setOf("rdfObject")
-      PropertyType.OBJECT_LIST -> setOf("rdfObjects")
-    }
-  }
-
   private fun generatePropertyImplementation(domainPackageName: String, property: PropertyModel): PropertySpec {
-    val pred = CodeBlock.of("Iri(%S)", property.predicateIri)
+    val pred = CodeBlock.of("%T(%S)", IRI, property.predicateIri)
     return when (property.type) {
       PropertyType.LITERAL -> literalProperty(domainPackageName, property, pred)
       PropertyType.OBJECT -> objectProperty(domainPackageName, property, pred)
@@ -119,19 +94,31 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     }
   }
 
+  private fun label(property: PropertyModel) = "${property.name} <${property.predicateIri}>"
+
+  private fun decoder(kotlinType: String): String = when (kotlinType.removePrefix("List<").removeSuffix(">")) {
+    "Int" -> "int"
+    "Double" -> "double"
+    "Boolean" -> "boolean"
+    else -> "string"
+  }
+
   private fun literalProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
-    val typeName = determineTypeName(property.kotlinType, domainPackageName)
+    val isList = property.kotlinType.startsWith("List<")
+    val baseType = determineTypeName(property.kotlinType, domainPackageName)
+    val typeName = if (property.nullable && !isList) baseType.copy(nullable = true) else baseType
     if (!property.mutable) {
-      val delegateExpr = when (property.kotlinType) {
-        "String" -> CodeBlock.of("rdfString(%L)", pred)
-        "Int" -> CodeBlock.of("rdfInt(%L)", pred)
-        "Double" -> CodeBlock.of("rdfDouble(%L)", pred)
-        "Boolean" -> CodeBlock.of("rdfBoolean(%L)", pred)
-        "List<String>" -> CodeBlock.of("rdfStrings(%L)", pred)
-        "List<Int>" -> CodeBlock.of("rdfInts(%L)", pred)
-        "List<Double>" -> CodeBlock.of("rdfDoubles(%L)", pred)
-        "List<Boolean>" -> CodeBlock.of("rdfBooleans(%L)", pred)
-        else -> CodeBlock.of("rdfString(%L)", pred)
+      val delegateExpr = if (isList) {
+        val delegate = when (property.kotlinType) {
+          "List<Int>" -> "rdfInts"
+          "List<Double>" -> "rdfDoubles"
+          "List<Boolean>" -> "rdfBooleans"
+          else -> "rdfStrings"
+        }
+        CodeBlock.of("%M(%L)", MemberName(DELEGATES, delegate), pred)
+      } else {
+        val delegate = if (property.nullable) "rdfLiteralOrNull" else "rdfLiteral"
+        CodeBlock.of("%M(%L, %T::%N)", MemberName(DELEGATES, delegate), pred, XSD_LITERALS, decoder(property.kotlinType))
       }
       return PropertySpec.builder(property.name, typeName)
         .addModifiers(OVERRIDE)
@@ -139,78 +126,57 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
         .build()
     }
     val getter = FunSpec.getterBuilder()
-      .addCode(literalMutableGetterBody(property, pred))
+      .addCode(
+        CodeBlock.builder()
+          .add("return %T.getLiteralValues(rdf.graph, rdf.node, %L).firstOrNull()", KASTOR_GRAPH_OPS, pred)
+          .add("?.let { %T.%N(it) ?: error(%S) }", XSD_LITERALS, decoder(property.kotlinType), "Value of ${label(property)} is not a valid ${property.kotlinType}")
+          .apply { if (!property.nullable) add(" ?: error(%S)", "Required value of ${label(property)} is missing") }
+          .add("\n")
+          .build(),
+      )
       .build()
-    val setter = FunSpec.setterBuilder()
-      .addParameter("value", typeName)
-      .addCode(literalMutableSetterBody(pred))
-      .build()
+    val setterBody = if (property.nullable) {
+      CodeBlock.of("if (value == null) %M(%L) else %M(%L, %T(value))\n", CLEAR_LITERALS, pred, REPLACE_LITERALS, pred, RDF_LITERAL)
+    } else {
+      CodeBlock.of("%M(%L, %T(value))\n", REPLACE_LITERALS, pred, RDF_LITERAL)
+    }
     return PropertySpec.builder(property.name, typeName)
       .mutable(true)
       .addModifiers(OVERRIDE)
       .getter(getter)
-      .setter(setter)
+      .setter(FunSpec.setterBuilder().addParameter("value", typeName).addCode(setterBody).build())
       .build()
   }
-
-  private fun literalMutableGetterBody(property: PropertyModel, pred: CodeBlock): CodeBlock {
-    val tail = when (property.kotlinType) {
-      "String" -> ".map { it.lexical }.firstOrNull() ?: \"\""
-      "Int" -> ".mapNotNull { it.lexical.toIntOrNull() }.firstOrNull() ?: 0"
-      "Double" -> ".mapNotNull { it.lexical.toDoubleOrNull() }.firstOrNull() ?: 0.0"
-      "Boolean" -> ".mapNotNull { com.geoknoesis.kastor.gen.runtime.XsdLiterals.boolean(it) }.firstOrNull() ?: false"
-      else -> ".map { it.lexical }.firstOrNull() ?: \"\""
-    }
-    return CodeBlock.builder()
-      .add("return %T.getLiteralValues(rdf.graph, rdf.node, ", KASTOR_GRAPH_OPS)
-      .add(pred)
-      .add(tail)
-      .add("\n")
-      .build()
-  }
-
-  private fun literalMutableSetterBody(pred: CodeBlock): CodeBlock =
-    CodeBlock.builder()
-      .add("replacePredicateLiterals(")
-      .add(pred)
-      .add(", %T(value))\n", RDF_LITERAL)
-      .build()
 
   private fun objectProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
-    val elementType = property.kotlinType
-    val elementTypeName = domainClassName(domainPackageName, elementType)
+    val elementTypeName = domainClassName(domainPackageName, property.kotlinType)
+    val typeName = if (property.nullable) elementTypeName.copy(nullable = true) else elementTypeName
     if (!property.mutable) {
-      val delegateExpr = CodeBlock.of("rdfObject<%T>(%L)", elementTypeName, pred)
-      return PropertySpec.builder(property.name, elementTypeName)
+      val delegate = if (property.nullable) "rdfObjectOrNull" else "rdfObject"
+      return PropertySpec.builder(property.name, typeName)
         .addModifiers(OVERRIDE)
-        .delegate(delegateExpr)
+        .delegate(CodeBlock.of("%M<%T>(%L)", MemberName(DELEGATES, delegate), elementTypeName, pred))
         .build()
     }
     val getterCode = CodeBlock.builder()
-      .add("return %T.getObjectValues(rdf.graph, rdf.node, ", KASTOR_GRAPH_OPS)
-      .add(pred)
-      .add(") { child ->\n")
+      .add("return %T.getObjectValues(rdf.graph, rdf.node, %L) { child ->\n", KASTOR_GRAPH_OPS, pred)
       .indent()
       .addStatement("%T.materialize(%T(child, rdf.graph), %T::class.java)", ONTO_MAPPER, RDF_REF, elementTypeName)
       .unindent()
-      .add("}.firstOrNull() ?: error(%S)\n", "Required object of type $elementType for mapped property is missing")
+      .add("}.firstOrNull()")
+      .apply { if (!property.nullable) add(" ?: error(%S)", "Required object of ${label(property)} is missing") }
+      .add("\n")
       .build()
-    val getter = FunSpec.getterBuilder().addCode(getterCode).build()
-    val setter = FunSpec.setterBuilder()
-      .addParameter("value", elementTypeName)
-      .addCode(
-        CodeBlock.builder()
-          .add("replacePredicateObjectTerm(")
-          .add(pred)
-          .add(", value.asRdf().node)\n")
-          .build(),
-      )
-      .build()
-    return PropertySpec.builder(property.name, elementTypeName)
+    val setterBody = if (property.nullable) {
+      CodeBlock.of("if (value == null) %M(%L) else %M(%L, value.%M().node)\n", CLEAR_OBJECTS, pred, REPLACE_OBJECT, pred, AS_RDF)
+    } else {
+      CodeBlock.of("%M(%L, value.%M().node)\n", REPLACE_OBJECT, pred, AS_RDF)
+    }
+    return PropertySpec.builder(property.name, typeName)
       .mutable(true)
       .addModifiers(OVERRIDE)
-      .getter(getter)
-      .setter(setter)
+      .getter(FunSpec.getterBuilder().addCode(getterCode).build())
+      .setter(FunSpec.setterBuilder().addParameter("value", typeName).addCode(setterBody).build())
       .build()
   }
 
@@ -218,10 +184,9 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     val elementType = property.kotlinType.removePrefix("List<").removeSuffix(">")
     val elementTypeName = domainClassName(domainPackageName, elementType)
     val listType = KotlinPoetUtils.listOf(elementTypeName)
-    val delegateExpr = CodeBlock.of("rdfObjects<%T>(%L)", elementTypeName, pred)
     return PropertySpec.builder(property.name, listType)
       .addModifiers(OVERRIDE)
-      .delegate(delegateExpr)
+      .delegate(CodeBlock.of("%M<%T>(%L)", MemberName(DELEGATES, "rdfObjects"), elementTypeName, pred))
       .build()
   }
 

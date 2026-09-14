@@ -58,23 +58,18 @@ internal enum class ValueKind {
     LITERAL,
 }
 
-/** `Regex("pattern")` / `Regex("pattern", setOf(RegexOption.X))` honouring SHACL `sh:flags` (i, m, s, x, q). */
+/**
+ * `Regex("pattern")` / `Regex("pattern", setOf(RegexOption.X))` for an `sh:pattern` (XPath syntax, translated by
+ * [ShaclPatterns.toJava]) honouring SHACL `sh:flags` (i, m, s, x, q).
+ */
 internal fun regexCode(pattern: String, flags: String?): CodeBlock {
-    val options = flags.orEmpty().mapNotNull {
-        when (it) {
-            'i' -> "IGNORE_CASE"
-            'm' -> "MULTILINE"
-            's' -> "DOT_MATCHES_ALL"
-            'x' -> "COMMENTS"
-            'q' -> "LITERAL"
-            else -> null
-        }
-    }.distinct()
+    val options = ShaclPatterns.options(flags)
+    val source = ShaclPatterns.toJava(pattern, flags)
     return if (options.isEmpty()) {
-        CodeBlock.of("%T(%S)", Regex::class, pattern)
+        CodeBlock.of("%T(%S)", Regex::class, source)
     } else {
         CodeBlock.of(
-            "%T(%S, setOf(%L))", Regex::class, pattern,
+            "%T(%S, setOf(%L))", Regex::class, source,
             options.map { CodeBlock.of("%T.%L", RegexOption::class, it) }.joinToCode(", "),
         )
     }

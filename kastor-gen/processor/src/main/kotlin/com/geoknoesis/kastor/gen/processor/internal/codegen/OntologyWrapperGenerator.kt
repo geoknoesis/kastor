@@ -8,13 +8,14 @@ import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclShape
 import com.geoknoesis.kastor.gen.processor.internal.utils.Cardinality
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.EffectiveMember
 import com.geoknoesis.kastor.gen.processor.internal.utils.GenerationNames
 import com.geoknoesis.kastor.gen.processor.internal.utils.KotlinPoetUtils
 import com.geoknoesis.kastor.gen.processor.internal.utils.NamingUtils
+import com.geoknoesis.kastor.gen.processor.internal.utils.ShaclPatterns
 import com.geoknoesis.kastor.gen.processor.internal.utils.TypeMapper
 import com.geoknoesis.kastor.gen.processor.internal.utils.ValueKind
 import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
-import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
@@ -38,7 +39,7 @@ public class OntologyWrapperGenerator(
         val domainPackage: String,
         val knownTypes: Set<String>?,
         val enumsByName: Map<String, EnumModel>,
-        val supers: Map<String, List<ShaclShape>>,
+        val members: Map<String, List<EffectiveMember>>,
     )
 
     private val runtime = CodegenConstants.RUNTIME_PACKAGE
@@ -62,7 +63,7 @@ public class OntologyWrapperGenerator(
             domainPackage = interfacePackage,
             knownTypes = if (fallbackUnshapedToIri) GenerationNames.knownTypes(ontologyModel) else null,
             enumsByName = ontologyModel.enums.associateBy { it.name },
-            supers = GenerationNames.superTypes(ontologyModel),
+            members = GenerationNames.effectiveMembers(ontologyModel, GenerationNames.superTypes(ontologyModel)),
         )
         val wrappers = sortedMapOf<String, FileSpec>()
 
@@ -79,7 +80,7 @@ public class OntologyWrapperGenerator(
         val context = ctx.model.context
         val interfaceName = NamingUtils.domainName(shape.targetClass, context)
         val wrapperName = "${interfaceName}Wrapper"
-        val properties = GenerationNames.effectiveProperties(shape, ctx.supers)
+        val members = ctx.members[shape.targetClass].orEmpty()
 
         val fileBuilder = FileSpec.builder(ctx.packageName, wrapperName)
             .addFileComment("GENERATED FILE - DO NOT EDIT")
@@ -102,11 +103,13 @@ public class OntologyWrapperGenerator(
             .addSuperinterface(ClassName(ctx.domainPackage, interfaceName))
             .addSuperinterface(ClassName(runtime, "RdfBacked"))
 
-        // Known predicates set - sorted by path IRI for deterministic output
-        classBuilder.addProperty(
-            PropertySpec.builder("known", KotlinPoetUtils.setOf(iriClass))
+        val companionBuilder = TypeSpec.companionObjectBuilder()
+
+        // Known predicates set, shared by all instances - sorted by path IRI for deterministic output
+        companionBuilder.addProperty(
+            PropertySpec.builder("KNOWN", KotlinPoetUtils.setOf(iriClass))
                 .addModifiers(PRIVATE)
-                .initializer("setOf(%L)", properties.map { CodeBlock.of("Iri(%S)", it.path) }.joinToCode(", "))
+                .initializer("setOf(%L)", members.map { it.path }.distinct().map { CodeBlock.of("Iri(%S)", it) }.joinToCode(", "))
                 .build()
         )
 
@@ -117,18 +120,16 @@ public class OntologyWrapperGenerator(
                 .delegate(
                     CodeBlock.of(
                         "lazy(LazyThreadSafetyMode.PUBLICATION) {\n" +
-                        "  if (input is DefaultRdfHandle) input.withKnownPredicates(known) else input\n" +
+                        "  if (input is DefaultRdfHandle) input.withKnownPredicates(KNOWN) else input\n" +
                         "}"
                     )
                 )
                 .build()
         )
 
-        properties.forEach { property ->
-            classBuilder.addProperty(generatePropertyImplementation(property, ctx))
+        members.forEach { member ->
+            classBuilder.addProperty(generatePropertyImplementation(member.typing, ctx))
         }
-
-        val companionBuilder = TypeSpec.companionObjectBuilder()
 
         when (validationMode) {
             ValidationMode.NONE -> Unit
@@ -139,14 +140,14 @@ public class OntologyWrapperGenerator(
                 classBuilder.addFunction(generateExternalValidation())
             }
             ValidationMode.EMBEDDED -> {
-                classBuilder.addFunction(generateEmbeddedValidation(shape, properties, ctx, companionBuilder))
+                classBuilder.addFunction(generateEmbeddedValidation(shape, members.filter { it.primaryForPath }, ctx, companionBuilder))
             }
         }
 
         classBuilder.addFunction(generateWriteToGraph())
 
         // Property mappings - sorted by path IRI for deterministic output
-        val mappingEntries = properties.map { property ->
+        val mappingEntries = members.map { it.typing }.map { property ->
             val jsonLdName = context.propertyMappings.entries
                 .filter { it.value.id.value == property.path }
                 .minByOrNull { it.key }
@@ -191,7 +192,7 @@ public class OntologyWrapperGenerator(
 
     private fun generateEmbeddedValidation(
         shape: ShaclShape,
-        properties: List<ShaclProperty>,
+        members: List<EffectiveMember>,
         ctx: Ctx,
         companion: TypeSpec.Builder,
     ): FunSpec {
@@ -220,9 +221,10 @@ public class OntologyWrapperGenerator(
         }
 
         var patternIndex = 0
-        properties.forEach { property ->
+        members.forEach { member ->
+            val property = member.constraints
             val pred = property.path
-            val kind = TypeMapper.valueKind(property, ctx.model.context, ctx.knownTypes)
+            val kind = TypeMapper.valueKind(member.typing, ctx.model.context, ctx.knownTypes)
             val min = property.minCount
             val max = property.maxCount
 
@@ -240,12 +242,8 @@ public class OntologyWrapperGenerator(
 
                 property.pattern?.let { pat ->
                     val constant = "PATTERN_${patternIndex++}"
-                    companion.addProperty(
-                        PropertySpec.builder(constant, Regex::class)
-                            .addModifiers(PRIVATE)
-                            .initializer(regexCode(pat, property.patternFlags))
-                            .build()
-                    )
+                    // Lazy: a pattern the JVM cannot compile only fails validate(), never class initialisation.
+                    companion.addProperty(ShaclPatterns.lazyProperty(pat, property.patternFlags, constant))
                     functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
                     check(CodeBlock.of("!%N.containsMatchIn(lit.lexical)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("lit"))
                     functionBuilder.endControlFlow()

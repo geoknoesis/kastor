@@ -234,6 +234,7 @@ public class OntoMapperProcessor(
       predicateIri = predicateIri,
       type = propertyType,
       mutable = effectiveMutable,
+      nullable = returnType.isMarkedNullable,
     )
   }
 

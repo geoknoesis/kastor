@@ -431,7 +431,7 @@ class OntologyProcessorIntegrationTest {
         // Verify empty wrapper
         assertTrue(emptyWrapper.contains("internal class EmptyWrapper"))
         assertTrue(emptyWrapper.contains("Empty") && emptyWrapper.contains("RdfBacked"))
-        assertTrue(emptyWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(emptyWrapper.contains("private val KNOWN: Set<Iri>"))
         assertTrue(emptyWrapper.contains("setOf"))
         assertTrue(emptyWrapper.contains(")"))
         assertTrue(emptyWrapper.contains("companion object {"))
@@ -482,7 +482,7 @@ class OntologyProcessorIntegrationTest {
         assertFalse(malformedInterface.contains("@get:Rdf"))
 
         assertTrue(malformedWrapper.contains("internal class MalformedWrapper"))
-        assertTrue(malformedWrapper.contains("private val known: Set<Iri>"))
+        assertTrue(malformedWrapper.contains("private val KNOWN: Set<Iri>"))
         assertTrue(malformedWrapper.contains("setOf"))
         assertTrue(malformedWrapper.contains(")"))
     }

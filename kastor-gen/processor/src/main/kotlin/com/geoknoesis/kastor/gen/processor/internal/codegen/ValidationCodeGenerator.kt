@@ -2,8 +2,8 @@ package com.geoknoesis.kastor.gen.processor.internal.codegen
 
 import com.geoknoesis.kastor.gen.processor.api.model.ClassBuilderModel
 import com.geoknoesis.kastor.gen.processor.internal.utils.CodegenConstants
+import com.geoknoesis.kastor.gen.processor.internal.utils.ShaclPatterns
 import com.geoknoesis.kastor.gen.processor.internal.utils.kdocText
-import com.geoknoesis.kastor.gen.processor.internal.utils.regexCode
 import com.google.devtools.ksp.processing.KSPLogger
 import com.squareup.kotlinpoet.*
 
@@ -70,7 +70,7 @@ internal class ValidationCodeGenerator(
                         functionBuilder.endControlFlow()
                     }
                     c.pattern?.let {
-                        functionBuilder.beginControlFlow("if (!%L.containsMatchIn(value))", regexCode(it, c.patternFlags))
+                        functionBuilder.beginControlFlow("if (!%N.containsMatchIn(value))", ShaclPatterns.constantName(it, c.patternFlags))
                         functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $it")
                         functionBuilder.endControlFlow()
                     }
