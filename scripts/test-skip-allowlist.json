@@ -1,5 +1,5 @@
 {
- "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: 9 known deviations); other entries are environment-gated. 239 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
+ "description": "Tests allowed to be skipped. Conformance (RDF 1.2 Jena/RDF4J, SHACL W3C) entries regenerated from a full local run on 2026-09-13 (RDF4J: 155 allowlisted upstream gaps; SHACL: 9 known deviations); other entries are environment-gated. 233 allowed skips. scripts/check-test-results.py --skip-allowlist fails on skips not listed here and reports entries that no longer skip. Remove entries when a backend limitation is fixed. Every entry needs a non-empty, machine-independent reason (enforced by scripts/check-test-results.py).",
  "entries": [
   {
    "class": "com.geoknoesis.kastor.ontoquality.OopsBenchmarkTest",
@@ -54,42 +54,6 @@
    "test": "enrichesReportWithOpenAi()",
    "count": 1,
    "reason": "org.opentest4j.TestAbortedException: Assumption failed: Skipped: KASTOR_SKIP_OPENAI_LLM_TESTS=1"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkBatchOperations()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkLargeFileParsing()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkLargeGraphCreation()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkLargeGraphQuery()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkSerialization()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.PerformanceBenchmarkTest",
-   "test": "benchmarkStreamingParse()",
-   "count": 1,
-   "reason": "@Disabled: resource-intensive large-graph benchmarks (up to 1M triples), run manually with -DenableBenchmarks=true. Debt: migrate to benchmarks/ (JMH) and delete from the unit suite."
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
