@@ -42,8 +42,7 @@ import com.geoknoesis.kastor.rdf.shacl.native.OwlImportsExpander
 import com.geoknoesis.kastor.rdf.shacl.native.PathEvaluator
 import com.geoknoesis.kastor.rdf.shacl.native.PropertyConstraint
 import com.geoknoesis.kastor.rdf.shacl.native.graphFromTriples
-import com.geoknoesis.kastor.rdf.shacl.native.literalLess
-import com.geoknoesis.kastor.rdf.shacl.native.literalLessOrEqual
+import com.geoknoesis.kastor.rdf.shacl.native.orderViolations
 import com.geoknoesis.kastor.rdf.shacl.native.literalLexicallyValid
 import com.geoknoesis.kastor.rdf.shacl.native.ShaclPath
 import com.geoknoesis.kastor.rdf.shacl.native.ShapesCompiler
@@ -118,7 +117,9 @@ internal class NativeShaclValidator(
      * unchanged shapes graph on every run). The RdfGraph API exposes no modification counter, so entries are keyed
      * by the **content** of the merged triple snapshot: a hit requires element-wise equality with a stored copy
      * (O(n) `equals`, no canonicalization/sort/SHA-256). Any mutation of the shapes graph changes the snapshot and
-     * therefore misses — a stale digest can never be reused. Snapshots whose triple order differs simply miss.
+     * therefore misses — a stale digest can never be reused. Snapshots whose triple order differs simply miss. There is
+     * deliberately no identity fast path (same graph object): without a modification stamp in the RdfGraph API it
+     * could return the digest of a graph mutated since.
      * Bounded to [DIGEST_MEMO_CAPACITY] entries (each retains a copy of the triple list, not the graph) and emptied
      * by [clearCache].
      */
@@ -1021,7 +1022,8 @@ internal class NativeShaclValidator(
     }
 
     /**
-     * `sh:uniqueValuesFor`: hash-groups targets by their composite key (multisets of values per property). Every
+     * `sh:uniqueValuesFor`: hash-groups targets by their composite key (for each listed property, the set of its values
+     * compared as RDF terms; value nodes are sets, so value order is irrelevant). Every
      * target whose key is shared with at least one other target yields exactly one result, without `sh:value`
      * (W3C `uniqueValuesFor-001` … `-005`). The total is counted per group and at most [capacity] result rows are
      * materialized, so large duplicate groups stay linear.
@@ -1176,14 +1178,17 @@ internal class NativeShaclValidator(
                     val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
                     values.filter { shaclRdfTermFingerprint(it) in otherKeys }.forEach { add(ConstraintType.DISJOINT, "sh:disjoint violated: $it is shared with the referenced path", it) }
                 }
-                is PropertyConstraint.LessThanPath -> {
-                    val other = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    values.forEach { v -> other.forEach { w -> if (!literalLess(v, w)) add(ConstraintType.LESS_THAN, "sh:lessThan violated comparing $v and $w", v) } }
-                }
-                is PropertyConstraint.LessThanOrEqualsPath -> {
-                    val other = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    values.forEach { v -> other.forEach { w -> if (!literalLessOrEqual(v, w)) add(ConstraintType.LESS_THAN_OR_EQUALS, "sh:lessThanOrEquals violated comparing $v and $w", v) } }
-                }
+                // One result per (value, other value) pair that is not ordered; orderViolations sorts once when it can.
+                is PropertyConstraint.LessThanPath ->
+                    for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = true)) {
+                        add(ConstraintType.LESS_THAN, "sh:lessThan violated comparing $v and $w", v)
+                        if (sink.stop) break
+                    }
+                is PropertyConstraint.LessThanOrEqualsPath ->
+                    for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = false)) {
+                        add(ConstraintType.LESS_THAN_OR_EQUALS, "sh:lessThanOrEquals violated comparing $v and $w", v)
+                        if (sink.stop) break
+                    }
                 is PropertyConstraint.MinInclusive ->
                     values.forEach { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
                 is PropertyConstraint.MaxInclusive ->
@@ -1415,7 +1420,7 @@ internal class NativeShaclValidator(
         when (term) {
             is Literal -> term.lexical
             is Iri -> term.value
-            is BlankNode -> "_:${term.id}"
+            is BlankNode -> term.toString()
             else -> term.toString()
         }
 
@@ -1582,7 +1587,7 @@ internal class NativeShaclValidator(
 
     private fun RdfResource.displayId(): String = when (this) {
         is Iri -> value
-        is BlankNode -> "_:$id"
+        is BlankNode -> toString()
         else -> toString()
     }
 
