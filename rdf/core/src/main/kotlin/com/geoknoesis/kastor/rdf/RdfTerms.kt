@@ -256,7 +256,7 @@ private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' ||
 /** BMP characters that are neither `ucschar`, `iprivate` nor an allowed ASCII character (RFC 3987 section 2.2). */
 private fun Char.isForbiddenIriChar(): Boolean = when (this) {
     '<', '>', '"', '{', '}', '|', '\\', '^', '`' -> true
-    in ' '..' ', in ''..'', in '﷐'..'﷯', '￾', '￿' -> true
+    in '\u0000'..'\u0020', in '\u007F'..'\u009F', in '\uFDD0'..'\uFDEF', '\uFFFE', '\uFFFF' -> true
     else -> false
 }
 

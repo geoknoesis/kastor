@@ -16,7 +16,7 @@ class LiteralValidationTest {
         listOf("en", "en-GB", "zh-Hant-TW", "de-CH-1996", "x-private1", "abcdefghi", "en-abcdefghi").forEach {
             assertTrue(LiteralValidation.isWellFormedLanguageTag(it), it)
         }
-        listOf("", "en-", "-en", "1en", "en_GB", "en--rtl", "en US", "é").forEach {
+        listOf("", "en-", "-en", "1en", "en_GB", "en--rtl", "en US", "\u00E9").forEach {
             assertFalse(LiteralValidation.isWellFormedLanguageTag(it), it)
         }
     }

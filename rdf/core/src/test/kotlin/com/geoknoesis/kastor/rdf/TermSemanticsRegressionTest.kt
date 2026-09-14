@@ -124,7 +124,7 @@ class TermSemanticsRegressionTest {
         assertEquals("abcdefghi", LangString("x", "abcdefghi").lang)
         assertEquals("en-abcdefghijk", LangString("x", "en-abcdefghijk").lang)
         assertEquals("abcdefghi", normalizeLanguageTag("ABCDEFGHI"))
-        listOf("", "en US", "en-", "-en", "1en", "en_GB", "en--rtl", "e\"n", "é").forEach { tag ->
+        listOf("", "en US", "en-", "-en", "1en", "en_GB", "en--rtl", "e\"n", "\u00E9").forEach { tag ->
             assertThrows(IllegalArgumentException::class.java, { LangString("x", tag) }, tag)
             assertThrows(IllegalArgumentException::class.java, { normalizeLanguageTag(tag) }, tag)
         }
