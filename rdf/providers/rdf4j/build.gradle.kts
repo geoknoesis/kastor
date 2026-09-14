@@ -10,6 +10,7 @@ configurations.configureEach { exclude(group = "org.lz4", module = "lz4-java") }
 dependencies {
   implementation("at.yawk.lz4:lz4-java")
   api(project(":rdf:core"))
+  implementation(project(":rdf:sparql-contract"))
   implementation(project(":rdf:shacl-validation"))
   implementation(libs.rdf4j.repository.api)
   implementation(libs.rdf4j.repository.sail)
@@ -24,6 +25,8 @@ dependencies {
   implementation(libs.rdf4j.rio.n3)
   implementation(libs.rdf4j.rio.trig)
   implementation(libs.rdf4j.rio.nquads)
+  // Initial-binding parity tests compare rows with the Jena provider.
+  testImplementation(project(":rdf:jena"))
 }
 
 publishing {

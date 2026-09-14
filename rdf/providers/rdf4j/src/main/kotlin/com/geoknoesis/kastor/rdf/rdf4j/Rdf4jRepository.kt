@@ -333,19 +333,54 @@ class Rdf4jRepository(
     }
 
     /**
-     * Timed SELECT. RDF4J's `maxExecutionTime` has whole-second granularity, so [timeout] is rounded
-     * **up** to the next second (minimum 1 s): a query is never cut off earlier than requested, but may
-     * run up to one second longer.
+     * Timed SELECT with initial bindings. RDF4J's `maxExecutionTime` has whole-second granularity, so
+     * [timeout] is rounded **up** to the next second (minimum 1 s): a query is never cut off earlier than
+     * requested, but may run up to one second longer.
+     *
+     * IRI and literal bindings are applied by syntactic substitution
+     * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]), the same rules the Jena provider
+     * (Jena's `substitution`) and the SPARQL endpoint adapter use, so every provider returns the same rows:
+     * the constant restricts the query before aggregation, LIMIT and FILTER, and a projected bound variable
+     * is bound in every row. Queries that assign a bound variable (`BIND(... AS ?v)`, `(expr AS ?v)`,
+     * `VALUES ?v`) or use it inside a sub-select that does not project it are rejected with
+     * [IllegalArgumentException]. Blank nodes, triple terms and directional language strings (which RDF4J's
+     * SPARQL parser cannot spell) keep RDF4J's native `setBinding`.
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
-        consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        val result = queryOperation(query.sparql) {
-            val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql)
-            bindings.forEach { (name, term) -> prepared.setBinding(name, Rdf4jTerms.toRdf4jValue(term)) }
-            prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
-            prepared.evaluate()
+        consume: (Sequence<BindingSet>) -> T): T {
+        val (substituted, native) = bindings.entries.partition { sparqlConstant(it.value) != null }
+        // Outside queryOperation: a query the substitution rejects is the caller's error (IllegalArgumentException).
+        val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(
+            query.sparql,
+            substituted.associate { it.key to sparqlConstant(it.value)!! },
+        )
+        return withConnection { conn ->
+            val result = queryOperation(sparql) {
+                val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql)
+                native.forEach { (name, term) -> prepared.setBinding(name, Rdf4jTerms.toRdf4jValue(term)) }
+                prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
+                prepared.evaluate()
+            }
+            result.use { consume(it.rows(sparql)) }
         }
-        result.use { consume(it.rows(query.sparql)) }
+    }
+
+    /**
+     * SPARQL text for a binding substituted into the query (as the SPARQL endpoint adapter renders terms),
+     * or null for terms bound natively.
+     */
+    private fun sparqlConstant(term: RdfTerm): String? {
+        val lexical = com.geoknoesis.kastor.rdf.sparql.internal.SparqlLexical
+        return when (term) {
+            is Iri -> lexical.iriRef(term.value)
+            is LangString -> if (term.direction == null) lexical.langLiteral(term.lexical, term.lang) else null
+            is TypedLiteral ->
+                if (term.datatype == com.geoknoesis.kastor.rdf.vocab.XSD.string) lexical.quoted(term.lexical)
+                else lexical.typedLiteral(term.lexical, term.datatype.value)
+            is TrueLiteral -> "\"true\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
+            is FalseLiteral -> "\"false\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
+            else -> null
+        }
     }
 
     private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String): Sequence<BindingSet> =
