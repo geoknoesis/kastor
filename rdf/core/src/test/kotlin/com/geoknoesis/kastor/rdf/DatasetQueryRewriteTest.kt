@@ -90,11 +90,14 @@ class DatasetQueryRewriteTest {
     }
 
     @Test
-    fun `queries that already declare a dataset are not rewritten`() {
+    fun `queries that already declare a dataset are rejected`() {
         val repo = CapturingRepository()
         val query = "SELECT * FROM <http://example.org/explicit> WHERE { ?s ?p ?o }"
-        namedDefaultsDataset(repo).select(SparqlSelectQuery(query))
-        assertEquals(query, repo.lastSelect!!.sparql)
+        val error = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            namedDefaultsDataset(repo).select(SparqlSelectQuery(query))
+        }
+        assertTrue(error.message!!.contains("FROM"))
+        assertNull(repo.lastSelect)
     }
 
     @Test
