@@ -24,13 +24,17 @@ import org.eclipse.rdf4j.model.Triple
 import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model.vocabulary.OWL
 import org.eclipse.rdf4j.model.vocabulary.RDF
 import org.eclipse.rdf4j.model.vocabulary.RDF4J
+import org.eclipse.rdf4j.model.vocabulary.RDFS
 import org.eclipse.rdf4j.model.vocabulary.SHACL
+import org.eclipse.rdf4j.repository.RepositoryConnection
 import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
+import java.lang.ref.WeakReference
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
@@ -38,24 +42,36 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * RDF4J-based SHACL validation adapter backed by [ShaclSail].
  *
  * Shapes can be supplied in two ways:
- * - **Separate shapes graph** (recommended): `Rdf4jValidation(shapesGraph)` or [fromTurtle]. The
- *   shapes are converted once and loaded into the [RDF4J.SHACL_SHAPE_GRAPH] context of a single
- *   in-memory [ShaclSail] repository that is reused across calls. Each [validate] call adds the
- *   data in a transaction, runs validation via `prepare()`, and always rolls back, so no data is
- *   retained between calls. Calls are serialized on that repository; call [close] to release it.
- * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): a short-lived
- *   repository is built per call because the shapes can differ from call to call. If the data graph
- *   declares no shapes the result is [ValidationResult.Ok].
+ * - **Separate shapes graph** (recommended): `Rdf4jValidation(shapesGraph)` or [fromTurtle]; the shapes are
+ *   converted once at construction.
+ * - **Shapes embedded in the data graph** (no-arg constructor, backward compatible): the shapes are extracted from
+ *   the data graph (once per graph version). If the data graph declares no shapes the result is
+ *   [ValidationResult.Ok].
  *
- * The data graph is always converted to RDF4J statements: ShaclSail validates data held in its own
- * store, so the Kastor graph cannot be validated in place even when it is RDF4J-backed.
+ * ## Cost model
+ * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
+ * validator keeps one in-memory repository and loads a graph into it only when the graph passed to [validate] is a
+ * different instance or its content changed (detected with an order-independent fingerprint of its triples, which
+ * costs one pass over the triples but no conversion or store writes). Validating many nodes of one graph therefore
+ * converts and loads it once.
  *
- * [validate] returns the `sh:ValidationResult`s whose `sh:focusNode` is the requested node. Engine
- * failures other than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
+ * Each [validate] call evaluates only the shapes that target the focus node: the target declarations
+ * (`sh:targetClass` including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`,
+ * `sh:targetSubjectsOf`, `sh:targetObjectsOf`) are resolved for the focus node against the loaded data, and those
+ * shapes are validated with `sh:targetNode <focus>` in a transaction that is always rolled back. Shapes reached
+ * through `sh:node`, `sh:property` etc. are evaluated as usual. When no shape targets the focus node the result is
+ * [ValidationResult.Ok] without running the engine. Shapes with other target kinds (e.g. SPARQL-based `sh:target`)
+ * are validated for all their targets and the results are filtered to the focus node.
  *
- * Term conversion is exact (IRIs, blank node ids, language tags, datatypes). RDF4J 5.x has no
- * literal base-direction support, so the direction of an RDF 1.2 directional language string is
- * dropped (the language tag is kept).
+ * Calls are serialized on the repository; [close] releases it (together with the loaded data). A validator is safe
+ * to share between threads.
+ *
+ * [validate] returns the `sh:ValidationResult`s whose `sh:focusNode` is the requested node. Engine failures other
+ * than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
+ *
+ * Term conversion is exact (IRIs, blank node ids, language tags, datatypes). RDF4J 5.x has no literal
+ * base-direction support, so the direction of an RDF 1.2 directional language string is dropped (the language tag
+ * is kept).
  */
 class Rdf4jValidation private constructor(
   private val fixedShapes: List<Statement>?,
@@ -68,10 +84,13 @@ class Rdf4jValidation private constructor(
   constructor(shapes: RdfGraph) : this(toStatements(shapes))
 
   private val lock = Any()
-  private var sharedRepository: SailRepository? = null
+  private var repository: SailRepository? = null
+  private var loadedGraph: WeakReference<RdfGraph>? = null
+  private var loadedFingerprint = 0L
+  private var embeddedShapes: ShapeIndex? = null
   private var closed = false
-  private val fixedShapesModel: Model? by lazy(LazyThreadSafetyMode.PUBLICATION) {
-    fixedShapes?.let { LinkedHashModel(it) }
+  private val fixedShapeIndex: ShapeIndex? by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    fixedShapes?.let { ShapeIndex(it) }
   }
 
   companion object {
@@ -118,25 +137,78 @@ class Rdf4jValidation private constructor(
       else -> throw IllegalStateException("Unsupported RDF4J value in SHACL report: $value")
     }
 
-    private fun newRepository(shapes: Collection<Statement>): SailRepository {
+    /** Order-independent content fingerprint: mixed triple hashes summed, combined with the triple count. */
+    private fun fingerprint(graph: RdfGraph): Long {
+      var sum = 0L
+      var count = 0L
+      for (triple in graph.getTriples()) {
+        sum += mix(triple.hashCode().toLong())
+        count++
+      }
+      return mix(sum) * 31 + count
+    }
+
+    private fun mix(input: Long): Long {
+      var z = input + -0x61c8864680b583ebL
+      z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+      z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+      return z xor (z ushr 31)
+    }
+
+    private fun newRepository(): SailRepository {
       val sail = ShaclSail(MemoryStore()).apply {
         // Report every result rather than the engine's default per-constraint cap.
         validationResultsLimitTotal = -1
         validationResultsLimitPerConstraint = -1
       }
-      val repository = SailRepository(sail)
-      repository.init()
-      try {
-        repository.connection.use { connection ->
-          connection.begin()
-          connection.add(shapes, RDF4J.SHACL_SHAPE_GRAPH)
-          connection.commit()
+      return SailRepository(sail).apply { init() }
+    }
+
+    /** Shape statements embedded in a data graph: everything reachable from node/property shapes and targets. */
+    private fun extractEmbeddedShapes(statements: List<Statement>): List<Statement> {
+      val bySubject = statements.groupBy { it.subject }
+      val roots = statements.filter { st ->
+        st.predicate in TARGET_PREDICATES ||
+          (st.predicate == RDF.TYPE && (st.`object` == SHACL.NODE_SHAPE || st.`object` == SHACL.PROPERTY_SHAPE))
+      }.map { it.subject }
+      if (roots.isEmpty()) return emptyList()
+      val seen = LinkedHashSet<Resource>()
+      val pending = ArrayDeque(roots)
+      val result = ArrayList<Statement>()
+      while (pending.isNotEmpty()) {
+        val subject = pending.removeFirst()
+        if (!seen.add(subject)) continue
+        bySubject[subject].orEmpty().forEach { st ->
+          result += st
+          val obj = st.`object`
+          // Follow nested shape structure (blank nodes, RDF lists, referenced shapes), not data IRIs such as targets.
+          if (obj is BNode || (obj is IRI && st.predicate != SHACL.TARGET_NODE && st.predicate != SHACL.TARGET_CLASS &&
+              st.predicate != RDF.TYPE && bySubject[obj]?.any { it.predicate.namespace == SHACL.NAMESPACE } == true)
+          ) {
+            pending += obj as Resource
+          }
         }
-      } catch (e: Exception) {
-        runCatching { repository.shutDown() }
-        throw e
       }
-      return repository
+      return result
+    }
+  }
+
+  /** Shapes with their target declarations, indexed once. */
+  private class ShapeIndex(val statements: List<Statement>) {
+    val model: Model = LinkedHashModel(statements)
+    val targets: Map<Resource, List<Statement>> = statements.filter { it.predicate in TARGET_PREDICATES }.groupBy { it.subject }
+    /** Node shapes that are also classes: SHACL implicit class targets. */
+    val implicitClassTargets: Set<Resource> = statements
+      .filter { it.predicate == RDF.TYPE && (it.`object` == RDFS.CLASS || it.`object` == OWL.CLASS) }
+      .map { it.subject }
+      .filter { model.contains(it, RDF.TYPE, SHACL.NODE_SHAPE) }
+      .toSet()
+    /** Target kinds this adapter cannot resolve per focus node (e.g. SPARQL-based sh:target). */
+    val hasOtherTargets: Boolean = statements.any { it.predicate == SHACL.TARGET_PROP }
+    /** Shape statements without target declarations. */
+    val untargeted: List<Statement> = statements.filterNot { st ->
+      st.predicate in TARGET_PREDICATES ||
+        (st.subject in implicitClassTargets && st.predicate == RDF.TYPE && (st.`object` == RDFS.CLASS || st.`object` == OWL.CLASS))
     }
   }
 
@@ -145,60 +217,114 @@ class Rdf4jValidation private constructor(
       throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
     }
     val focusValue = toResource(focus)
-    val dataStatements = toStatements(data)
-
-    val shapes = fixedShapes
-    if (shapes == null) {
-      if (!declaresShapes(dataStatements)) return ValidationResult.Ok
-      val repository = newRepository(dataStatements)
-      try {
-        return validateIn(repository, dataStatements, focusValue) { LinkedHashModel(dataStatements) }
-      } finally {
-        repository.shutDown()
-      }
-    }
-
     synchronized(lock) {
       check(!closed) { "Rdf4jValidation has been closed" }
-      val repository = sharedRepository ?: newRepository(shapes).also { sharedRepository = it }
-      return validateIn(repository, dataStatements, focusValue) { fixedShapesModel!! }
+      val fingerprint = fingerprint(data)
+      val stale = loadedGraph?.get() !== data || loadedFingerprint != fingerprint
+      val repo = repository ?: newRepository().also { repository = it }
+      if (stale) {
+        val statements = toStatements(data)
+        if (fixedShapes == null) embeddedShapes = ShapeIndex(extractEmbeddedShapes(statements))
+        repo.connection.use { connection ->
+          connection.begin()
+          connection.clear()
+          connection.add(statements)
+          connection.commit()
+        }
+        loadedGraph = WeakReference(data)
+        loadedFingerprint = fingerprint
+      }
+      val shapes = fixedShapeIndex ?: embeddedShapes ?: return ValidationResult.Ok
+      if (shapes.statements.isEmpty()) return ValidationResult.Ok
+
+      return repo.connection.use { connection ->
+        if (shapes.hasOtherTargets) {
+          validateIn(connection, shapes.statements, focusValue, shapes.model)
+        } else {
+          val targeting = targetingShapes(connection, shapes, focusValue)
+          if (targeting.isEmpty()) {
+            ValidationResult.Ok
+          } else {
+            val restricted = if (focusValue is BNode) {
+              // RDF4J does not accept a blank node as sh:targetNode: keep the selected shapes' own target
+              // declarations (other shapes stay untargeted) and filter the report to the focus node.
+              shapes.untargeted + shapes.statements.filter { st ->
+                st.subject in targeting && (st.predicate in TARGET_PREDICATES ||
+                  (st.subject in shapes.implicitClassTargets && st.predicate == RDF.TYPE))
+              }
+            } else {
+              shapes.untargeted + targeting.map { vf.createStatement(it, SHACL.TARGET_NODE, focusValue) }
+            }
+            validateIn(connection, restricted, focusValue, shapes.model)
+          }
+        }
+      }
     }
   }
 
-  /** Releases the reusable ShaclSail repository (only created when shapes were supplied). */
+  /** Releases the repository and the data loaded into it. */
   override fun close() {
     synchronized(lock) {
       closed = true
-      sharedRepository?.shutDown()
-      sharedRepository = null
+      repository?.shutDown()
+      repository = null
+      loadedGraph = null
+      embeddedShapes = null
     }
   }
 
-  private fun declaresShapes(statements: List<Statement>): Boolean = statements.any { st ->
-    st.predicate in TARGET_PREDICATES ||
-      (st.predicate == RDF.TYPE && (st.`object` == SHACL.NODE_SHAPE || st.`object` == SHACL.PROPERTY_SHAPE))
+  /** The shapes whose target declarations select [focus] in the loaded data. */
+  private fun targetingShapes(connection: RepositoryConnection, shapes: ShapeIndex, focus: Resource): Set<Resource> {
+    val types by lazy(LazyThreadSafetyMode.NONE) { instanceTypes(connection, focus) }
+    val result = LinkedHashSet<Resource>()
+    shapes.targets.forEach { (shape, declarations) ->
+      val selected = declarations.any { st ->
+        val target = st.`object`
+        when (st.predicate) {
+          SHACL.TARGET_NODE -> target == focus
+          SHACL.TARGET_CLASS -> target in types
+          SHACL.TARGET_SUBJECTS_OF -> target is IRI && connection.hasStatement(focus, target, null, false)
+          SHACL.TARGET_OBJECTS_OF -> target is IRI && connection.hasStatement(null, target, focus, false)
+          else -> false
+        }
+      }
+      if (selected) result += shape
+    }
+    shapes.implicitClassTargets.forEach { if (it in types) result += it }
+    return result
+  }
+
+  /** `rdf:type`s of [focus] and their transitive `rdfs:subClassOf` superclasses (ShaclSail's RDFS reasoning). */
+  private fun instanceTypes(connection: RepositoryConnection, focus: Resource): Set<Value> {
+    val seen = LinkedHashSet<Value>()
+    val pending = ArrayDeque<Value>()
+    connection.getStatements(focus, RDF.TYPE, null, false).use { result -> result.forEach { pending += it.`object` } }
+    while (pending.isNotEmpty()) {
+      val type = pending.removeFirst()
+      if (!seen.add(type) || type !is Resource) continue
+      connection.getStatements(type, RDFS.SUBCLASSOF, null, false).use { result -> result.forEach { pending += it.`object` } }
+    }
+    return seen
   }
 
   private fun validateIn(
-    repository: SailRepository,
-    data: List<Statement>,
+    connection: RepositoryConnection,
+    shapes: List<Statement>,
     focus: Resource,
-    shapesModel: () -> Model,
+    shapesModel: Model,
   ): ValidationResult {
-    repository.connection.use { connection ->
-      connection.begin()
-      try {
-        connection.add(data)
-        connection.prepare()
-        return ValidationResult.Ok
-      } catch (e: Exception) {
-        val validationFailure = generateSequence<Throwable>(e) { it.cause }
-          .firstOrNull { it is ShaclSailValidationException } as ShaclSailValidationException?
-          ?: throw e
-        return toResult(validationFailure.validationReportAsModel(), focus, shapesModel())
-      } finally {
-        if (connection.isActive) connection.rollback()
-      }
+    connection.begin()
+    try {
+      connection.add(shapes, RDF4J.SHACL_SHAPE_GRAPH)
+      connection.prepare()
+      return ValidationResult.Ok
+    } catch (e: Exception) {
+      val validationFailure = generateSequence<Throwable>(e) { it.cause }
+        .firstOrNull { it is ShaclSailValidationException } as ShaclSailValidationException?
+        ?: throw e
+      return toResult(validationFailure.validationReportAsModel(), focus, shapesModel)
+    } finally {
+      if (connection.isActive) connection.rollback()
     }
   }
 
