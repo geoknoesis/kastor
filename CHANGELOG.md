@@ -99,7 +99,49 @@ and is kept as is; it was never published to Maven Central.
   - The W3C harness requires the expected failure category for known deviations and `sht:Failure` cases, uses the engine's conformance for `conformanceDisallows` cases, and enforces required suites for manifest overrides.
 - **Added:** `UnsupportedShaclFeatureException` (with `features`), the `UnsupportedShaclFeature` enum, `SparqlPreBindingRestrictionException`, and JMH workloads for monotone recursion and `sh:targetWhere`.
 
-<!-- providers and kastor-gen entries pending -->
+#### Code generator (`kastor-gen-*`)
+
+- **Breaking:**
+  - Processor model: `ShaclProperty` / `PropertyConstraints` numeric bounds are `BigDecimal` instead of `Double`.
+  - Processor model additions:
+    - `severity`, `message` and `deactivated` on `ShaclProperty`
+    - `deactivated` on `ShaclShape`
+    - `enumKind` and `typePackage` on `PropertyModel`
+    - `PropertyType.TERM`
+    - `RdfEnumKind`
+  - Generated code: `sh:BlankNodeOrIRI` / `sh:BlankNode` members are typed `RdfResource` instead of `String`, so blank nodes are no longer dropped.
+  - Generated readers throw `MaterializationException` by default for values of an unexpected term kind.
+  - Generated EXTERNAL-mode validators are shared across wrapper types (`SharedValidators`; close with `close(type)` / `closeAll()`).
+  - `NestedMode.IRI_ONLY` combined with `dataClassImplementsInterface = true` is rejected when a shape has object members, naming those members.
+  - Deprecated (WARNING) in favour of `rdfLiteral` / `rdfLiteralOrNull` / `rdfLiterals`, because they silently drop ill-typed values:
+    - `rdfString`, `rdfInt`, `rdfDouble`, `rdfBoolean`
+    - their `OrNull` and list variants
+- **Fixed:**
+  - The RDF4J validation adapter reloads when content changes (order-independent SHA-256 triple digest, so hash collisions can no longer hide changes), and reloads are atomic.
+  - Cardinality checks count values of every term kind, so literal `sh:in` enums no longer fail `sh:minCount` or miss `sh:maxCount`.
+  - Hand-written `@Rdf` interfaces support these member types, read through the policy-aware decoders:
+    - `Long`, `Float`, `BigInteger`, `BigDecimal`, `LocalDate`, `LangString`
+    - Kotlin and generated `sh:in` enums
+    - `Iri` and `RdfResource`
+  - Missing required values on hand-written `@Rdf` interfaces throw `MaterializationException`.
+  - Numeric bounds are compared exactly in wrapper validation, DSL setters and DSL `validate()`.
+  - `sh:pattern` translation follows XPath:
+    - flag `x` strips whitespace itself;
+    - `\d`, `\w` and `\s` follow XPath definitions;
+    - `q` ignores `m`/`s`/`x`;
+    - character-class subtraction inside negated classes has the correct precedence.
+  - Embedded validation honours `sh:severity`, `sh:message` and `sh:deactivated`.
+  - The Gradle plugin retries locked file deletes and moves with backoff, keeps the manifest consistent until every move succeeds, handles cross-drive moves, and explains how to recover on failure.
+  - Factory registration from a different class loader replaces the stale factory instead of failing class initialisation.
+  - Generated DSL enum types are package-qualified correctly for packages with upper-case segments.
+  - The runtime loads without SLF4J on the class path (loggers initialise lazily).
+- **Added:**
+  - `MaterializationPolicy.withIllTypedValues(handling) { … }` (thread-local override)
+  - `MaterializationPolicy.unexpectedTerm`
+  - `KastorGraphOps.getIriValues` / `getResourceValues`
+  - `SharedValidators`
+
+<!-- providers entries pending -->
 
 ### Fixed (re-audit)
 
