@@ -34,7 +34,6 @@ class Rdf4jTripleStreamTest {
         override fun close() = closed.countDown()
     }
 
-    private fun liveProducers() = Thread.getAllStackTraces().keys.count { it.name == producerName && it.isAlive }
 
     @Test
     fun `close from another thread wakes a consumer blocked waiting for the next triple`() {
