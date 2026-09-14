@@ -3,7 +3,7 @@ package com.geoknoesis.kastor.rdf.rdf4j.reasoning
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.rdf4j.rdf4jStatementOf
 import com.geoknoesis.kastor.rdf.rdf4j.rdfTermFromRdf4j
-import com.geoknoesis.kastor.rdf.rdf4j.rdfTripleFromRdf4j
+import com.geoknoesis.kastor.rdf.rdf4j.rdfTriplesFromRdf4j
 import com.geoknoesis.kastor.rdf.reasoning.*
 import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.Model
@@ -172,7 +172,7 @@ class Rdf4jReasoner(private val config: ReasonerConfig) : RdfReasoner {
             budget.check()
             if (statement in asserted) continue
             if (!includeAxiomatic && (statement.subject as? IRI)?.let { isVocabularyTerm(it.stringValue()) } == true) continue
-            result.add(rdfTripleFromRdf4j(statement))
+            result.addAll(rdfTriplesFromRdf4j(statement))
             require(result.size.toLong() <= config.materializationThreshold) {
                 "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
             }

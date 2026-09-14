@@ -4,6 +4,7 @@ public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jInterop {
 	public static final fun rdf4jValueOf (Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lorg/eclipse/rdf4j/model/Value;
 	public static final fun rdfTermFromRdf4j (Lorg/eclipse/rdf4j/model/Value;)Lcom/geoknoesis/kastor/rdf/RdfTerm;
 	public static final fun rdfTripleFromRdf4j (Lorg/eclipse/rdf4j/model/Statement;)Lcom/geoknoesis/kastor/rdf/RdfTriple;
+	public static final fun rdfTriplesFromRdf4j (Lorg/eclipse/rdf4j/model/Statement;)Ljava/util/List;
 }
 
 public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jProvider : com/geoknoesis/kastor/rdf/RdfProvider {
@@ -39,6 +40,7 @@ public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoe
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository$Companion;
 	public fun <init> (Lorg/eclipse/rdf4j/repository/Repository;Z)V
 	public synthetic fun <init> (Lorg/eclipse/rdf4j/repository/Repository;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/eclipse/rdf4j/repository/Repository;ZZ)V
 	public fun ask (Lcom/geoknoesis/kastor/rdf/SparqlAsk;)Z
 	public fun clear ()Z
 	public fun close ()V

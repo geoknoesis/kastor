@@ -339,6 +339,7 @@ internal object Rdf4jFormatSupport {
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
                         checkedTriples(statement, null)
+                        rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
                         val context = statement.context
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)
