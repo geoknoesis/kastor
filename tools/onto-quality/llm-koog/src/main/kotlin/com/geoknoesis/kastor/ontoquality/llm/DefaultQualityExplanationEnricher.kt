@@ -255,12 +255,12 @@ class DefaultQualityExplanationEnricher internal constructor(
         ): String {
             val canon =
                 buildString {
-                    append(modelKey).append('')
+                    append(modelKey).append('\u001F')
                     for (f in findings) {
-                        append(f.violation.message).append('')
-                        append(f.violation.shapeUri ?: "").append('')
+                        append(f.violation.message).append('\u001F')
+                        append(f.violation.shapeUri ?: "").append('\u001E')
                     }
-                    append(SYSTEM_PROMPT).append('')
+                    append(SYSTEM_PROMPT).append('\u001D')
                     append(userMessage)
                 }
             val digest = MessageDigest.getInstance("SHA-256").digest(canon.toByteArray(Charsets.UTF_8))

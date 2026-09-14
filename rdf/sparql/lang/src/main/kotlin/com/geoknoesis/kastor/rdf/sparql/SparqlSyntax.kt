@@ -41,7 +41,7 @@ internal object SparqlSyntax {
                 '\r' -> append("\\r")
                 '\t' -> append("\\t")
                 '\b' -> append("\\b")
-                '' -> append("\\f")
+                '\u000C' -> append("\\f")
                 else -> if (c.code < 0x20 || c.code == 0x7F) append("\\u%04X".format(c.code)) else append(c)
             }
         }

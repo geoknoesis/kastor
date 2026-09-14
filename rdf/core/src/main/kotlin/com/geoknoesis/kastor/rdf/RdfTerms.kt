@@ -558,7 +558,7 @@ fun normalizeLanguageTag(tag: String): String {
 
 /** Escapes a lexical form for use inside a double-quoted N-Triples/Turtle/SPARQL string. */
 internal fun escapeLiteralLexical(value: String): String {
-    if (value.none { it == '"' || it == '\\' || it == '\n' || it == '\r' || it == '\t' || it == '\b' || it == '' }) {
+    if (value.none { it == '"' || it == '\\' || it == '\n' || it == '\r' || it == '\t' || it == '\b' || it == '\u000C' }) {
         return value
     }
     return buildString(value.length + 8) {
@@ -570,7 +570,7 @@ internal fun escapeLiteralLexical(value: String): String {
                 '\r' -> append("\\r")
                 '\t' -> append("\\t")
                 '\b' -> append("\\b")
-                '' -> append("\\f")
+                '\u000C' -> append("\\f")
                 else -> append(c)
             }
         }

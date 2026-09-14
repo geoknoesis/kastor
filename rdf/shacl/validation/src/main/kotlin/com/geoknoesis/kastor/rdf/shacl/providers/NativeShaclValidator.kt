@@ -725,7 +725,7 @@ internal class NativeShaclValidator(
                     }
                 is PropertyConstraint.UniqueLang ->
                     if (c.enabled) {
-                        val duplicated = values.mapNotNull { v -> (v as? LangString)?.let { "${it.lang.lowercase()} ${it.direction?.token ?: ""}" } }
+                        val duplicated = values.mapNotNull { v -> (v as? LangString)?.let { "${it.lang.lowercase()}\u0000${it.direction?.token ?: ""}" } }
                             .groupingBy { it }.eachCount().filter { it.value > 1 }.keys
                         duplicated.forEach { _ -> add(ConstraintType.UNIQUE_LANG, "sh:uniqueLang violated") }
                     }

@@ -55,7 +55,7 @@ class SparqlRendererGrammarTest {
             "line\nbreak\r\ttab",
             "\"\"\"triple-quoted\"\"\"",
             "'''single'''",
-            "ctl",
+            "ctl\u0001\u0008\u000C\u007F",
             "} } DROP ALL ; #",
             "escaped\\u0022 || true || \\u0022",
             "unicode αβγ 😀",
