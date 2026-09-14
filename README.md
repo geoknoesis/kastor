@@ -67,6 +67,7 @@ Use Kastor when you want **domain-first RDF** in Kotlin: pure domain interfaces 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
 import com.geoknoesis.kastor.rdf.jena.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
 
@@ -92,6 +93,7 @@ val statement = underlyingModel.listStatements().next()
 
 ```kotlin
 import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.FOAF
 import org.eclipse.rdf4j.repository.Repository
 
 // Your existing RDF4J repository

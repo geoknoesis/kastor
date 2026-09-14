@@ -12,6 +12,10 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (round three)
+
+<!-- entries pending -->
+
 ### Fixed (re-audit)
 
 #### Security
