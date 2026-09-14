@@ -177,16 +177,17 @@ println("Providers supporting triple terms: ${tripleTermProviders.map { it.id }}
 The bundled providers do not generate service descriptions themselves; build one from capabilities with `SparqlServiceDescriptionGenerator` (module `rdf-sparql-lang`):
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.sparql.KastorSparqlVocabulary
 import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
 
 val description = SparqlServiceDescriptionGenerator(
     "http://example.org/sparql",
     repo.getCapabilities()
 ).generateServiceDescription()
 
+// The flag is a Kastor term (https://kastor.geoknoesis.com/ns/sparql#supportsRdfStar)
 val advertisesRdfStar = description.getTriples().any { triple ->
-    triple.predicate == SPARQL12.supportsRdfStar && triple.obj == boolean(true)
+    triple.predicate == KastorSparqlVocabulary.supportsRdfStar && triple.obj == boolean(true)
 }
 println("Service description advertises RDF-star support: $advertisesRdfStar")
 ```

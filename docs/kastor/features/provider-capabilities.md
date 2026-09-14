@@ -135,6 +135,14 @@ println("Entailment Regimes: ${capabilities.entailmentRegimes}")
 // [RDFS, OWL-RL, OWL-EL, ...]
 ```
 
+When these capabilities are turned into a service description with `SparqlServiceDescriptionGenerator`:
+
+- capability flags without a W3C term (`supportsRdfStar`, `supportsPropertyPaths`, `supportsAggregation`, `supportsSubSelect`, `supportsVersionDeclaration`, the SPARQL version) are emitted in the Kastor namespace `https://kastor.geoknoesis.com/ns/sparql#` (`KastorSparqlVocabulary`);
+- `supportsFederation` becomes `sd:feature sd:BasicFederatedQuery`;
+- only `extensionFunctions` entries with `isBuiltIn = false` are advertised as `sd:extensionFunction`. Listing `SparqlExtensionFunctionRegistry.getBuiltInFunctions()`, as some examples below do, adds nothing to the description.
+
+See [Service Description](service-description.md).
+
 ## 🔧 Provider Categories
 
 ### ProviderCategory Enum

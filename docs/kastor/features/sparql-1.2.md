@@ -191,16 +191,18 @@ println("Built-in functions: ${functions.map { it.name }}")
 
 ## 📊 SPARQL 1.2 Vocabulary
 
-Kastor includes comprehensive vocabulary support for SPARQL 1.2:
+The W3C SPARQL Service Description vocabulary has no terms for most SPARQL 1.2 capability flags, and Kastor does not invent terms in the W3C-owned `http://www.w3.org/ns/sparql#` namespace. The terms that service descriptions use are in `KastorSparqlVocabulary` (module `rdf-sparql-lang`, namespace `https://kastor.geoknoesis.com/ns/sparql#`, prefix `ksparql`):
 
 ```kotlin
-import com.geoknoesis.kastor.rdf.vocab.SPARQL12
+import com.geoknoesis.kastor.rdf.sparql.KastorSparqlVocabulary
 
-// Use SPARQL 1.2 vocabulary terms
-val service = SPARQL12.Sparql12Service
-val supportsRdfStar = SPARQL12.supportsRdfStar
-val tripleFunction = SPARQL12.TRIPLE
+val service = KastorSparqlVocabulary.Sparql12Service                // ksparql:Sparql12Service
+val supportsRdfStar = KastorSparqlVocabulary.supportsRdfStar        // ksparql:supportsRdfStar
+val version = KastorSparqlVocabulary.supportedSparqlVersion         // ksparql:supportedSparqlVersion
+val tripleFunctionId = KastorSparqlVocabulary.function("TRIPLE")    // registry identifier of TRIPLE
 ```
+
+The terms available are `Sparql12Service`, `supportedSparqlVersion`, `supportsRdfStar`, `supportsPropertyPaths`, `supportsAggregation`, `supportsSubSelect` and `supportsVersionDeclaration`. Federation uses the standard `sd:feature sd:BasicFederatedQuery`. The `SPARQL12` object in `rdf-core` still exists, but the service description generator and the function registry no longer use it.
 
 ## 🎨 DSL Integration
 
@@ -253,11 +255,14 @@ println(serviceDescription.getTriples().size)
 ```
 
 The service description includes:
-- SPARQL version support
-- RDF-star and other feature flags
-- Extension functions listed in `ProviderCapabilities.extensionFunctions`
+- SPARQL version support (`ksparql:supportedSparqlVersion`, plus type `ksparql:Sparql12Service` for 1.2)
+- RDF-star and other feature flags, in the Kastor namespace `https://kastor.geoknoesis.com/ns/sparql#`
+- Federation as the standard `sd:feature sd:BasicFederatedQuery`
+- Custom extension functions (`isBuiltIn = false`) listed in `ProviderCapabilities.extensionFunctions`; built-in SPARQL functions are not advertised
 - Supported languages and result/input formats
 - Default and named graph information
+
+See [Service Description](service-description.md) for the full structure.
 
 ## 📚 Built-in Functions
 
@@ -315,7 +320,7 @@ repo.add {
 ### 3. Extension Functions
 Look up SPARQL 1.2 function descriptions in the registry:
 ```kotlin
-if (SparqlExtensionFunctionRegistry.isRegistered(SPARQL12.TRIPLE.value)) {
+if (SparqlExtensionFunctionRegistry.isRegistered(KastorSparqlVocabulary.function("TRIPLE").value)) {
     // TRIPLE is described; evaluation still depends on the engine (Jena, RDF4J)
 }
 ```

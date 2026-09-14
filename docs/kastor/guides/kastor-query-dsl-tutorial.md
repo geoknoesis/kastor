@@ -437,29 +437,33 @@ val phonePred = iri("http://example.org/phone")
 
 val query = select("name", "contact") {
     where {
-        union {
-            triple(`var`("person"), emailPred, `var`("contact"))
-        }
-        union {
-            triple(`var`("person"), phonePred, `var`("contact"))
-        }
         triple(`var`("person"), namePred, `var`("name"))
+        union(
+            { triple(`var`("person"), emailPred, `var`("contact")) },
+            { triple(`var`("person"), phonePred, `var`("contact")) },
+        )
     }
 }
 
-println(query)
+println(query.sparql)
 ```
 
 **Generated SPARQL**:
 ```sparql
 SELECT ?name ?contact
 WHERE {
-  { ?person <http://example.org/email> ?contact . } UNION { ?person <http://example.org/phone> ?contact . }
   ?person <http://example.org/name> ?name .
+  {
+    ?person <http://example.org/email> ?contact .
+  } UNION {
+    ?person <http://example.org/phone> ?contact .
+  }
 }
 ```
 
-**Note**: `union { }` uses the pattern added immediately before it as its left operand (`{ previous } UNION { block }`), and further `union { }` calls extend the same UNION. That is why the name pattern comes *after* the unions here: placed first, it would itself become the first UNION branch.
+`union(first, second, ...)` takes every branch explicitly (two or more) and adds one `UNION` element at its position, so the order of the surrounding patterns does not matter. For branches with several patterns, `unionOf { branch { … }; branch { … } }` builds the same element (it requires at least two `branch { }` blocks; see [Conditional Queries](#24-conditional-queries)).
+
+**Note**: the single-block `union { }` is deprecated (level WARNING). It turns only the one pattern added immediately before it into the left branch, so in `triple(a); filter(f); union { b }` the filter, not the triple, is unioned and stops constraining `a`. Replace it with `union({ … }, { … })` or `unionOf { }`.
 
 **In plain English**: "Find people and their contact information (either email or phone)"
 
@@ -494,6 +498,17 @@ WHERE {
 ```
 
 **In plain English**: "Find all people except those marked as deleted"
+
+**Note**: as in SPARQL, `minus { }` subtracts from everything that precedes it in the same group. A `minus { }` with nothing before it in its group removes nothing, so put the patterns you want to filter first. To subtract from specific patterns only, build a `MinusPatternAst(left, right)` with a non-empty `left`. The renderer then wraps it in its own group, `{ left MINUS { right } }`, so the MINUS never applies to patterns outside `left`:
+
+```sparql
+  {
+    ?s <urn:a> ?o .
+    MINUS {
+      ?s <urn:b> ?z .
+    }
+  }
+```
 
 ## Advanced Graph Navigation
 
@@ -816,17 +831,42 @@ val query = select("ageGroup", "avgAge") {
 val query = select("name", "contactType", "contactValue") {
     where {
         triple(`var`("person"), namePred, `var`("name"))
-        union {
-            triple(`var`("person"), emailPred, `var`("contactValue"))
-            bind(`var`("contactType"), string("email"))
-        }
-        union {
-            triple(`var`("person"), phonePred, `var`("contactValue"))
-            bind(`var`("contactType"), string("phone"))
+        unionOf {
+            branch {
+                triple(`var`("person"), emailPred, `var`("contactValue"))
+                bind(`var`("contactType"), string("email"))
+            }
+            branch {
+                triple(`var`("person"), phonePred, `var`("contactValue"))
+                bind(`var`("contactType"), string("phone"))
+            }
         }
     }
 }
 ```
+
+**Generated SPARQL**:
+```sparql
+SELECT ?name ?contactType ?contactValue
+WHERE {
+  ?person <http://example.org/name> ?name .
+  {
+    ?person <http://example.org/email> ?contactValue .
+    BIND("email" AS ?contactType)
+  } UNION {
+    ?person <http://example.org/phone> ?contactValue .
+    BIND("phone" AS ?contactType)
+  }
+}
+```
+
+## Query Rules Enforced by the Renderer
+
+The renderer rejects queries that are not legal SPARQL with `IllegalArgumentException` instead of sending them:
+
+- **Projections with GROUP BY / HAVING**: a query with `groupBy(...)` or `having { }` must list its projection explicitly. `SELECT *` or an empty projection (`select { }` with no variables or expressions, which renders `SELECT *`) is rejected.
+- **`*` mixed with variables**: a `WildcardSelectItemAst` cannot be combined with other projection items.
+- **Blank nodes**: a blank node label may be used in only one basic graph pattern of a query (FILTER, BIND and VALUES do not end a basic graph pattern, but OPTIONAL, UNION, MINUS, GRAPH, sub-groups and similar elements do), or in only one operation of an update request. Use a variable to join across patterns. Blank nodes are also rejected inside expressions (FILTER, BIND, SELECT, ORDER BY, HAVING; use a variable or `BNODE()`) and inside triple terms in `VALUES`.
 
 ## Validation
 

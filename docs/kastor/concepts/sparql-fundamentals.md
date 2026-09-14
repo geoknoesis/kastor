@@ -226,26 +226,35 @@ optional {
 
 #### UNION Patterns
 
-Match either of two patterns.
+Match any of two or more alternative patterns. Give every branch explicitly:
 
 ```kotlin
-union {
-    triple(personVar, emailPred, `var`("contact"))
-}
-union {
-    triple(personVar, iri("http://example.org/phone"), `var`("contact"))
+union(
+    { triple(personVar, emailPred, `var`("contact")) },
+    { triple(personVar, iri("http://example.org/phone"), `var`("contact")) },
+)
+
+// Equivalent, convenient for multi-pattern branches (at least two branch { } blocks)
+unionOf {
+    branch { triple(personVar, emailPred, `var`("contact")) }
+    branch { triple(personVar, iri("http://example.org/phone"), `var`("contact")) }
 }
 ```
+
+Both render `{ … } UNION { … }` at the position where they are called. The single-block `union { }` is deprecated (level WARNING) because it turns only the one pattern added immediately before it into the left branch, which silently detaches earlier filters or triples.
 
 #### MINUS Patterns
 
 Exclude solutions that match a pattern.
 
 ```kotlin
+triple(personVar, namePred, nameVar)
 minus {
     triple(personVar, iri("http://example.org/deleted"), string("true"))
 }
 ```
+
+`minus { }` renders a bare `MINUS { … }` that, as in SPARQL, subtracts from everything before it in the same group. A MINUS with nothing before it removes nothing. In the AST, `MinusPatternAst(left, right)` with a non-empty `left` renders `{ left MINUS { right } }`, so only `left` is affected.
 
 #### VALUES Patterns
 
@@ -436,6 +445,13 @@ subSelect {
 }
 ```
 
+### Projection Rules
+
+The renderer rejects projections that SPARQL does not allow (`IllegalArgumentException`):
+
+- With `groupBy(...)` or `having { }`, list the grouped variables and aggregates explicitly. `SELECT *` or an empty projection (which renders `SELECT *`) is rejected.
+- `*` (`WildcardSelectItemAst`) cannot be combined with other projection items.
+
 ### Use Cases
 
 1. **Complex Aggregations**: Calculate averages within groups
@@ -519,6 +535,45 @@ WHERE {
 2. **Provenance**: Track the source of information
 3. **Temporal Information**: Add timestamps to statements
 4. **Annotations**: Add comments or notes to triples
+
+## Blank Nodes in Queries and Updates
+
+SPARQL scopes a blank node label to one basic graph pattern, so the renderer rejects (`IllegalArgumentException`):
+
+- the same blank node label in two basic graph patterns of one query. FILTER, BIND and VALUES do not end a basic graph pattern; OPTIONAL, UNION, MINUS, GRAPH, SERVICE, sub-groups and sub-selects do. Use a variable to join across patterns;
+- the same blank node label in two operations of one update request;
+- blank nodes in expressions (FILTER, BIND, SELECT, ORDER BY, HAVING). Use a variable or the `BNODE()` function;
+- blank nodes or variables inside a triple term in `VALUES` (plain blank nodes and variables are not allowed there either).
+
+## Updates
+
+`update { }` builds a SPARQL Update request. Graph management operations:
+
+```kotlin
+val request = update {
+    clear(Iri("http://example.org/g"))      // CLEAR GRAPH <http://example.org/g>
+    clear()                                 // CLEAR DEFAULT
+    clear(GraphScope.NAMED, silent = true)  // CLEAR SILENT NAMED
+    drop(GraphScope.ALL)                    // DROP ALL
+    copy(null, Iri("http://example.org/backup"))  // COPY DEFAULT TO <http://example.org/backup>
+    move(Iri("http://example.org/tmp"), null)     // MOVE <http://example.org/tmp> TO DEFAULT
+    add(null, Iri("http://example.org/all"))      // ADD DEFAULT TO <http://example.org/all>
+}
+```
+
+`GraphScope` (`DEFAULT`, `NAMED`, `ALL`) selects the target of `clear` / `drop` when no graph IRI is given. In the AST, `ClearOperationAst` and `DropOperationAst` take either `graph` or `scope`, not both. For `copy`, `move` and `add` (and `CopyOperationAst`, `MoveOperationAst`, `AddOperationAst`), a `null` source or destination means the default graph. Operations are joined with ` ;` and a newline.
+
+## Literal Escaping
+
+Every literal the DSL renders (and every literal the SPARQL endpoint adapter sends) is escaped by the same shared helper:
+
+- `\t`, `\b`, `\n`, `\r`, `\f`, `"` and `\` use the SPARQL escapes; other control characters and DEL use `\u00XX`.
+- A `u` or `U` directly after a backslash in the text is written as `\u0075` / `\u0055`. SPARQL 1.1 lets servers decode `\uXXXX` sequences over the whole query text before parsing it. Without this rule, a pre-pass could turn the text backslash-`u0022` into a quote and change the value. The encoded form reads back as the same text whether or not the server does such a pre-pass.
+- Unpaired UTF-16 surrogates are rejected.
+
+For example, the Kotlin string `"C:\\users"` (text `C:\users`) renders as `"C:\\\u0075sers"`.
+
+The helper, `com.geoknoesis.kastor.rdf.sparql.internal.SparqlLexical` in the `rdf-sparql-contract` module, is **not public API**. It is public only so that the renderer and the endpoint adapter can share it, and it may change without notice.
 
 ## Best Practices
 
