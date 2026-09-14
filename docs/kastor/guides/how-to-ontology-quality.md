@@ -104,7 +104,7 @@ onto-qa check ontology.ttl --catalog all --reasoner owl-rl
 onto-qa check ontology.ttl --catalog all --reasoner hermit
 ```
 
-`--reasoner owl-micro` (`OntoQualityReasoningProfile.OWL_MICRO`) runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`): faster than `owl-rl`, but it covers only RDFS plus property axioms, equality and simple class expressions. `--reasoner owl-rl` (`OWL_RL`) runs Jena's full OWL rule reasoner (`ReasonerType.OWL_RL`).
+`--reasoner owl-micro` (`OntoQualityReasoningProfile.OWL_MICRO`) runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`): faster than `owl-rl`, but less complete. `--reasoner owl-rl` (`OWL_RL`) runs Jena's full OWL rule reasoner (`ReasonerType.OWL_RL`). The two profiles are distinct. For example, `owl-rl` derives `owl:sameAs` between two values of an `owl:FunctionalProperty`, while `owl-micro` has no equality reasoning and does not.
 
 **CLI `--catalog all`** uses **`QualityChecker.default()`**, so the OOPS registry is present and **K07** metadata applies when **HermiT** reports inconsistency. Requires **`:rdf:reasoning-hermit`** (and its transitive deps) on the classpath for the CLI artifact.
 

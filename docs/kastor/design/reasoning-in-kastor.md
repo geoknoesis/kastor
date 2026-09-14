@@ -55,7 +55,7 @@ SHACL validation in Kastor operates on an [RdfGraph](../../../rdf/core/src/main/
 
 | API | Meaning |
 |-----|---------|
-| [OntoQualityReasoningProfile](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `NONE`, `RDFS`, `OWL_MICRO` (Jena OWL Micro rule reasoner, `ReasonerType.OWL_MICRO`), `OWL_RL` (Jena OWL rule reasoner, `ReasonerType.OWL_RL`), `HERMIT` (OWL 2 DL via HermiT when module present). |
+| [OntoQualityReasoningProfile](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `NONE`, `RDFS`, `OWL_MICRO` (Jena OWL Micro rule reasoner, `ReasonerType.OWL_MICRO`; no equality reasoning), `OWL_RL` (Jena OWL rule reasoner, `ReasonerType.OWL_RL`; derives `owl:sameAs` from functional properties), `HERMIT` (OWL 2 DL via HermiT when module present). `OWL_MICRO` and `OWL_RL` are distinct profiles. |
 | [OntoQualityReasoning.expand](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | `expand(graph, profile)` → materialized [RdfGraph](../../../rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/RdfTerms.kt). |
 | [QualityChecker.check(graph, profile)](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/QualityChecker.kt) | Expand (single `reason()` per profile), run SHACL, merge **OWL inconsistency** rows (HermiT) as violations when reported. |
 | [OntoQualityReasoning.expand(graph, ReasonerConfig)](../../../tools/onto-quality/library/src/main/kotlin/com/geoknoesis/kastor/ontoquality/reasoning/OntoQualityReasoning.kt) | Advanced: custom timeouts/rules when you depend on `:rdf:reasoning`. |
@@ -74,8 +74,10 @@ On **`check`** and **`pipeline`**:
 
 - `--reasoner none` (default) — no expansion.
 - `--reasoner rdfs` — RDFS materialization before SHACL.
-- `--reasoner owl-micro` — Jena OWL Micro rule reasoner (`ReasonerType.OWL_MICRO` binding; fast, incomplete OWL fragment).
+- `--reasoner owl-micro` — Jena OWL Micro rule reasoner (`ReasonerType.OWL_MICRO` binding; fast, incomplete OWL fragment, no equality reasoning).
 - `--reasoner owl-rl` — Jena OWL rule reasoner (`ReasonerType.OWL_RL` binding; not complete OWL 2 RL).
+
+`owl-micro` is a separate profile, not an alias of `owl-rl`. For example, if `ex:hasMother` is an `owl:FunctionalProperty` and `ex:alice ex:hasMother ex:carol , ex:caroline`, then `owl-rl` derives `ex:carol owl:sameAs ex:caroline`. `owl-micro` does not, because its rule set has no functional-property or `owl:sameAs` rules.
 - `--reasoner hermit` — HermiT-backed OWL 2 DL materialization (requires `:rdf:reasoning-hermit`); inconsistent ontologies fail quality checks via merged **K07** rows when pitfall metadata is present (included in **`QualityChecker.default()`** / CLI `--catalog all`).
 
 When a non-`none` profile is selected, the CLI logs the active reasoning profile name.
