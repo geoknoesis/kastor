@@ -20,9 +20,16 @@ import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.URLDecoder
+import org.junit.jupiter.api.Timeout
+import java.io.IOException
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Regression tests for the second audit of the SPARQL HTTP endpoint adapter. */
 class SparqlEndpointReauditTest {
@@ -301,10 +308,12 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `request timeout covers stream headers but not slow consumers or long streams`() = TestEndpoint { exchange, request ->
+    fun `request timeout covers stream headers but not slow consumers while a per-call timeout covers the whole stream`() = TestEndpoint { exchange, request ->
         if (request.path == "/slow-headers") {
             Thread.sleep(2_000)
             exchange.respond(200, rowsJson(1))
+        } else if (request.path == "/burst") {
+            exchange.respond(200, rowsJson(5))
         } else {
             exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
             exchange.sendResponseHeaders(200, 0)
@@ -324,7 +333,22 @@ class SparqlEndpointReauditTest {
         SparqlRepository(config).use { repo ->
             val rows = repo.withSelectRows(selectAll) { seq -> seq.onEach { Thread.sleep(150) }.count() }
             assertEquals(5, rows)
-            assertEquals(5, repo.withSelectRows(selectAll, emptyMap(), Duration.ofMillis(400)) { it.count() })
+            // An explicit per-call timeout bounds the whole call, like the Jena and RDF4J providers:
+            // rows trickling in after the deadline fail the call.
+            val start = System.nanoTime()
+            val e = assertThrows(RdfQueryException::class.java) {
+                repo.withSelectRows(selectAll, emptyMap(), Duration.ofMillis(400)) { it.count() }
+            }
+            assertTrue(elapsedMillis(start) < 900, "per-call timeout not enforced on the stream, took ${elapsedMillis(start)} ms")
+            assertTrue(e.message!!.contains("deadline"), e.message)
+            assertEquals(5, repo.withSelectRows(selectAll, emptyMap(), Duration.ofSeconds(10)) { it.count() })
+            // ...and time the consumer spends on rows that are already buffered.
+            SparqlRepository(config.copy(endpoint = "${endpoint.base}/burst")).use { burst ->
+                val slow = assertThrows(RdfQueryException::class.java) {
+                    burst.withSelectRows(selectAll, emptyMap(), Duration.ofMillis(400)) { seq -> seq.onEach { Thread.sleep(150) }.count() }
+                }
+                assertTrue(slow.message!!.contains("deadline"), slow.message)
+            }
             // Buffered select keeps the whole-request deadline.
             assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
         }
@@ -473,6 +497,131 @@ class SparqlEndpointReauditTest {
             }
         }
         dataset.close()
+    }
+
+    // ------------------------------------------------------------------ third audit
+
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `without a request timeout the wait for response headers is bounded by the read timeout`() {
+        ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).use { server ->
+            val accepted = CopyOnWriteArrayList<Socket>()
+            Thread {
+                try {
+                    while (true) accepted += server.accept()
+                } catch (_: IOException) {
+                    // server closed
+                }
+            }.apply { isDaemon = true }.start()
+            try {
+                val config = SparqlEndpointConfig(
+                    "http://127.0.0.1:${server.localPort}/sparql",
+                    readTimeout = Duration.ofMillis(500),
+                    requestTimeout = null,
+                )
+                SparqlRepository(config).use { repo ->
+                    listOf<Pair<String, () -> Any>>(
+                        "select" to { repo.select(selectAll) },
+                        "stream" to { repo.withSelectRows(selectAll) { it.count() } },
+                        "ask" to { repo.ask(SparqlAskQuery("ASK {}")) },
+                        "update" to { repo.update(UpdateQuery("CLEAR DEFAULT")) },
+                    ).forEach { (name, call) ->
+                        val start = System.nanoTime()
+                        val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                        assertTrue(elapsedMillis(start) < 3_000, "$name: header wait not bounded, took ${elapsedMillis(start)} ms")
+                        assertTrue(e.message!!.contains("timed out"), "$name: ${e.message}")
+                    }
+                }
+            } finally {
+                accepted.forEach { it.close() }
+            }
+        }
+    }
+
+    @Test
+    fun `graph writes validate every batch before anything is sent`() = TestEndpoint { exchange, request ->
+        if (request.contentType == "application/sparql-update") exchange.respond(200, "") else exchange.respond(200, "{\"boolean\":true}")
+    }.use { endpoint ->
+        SparqlRepository(SparqlEndpointConfig(endpoint.url, insertBatchSize = 1)).use { repo ->
+            val graph = repo.editDefaultGraph()
+            val p = Iri("urn:p")
+            val valid = RdfTriple(Iri("urn:s"), p, Literal("ok"))
+            val directional = RdfTriple(Iri("urn:s"), p, LangString("x", "ar", Direction.RTL))
+            assertThrows(IllegalArgumentException::class.java) {
+                graph.addTriples(listOf(valid, RdfTriple(Iri("urn:s2"), p, Literal("ok")), directional))
+            }
+            assertThrows(IllegalArgumentException::class.java) { graph.removeTriples(listOf(valid, directional)) }
+            assertThrows(IllegalArgumentException::class.java) {
+                graph.removeTriples(listOf(valid, RdfTriple(BlankNode("b"), p, Literal("x"))))
+            }
+            assertTrue(endpoint.requests.isEmpty(), "nothing may be sent: ${endpoint.requests.map { it.body }}")
+        }
+    }
+
+    @Test
+    fun `a failed insert batch reports how many triples earlier batches inserted`() {
+        val updates = AtomicInteger()
+        TestEndpoint { exchange, _ ->
+            if (updates.incrementAndGet() == 2) exchange.respond(500, "boom", "text/plain") else exchange.respond(200, "")
+        }.use { endpoint ->
+            SparqlRepository(SparqlEndpointConfig(endpoint.url, insertBatchSize = 2)).use { repo ->
+                val triples = (1..6).map { RdfTriple(Iri("urn:s$it"), Iri("urn:p"), Literal("$it")) }
+                val e = assertThrows(RdfQueryException::class.java) { repo.editDefaultGraph().addTriples(triples) }
+                assertTrue(e.message!!.contains("2 of 6"), e.message)
+                assertTrue(e.message!!.contains("boom"), e.message)
+                assertEquals(2, updates.get(), "no batch may be sent after a failure")
+            }
+        }
+    }
+
+    @Test
+    fun `repositories with the same connect timeout share one HTTP client until the last one is closed`() = TestEndpoint { exchange, _ ->
+        exchange.respond(200, rowsJson(1))
+    }.use { endpoint ->
+        val connectTimeout = Duration.ofMillis(12_345)
+        val before = SparqlRepository.sharedHttpClientCount()
+        val first = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout))
+        val second = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout, readTimeout = Duration.ofSeconds(5)))
+        assertEquals(before + 1, SparqlRepository.sharedHttpClientCount())
+        first.close()
+        first.close()
+        assertEquals(1, second.select(selectAll).count())
+        second.close()
+        assertEquals(before, SparqlRepository.sharedHttpClientCount())
+        assertThrows(IllegalStateException::class.java) { second.select(selectAll) }
+    }
+
+    @Test
+    fun `parallel streams each enforce their own read timeout`() = TestEndpoint { exchange, request ->
+        if (request.path == "/stall") {
+            exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.write("{\"head\":".toByteArray())
+            exchange.responseBody.flush()
+            Thread.sleep(3_000)
+        } else {
+            exchange.respond(200, rowsJson(2_000))
+        }
+    }.use { endpoint ->
+        val config = SparqlEndpointConfig(endpoint.url, readTimeout = Duration.ofMillis(500), requestTimeout = null)
+        val pool = Executors.newFixedThreadPool(4)
+        try {
+            SparqlRepository(config).use { repo ->
+                SparqlRepository(config.copy(endpoint = "${endpoint.base}/stall")).use { stalling ->
+                    val fast = (1..3).map { pool.submit<Int> { (1..5).sumOf { repo.withSelectRows(selectAll) { rows -> rows.count() } } } }
+                    val stalled = pool.submit<Long> {
+                        val start = System.nanoTime()
+                        val e = assertThrows(RdfQueryException::class.java) { stalling.withSelectRows(selectAll) { it.count() } }
+                        assertTrue(e.message!!.contains("timed out"), e.message)
+                        elapsedMillis(start)
+                    }
+                    fast.forEach { assertEquals(10_000, it.get(60, TimeUnit.SECONDS)) }
+                    assertTrue(stalled.get(60, TimeUnit.SECONDS) < 2_500, "stalled stream not cut off in time")
+                }
+            }
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
     @Test

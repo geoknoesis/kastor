@@ -456,6 +456,19 @@ data class AggregateExpressionAst(
         require(expression != null || function == AggregateFunction.COUNT) { "Only COUNT accepts '*'" }
         require(separator == null || function == AggregateFunction.GROUP_CONCAT) { "SEPARATOR is only valid for GROUP_CONCAT" }
     }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(function: AggregateFunction, expression: ExpressionAst, distinct: Boolean = false) :
+        this(function, expression, distinct, null)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy")
+    fun copyWithoutSeparator(
+        function: AggregateFunction = this.function,
+        expression: ExpressionAst = compatNotNull(this.expression, "expression"),
+        distinct: Boolean = this.distinct,
+    ): AggregateExpressionAst =
+        AggregateExpressionAst(function, expression, distinct, separator.takeIf { function == AggregateFunction.GROUP_CONCAT })
 }
 
 enum class AggregateFunction(val functionName: String) {
@@ -538,6 +551,23 @@ data class InsertDataOperationAst(
     val graphData: List<QuadBlockAst> = emptyList()
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        data: List<TriplePatternAst>,
+        using: List<Iri> = emptyList(),
+        usingNamed: List<Iri> = emptyList(),
+        with: Iri? = null,
+    ) : this(data, using, usingNamed, with, emptyList())
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-HMI5rLE")
+    fun copyWithoutGraphData(
+        data: List<TriplePatternAst> = this.data,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): InsertDataOperationAst = InsertDataOperationAst(data, using, usingNamed, with, graphData)
 }
 
 /**
@@ -552,6 +582,23 @@ data class DeleteDataOperationAst(
     val graphData: List<QuadBlockAst> = emptyList()
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        data: List<TriplePatternAst>,
+        using: List<Iri> = emptyList(),
+        usingNamed: List<Iri> = emptyList(),
+        with: Iri? = null,
+    ) : this(data, using, usingNamed, with, emptyList())
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-HMI5rLE")
+    fun copyWithoutGraphData(
+        data: List<TriplePatternAst> = this.data,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): DeleteDataOperationAst = DeleteDataOperationAst(data, using, usingNamed, with, graphData)
 }
 
 /**
@@ -569,7 +616,29 @@ data class ModifyOperationAst(
     val deleteGraphs: List<QuadBlockAst> = emptyList(),
     /** `GRAPH ?g { ... }` blocks of the INSERT template. */
     val insertGraphs: List<QuadBlockAst> = emptyList()
-) : UpdateOperationAst
+) : UpdateOperationAst {
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        delete: List<TriplePatternAst> = emptyList(),
+        insert: List<TriplePatternAst> = emptyList(),
+        where: GraphPatternAst? = null,
+        using: List<Iri> = emptyList(),
+        usingNamed: List<Iri> = emptyList(),
+        with: Iri? = null,
+    ) : this(delete, insert, where, using, usingNamed, with, emptyList(), emptyList())
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-wt97nKI")
+    fun copyWithoutGraphs(
+        delete: List<TriplePatternAst> = this.delete,
+        insert: List<TriplePatternAst> = this.insert,
+        where: GraphPatternAst? = this.where,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): ModifyOperationAst = ModifyOperationAst(delete, insert, where, using, usingNamed, with, deleteGraphs, insertGraphs)
+}
 
 /**
  * DELETE WHERE operation.
@@ -613,6 +682,25 @@ data class ClearOperationAst(
         requireNoDatasetClauses(using, usingNamed, with)
         require(graph == null || scope == GraphScope.DEFAULT) { "CLEAR takes either a graph IRI or a scope, not both" }
     }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        graph: Iri? = null,
+        silent: Boolean = false,
+        using: List<Iri> = emptyList(),
+        usingNamed: List<Iri> = emptyList(),
+        with: Iri? = null,
+    ) : this(graph, silent, using, usingNamed, with, GraphScope.DEFAULT)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-z3iZ69M")
+    fun copyWithoutScope(
+        graph: Iri? = this.graph,
+        silent: Boolean = this.silent,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): ClearOperationAst = ClearOperationAst(graph, silent, using, usingNamed, with, if (graph == null) scope else GraphScope.DEFAULT)
 }
 
 /**
@@ -644,6 +732,25 @@ data class DropOperationAst(
         requireNoDatasetClauses(using, usingNamed, with)
         require(graph == null || scope == GraphScope.DEFAULT) { "DROP takes either a graph IRI or a scope, not both" }
     }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        graph: Iri? = null,
+        silent: Boolean = false,
+        using: List<Iri> = emptyList(),
+        usingNamed: List<Iri> = emptyList(),
+        with: Iri? = null,
+    ) : this(graph, silent, using, usingNamed, with, GraphScope.DEFAULT)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-z3iZ69M")
+    fun copyWithoutScope(
+        graph: Iri? = this.graph,
+        silent: Boolean = this.silent,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): DropOperationAst = DropOperationAst(graph, silent, using, usingNamed, with, if (graph == null) scope else GraphScope.DEFAULT)
 }
 
 /**
@@ -658,6 +765,33 @@ data class CopyOperationAst(
     override val with: Iri? = null
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getSource-tqZU9bw")
+    fun sourceNotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getDestination-tqZU9bw")
+    fun destinationNotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component1-tqZU9bw")
+    fun component1NotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component2-tqZU9bw")
+    fun component2NotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-VXt0FlY")
+    fun copyNotNull(
+        source: Iri = compatNotNull(this.source, "source"),
+        destination: Iri = compatNotNull(this.destination, "destination"),
+        silent: Boolean = this.silent,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): CopyOperationAst = CopyOperationAst(source, destination, silent, using, usingNamed, with)
 }
 
 /**
@@ -672,6 +806,33 @@ data class MoveOperationAst(
     override val with: Iri? = null
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getSource-tqZU9bw")
+    fun sourceNotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getDestination-tqZU9bw")
+    fun destinationNotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component1-tqZU9bw")
+    fun component1NotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component2-tqZU9bw")
+    fun component2NotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-VXt0FlY")
+    fun copyNotNull(
+        source: Iri = compatNotNull(this.source, "source"),
+        destination: Iri = compatNotNull(this.destination, "destination"),
+        silent: Boolean = this.silent,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): MoveOperationAst = MoveOperationAst(source, destination, silent, using, usingNamed, with)
 }
 
 /**
@@ -686,7 +847,44 @@ data class AddOperationAst(
     override val with: Iri? = null
 ) : UpdateOperationAst {
     init { requireNoDatasetClauses(using, usingNamed, with) }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getSource-tqZU9bw")
+    fun sourceNotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("getDestination-tqZU9bw")
+    fun destinationNotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component1-tqZU9bw")
+    fun component1NotNull(): Iri = compatNotNull(source, "source")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("component2-tqZU9bw")
+    fun component2NotNull(): Iri = compatNotNull(destination, "destination")
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy-VXt0FlY")
+    fun copyNotNull(
+        source: Iri = compatNotNull(this.source, "source"),
+        destination: Iri = compatNotNull(this.destination, "destination"),
+        silent: Boolean = this.silent,
+        using: List<Iri> = this.using,
+        usingNamed: List<Iri> = this.usingNamed,
+        with: Iri? = this.with,
+    ): AddOperationAst = AddOperationAst(source, destination, silent, using, usingNamed, with)
 }
+
+/**
+ * Message of the hidden bridges that keep the JVM signatures published in Kastor 0.2.1 (non-null
+ * COPY/MOVE/ADD graphs, constructors without scope, graph blocks or separator) linkable.
+ */
+internal const val BINARY_COMPATIBILITY = "Binary compatibility with Kastor 0.2.1 only"
+
+/** Value for a 0.2.1 bridge that cannot represent the default graph or `COUNT(*)`. */
+internal fun <T : Any> compatNotNull(value: T?, name: String): T =
+    value ?: throw IllegalStateException("$name is null (DEFAULT graph or '*'), which the 0.2.1 API cannot represent")
 
 /** Target of `CLEAR`/`DROP` without a graph IRI (SPARQL 1.1 Update `GraphRefAll`). */
 enum class GraphScope(val keyword: String) {
