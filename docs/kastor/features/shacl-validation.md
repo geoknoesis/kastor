@@ -81,6 +81,79 @@ if (!report.isValid) {
 - Repeatable parameters (`sh:pattern`, `sh:hasValue`, bounds, …) produce one constraint per value. Repeating a single-valued parameter (`sh:minCount`, `sh:flags`, `sh:in`, …) is a shape compilation error. `sh:pattern` is compiled once, at shape compile time, and supports the flags `i`, `m`, `s`, `x` and `q`.
 - Classes that are also shapes act as implicit class targets. Value comparisons (`sh:lessThan`, bounds, …) follow the SPARQL operator mapping for datatypes, and literals are checked for XSD lexical validity.
 
+### Three-valued conformance
+
+The native engine answers every nested conformance check (`sh:node`, logical constraints, qualified value shapes, `sh:someValue`, `sh:targetWhere`, …) with **conforms**, **fails** or **undefined**, and combines the answers with Kleene logic:
+
+- a shape and `sh:and` fail as soon as one part definitely fails;
+- `sh:or` and `sh:someValue` conform as soon as one part definitely conforms;
+- an answer is undefined only when it really depends on an undefined answer.
+
+As a result, reports never depend on the order of operands, constraints or targets. When one value node is undefined, the definite violations of the other value nodes are still reported, and the undefined value adds a `sh:Warning` result. Qualified value counts use a lower bound (values that definitely conform) and an upper bound (values that conform or are undefined). A count is undefined only when the two bounds lead to different outcomes.
+
+Undefined answers only come from recursive shapes, described next.
+
+### Recursive shapes
+
+SHACL does not define recursive shapes. At compile time, the native engine finds the shapes that can reach themselves (the strongly connected components of the shape dependency graph), because only those can recurse over data. It then applies these rules.
+
+**Monotone recursion conforms (greatest fixpoint).** A shape that depends on itself only through `sh:node`, `sh:and`, `sh:property`, `sh:or`, `sh:someValue` or `sh:qualifiedMinCount` is assumed to conform until one of its constraints fails. Valid cyclic data therefore conforms. `sh:shape`, `sh:memberShape`, `sh:reifierShape` and `sh:nodeByExpression` also count as monotone.
+
+```turtle
+# Shapes: recursion through sh:or
+ex:PersonShape a sh:NodeShape ; sh:targetClass ex:Person ;
+  sh:property [ sh:path ex:knows ; sh:or ( ex:NamedShape ex:PersonShape ) ] .
+ex:NamedShape sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+
+# Data: a cycle. Conforms, also with strictMode = true.
+ex:a a ex:Person ; ex:knows ex:b .
+ex:b a ex:Person ; ex:knows ex:a .
+```
+
+A cycle can still fail. If a node on it definitely breaks a constraint (for example, a `sh:minCount` on `ex:knows` at the end of a chain), the nodes that depend on it get ordinary `sh:Violation` results.
+
+**Recursion through non-monotone operators is undefined.** Consider a dependency cycle that passes through `sh:not`, `sh:xone`, `sh:qualifiedMaxCount` or the sibling exclusion of `sh:qualifiedValueShapesDisjoint true`. It has no defined answer. Each constraint whose outcome depends on that answer produces a `sh:Warning` result stating that the recursive dependency is undefined. Under the default `conformanceDisallows`, this warning makes `report.isValid` false. With `ValidationConfig(strictMode = true)`, validation throws `ShaclValidationException` instead. If a non-recursive part of the shape already fails, that failure decides the outcome and no undefined result is produced.
+
+```turtle
+# Shapes: ex:S depends on itself through sh:not
+ex:S a sh:NodeShape ; sh:targetNode ex:x ;
+  sh:property [ sh:path ex:name ; sh:minCount 1 ] ;
+  sh:property [ sh:path ex:self ; sh:not ex:S ] .
+
+# Data: one blocking sh:Warning result ("... is undefined"); strictMode throws.
+ex:x ex:self ex:x ; ex:name "x" .
+```
+
+**Deep data is stack-safe.** Recursive shapes are solved with an explicit worklist, not with JVM stack proportional to the data. For example, the following 10,000-node chain validates. A missing name at its tail is reported for every node of the chain.
+
+```kotlin
+val chain = Rdf.graph {
+    for (i in 0 until 10_000) {
+        val p = iri("http://example.org/p$i")
+        p - RDF.type - iri("http://example.org/Person")
+        p - iri("http://example.org/name") - string("person $i")
+        if (i + 1 < 10_000) p - iri("http://example.org/knows") - iri("http://example.org/p${i + 1}")
+    }
+}
+// PersonShape: sh:property [ sh:path ex:knows ; sh:node ex:PersonShape ] (plus a name constraint)
+val report = ShaclValidation.validator().validate(chain, shapesGraph)
+```
+
+**`maxRecursionDepth` limits non-recursive nesting only.** `ValidationConfig.maxRecursionDepth` (default `64`) limits how deeply shapes that are **not** recursive can nest through `sh:node`, logical constraints and similar references. Recursive shapes are solved as described above and are not bound by it. Exceeding the limit throws `ShaclValidationException`.
+
+```kotlin
+val validator = ShaclValidation.validator(ValidationConfig(maxRecursionDepth = 128))
+```
+
+### `sh:targetWhere`
+
+The native engine checks every node of the data graph against the membership shape of `sh:targetWhere`. It first prunes candidates using the membership node shape's own constraints:
+- with `sh:class`, only instances of that class are checked;
+- with `sh:nodeKind`, the node kinds it excludes (literals or non-literals) are skipped;
+- with `sh:datatype`, only literals are checked.
+
+When a candidate's membership is undefined (recursion through a non-monotone operator), the report gets a `sh:Warning` result for that candidate. The warning blocks conformance under the default `conformanceDisallows`. With `strictMode = true`, validation throws `ShaclValidationException`. SPARQL node expressions used as `sh:targetWhere` values are not supported; see [Unsupported features](#unsupported-features).
+
 ### Report contents
 
 `ValidationViolation` carries the full result path (`resultPathNode`, plus `resultPathTriples` for blank-node paths), the shape's `sh:message` values with language tags (`resultMessages`) and `sourceConstraint` (for example, the SHACL-SPARQL constraint node). `toShaclValidationReportRdf()` emits `sh:resultPath`, `sh:resultMessage` and `sh:sourceConstraint`, emits `sh:value` only for components that define it, and emits one `sh:closed` result per offending triple.
