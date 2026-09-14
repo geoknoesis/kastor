@@ -352,13 +352,18 @@ ksp {
 }
 ```
 
-`kastor.gen.resources` is the only KSP option the processor reads.
+Relative `kastor.gen.resources` entries are resolved against the KSP option `kastor.gen.projectDir`
+(`arg("kastor.gen.projectDir", projectDir.absolutePath)`); without it, a relative entry that does not exist
+relative to the compiler's working directory fails generation. See the
+[processor options](processor.md#processor-options).
 
 ### Incremental builds
 
 KSP regenerates when the annotated Kotlin source changes, but it **does not see edits to the SHACL or
-JSON-LD files** themselves. After editing an ontology resource, touch the annotated source file or run a
-clean build — or use the [Gradle plugin](gradle-plugin.md), which tracks those files as task inputs.
+JSON-LD files** themselves, and the processor warns about every ontology file it reads. Declare
+`src/main/resources` as an input of the `kspKotlin` task and set `kastor.gen.resources.tracked=true`
+(as the repository examples do; see [Incremental Builds](../guides/incremental-builds.md#ksp-processor)),
+or use the [Gradle plugin](gradle-plugin.md), which tracks those files as task inputs.
 
 ## Best Practices
 

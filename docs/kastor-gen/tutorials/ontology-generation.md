@@ -462,8 +462,9 @@ src/main/kotlin/
 ### 3. **Version Control**
 - Commit ontology files to version control
 - Generated code should be in `.gitignore`
-- With KSP, editing only the ontology files does not trigger regeneration: touch the annotated source or
-  clean the module (see [Incremental Builds](../guides/incremental-builds.md))
+- KSP does not see edits to ontology files (the processor warns about each file it reads): declare
+  `src/main/resources` as an input of the `kspKotlin` task and set `kastor.gen.resources.tracked=true`
+  (see [Incremental Builds](../guides/incremental-builds.md#ksp-processor))
 
 ### 4. **Testing**
 - Test generated interfaces with sample data
