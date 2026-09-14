@@ -134,14 +134,26 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
         )
     }
 
-    /** Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order. */
+    /**
+     * Computes asserted ∪ entailed triples (fixpoint of the enabled RDFS rules), in insertion order.
+     *
+     * [ReasonerConfig.timeout] is checked while the fixpoint is computed ([IllegalStateException] when exhausted)
+     * and [ReasonerConfig.materializationThreshold] bounds the number of entailed triples ([IllegalArgumentException]).
+     */
     internal fun closure(asserted: Collection<RdfTriple>): Set<RdfTriple> {
+        val deadline = System.nanoTime() + config.timeout.toNanos()
+        var steps = 0L
+        fun checkBudget() {
+            check(System.nanoTime() - deadline < 0 && !Thread.currentThread().isInterrupted) { "Memory RDFS reasoning timed out or was cancelled" }
+        }
         val rules = config.enabledRules
         val subClass = ReasoningRule.RDFS_SUBCLASS in rules
         val subProperty = ReasoningRule.RDFS_SUBPROPERTY in rules
         val domain = ReasoningRule.RDFS_DOMAIN in rules
         val range = ReasoningRule.RDFS_RANGE in rules
         val all = LinkedHashSet(asserted)
+        val assertedCount = all.size
+        checkBudget()
         while (true) {
             val superClasses = index(all, SUB_CLASS_OF)
             val superProperties = index(all, SUB_PROPERTY_OF)
@@ -150,6 +162,7 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
             val added = LinkedHashSet<RdfTriple>()
             fun emit(triple: RdfTriple) { if (triple !in all) added.add(triple) }
             for (t in all) {
+                if ((++steps and 1023L) == 0L) checkBudget()
                 val obj = t.obj
                 when (t.predicate) {
                     SUB_CLASS_OF -> if (subClass && obj is RdfResource) {
@@ -174,6 +187,10 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
             }
             if (added.isEmpty()) return all
             all.addAll(added)
+            require(all.size - assertedCount <= config.materializationThreshold) {
+                "Inferred triples exceed materializationThreshold (${config.materializationThreshold})"
+            }
+            checkBudget()
         }
     }
 
@@ -233,23 +250,59 @@ class MemoryReasoner(private val config: ReasonerConfig) : RdfReasoner {
     }
 }
 
-/** Lexical-space checks for the XSD datatypes the memory reasoner recognises. Unknown datatypes are accepted. */
+/**
+ * Lexical-space checks (XML Schema 1.1 Part 2) for the XSD datatypes the memory reasoner recognises.
+ * Unknown datatypes are accepted.
+ *
+ * All recognised types have the `whiteSpace=collapse` facet, so leading and trailing XML whitespace is removed
+ * before matching. Dates use the XSD 1.1 grammar: years of four or more digits (optionally negative, `0000`
+ * allowed), day-of-month checked against the month and leap years, and `24:00:00` as end-of-day time.
+ */
 internal object XsdLexicalForms {
     private const val XSD = "http://www.w3.org/2001/XMLSchema#"
     private val integer = Regex("[+-]?[0-9]+")
     private val decimal = Regex("[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)")
     private val floating = Regex("([+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?|[+-]?INF|NaN)")
+    private const val YEAR_MONTH_DAY = "(-?(?:[1-9][0-9]{3,}|0[0-9]{3}))-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"
+    private const val TIME = "(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?|24:00:00(?:\\.0+)?)"
+    private const val TIMEZONE = "(?:Z|[+-](?:(?:0[0-9]|1[0-3]):[0-5][0-9]|14:00))"
+    private val date = Regex("$YEAR_MONTH_DAY$TIMEZONE?")
+    private val dateTime = Regex("${YEAR_MONTH_DAY}T$TIME$TIMEZONE?")
+    private val dateTimeStamp = Regex("${YEAR_MONTH_DAY}T$TIME$TIMEZONE")
+    private val time = Regex("$TIME$TIMEZONE?")
 
-    fun isWellTyped(lexical: String, datatype: Iri): Boolean = when (datatype.value) {
-        "${XSD}boolean" -> lexical in setOf("true", "false", "1", "0")
-        "${XSD}integer", "${XSD}long", "${XSD}int", "${XSD}short", "${XSD}byte",
-        "${XSD}nonNegativeInteger", "${XSD}positiveInteger", "${XSD}nonPositiveInteger", "${XSD}negativeInteger" ->
-            integer.matches(lexical) && inRange(lexical, datatype.value.removePrefix(XSD))
-        "${XSD}decimal" -> decimal.matches(lexical)
-        "${XSD}double", "${XSD}float" -> floating.matches(lexical)
-        "${XSD}date" -> runCatching { java.time.format.DateTimeFormatter.ISO_DATE.parse(lexical) }.isSuccess
-        "${XSD}dateTime" -> runCatching { java.time.format.DateTimeFormatter.ISO_DATE_TIME.parse(lexical) }.isSuccess
-        else -> true
+    fun isWellTyped(lexical: String, datatype: Iri): Boolean {
+        val type = datatype.value
+        if (!type.startsWith(XSD)) return true
+        val value = lexical.trim(' ', '\t', '\n', '\r')
+        return when (type.removePrefix(XSD)) {
+            "boolean" -> value in setOf("true", "false", "1", "0")
+            "integer", "long", "int", "short", "byte",
+            "nonNegativeInteger", "positiveInteger", "nonPositiveInteger", "negativeInteger",
+            "unsignedLong", "unsignedInt", "unsignedShort", "unsignedByte" ->
+                integer.matches(value) && inRange(value, type.removePrefix(XSD))
+            "decimal" -> decimal.matches(value)
+            "double", "float" -> floating.matches(value)
+            "date" -> date.matchEntire(value)?.let(::validDay) ?: false
+            "dateTime" -> dateTime.matchEntire(value)?.let(::validDay) ?: false
+            "dateTimeStamp" -> dateTimeStamp.matchEntire(value)?.let(::validDay) ?: false
+            "time" -> time.matches(value)
+            else -> true
+        }
+    }
+
+    /** Day-of-month is within the month (proleptic Gregorian leap years; XSD 1.1 treats year 0000 as a leap year). */
+    private fun validDay(match: MatchResult): Boolean {
+        val (yearText, monthText, dayText) = match.destructured
+        val year = yearText.toBigInteger()
+        val leap = year.mod(400.toBigInteger()).signum() == 0 ||
+            (year.mod(4.toBigInteger()).signum() == 0 && year.mod(100.toBigInteger()).signum() != 0)
+        val maxDay = when (monthText.toInt()) {
+            2 -> if (leap) 29 else 28
+            4, 6, 9, 11 -> 30
+            else -> 31
+        }
+        return dayText.toInt() <= maxDay
     }
 
     private fun inRange(lexical: String, type: String): Boolean {
@@ -264,6 +317,10 @@ internal object XsdLexicalForms {
             "positiveInteger" -> value.signum() > 0
             "nonPositiveInteger" -> value.signum() <= 0
             "negativeInteger" -> value.signum() < 0
+            "unsignedLong" -> value.signum() >= 0 && value <= "18446744073709551615".toBigInteger()
+            "unsignedInt" -> between(0, 4294967295L)
+            "unsignedShort" -> between(0, 65535)
+            "unsignedByte" -> between(0, 255)
             else -> true
         }
     }

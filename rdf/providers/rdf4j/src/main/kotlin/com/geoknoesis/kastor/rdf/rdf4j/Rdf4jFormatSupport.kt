@@ -125,11 +125,12 @@ internal object Rdf4jFormatSupport {
     fun parseGraph(inputStream: InputStream, format: String, baseIri: String): MutableRdfGraph {
         val rdf4jFormat = graphFormat(format)
         val triples = mutableListOf<RdfTriple>()
+        val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
             val parser = Rio.createParser(rdf4jFormat)
             parser.setRDFHandler(object : AbstractRDFHandler() {
                 override fun handleStatement(statement: Statement) {
-                    triples.add(checkedTriple(statement))
+                    triples.addAll(checkedTriples(statement, seen))
                 }
             })
             parser.parse(inputStream, baseIri)
@@ -137,75 +138,93 @@ internal object Rdf4jFormatSupport {
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
 
-    /** Converts and validates a parsed statement; terms Kastor cannot represent become Rio parse errors. */
-    private fun checkedTriple(statement: Statement): RdfTriple = try {
-        toTriple(statement).also { Rdf4jTerms.requireWellFormed(it.obj) }
+    /**
+     * Converts and validates a parsed statement; terms Kastor cannot represent become Rio parse errors.
+     * Rio reads RDF 1.2 reified-triple syntax (`<< s p o >> :q :z`, annotations) as RDF-star quoted-triple
+     * subjects; those map to the RDF 1.2 reified form (see [Rdf4jTerms.triplesOf]), with each `rdf:reifies`
+     * triple emitted once per [seen] set.
+     */
+    private fun checkedTriples(statement: Statement, seen: MutableSet<org.eclipse.rdf4j.model.Triple>?): List<RdfTriple> = try {
+        Rdf4jTerms.triplesOf(statement, seen).onEach { Rdf4jTerms.requireWellFormed(it.obj) }
     } catch (e: IllegalArgumentException) {
         throw RDFParseException("Invalid RDF term: ${e.message}").also { it.initCause(e) }
     }
-
-    private fun toTriple(statement: Statement) = RdfTriple(
-        Rdf4jTerms.fromRdf4jResource(statement.subject),
-        Rdf4jTerms.fromRdf4jIri(statement.predicate),
-        Rdf4jTerms.fromRdf4jValue(statement.`object`),
-    )
 
     /**
      * Opens a streaming parse: Rio runs on a daemon thread and hands triples over through a bounded
      * queue, so memory stays constant regardless of document size. Closing the stream stops the
      * parser and closes [inputStream].
      */
-    fun openTripleStream(inputStream: InputStream, format: String): TripleStream {
+    fun openTripleStream(inputStream: InputStream, format: String, baseIri: String? = null): TripleStream {
         val rdf4jFormat = graphFormat(format)
-        return Rdf4jTripleStream(inputStream, rdf4jFormat, format)
+        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "")
     }
 
+    /**
+     * Background-parser triple stream.
+     *
+     * Lifecycle guarantees:
+     * - [close] (from any thread) stops the parser, closes the input and wakes a consumer blocked waiting for
+     *   the next triple; that consumer then fails with [IllegalStateException].
+     * - The producer always delivers a terminal item (end, failure, or a pre-allocated failure marker when even
+     *   the failure cannot be allocated), so a consumer never waits forever for a dead producer.
+     * - A stream abandoned without [close] is closed by a [java.lang.ref.Cleaner] once it becomes unreachable,
+     *   which stops its producer thread (the producer holds no reference to the stream itself).
+     */
     private class Rdf4jTripleStream(
-        private val input: InputStream,
+        input: InputStream,
         rdf4jFormat: RDFFormat,
         private val formatName: String,
+        baseIri: String,
     ) : TripleStream {
-        private object End
         private class Failure(val error: Throwable)
         private class Cancelled : RuntimeException(null, null, false, false)
 
-        private val queue = ArrayBlockingQueue<Any>(1024)
-        @Volatile private var closed = false
+        /** State shared with the producer thread; it must not reference the stream so an abandoned stream is collectable. */
+        private class State(val input: InputStream) : Runnable {
+            val queue = ArrayBlockingQueue<Any>(QUEUE_CAPACITY)
+            @Volatile var closed = false
+
+            /** Close action (also run by the cleaner): stop the producer and wake a waiting consumer. */
+            override fun run() {
+                if (closed) return
+                closed = true
+                try {
+                    input.close()
+                } catch (_: Exception) {
+                    // closing is best effort
+                } finally {
+                    do { queue.clear() } while (!queue.offer(CLOSED))
+                }
+            }
+        }
+
+        private val state = State(input)
+        private val cleanable = CLEANER.register(this, state)
         private var next: Any? = null
         private var finished = false
         private var iterated = false
 
-        private val producer = Thread({
-            try {
-                val parser = Rio.createParser(rdf4jFormat)
-                parser.setRDFHandler(object : AbstractRDFHandler() {
-                    override fun handleStatement(statement: Statement) = offer(checkedTriple(statement))
-                })
-                parser.parse(input, "")
-                offer(End)
-            } catch (_: Cancelled) {
-                // closed by the consumer
-            } catch (e: Throwable) {
-                if (!closed) runCatching { offer(Failure(e)) }
-            }
-        }, "kastor-rdf4j-stream-parser").apply { isDaemon = true }
-
-        init { producer.start() }
-
-        private fun offer(item: Any) {
-            while (!queue.offer(item, 50, TimeUnit.MILLISECONDS)) {
-                if (closed) throw Cancelled()
-            }
-            if (closed) throw Cancelled()
+        init {
+            val shared = state
+            Thread({ produce(shared, rdf4jFormat, baseIri) }, PRODUCER_THREAD).apply { isDaemon = true }.start()
         }
 
         private fun advance(): Boolean {
-            check(!closed) { "Triple stream is closed" }
+            check(!state.closed) { "Triple stream is closed" }
             if (finished) return false
-            if (next == null) next = queue.take()
-            return when (val item = next) {
-                End -> { finished = true; false }
-                is Failure -> {
+            if (next == null) next = state.queue.take()
+            val item = next
+            return when {
+                item === CLOSED -> {
+                    finished = true
+                    throw IllegalStateException("Triple stream is closed")
+                }
+                item === END -> {
+                    finished = true
+                    false
+                }
+                item is Failure -> {
                     finished = true
                     val error = item.error
                     formatErrors("$formatName data") { throw error }
@@ -215,7 +234,7 @@ internal object Rdf4jFormatSupport {
         }
 
         override fun iterator(): Iterator<RdfTriple> {
-            check(!closed) { "Triple stream is closed" }
+            check(!state.closed) { "Triple stream is closed" }
             check(!iterated) { "Triple stream can only be iterated once" }
             iterated = true
             return object : Iterator<RdfTriple> {
@@ -227,10 +246,47 @@ internal object Rdf4jFormatSupport {
             }
         }
 
-        override fun close() {
-            if (closed) return
-            closed = true
-            try { input.close() } finally { queue.clear() }
+        override fun close() = cleanable.clean()
+
+        private companion object {
+            const val PRODUCER_THREAD = "kastor-rdf4j-stream-parser"
+            const val QUEUE_CAPACITY = 1024
+            const val POLL_MILLIS = 50L
+            val CLEANER: java.lang.ref.Cleaner = java.lang.ref.Cleaner.create()
+            val END = Any()
+            val CLOSED = Any()
+
+            /** Delivered when the producer died and not even a [Failure] could be allocated (e.g. out of memory). */
+            val PRODUCER_DIED = Failure(IllegalStateException("RDF4J stream parser thread terminated abnormally"))
+
+            fun produce(state: State, format: RDFFormat, baseIri: String) {
+                var terminal: Any = PRODUCER_DIED
+                try {
+                    val parser = Rio.createParser(format)
+                    val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
+                    parser.setRDFHandler(object : AbstractRDFHandler() {
+                        override fun handleStatement(statement: Statement) =
+                            checkedTriples(statement, seen).forEach { offer(state, it) }
+                    })
+                    parser.parse(state.input, baseIri)
+                    terminal = END
+                } catch (_: Cancelled) {
+                    // closed: the close action already woke the consumer
+                } catch (e: Throwable) {
+                    terminal = try { Failure(e) } catch (_: Throwable) { PRODUCER_DIED }
+                } finally {
+                    while (!state.closed) {
+                        if (try { state.queue.offer(terminal, POLL_MILLIS, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { false }) break
+                    }
+                }
+            }
+
+            fun offer(state: State, item: Any) {
+                while (!state.queue.offer(item, POLL_MILLIS, TimeUnit.MILLISECONDS)) {
+                    if (state.closed) throw Cancelled()
+                }
+                if (state.closed) throw Cancelled()
+            }
         }
     }
 
@@ -282,7 +338,7 @@ internal object Rdf4jFormatSupport {
                 val parser = Rio.createParser(rdf4jFormat)
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
-                        checkedTriple(statement)
+                        checkedTriples(statement, null)
                         val context = statement.context
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)

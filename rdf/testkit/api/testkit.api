@@ -1,3 +1,9 @@
+public final class com/geoknoesis/kastor/rdf/testing/RdfDatasetIsomorphism {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/testing/RdfDatasetIsomorphism;
+	public final fun isIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfRepository;Lcom/geoknoesis/kastor/rdf/RdfRepository;)Z
+	public final fun isIsomorphic (Ljava/util/Map;Ljava/util/Map;)Z
+}
+
 public final class com/geoknoesis/kastor/rdf/testing/RdfGraphAssertionsKt {
 	public static final fun assertDefaultGraphIsomorphicTurtle (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;)V
 	public static synthetic fun assertDefaultGraphIsomorphicTurtle$default (Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfRepository;Ljava/lang/String;ILjava/lang/Object;)V

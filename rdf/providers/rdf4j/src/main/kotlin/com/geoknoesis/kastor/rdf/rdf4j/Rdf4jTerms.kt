@@ -71,15 +71,87 @@ internal object Rdf4jTerms {
         }
     }
 
+    /**
+     * Converts an RDF4J subject. An RDF-star quoted triple in subject position (which RDF 1.2 cannot
+     * represent) becomes its deterministic reifier blank node, see [reifierFor].
+     */
     fun fromRdf4jResource(resource: Resource): RdfResource {
         return when (resource) {
             is IRI -> Iri(resource.stringValue())
             is BNode -> BlankNode(resource.id)
+            is Triple -> reifierFor(resource)
             else -> throw IllegalArgumentException(
                 "Unsupported RDF4J Resource type for RDF 1.2 (subjects must be IRI or BNode): " +
                     resource.javaClass,
             )
         }
+    }
+
+    /** Blank-node id prefix of the deterministic reifiers standing in for RDF-star quoted-triple subjects. */
+    const val STAR_REIFIER_PREFIX: String = "kastor-star-"
+
+    /**
+     * Deterministic reifier for an RDF-star quoted triple: the same triple (within one store or one
+     * parse) always maps to the same blank node, so reads, lookups and removals agree.
+     */
+    fun reifierFor(triple: Triple): BlankNode {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(org.eclipse.rdf4j.rio.helpers.NTriplesUtil.toNTriplesString(triple).toByteArray(Charsets.UTF_8))
+        val hex = StringBuilder(STAR_REIFIER_PREFIX)
+        for (i in 0 until 16) hex.append(Character.forDigit((digest[i].toInt() shr 4) and 0xF, 16)).append(Character.forDigit(digest[i].toInt() and 0xF, 16))
+        return BlankNode(hex.toString())
+    }
+
+    /** True when [term] is (or contains, inside a triple term) a reifier produced by [reifierFor]. */
+    fun mentionsStarReifier(term: RdfTerm?): Boolean = when (term) {
+        is BlankNode -> term.id.startsWith(STAR_REIFIER_PREFIX)
+        is TripleTerm -> mentionsStarReifier(term.triple.subject) || mentionsStarReifier(term.triple.obj)
+        else -> false
+    }
+
+    /**
+     * Maps one RDF4J statement to RDF 1.2 triples. Without RDF-star subjects this is the single converted
+     * triple. Every quoted triple that occurs in subject position (also nested inside triple terms) is replaced
+     * by its reifier `_:r` and additionally yields `_:r rdf:reifies <<( s p o )>>` — the RDF 1.2 reified form.
+     * The converted statement itself is always the first element.
+     *
+     * @param seen quoted triples whose `rdf:reifies` triple was already emitted (for de-duplication across a
+     *   stream of statements); `null` emits them every time.
+     */
+    fun triplesOf(subject: Resource, predicate: IRI, obj: Value, seen: MutableSet<Triple>? = null): List<RdfTriple> {
+        val main = RdfTriple(fromRdf4jResource(subject), fromRdf4jIri(predicate), fromRdf4jValue(obj))
+        if (subject !is Triple && obj !is Triple) return listOf(main)
+        val quoted = LinkedHashSet<Triple>()
+        collectQuotedSubjects(subject, true, quoted)
+        collectQuotedSubjects(obj, false, quoted)
+        if (quoted.isEmpty()) return listOf(main)
+        val result = ArrayList<RdfTriple>(quoted.size + 1)
+        result.add(main)
+        for (triple in quoted) {
+            if (seen == null || seen.add(triple)) {
+                result.add(RdfTriple(reifierFor(triple), com.geoknoesis.kastor.rdf.vocab.RDF.reifies, fromRdf4jValue(triple)))
+            }
+        }
+        return result
+    }
+
+    /** [triplesOf] for a whole [org.eclipse.rdf4j.model.Statement] (its context is ignored). */
+    fun triplesOf(statement: org.eclipse.rdf4j.model.Statement, seen: MutableSet<Triple>? = null): List<RdfTriple> =
+        triplesOf(statement.subject, statement.predicate, statement.`object`, seen)
+
+    /** True if converting the statement yields more than one triple (it involves an RDF-star subject). */
+    fun hasQuotedSubject(statement: org.eclipse.rdf4j.model.Statement): Boolean {
+        val quoted = LinkedHashSet<Triple>()
+        collectQuotedSubjects(statement.subject, true, quoted)
+        collectQuotedSubjects(statement.`object`, false, quoted)
+        return quoted.isNotEmpty()
+    }
+
+    private fun collectQuotedSubjects(value: Value, subjectPosition: Boolean, out: MutableSet<Triple>) {
+        if (value !is Triple) return
+        if (subjectPosition) out.add(value)
+        collectQuotedSubjects(value.subject, true, out)
+        collectQuotedSubjects(value.`object`, false, out)
     }
 
     fun fromRdf4jIri(iri: IRI): Iri {

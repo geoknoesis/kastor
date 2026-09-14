@@ -15,12 +15,21 @@ import org.apache.jena.rdf.model.Model
  * **Write cost:** outside an explicit `transaction { }`, every [addTriple]/[removeTriple] call is its
  * own write transaction. Use [addTriples]/[removeTriples] (one transaction per call) or wrap many
  * calls in `repository.transaction { }` for bulk changes.
+ *
+ * **Streaming-write atomicity:** unlike the core default for `addTriples(Sequence)` / `removeTriples(Sequence)`
+ * (which commits in chunks), these overrides apply the whole sequence in **one** write transaction: a failure
+ * part-way rolls everything back, and the transaction holds all changes until the sequence ends.
+ *
+ * **Lenient reads** ([lenientRead], used for wrapped foreign models): statements that cannot be converted to
+ * Kastor terms (e.g. `xml:lang="en_US"`) are skipped with a logged warning instead of failing the whole read.
  */
 internal class JenaGraph(
     val model: Model,
     private val repository: JenaRepository? = null,
     /** Cache key of this graph inside [repository]: "" for the default graph, else the graph name. */
     private val graphKey: String = "",
+    /** Skip statements that are not representable as Kastor terms (with a warning) instead of throwing. */
+    private val lenientRead: Boolean = false,
 ) : MutableRdfGraph {
 
     /** Runs [block] against this graph's read view (inference view for inference repositories). */
@@ -83,10 +92,32 @@ internal class JenaGraph(
             obj?.let(JenaTerms::toJenaNode) ?: Node.ANY,
         )
         try {
-            iterator.asSequence().map(JenaTerms::fromJenaTriple).toList()
+            if (!lenientRead) {
+                iterator.asSequence().map(JenaTerms::fromJenaTriple).toList()
+            } else {
+                val result = ArrayList<RdfTriple>()
+                var skipped = 0
+                var firstProblem: String? = null
+                iterator.forEachRemaining { triple ->
+                    try {
+                        result.add(JenaTerms.fromJenaTriple(triple))
+                    } catch (e: IllegalArgumentException) {
+                        skipped++
+                        if (firstProblem == null) firstProblem = "$triple (${e.message})"
+                    }
+                }
+                if (skipped > 0) {
+                    LOG.warn("Skipped {} statement(s) of a wrapped Jena model that are not valid RDF terms for Kastor; first: {}", skipped, firstProblem)
+                }
+                result
+            }
         } finally {
             iterator.close()
         }
+    }
+
+    private companion object {
+        val LOG: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(JenaGraph::class.java)
     }
 
     override fun clear(): Boolean = write { val changed = !model.isEmpty; model.removeAll(); changed }

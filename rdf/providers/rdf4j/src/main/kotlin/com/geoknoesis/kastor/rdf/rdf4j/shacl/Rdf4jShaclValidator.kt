@@ -65,14 +65,18 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
    */
   private fun runValidation(graph: RdfGraph, shapes: RdfGraph, focus: RdfResource?): ValidationReport {
     val start = System.currentTimeMillis()
+    // Admission uses size() (cheap for most graphs); each graph is then materialised exactly once, and every
+    // statement list and statistic below is derived from that single copy.
     val combined = graph.size().toLong() + shapes.size().toLong()
     if (combined > config.maxCombinedGraphTriples) {
       throw ShaclValidationException(
           "Combined data + shapes triple count ($combined) exceeds ValidationConfig.maxCombinedGraphTriples (${config.maxCombinedGraphTriples})",
       )
     }
-    val shapeStmts = graphToStatements(shapes)
-    val dataStmts = graphToStatements(graph)
+    val dataTriples = graph.getTriples()
+    val shapeTriples = shapes.getTriples()
+    val shapeStmts = shapeTriples.map(::tripleToStatement)
+    val dataStmts = dataTriples.map(::tripleToStatement)
 
     val sail = ShaclSail(MemoryStore())
     val repo = SailRepository(sail)
@@ -85,7 +89,7 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
           conn.add(dataStmts)
           conn.commit()
           val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
-          return emptyReport(graph, shapes, elapsed)
+          return emptyReport(dataTriples, shapeTriples, elapsed)
         } catch (e: RepositoryException) {
           runCatching { conn.rollback() }
           val cause = e.cause
@@ -102,11 +106,11 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
                 } else {
                   allViolations.isEmpty()
                 }
-            if (focus != null && conforms) return emptyReport(graph, shapes, elapsed)
+            if (focus != null && conforms) return emptyReport(dataTriples, shapeTriples, elapsed)
             val cap = config.maxViolations.coerceAtLeast(1)
             val truncated = allViolations.size > cap
             val violations = allViolations.take(cap)
-            return reportFromViolations(graph, shapes, violations, elapsed, truncated, conforms)
+            return reportFromViolations(dataTriples, shapeTriples, violations, elapsed, truncated, conforms)
           }
           throw ShaclValidationException(
               "RDF4J SHACL validation failed: ${e.message}",
@@ -149,9 +153,6 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
   override fun getValidationStatistics(graph: RdfGraph, shapes: RdfGraph): ValidationStatistics =
       validate(graph, shapes).statistics
 
-  private fun graphToStatements(graph: RdfGraph): List<Statement> =
-      graph.getTriples().map { tripleToStatement(it) }
-
   private fun tripleToStatement(t: RdfTriple): Statement =
       vf.createStatement(
           Rdf4jTerms.toRdf4jResource(t.subject),
@@ -159,23 +160,25 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
           Rdf4jTerms.toRdf4jValue(t.obj),
       )
 
-  private fun emptyReport(graph: RdfGraph, shapes: RdfGraph, elapsed: Duration): ValidationReport {
+  private fun distinctSubjects(triples: List<RdfTriple>): Int = triples.mapTo(HashSet()) { it.subject }.size
+
+  private fun emptyReport(dataTriples: List<RdfTriple>, shapeTriples: List<RdfTriple>, elapsed: Duration): ValidationReport {
     val violations = emptyList<ValidationViolation>()
     val warnings = emptyList<ValidationWarning>()
     return ValidationReport(
         isValid = true,
         violations = violations,
         warnings = warnings,
-        statistics = buildStatistics(graph, shapes, violations, warnings),
+        statistics = buildStatistics(dataTriples, shapeTriples, violations, warnings),
         validationTime = elapsed,
-        validatedResources = graph.getTriples().map { it.subject }.distinct().size,
-        validatedConstraints = shapes.getTriples().count { it.predicate.value.startsWith(SHACL.NAMESPACE) },
+        validatedResources = distinctSubjects(dataTriples),
+        validatedConstraints = shapeTriples.count { it.predicate.value.startsWith(SHACL.NAMESPACE) },
     )
   }
 
   private fun reportFromViolations(
-      graph: RdfGraph,
-      shapes: RdfGraph,
+      dataTriples: List<RdfTriple>,
+      shapeTriples: List<RdfTriple>,
       violations: List<ValidationViolation>,
       elapsed: Duration,
       violationsTruncated: Boolean,
@@ -185,9 +188,9 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
         isValid = isValid,
         violations = violations,
         warnings = emptyList(),
-        statistics = buildStatistics(graph, shapes, violations, emptyList()),
+        statistics = buildStatistics(dataTriples, shapeTriples, violations, emptyList()),
         validationTime = elapsed,
-        validatedResources = graph.getTriples().map { it.subject }.distinct().size,
+        validatedResources = distinctSubjects(dataTriples),
         validatedConstraints = violations.size.coerceAtLeast(1),
         shapeViolations = violations.groupBy { it.shapeUri ?: "unknown" },
         constraintViolations = violations.groupBy { it.constraint.constraintType.name },
@@ -196,19 +199,17 @@ internal class Rdf4jShaclValidator(private val config: ValidationConfig) : Shacl
   }
 
   private fun buildStatistics(
-      graph: RdfGraph,
-      shapes: RdfGraph,
+      triples: List<RdfTriple>,
+      shapeTriples: List<RdfTriple>,
       violations: List<ValidationViolation>,
       warnings: List<ValidationWarning>,
   ): ValidationStatistics {
-    val triples = graph.getTriples()
-    val shapeTriples = shapes.getTriples()
     val constraintsByType = violations.groupBy { it.constraint.constraintType }.mapValues { it.value.size }
     val violationsByType = constraintsByType
     val warningsByType =
         warnings.mapNotNull { w -> w.constraint?.constraintType }.groupingBy { it }.eachCount()
     return ValidationStatistics(
-        totalResources = triples.map { it.subject }.distinct().size,
+        totalResources = distinctSubjects(triples),
         validatedResources = violations.map { it.focusNode }.distinct().size,
         totalConstraints =
             shapeTriples.count { it.predicate.value.startsWith(SHACL.NAMESPACE) },

@@ -33,6 +33,16 @@ class HermitLifecycleTest {
     }
 
     @Test
+    fun `OWL Micro is rejected with a clear error`() {
+        val provider = HermitReasonerProvider()
+        assertFalse(provider.isSupported(ReasonerType.OWL_MICRO))
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            provider.createReasoner(ReasonerConfig(reasonerType = ReasonerType.OWL_MICRO))
+        }
+        assertTrue(error.message!!.contains("OWL_MICRO"), error.message)
+    }
+
+    @Test
     fun `inferred triples exclude asserted axioms, headers, declarations and blank nodes`() {
         val graph = Rdf.parse(ontology, RdfFormat.TURTLE)
         val inferred = HermitRdfReasoner(ReasonerConfig.hermit()).reason(graph).inferredTriples

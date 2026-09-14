@@ -9,6 +9,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaBridge {
 	public static synthetic fun fromFile$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromJenaGraph (Lorg/apache/jena/graph/Graph;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromJenaModel (Lorg/apache/jena/rdf/model/Model;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
+	public final fun fromJenaModel (Lorg/apache/jena/rdf/model/Model;Z)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromString (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public static synthetic fun fromString$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
 	public final fun fromUrl (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/MutableRdfGraph;
@@ -24,16 +25,6 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaBridge {
 	public final fun toJenaModel (Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lorg/apache/jena/rdf/model/Model;
 	public final fun toString (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;)Ljava/lang/String;
 	public static synthetic fun toString$default (Lcom/geoknoesis/kastor/rdf/jena/JenaBridge;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/SerializationOptions;ILjava/lang/Object;)Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/rdf/jena/JenaBridgeDemoKt {
-	public static final fun basicConversionExample ()V
-	public static final fun extensionFunctionsExample ()V
-	public static final fun inferenceExample ()V
-	public static final fun loadingDataExample ()V
-	public static final fun main ()V
-	public static synthetic fun main ([Ljava/lang/String;)V
-	public static final fun roundTripExample ()V
 }
 
 public final class com/geoknoesis/kastor/rdf/jena/JenaBridgeKt {

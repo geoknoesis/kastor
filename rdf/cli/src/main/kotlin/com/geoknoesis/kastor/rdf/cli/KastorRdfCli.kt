@@ -10,6 +10,7 @@ import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.serialize
+import com.geoknoesis.kastor.rdf.testing.RdfDatasetIsomorphism
 import com.geoknoesis.kastor.rdf.testing.RdfGraphIsomorphism
 import com.geoknoesis.kastor.rdf.testing.RdfGraphSnapshots
 import java.io.PrintStream
@@ -28,6 +29,9 @@ fun main(args: Array<String>) {
 /** Parsed input: the default graph plus named graphs (empty for graph formats). */
 private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<String, RdfGraph>) {
     val tripleCount: Int get() = defaultGraph.size() + namedGraphs.values.sumOf { it.size() }
+
+    /** Graph name to graph, with the default graph under the `null` key. */
+    fun asDataset(): Map<Iri?, RdfGraph> = mapOf<Iri?, RdfGraph>(null to defaultGraph) + namedGraphs.mapKeys { Iri(it.key) }
 }
 
 private class CliError(message: String, val code: Int = 1) : RuntimeException(message)
@@ -72,8 +76,8 @@ private fun printUsage(out: PrintStream) {
 
         FORMAT defaults from the file extension when omitted (.ttl → TURTLE, .nt → NTRIPLES, .nq → NQUADS,
         .trig → TRIG, .jsonld/.json → JSON-LD, .rdf/.owl/.xml → RDFXML); other extensions require FORMAT.
-        Quad formats (TriG, N-Quads) are read as datasets: diff compares the default graph and every
-        named graph separately.
+        Quad formats (TriG, N-Quads) are read as datasets: diff compares the default graph and all named
+        graphs as one dataset (blank nodes shared across graphs must correspond).
 
         Examples:
           ./gradlew :rdf:cli:run --args="parse data/example.ttl"
@@ -124,6 +128,10 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int
             err.println("--- $label in ${p2.name} (sorted N-Triples, first lines) ---")
             err.println(RdfGraphSnapshots.formatSnippet(graphs.second))
         }
+    }
+    // Graph-by-graph isomorphism ignores blank nodes shared across graphs; the dataset must match as a whole.
+    if (differences.isEmpty() && !RdfDatasetIsomorphism.isIsomorphic(first.asDataset(), second.asDataset())) {
+        differences += "every graph is isomorphic on its own, but blank nodes shared across graphs do not correspond"
     }
     if (differences.isEmpty()) {
         out.println(
