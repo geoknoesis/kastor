@@ -205,11 +205,15 @@ All exception classes are public for error handling:
 
 ## Processor options
 
-The processor reads one KSP option:
+The processor reads these KSP options (all optional):
 
 | Option | Description |
 |---|---|
-| `kastor.gen.resources` | Extra directories (platform path-separator separated) searched for relative `shacl`, `context` and `ontologyPath` files, after the annotated file's source-set resources. |
+| `kastor.gen.resources` | Extra directories (platform path-separator separated) searched for relative `shacl`, `context` and `ontologyPath` files, after the annotated file's source-set resources. Absolute entries are used as-is; relative entries are resolved against `kastor.gen.projectDir`. Without that option a relative entry must exist relative to the compiler's working directory, otherwise generation fails. |
+| `kastor.gen.projectDir` | Project directory that relative `kastor.gen.resources` entries are resolved against, e.g. `arg("kastor.gen.projectDir", projectDir.absolutePath)`. |
+| `kastor.gen.resources.tracked` | Set to `true` once the ontology files are declared as inputs of the KSP task, so that editing them re-runs KSP. Silences the warning the processor otherwise logs for every ontology file it reads. |
+
+See [Incremental Builds](../guides/incremental-builds.md#ksp-processor) for the recommended build setup.
 
 See [Annotations: resolving paths](annotations.md#resolving-shacl-context-and-ontologypath).
 

@@ -12,13 +12,17 @@ All in package `com.geoknoesis.kastor.gen.runtime`.
 ### ValidationContext
 
 ```kotlin
-interface ValidationContext {
+interface ValidationContext : AutoCloseable {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
+    override fun close() {}   // default: nothing to release
 }
 ```
 
 - `data` — the graph holding the data to check.
 - `focus` — the focus node (an `Iri` or `BlankNode`).
+- `close()` — validators may hold resources (an RDF4J repository, parsed shapes). Whoever creates a
+  context should close it (`use { }`); the default implementation does nothing, so custom contexts only
+  override it when they own resources.
 
 **Contract:** the result describes the **focus node only**. The bundled adapters evaluate the shapes that
 target `focus` and return only the SHACL results whose `sh:focusNode` is `focus`; violations reported for
@@ -33,8 +37,19 @@ sealed interface ValidationResult {
     data class Violations(val items: List<ShaclViolation>) : ValidationResult
 }
 
-fun ValidationResult.orThrow()   // throws ValidationException for Violations
+fun ValidationResult.orThrow()                                // fails only on sh:Violation
+fun ValidationResult.orThrow(minimumSeverity: ShaclSeverity)  // fails on results at least this severe
 ```
+
+`Violations` holds every SHACL result, whatever its severity. `orThrow()` throws only when at least one
+item has severity `sh:Violation`; `sh:Warning` and `sh:Info` results are advisory and ignored. To fail on
+them too, pass a minimum severity (`Violation` > `Warning` > `Info`):
+
+```kotlin
+result.orThrow(ShaclSeverity.Warning)   // throws on Violation or Warning results
+```
+
+The thrown `ValidationException` carries only the items at or above the threshold.
 
 ### ShaclViolation
 
@@ -64,7 +79,8 @@ class ValidationException(
 ```
 
 Thrown by `ValidationResult.orThrow()`, `RdfHandle.validateOrThrow()` and `materializeValidated` when
-there are violations. `violations` carries the structured results.
+there are failing results (by default, results with severity `sh:Violation`). `violations` carries the
+structured results.
 
 ## Engine adapters
 
@@ -74,7 +90,7 @@ Both adapters offer the same two ways of supplying shapes:
 |---|---|---|
 | `JenaValidation(shapes: RdfGraph)` / `Rdf4jValidation(shapes: RdfGraph)` | a **separate shapes graph** (recommended) | shapes are copied/converted once and reused for every call |
 | `JenaValidation.fromTurtle(ttl)` / `Rdf4jValidation.fromTurtle(ttl)` | Turtle text | same as above |
-| `JenaValidation()` / `Rdf4jValidation()` | shapes **embedded in the data graph** | shapes are re-read from `data` on every call; if the data graph declares no shapes the result is `Ok` |
+| `JenaValidation()` / `Rdf4jValidation()` | shapes **embedded in the data graph** | shapes are read from `data` (Jena: on every call; RDF4J: again only when the graph instance or its content changes); if the data graph declares no shapes the result is `Ok` |
 
 With the no-arg constructors, a data graph that contains no SHACL shapes always validates as `Ok`. Supply
 the shapes explicitly unless your data really carries them.
@@ -94,6 +110,7 @@ class JenaValidation : ValidationContext {
     companion object {
         fun fromTurtle(shapesTurtle: String): JenaValidation
     }
+    // close() is inherited from ValidationContext and does nothing
 }
 ```
 
@@ -116,12 +133,24 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 }
 ```
 
-- Backed by RDF4J's `ShaclSail`. With a shapes graph, the shapes are loaded into the SHACL shape-graph
-  context of one in-memory `ShaclSail` repository that is reused. Each `validate` call adds the data in a
-  transaction, validates, and always rolls back, so no data is retained between calls.
-- Calls on one instance are serialized. Call `close()` (or use `use { }`) to release the repository;
-  `validate` after `close()` throws `IllegalStateException`.
-- The data graph is always converted to RDF4J statements (ShaclSail validates its own store).
+- Backed by RDF4J's `ShaclSail`. A shapes graph is converted once at construction.
+- **One repository per validator.** ShaclSail validates data held in its own store, so the Kastor graph is
+  converted to RDF4J statements and loaded into a single in-memory repository. It is reloaded only when
+  `validate` receives a different graph instance or the graph's content changed (detected with an
+  order-independent fingerprint of its triples: one pass over the triples, no conversion or store writes).
+  Validating many nodes of one graph therefore converts and loads it once. With the no-arg constructor the
+  embedded shapes are extracted at the same time.
+- **Only shapes that target the focus node are evaluated.** The target declarations (`sh:targetClass`,
+  including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`, `sh:targetSubjectsOf`,
+  `sh:targetObjectsOf`) are resolved for the focus node, and only those shapes are validated, in a
+  transaction that is always rolled back. Shapes reached through `sh:node`, `sh:property` etc. are
+  evaluated as usual. When no shape targets the focus node the result is `Ok` without running the engine.
+- Fallbacks: for a **blank-node** focus (RDF4J does not accept a blank node as `sh:targetNode`) the selected
+  shapes keep their own target declarations; shapes with other target kinds (e.g. SPARQL-based `sh:target`)
+  are validated for all their targets. In both cases the report is filtered to the focus node.
+- Calls on one instance are serialized, so a validator can be shared between threads. Call `close()` (or
+  use `use { }`) to release the repository and the loaded data; `validate` after `close()` throws
+  `IllegalStateException`.
 - RDF4J 5.x has no base-direction support, so the direction of an RDF 1.2 directional language string is
   dropped (the language tag is kept).
 

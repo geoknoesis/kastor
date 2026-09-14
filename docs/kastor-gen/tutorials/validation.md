@@ -80,8 +80,12 @@ val rdf4j = Rdf4jValidation(shapes)   // AutoCloseable: close() when done, or us
 
 Create the context once and reuse it: shapes are parsed at construction.
 
-> The no-arg constructors `JenaValidation()` / `Rdf4jValidation()` read shapes from the *data* graph on
-> every call. If your data graph holds no shapes, every node validates as `Ok`.
+> The no-arg constructors `JenaValidation()` / `Rdf4jValidation()` read shapes from the *data* graph. If
+> your data graph holds no shapes, every node validates as `Ok`.
+
+`Rdf4jValidation` loads the data graph into its repository once and reloads it only when you pass a
+different graph or the graph's content changed, so validating many nodes of one graph is cheap. It also
+evaluates only the shapes that target the focus node.
 
 ## Step 4: Validate while materializing
 
@@ -190,11 +194,14 @@ class PersonValidationTest {
 
 ## Good practice
 
-- Build the context once (per shapes file) and reuse it; `close()` `Rdf4jValidation` when finished.
+- Build the context once (per shapes file) and reuse it; every `ValidationContext` is `AutoCloseable`, so
+  `close()` it (or `use { }`) when finished. It matters for `Rdf4jValidation`, which holds a repository; for
+  `JenaValidation` it is a no-op.
 - Keep shapes in their own graph/resource instead of mixing them into the data.
 - Validate at trust boundaries (data loaded from outside), not on every property read.
-- Inspect `ShaclViolation.severity`: `Warning`/`Info` results are also reported as `Violations`; decide
-  whether your code should fail on them.
+- Inspect `ShaclViolation.severity`: `Warning`/`Info` results are also reported as `Violations`, but
+  `orThrow()` fails only on `sh:Violation`. Use `result.orThrow(ShaclSeverity.Warning)` (or `Info`) if your
+  code should fail on them too.
 
 ## Next Steps
 

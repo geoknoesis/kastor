@@ -9,7 +9,7 @@ using only Gradle configuration — no `@Rdf` annotation in your sources. Every 
 | | Gradle plugin | KSP `@Rdf(shacl = …)` |
 |---|---|---|
 | Configuration | build script | annotation in a Kotlin file |
-| Ontology file edits trigger regeneration | yes (task inputs) | no — touch the annotated file or clean |
+| Ontology file edits trigger regeneration | yes (task inputs) | only when you declare the files as `kspKotlin` inputs ([Incremental Builds](../guides/incremental-builds.md#ksp-processor)) |
 | Vocabulary object generation | yes | no |
 | Data classes, `NestedMode`, write support | no | yes |
 
@@ -78,8 +78,12 @@ kastorGen {
 }
 ```
 
-`interfacePackage` is the only required setting besides the two paths. Wrappers and the vocabulary default
-to the same package, and the DSL to `com.example.dcatus.dsl`.
+`interfacePackage` is the only required setting besides `shaclPath`. `contextPath` is optional; without a
+context, type and property names come from IRI local names and `sh:name`. Wrappers and the vocabulary
+default to the same package, and the DSL to `com.example.dcatus.dsl`.
+
+The plugin needs `org.jetbrains.kotlin.jvm` or `org.jetbrains.kotlin.multiplatform` (with at least one JVM
+target, e.g. `jvm()` or `jvm("desktop")`); Android projects are not supported.
 
 ## Step 4: Build
 
@@ -244,8 +248,9 @@ kastorGen {
 ## Incremental builds
 
 The SHACL and context files are `@InputFile`s of the task and the task is `@CacheableTask`: editing either
-file re-runs generation, unchanged inputs are up to date or restored from the build cache, and files from
-the previous run are removed before new ones are written. No manual `inputs.files(...)` or
+file re-runs generation, unchanged inputs are up to date or restored from the build cache, and the new
+files are written to a staging directory before they replace the previous run's files (so a failed run
+leaves the previous output intact). No manual `inputs.files(...)` or
 `outputs.cacheIf` configuration is needed. See [Incremental Builds](../guides/incremental-builds.md).
 
 ## Troubleshooting
@@ -257,7 +262,9 @@ the previous run are removed before new ones are written. No manual `inputs.file
 | `generation reported errors: …` / `name collisions: …` | Two classes or properties map to the same Kotlin name; add distinct JSON-LD context terms or `sh:name` values. The message lists the IRIs. |
 | `dslName '…' must match …` | Use letters and digits only, starting with a letter. |
 | `vocabularyName is required when generateVocabulary is true` | Set all three vocabulary properties, or leave `generateVocabulary` unset. |
-| `Unresolved reference` in your code | Check the package you import from; generation output is wired into `main` (or `jvmMain`) automatically. |
+| `Unresolved reference` in your code | Check the package you import from; generation output is wired into `main` (or the `main` compilation of every JVM target in multiplatform projects) automatically. |
+| `… applies neither org.jetbrains.kotlin.jvm nor org.jetbrains.kotlin.multiplatform …` | Apply one of the Kotlin plugins; Android is not supported. |
+| `no JVM target found in …` | Add `jvm()` (or `jvm("name")`) to the multiplatform project. |
 
 Inspect the tasks and resolved paths with:
 

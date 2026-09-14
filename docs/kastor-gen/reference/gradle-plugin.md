@@ -4,8 +4,9 @@
 
 ## Overview
 
-The Kastor Gen Gradle plugin (`com.geoknoesis.kastor.gen`) generates code from a SHACL shapes file and a
-JSON-LD context file at build time, configured entirely in the build script (no `@Rdf` annotation needed).
+The Kastor Gen Gradle plugin (`com.geoknoesis.kastor.gen`) generates code from a SHACL shapes file and an
+optional JSON-LD context file at build time, configured entirely in the build script (no `@Rdf` annotation
+needed).
 For each configured ontology it can generate:
 
 - domain interfaces,
@@ -98,7 +99,7 @@ kastorGen {
             generateInterfaces = true                          // default: true
             generateWrappers = true                            // default: true
             generateDsl = true                                 // default: false
-            dslName = "dcat"                                   // default: derived from the context file name
+            dslName = "dcat"                                   // default: derived from the context (else SHACL) file name
 
             vocabularyName = "DCAT"                            // these three together enable
             vocabularyNamespace = "http://www.w3.org/ns/dcat#" // vocabulary generation
@@ -117,7 +118,7 @@ Every optional setting is `null` until you assign it; the task then applies the 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `shaclPath` | `String` | required | SHACL file. Absolute, or relative to the project directory; if not found there, relative to `src/main/resources` |
-| `contextPath` | `String` | required | JSON-LD context file, resolved the same way |
+| `contextPath` | `String` | optional | JSON-LD context file, resolved the same way. Without it, type and property names come from IRI local names and `sh:name` |
 | `interfacePackage` | `String?` | **required** — the task fails with `interfacePackage must be set` | Package for interfaces |
 | `wrapperPackage` | `String?` | `interfacePackage` | Package for wrappers |
 | `vocabularyPackage` | `String?` | `interfacePackage` | Package for the vocabulary object |
@@ -129,7 +130,7 @@ Every optional setting is `null` until you assign it; the task then applies the 
 | `vocabularyNamespace` | `String?` | — | Namespace IRI |
 | `vocabularyPrefix` | `String?` | — | Prefix |
 | `generateDsl` | `Boolean?` | `false` | Generate the instance DSL |
-| `dslName` | `String?` | derived from the context file name | Top-level DSL function name; an explicit value must match `[a-zA-Z][a-zA-Z0-9]*` |
+| `dslName` | `String?` | derived from the context file name (the SHACL file name when no context is set) | Top-level DSL function name; an explicit value must match `[a-zA-Z][a-zA-Z0-9]*` |
 | `outputDirectory` | `String?` | `build/generated/sources/kastor-gen` | Output base directory, relative to the project directory; the ontology name is appended |
 
 Validation performed before anything is written:
@@ -151,20 +152,36 @@ All tasks are in the `kastor-gen` group (`./gradlew tasks --group=kastor-gen`).
 ### Automatic source-set wiring
 
 Each task's output directory is added to the `main` Kotlin source set of `org.jetbrains.kotlin.jvm`
-projects, or to `jvmMain` of `org.jetbrains.kotlin.multiplatform` projects. Because the source directory is
-the task's output, compiling Kotlin runs generation first — no `sourceSets { … }` or `dependsOn` is needed.
-The generated code is JVM-only: a multiplatform project without a `jvm()` target fails with a clear error.
+projects, or, in `org.jetbrains.kotlin.multiplatform` projects, to the default source set of the `main`
+compilation of **every JVM target**, whatever its name (`jvm()`, `jvm("desktop")`, …, including targets
+added later). Because the source directory is the task's output, compiling Kotlin runs generation first — no
+`sourceSets { … }` or `dependsOn` is needed.
+
+- The generated code is JVM-only: a multiplatform project without a JVM target fails at the end of
+  configuration with a clear error.
+- A project that configures `kastorGen` ontologies but applies neither `org.jetbrains.kotlin.jvm` nor
+  `org.jetbrains.kotlin.multiplatform` fails at configuration time instead of silently not compiling the
+  generated sources. **Android projects are not supported**; there the `generateOntology<Name>` tasks still
+  work, so add their `outputDirectory` to a source set yourself.
 
 ### `OntologyGenerationTask`
 
 - `ontologyName` — the configuration name, used in diagnostics (`kastorGen ontology 'dcat': …`).
 - `shaclFile` / `contextFile` — `@InputFile` properties resolved from the paths, so editing an ontology
-  file re-runs the task.
+  file re-runs the task; `contextFile` is `@Optional`.
 - `@CacheableTask`; execution does not touch `Project`, so the task is configuration-cache compatible.
 - **All-or-nothing:** every file is generated in memory first. SHACL/JSON-LD parse errors, name
   collisions, invalid packages or missing required settings fail the task *before* the output directory is
-  touched. Then the files written by the previous run (listed in `.kastor-generated-files`) are deleted and
-  the new ones written, so renamed shapes never leave stale files.
+  touched. Then:
+  1. every entry of the previous run's manifest (`.kastor-generated-files`) is validated — an entry that
+     escapes the output directory fails the task before anything is deleted;
+  2. the complete new output is written to a staging directory, so an I/O failure leaves the previous
+     output and manifest untouched;
+  3. the files listed in the old manifest are deleted, the staged files are moved in, and the manifest is
+     written last.
+
+  Renamed shapes therefore never leave stale files, including case-only renames on case-insensitive file
+  systems.
 
 See [Incremental Builds](../guides/incremental-builds.md).
 
@@ -256,7 +273,18 @@ add distinct context terms.
 **`cannot read SHACL file …`** — the file does not exist or is not valid Turtle. Relative paths are tried
 against the project directory, then `src/main/resources`; `--info` logs the resolved absolute paths.
 
-**`Kotlin source set 'jvmMain' not found`** — add a `jvm()` target to the multiplatform project.
+**`kastor-gen: no JVM target found in …`** — add a JVM target (`jvm()` or `jvm("name")`) to the
+multiplatform project.
+
+**`kastor-gen: … configures kastorGen ontologies but applies neither org.jetbrains.kotlin.jvm nor
+org.jetbrains.kotlin.multiplatform`** — apply one of them. Android projects are not supported; add the
+`outputDirectory` of the `generateOntology<Name>` tasks to a source set yourself.
+
+**`generated-files manifest escapes the output directory`** — `.kastor-generated-files` in the output
+directory was edited or corrupted; nothing was deleted. Remove the output directory and run the task again.
+
+**`cannot write generated files: …`** — writing to the staging directory failed; the previous output is
+unchanged.
 
 ## Related Documentation
 

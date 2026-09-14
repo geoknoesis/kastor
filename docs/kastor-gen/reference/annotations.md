@@ -235,6 +235,15 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
 3. **Type support**
    - Literals: `String`, `Int`, `Double`, `Boolean` (and `List` of those for multi-valued literals).
    - Objects: other `@Rdf` domain interfaces.
+   - Single values may be declared nullable (`String?`, `Int?`, `Organization?`).
+
+4. **Missing values**
+   - Missing values are never replaced by invented defaults (`""`, `0`, `false`).
+   - A **non-null** single-valued property throws `IllegalStateException` when its value is missing or
+     cannot be decoded (e.g. `"abc"` for an `Int`).
+   - A **nullable** property returns `null` when the value is missing; assigning `null` to a nullable `var`
+     removes the triples for that predicate.
+   - Lists are empty when there are no values.
 
 ## Common Patterns
 
@@ -343,13 +352,18 @@ ksp {
 }
 ```
 
-`kastor.gen.resources` is the only KSP option the processor reads.
+Relative `kastor.gen.resources` entries are resolved against the KSP option `kastor.gen.projectDir`
+(`arg("kastor.gen.projectDir", projectDir.absolutePath)`); without it, a relative entry that does not exist
+relative to the compiler's working directory fails generation. See the
+[processor options](processor.md#processor-options).
 
 ### Incremental builds
 
 KSP regenerates when the annotated Kotlin source changes, but it **does not see edits to the SHACL or
-JSON-LD files** themselves. After editing an ontology resource, touch the annotated source file or run a
-clean build — or use the [Gradle plugin](gradle-plugin.md), which tracks those files as task inputs.
+JSON-LD files** themselves, and the processor warns about every ontology file it reads. Declare
+`src/main/resources` as an input of the `kspKotlin` task and set `kastor.gen.resources.tracked=true`
+(as the repository examples do; see [Incremental Builds](../guides/incremental-builds.md#ksp-processor)),
+or use the [Gradle plugin](gradle-plugin.md), which tracks those files as task inputs.
 
 ## Best Practices
 
