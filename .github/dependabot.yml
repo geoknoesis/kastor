@@ -11,8 +11,19 @@ updates:
         patterns:
           - "*"
 
+  # Dependabot does not refresh gradle.lockfile / verification-metadata.xml: run
+  # scripts/refresh-dependency-locks.sh --commit on the PR branch (see CONTRIBUTING.md).
+  # Minor/patch bumps are grouped into one weekly PR to keep that manual step to once a week;
+  # major upgrades stay separate and follow docs/reference/dependency-upgrade-plan.md.
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      gradle-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
