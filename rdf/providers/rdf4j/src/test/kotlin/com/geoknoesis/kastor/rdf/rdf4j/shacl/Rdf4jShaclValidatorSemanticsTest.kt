@@ -33,6 +33,35 @@ class Rdf4jShaclValidatorSemanticsTest {
     assertFalse(report.isValid, "a truncated report of a non-conforming graph must stay invalid")
   }
 
+  @Test
+  fun `conformanceDisallows decides conformance like the native engine`() {
+    fun shapesWith(severity: String) =
+        Rdf.parse(
+            """
+            @prefix sh: <http://www.w3.org/ns/shacl#> .
+            @prefix ex: <http://example.org/> .
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:severity $severity ; sh:minCount 1 ] .
+            """.trimIndent(),
+            "TURTLE",
+        )
+    val graph = Rdf.parse("<http://example.org/a> <http://example.org/q> 1 .", "TURTLE")
+    fun validate(severity: String, disallows: Set<Iri>?) =
+        ShaclValidation.validator(
+                ValidationConfig(profile = ValidationProfile.SHACL_CORE, providerId = "rdf4j", conformanceDisallows = disallows))
+            .validate(graph, shapesWith(severity))
+    val violation = Iri("http://www.w3.org/ns/shacl#Violation")
+    val warning = Iri("http://www.w3.org/ns/shacl#Warning")
+
+    assertFalse(validate("sh:Warning", null).isValid, "by default a warning makes the report non-conforming")
+    val allowedWarning = validate("sh:Warning", setOf(violation))
+    assertTrue(allowedWarning.isValid)
+    assertEquals(1, allowedWarning.violations.size, "results of allowed severities are still reported")
+    assertFalse(validate("sh:Warning", setOf(warning)).isValid)
+    assertFalse(validate("sh:Violation", setOf(violation)).isValid)
+    assertTrue(validate("sh:Info", setOf(violation, warning)).isValid)
+    assertFalse(validate("sh:Info", null).isValid)
+  }
+
   private val shapes =
       """
       @prefix sh: <http://www.w3.org/ns/shacl#> .

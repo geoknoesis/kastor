@@ -386,6 +386,7 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationConfig {
 	public final fun component9 ()Z
 	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJLcom/geoknoesis/kastor/rdf/shacl/UnsupportedFeatureHandling;ILjava/util/Set;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
 	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;Lcom/geoknoesis/kastor/rdf/shacl/ValidationProfile;ZZILjava/time/Duration;ZZIZZZZLjava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/shacl/EnginePreference;ILcom/geoknoesis/kastor/rdf/shacl/CacheConfig;Lcom/geoknoesis/kastor/rdf/shacl/ImportConfig;Lcom/geoknoesis/kastor/rdf/shacl/StreamingConfigExtension;Lcom/geoknoesis/kastor/rdf/shacl/DatasetValidationConfig;ZJLcom/geoknoesis/kastor/rdf/shacl/UnsupportedFeatureHandling;ILjava/util/Set;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig;
+	public final fun disallowsConformance (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;)Z
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAllowTripleTermsInShapeParameters ()Z
 	public final fun getBatchSize ()I

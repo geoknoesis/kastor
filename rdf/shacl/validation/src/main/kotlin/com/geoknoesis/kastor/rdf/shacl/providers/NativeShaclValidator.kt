@@ -461,18 +461,8 @@ internal class NativeShaclValidator(
         validate(graph, shapes).statistics
 
     /** Whether a result of this severity makes the report non-conforming ([ValidationConfig.conformanceDisallows]). */
-    private fun disallowsConformance(severity: ViolationSeverity, customIri: Iri?): Boolean {
-        val disallowed = config.conformanceDisallows
-            ?: return severity != ViolationSeverity.DEBUG && severity != ViolationSeverity.TRACE
-        val iri = customIri ?: when (severity) {
-            ViolationSeverity.VIOLATION, ViolationSeverity.ERROR -> SHACL.Violation
-            ViolationSeverity.WARNING -> SHACL.Warning
-            ViolationSeverity.INFO -> SHACL.Info
-            ViolationSeverity.DEBUG -> SHACL.Debug
-            ViolationSeverity.TRACE -> SHACL.Trace
-        }
-        return iri in disallowed
-    }
+    private fun disallowsConformance(severity: ViolationSeverity, customIri: Iri?): Boolean =
+        config.disallowsSeverity(severity, customIri)
 
     private fun computeFocusNodes(shape: CompiledNodeShape, ctx: ValidationContext, undecidedTargets: MutableList<ValidationViolation>): List<RdfTerm> {
         val data = ctx.data

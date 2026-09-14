@@ -71,3 +71,48 @@ class FailureCategoryAndConformanceTest {
         assertTrue(error.causeOfType<UnsupportedShaclFeatureException>() == null)
     }
 }
+
+/** The memory validator decides `sh:conforms` with the same `sh:conformanceDisallows` rule as the native engine. */
+class MemoryValidatorConformanceDisallowsTest {
+
+    private val data = Rdf.parse("@prefix ex: <http://example.org/> . ex:a a ex:T ; ex:q 1 .", RdfFormat.TURTLE)
+    private val shapes = Rdf.parse(
+        """
+        @prefix sh: <http://www.w3.org/ns/shacl#> .
+        @prefix ex: <http://example.org/> .
+        ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .
+        """.trimIndent(),
+        RdfFormat.TURTLE,
+    )
+
+    private fun validate(config: ValidationConfig) =
+        com.geoknoesis.kastor.rdf.shacl.providers.MemoryShaclValidator(config).validate(data, shapes)
+
+    @Test fun `memory validator honours conformanceDisallows`() {
+        val default = validate(ValidationConfig())
+        assertEquals(1, default.violations.size, default.violations.toString())
+        assertFalse(default.isValid)
+        assertFalse(validate(ValidationConfig(conformanceDisallows = setOf(SHACL.Violation))).isValid)
+
+        val onlyWarnings = validate(ValidationConfig(conformanceDisallows = setOf(SHACL.Warning)))
+        assertTrue(onlyWarnings.isValid)
+        assertEquals(1, onlyWarnings.violations.size, "results of allowed severities are still reported")
+        assertTrue(validate(ValidationConfig(conformanceDisallows = emptySet())).isValid)
+    }
+
+    @Test fun `disallowsConformance uses the result severity IRI and the SHACL default`() {
+        val constraint = ShaclConstraint(constraintType = ConstraintType.MIN_COUNT, severity = ViolationSeverity.VIOLATION, message = "m")
+        fun violation(severity: ViolationSeverity, iri: String? = null) =
+            ValidationViolation(severity = severity, constraint = constraint, focusNode = Iri("urn:a"), message = "m", resultSeverityIri = iri)
+        val default = ValidationConfig()
+        assertTrue(default.disallowsConformance(violation(ViolationSeverity.WARNING)))
+        assertTrue(default.disallowsConformance(violation(ViolationSeverity.INFO)))
+        assertFalse(default.disallowsConformance(violation(ViolationSeverity.DEBUG)))
+        assertFalse(default.disallowsConformance(violation(ViolationSeverity.TRACE)))
+        assertFalse(default.disallowsConformance(violation(ViolationSeverity.VIOLATION, SHACL.Debug.value)))
+        assertTrue(default.disallowsConformance(violation(ViolationSeverity.VIOLATION, "http://example.org/Custom")))
+        val custom = ValidationConfig(conformanceDisallows = setOf(Iri("http://example.org/Custom")))
+        assertTrue(custom.disallowsConformance(violation(ViolationSeverity.VIOLATION, "http://example.org/Custom")))
+        assertFalse(custom.disallowsConformance(violation(ViolationSeverity.VIOLATION)))
+    }
+}
