@@ -37,7 +37,13 @@ enum class IllTypedValueHandling {
  */
 object MaterializationPolicy {
 
-  private val log = LoggerFactory.getLogger(MaterializationPolicy::class.java)
+  /**
+   * Holder initialised by the JVM only when a skipped value is logged (IllTypedValueHandling.SKIP), so the policy and
+   * the default THROW path never require SLF4J on the runtime class path.
+   */
+  private object SkipLog {
+    val logger: org.slf4j.Logger = LoggerFactory.getLogger(MaterializationPolicy::class.java)
+  }
 
   @Volatile
   private var defaultIllTypedValues: IllTypedValueHandling = IllTypedValueHandling.THROW
@@ -91,7 +97,7 @@ object MaterializationPolicy {
   private fun reject(message: String): Nothing? {
     when (illTypedValues) {
       IllTypedValueHandling.THROW -> throw MaterializationException(message)
-      IllTypedValueHandling.SKIP -> log.warn("{}; value skipped", message)
+      IllTypedValueHandling.SKIP -> SkipLog.logger.warn("{}; value skipped", message)
     }
     return null
   }

@@ -139,7 +139,7 @@ object OntoMapper {
           "call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
       }
       if (registry.replace(type, previous, factory)) {
-        log.debug(
+        ReplacementLog.logger.debug(
           "Replacing the factory for {} registered from class loader {} with one from class loader {}",
           type.name, previous.javaClass.classLoader, factory.javaClass.classLoader,
         )
@@ -148,7 +148,13 @@ object OntoMapper {
     }
   }
 
-  private val log = org.slf4j.LoggerFactory.getLogger(OntoMapper::class.java)
+  /**
+   * Holder initialised by the JVM only when the class-reloading path logs, so loading OntoMapper never requires SLF4J
+   * on the runtime class path (a `lazy { }` field would still link `org.slf4j.Logger` in the static initialiser).
+   */
+  private object ReplacementLog {
+    val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(OntoMapper::class.java)
+  }
 
   /** Removes the factory for [type]; returns true when one was registered. */
   @JvmStatic
