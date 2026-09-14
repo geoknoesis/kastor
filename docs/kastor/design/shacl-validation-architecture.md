@@ -333,7 +333,7 @@ Exit criterion for P7: duplicated conversion code **removed** or thin-wrapped; d
 | Layer | Responsibility |
 |-------|----------------|
 | **Unit tests** | Path algebra, constraint dispatch, message and severity mapping |
-| **W3C SHACL test manifests** | Primary labeled-conformance gate for the **native** provider |
+| **W3C SHACL test manifests** | Primary labeled-conformance gate for the **native** provider. CI runs the full suite from a pinned `w3c/data-shapes` commit via `:rdf:shacl-validation:w3cConformanceTest`; known deviations (`W3cKnownDeviations`) must fail with their listed `UnsupportedShaclFeature` category |
 | **Internal supplementary suite** | Spec-adjacent and product edge cases not covered by manifests: recursion, imports, datasets ([§9](#9-native-engine-architecture-summary)), bridge fidelity ([§10.1](#101-bridge-to-kastor-report-fidelity-normative)), production regressions |
 | **Bridge tests** | Round-trip a small fixed corpus for each bridge artifact |
 | **Native–bridge parity** | **Optional but owned:** diff **normalized** reports (see [§13.1](#131-parity-report-normalization)) for a fixed manifest subset; default = **nightly** on `main` and **required on release branches** for published bridge modules; **not** a per-PR gate unless the PR touches that bridge (then **required**). Document the job owner in `benchmarks/shacl/jmh/` or bridge `README`. |
@@ -411,6 +411,10 @@ Authoritative **Kotlin types** today live in the **`rdf/shacl/validation`** modu
 - **`ProviderNotFoundException`**, **`UnsupportedProfileException`** — registry ([§7.1](#71-failure-semantics-normative)).
 - **`ShapesGraphNotFoundException`** — declared shapes reference **missing** from the dataset (no triples to load). **`ShapesGraphAccessException`** — resolution **attempted** but failed (network, I/O, policy denial when `allowImportFetch` is true, etc.). See [§9.2](#92-dataset-named-graphs-and-shape-graph-imports).
 - **`StaleShapesGraphTagException`** — compile cache tag mismatch ([§9.3](#93-performance-engineering-jvm)).
+- **`ShapeCompileException`** (open) and its subtypes are thrown by the compiler; the native validator rethrows them as **`ShaclValidationException`** ("SHACL compile failed") with the original as cause:
+  - **`UnsupportedShaclFeatureException`** — the shapes graph uses recognised but unevaluated features. Its `features: Set<UnsupportedShaclFeature>` lists the categories: `SPARQL_CONSTRAINT_COMPONENT`, `NODE_EXPRESSION`, `SPARQL_NODE_EXPRESSION`, `SHACL_FUNCTION`, `CUSTOM_TARGET`. Only raised under `ValidationConfig.unsupportedFeatures = FAIL` (the default). `IGNORE_WITH_WARNING` skips the constructs and lists them in `ValidationReport.warnings`. Detection only inspects shape-reachable nodes.
+  - **`SparqlPreBindingRestrictionException`** — a SHACL-SPARQL query uses `MINUS`, `SERVICE` or `VALUES`, re-binds a pre-bound variable, or has a sub-query that does not project `$this`.
+- Undefined recursion and undecidable `sh:targetWhere` membership are **not** exceptions by default: they are blocking `sh:Warning` results ([§9.1](#91-recursion-deactivation-and-logical-nesting)). In `strictMode` they throw `ShaclValidationException`.
 
 **Planned `ValidationConfig` shape (P0a)**
 
@@ -425,6 +429,8 @@ Prefer **nested value types** (e.g. `CacheConfig`, `StreamingConfig`, `DatasetCo
 | `shapesGraphVersion: String?` | Opt-in compile-cache tag ([§9.3](#93-performance-engineering-jvm)) |
 | `shapesDigestMode: enum` | `SHAPES_STRUCTURAL_DIGEST_V1` (default), `SHAPES_RDF_CANONICAL_DIGEST` |
 | `maxRecursionDepth: Int` | Nesting guard for **non-recursive** shapes ([§9.1](#91-recursion-deactivation-and-logical-nesting)); recursive shapes are solved without it; default **`64`** |
+| `unsupportedFeatures: UnsupportedFeatureHandling` | `FAIL` (default: throw `UnsupportedShaclFeatureException`, wrapped) or `IGNORE_WITH_WARNING` (skip, list in `ValidationReport.warnings`) |
+| `conformanceDisallows: Set<Iri>?` | SHACL 1.2 `sh:conformanceDisallows`: severities whose results make `isValid` false; `null` = all but `sh:Debug` / `sh:Trace`; honoured by the native engine |
 | `maxPerFocusBuffer: Int` | Streaming qualified-value buffer cap ([§9.4](#94-streaming-and-incremental-validation-scope)) |
 | `streamingBufferPolicy: enum` | e.g. `BATCH_FALLBACK`, `SKIP_WITH_WARNING` when `maxPerFocusBuffer` exceeded ([§9.4](#94-streaming-and-incremental-validation-scope)) |
 | `resolveOwlImports: Boolean` | Default **false** ([§9.2](#92-dataset-named-graphs-and-shape-graph-imports)) |

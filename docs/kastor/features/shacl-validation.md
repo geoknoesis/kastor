@@ -74,7 +74,8 @@ if (!report.isValid) {
 
 ### Conformance semantics
 
-- `report.isValid` mirrors SHACL `sh:conforms`: it is `false` if **any** validation result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists. SHACL 1.2 `sh:Debug` / `sh:Trace` results do not affect conformance.
+- `report.isValid` mirrors SHACL `sh:conforms`. By default it is `false` if **any** validation result of severity `sh:Violation`, `sh:Warning`, `sh:Info` or a custom severity exists; SHACL 1.2 `sh:Debug` / `sh:Trace` results do not affect conformance.
+- `ValidationConfig.conformanceDisallows: Set<Iri>?` is SHACL 1.2 `sh:conformanceDisallows`. It is the set of result severities (`SHACL.Violation`, `SHACL.Warning`, `SHACL.Info`, `SHACL.Debug`, `SHACL.Trace` or a custom severity IRI) whose results make `isValid` false. `null` (the default) applies the SHACL default above. Results of other severities are still reported; they just do not block conformance. For example, `ValidationConfig(conformanceDisallows = setOf(SHACL.Violation))` lets warnings through, including the `sh:Warning` results for undefined recursion and undecidable `sh:targetWhere`. The native engine (`kastor`) honours this setting; the other providers do not read it.
 - `report.hasViolations` is the severity-filtered check (Violation/Error only). Use it when warnings should not fail a build.
 - Property shapes default to `sh:Violation`; they do not inherit a node shape's severity.
 - Deactivated shapes and shapes without constraints accept every node. Literal value nodes can conform to nested shapes (`sh:node`, `sh:and`/`sh:or`/`sh:xone`/`sh:not`, qualified value shapes).
@@ -162,16 +163,74 @@ When a candidate's membership is undefined (recursion through a non-monotone ope
 
 `sh:sparql` constraints need a SPARQL engine **at runtime**: add `rdf-jena` or `rdf-rdf4j`. Without one, validation fails with a `ShaclValidationException` naming those modules, and the native provider's capability flags report SHACL-SPARQL as unsupported. Queries:
 
-- run over the **data graph**;
+- run over the **data graph** (see [where queries run](#where-queries-run));
 - honour `sh:prefixes`/`sh:declare`, `$PATH`, `sh:deactivated` and message templates;
 - pre-bind `$this`, `$currentShape` and `$shapesGraph`;
 - produce one result per solution row.
 
-SPARQL-based constraint components and SHACL 1.2 node expressions are not supported.
+#### Where queries run
+
+When you validate a SPARQL-capable dataset, such as a repository passed to `validateDataset`, queries run on it **in place** only if the dataset lists **no named graphs**. Otherwise the engine copies the data graph into a private in-memory repository once per validation run, and all SPARQL constraints of that run share the copy. This also happens when validating a plain graph. The reason is that a query without a dataset clause may see more than the default graph: on RDF4J it sees the union of all contexts. SHACL-SPARQL constraints must see exactly the data graph that the other constraints validate. Each kind of fallback is logged once per dataset class. The copy is not reused across runs; to validate a large graph repeatedly, validate a repository without named graphs in place.
+
+#### Pre-binding
+
+The engine pre-binds variables itself before the query reaches the provider, so the result is the same on every provider, including inside sub-queries:
+
+- IRIs and literals are substituted **textually** into the query text. In a `SELECT` projection a value becomes `(term AS ?fresh)`, and `BOUND(?var)` on a substituted variable becomes `true`.
+- Values with no equivalent SPARQL syntax are passed to the provider as initial bindings: blank nodes, triple terms, directional language strings, and IRIs containing characters that are illegal in an `IRIREF`.
+- When a query uses `$shapesGraph`, the shapes graph is loaded as a named graph of the private copy. The caller's dataset is never modified.
+
+A query that breaks the SHACL-SPARQL pre-binding restrictions is rejected when the shapes are compiled. The restrictions are:
+- no `MINUS`, `SERVICE` or `VALUES`;
+- no `AS` that re-binds a pre-bound variable;
+- a query that uses `$this` must project `$this` from each sub-query.
+
+Validation then throws `ShaclValidationException` ("SHACL compile failed: ..."), with a `SparqlPreBindingRestrictionException` as its cause.
+
+### Unsupported features
+
+The native engine recognises some SHACL constructs that it cannot evaluate. By default (`ValidationConfig.unsupportedFeatures = UnsupportedFeatureHandling.FAIL`), it rejects the shapes graph before validating anything, so these constraints are never silently skipped.
+
+| `UnsupportedShaclFeature` | Constructs |
+|---------------------------|------------|
+| `SPARQL_CONSTRAINT_COMPONENT` | SHACL-SPARQL constraint components (`sh:validator`, `sh:nodeValidator`, `sh:propertyValidator`) used by a shape |
+| `NODE_EXPRESSION` | SHACL 1.2 node expressions: `sh:values`, `sh:expression`, computed `sh:targetNode` / `sh:nodeByExpression` values |
+| `SPARQL_NODE_EXPRESSION` | SPARQL node expressions (`sh:select`, `sh:sparqlExpr`), including SPARQL expressions used as targets (`sh:targetWhere`, `sh:targetNode`) |
+| `SHACL_FUNCTION` | SHACL 1.2 functions (`sh:bodyExpression`) called from a SPARQL query |
+| `CUSTOM_TARGET` | SPARQL-based or custom targets (`sh:target`) |
+
+Plain `sh:sparql` constraints (see above) are supported.
+
+In the failure, `ShaclValidationException` wraps an `UnsupportedShaclFeatureException`. Its message names each offending construct, and its `features` property lists the categories:
+
+```kotlin
+try {
+    validator.validate(dataGraph, shapesGraph)
+} catch (e: ShaclValidationException) {
+    val unsupported = e.cause as? UnsupportedShaclFeatureException ?: throw e
+    println("Unsupported: ${unsupported.features}")
+}
+```
+
+To skip these constructs instead, set `ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)`. Each skipped construct is listed in `report.warnings` ("Unsupported SHACL feature ignored: ..."). These are report warnings, not validation results, so they do not change `isValid`.
+
+Detection only inspects declared and implicit shapes, plus the nodes reachable from them through shape-valued parameters. Data triples that share the shapes graph are therefore never mistaken for expressions. For example, `validate(g, g)` works when `g` has blank-node `sh:targetNode` values that carry data triples. A blank `sh:targetNode` counts as a node expression only when its own triples use expression syntax.
 
 ### W3C conformance
 
-The native engine runs the W3C SHACL 1.2 test suite: 163 cases, 154 pass. The 9 known deviations (4 SPARQL-based constraint components, 2 SHACL 1.2 node expressions, 3 SPARQL node expressions) are listed with justifications in `W3cKnownDeviations`; see the [module README](../../../rdf/shacl/validation/README.md).
+CI runs the **full W3C SHACL 1.2 test suite** (core, node-expression and SPARQL manifests) against the native engine. The suite comes from a pinned `w3c/data-shapes` commit (`94d8bc2`, 166 cases). To run it locally:
+
+```bash
+python scripts/fetch-conformance-data.py --only shacl
+./gradlew :rdf:shacl-validation:w3cConformanceTest
+```
+
+The task fails instead of skipping when the suite is missing, and every case is executed. The harness checks failures strictly:
+- Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 11: 4 SPARQL constraint components, 1 node expression, 3 SPARQL node expressions and 3 SHACL functions.
+- `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
+- `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.
+
+See the [module README](../../../rdf/shacl/validation/README.md).
 
 ### RDF4J validator
 

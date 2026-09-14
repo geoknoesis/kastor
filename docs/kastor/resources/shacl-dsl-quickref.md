@@ -189,7 +189,7 @@ Severity.Warning
 Severity.Info
 ```
 
-Any result, whatever its severity, makes `ValidationReport.isValid` (`sh:conforms`) false; use `hasViolations` to ignore Warning/Info.
+By default, any Violation, Warning, Info or custom-severity result makes `ValidationReport.isValid` (`sh:conforms`) false; Debug and Trace results do not. Use `hasViolations` to ignore Warning/Info, or on the native engine set `ValidationConfig(conformanceDisallows = setOf(SHACL.Violation))`.
 
 ## Prefixes
 
