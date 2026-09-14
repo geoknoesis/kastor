@@ -116,6 +116,12 @@ class JenaProvider : RdfProvider {
     override fun openTripleStream(inputStream: java.io.InputStream, format: String): TripleStream =
         openTripleStreamWithBase(inputStream, format, null)
 
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        parseStreamingWithBase(inputStream, format, baseIri)
+
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        openTripleStreamWithBase(inputStream, format, baseIri)
+
     /**
      * Eager compatibility parse with a base IRI; the caller's stream is not closed.
      * Implementation target for the core `parseStreaming(inputStream, format, baseIri)` provider method.

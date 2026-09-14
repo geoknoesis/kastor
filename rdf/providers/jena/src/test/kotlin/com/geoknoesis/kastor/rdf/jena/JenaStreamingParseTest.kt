@@ -76,4 +76,24 @@ class JenaStreamingParseTest {
       JenaProvider().parseStreamingWithBase(relative.byteInputStream(), "TURTLE", null).toList()
     }
   }
+
+  @Test
+  fun `provider openTripleStream with a base IRI streams a relative Turtle document lazily`() {
+    val document = (0 until 200_000).joinToString("\n") { "<s$it> <p> \"$it\" ." }.toByteArray()
+    var bytesRead = 0L
+    val counting = object : FilterInputStream(ByteArrayInputStream(document)) {
+      override fun read(): Int = super.read().also { if (it >= 0) bytesRead++ }
+      override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead += it }
+    }
+    val provider: com.geoknoesis.kastor.rdf.RdfProvider = JenaProvider()
+    provider.openTripleStream(counting, "TURTLE", "http://example.org/base/").use { stream ->
+      val first = stream.iterator().next()
+      assertEquals(Iri("http://example.org/base/s0"), first.subject)
+      assertEquals(Iri("http://example.org/base/p"), first.predicate)
+      Thread.sleep(300) // let the background parser read ahead as far as it will
+      assertTrue(bytesRead < document.size / 2, "must not materialise the document: read $bytesRead of ${document.size} bytes")
+    }
+    val eager = provider.parseStreaming("<s> <p> <o> .".byteInputStream(), "TURTLE", "http://example.org/base/").toList()
+    assertEquals(Iri("http://example.org/base/o"), eager.single().obj)
+  }
 }

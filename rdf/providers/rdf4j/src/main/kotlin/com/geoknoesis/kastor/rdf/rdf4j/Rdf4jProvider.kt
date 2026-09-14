@@ -123,6 +123,12 @@ class Rdf4jProvider : RdfProvider {
     override fun parseStreaming(inputStream: java.io.InputStream, format: String): Sequence<RdfTriple> =
         parseStreamingWithBase(inputStream, format, null)
 
+    override fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream =
+        openTripleStreamWithBase(inputStream, format, baseIri)
+
+    override fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> =
+        parseStreamingWithBase(inputStream, format, baseIri)
+
     /**
      * Streaming parse resolving relative IRIs against [baseIri] (`null`: relative IRIs are a parse error).
      * Implementation target for the core `openTripleStream(inputStream, format, baseIri)` provider method.
