@@ -37,34 +37,43 @@ class VocabularyMetricsTest {
     }
 
     @Test
-    fun `single class - NOC and CBO not computable`() {
+    fun `single class - NOC not computable, CBO zero, depth one below owl Thing`() {
         val r = VocabularyMetrics.compute(parse(loadFixture("single-class.ttl")))
         assertFalse(r.owl.oquare.numberOfChildren.computable)
-        assertFalse(r.owl.oquare.couplingBetweenObjects.computable)
+        assertTrue(r.owl.oquare.couplingBetweenObjects.computable)
+        assertEquals(0.0, r.owl.oquare.couplingBetweenObjects.rawValue, EPS)
         assertTrue(r.owl.oquare.depthOfInheritanceTree.computable)
-        assertEquals(0.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
+        // An isolated class is a direct child of owl:Thing: depth 1, one path of length 1.
+        assertEquals(1.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
+        assertEquals(1.0, r.owl.oquare.lackOfCohesionInMethods.rawValue, EPS)
     }
 
     @Test
     fun `linear chain A to D - DIT and NAC`() {
         val r = VocabularyMetrics.compute(parse(loadFixture("linear-chain.ttl")))
         val oq = r.owl.oquare
-        assertEquals(3.0, oq.depthOfInheritanceTree.rawValue, EPS)
+        // Thing -> A (1) -> B (2) -> C (3) -> D (4).
+        assertEquals(4.0, oq.depthOfInheritanceTree.rawValue, EPS)
         assertEquals(1.0, oq.numberOfAncestorClasses.rawValue, EPS)
         assertEquals(1.0, oq.numberOfChildren.rawValue, EPS)
+        // Couplings: A 0, B {A}, C {B}, D {C} = 3 / 4 classes.
+        assertEquals(0.75, oq.couplingBetweenObjects.rawValue, EPS)
         // No multiple inheritance: TMOnto is 0 (best band).
         assertEquals(0.0, oq.tangledness.rawValue, EPS)
         assertEquals(5, oq.tangledness.score)
-        // One path A-B-C-D of length 3.
-        assertEquals(3.0, oq.lackOfCohesionInMethods.rawValue, EPS)
+        // One path Thing-A-B-C-D of length 4.
+        assertEquals(4.0, oq.lackOfCohesionInMethods.rawValue, EPS)
     }
 
     @Test
     fun `wide tree fan-out - NOC and DIT`() {
         val r = VocabularyMetrics.compute(parse(wideTreeTtl(50)))
         val oq = r.owl.oquare
-        assertEquals(1.0, oq.depthOfInheritanceTree.rawValue, EPS)
-        assertEquals(1.0, oq.numberOfChildren.rawValue, EPS)
+        assertEquals(2.0, oq.depthOfInheritanceTree.rawValue, EPS)
+        // A is the only class with subclasses and has 50 of them.
+        assertEquals(50.0, oq.numberOfChildren.rawValue, EPS)
+        // 50 superclass links over 51 classes: NOC and CBO are no longer identical.
+        assertEquals(50.0 / 51.0, oq.couplingBetweenObjects.rawValue, EPS)
         assertEquals(1.0, oq.numberOfAncestorClasses.rawValue, EPS)
     }
 
@@ -72,8 +81,48 @@ class VocabularyMetricsTest {
     fun `diamond - NAC mean direct supers on leaf`() {
         val r = VocabularyMetrics.compute(parse(loadFixture("diamond.ttl")))
         assertEquals(2.0, r.owl.oquare.numberOfAncestorClasses.rawValue, EPS)
-        assertEquals(2.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
+        assertEquals(3.0, r.owl.oquare.depthOfInheritanceTree.rawValue, EPS)
         assertEquals(2.0, r.owl.oquare.tangledness.rawValue, EPS)
+        assertEquals(4, r.owl.oquare.tangledness.score)
+    }
+
+    @Test
+    fun `TMOnto bands distinguish two-parent tangling from no tangling`() {
+        assertEquals(5, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(0.0))
+        assertEquals(4, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(2.0))
+        assertEquals(3, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(3.0))
+        assertEquals(3, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(4.0))
+        assertEquals(2, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(8.0))
+        assertEquals(1, com.geoknoesis.kastor.ontoquality.metrics.compute.OquareScoring.scoreTM(8.5))
+    }
+
+    @Test
+    fun `distinct object count keys literals by lexical form, datatype and language`() {
+        val ttl =
+            """
+            @prefix : <http://example.org/void#> .
+            @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+            :s :p "1", "1"^^xsd:integer, "1"@en, "1"@fr, :o .
+            :t :p "1" .
+            """.trimIndent()
+        val r = VocabularyMetrics.compute(parse(ttl))
+        assertEquals(6L, r.graph.tripleCount)
+        // "1" (xsd:string), "1"^^xsd:integer, "1"@en, "1"@fr and :o; the second plain "1" is the same term.
+        assertEquals(5L, r.graph.distinctObjectCount)
+    }
+
+    @Test
+    fun `SKOS definition coverage counts skos definition only`() {
+        val ttl =
+            """
+            @prefix : <http://example.org/skosdef#> .
+            @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+            @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+            :c1 a skos:Concept ; skos:definition "Defined." .
+            :c2 a skos:Concept ; rdfs:comment "Only a comment." .
+            """.trimIndent()
+        val r = VocabularyMetrics.compute(parse(ttl))
+        assertEquals(0.5, r.skos.definitionCoverage.rawValue, EPS)
     }
 
     @Test

@@ -88,7 +88,8 @@ internal object HotSpotExtractor {
                 .filter { it !in iq.cycleParticipants }
                 .maxWithOrNull(compareBy({ iq.ditDepthOf[it] ?: 0 }, { it }))
         val example =
-            if (deepest == null || (iq.ditDepthOf[deepest] ?: 0) <= 0) {
+            // Roots sit at depth 1 below owl:Thing: a chain needs at least one named subclass edge.
+            if (deepest == null || (iq.ditDepthOf[deepest] ?: 0) <= 1) {
                 null
             } else {
                 reconstructChain(deepest, iq.ditDepthOf, iq.superClassesOf, iq.namedClasses, iq.cycleParticipants)
@@ -128,7 +129,7 @@ internal object HotSpotExtractor {
         while (cur != null && steps <= targetDepth + 2) {
             chain.addFirst(cur)
             val d = depth[cur] ?: 0
-            if (d <= 0) break
+            if (d <= 1) break
             val parents =
                 superClassesOf[cur].orEmpty().filter {
                     it in namedClasses && it !in cycleParticipants && (depth[it] ?: -1) == d - 1

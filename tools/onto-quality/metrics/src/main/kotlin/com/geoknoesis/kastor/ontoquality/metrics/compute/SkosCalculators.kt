@@ -12,7 +12,6 @@ import com.geoknoesis.kastor.ontoquality.metrics.SkosStructuralEdges
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.RdfGraph
-import com.geoknoesis.kastor.rdf.vocab.RDFS
 import com.geoknoesis.kastor.rdf.vocab.SKOS
 
 internal object SkosCalculators {
@@ -36,8 +35,8 @@ internal object SkosCalculators {
                     val lang = (t.obj as? LangString)?.lang?.takeIf { it.isNotBlank() } ?: ""
                     prefLang[lang] = prefLang.getOrDefault(lang, 0L) + 1L
                 }
+                // Only skos:definition counts: rdfs:comment is a general annotation, not a SKOS definition.
                 SKOS.definition -> definitions.add(s)
-                RDFS.comment -> definitions.add(s)
                 SKOS.inScheme -> {
                     inSchemeConcepts.add(s)
                     val sch = (t.obj as? Iri)?.value ?: continue

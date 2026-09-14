@@ -16,6 +16,10 @@ Primary external comparator: [tecnomod-um/oquare-metrics](https://github.com/tec
 | File | Purpose |
 |------|---------|
 | `minimal-branches.ttl` | Tiny ontology with one subclass pair plus one object-property axiom between named classes (non-inheritance edge for richness metrics). |
+| `populated-restrictions.ttl` | Classes with instances, annotations, a datatype attribute and an `owl:Restriction`. |
+| `pizza-like.ttl` | Externally derived fixture: a 10-class pizza-like ontology with multiple inheritance, an isolated class, domain/range properties and a restriction. All 15 raw OQuaRE values and five scores were worked out by hand from the OQuaRE definitions (derivation in the test KDoc), not by running the calculators. |
+
+All three fixtures are asserted exactly (tolerance 1e-9) in `CrossImplementationCalibrationTest`.
 
 ## Observed Kastor outputs (logged only in v0.1)
 
