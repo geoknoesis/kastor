@@ -91,7 +91,32 @@ and is kept as is; it was never published to Maven Central.
   - `scripts/configure-github-release.sh` applies the release environment, rulesets and Pages settings (dry run by default).
   - `publish.yml` polls Maven Central validation.
 
-<!-- providers/reasoning and kastor-gen entries pending -->
+#### Code generator (`kastor-gen-*`)
+
+- **Breaking:**
+  - Ill-typed literal values now throw during materialisation by default. Use `MaterializationPolicy` with `IllTypedValueHandling` to skip them with a warning instead.
+  - `OntoMapper.register` refuses a different factory for a type that is already registered, unless you pass `replace = true`.
+  - `ValidationResult.orThrow()` fails only on `sh:Violation`. Use `orThrow(minimumSeverity)` to fail on warnings or info as well.
+  - `xsd:decimal` values with an exponent are rejected.
+  - `ValidationContext` now extends `AutoCloseable`, with a no-op default `close()`.
+  - Generated embedded validation now enforces `sh:datatype`, `sh:nodeKind` and `sh:class`, and compares numeric bounds exactly.
+- **Fixed:**
+  - Shape inheritance generates compilable overrides. A restated path keeps the parent's member name and may narrow nullability. Refinements that Kotlin can't express as overrides (such as a list narrowed to a single value) are enforced only in validation. Conflicting parent member types fail at generation time.
+  - A path used by several property shapes in one shape produces one member everywhere.
+  - IRIs containing `%` no longer break the KSP `@Rdf` wrapper path, and missing values are never replaced by invented defaults.
+  - `sh:pattern` XPath constructs (`\i`, `\c`, class subtraction, `\p{Is…}`) are translated. A still-invalid pattern fails generation. Regexes are compiled lazily, so a bad pattern can no longer break class loading.
+  - KSP no longer reprocesses symbols it has already generated (no `FileAlreadyExistsException`). Relative `kastor.gen.resources` entries resolve against `kastor.gen.projectDir`.
+  - Colliding `sh:in` enum constants get deterministic suffixes.
+  - The RDF4J adapter reuses one repository, reloads only when the graph changes, and validates only the shapes targeting the focus node.
+  - The Gradle plugin validates the whole output manifest before deleting anything, and stages new files before replacing old ones.
+  - Projects with ontologies but without the Kotlin JVM or multiplatform plugin fail with a clear message.
+  - Multiplatform projects wire the main compilation of every JVM target.
+  - The JSON-LD context file is optional.
+  - Generated DSL enum types are package-qualified.
+  - XSD integer/decimal parsing follows the lexical rules, and dates with years above 9999 round-trip.
+- **Added:** `MaterializationPolicy`, `IllTypedValueHandling`, `register(type, replace, factory)`, `orThrow(ShaclSeverity)`, and the KSP options `kastor.gen.projectDir` and `kastor.gen.resources.tracked`.
+
+<!-- providers/reasoning entries pending -->
 
 ### Breaking changes (Maven `artifactId`s)
 
