@@ -86,7 +86,7 @@ Each configured ontology gets an `OntologyGenerationTask` (`generateOntology<Nam
 | Property | Annotation | Notes |
 |---|---|---|
 | `shaclFile` | `@InputFile`, `@PathSensitive(RELATIVE)` | resolved from `shaclPath` (project directory, then `src/main/resources`) |
-| `contextFile` | `@InputFile`, `@PathSensitive(RELATIVE)` | resolved from `contextPath` |
+| `contextFile` | `@InputFile`, `@Optional`, `@PathSensitive(RELATIVE)` | resolved from `contextPath`; absent when no context is configured |
 | `interfacePackage`, `wrapperPackage`, `vocabularyPackage`, `dslPackage` | `@Input @Optional` | |
 | `generateInterfaces`, `generateWrappers`, `generateVocabulary`, `generateDsl` | `@Input @Optional` | |
 | `vocabularyName`, `vocabularyNamespace`, `vocabularyPrefix`, `dslName` | `@Input @Optional` | |
@@ -101,15 +101,25 @@ from the local or remote build cache.
 
 The task writes a manifest (`.kastor-generated-files`) in its output directory. On each run it first
 generates everything in memory and fails — without touching the output directory — on parse errors, name
-collisions or invalid configuration. Only then does it delete the files recorded by the previous run and
-write the new ones. Renamed or removed shapes therefore never leave stale files behind, including
-case-only renames on case-insensitive file systems.
+collisions or invalid configuration. Only then does it replace the previous output:
+
+1. it validates every entry of the previous manifest, failing before anything is deleted if an entry
+   escapes the output directory;
+2. it writes the complete new output to a staging directory, so an I/O failure leaves the previous output
+   and manifest untouched;
+3. it deletes the files recorded by the previous run, moves the staged files in and writes the manifest
+   last.
+
+Renamed or removed shapes therefore never leave stale files behind, including case-only renames on
+case-insensitive file systems.
 
 ### Wiring
 
-The plugin adds each task's output directory to the `main` Kotlin source set (`jvmMain` for Kotlin
-Multiplatform projects), so compilation depends on generation automatically. No `sourceSets` or
-`dependsOn` configuration is required.
+The plugin adds each task's output directory to the `main` Kotlin source set of Kotlin JVM projects, or to
+the `main` compilation of every JVM target of Kotlin Multiplatform projects (`jvm()`, `jvm("desktop")`, …),
+so compilation depends on generation automatically. No `sourceSets` or `dependsOn` configuration is
+required. Projects that configure ontologies without the Kotlin JVM or multiplatform plugin (including
+Android projects, which are not supported) fail with a clear message.
 
 ## Troubleshooting
 
