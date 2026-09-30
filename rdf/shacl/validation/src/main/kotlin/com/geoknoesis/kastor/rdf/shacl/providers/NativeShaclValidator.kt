@@ -1483,11 +1483,15 @@ internal class NativeShaclValidator(
         for (claim in claims) {
             val reifiers = ctx.data.reifiersForClaim(claim)
             if (reifiers.isEmpty()) {
+                // SHACL 1.2: sh:reifierShape only constrains existing reifiers; a missing reifier is a violation only
+                // under sh:reificationRequired true, reported by sh:ReifierShapeConstraintComponent when the property
+                // shape has a sh:reifierShape (sh:reificationRequired is one of its parameters).
+                if (!reifReq) continue
                 if (shapeRefs.isNotEmpty()) {
                     sink.fail {
-                        violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reifierShape: no reifier for triple $claim", value = claim.obj)
+                        violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reificationRequired: missing reifier for triple $claim", value = claim.obj)
                     }
-                } else if (reifReq) {
+                } else {
                     sink.fail {
                         violation(focus, tpl, constraintStub(ConstraintType.REIFICATION_REQUIRED, pathPredicate), "sh:reificationRequired: missing reifier for triple $claim", value = claim.obj)
                     }
