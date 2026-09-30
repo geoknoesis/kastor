@@ -634,4 +634,140 @@ class SparqlEndpointReauditTest {
             values.forEachIndexed { i, v -> assertEquals("v\"$i\\ é€😀", v) }
         }
     }
+
+    // ------------------------------------------------------------------ fourth audit
+
+    /** A server that accepts connections but never sends response headers. */
+    private fun withSilentServer(run: (String) -> Unit) {
+        ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).use { server ->
+            val accepted = CopyOnWriteArrayList<Socket>()
+            Thread {
+                try {
+                    while (true) accepted += server.accept()
+                } catch (_: IOException) {
+                    // server closed
+                }
+            }.apply { isDaemon = true }.start()
+            try {
+                run("http://127.0.0.1:${server.localPort}/sparql")
+            } finally {
+                accepted.forEach { it.close() }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a short streaming request timeout also bounds the wait for response headers`() = withSilentServer { url ->
+        val config = SparqlEndpointConfig(
+            url,
+            readTimeout = Duration.ofSeconds(30),
+            requestTimeout = Duration.ofSeconds(30),
+            streamingRequestTimeout = Duration.ofMillis(500),
+        )
+        SparqlRepository(config).use { repo ->
+            listOf<Pair<String, () -> Any>>(
+                "stream" to { repo.withSelectRows(selectAll) { it.count() } },
+                "stream with per-call timeout" to { repo.withSelectRows(selectAll, emptyMap(), Duration.ofSeconds(30)) { it.count() } },
+            ).forEach { (name, call) ->
+                val start = System.nanoTime()
+                val e = assertThrows(RdfQueryException::class.java, { call() }, name)
+                assertTrue(elapsedMillis(start) < 5_000, "$name: header wait not bounded by streamingRequestTimeout, took ${elapsedMillis(start)} ms")
+                assertTrue(e.message!!.contains("500 ms"), "$name: ${e.message}")
+            }
+        }
+        SparqlRepository(config.copy(requestTimeout = null)).use { repo ->
+            val start = System.nanoTime()
+            val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
+            assertTrue(elapsedMillis(start) < 5_000, "header wait not bounded by streamingRequestTimeout, took ${elapsedMillis(start)} ms")
+            assertTrue(e.message!!.contains("500 ms"), e.message)
+        }
+    }
+
+    @Test
+    fun `an oversized result row fails even when streamed responses are unbounded`() = TestEndpoint { exchange, request ->
+        when (request.path) {
+            "/head" -> exchange.respond(200, "{\"head\":{\"vars\":[\"${"x".repeat(5_000)}\"]},\"results\":{\"bindings\":[]}}")
+            else -> exchange.respond(200, rowsJson(3) { if (it == 1) "y".repeat(5_000) else "ok" })
+        }
+    }.use { endpoint ->
+        val config = SparqlEndpointConfig(endpoint.url, maxStreamedResponseBytes = null, maxResultRowChars = 1_000)
+        SparqlRepository(config).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
+            assertTrue(e.message!!.contains("maxResultRowChars"), e.message)
+            assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+        }
+        SparqlRepository(config.copy(endpoint = "${endpoint.base}/head")).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
+            assertTrue(e.message!!.contains("maxResultRowChars"), e.message)
+        }
+        SparqlRepository(endpoint.url).use { repo -> assertEquals(3, repo.withSelectRows(selectAll) { it.count() }) }
+        assertEquals(SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS, SparqlEndpointConfig(endpoint.url).maxResultRowChars)
+        assertThrows(IllegalArgumentException::class.java) { SparqlEndpointConfig(endpoint.url, maxResultRowChars = 0) }
+        // (Expression-bodied JUnit tests must return Unit, otherwise they are silently skipped.)
+        assertEquals(77, SparqlEndpointConfig.fromOptions(mapOf("location" to endpoint.url, "maxResultRowChars" to "77")).maxResultRowChars)
+    }
+
+    @Test
+    fun `https to http redirects are refused even when cross-origin redirects are followed`() {
+        val https = java.net.URI("https://example.org/sparql")
+        val http = java.net.URI("http://example.org/sparql")
+        val refusal = SparqlRepository.redirectRefusal(https, http, followCrossOriginRedirects = true)
+        assertNotNull(refusal)
+        assertTrue(refusal!!.contains("plain http"), refusal)
+        assertNotNull(SparqlRepository.redirectRefusal(https, http, followCrossOriginRedirects = false))
+        assertNull(SparqlRepository.redirectRefusal(http, java.net.URI("https://example.org/sparql"), followCrossOriginRedirects = true))
+        assertNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = true))
+        assertNotNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://other.org/sparql"), followCrossOriginRedirects = false))
+        assertNull(SparqlRepository.redirectRefusal(https, java.net.URI("https://example.org/moved"), followCrossOriginRedirects = false))
+    }
+
+    @Test
+    fun `a success response that is not SPARQL JSON fails with its content type`() = TestEndpoint { exchange, request ->
+        when (request.path) {
+            "/html" -> exchange.respond(200, "<html><body>login</body></html>", "text/html; charset=utf-8")
+            "/xml" -> exchange.respond(200, "<sparql/>", "application/sparql-results+xml")
+            "/plain" -> exchange.respond(200, "true", "text/plain")
+            else -> exchange.respond(200, rowsJson(1), "application/json; charset=UTF-8")
+        }
+    }.use { endpoint ->
+        SparqlRepository("${endpoint.base}/html").use { repo ->
+            val select = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+            assertTrue(select.message!!.contains("text/html"), select.message)
+            val stream = assertThrows(RdfQueryException::class.java) { repo.withSelectRows(selectAll) { it.count() } }
+            assertTrue(stream.message!!.contains("text/html"), stream.message)
+            val ask = assertThrows(RdfQueryException::class.java) { repo.ask(SparqlAskQuery("ASK {}")) }
+            assertTrue(ask.message!!.contains("text/html"), ask.message)
+        }
+        SparqlRepository("${endpoint.base}/xml").use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
+            assertTrue(e.message!!.contains("application/sparql-results+xml"), e.message)
+        }
+        SparqlRepository("${endpoint.base}/plain").use { repo -> assertTrue(repo.ask(SparqlAskQuery("ASK {}"))) }
+        SparqlRepository(endpoint.url).use { repo -> assertEquals(1, repo.select(selectAll).count()) }
+    }
+
+    @Test
+    fun `a graph size beyond Int range fails as a query error`() = TestEndpoint { exchange, _ ->
+        exchange.respond(
+            200,
+            "{\"head\":{\"vars\":[\"count\"]},\"results\":{\"bindings\":[{\"count\":{\"type\":\"literal\"," +
+                "\"datatype\":\"http://www.w3.org/2001/XMLSchema#integer\",\"value\":\"3000000000\"}}]}}",
+        )
+    }.use { endpoint ->
+        SparqlRepository(endpoint.url).use { repo ->
+            val e = assertThrows(RdfQueryException::class.java) { repo.defaultGraph.size() }
+            assertTrue(e.message!!.contains("3000000000"), e.message)
+        }
+    }
+
+    @Test
+    fun `endpoint URLs with a fragment are rejected`() {
+        assertThrows(IllegalArgumentException::class.java) { SparqlEndpointConfig("http://example.org/sparql#frag") }
+        assertThrows(IllegalArgumentException::class.java) { SparqlEndpointConfig("http://example.org/sparql#") }
+        assertThrows(IllegalArgumentException::class.java) {
+            SparqlEndpointConfig("http://example.org/sparql", updateEndpoint = "http://example.org/update#x")
+        }
+        SparqlEndpointConfig("http://example.org/sparql?default-graph-uri=urn%3Ag")
+    }
 }

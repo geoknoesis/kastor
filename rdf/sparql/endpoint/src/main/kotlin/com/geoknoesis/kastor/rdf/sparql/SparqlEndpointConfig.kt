@@ -31,7 +31,7 @@ enum class SparqlUpdateMethod {
 /**
  * Connection settings for [SparqlRepository].
  *
- * @property endpoint query endpoint (`http` or `https`). Credentials embedded in the URL
+ * @property endpoint query endpoint (`http` or `https`, without a `#fragment`). Credentials embedded in the URL
  *   (`https://user:pass@host/sparql`) are removed from the request URL and sent as HTTP Basic
  *   authentication unless [username] is set.
  * @property updateEndpoint update endpoint; defaults to [endpoint].
@@ -55,17 +55,26 @@ enum class SparqlUpdateMethod {
  * @property insertBatchSize maximum triples per `INSERT DATA`/`DELETE DATA` request. Triples joined
  *   by blank nodes are never split across requests; see [SparqlGraph].
  * @property streamingRequestTimeout optional overall deadline for a streamed
- *   [SparqlRepository.withSelectRows] call, including the time the consumer spends on rows. `null`
- *   (default) means only [requestTimeout] (until headers) and [readTimeout] (per read) apply.
+ *   [SparqlRepository.withSelectRows] call, including the wait for the response headers and the
+ *   time the consumer spends on rows; when it is shorter than [requestTimeout] (or a per-call
+ *   timeout) it also ends the header wait. `null` (default) means only [requestTimeout] (until
+ *   headers) and [readTimeout] (per read) apply.
  * @property followCrossOriginRedirects follow `307`/`308` (and, for GET, `301`/`302`/`303`)
  *   redirects to a different scheme, host or port. Custom [headers] and credentials are never sent
- *   to the other origin. Default `false`: such redirects fail with a clear error.
+ *   to the other origin (a warning is logged when they are dropped). Default `false`: such
+ *   redirects fail with a clear error. A redirect from `https` to plain `http` is always refused,
+ *   because the query would be re-sent unencrypted.
  * @property maxRedirects maximum redirects followed per request.
  * @property maxGetUrlLength longest request URL sent with [SparqlQueryMethod.GET]; longer queries
  *   are sent as a form-encoded POST instead (many servers and proxies reject long URLs).
  * @property maxBlankNodeComponentTriples largest group of triples connected through blank nodes that
  *   [SparqlGraph.addTriples] accepts. Such a group must be sent in one request because blank-node
  *   labels are scoped to a request; larger groups are rejected before anything is sent.
+ * @property maxResultRowChars largest single JSON value, in characters, that is read into memory
+ *   while parsing SELECT results: one binding row, or one skipped value such as `head`. It applies
+ *   to [SparqlRepository.select] and [SparqlRepository.withSelectRows] alike, so a streamed response
+ *   with [maxStreamedResponseBytes] `null` still never buffers an unbounded row. Exceeding it fails
+ *   with [com.geoknoesis.kastor.rdf.RdfQueryException]. Default 16 Mi characters.
  */
 data class SparqlEndpointConfig(
     val endpoint: String,
@@ -86,6 +95,7 @@ data class SparqlEndpointConfig(
     val maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
     val maxGetUrlLength: Int = DEFAULT_MAX_GET_URL_LENGTH,
     val maxBlankNodeComponentTriples: Int = DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES,
+    val maxResultRowChars: Int = DEFAULT_MAX_RESULT_ROW_CHARS,
 ) {
     init {
         HttpTarget.parse(endpoint)
@@ -100,6 +110,7 @@ data class SparqlEndpointConfig(
         require(maxRedirects >= 0) { "maxRedirects must not be negative" }
         require(maxGetUrlLength > 0) { "maxGetUrlLength must be positive" }
         require(maxBlankNodeComponentTriples > 0) { "maxBlankNodeComponentTriples must be positive" }
+        require(maxResultRowChars > 0) { "maxResultRowChars must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
         headers.forEach { (name, value) ->
             require(HEADER_NAME.matches(name)) { "Invalid HTTP header name: '$name'" }
@@ -116,7 +127,8 @@ data class SparqlEndpointConfig(
             "headers=${headers.keys}, username=$username, password=${password?.let { "***" }}, " +
             "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize, " +
             "streamingRequestTimeout=$streamingRequestTimeout, followCrossOriginRedirects=$followCrossOriginRedirects, " +
-            "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples)"
+            "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples, " +
+            "maxResultRowChars=$maxResultRowChars)"
 
     companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024 * 1024
@@ -127,6 +139,7 @@ data class SparqlEndpointConfig(
         const val DEFAULT_MAX_REDIRECTS: Int = 5
         const val DEFAULT_MAX_GET_URL_LENGTH: Int = 2_000
         const val DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES: Int = 100_000
+        const val DEFAULT_MAX_RESULT_ROW_CHARS: Int = 16 * 1024 * 1024
 
         private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
         private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade")
@@ -138,7 +151,7 @@ data class SparqlEndpointConfig(
          * `streamingRequestTimeoutMillis`, `username`, `password`, `queryMethod`
          * (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`), `insertBatchSize`,
          * `followCrossOriginRedirects` (`true`/`false`), `maxRedirects`, `maxGetUrlLength`,
-         * `maxBlankNodeComponentTriples`, and `header.<Name>` for custom headers.
+         * `maxBlankNodeComponentTriples`, `maxResultRowChars`, and `header.<Name>` for custom headers.
          * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
          * accept `none` for unbounded.
          */
@@ -182,6 +195,7 @@ data class SparqlEndpointConfig(
                 maxGetUrlLength = long("maxGetUrlLength")?.let(Math::toIntExact) ?: defaults.maxGetUrlLength,
                 maxBlankNodeComponentTriples = long("maxBlankNodeComponentTriples")?.let(Math::toIntExact)
                     ?: defaults.maxBlankNodeComponentTriples,
+                maxResultRowChars = long("maxResultRowChars")?.let(Math::toIntExact) ?: defaults.maxResultRowChars,
             )
         }
 
@@ -238,6 +252,8 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
                 "SPARQL endpoint must be an http(s) URL, got '${redact(endpoint)}'"
             }
             require(!uri.host.isNullOrEmpty()) { "SPARQL endpoint URL has no host: '${redact(endpoint)}'" }
+            // A fragment is never sent to the server, and a GET query parameter would be appended after it.
+            require(uri.rawFragment == null) { "SPARQL endpoint URL must not contain a fragment ('#...'): '${redact(endpoint)}'" }
             val authorization = uri.userInfo?.let { info ->
                 basicAuthorization(info.substringBefore(':'), if (':' in info) info.substringAfter(':') else "")
             }

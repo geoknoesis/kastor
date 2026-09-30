@@ -336,7 +336,8 @@ object SparqlInitialBindings {
 
     private val IRIREF = Regex("<[^<>\"{}|^`\\\\\\u0000-\\u0020]*>")
     private const val PUNCT = "{}()[],;"
-    private const val WORD_BREAK = "{}()[],;\"'<?$#"
+    // `*` never occurs inside a name, and `SELECT*WHERE{` / `SELECT DISTINCT*{` are legal SPARQL.
+    private const val WORD_BREAK = "{}()[],;\"'<?$#*"
 
     private fun isVarChar(c: Char) =
         c == '_' || c.isLetterOrDigit() || c == '·' || c in '̀'..'ͯ' || c in '‿'..'⁀' ||
@@ -376,7 +377,7 @@ object SparqlInitialBindings {
                     tokens.add(Token(Kind.VAR, "?" + text.substring(start + 1, i), start, i))
                 }
                 c in PUNCT -> { tokens.add(Token(Kind.PUNCT, c.toString(), i, i + 1)); i++ }
-                c == '<' || c == '?' || c == '$' -> { tokens.add(Token(Kind.WORD, c.toString(), i, i + 1)); i++ }
+                c == '<' || c == '?' || c == '$' || c == '*' -> { tokens.add(Token(Kind.WORD, c.toString(), i, i + 1)); i++ }
                 else -> {
                     val start = i
                     while (i < n && !text[i].isWhitespace() && text[i] !in WORD_BREAK) {
