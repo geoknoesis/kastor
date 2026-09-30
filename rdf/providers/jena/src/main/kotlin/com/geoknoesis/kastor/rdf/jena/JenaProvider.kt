@@ -261,10 +261,13 @@ class JenaProvider : RdfProvider {
 
     /**
      * Parser sink that converts quads as they are parsed and adds them to [target] (inside its transaction) in
-     * batches of [DATASET_BATCH_SIZE] triples per graph, so a load never buffers a copy of the whole dataset.
+     * batches of up to [DATASET_BATCH_SIZE] triples per graph, so a load never buffers a copy of the whole dataset.
+     * At most [DATASET_BUFFER_LIMIT] triples are buffered across all graphs: input spread over many small graphs
+     * (e.g. N-Quads with one graph per statement) flushes every buffer when that limit is reached.
      */
     private class BatchingDatasetSink(private val target: RdfRepository) : org.apache.jena.riot.system.StreamRDFBase() {
         private val pending = LinkedHashMap<String?, MutableList<RdfTriple>>()
+        private var buffered = 0
 
         override fun triple(triple: org.apache.jena.graph.Triple) = add(null, triple)
 
@@ -273,13 +276,16 @@ class JenaProvider : RdfProvider {
             add(if (quad.isDefaultGraph) null else quad.graph.uri, quad.asTriple())
 
         private fun add(graph: String?, triple: org.apache.jena.graph.Triple) {
-            val batch = pending.getOrPut(graph) { ArrayList(DATASET_BATCH_SIZE) }
+            val batch = pending.getOrPut(graph) { ArrayList() }
             batch.add(JenaTerms.fromJenaTriple(triple))
+            buffered++
             if (batch.size >= DATASET_BATCH_SIZE) flush(graph)
+            if (buffered >= DATASET_BUFFER_LIMIT) flushAll()
         }
 
         private fun flush(graph: String?) {
             val batch = pending.remove(graph) ?: return
+            buffered -= batch.size
             if (graph == null) target.editDefaultGraph().addTriples(batch) else target.editGraph(Iri(graph)).addTriples(batch)
         }
 
@@ -295,6 +301,9 @@ class JenaProvider : RdfProvider {
 
         /** Triples per graph added to a foreign repository at a time by [parseDataset]. */
         const val DATASET_BATCH_SIZE = 1_000
+
+        /** Triples buffered across all graphs by [parseDataset] before every buffer is flushed. */
+        const val DATASET_BUFFER_LIMIT = 10_000
 
         /** Closes triple streams that were abandoned without `close()`. */
         val STREAM_CLEANER: java.lang.ref.Cleaner = java.lang.ref.Cleaner.create()

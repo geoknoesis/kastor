@@ -106,4 +106,22 @@ class JenaDatasetLoadTest {
             }
         }
     }
+
+    @Test
+    fun `N-Quads with many small graphs is flushed before the whole input is buffered`() {
+        val graphs = 50_000
+        val bytes = buildString {
+            for (i in 0 until graphs) appendLine("<http://example.org/s$i> <http://example.org/p> \"$i\" <http://example.org/g$i> .")
+        }.toByteArray()
+        Rdf.memory().use { memory ->
+            val recording = RecordingRepository(memory)
+            val input = CountingInputStream(ByteArrayInputStream(bytes))
+            recording.input = input
+            JenaProvider().parseDataset(recording, input, "N-QUADS")
+            assertEquals(graphs, recording.batches.sum())
+            assertEquals(graphs, recording.listGraphs().size)
+            val first = recording.bytesReadAtBatch.first()
+            assertTrue(first < bytes.size / 2, "buffers must be flushed while parsing: first flush after $first of ${bytes.size} bytes")
+        }
+    }
 }
