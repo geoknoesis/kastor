@@ -326,4 +326,75 @@ class ThreeValuedRecursionTest {
         // Before (separate first pass, dependency predictor and re-evaluation, plus the report pass): 11 per node.
         assertTrue(validator.shapeEvaluations <= 4L * n, "shape evaluations: ${validator.shapeEvaluations}")
     }
+
+    /**
+     * A two-way chain `n0 .. n(k-1)` in one component with negative dependencies: `S(x)` holds when no `ex:next` value
+     * conforms to `S` (sh:not), and every `ex:prev` value satisfies `sh:or ( ex:Any ex:S )` (a positive back edge that
+     * is always true). Only the last node is settled first, then each predecessor in turn: answers alternate.
+     */
+    private fun negativeChainEvaluations(k: Int): Long {
+        val data = Rdf.graph {
+            for (i in 0 until k) {
+                ex("n$i") - RDF.type - ex("Link")
+                if (i + 1 < k) {
+                    ex("n$i") - ex("next") - ex("n${i + 1}")
+                    ex("n${i + 1}") - ex("prev") - ex("n$i")
+                }
+            }
+        }
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetClass ex:Link ;
+              sh:property [ sh:path ex:next ; sh:not ex:S ] ;
+              sh:property [ sh:path ex:prev ; sh:or ( ex:Any ex:S ) ] .
+            ex:Any sh:property [ sh:path ex:none ; sh:maxCount 0 ] .
+        """
+        val validator = NativeShaclValidator(ValidationConfig(maxViolations = 2 * k))
+        val report = validator.validate(data, g(shapes))
+        val expected = (0 until k).filter { (k - 1 - it) % 2 == 1 }.map { ex("n$it") }.toSet()
+        assertTrue(report.violations.none { it.isUndefinedRecursion }, report.violations.take(3).toString())
+        assertTrue(report.violations.all { it.constraint.constraintType == ConstraintType.NOT }, report.violations.take(3).toString())
+        assertEquals(expected, report.violations.map { it.focusNode }.toSet())
+        assertEquals(expected.size, report.violations.size)
+        return validator.shapeEvaluations
+    }
+
+    @Test fun `refining a negative component re-evaluates only questions whose dependencies were settled`() {
+        val small = negativeChainEvaluations(200)
+        val large = negativeChainEvaluations(400)
+        // Before: every refinement round re-evaluated every remaining question and settled one, so doubling the
+        // chain quadrupled the evaluations (quadratic). Incremental refinement grows linearly.
+        assertTrue(large < 2.5 * small, "evaluations: n=200 -> $small, n=400 -> $large")
+        assertTrue(large <= 20L * 400, "evaluations: n=400 -> $large")
+    }
+
+    @Test fun `deep monotone recursion is solved without stack overflow`() {
+        val n = 100_000
+        val shapes = """
+            ex:T sh:targetNode ex:p0 ; sh:node ex:P .
+            ex:P sh:property [ sh:path ex:knows ; sh:minCount 1 ; sh:or ( ex:Named ex:P ) ] .
+            $named
+        """
+        fun ring(tail: Boolean) = Rdf.graph {
+            for (i in 0 until n) ex("p$i") - ex("knows") - ex("p${(i + 1) % n}")
+            if (tail) ex("p${n - 1}") - ex("knows") - ex("dead")
+        }
+        val started = System.nanoTime()
+        // An unnamed ring of 100k questions in one component conforms (greatest fixpoint).
+        assertTrue(validate(ring(tail = false), shapes).isValid)
+        // One node also knows a node that knows nobody: the failure propagates around the whole ring.
+        val failing = validate(ring(tail = true), shapes)
+        val violation = failing.violations.single()
+        assertEquals(ex("p0"), violation.focusNode)
+        assertFalse(violation.isUndefinedRecursion, violation.toString())
+        val seconds = (System.nanoTime() - started) / 1e9
+        assertTrue(seconds < 20, "deep recursion took ${seconds}s")
+    }
+
+    @Test fun `deep negative chain is refined in near-linear time`() {
+        val started = System.nanoTime()
+        val evaluations = negativeChainEvaluations(20_000)
+        val seconds = (System.nanoTime() - started) / 1e9
+        assertTrue(evaluations <= 20L * 20_000, "evaluations: $evaluations")
+        assertTrue(seconds < 20, "negative chain took ${seconds}s")
+    }
 }

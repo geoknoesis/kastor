@@ -224,6 +224,10 @@ internal class NativeShaclValidator(
         var inGroup = false
         /** While a group with negative dependencies is refined, reads of its members answer undefined. */
         var readUndefined = false
+        /** [RecursionSolver.epoch] at which the question was settled (meaningful once [resolved]). */
+        var settledAt = 0L
+        /** [RecursionSolver.epoch] of the last refinement evaluation that answered undefined; -1 before the first. */
+        var refinedAt = -1L
         /**
          * Reads of registered but unsettled questions that the recording of this question missed. They are kept across
          * solver restarts and added to the recorded dependencies, so the next dependency graph orders them correctly.
@@ -242,6 +246,16 @@ internal class NativeShaclValidator(
         var discovered = 0
         /** Question whose evaluation is under way in step 2 (receives the dependencies its recording missed). */
         var evaluating: Atom? = null
+        /** Advanced each time a question is settled, so refinement re-evaluates only questions whose inputs changed. */
+        var epoch = 0L
+
+        fun settle(atom: Atom, value: Conformance) {
+            atom.value = value
+            atom.resolved = true
+            atom.inGroup = false
+            atom.readUndefined = false
+            atom.settledAt = ++epoch
+        }
     }
 
     /** Evaluates a CharSequence for regex matching while consulting the deadline every 1024 character reads. */
@@ -629,6 +643,7 @@ internal class NativeShaclValidator(
                     atom.resolved = false
                     atom.inGroup = false
                     atom.readUndefined = false
+                    atom.refinedAt = -1L
                     atom.dependencies = emptyList()
                 }
                 toRecord = solver.atoms.keys.toList()
@@ -663,8 +678,7 @@ internal class NativeShaclValidator(
             reads.addAll(atom.missedReads)
             if (reads.isEmpty() || (result == Conformance.FAILS && reads.none { it.negative })) {
                 // No recursive read, or failing although every (positive) read conformed: decided by monotonicity.
-                atom.value = result
-                atom.resolved = true
+                solver.settle(atom, result)
                 continue
             }
             atom.dependencies = reads
@@ -695,29 +709,68 @@ internal class NativeShaclValidator(
                 if (solver.restart) return
                 continue
             }
-            // Settle the questions whose answer does not depend on the group's answers, then split the rest again.
-            atoms.forEach { it.inGroup = true; it.readUndefined = true }
-            val decided = ArrayList<Atom>()
-            for (atom in atoms) {
-                val result = evaluateAtom(solver, atom, ctx, evaluationState)
+            if (!refine(solver, members, memberSet, atoms, ctx, evaluationState)) {
                 if (solver.restart) return
-                if (result != Conformance.UNDEFINED) {
-                    atom.value = result
-                    decided.add(atom)
-                }
-            }
-            atoms.forEach { it.inGroup = false; it.readUndefined = false }
-            if (decided.isEmpty()) {
                 // Every remaining question lies on a cycle through a negative dependency.
-                atoms.forEach { it.value = Conformance.UNDEFINED; it.resolved = true }
+                atoms.forEach { solver.settle(it, Conformance.UNDEFINED) }
                 continue
             }
-            decided.forEach { it.resolved = true }
             val rest = members.filter { !solver.atoms.getValue(it).resolved }
             val restSet = rest.toHashSet()
             val split = stronglyConnectedComponents(rest, ctx.budget) { successors(it, restSet) }
             for (group in split.asReversed()) work.addFirst(group)
         }
+    }
+
+    /**
+     * Settles the questions of a group with negative dependencies whose answer does not depend on the group's
+     * unsettled answers (every read of an unsettled member answers undefined; by Kleene monotonicity a definite answer
+     * stays valid whatever those members turn out to be). Incremental: a question is evaluated again only when one of
+     * its recorded dependencies was settled to a definite answer since its last evaluation, so a group costs its
+     * members plus its dependency edges rather than one pass over every member per settled question.
+     * Returns whether any question was settled (false also on a solver restart).
+     */
+    private fun refine(
+        solver: RecursionSolver,
+        members: List<AtomKey>,
+        memberSet: Set<AtomKey>,
+        atoms: List<Atom>,
+        ctx: ValidationContext,
+        state: DepthState,
+    ): Boolean {
+        fun changedSinceRefined(atom: Atom): Boolean =
+            atom.refinedAt < 0 || atom.dependencies.any { d ->
+                // A dependency settled to undefined changes nothing: it was read as undefined while unsettled.
+                solver.atoms.getValue(d.key).let { it.resolved && it.value != Conformance.UNDEFINED && it.settledAt > atom.refinedAt }
+            }
+        val dependents = HashMap<AtomKey, MutableList<AtomKey>>()
+        for ((index, atom) in atoms.withIndex()) {
+            atom.inGroup = true
+            atom.readUndefined = true
+            for (d in atom.dependencies) if (d.key in memberSet) dependents.getOrPut(d.key) { ArrayList() }.add(members[index])
+        }
+        val work = ArrayDeque<AtomKey>()
+        val queued = HashSet<AtomKey>()
+        for ((index, atom) in atoms.withIndex()) if (changedSinceRefined(atom) && queued.add(members[index])) work.add(members[index])
+        var settled = false
+        while (work.isNotEmpty()) {
+            ctx.checkDeadline()
+            val key = work.removeFirst()
+            queued.remove(key)
+            val atom = solver.atoms.getValue(key)
+            if (atom.resolved) continue
+            val result = evaluateAtom(solver, atom, ctx, state)
+            if (solver.restart) return false
+            atom.refinedAt = solver.epoch
+            if (result == Conformance.UNDEFINED) continue
+            solver.settle(atom, result)
+            settled = true
+            dependents[key]?.forEach { reader ->
+                if (!solver.atoms.getValue(reader).resolved && queued.add(reader)) work.add(reader)
+            }
+        }
+        for (atom in atoms) if (!atom.resolved) { atom.inGroup = false; atom.readUndefined = false }
+        return settled
     }
 
     /** Evaluates a solver question in step 2, attributing reads the recording missed to it. */
@@ -768,7 +821,7 @@ internal class NativeShaclValidator(
                 lowered(key)
             }
         }
-        for (key in members) solver.atoms.getValue(key).let { it.inGroup = false; it.resolved = true }
+        for (key in members) solver.atoms.getValue(key).let { solver.settle(it, it.value) }
     }
 
     // --- three-valued outcomes -----------------------------------------------------------------------------------------
