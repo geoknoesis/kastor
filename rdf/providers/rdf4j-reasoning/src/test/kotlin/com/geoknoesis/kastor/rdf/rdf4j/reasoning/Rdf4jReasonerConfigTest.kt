@@ -101,6 +101,73 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
+    fun `an uninterruptible inferencer commit is abandoned at the deadline and abandoned work is capped`() {
+        val release = java.util.concurrent.CountDownLatch(1)
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        // Emulates the inferencer's commit(), which computes the closure and ignores interrupts until released.
+        val stuckCommit: (org.eclipse.rdf4j.repository.RepositoryConnection) -> Unit = { connection ->
+            started.incrementAndGet()
+            while (true) {
+                try {
+                    if (release.await(10, java.util.concurrent.TimeUnit.SECONDS)) break
+                } catch (_: InterruptedException) {
+                    // uninterruptible, like SchemaCachingRDFSInferencer's commit
+                }
+            }
+            connection.commit()
+        }
+        val cap = 2
+        val permits = java.util.concurrent.Semaphore(cap)
+        val reasoner = Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(200)), System::nanoTime, stuckCommit, permits)
+        fun liveWorkers() = Thread.getAllStackTraces().keys.count { it.name == "kastor-rdf4j-inference" && it.isAlive }
+        val graph = chain(3, 3)
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(30)) {
+                repeat(cap) {
+                    val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
+                    assertTrue(error.message!!.contains("timed out"), error.message)
+                }
+                repeat(5) {
+                    val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
+                    assertTrue(error.message!!.contains("too many RDFS inferences"), error.message)
+                    assertTrue(liveWorkers() <= cap, "abandoned inferences must not pile up: ${liveWorkers()}")
+                }
+            }
+            assertEquals(cap, started.get(), "rejected calls must not start more inferences")
+        } finally {
+            release.countDown()
+        }
+        assertTimeoutPreemptively(Duration.ofSeconds(20)) {
+            while (permits.availablePermits() < cap || liveWorkers() > 0) Thread.onSpinWait()
+        }
+        val inferred = Rdf4jReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.commit() }, permits).getInferredTriples(graph)
+        assertTrue(RdfTriple(iri("i0"), type, iri("C3")) in inferred, "permits are released")
+    }
+
+    @Test
+    fun `waiting for the inferencer commit uses the injected clock`() {
+        val now = java.util.concurrent.atomic.AtomicLong()
+        // The injected clock is already past the deadline once the commit starts: the caller must not wait for it.
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val blockingCommit: (org.eclipse.rdf4j.repository.RepositoryConnection) -> Unit = {
+            started.countDown()
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            it.commit()
+        }
+        val clock = { if (started.count == 0L) now.get() + Duration.ofHours(1).toNanos() else now.get() }
+        val reasoner = Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofHours(1)), clock, blockingCommit, java.util.concurrent.Semaphore(1))
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(5)) {
+                val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(chain(3, 3)) }
+                assertTrue(error.message!!.contains("timed out"), error.message)
+            }
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
     fun `OWL Micro is rejected with a clear error`() {
         val provider = Rdf4jReasonerProvider()
         assertFalse(provider.isSupported(ReasonerType.OWL_MICRO))

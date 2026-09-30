@@ -12,6 +12,7 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil
 import org.eclipse.rdf4j.model.impl.LinkedHashModel
 import org.eclipse.rdf4j.model.vocabulary.RDF
 import org.eclipse.rdf4j.model.vocabulary.RDFS
+import org.eclipse.rdf4j.repository.RepositoryConnection
 import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer
 import org.eclipse.rdf4j.sail.memory.MemoryStore
@@ -68,9 +69,13 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  * - [ReasonerConfig.enabledRules]: the inferencer always applies the complete RDFS rule set and cannot select
  *   rules, so a configuration that does not enable all four RDFS rule groups is rejected (use the Jena or memory
  *   reasoner for a subset). Non-RDFS rules in the set are ignored, as by every RDFS reasoner.
- * - [ReasonerConfig.timeout] is a wall-clock budget checked before and after the inferencer runs and for every
- *   statement read from the closure. The inferencer's own commit (which computes the closure) cannot be interrupted,
- *   so the timeout only takes effect once it returns; a timed-out call fails with [IllegalStateException].
+ * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. The inferencer computes the closure inside
+ *   its `commit()`, which cannot be interrupted, so the load and commit run on a daemon worker thread that the caller
+ *   waits for only until the deadline; an inference that misses it is abandoned, finishes in the background and shuts
+ *   its store down itself. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
+ *   one before its deadline fails with a clear "too many RDFS inferences in progress" error instead of piling up
+ *   background work (the same pattern as the Jena and HermiT reasoners). After the commit the budget is checked for
+ *   every statement read from the closure. A timed-out call fails with [IllegalStateException].
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
  *   It is checked incrementally while the closure is read back from the inferencer, so an oversized closure fails
  *   before it is copied. The closure computed inside the inferencer's commit cannot be bounded by count.
@@ -85,9 +90,15 @@ class Rdf4jReasoner internal constructor(
     private val config: ReasonerConfig,
     /** Monotonic clock in nanoseconds; replaceable in tests. */
     private val clock: () -> Long,
+    /** Commits the loaded data, which makes the inferencer compute the closure; replaceable in tests. */
+    private val commit: (RepositoryConnection) -> Unit,
+    /** Limits concurrently running (including abandoned) inferences; replaceable in tests. */
+    private val inferences: java.util.concurrent.Semaphore,
 ) : RdfReasoner {
 
     constructor(config: ReasonerConfig) : this(config, System::nanoTime)
+
+    internal constructor(config: ReasonerConfig, clock: () -> Long) : this(config, clock, { it.commit() }, INFERENCES)
 
     init {
         require(config.reasonerType == ReasonerType.RDFS) {
@@ -106,10 +117,14 @@ class Rdf4jReasoner internal constructor(
     /** Wall-clock budget of one call; [check] fails with [IllegalStateException] once it is exhausted. */
     private class Budget(timeout: java.time.Duration, private val clock: () -> Long) {
         private val deadline = clock() + timeout.toNanos()
+        fun remainingNanos(): Long = deadline - clock()
         fun check() {
-            check(clock() - deadline < 0 && !Thread.currentThread().isInterrupted) { "RDF4J reasoning timed out or was cancelled" }
+            check(remainingNanos() > 0 && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
         }
     }
+
+    /** Thrown when an inference is abandoned at the deadline; the worker then owns (and shuts down) the repository. */
+    private class InferenceAbandoned : IllegalStateException(TIMEOUT_MESSAGE)
 
     override fun reason(graph: RdfGraph): ReasoningResult {
         val startTime = System.currentTimeMillis()
@@ -204,12 +219,16 @@ class Rdf4jReasoner internal constructor(
         budget.check()
         val repository = SailRepository(SchemaCachingRDFSInferencer(MemoryStore()))
         repository.init()
+        var ownsRepository = true
         try {
+            try {
+                commitWithinDeadline(repository, model, budget)
+            } catch (abandoned: InferenceAbandoned) {
+                ownsRepository = false // the inference worker shuts the repository down when it finishes
+                throw IllegalStateException(TIMEOUT_MESSAGE, abandoned)
+            }
+            budget.check()
             repository.connection.use { connection ->
-                connection.begin()
-                connection.add(model)
-                connection.commit()
-                budget.check()
                 val closure = LinkedHashModel()
                 var inferred = 0L
                 connection.getStatements(null, null, null, true).use { statements ->
@@ -227,8 +246,77 @@ class Rdf4jReasoner internal constructor(
                 return closure
             }
         } finally {
-            repository.shutDown()
+            if (ownsRepository) repository.shutDown()
         }
+    }
+
+    /**
+     * Loads [model] and commits it on a daemon worker (the inferencer computes the closure inside `commit()`, which
+     * cannot be interrupted), waiting at most until the budget's deadline. On timeout the inference is abandoned: it
+     * keeps its [inferences] permit until it finishes and then shuts [repository] down itself.
+     */
+    private fun commitWithinDeadline(repository: SailRepository, model: Model, budget: Budget) {
+        val acquired = try {
+            inferences.tryAcquire(budget.remainingNanos().coerceAtLeast(0), java.util.concurrent.TimeUnit.NANOSECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IllegalStateException(TIMEOUT_MESSAGE, e)
+        }
+        check(acquired) {
+            "RDF4J reasoning timed out: too many RDFS inferences in progress (at most $MAX_IN_FLIGHT_INFERENCES, " +
+                "including abandoned ones that are still finishing); retry later or raise ReasonerConfig.timeout"
+        }
+        val state = java.util.concurrent.atomic.AtomicInteger(RUNNING)
+        val outcome = java.util.concurrent.CompletableFuture<Unit>()
+        val worker = Thread({
+            try {
+                repository.connection.use { connection ->
+                    connection.begin()
+                    connection.add(model)
+                    commit(connection)
+                }
+                outcome.complete(Unit)
+            } catch (t: Throwable) {
+                outcome.completeExceptionally(t)
+            } finally {
+                inferences.release()
+                if (!state.compareAndSet(RUNNING, FINISHED)) {
+                    // Abandoned by a timed-out caller: this worker owns the repository now.
+                    try { repository.shutDown() } catch (_: Exception) { }
+                }
+            }
+        }, INFERENCE_THREAD)
+        worker.isDaemon = true
+        worker.start()
+        try {
+            // Waits in slices so that the deadline follows the (injectable) budget clock.
+            while (true) {
+                val remaining = budget.remainingNanos()
+                if (remaining <= 0) throw java.util.concurrent.TimeoutException()
+                try {
+                    outcome.get(minOf(remaining, WAIT_SLICE_NANOS), java.util.concurrent.TimeUnit.NANOSECONDS)
+                    return
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    // re-check the budget
+                }
+            }
+        } catch (e: java.util.concurrent.TimeoutException) {
+            abandonOrFail(state, cause = e)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            abandonOrFail(state, cause = e)
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw e.cause ?: e
+        }
+    }
+
+    /**
+     * Hands the repository to the still-running worker ([InferenceAbandoned]). If the worker finished in the meantime
+     * it did not see the abandonment, so the caller keeps ownership and simply reports the timeout.
+     */
+    private fun abandonOrFail(state: java.util.concurrent.atomic.AtomicInteger, cause: Exception): Nothing {
+        if (state.compareAndSet(RUNNING, ABANDONED)) throw InferenceAbandoned().also { it.initCause(cause) }
+        throw IllegalStateException(TIMEOUT_MESSAGE, cause)
     }
 
     private fun checkConsistency(model: Model): ConsistencyResult {
@@ -269,6 +357,24 @@ class Rdf4jReasoner internal constructor(
         LinkedHashModel().also { model -> graph.getTriples().forEach { model.add(rdf4jStatementOf(it)) } }
 
     private companion object {
+        const val TIMEOUT_MESSAGE = "RDF4J reasoning timed out or was cancelled"
+
+        /** Name of the daemon threads that run the inferencer's (uninterruptible) commit. */
+        const val INFERENCE_THREAD = "kastor-rdf4j-inference"
+
+        /** Upper bound on inferences running at once, abandoned ones included. */
+        val MAX_IN_FLIGHT_INFERENCES: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
+
+        /** Shared by every [Rdf4jReasoner] of this class loader. */
+        val INFERENCES = java.util.concurrent.Semaphore(MAX_IN_FLIGHT_INFERENCES)
+
+        /** Longest single wait for the worker before the budget is re-checked. */
+        val WAIT_SLICE_NANOS: Long = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(20)
+
+        const val RUNNING = 0
+        const val FINISHED = 1
+        const val ABANDONED = 2
+
         val RDFS_RULES = setOf(ReasoningRule.RDFS_SUBCLASS, ReasoningRule.RDFS_SUBPROPERTY, ReasoningRule.RDFS_DOMAIN, ReasoningRule.RDFS_RANGE)
 
         /** The statements the inferencer produces for an empty store: the RDF/RDFS axioms. */
