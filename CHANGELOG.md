@@ -14,6 +14,43 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (round five)
+
+#### Breaking changes
+
+- **`rdf-core` (URL loading):** redirects are followed by Kastor, not the JDK: at most 10 hops sharing one deadline, same scheme or `http`→`https` only (previously the JDK refused `http`→`https`). The deadline now also covers DNS lookup, connect and TLS. Timeouts caused by the deadline raise `RdfLoadTimeoutException`.
+- **Initial bindings:** Jena now rejects the same queries RDF4J does (`IllegalArgumentException`): a bound variable assigned by `BIND`, `VALUES` or `AS`, one local to a sub-select that does not project it, and non-SELECT queries.
+- **Reasoners:** Jena and RDF4J no longer report inferred triples made only of `rdf:`, `rdfs:`, `owl:` and `xsd:` terms (such as `xsd:integer a rdfs:Class`) unless `includeAxiomaticTriples = true`.
+- **`rdf-shacl`:** in `sh:pattern`, `$` follows XPath: it matches only at the end of the value, or before a line feed with the `m` flag (so `"123\n"` no longer matches `^\d+$`).
+- **`kastor-gen`:**
+  - A different factory class registered for the same type from another class loader throws `IllegalStateException`.
+  - `@Rdf` members typed `Set`, `Collection`, `Map`, arrays or `Sequence` fail generation with a KSP error.
+  - `sh:minLength`/`sh:maxLength` count code points, not UTF-16 units, and `$` in `sh:pattern` follows XPath.
+  - Nested `@Rdf` interfaces generate `Outer_InnerWrapper`.
+- **`onto-quality`:**
+  - The published OQuaRE formulas are emitted as `kmetrics:numberOfChildrenOquare`, `couplingBetweenObjectsOquare` and `tanglednessOquare`. The 0.2.x IRIs are deprecated and no longer emitted, so an IRI never silently changes meaning.
+  - `--explain-dry-run` without `--explain` is a usage error (exit 4).
+  - Finding refs and JSON `focusNode` for blank nodes are structural keys, stable across parses.
+- **`rdf-cli`:** exit codes are 0 ok, 1 usage or input error, 2 diff mismatch, 3 runtime error. Extra arguments are rejected.
+
+#### Added
+
+- CycloneDX SBOMs (`-cyclonedx.json`, `-cyclonedx.xml`) are published for every module, and releases carry a build provenance attestation.
+- `scripts/configure-github-release.sh` also turns on vulnerability alerts, Dependabot security updates, secret scanning with push protection and private vulnerability reporting (opt out with `--no-security-features`).
+- The POM lists `developerConnection`, issue management and the developer URL.
+- A 0.x compatibility policy in `docs/reference/release-contract.md`, linked from this file's header.
+- Jena inference views have a configurable idle timeout (`viewIdleTimeoutMillis`, default 1 s).
+
+#### Fixed
+
+- `rdf-core`: URL loading uses at most 32 daemon helper threads and always disconnects; the eager base-IRI fallback no longer keeps a test-only counter.
+- `rdf-shacl`: refinement of recursive components with negative dependencies is incremental (near-linear instead of quadratic).
+- `rdf-jena` / `rdf-rdf4j`: initial bindings for blank nodes, directional literals and triple terms follow the shared rewrite on RDF4J; reasoner permits are released only after an abandoned worker has cleaned up; closing a Jena repository ends its inference-view workers.
+- `kastor-gen`: every `@Rdf` wrapper reader follows `MaterializationPolicy`; named-graph views of memory repositories carry modification stamps, so RDF4J validation skips digests for them.
+- `onto-quality`: `--debug` prints the stack trace of a failed explanation; LLM prerequisites are checked before any model is loaded; `--explain-dry-run` needs neither the opt-in nor an API key.
+- `rdf-cli`: runtime errors print one line, and Jena warnings reach stderr.
+- README samples at the start of a section import everything they use, and CI checks them.
+
 ### Fixed (round four)
 
 #### Breaking changes
