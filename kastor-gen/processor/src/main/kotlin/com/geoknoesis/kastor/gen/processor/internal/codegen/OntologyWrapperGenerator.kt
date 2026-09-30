@@ -308,10 +308,10 @@ public class OntologyWrapperGenerator(
                     check(CodeBlock.of("str == null || !%N.containsMatchIn(str)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("value"))
                 }
                 property.minLength?.let {
-                    check(CodeBlock.of("str == null || str.length < %L", it), "minLength", pred, "minLength $it violated for $pred", CodeBlock.of("value"))
+                    check(CodeBlock.of("str == null || str.codePointCount(0, str.length) < %L", it), "minLength", pred, "minLength $it violated for $pred", CodeBlock.of("value"))
                 }
                 property.maxLength?.let {
-                    check(CodeBlock.of("str == null || str.length > %L", it), "maxLength", pred, "maxLength $it violated for $pred", CodeBlock.of("value"))
+                    check(CodeBlock.of("str == null || str.codePointCount(0, str.length) > %L", it), "maxLength", pred, "maxLength $it violated for $pred", CodeBlock.of("value"))
                 }
                 functionBuilder.endControlFlow()
             }

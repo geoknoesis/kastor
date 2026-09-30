@@ -65,4 +65,87 @@ class KspWrapperCompilationTest {
         val output = result.classLoader().loadClass("gen.ksp.ProbeKt").getMethod("probe").invoke(null)
         assertEquals("T|missing|missing|L", output)
     }
+
+    private val kindIface = """
+        package gen.kind
+
+        interface Friend {
+            val name: String
+        }
+
+        interface Doc {
+            var label: String
+            val title: String
+            val tags: List<String>
+            var best: Friend?
+            val friend: Friend?
+            val friends: List<Friend>
+        }
+    """.trimIndent()
+
+    private val kindProbe = """
+        package gen.kind
+
+        import com.geoknoesis.kastor.gen.runtime.*
+        import com.geoknoesis.kastor.rdf.*
+        import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+
+        private fun read(block: () -> Any?): String =
+            try { block().toString() } catch (e: MaterializationException) { "rejected" }
+
+        fun probe(): String {
+            fun p(local: String) = Iri("https://example.test/" + local)
+            val g = MemoryGraph()
+            val n = Iri("urn:doc")
+            // Every member holds a value of the wrong term kind.
+            g.addTriple(RdfTriple(n, p("label"), Iri("urn:not-a-literal")))
+            g.addTriple(RdfTriple(n, p("title"), Iri("urn:not-a-literal")))
+            g.addTriple(RdfTriple(n, p("tags"), Iri("urn:not-a-literal")))
+            g.addTriple(RdfTriple(n, p("best"), Literal("not an object")))
+            g.addTriple(RdfTriple(n, p("friend"), Literal("not an object")))
+            g.addTriple(RdfTriple(n, p("friends"), Literal("not an object")))
+            val d = OntoMapper.materialize(RdfRef(n, g), Doc::class.java)
+            val strict = listOf(read { d.label }, read { d.title }, read { d.tags }, read { d.best }, read { d.friend }, read { d.friends })
+            val lenient = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+                val s = OntoMapper.materialize(RdfRef(n, g), Doc::class.java)
+                listOf(read { s.label }, read { s.title }, read { s.tags }, read { s.best }, read { s.friend }, read { s.friends })
+            }
+            return strict.joinToString(",") + "|" + lenient.joinToString(",")
+        }
+    """.trimIndent()
+
+    @Test
+    fun `values of the wrong term kind follow the materialization policy in every reader`() {
+        fun p(name: String, type: String, kind: PropertyType, mutable: Boolean = false, nullable: Boolean = false) =
+            PropertyModel(name, type, "https://example.test/$name", kind, mutable = mutable, nullable = nullable)
+        val friend = ClassModel(
+            qualifiedName = "gen.kind.Friend", simpleName = "Friend", packageName = "gen.kind",
+            classIri = "https://example.test/Friend",
+            properties = listOf(p("name", "String", PropertyType.LITERAL)),
+        )
+        val doc = ClassModel(
+            qualifiedName = "gen.kind.Doc", simpleName = "Doc", packageName = "gen.kind",
+            classIri = "https://example.test/Doc",
+            properties = listOf(
+                p("label", "String", PropertyType.LITERAL, mutable = true),
+                p("title", "String", PropertyType.LITERAL),
+                p("tags", "List<String>", PropertyType.LITERAL),
+                p("best", "Friend", PropertyType.OBJECT, mutable = true, nullable = true),
+                p("friend", "Friend", PropertyType.OBJECT, nullable = true),
+                p("friends", "List<Friend>", PropertyType.OBJECT_LIST),
+            ),
+        )
+        val generator = WrapperGenerator(RecordingLogger())
+        val result = KotlinSourceCompiler.compile(
+            listOf(generator.generateWrapper(friend), generator.generateWrapper(doc)),
+            mapOf("gen/kind/Doc.kt" to kindIface, "gen/kind/Probe.kt" to kindProbe),
+        )
+        result.assertOk()
+        val output = result.classLoader().loadClass("gen.kind.ProbeKt").getMethod("probe").invoke(null)
+        // Required single members still report the missing value once the wrong-kind value is skipped.
+        assertEquals(
+            "rejected,rejected,rejected,rejected,rejected,rejected|rejected,rejected,[],null,null,[]",
+            output,
+        )
+    }
 }

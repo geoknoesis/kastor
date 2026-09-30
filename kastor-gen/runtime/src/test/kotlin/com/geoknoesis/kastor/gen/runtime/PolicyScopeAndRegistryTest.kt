@@ -31,6 +31,11 @@ class ReloadableTestFactory : (RdfHandle) -> ReloadableType {
   override fun invoke(handle: RdfHandle): ReloadableType = ReloadableImpl(javaClass.classLoader)
 }
 
+/** An unrelated factory for the same type, e.g. a second generated module claiming [ReloadableType]. */
+class ConflictingTestFactory : (RdfHandle) -> ReloadableType {
+  override fun invoke(handle: RdfHandle): ReloadableType = ReloadableImpl(null)
+}
+
 /** Loads [name] itself (child first) and delegates everything else to [parent]. */
 private class ChildFirstLoader(parent: ClassLoader, private val name: String) : ClassLoader(parent) {
   override fun loadClass(className: String, resolve: Boolean): Class<*> {
@@ -168,6 +173,26 @@ class PolicyScopeAndRegistryTest {
 
       val instance = OntoMapper.materialize(RdfRef(Iri("urn:x"), MemoryGraph()), ReloadableType::class.java)
       assertSame(child, instance.factoryLoader, "the factory of the reloaded class loader is used")
+    } finally {
+      OntoMapper.unregister(ReloadableType::class.java)
+    }
+  }
+
+  @Test
+  fun `a different factory class from another class loader is a conflict, not a reload`() {
+    OntoMapper.unregister(ReloadableType::class.java)
+    try {
+      val original = ReloadableTestFactory()
+      OntoMapper.register(ReloadableType::class.java, original)
+
+      val child = ChildFirstLoader(javaClass.classLoader, ConflictingTestFactory::class.java.name)
+      @Suppress("UNCHECKED_CAST")
+      val conflicting = child.loadClass(ConflictingTestFactory::class.java.name).getDeclaredConstructor().newInstance() as (RdfHandle) -> ReloadableType
+      val error = assertFailsWith<IllegalStateException> { OntoMapper.register(ReloadableType::class.java, conflicting) }
+      assertTrue(error.message!!.contains(ConflictingTestFactory::class.java.name), error.message)
+
+      val instance = OntoMapper.materialize(RdfRef(Iri("urn:x"), MemoryGraph()), ReloadableType::class.java)
+      assertSame(javaClass.classLoader, instance.factoryLoader, "the original factory stays registered")
     } finally {
       OntoMapper.unregister(ReloadableType::class.java)
     }

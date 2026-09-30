@@ -47,4 +47,33 @@ class MemoryGraphModificationStampTest {
         assertEquals(0, g.size())
         assertTrue(g.modificationStamp > before)
     }
+
+    @Test
+    fun `named graph views of the memory repository carry a stamp that never repeats a value`() {
+        val repo = MemoryRepository(RdfConfig(providerId = "memory"))
+        val name = Iri("urn:g")
+        val view = repo.getGraph(name) as VersionedRdfGraph
+        val seen = mutableListOf(view.modificationStamp)
+        fun changed(what: String) {
+            val stamp = view.modificationStamp
+            assertTrue(stamp !in seen, "$what must yield a new stamp, got $stamp after $seen")
+            seen += stamp
+        }
+        fun unchanged(what: String) = assertEquals(seen.last(), view.modificationStamp, what)
+
+        repo.editGraph(name).addTriple(t1); changed("add through another view")
+        view.getTriples(); view.size(); unchanged("reads")
+        repo.editGraph(Iri("urn:other")).addTriple(t2); unchanged("a change of another graph")
+        repo.editDefaultGraph().addTriple(t2); unchanged("a change of the default graph")
+        repo.removeGraph(name); changed("removing the graph")
+        repo.createGraph(name); changed("re-creating the graph")
+        assertThrows(IllegalStateException::class.java) {
+            repo.transaction { editGraph(name).addTriple(t2); removeGraph(name); error("rollback") }
+        }
+        assertEquals(0, view.size())
+        changed("a rolled back transaction")
+        repo.editGraph(name).addTriple(t1); changed("add after rollback")
+        repo.clear(); changed("clearing the repository")
+        assertTrue(repo.editGraph(name) is VersionedRdfGraph)
+    }
 }

@@ -56,6 +56,24 @@ class Rdf4jGraphCacheTest {
     }
 
     @Test
+    fun `named graphs of the memory repository are stamped and never digested`() {
+        Rdf4jValidation.fromTurtle(shapes).use { v ->
+            val repo = com.geoknoesis.kastor.rdf.provider.MemoryRepository(com.geoknoesis.kastor.rdf.RdfConfig(providerId = "memory"))
+            val name = ex("people")
+            repo.editGraph(name).addTriples(personGraph("a", "b").getTriples())
+            val g = repo.getGraph(name)
+            repeat(5) { assertEquals(ValidationResult.Ok, v.validate(g, ex("a"))) }
+            assertEquals(0, v.digestCount.get(), "a named graph view has a modification stamp")
+            assertEquals(1, v.loadCount.get())
+
+            repo.editGraph(name).removeTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
+            assertTrue(v.validate(g, ex("b")) is ValidationResult.Violations, "mutation is detected")
+            assertEquals(2, v.loadCount.get())
+            assertEquals(0, v.digestCount.get())
+        }
+    }
+
+    @Test
     fun `graphs without a stamp fall back to the content digest`() {
         Rdf4jValidation.fromTurtle(shapes).use { v ->
             val inner = personGraph("a")

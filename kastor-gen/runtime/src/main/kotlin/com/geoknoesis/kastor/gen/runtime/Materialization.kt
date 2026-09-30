@@ -111,12 +111,17 @@ object OntoMapper {
    * (for example two generated modules claiming one interface); use the `replace = true` overload to replace a
    * factory deliberately (tests, plugins).
    *
-   * **Class reloading.** When the previously registered factory's class was defined by a *different* class loader
-   * than [factory]'s (a hot-reload or plugin framework re-defined the wrapper in a new child class loader while
-   * [type] stays in a shared parent loader), the new factory replaces the old one, logged at debug level. The old
-   * factory is dropped, so its class loader is no longer reachable from the registry.
+   * **Class reloading.** When the previously registered factory is the *same* factory class re-defined by a
+   * *different* class loader than [factory]'s (a hot-reload or plugin framework re-defined the wrapper in a new
+   * child class loader while [type] stays in a shared parent loader), the new factory replaces the old one, logged
+   * at debug level. The old factory is dropped, so its class loader is no longer reachable from the registry.
+   * Factory classes are compared by binary name, ignoring the JVM-assigned suffix of lambda classes.
    *
-   * @throws IllegalStateException when a different factory from the same class loader is already registered for [type]
+   * A factory of a *different* class from another class loader (two independently loaded modules generating a
+   * wrapper for one shared interface) is a genuine conflict and fails like any other conflicting registration.
+   *
+   * @throws IllegalStateException when a different factory is already registered for [type], unless it is the same
+   *   factory class reloaded by another class loader
    */
   @JvmStatic
   fun <T : Any> register(type: Class<T>, factory: (RdfHandle) -> T): Unit = register(type, replace = false, factory = factory)
@@ -134,9 +139,11 @@ object OntoMapper {
     while (true) {
       val previous = registry.putIfAbsent(type, factory) ?: return
       if (previous === factory) return
-      check(previous.javaClass.classLoader !== factory.javaClass.classLoader) {
-        "A different factory is already registered for ${type.name}; " +
-          "call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
+      val reloaded = previous.javaClass.classLoader !== factory.javaClass.classLoader &&
+        factoryOrigin(previous.javaClass) == factoryOrigin(factory.javaClass)
+      check(reloaded) {
+        "A different factory (${factory.javaClass.name}) is already registered for ${type.name} " +
+          "(${previous.javaClass.name}); call OntoMapper.register(type, replace = true, factory) to replace it deliberately"
       }
       if (registry.replace(type, previous, factory)) {
         ReplacementLog.logger.debug(
@@ -146,6 +153,16 @@ object OntoMapper {
         return
       }
     }
+  }
+
+  /**
+   * Stable identity of a factory class across class loaders: its binary name without the JVM-assigned lambda
+   * suffix (`Foo$$Lambda/0x…`, `Foo$$Lambda$12/0x…`), so a reloaded lambda compares equal to the original.
+   */
+  private fun factoryOrigin(factoryClass: Class<*>): String {
+    val name = factoryClass.name
+    val lambda = name.indexOf("$\$Lambda")
+    return if (lambda >= 0) name.substring(0, lambda) else name.substringBefore('/')
   }
 
   /**
@@ -276,6 +293,10 @@ object OntoMapper {
   private fun loadWrapperClass(type: Class<*>) {
     // Try the live-wrapper class first (interface + delegate pattern).
     tryLoad("${type.name}$WRAPPER_SUFFIX", type.classLoader)
+    // A nested interface `Outer$Inner` has the top-level wrapper `Outer_InnerWrapper`.
+    if (!registry.containsKey(type) && '$' in type.name) {
+      tryLoad("${type.name.replace('$', '_')}$WRAPPER_SUFFIX", type.classLoader)
+    }
     // If still unregistered, try the data-class factory (eager-projection pattern).
     if (!registry.containsKey(type)) {
       tryLoad("${type.name}$FACTORY_SUFFIX", type.classLoader)

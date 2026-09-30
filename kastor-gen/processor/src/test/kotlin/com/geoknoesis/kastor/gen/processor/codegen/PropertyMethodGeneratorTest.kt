@@ -199,7 +199,7 @@ class PropertyMethodGeneratorTest {
 
         val code = methods[0].toString()
         assertTrue(code.contains("require"))
-        assertTrue(code.contains("length >= 3"))
+        assertTrue(code.contains("codePointCount(0, it.length) } >= 3"), code)
     }
 
     @Test
@@ -217,7 +217,7 @@ class PropertyMethodGeneratorTest {
 
         val code = methods[0].toString()
         assertTrue(code.contains("require"))
-        assertTrue(code.contains("length <= 100"))
+        assertTrue(code.contains("codePointCount(0, it.length) } <= 100"), code)
     }
 
     @Test

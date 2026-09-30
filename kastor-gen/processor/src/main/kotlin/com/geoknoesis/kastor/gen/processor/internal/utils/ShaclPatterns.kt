@@ -18,6 +18,10 @@ import java.util.regex.PatternSyntaxException
  * - character-class subtraction `[base-[excluded]]` becomes `[[base]&&[^[excluded]]]`, with every operand a
  *   self-contained class so a negated base (`[^a-z-[0-9]]` = "not a-z, minus digits") keeps XPath precedence;
  * - Unicode block escapes `\p{IsBlock}` become `\p{InBlock}`;
+ * - the anchor `$` matches only at the very end of the input (`\z`): Java's `$` also matches before a final line
+ *   terminator, so `^\d+$` would accept "123" followed by a newline. With the `m` flag `$` matches before a newline
+ *   or at the end, and `^` at the start or after a newline: only a newline (U+000A) ends a line in XPath, whereas
+ *   Java's line anchors also treat carriage return, U+0085, U+2028 and U+2029 as line terminators;
  * - a literal `&` or `[` inside a class is escaped (they are operators in Java classes);
  * - the `x` flag removes whitespace outside character classes during translation. It is not mapped to Java's
  *   `COMMENTS` mode, which would also treat `#` as a comment start and drop whitespace inside classes.
@@ -35,10 +39,10 @@ internal object ShaclPatterns {
     fun toJava(pattern: String, flags: String?): String {
         val f = flags.orEmpty()
         if ('q' in f) return pattern
-        return Translator(pattern, extended = 'x' in f).translate()
+        return Translator(pattern, extended = 'x' in f, multiline = 'm' in f).translate()
     }
 
-    private class Translator(private val p: String, private val extended: Boolean) {
+    private class Translator(private val p: String, private val extended: Boolean, private val multiline: Boolean) {
         private var i = 0
 
         fun translate(): String {
@@ -48,6 +52,14 @@ internal object ShaclPatterns {
                 when {
                     c == '\\' && i + 1 < p.length -> out.append(escape(inClass = false))
                     c == '[' -> out.append(charClass())
+                    c == '$' -> {
+                        out.append(if (multiline) "(?=\\n|\\z)" else "\\z")
+                        i++
+                    }
+                    c == '^' && multiline -> {
+                        out.append("(?:\\A|(?<=\\n))")
+                        i++
+                    }
                     extended && (c == ' ' || c == '\t' || c == '\n' || c == '\r') -> i++
                     else -> {
                         out.append(c)

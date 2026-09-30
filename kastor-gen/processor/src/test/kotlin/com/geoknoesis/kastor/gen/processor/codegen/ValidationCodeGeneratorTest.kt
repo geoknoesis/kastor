@@ -99,7 +99,7 @@ class ValidationCodeGeneratorTest {
 
         val code = method.toString()
         assertTrue(code.contains("Validate title constraints"))
-        assertTrue(code.contains("value.length < 3"))
+        assertTrue(code.contains("value.codePointCount(0, value.length) < 3"), code)
         assertTrue(code.contains("title must have minLength >= 3"))
     }
 
@@ -125,7 +125,7 @@ class ValidationCodeGeneratorTest {
         val method = generator.generateValidationMethod(classBuilder)
 
         val code = method.toString()
-        assertTrue(code.contains("value.length > 100"))
+        assertTrue(code.contains("value.codePointCount(0, value.length) > 100"), code)
         assertTrue(code.contains("title must have maxLength <= 100"))
     }
 
