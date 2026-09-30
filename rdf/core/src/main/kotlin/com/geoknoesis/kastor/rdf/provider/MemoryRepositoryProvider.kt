@@ -89,6 +89,13 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private val transactionMode = ThreadLocal<Boolean?>()
     /** Undo actions of the active write transaction; only touched while holding the write lock. */
     private var undoLog: MutableList<() -> Unit>? = null
+    /**
+     * Source of the modification stamps of every graph of this repository, so a named graph's stamp never repeats a
+     * value when its backing graph is removed, re-created or restored by a rollback.
+     */
+    private val stamps = java.util.concurrent.atomic.AtomicLong()
+    /** Stamp of each removed named graph while it has no backing graph. Guarded by [lock]. */
+    private val absentStamps = HashMap<Iri, Long>()
 
     // Access is checked before taking a lock: a write attempted while holding the read lock
     // (inside readTransaction) must fail rather than deadlock on lock upgrade.
@@ -101,7 +108,17 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         undoLog?.add(undo)
     }
 
-    private fun newGraph() = MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo)
+    private fun newGraph() = MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo, stamps::incrementAndGet)
+
+    /** Records that [name] lost its backing graph; called while holding the write lock. */
+    private fun markAbsent(name: Iri) { absentStamps[name] = stamps.incrementAndGet() }
+
+    /** Puts [graph] back as [name] (rollback) with a fresh stamp; called while holding the write lock. */
+    private fun restore(name: Iri, graph: MemoryGraph) {
+        graphs[name] = graph
+        absentStamps.remove(name)
+        graph.touch()
+    }
 
     private val default = newGraph()
 
@@ -115,7 +132,8 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         lock.write {
             if (name !in graphs) {
                 graphs[name] = newGraph()
-                recordUndo { lock.write { graphs.remove(name) } }
+                absentStamps.remove(name)
+                recordUndo { lock.write { graphs.remove(name); markAbsent(name) } }
             }
             if (createdGraphs.add(name)) recordUndo { lock.write { createdGraphs.remove(name) } }
         }
@@ -129,11 +147,12 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
             if (graph == null && !wasCreated) return@write false
             recordUndo {
                 lock.write {
-                    if (graph != null) graphs[name] = graph
+                    if (graph != null) restore(name, graph)
                     if (wasCreated) createdGraphs.add(name)
                 }
             }
             val changed = graph?.clear() ?: false
+            markAbsent(name)
             changed || wasCreated
         }
     }
@@ -188,7 +207,8 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
             if (removedCreated.isNotEmpty()) changed = true
             graphs.clear()
             createdGraphs.clear()
-            recordUndo { lock.write { graphs.putAll(removed); createdGraphs.addAll(removedCreated) } }
+            removed.keys.forEach(::markAbsent)
+            recordUndo { lock.write { removed.forEach { (name, graph) -> restore(name, graph) }; createdGraphs.addAll(removedCreated) } }
             changed
         }
     }
@@ -206,16 +226,23 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
 
     override fun getCapabilities(): ProviderCapabilities = MemoryRepositoryProvider().getCapabilities("memory")
 
-    /** Live view of a named graph; resolves the backing graph on every call. */
-    private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph {
+    /**
+     * Live view of a named graph; resolves the backing graph on every call. Its [modificationStamp] is the backing
+     * graph's (stamps are unique across the repository), or the stamp recorded when the graph was removed.
+     */
+    private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph, VersionedRdfGraph {
         private val repository: MemoryRepository get() = this@MemoryRepository
 
         private inline fun <T> reading(block: (MemoryGraph?) -> T): T = lock.read { checkAccess(false); block(graphs[name]) }
 
         private inline fun <T> writing(create: Boolean, block: (MemoryGraph?) -> T): T {
             checkAccess(true)
-            return lock.write { block(if (create) graphs.getOrPut(name) { newGraph() } else graphs[name]) }
+            return lock.write {
+                block(if (create) graphs.getOrPut(name) { absentStamps.remove(name); newGraph() } else graphs[name])
+            }
         }
+
+        override val modificationStamp: Long get() = reading { it?.modificationStamp ?: absentStamps[name] ?: 0L }
 
         override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
             reading { it?.find(subject, predicate, obj) ?: emptyList() }
@@ -247,6 +274,8 @@ class MemoryGraph internal constructor(
     private val lock: ReentrantReadWriteLock,
     private val access: (Boolean) -> Unit,
     private val recordUndo: ((() -> Unit) -> Unit)?,
+    /** Shared stamp source of a repository's graphs; `null` counts this graph's own modifications. */
+    private val nextStamp: (() -> Long)? = null,
 ) : MutableRdfGraph, VersionedRdfGraph {
     constructor() : this(emptyList())
     constructor(initialTriples: Collection<RdfTriple>) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
@@ -256,13 +285,16 @@ class MemoryGraph internal constructor(
     private val predicates = mutableMapOf<Iri, MutableSet<RdfTriple>>()
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
     /** Incremented (under the write lock) by every change of the content, including transaction rollbacks. */
-    @Volatile private var stamp = 0L
+    @Volatile private var stamp = nextStamp?.invoke() ?: 0L
     override val modificationStamp: Long get() = stamp
+
+    /** Moves the stamp to a new value; called while holding the write lock. */
+    internal fun touch() { stamp = nextStamp?.invoke() ?: (stamp + 1) }
     init { if (initialTriples.isNotEmpty()) addTriples(initialTriples) }
 
     private fun addUnlocked(triple: RdfTriple) {
         if (triples.add(triple)) {
-            stamp++
+            touch()
             subjects.getOrPut(triple.subject) { linkedSetOf() }.add(triple)
             predicates.getOrPut(triple.predicate) { linkedSetOf() }.add(triple)
             objects.getOrPut(triple.obj) { linkedSetOf() }.add(triple)
@@ -272,7 +304,7 @@ class MemoryGraph internal constructor(
 
     private fun removeUnlocked(triple: RdfTriple): Boolean {
         if (!triples.remove(triple)) return false
-        stamp++
+        touch()
         fun <K> remove(index: MutableMap<K, MutableSet<RdfTriple>>, key: K) {
             index[key]?.let { it.remove(triple); if (it.isEmpty()) index.remove(key) }
         }
@@ -310,7 +342,7 @@ class MemoryGraph internal constructor(
             if (triples.isEmpty()) return@write false
             val snapshot = triples.toList()
             triples.clear(); subjects.clear(); predicates.clear(); objects.clear()
-            stamp++
+            touch()
             recordUndo?.invoke { addTriples(snapshot) }
             true
         }
