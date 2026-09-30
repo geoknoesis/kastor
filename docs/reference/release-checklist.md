@@ -15,6 +15,7 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 | `release-tags` tag ruleset | **missing** | only admins may push `v*` tags | 3.3 |
 | `main-protection` branch ruleset | **missing** (only the disabled "My ruleset" exists) | PRs and required checks on `main` | 3.3 |
 | Pages source | **legacy** (`build_type: legacy`, branch `main` `/docs`) so every push deploys twice | `pages.yml` as the only deployment | 3.3 |
+| Code security: Dependabot security updates, secret scanning + push protection, private vulnerability reporting | **disabled** (Dependabot vulnerability alerts already enabled; read-only check 2026-09-30) | `SECURITY.md` reporting channel, leaked-secret blocking, dependency fixes | 3.3 |
 | Environment secrets (4) | **not set** | `publish.yml` signing and upload | 3.4 |
 
 ## 1. Land the changes through a pull request
@@ -40,10 +41,10 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 2. Verify in the run:
    - `staged-consumer (ubuntu-latest)` and `staged-consumer (windows-latest)` both pass, then `local-signing` passes.
    - The *Verify executed test counts and skips* step prints the counts above the floors (overall 3,350; RDF corpus 1,700; SHACL module 250 with `Shacl12NativeConformanceTest=150`).
-   - The *Inspect metadata and documentation jars* step prints `Validated metadata and required artifacts for N staged publications`.
+   - The *Inspect metadata and documentation jars* step prints `Validated metadata, required artifacts and SBOMs for N staged publications`.
    - The *Verify plugin configuration cache reuse* step passes (`Reusing configuration cache`).
 3. Download and inspect the artifacts (`gh run download <run-id>`):
-   - `staged-release-ubuntu-latest` / `staged-release-windows-latest`: `release-repository/` holds every expected artifact ID (`rdf-*`, `kastor-gen-*`, `onto-quality*`, `kastor-bom`, the plugin marker), unsigned. **This exact artifact is what `publish.yml` signs and uploads for a tag.**
+   - `staged-release-ubuntu-latest` / `staged-release-windows-latest`: `release-repository/` holds every expected artifact ID (`rdf-*`, `kastor-gen-*`, `onto-quality*`, `kastor-bom`, the plugin marker), unsigned, and each module's `-cyclonedx.json`/`-cyclonedx.xml` SBOM. **This exact artifact is what `publish.yml` signs and uploads for a tag.**
    - `local-signing-evidence`: `signing-verification.json` lists the verified artifacts with `"tampered_artifact_rejected": true`. Only a run on the release commit counts.
 4. Run **Conformance** manually (`gh workflow run conformance.yml --ref main`) and check that the full RDF 1.2 and SHACL 1.2 floors pass.
 
@@ -61,7 +62,8 @@ Run these in this order.
    Check that the plan shows:
    - required checks `build (ubuntu-latest)`, `build (windows-latest)`, `shacl-w3c-suite`, plus `dependency-review` only if the graph is enabled;
    - `bypass: repository admins (RepositoryRole 5, always)`. Without this bypass, maintainers could no longer push directly to `main`. Pass `--no-admin-bypass` only once every change goes through PRs;
-   - `Pages build type: legacy -> workflow`.
+   - `Pages build type: legacy -> workflow`;
+   - the *Code security* block with the current state of each setting (settings already enabled are skipped).
 
    Flags: `--require-dependency-review` forces the check to be required, and `--no-dependency-review` never requires it. `--approvals N` requires N approving reviews (default 0).
 3. **Apply:**
@@ -74,7 +76,8 @@ Run these in this order.
    - the `release` environment with required reviewers and deployments only from `v*` tags;
    - the `release-tags` tag ruleset: only admins may create, update or delete `v*` tags;
    - the `main-protection` branch ruleset: pull requests, no force-push or deletion, the required checks above, admin bypass;
-   - GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build.
+   - GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build;
+   - code security: Dependabot vulnerability alerts (`PUT vulnerability-alerts`), Dependabot security updates (`PUT automated-security-fixes`), secret scanning with push protection (`PATCH` `security_and_analysis`), and private vulnerability reporting (`PUT private-vulnerability-reporting`). Pass `--no-security-features` to leave these untouched. Private repositories must enable the Dependency graph first (step 1).
 4. **Secrets.** Set the four environment secrets. The script prints these commands; values are entered interactively, never as arguments:
 
    ```bash
@@ -88,7 +91,8 @@ Run these in this order.
 5. **Verify:**
    - `gh api repos/geoknoesis/kastor/environments/release`;
    - `gh api repos/geoknoesis/kastor/rulesets`: `main-protection` and `release-tags` are `active`;
-   - `gh api repos/geoknoesis/kastor/pages --jq .build_type` must print `workflow`.
+   - `gh api repos/geoknoesis/kastor/pages --jq .build_type` must print `workflow`;
+   - `gh api repos/geoknoesis/kastor --jq .security_and_analysis` shows `secret_scanning` and `secret_scanning_push_protection` `enabled`, and `gh api repos/geoknoesis/kastor/private-vulnerability-reporting` prints `{"enabled":true}`.
 
    Push to `main` once. Only **Deploy documentation to GitHub Pages** should deploy; the legacy *pages build and deployment* run should no longer appear.
 
@@ -103,6 +107,7 @@ Run these in this order.
    - It refuses to upload while an earlier deployment of the same tag is still live (see below).
    - It does **not** rebuild. It downloads the `staged-release-ubuntu-latest` artifact that readiness staged, tested and consumed in this run, and verifies its checksums and metadata.
    - It signs every file with the release key and verifies each signature, then zips the bundle. The bundle's SHA-256 is written to the job summary.
+   - It records a GitHub build provenance attestation (`actions/attest-build-provenance`) for every jar, POM, Gradle module file, CycloneDX SBOM and the bundle. Check one with `gh attestation verify <file> --repo geoknoesis/kastor`.
    - It uploads the bundle and records the deployment id as the artifact `central-deployment-vX.Y.Z` (kept 90 days).
    - It polls the Central Portal. It fails with the portal's error details if validation fails, and succeeds at `VALIDATED`.
 5. Release the validated deployment at <https://central.sonatype.com/publishing/deployments>.

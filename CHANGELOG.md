@@ -3,7 +3,9 @@
 All notable changes to Kastor are documented in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to semantic versioning where every breaking change bumps at least the minor
-version while we are in 0.x.
+version while we are in 0.x. What counts as breaking (source, binary, behavioural),
+the deprecation policy and the supported JDK/Kotlin versions are defined in the
+[compatibility policy](docs/reference/release-contract.md#compatibility-policy).
 
 ## [Unreleased]
 

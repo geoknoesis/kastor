@@ -38,6 +38,8 @@ libthrift = "0.24.0"
 lz4Java = "1.11.3"
 # Gradle Plugin Portal publication plugin, applied by kastor-gen/gradle-plugin (marker + portal metadata).
 pluginPublish = "2.2.1"
+# CycloneDX SBOM generator, applied to every published module (attached as the `cyclonedx` classifier).
+cyclonedx = "3.4.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -106,3 +108,4 @@ jmh = { id = "me.champeau.jmh", version.ref = "jmhGradle" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 plugin-publish = { id = "com.gradle.plugin-publish", version.ref = "pluginPublish" }
+cyclonedx = { id = "org.cyclonedx.bom", version.ref = "cyclonedx" }

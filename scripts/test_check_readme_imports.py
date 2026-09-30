@@ -31,6 +31,22 @@ class CheckReadmeImportsTest(unittest.TestCase):
     def test_fragment_without_imports_is_skipped(self):
         self.assertEqual(readme.check_text(block('person - FOAF.name - "x"'), MIRROR, VOCAB), [])
 
+    def test_block_opening_a_section_needs_imports(self):
+        sample = block("import com.geoknoesis.kastor.rdf.vocab.FOAF", 'x - FOAF.name - "x"')
+        continuation = block('person - FOAF.name - "x"')
+        self.assertEqual(readme.check_text("# A\n\n" + sample + "\n" + continuation, MIRROR, VOCAB), [])
+        problems = readme.check_text("# A\n\n" + sample + "\n### B\n\n" + continuation, MIRROR, VOCAB)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("block 2 uses FOAF", problems[0])
+
+    def test_core_type_needs_import(self):
+        missing = block("import com.geoknoesis.kastor.rdf.vocab.FOAF", 'x - FOAF.name - lang("a", "ar", Direction.RTL)')
+        problems = readme.check_text(missing, MIRROR | {"com.geoknoesis.kastor.rdf.Direction"}, VOCAB)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("uses Direction", problems[0])
+        wildcard = block("import com.geoknoesis.kastor.rdf.*", 'lang("a", "ar", Direction.RTL)')
+        self.assertEqual(readme.check_text(wildcard, MIRROR, VOCAB), [])
+
     def test_import_absent_from_mirror_is_reported(self):
         text = block("import com.geoknoesis.kastor.rdf.vocab.XSD", "lit(\"1\", XSD.integer)")
         problems = readme.check_text(text, MIRROR, VOCAB)
