@@ -126,6 +126,51 @@ class Rdf4jRepository(
         }
         return level
     }
+
+    /** An explicitly added `_:r rdf:reifies <<quoted>>` triple in graph [context] (null for the default graph). */
+    internal data class ReifiesKey(val context: org.eclipse.rdf4j.model.Resource?, val quoted: org.eclipse.rdf4j.model.Triple)
+
+    /**
+     * Explicit `rdf:reifies` triples that are not stored because statements about the quoted triple imply them
+     * (RDF-star capable stores only). Remembered so that the triple survives the removal of the last such statement.
+     */
+    private val explicitReifies: MutableSet<ReifiesKey> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** Changes to [explicitReifies] made by the current thread's transaction, applied when it commits. */
+    private val explicitReifiesInTransaction = ThreadLocal<LinkedHashMap<ReifiesKey, Boolean>?>()
+
+    internal fun isExplicitReifies(key: ReifiesKey): Boolean =
+        explicitReifiesInTransaction.get()?.get(key) ?: (key in explicitReifies)
+
+    internal fun setExplicitReifies(key: ReifiesKey, present: Boolean) {
+        val pending = explicitReifiesInTransaction.get()
+        when {
+            pending != null -> pending[key] = present
+            present -> explicitReifies.add(key)
+            else -> explicitReifies.remove(key)
+        }
+    }
+
+    /** Explicit implied `rdf:reifies` triples visible to the current thread, restricted to [filter]. */
+    private fun explicitReifiesMatching(filter: (ReifiesKey) -> Boolean): List<ReifiesKey> =
+        (explicitReifies + explicitReifiesInTransaction.get()?.keys.orEmpty()).filter { filter(it) && isExplicitReifies(it) }
+
+    /** Forgets the explicit implied `rdf:reifies` triples of cleared graphs. */
+    internal fun forgetExplicitReifies(filter: (ReifiesKey) -> Boolean) =
+        explicitReifiesMatching(filter).forEach { setExplicitReifies(it, false) }
+
+    /**
+     * Stores every remembered explicit `rdf:reifies` triple as a plain statement, e.g. before a SPARQL update that may
+     * remove the statements implying it (and that this repository cannot follow).
+     */
+    private fun materialiseExplicitReifies(conn: RepositoryConnection) {
+        for (key in explicitReifiesMatching { true }) {
+            val reifier = valueFactory.createBNode(Rdf4jTerms.reifierFor(key.quoted).id)
+            conn.add(reifier, Rdf4jTerms.toRdf4jIri(com.geoknoesis.kastor.rdf.vocab.RDF.reifies), key.quoted, key.context)
+            setExplicitReifies(key, false)
+        }
+    }
+
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
         var result: Any? = null
@@ -300,6 +345,7 @@ class Rdf4jRepository(
     override fun removeGraph(name: Iri): Boolean = withWriteConnection { conn ->
         val context = valueFactory.createIRI(name.value)
         val had = conn.hasStatement(null, null, null, false, context)
+        forgetExplicitReifies { it.context == context }
         conn.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
         had
     }
@@ -481,6 +527,8 @@ class Rdf4jRepository(
             val startTime = System.currentTimeMillis()
             // An update may create quoted-triple subjects (RDF-star syntax, TRIPLE(), or moving triple terms).
             noteQuotedWrite(QuotedLevel.UNKNOWN)
+            // The update may remove the statements implying an explicit rdf:reifies triple; store those triples first.
+            materialiseExplicitReifies(conn)
             try {
                 conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).execute()
                 RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
@@ -518,16 +566,21 @@ class Rdf4jRepository(
         repository.connection.use { conn ->
             txConnection.set(conn)
             readOnly.set(read)
+            val pendingReifies = LinkedHashMap<ReifiesKey, Boolean>()
+            explicitReifiesInTransaction.set(pendingReifies)
             try {
                 conn.begin()
                 operations(this)
                 conn.commit()
+                explicitReifiesInTransaction.remove()
+                pendingReifies.forEach { (key, present) -> setExplicitReifies(key, present) }
             } catch (e: Throwable) {
                 if (conn.isActive) conn.rollback()
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
+                explicitReifiesInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
                     quotedWrittenInTransaction.remove()
@@ -540,6 +593,7 @@ class Rdf4jRepository(
 
     override fun clear(): Boolean = withWriteConnection { conn ->
         val wasEmpty = conn.isEmpty
+        forgetExplicitReifies { true }
         conn.clear()
         !wasEmpty
     }
