@@ -112,7 +112,7 @@ Useful variants:
 - The version lives only in [`gradle.properties`](gradle.properties) (`version=`). `main` always carries the next `-SNAPSHOT`. **A released version is never reused:** fixes after a release go into a new version.
 - Tags use the form **`vX.Y.Z`**. The historical tag `0.2.1` (no `v`) predates this convention; it is kept, never moved or reused.
 - Follow the [release checklist](docs/reference/release-checklist.md) for the first CI run, GitHub configuration and tagging.
-- **GitHub settings** (release environment, secrets, tag and branch rulesets, Pages source) are applied by [`scripts/configure-github-release.sh`](scripts/configure-github-release.sh). It prints every call by default; pass `--apply` to change the repository.
+- **GitHub settings** (release environment, secrets, tag and branch rulesets, Pages source, Dependabot alerts and security updates, secret scanning with push protection, private vulnerability reporting) are applied by [`scripts/configure-github-release.sh`](scripts/configure-github-release.sh). It prints every call by default; pass `--apply` to change the repository.
 - To release:
   1. Commit `version=X.Y.Z` and the dated `CHANGELOG.md` section.
   2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, refuses versions already on Maven Central, builds the signed Central Portal bundle (`./gradlew centralBundle`), uploads it once the `release` environment is approved, and waits until the Central Portal reports it `VALIDATED` (or fails with the portal's errors). Release the validated deployment manually in the portal.

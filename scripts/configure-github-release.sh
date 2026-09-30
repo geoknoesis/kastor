@@ -16,6 +16,7 @@
 #   --no-admin-bypass             Do not let repository admins bypass `main-protection`. By default admins
 #                                 (RepositoryRole 5) may bypass it, so maintainer pushes and emergency merges
 #                                 still work while everyone else goes through a pull request.
+#   --no-security-features        Leave the repository's code-security settings (step 5) untouched.
 #   --apply                       Perform the calls. Without it, every call is printed and nothing changes.
 #
 # What it configures (see docs/reference/release-checklist.md):
@@ -24,6 +25,10 @@
 #   3. Branch ruleset `main-protection`: PRs required, no force-push/deletion, required CI checks,
 #      admin bypass unless --no-admin-bypass.
 #   4. GitHub Pages built by GitHub Actions (`pages.yml`) instead of the legacy branch build.
+#   5. Code security (unless --no-security-features): Dependabot vulnerability alerts (on the Dependency
+#      graph), Dependabot security updates, secret scanning with push protection, and private
+#      vulnerability reporting (the channel SECURITY.md points reporters to). Settings already enabled
+#      are skipped.
 # Secrets are never passed through this script. It prints the `gh secret set` commands to run.
 # In dry-run mode only read-only GET requests are sent.
 #
@@ -36,6 +41,7 @@ approvals=0
 reviewers=()
 dependency_review=auto   # auto | always | never
 admin_bypass=true
+security_features=true
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,7 +53,8 @@ while [ $# -gt 0 ]; do
     --require-dependency-review) dependency_review=always ;;
     --no-dependency-review) dependency_review=never ;;
     --no-admin-bypass) admin_bypass=false ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --no-security-features) security_features=false ;;
+    -h|--help) sed -n '2,35p' "$0"; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -88,6 +95,13 @@ required_checks=(
 $require_dependency_review && required_checks+=("dependency-review")
 
 current_pages="$(gh api "repos/$repo/pages" --jq .build_type 2>/dev/null || echo "unavailable")"
+# Code security state. `vulnerability-alerts` answers 204 when enabled and 404 when disabled.
+enabled_or_not() { if "$@" >/dev/null 2>&1; then echo enabled; else echo disabled; fi; }
+vulnerability_alerts="$(enabled_or_not gh api "repos/$repo/vulnerability-alerts")"
+security_fixes="$(gh api "repos/$repo/automated-security-fixes" --jq 'if .enabled then "enabled" else "disabled" end' 2>/dev/null || echo "unknown")"
+private_reporting="$(gh api "repos/$repo/private-vulnerability-reporting" --jq 'if .enabled then "enabled" else "disabled" end' 2>/dev/null || echo "unknown")"
+secret_scanning="$(gh api "repos/$repo" --jq '.security_and_analysis.secret_scanning.status // "unknown"' 2>/dev/null || echo "unknown")"
+push_protection="$(gh api "repos/$repo" --jq '.security_and_analysis.secret_scanning_push_protection.status // "unknown"' 2>/dev/null || echo "unknown")"
 existing_rulesets="$(gh api "repos/$repo/rulesets" --jq '[.[] | "\(.name) (\(.enforcement))"] | join(", ")' 2>/dev/null || echo "unavailable")"
 
 mode="DRY RUN (pass --apply to change $repo; only GET requests are sent)"
@@ -113,18 +127,29 @@ else
 fi
 echo "- Pages build type: $current_pages -> workflow"
 echo "- Existing rulesets: ${existing_rulesets:-none}"
+if $security_features; then
+  echo "- Code security (current -> enabled):"
+  echo "    Dependabot vulnerability alerts: $vulnerability_alerts"
+  echo "    Dependabot security updates:     $security_fixes"
+  echo "    secret scanning:                 $secret_scanning"
+  echo "    secret scanning push protection: $push_protection"
+  echo "    private vulnerability reporting: $private_reporting"
+else
+  echo "- Code security: left untouched (--no-security-features)"
+fi
 
 # call METHOD PATH [JSON]: prints the call; performs it only with --apply.
 call() {
   local method="$1" path="$2" body="${3:-}"
+  local url="repos/$repo${path:+/$path}"   # empty PATH addresses the repository itself
   echo
-  echo "gh api -X $method repos/$repo/$path${body:+ --input - <<'JSON'}"
+  echo "gh api -X $method $url${body:+ --input - <<'JSON'}"
   [ -n "$body" ] && printf '%s\nJSON\n' "$body"
   if $apply; then
     if [ -n "$body" ]; then
-      printf '%s' "$body" | gh api -X "$method" "repos/$repo/$path" --input - >/dev/null
+      printf '%s' "$body" | gh api -X "$method" "$url" --input - >/dev/null
     else
-      gh api -X "$method" "repos/$repo/$path" >/dev/null
+      gh api -X "$method" "$url" >/dev/null
     fi
     echo "   -> done"
   fi
@@ -219,6 +244,40 @@ else
   call PUT "pages" '{ "build_type": "workflow" }'
 fi
 
+# --- 5. Code security ---------------------------------------------------------------------------------
+# Order matters: security updates need vulnerability alerts, which need the Dependency graph (always on for
+# public repositories; private repositories enable it under Settings > Code security first).
+if $security_features; then
+  if [ "$vulnerability_alerts" = enabled ]; then
+    echo; echo "# Dependabot vulnerability alerts already enabled"
+  else
+    call PUT "vulnerability-alerts"
+  fi
+  if [ "$security_fixes" = enabled ]; then
+    echo; echo "# Dependabot security updates already enabled"
+  else
+    call PUT "automated-security-fixes"
+  fi
+  if [ "$secret_scanning" = enabled ] && [ "$push_protection" = enabled ]; then
+    echo; echo "# Secret scanning and push protection already enabled"
+  else
+    call PATCH "" "$(cat <<'JSON'
+{
+  "security_and_analysis": {
+    "secret_scanning": { "status": "enabled" },
+    "secret_scanning_push_protection": { "status": "enabled" }
+  }
+}
+JSON
+)"
+  fi
+  if [ "$private_reporting" = enabled ]; then
+    echo; echo "# Private vulnerability reporting already enabled"
+  else
+    call PUT "private-vulnerability-reporting"
+  fi
+fi
+
 # --- secrets (manual, never echoed) ----------------------------------------------------------------
 cat <<EOF
 
@@ -231,5 +290,6 @@ gh secret list --env release --repo $repo                                       
 
 == Afterwards
 - Required checks only bind once each check has reported at least once on a PR.
+- If this run enabled the Dependency graph or vulnerability alerts, re-run it so dependency-review becomes required.
 - The legacy ruleset "My ruleset" (disabled) is left untouched; delete it in Settings > Rules if unused.
 EOF
