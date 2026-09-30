@@ -46,6 +46,7 @@ public class OntologyWrapperGenerator(
     private val iriClass = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
     private val graphOps = ClassName(runtime, "KastorGraphOps")
     private val xsdLiterals = ClassName(runtime, "XsdLiterals")
+    private val literalClass = ClassName(CodegenConstants.RDF_PACKAGE, "Literal")
     private val materializationPolicy = ClassName(runtime, "MaterializationPolicy")
 
     /**
@@ -290,63 +291,68 @@ public class OntologyWrapperGenerator(
                 functionBuilder.endControlFlow()
             }
 
-            if (kind == ValueKind.LITERAL || (kind == ValueKind.ENUM && property.inValuesTyped?.none { it.isIri } != false)) {
-                val literals = CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, Iri(%S))", graphOps, pred)
+            val literalKind = kind == ValueKind.LITERAL || (kind == ValueKind.ENUM && property.inValuesTyped?.none { it.isIri } != false)
 
+            // String-based constraints apply to the string of every value node: the lexical form of a literal or the
+            // IRI string of an IRI. A blank node (or triple term) has no string and violates them (SHACL 4.4).
+            if (property.pattern != null || property.minLength != null || property.maxLength != null) {
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                functionBuilder.addStatement(
+                    "val str: String? = when (value) { is %T -> value.lexical; is %T -> value.value; else -> null }",
+                    literalClass, iriClass,
+                )
                 property.pattern?.let { pat ->
                     val constant = "PATTERN_${patternIndex++}"
                     // Lazy: a pattern the JVM cannot compile only fails validate(), never class initialisation.
                     companion.addProperty(ShaclPatterns.lazyProperty(pat, property.patternFlags, constant))
-                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
-                    check(CodeBlock.of("!%N.containsMatchIn(lit.lexical)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("lit"))
-                    functionBuilder.endControlFlow()
+                    check(CodeBlock.of("str == null || !%N.containsMatchIn(str)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("value"))
                 }
-
-                if (property.minLength != null || property.maxLength != null) {
-                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
-                    property.minLength?.let {
-                        check(CodeBlock.of("lit.lexical.length < %L", it), "minLength", pred, "minLength $it violated for $pred", CodeBlock.of("lit"))
-                    }
-                    property.maxLength?.let {
-                        check(CodeBlock.of("lit.lexical.length > %L", it), "maxLength", pred, "maxLength $it violated for $pred", CodeBlock.of("lit"))
-                    }
-                    functionBuilder.endControlFlow()
+                property.minLength?.let {
+                    check(CodeBlock.of("str == null || str.length < %L", it), "minLength", pred, "minLength $it violated for $pred", CodeBlock.of("value"))
                 }
-
-                if (property.minInclusive != null || property.maxInclusive != null ||
-                    property.minExclusive != null || property.maxExclusive != null
-                ) {
-                    // Exact comparison (BigDecimal); a value that is not a well-formed numeric literal cannot be compared,
-                    // which SHACL reports as a violation.
-                    functionBuilder.beginControlFlow("%L.forEach { value ->", values)
-                    fun bound(limit: java.math.BigDecimal?, term: String, violatedWhen: String) {
-                        if (limit == null) return
-                        val lexical = limit.toPlainString()
-                        check(
-                            CodeBlock.of("%T.compareNumeric(value, %S).let { it == null || %L }", xsdLiterals, lexical, violatedWhen),
-                            term, pred, "$term $lexical violated for $pred", CodeBlock.of("value"),
-                        )
-                    }
-                    bound(property.minInclusive, "minInclusive", "it < 0")
-                    bound(property.maxInclusive, "maxInclusive", "it > 0")
-                    bound(property.minExclusive, "minExclusive", "it <= 0")
-                    bound(property.maxExclusive, "maxExclusive", "it >= 0")
-                    functionBuilder.endControlFlow()
+                property.maxLength?.let {
+                    check(CodeBlock.of("str == null || str.length > %L", it), "maxLength", pred, "maxLength $it violated for $pred", CodeBlock.of("value"))
                 }
-
-                property.inValues?.takeIf { it.isNotEmpty() && property.inValuesTyped?.any { v -> v.isIri } != true }?.let { values ->
-                    val allowed = values.map { CodeBlock.of("%S", it) }.joinToCode(", ")
-                    functionBuilder.beginControlFlow("%L.forEach { lit ->", literals)
-                    check(CodeBlock.of("lit.lexical !in listOf(%L)", allowed), "in", pred, "sh:in violated for $pred", CodeBlock.of("lit"))
-                    functionBuilder.endControlFlow()
-                }
+                functionBuilder.endControlFlow()
             }
 
-            // IRI-membered sh:in: every value (of any term kind) must be one of the listed IRIs.
-            property.inValuesTyped?.takeIf { tv -> tv.isNotEmpty() && tv.all { it.isIri } }?.let { ivs ->
-                val allowed = ivs.map { CodeBlock.of("Iri(%S)", it.value) }.joinToCode(", ")
-                functionBuilder.beginControlFlow("%T.getValues(rdf.graph, rdf.node, Iri(%S)).forEach { obj ->", graphOps, pred)
-                check(CodeBlock.of("obj !in listOf(%L)", allowed), "in", pred, "sh:in violated for $pred", CodeBlock.of("obj"))
+            if (literalKind && (property.minInclusive != null || property.maxInclusive != null ||
+                    property.minExclusive != null || property.maxExclusive != null)
+            ) {
+                // Exact comparison (BigDecimal); a value that is not a well-formed numeric literal cannot be compared,
+                // which SHACL reports as a violation.
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                fun bound(limit: java.math.BigDecimal?, term: String, violatedWhen: String) {
+                    if (limit == null) return
+                    val lexical = limit.toPlainString()
+                    check(
+                        CodeBlock.of("%T.compareNumeric(value, %S).let { it == null || %L }", xsdLiterals, lexical, violatedWhen),
+                        term, pred, "$term $lexical violated for $pred", CodeBlock.of("value"),
+                    )
+                }
+                bound(property.minInclusive, "minInclusive", "it < 0")
+                bound(property.maxInclusive, "maxInclusive", "it > 0")
+                bound(property.minExclusive, "minExclusive", "it <= 0")
+                bound(property.maxExclusive, "maxExclusive", "it >= 0")
+                functionBuilder.endControlFlow()
+            }
+
+            // sh:in: every value node (of any term kind) must be one of the members. Typed members compare as RDF terms
+            // (IRI, or literal lexical form and datatype; language-tagged members by lexical form); untyped members
+            // (literal-valued properties only) by lexical form.
+            val inMembers: List<CodeBlock>? = property.inValuesTyped?.takeIf { it.isNotEmpty() }?.map { v ->
+                when {
+                    v.isIri -> CodeBlock.of("value == %T(%S)", iriClass, v.value)
+                    v.datatype == null || v.datatype == RDF_LANG_STRING ->
+                        CodeBlock.of("(value is %T && value.lexical == %S)", literalClass, v.value)
+                    else -> CodeBlock.of("(value is %T && value.lexical == %S && value.datatype.value == %S)", literalClass, v.value, v.datatype)
+                }
+            } ?: property.inValues?.takeIf { it.isNotEmpty() && literalKind }?.map { v ->
+                CodeBlock.of("(value is %T && value.lexical == %S)", literalClass, v)
+            }
+            inMembers?.let { members ->
+                functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                check(CodeBlock.of("!(%L)", members.joinToCode(" || ")), "in", pred, "sh:in violated for $pred", CodeBlock.of("value"))
                 functionBuilder.endControlFlow()
             }
         }
@@ -367,9 +373,10 @@ public class OntologyWrapperGenerator(
 
         val initializer = valuesInitializer(property, ctx, shapeIri)
 
+        // The wrapper captures the MaterializationPolicy in effect when it is created; properties read later use it.
         propertyBuilder.delegate(
             CodeBlock.builder()
-                .add("lazy {\n").indent()
+                .add("%T.lazyWithCurrentPolicy {\n", materializationPolicy).indent()
                 .add(initializer)
                 .unindent().add("\n}")
                 .build()
@@ -494,3 +501,5 @@ public class OntologyWrapperGenerator(
     }
 
 }
+
+private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"

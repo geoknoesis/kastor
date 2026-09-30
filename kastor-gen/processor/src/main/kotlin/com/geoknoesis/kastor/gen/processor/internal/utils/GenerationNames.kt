@@ -138,7 +138,10 @@ public object GenerationNames {
             val ownDeclaration = own[path]
             val inheritedByName = sortedMapOf<String, MutableList<EffectiveMember>>()
             parentMembers.flatten().filter { it.path == path }.forEach { inheritedByName.getOrPut(it.name) { mutableListOf() } += it }
-            val merged = (listOfNotNull(ownDeclaration) + inheritedByName.values.flatten().map { it.constraints }).reduce(::conjoin)
+            // Inherited constraints come from each direct supertype as seen by its subtypes: the declarations of a
+            // deactivated shape are deactivated there, so they do not tighten this type's constraints.
+            val inheritedConstraints = supers[shape.targetClass].orEmpty().mapNotNull { inheritableConstraints(it, path, supers) }
+            val merged = (listOfNotNull(ownDeclaration) + inheritedConstraints).reduce(::conjoin)
 
             if (inheritedByName.isEmpty()) {
                 members += EffectiveMember(merged, merged, declared = true, inherited = false, primaryForPath = false)
@@ -163,6 +166,18 @@ public object GenerationNames {
         }
         memo[shape.targetClass] = result
         return result
+    }
+
+    /**
+     * The constraints [shape] passes on to its subtypes for [path]: its own declarations (deactivated when the node
+     * shape is `sh:deactivated`) conjoined with those its supertypes pass on; null when none declares [path].
+     */
+    private fun inheritableConstraints(shape: ShaclShape, path: String, supers: Map<String, List<ShaclShape>>): ShaclProperty? {
+        val own = shape.properties.filter { it.path == path }
+            .sortedWith(compareBy({ it.name }, { it.description }))
+            .map { if (shape.deactivated) it.copy(deactivated = true) else it }
+        val inherited = supers[shape.targetClass].orEmpty().mapNotNull { inheritableConstraints(it, path, supers) }
+        return (own + inherited).reduceOrNull(::conjoin)
     }
 
     /** Several property shapes for one path in one node shape: one member, constraints combined. */
@@ -227,8 +242,16 @@ public object GenerationNames {
         else -> listOf("literal", TypeMapper.literalMapping(p.datatype).type.toString())
     }
 
-    /** Conjunction of two declarations of one path; for non-orderable parameters [a]'s value wins. */
+    /**
+     * Conjunction of two declarations of one path; for non-orderable parameters [a]'s value wins. A `sh:deactivated`
+     * declaration contributes no constraints: conjoined with an active one, only the active one's constraints remain
+     * (the member keeps [a]'s name).
+     */
     private fun conjoin(a: ShaclProperty, b: ShaclProperty): ShaclProperty {
+        if (a.deactivated != b.deactivated) {
+            val active = if (a.deactivated) b else a
+            return active.copy(name = a.name, description = a.description.ifBlank { b.description })
+        }
         fun hi(x: Int?, y: Int?): Int? = if (x == null) y else if (y == null) x else kotlin.comparisons.maxOf(x, y)
         fun lo(x: Int?, y: Int?): Int? = if (x == null) y else if (y == null) x else kotlin.comparisons.minOf(x, y)
         fun hi(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =

@@ -18,6 +18,7 @@ internal class ValidationCodeGenerator(
 ) {
 
     private val literalClass = ClassName(CodegenConstants.RDF_PACKAGE, "Literal")
+    private val iriClass = ClassName(CodegenConstants.RDF_PACKAGE, "Iri")
     private val xsdLiterals = ClassName(CodegenConstants.RUNTIME_PACKAGE, "XsdLiterals")
 
     /**
@@ -56,22 +57,25 @@ internal class ValidationCodeGenerator(
 
                 if (hasConstraints) {
                     functionBuilder.addComment("Validate %L constraints", name)
+                    // Like embedded validation (SHACL): string constraints use the lexical form of a literal or the
+                    // string of an IRI; a blank node has no string and violates them. sh:in compares the same string.
                     functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
-                    functionBuilder.addStatement("val literal = triple.obj as? %T", literalClass)
-                    functionBuilder.beginControlFlow("if (literal != null)")
-                    functionBuilder.addStatement("val value = literal.lexical")
+                    functionBuilder.addStatement(
+                        "val value: String? = when (val obj = triple.obj) { is %T -> obj.lexical; is %T -> obj.value; else -> null }",
+                        literalClass, iriClass,
+                    )
                     c.minLength?.let {
-                        functionBuilder.beginControlFlow("if (value.length < %L)", it)
+                        functionBuilder.beginControlFlow("if (value == null || value.length < %L)", it)
                         functionBuilder.addStatement("violations.add(%S)", "$name must have minLength >= $it")
                         functionBuilder.endControlFlow()
                     }
                     c.maxLength?.let {
-                        functionBuilder.beginControlFlow("if (value.length > %L)", it)
+                        functionBuilder.beginControlFlow("if (value == null || value.length > %L)", it)
                         functionBuilder.addStatement("violations.add(%S)", "$name must have maxLength <= $it")
                         functionBuilder.endControlFlow()
                     }
                     c.pattern?.let {
-                        functionBuilder.beginControlFlow("if (!%N.containsMatchIn(value))", ShaclPatterns.constantName(it, c.patternFlags))
+                        functionBuilder.beginControlFlow("if (value == null || !%N.containsMatchIn(value))", ShaclPatterns.constantName(it, c.patternFlags))
                         functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $it")
                         functionBuilder.endControlFlow()
                     }
@@ -83,7 +87,6 @@ internal class ValidationCodeGenerator(
                         functionBuilder.endControlFlow()
                     }
                     functionBuilder.endControlFlow()
-                    functionBuilder.endControlFlow()
                 }
 
                 val hasNumericConstraints = c.minInclusive != null || c.maxInclusive != null ||
@@ -91,14 +94,14 @@ internal class ValidationCodeGenerator(
 
                 if (hasNumericConstraints) {
                     functionBuilder.addComment("Validate %L numeric constraints", name)
-                    // Exact comparison of XSD numeric literals with the bound's decimal lexical form; values that are
-                    // not well-formed numeric literals cannot be compared and are left to sh:datatype.
+                    // Exact comparison of XSD numeric literals with the bound's decimal lexical form; a value that is not
+                    // a well-formed numeric literal cannot be compared, which SHACL (and embedded validation) reports.
                     functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
                     fun bound(bound: java.math.BigDecimal?, violatedWhen: String, text: String) {
                         if (bound == null) return
                         val lexical = bound.toPlainString()
                         functionBuilder.beginControlFlow(
-                            "if (%T.compareNumeric(triple.obj, %S)?.let { %L } == true)", xsdLiterals, lexical, violatedWhen,
+                            "if (%T.compareNumeric(triple.obj, %S).let { it == null || %L })", xsdLiterals, lexical, violatedWhen,
                         )
                         functionBuilder.addStatement("violations.add(%S)", "$name must be $text $lexical")
                         functionBuilder.endControlFlow()

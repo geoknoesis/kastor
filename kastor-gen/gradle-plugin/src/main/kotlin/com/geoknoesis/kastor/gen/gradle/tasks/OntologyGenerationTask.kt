@@ -287,6 +287,7 @@ abstract class OntologyGenerationTask : DefaultTask() {
         //    next run deletes everything the manifest lists. Previous files are deleted BEFORE the new ones are moved
         //    in, so a case-only rename (Foo.kt -> FOO.kt) does not delete the new file on case-insensitive file
         //    systems. Deletes and moves retry transient locks; cross-drive moves copy and then rename.
+        val fileReplacement = fileReplacement ?: FileReplacement()
         try {
             outputDir.mkdirs()
             manifest.writeText((previousEntries + generated).distinct().sorted().joinToString("\n"))
@@ -310,9 +311,14 @@ abstract class OntologyGenerationTask : DefaultTask() {
         logger.info("Ontology generation completed: ${generated.size} files")
     }
 
-    /** Deletes and moves generated files, retrying transient locks (test hook). */
+    /**
+     * Deletes and moves generated files, retrying transient locks (test hook; null uses the default). The field holds
+     * lambdas, so it is transient: the configuration cache never serializes it, and a task restored from the cache
+     * uses the default.
+     */
     @get:Internal
-    internal var fileReplacement: FileReplacement = FileReplacement()
+    @Transient
+    internal var fileReplacement: FileReplacement? = null
 
     private companion object {
         const val MANIFEST = ".kastor-generated-files"

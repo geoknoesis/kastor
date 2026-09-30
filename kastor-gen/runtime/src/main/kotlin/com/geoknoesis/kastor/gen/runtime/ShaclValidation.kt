@@ -56,8 +56,9 @@ interface ValidationContext : AutoCloseable {
  * Process-wide validators shared by generated wrappers, one per validator implementation.
  *
  * Wrappers generated with `ValidationMode.EXTERNAL` name a [ValidationContext] class with a no-argument constructor;
- * the class alone determines the shapes it validates against. Validators can be expensive (the RDF4J adapter keeps a
- * copy of the last validated graph in an in-memory store), so all wrapper types that name the same class use one
+ * the class alone determines the shapes it validates against. Validators can be expensive (the RDF4J adapter keeps
+ * in-memory copies of recently validated graphs, one store and lock per graph, so validations of different graphs
+ * run concurrently), so all wrapper types that name the same class use one
  * instance obtained from [get] instead of one instance each.
  *
  * ## Lifecycle

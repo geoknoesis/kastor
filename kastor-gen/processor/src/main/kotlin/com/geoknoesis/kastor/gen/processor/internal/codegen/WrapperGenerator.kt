@@ -116,11 +116,17 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     else -> element
   }
 
-  /** `by lazy { <values>… }` with the member's cardinality: list, first or null, or first or MaterializationException. */
+  /**
+   * `by MaterializationPolicy.lazyWithCurrentPolicy { <values>… }` with the member's cardinality: list, first or null,
+   * or first or MaterializationException. The policy in effect when the wrapper is created applies to later reads.
+   */
   private fun lazyValues(property: PropertyModel, values: CodeBlock): CodeBlock = when {
-    isList(property) -> CodeBlock.of("lazy { %L }", values)
-    property.nullable -> CodeBlock.of("lazy { %L.firstOrNull() }", values)
-    else -> CodeBlock.of("lazy { %L.firstOrNull() ?: %T.missingRequired(%S) }", values, MATERIALIZATION_POLICY, label(property))
+    isList(property) -> CodeBlock.of("%T.lazyWithCurrentPolicy { %L }", MATERIALIZATION_POLICY, values)
+    property.nullable -> CodeBlock.of("%T.lazyWithCurrentPolicy { %L.firstOrNull() }", MATERIALIZATION_POLICY, values)
+    else -> CodeBlock.of(
+      "%T.lazyWithCurrentPolicy { %L.firstOrNull() ?: %T.missingRequired(%S) }",
+      MATERIALIZATION_POLICY, values, MATERIALIZATION_POLICY, label(property),
+    )
   }
 
   private fun literalProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {

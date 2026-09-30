@@ -34,9 +34,11 @@ import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
+import com.geoknoesis.kastor.rdf.VersionedRdfGraph
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
@@ -52,11 +54,14 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  *
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
- * validator keeps one in-memory repository and loads a graph into it only when the graph passed to [validate] is a
- * different instance or its content changed (detected with an order-independent SHA-256-based digest of its triples,
- * which costs one pass over the triples but no conversion or store writes). Validating many nodes of one graph
- * therefore converts and loads it once. A reload is atomic: the data, the digest and the embedded shapes are replaced
- * together after the store transaction commits, so a failed conversion or load leaves the previous state intact.
+ * validator keeps one in-memory repository per data graph instance, for up to [MAX_CACHED_GRAPHS] graphs (the least
+ * recently used one is released when another graph arrives; entries whose graph was garbage collected are released
+ * first). A graph is (re)loaded only when it is new or its content changed. Change detection is O(1) for graphs that
+ * implement [VersionedRdfGraph] (such as `MemoryGraph`): the modification stamp is compared with the one of the loaded
+ * copy. Other graphs are checked with an order-independent SHA-256-based digest of their triples, which costs one pass
+ * over the triples but no conversion or store writes. Validating many nodes of one graph therefore converts and loads
+ * it once. A reload is atomic: the data, the change marker and the embedded shapes are replaced together after the
+ * store transaction commits, so a failed conversion or load leaves the previous state intact.
  *
  * Each [validate] call evaluates only the shapes that target the focus node: the target declarations
  * (`sh:targetClass` including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`,
@@ -66,8 +71,9 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * [ValidationResult.Ok] without running the engine. Shapes with other target kinds (e.g. SPARQL-based `sh:target`)
  * are validated for all their targets and the results are filtered to the focus node.
  *
- * Calls are serialized on the repository; [close] releases it (together with the loaded data). A validator is safe
- * to share between threads.
+ * Calls for the same data graph are serialized on that graph's repository; calls for different graphs run
+ * concurrently. [close] releases every repository (together with the loaded data). A validator is safe to share
+ * between threads.
  *
  * [validate] returns the `sh:ValidationResult`s whose `sh:focusNode` is the requested node. Engine failures other
  * than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
@@ -86,15 +92,18 @@ class Rdf4jValidation private constructor(
   /** Validates against the SHACL shapes in [shapes] (converted once at construction). */
   constructor(shapes: RdfGraph) : this(toStatements(shapes))
 
-  private val lock = Any()
-  private var repository: SailRepository? = null
-  private var loadedGraph: WeakReference<RdfGraph>? = null
-  private var loadedDigest: GraphDigest? = null
-  private var embeddedShapes: ShapeIndex? = null
+  /** Guards [slots], [closed] and [useCounter]; never held while a slot lock is acquired. */
+  private val slotsLock = Any()
+  private val slots = ArrayList<Slot>()
   private var closed = false
+  private var useCounter = 0L
 
   /** Test hook: runs inside the load transaction, before commit (to simulate a store failure). */
-  internal var beforeLoadCommit: (() -> Unit)? = null
+  @Volatile internal var beforeLoadCommit: (() -> Unit)? = null
+  /** Test hook: number of content digests computed. */
+  internal val digestCount = AtomicInteger()
+  /** Test hook: number of graphs converted and loaded into a store. */
+  internal val loadCount = AtomicInteger()
   private val fixedShapeIndex: ShapeIndex? by lazy(LazyThreadSafetyMode.PUBLICATION) {
     fixedShapes?.let { ShapeIndex(it) }
   }
@@ -104,6 +113,9 @@ class Rdf4jValidation private constructor(
     private val TARGET_PREDICATES: Set<IRI> =
       setOf(SHACL.TARGET_CLASS, SHACL.TARGET_NODE, SHACL.TARGET_SUBJECTS_OF, SHACL.TARGET_OBJECTS_OF)
     private const val MAX_SHAPE_ANCESTOR_DEPTH = 16
+
+    /** Maximum number of data graphs whose converted copy is kept (one in-memory store each). */
+    const val MAX_CACHED_GRAPHS: Int = 4
 
     /** Creates a validator from SHACL shapes written in Turtle. */
     @JvmStatic
@@ -244,6 +256,50 @@ class Rdf4jValidation private constructor(
   /** Content digest of a graph: four 64-bit words of a sum of SHA-256 triple digests, plus the triple count. */
   private data class GraphDigest(val words: List<Long>, val count: Long)
 
+  /**
+   * The cached store of one data graph. [lastUsed] is guarded by [slotsLock]; the other mutable fields by the slot's
+   * own monitor.
+   */
+  private class Slot(val graph: WeakReference<RdfGraph>, var lastUsed: Long) {
+    var repository: SailRepository? = null
+    var loaded = false
+    var loadedStamp: Long? = null
+    var loadedDigest: GraphDigest? = null
+    var embeddedShapes: ShapeIndex? = null
+    var closed = false
+
+    fun release() {
+      closed = true
+      repository?.shutDown()
+      repository = null
+      embeddedShapes = null
+      loadedDigest = null
+    }
+  }
+
+  /** The slot of [data], creating one (and evicting dead or least recently used slots) when needed. */
+  private fun acquire(data: RdfGraph): Slot {
+    val evicted = ArrayList<Slot>()
+    val slot = synchronized(slotsLock) {
+      check(!closed) { "Rdf4jValidation has been closed" }
+      val use = ++useCounter
+      slots.firstOrNull { it.graph.get() === data }?.let { it.lastUsed = use; return@synchronized it }
+      slots.removeAll { candidate -> (candidate.graph.get() == null).also { dead -> if (dead) evicted += candidate } }
+      while (slots.size >= MAX_CACHED_GRAPHS) {
+        val lru = slots.minBy { it.lastUsed }
+        slots.remove(lru)
+        evicted += lru
+      }
+      Slot(WeakReference(data), use).also { slots += it }
+    }
+    // Release outside the slots lock: this waits for an in-flight validation of an evicted graph to finish.
+    evicted.forEach { synchronized(it) { it.release() } }
+    return slot
+  }
+
+  /** Number of data graphs currently cached (for tests). */
+  internal fun cachedGraphCount(): Int = synchronized(slotsLock) { slots.size }
+
   /** Shapes with their target declarations, indexed once. */
   private class ShapeIndex(val statements: List<Statement>) {
     val model: Model = LinkedHashModel(statements)
@@ -268,70 +324,81 @@ class Rdf4jValidation private constructor(
       throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
     }
     val focusValue = toResource(focus)
-    synchronized(lock) {
-      check(!closed) { "Rdf4jValidation has been closed" }
-      val digest = digest(data)
-      val stale = loadedGraph?.get() !== data || loadedDigest != digest
-      val repo = repository ?: newRepository().also { repository = it }
-      if (stale) {
-        // Convert and index first, then replace the store content in one transaction; the loaded graph, its digest
-        // and its embedded shapes change together only after the commit, so a failure at any step leaves the
-        // previously loaded data and shapes in place.
-        val statements = toStatements(data)
-        val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
-        repo.connection.use { connection ->
-          connection.begin()
-          try {
-            connection.clear()
-            connection.add(statements)
-            beforeLoadCommit?.invoke()
-            connection.commit()
-          } catch (e: Throwable) {
-            if (connection.isActive) connection.rollback()
-            throw e
-          }
-        }
-        embeddedShapes = newShapes
-        loadedGraph = WeakReference(data)
-        loadedDigest = digest
+    while (true) {
+      val slot = acquire(data)
+      synchronized(slot) {
+        // Evicted (or the validator closed) between acquire and lock: look the graph up again.
+        if (slot.closed) continue
+        return loadAndValidate(slot, data, focusValue)
       }
-      val shapes = fixedShapeIndex ?: embeddedShapes ?: return ValidationResult.Ok
-      if (shapes.statements.isEmpty()) return ValidationResult.Ok
+    }
+  }
 
-      return repo.connection.use { connection ->
-        if (shapes.hasOtherTargets) {
-          validateIn(connection, shapes.statements, focusValue, shapes.model)
+  /** Loads [data] into [slot]'s store when it is new or changed, then validates [focusValue]; holds [slot]'s lock. */
+  private fun loadAndValidate(slot: Slot, data: RdfGraph, focusValue: Resource): ValidationResult {
+    // Read the stamp before converting: a concurrent change makes the next call reload (never a stale hit).
+    val stamp = (data as? VersionedRdfGraph)?.modificationStamp
+    val digest = if (stamp == null) digest(data).also { digestCount.incrementAndGet() } else null
+    val stale = !slot.loaded || (if (stamp != null) slot.loadedStamp != stamp else slot.loadedDigest != digest)
+    val repo = slot.repository ?: newRepository().also { slot.repository = it }
+    if (stale) {
+      // Convert and index first, then replace the store content in one transaction; the change marker and the
+      // embedded shapes change together only after the commit, so a failure at any step leaves the previously
+      // loaded data and shapes in place.
+      val statements = toStatements(data)
+      val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
+      repo.connection.use { connection ->
+        connection.begin()
+        try {
+          connection.clear()
+          connection.add(statements)
+          beforeLoadCommit?.invoke()
+          connection.commit()
+        } catch (e: Throwable) {
+          if (connection.isActive) connection.rollback()
+          throw e
+        }
+      }
+      loadCount.incrementAndGet()
+      slot.embeddedShapes = newShapes
+      slot.loadedStamp = stamp
+      slot.loadedDigest = digest
+      slot.loaded = true
+    }
+    val shapes = fixedShapeIndex ?: slot.embeddedShapes ?: return ValidationResult.Ok
+    if (shapes.statements.isEmpty()) return ValidationResult.Ok
+
+    return repo.connection.use { connection ->
+      if (shapes.hasOtherTargets) {
+        validateIn(connection, shapes.statements, focusValue, shapes.model)
+      } else {
+        val targeting = targetingShapes(connection, shapes, focusValue)
+        if (targeting.isEmpty()) {
+          ValidationResult.Ok
         } else {
-          val targeting = targetingShapes(connection, shapes, focusValue)
-          if (targeting.isEmpty()) {
-            ValidationResult.Ok
-          } else {
-            val restricted = if (focusValue is BNode) {
-              // RDF4J does not accept a blank node as sh:targetNode: keep the selected shapes' own target
-              // declarations (other shapes stay untargeted) and filter the report to the focus node.
-              shapes.untargeted + shapes.statements.filter { st ->
-                st.subject in targeting && (st.predicate in TARGET_PREDICATES ||
-                  (st.subject in shapes.implicitClassTargets && st.predicate == RDF.TYPE))
-              }
-            } else {
-              shapes.untargeted + targeting.map { vf.createStatement(it, SHACL.TARGET_NODE, focusValue) }
+          val restricted = if (focusValue is BNode) {
+            // RDF4J does not accept a blank node as sh:targetNode: keep the selected shapes' own target
+            // declarations (other shapes stay untargeted) and filter the report to the focus node.
+            shapes.untargeted + shapes.statements.filter { st ->
+              st.subject in targeting && (st.predicate in TARGET_PREDICATES ||
+                (st.subject in shapes.implicitClassTargets && st.predicate == RDF.TYPE))
             }
-            validateIn(connection, restricted, focusValue, shapes.model)
+          } else {
+            shapes.untargeted + targeting.map { vf.createStatement(it, SHACL.TARGET_NODE, focusValue) }
           }
+          validateIn(connection, restricted, focusValue, shapes.model)
         }
       }
     }
   }
 
-  /** Releases the repository and the data loaded into it. */
+  /** Releases the repositories and the data loaded into them. */
   override fun close() {
-    synchronized(lock) {
+    val released = synchronized(slotsLock) {
       closed = true
-      repository?.shutDown()
-      repository = null
-      loadedGraph = null
-      embeddedShapes = null
+      slots.toList().also { slots.clear() }
     }
+    released.forEach { synchronized(it) { it.release() } }
   }
 
   /** The shapes whose target declarations select [focus] in the loaded data. */

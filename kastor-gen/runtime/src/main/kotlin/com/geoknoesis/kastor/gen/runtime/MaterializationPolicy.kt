@@ -34,6 +34,10 @@ enum class IllTypedValueHandling {
  * block runs (nested scopes restore the enclosing value), so tests and request handlers can use a different policy
  * without racing other threads. The override is thread-local: work handed to other threads (executors, coroutines
  * resuming on another thread) sees the process-wide default.
+ *
+ * Generated wrappers read their properties lazily, so each wrapper captures the handling in effect when it is created
+ * (by `OntoMapper.materialize` or a factory) and applies it whenever a property is first read, even after the
+ * [withIllTypedValues] block has ended or on another thread. Data-class factories read every value eagerly.
  */
 object MaterializationPolicy {
 
@@ -71,6 +75,16 @@ object MaterializationPolicy {
     } finally {
       if (previous == null) scopedIllTypedValues.remove() else scopedIllTypedValues.set(previous)
     }
+  }
+
+  /**
+   * A lazy value whose [initializer] runs with the ill-typed-value handling in effect now (when the lazy value is
+   * created), whenever and on whichever thread it is first read. Generated wrappers use it for their properties.
+   */
+  @JvmStatic
+  fun <T> lazyWithCurrentPolicy(initializer: () -> T): Lazy<T> {
+    val handling = illTypedValues
+    return lazy { withIllTypedValues(handling, initializer) }
   }
 
   /**
