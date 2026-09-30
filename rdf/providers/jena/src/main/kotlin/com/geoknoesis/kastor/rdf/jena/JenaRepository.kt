@@ -1,6 +1,9 @@
 package com.geoknoesis.kastor.rdf.jena
 
 import com.geoknoesis.kastor.rdf.*
+import org.apache.jena.graph.Graph
+import org.apache.jena.graph.Node
+import org.apache.jena.graph.NodeFactory
 import org.apache.jena.query.Dataset
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryExecution
@@ -11,7 +14,7 @@ import org.apache.jena.rdf.model.Model
 import org.apache.jena.rdf.model.ModelFactory
 import org.apache.jena.tdb2.TDB2Factory
 import java.nio.file.Paths
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -21,24 +24,36 @@ import java.util.concurrent.atomic.AtomicLong
  * **Inference views** (`*-inference` variants) are lazy RDFS inference graphs over the store, prepared once per
  * graph and per committed state instead of per query, and **never copied into memory**: backward-chained
  * entailments are computed on demand from the (possibly disk-backed) store, so a large TDB2 dataset is not
- * materialised on the heap. The prepared graph is cached keyed by the **snapshot** the read transaction sees:
+ * materialised on the heap. Prepared graphs are shared by every reader of the same **snapshot**:
  * - TDB2: the transaction's data version, which belongs to the storage shared by every repository connected to the
  *   same location, so a commit through any instance (or any other TDB2 client of that location) is seen by all;
  * - in-memory stores: a commit generation of this repository.
  *
- * Jena inference graphs are not safe for concurrent use (backward chaining updates internal tables while reading),
- * so readers sharing a cached graph take turns: each `find` runs to completion under a per-graph lock and is handed
- * out as a detached result, which also keeps store iterators inside the reader's own transaction. The lock is never
- * held while caller-supplied code runs, so consumers may freely wait on reads performed by other threads. A reader
- * whose snapshot cannot be identified (a commit raced with its `begin`) gets a private, uncached lazy view. Inside
- * a write transaction the view is built fresh so uncommitted changes are visible.
+ * Jena inference graphs are not safe for concurrent use (backward chaining updates shared goal tables while
+ * reading), and TDB2 store iterators may only be advanced inside the transaction that opened them, while the
+ * reasoner keeps suspended store iterators in those shared tables. Each snapshot's inference graphs are therefore
+ * owned by a dedicated worker thread holding its own read transaction on that snapshot ([SnapshotView]); readers
+ * hand it small steps (open a find, pull the next chunk of results, close) so that:
+ * - results **stream**: a query reads only what it consumes (`LIMIT 10` never drains the closure);
+ * - concurrent readers **interleave** chunk by chunk instead of waiting for whole result sets;
+ * - no worker step runs while caller-supplied code runs, so consumers may freely wait on reads of other threads;
+ * - a query **timeout** or an interrupted reader stops the reasoner: store reads check the cancellation of the
+ *   step they belong to. A cancelled step may leave the shared goal tables half-updated, so the snapshot's view is
+ *   then discarded and rebuilt for later readers.
  *
- * Memory use of a cached view is Jena's own for lazy RDFS inference: the forward deductions (schema-level for the
- * RDFS rules) plus the backward-chaining tables of the goals queried so far in that snapshot. It is released when a
- * newer snapshot replaces the entry or the repository is closed.
+ * Named graphs are prepared lazily, when a read first touches them. A view is released when a newer snapshot
+ * replaces it (after commits) and no read transaction uses it any more, after [VIEW_IDLE_MILLIS] without readers,
+ * or when the repository is closed. A reader whose snapshot cannot be identified (a commit raced with its `begin`)
+ * gets a private, uncached lazy view; inside a write transaction the view is built fresh so uncommitted changes are
+ * visible.
  *
- * **Query errors:** failures while preparing or evaluating a query surface as [RdfQueryException];
- * exceptions thrown by a caller-supplied `consume` lambda propagate unchanged.
+ * Memory use of a view is Jena's own for lazy RDFS inference: the forward deductions (schema-level for the RDFS
+ * rules) plus the backward-chaining tables of the goals queried so far in that snapshot, plus at most one chunk of
+ * results per open iterator.
+ *
+ * **Query errors:** failures while preparing or evaluating a query surface as [RdfQueryException] (a timed-out
+ * query as an [RdfQueryException] caused by Jena's `QueryCancelledException`); exceptions thrown by a
+ * caller-supplied `consume` lambda propagate unchanged.
  */
 class JenaRepository private constructor(
     private val dataset: Dataset,
@@ -56,6 +71,9 @@ class JenaRepository private constructor(
             JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference")
 
         private const val DEFAULT_GRAPH_KEY = ""
+
+        /** A snapshot view nobody has used for this long is released (its worker ends its read transaction). */
+        internal const val VIEW_IDLE_MILLIS = 10_000L
     }
 
     private val tdb2: Boolean = variantId.startsWith("tdb2")
@@ -74,12 +92,20 @@ class JenaRepository private constructor(
         fun newerThan(other: Snapshot) = store !== other.store || version > other.version
     }
 
-    private class CachedInference(val snapshot: Snapshot, val graph: SharedInferenceGraph, val model: Model)
-    private val inferenceCache = ConcurrentHashMap<String, CachedInference>()
-    private val buildLocks = ConcurrentHashMap<String, Any>()
+    /** Guards [currentView] replacement. Lock order: [viewLock], then a [SnapshotView]'s monitor. */
+    private val viewLock = Any()
+
+    /** Shared inference view of the newest snapshot read so far, if any. */
+    @Volatile private var currentView: SnapshotView? = null
 
     /** Snapshot seen by this thread's read transaction, or null when it is not provable. */
     private val readSnapshot = ThreadLocal<Snapshot?>()
+
+    /** Inference view held by this thread's read transaction (released when the transaction ends). */
+    private val transactionView = ThreadLocal<SnapshotView?>()
+
+    /** Store triples read by inference views so far (diagnostic: views must stream, not drain the store). */
+    private val baseReads = AtomicLong()
 
     internal fun <T> withRead(block: () -> T): T = inTransaction(ReadWrite.READ, block)
 
@@ -103,6 +129,7 @@ class JenaRepository private constructor(
             throw e
         } finally {
             readSnapshot.remove()
+            transactionView.get()?.let { transactionView.remove(); it.release() }
             dataset.end()
         }
     }
@@ -122,7 +149,7 @@ class JenaRepository private constructor(
     private fun commit() {
         if (!inference || tdb2) {
             dataset.commit()
-            if (inference) inferenceCache.clear()
+            if (inference) retireCurrentView()
             return
         }
         generation.incrementAndGet()
@@ -130,82 +157,230 @@ class JenaRepository private constructor(
             dataset.commit()
         } finally {
             generation.incrementAndGet()
-            inferenceCache.clear()
+            retireCurrentView()
         }
+    }
+
+    private fun retireCurrentView() {
+        val view = synchronized(viewLock) { currentView.also { currentView = null } }
+        view?.retire()
     }
 
     /**
      * Read view of [model] (identified by [graphKey]). Must be called inside a transaction.
-     * Inference views are cached per graph for the snapshot of the current read transaction;
+     * Inference views are shared per snapshot of the current read transaction and prepared per graph on first use;
      * inside a write transaction a fresh, uncached view is built so uncommitted changes are visible.
      */
     internal fun readModel(graphKey: String, model: Model): Model {
         if (!inference) return model
-        if (dataset.transactionMode() == ReadWrite.WRITE) return ModelFactory.createRDFSModel(model)
+        if (dataset.transactionMode() == ReadWrite.WRITE) return privateView(model)
         // Unprovable snapshot: a private lazy view, confined to this thread and never shared.
-        val snapshot = readSnapshot.get() ?: return ModelFactory.createRDFSModel(model)
-        inferenceCache[graphKey]?.takeIf { it.snapshot.sameAs(snapshot) }?.let { return it.model }
-        synchronized(buildLocks.computeIfAbsent(graphKey) { Any() }) {
-            inferenceCache[graphKey]?.takeIf { it.snapshot.sameAs(snapshot) }?.let { return it.model }
-            val inf = org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null).bind(model.graph)
-            inf.prepare()
-            val shared = SharedInferenceGraph(inf)
-            val view = ModelFactory.createModelForGraph(shared)
-            // Never replace an entry for a newer snapshot with one built by an older reader.
-            inferenceCache.compute(graphKey) { _, existing ->
-                if (existing == null || snapshot.newerThan(existing.snapshot)) CachedInference(snapshot, shared, view) else existing
-            }
-            return view
+        val snapshot = readSnapshot.get() ?: return privateView(model)
+        var view = transactionView.get()
+        if (view != null && view.poisoned) {
+            transactionView.remove()
+            view.release()
+            view = null
         }
+        if (view == null) {
+            view = acquireView(snapshot) ?: return privateView(model)
+            transactionView.set(view)
+        }
+        return ModelFactory.createModelForGraph(view.graph(graphKey))
     }
+
+    private fun privateView(model: Model): Model =
+        ModelFactory.createInfModel(
+            org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null),
+            ModelFactory.createModelForGraph(CancellableGraph(model.graph, baseReads)),
+        )
+
+    /** The shared view of [snapshot], acquired for the calling transaction; null when none can be opened. */
+    private fun acquireView(snapshot: Snapshot): SnapshotView? {
+        currentView?.takeIf { it.snapshot.sameAs(snapshot) && it.tryAcquire() }?.let { return it }
+        val (view, replaced) = synchronized(viewLock) {
+            currentView?.takeIf { it.snapshot.sameAs(snapshot) && it.tryAcquire() }?.let { return it }
+            val opened = openView(snapshot) ?: return null
+            opened.tryAcquire()
+            val existing = currentView
+            // Never replace the view of a newer snapshot with one opened for an older reader: that one stays
+            // private to its reader and is released when the reader's transaction ends.
+            if (existing == null || !existing.usable() || snapshot.newerThan(existing.snapshot)) {
+                currentView = opened
+                opened to existing
+            } else {
+                opened.retire()
+                opened to null
+            }
+        }
+        replaced?.retire()
+        return view
+    }
+
+    private fun forgetView(view: SnapshotView) {
+        synchronized(viewLock) { if (currentView === view) currentView = null }
+    }
+
+    /** Store triples read by inference views so far (diagnostic: views must stream, not drain the store). */
+    internal fun inferenceBaseReads(): Long = baseReads.get()
+
+    /** Keys of the graphs whose inference view is prepared for the current snapshot (diagnostic). */
+    internal fun preparedInferenceGraphs(): Set<String> = currentView?.preparedGraphs() ?: emptySet()
 
     /** The prepared inference graph cached for [graphKey], if any (for tests and diagnostics). */
     internal fun cachedInferenceGraph(graphKey: String = DEFAULT_GRAPH_KEY): org.apache.jena.reasoner.InfGraph? =
-        inferenceCache[graphKey]?.graph?.inf
+        currentView?.preparedGraph(graphKey)?.inf
 
     /**
-     * Read-only facade over a prepared inference graph shared by the concurrent readers of one snapshot.
+     * Inference state of one committed snapshot: a worker thread holding a read transaction on that snapshot, and
+     * the inference graphs prepared on it so far. Every access to those graphs runs on the worker (see the class
+     * documentation of [JenaRepository]).
      *
-     * Jena inference graphs are not thread-safe: backward chaining updates shared tables while reading. Every
-     * operation therefore runs to completion under [lock] and results are handed out detached, so the lock is never
-     * held while caller code consumes them. Draining completely also keeps every store iterator inside the calling
-     * reader's own transaction (TDB2 rejects iterators used outside the transaction that created them).
+     * Lifecycle: each read transaction using the view holds it ([tryAcquire] / [release]); the view is retired when
+     * a newer snapshot replaces it, when it is poisoned by a cancelled step, after [VIEW_IDLE_MILLIS] without
+     * holders, or when the repository closes. A retired view stops (its worker ends the read transaction and exits)
+     * once it has no holders.
      */
-    internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph) : org.apache.jena.graph.impl.GraphBase() {
-        private val lock = Any()
+    private inner class SnapshotView(val snapshot: Snapshot, private val worker: InferenceWorker) : InferenceExecutor {
+        private val graphs = java.util.concurrent.ConcurrentHashMap<String, SharedInferenceGraph>()
+        private var holders = 0
+        private var retired = false
+        private var stopped = false
+        private var idleSince = 0L
 
-        override fun graphBaseFind(triplePattern: org.apache.jena.graph.Triple): org.apache.jena.util.iterator.ExtendedIterator<org.apache.jena.graph.Triple> {
-            val results = synchronized(lock) {
-                val iterator = inf.find(triplePattern)
-                try { iterator.toList() } finally { iterator.close() }
-            }
-            return org.apache.jena.util.iterator.WrappedIterator.create(results.iterator())
+        @Volatile var poisoned = false
+            private set
+
+        fun usable(): Boolean = !poisoned && synchronized(this) { !retired && !stopped }
+
+        fun tryAcquire(): Boolean = synchronized(this) {
+            if (retired || stopped || poisoned) false else { holders++; true }
         }
 
-        override fun graphBaseContains(t: org.apache.jena.graph.Triple): Boolean = synchronized(lock) { inf.contains(t) }
+        fun release() {
+            val idle = synchronized(this) {
+                holders--
+                if (holders == 0) idleSince = System.nanoTime()
+                stopIfUnused()
+                holders == 0 && !retired
+            }
+            if (idle) IDLE_TIMER.schedule({ retireIfIdle() }, VIEW_IDLE_MILLIS, TimeUnit.MILLISECONDS)
+        }
 
-        /** Counts what [find] exposes (an inference graph's own size does not count every entailment). */
-        override fun graphBaseSize(): Int = synchronized(lock) {
-            val iterator = inf.find()
-            try {
-                var count = 0
-                while (iterator.hasNext()) { iterator.next(); count++ }
-                count
-            } finally {
-                iterator.close()
+        fun retire() = synchronized(this) {
+            retired = true
+            stopIfUnused()
+        }
+
+        private fun retireIfIdle() {
+            val idle = synchronized(this) {
+                holders == 0 && !retired && System.nanoTime() - idleSince >= TimeUnit.MILLISECONDS.toNanos(VIEW_IDLE_MILLIS)
+            }
+            if (!idle) return
+            forgetView(this)
+            synchronized(this) { if (holders == 0) retire() }
+        }
+
+        private fun stopIfUnused() {
+            if (retired && holders == 0 && !stopped) {
+                stopped = true
+                graphs.clear()
+                worker.shutdown { if (dataset.isInTransaction) dataset.end() }
             }
         }
 
-        override fun createPrefixMapping(): org.apache.jena.shared.PrefixMapping = inf.prefixMapping
+        /** Waits for a stopped view's worker to finish (used by [close]). */
+        fun awaitStopped(millis: Long) {
+            if (synchronized(this) { stopped }) worker.awaitTermination(millis)
+        }
+
+        fun preparedGraphs(): Set<String> = graphs.keys.toSet()
+        fun preparedGraph(graphKey: String): SharedInferenceGraph? = graphs[graphKey]
+
+        /** The inference graph of [graphKey] in this snapshot, prepared on first use. */
+        fun graph(graphKey: String): SharedInferenceGraph =
+            graphs[graphKey] ?: call { graphs.getOrPut(graphKey) { prepare(graphKey) } }
+
+        /** Runs on the worker, inside its read transaction. */
+        private fun prepare(graphKey: String): SharedInferenceGraph {
+            val store = dataset.asDatasetGraph()
+            val base = if (graphKey == DEFAULT_GRAPH_KEY) store.defaultGraph else store.getGraph(NodeFactory.createURI(graphKey))
+            val inf = org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null)
+                .bind(CancellableGraph(base, baseReads))
+            inf.prepare()
+            return SharedInferenceGraph(inf, this)
+        }
+
+        override fun <T> call(block: () -> T): T = worker.call(onBroken = ::poison, block = block)
+
+        override fun submitQuietly(block: () -> Unit) = worker.submitQuietly(block)
+
+        /** A step was cancelled or failed half-way: the shared goal tables may be inconsistent, so stop sharing. */
+        private fun poison() {
+            poisoned = true
+            forgetView(this)
+            retire()
+        }
+
+        override fun toString(): String = "SnapshotView(${snapshot.version})"
     }
 
-    /** Dataset used for queries and dataset serialization: the store, or its inference view. Call inside a transaction. */
+    /**
+     * Opens a view of [snapshot]: starts a worker and begins its read transaction. Null when the worker's
+     * transaction does not see exactly [snapshot] (a commit happened in between).
+     */
+    private fun openView(snapshot: Snapshot): SnapshotView? {
+        val worker = InferenceWorker("kastor-jena-inference")
+        val endTransaction = { if (dataset.isInTransaction) dataset.end() }
+        val opened = try {
+            worker.call(onBroken = {}) {
+                val before = generation.get()
+                dataset.begin(ReadWrite.READ)
+                val seen = snapshotAfterBegin(before)
+                (seen != null && seen.sameAs(snapshot)).also { if (!it) dataset.end() }
+            }
+        } catch (e: Throwable) {
+            worker.shutdown(endTransaction)
+            throw e
+        }
+        if (!opened) {
+            worker.shutdown(endTransaction)
+            return null
+        }
+        return SnapshotView(snapshot, worker)
+    }
+
+    /**
+     * Dataset used for queries and dataset serialization: the store, or its inference view. Call inside a
+     * transaction. The inference view prepares a graph only when the query first reads it.
+     */
     internal fun queryDataset(): Dataset {
         if (!inference) return dataset
-        // Facade models borrow the store; closing them would close the borrowed models.
-        return DatasetFactory.create(readModel(DEFAULT_GRAPH_KEY, dataset.defaultModel)).also { view ->
-            dataset.listNames().forEachRemaining { view.addNamedModel(it, readModel(it, dataset.getNamedModel(it))) }
+        return DatasetFactory.wrap(InferenceDatasetGraph())
+    }
+
+    /**
+     * Read-only dataset over the inference views of the current transaction. Graphs are resolved lazily: the query
+     * engine asks for the default graph up front, so each graph is a [LazyGraph] that is prepared on first read.
+     */
+    private inner class InferenceDatasetGraph : org.apache.jena.sparql.core.DatasetGraphCollection(),
+        org.apache.jena.sparql.core.TransactionalNotSupportedMixin {
+        private val store = dataset.asDatasetGraph()
+        private val defaultView = LazyGraph { readModel(DEFAULT_GRAPH_KEY, dataset.defaultModel).graph }
+        private val namedViews = HashMap<Node, Graph>()
+
+        override fun listGraphNodes(): Iterator<Node> = store.listGraphNodes().asSequence().toList().iterator()
+        override fun getDefaultGraph(): Graph = defaultView
+        override fun getGraph(graphNode: Node): Graph {
+            if (org.apache.jena.sparql.core.Quad.isDefaultGraph(graphNode)) return defaultView
+            if (!graphNode.isURI) return org.apache.jena.graph.Graph.emptyGraph
+            return namedViews.getOrPut(graphNode) { LazyGraph { readModel(graphNode.uri, dataset.getNamedModel(graphNode.uri)).graph } }
         }
+        override fun addGraph(graphName: Node, graph: Graph) = throw UnsupportedOperationException("Inference views are read-only")
+        override fun removeGraph(graphName: Node) = throw UnsupportedOperationException("Inference views are read-only")
+        override fun prefixes(): org.apache.jena.riot.system.PrefixMap = store.prefixes()
+        override fun supportsTransactions(): Boolean = false
+        override fun supportsTransactionAbort(): Boolean = false
     }
 
     private val defaultGraphView by lazy { JenaGraph(dataset.defaultModel, this, DEFAULT_GRAPH_KEY) }
@@ -243,16 +418,24 @@ class JenaRepository private constructor(
             QueryExecution.dataset(queryDataset()).query(query.sparql).substitution(initial)
                 .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
         }
-        exec.use { consumeRows(it, query.sparql, consume) }
+        // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation).
+        val deadline = System.nanoTime() + timeout.toNanos().coerceAtLeast(1)
+        exec.use { consumeRows(it, query.sparql, deadline, consume) }
     }
 
-    private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T {
-        val results = queryOperation(sparql) { exec.execSelect() }
+    private fun <T> consumeRows(exec: QueryExecution, sparql: String, consume: (Sequence<BindingSet>) -> T): T =
+        consumeRows(exec, sparql, null, consume)
+
+    private fun <T> consumeRows(exec: QueryExecution, sparql: String, deadline: Long?, consume: (Sequence<BindingSet>) -> T): T {
+        val results = queryOperation(sparql) { withDeadline(deadline) { exec.execSelect() } }
         val rows = results.asSequence().map { row ->
             MapBindingSet(row.varNames().asSequence().associateWith { JenaTerms.fromNode(row.get(it)) }) as BindingSet
         }
-        return consume(rows.guardedBy(sparql))
+        return consume(rows.guardedBy(sparql, deadline))
     }
+
+    private inline fun <T> withDeadline(deadline: Long?, crossinline block: () -> T): T =
+        if (deadline == null) block() else InferenceCancellation.withDeadline(deadline) { block() }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withRead {
         val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }
@@ -292,7 +475,9 @@ class JenaRepository private constructor(
     override fun close() {
         check(!dataset.isInTransaction) { "Cannot close inside a transaction" }
         if (closed.compareAndSet(false, true)) {
-            inferenceCache.clear()
+            val view = synchronized(viewLock) { currentView.also { currentView = null } }
+            view?.retire()
+            view?.awaitStopped(10_000)
             dataset.close()
         }
     }
@@ -314,13 +499,13 @@ class JenaRepository private constructor(
      * Wraps engine failures raised while *iterating* results (e.g. timeouts, evaluation errors) as
      * [RdfQueryException], while exceptions thrown by the consumer's own code are left untouched.
      */
-    private fun <T> Sequence<T>.guardedBy(query: String): Sequence<T> {
+    private fun <T> Sequence<T>.guardedBy(query: String, deadline: Long? = null): Sequence<T> {
         val source = this
         return Sequence {
-            val iterator = queryOperation(query) { source.iterator() }
+            val iterator = queryOperation(query) { withDeadline(deadline) { source.iterator() } }
             object : Iterator<T> {
-                override fun hasNext(): Boolean = queryOperation(query) { iterator.hasNext() }
-                override fun next(): T = queryOperation(query) { iterator.next() }
+                override fun hasNext(): Boolean = queryOperation(query) { withDeadline(deadline) { iterator.hasNext() } }
+                override fun next(): T = queryOperation(query) { withDeadline(deadline) { iterator.next() } }
             }
         }.constrainOnce()
     }
