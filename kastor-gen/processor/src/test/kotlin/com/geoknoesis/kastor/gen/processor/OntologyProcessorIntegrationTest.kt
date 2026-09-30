@@ -168,8 +168,8 @@ class OntologyProcessorIntegrationTest {
         val catalogWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
         assertTrue(catalogWrapper.contains("internal class CatalogWrapper"))
         assertTrue(catalogWrapper.contains("Catalog") && catalogWrapper.contains("RdfBacked"))
-        assertTrue(catalogWrapper.contains("override val title: String by lazy {"))
-        assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
+        assertTrue(catalogWrapper.contains("override val title: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogWrapper.contains("OntoMapper.register(Catalog::class.java)"))
 
         // Verify Dataset interface
@@ -184,8 +184,8 @@ class OntologyProcessorIntegrationTest {
         val datasetWrapper = java.io.StringWriter().also { wrappers["DatasetWrapper"]!!.writeTo(it) }.toString()
         assertTrue(datasetWrapper.contains("internal class DatasetWrapper"))
         assertTrue(datasetWrapper.contains("Dataset") && datasetWrapper.contains("RdfBacked"))
-        assertTrue(datasetWrapper.contains("override val title: String by lazy {"))
-        assertTrue(datasetWrapper.contains("override val distribution: List<Distribution> by lazy {"))
+        assertTrue(datasetWrapper.contains("override val title: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(datasetWrapper.contains("override val distribution: List<Distribution> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(datasetWrapper.contains("OntoMapper.register(Dataset::class.java)"))
     }
 
@@ -288,11 +288,11 @@ class OntologyProcessorIntegrationTest {
         assertTrue(complexInterface.contains("val itemCount: Int"))
 
         // Verify wrapper implementations
-        assertTrue(complexWrapper.contains("override val title: String by lazy {"))
-        assertTrue(complexWrapper.contains("override val keywords: List<String> by lazy {"))
-        assertTrue(complexWrapper.contains("override val score: Double? by lazy {"))
-        assertTrue(complexWrapper.contains("override val isActive: Boolean by lazy {"))
-        assertTrue(complexWrapper.contains("override val itemCount: Int? by lazy {"))
+        assertTrue(complexWrapper.contains("override val title: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(complexWrapper.contains("override val keywords: List<String> by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(complexWrapper.contains("override val score: Double? by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(complexWrapper.contains("override val isActive: Boolean by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(complexWrapper.contains("override val itemCount: Int? by MaterializationPolicy.lazyWithCurrentPolicy {"))
 
         // Verify type conversions
         assertTrue(complexWrapper.contains("MaterializationPolicy.missingRequired(\"title <http://purl.org/dc/terms/title>"), complexWrapper)
@@ -380,9 +380,9 @@ class OntologyProcessorIntegrationTest {
         assertTrue(resourceInterface.contains("val requiredContact: Agent"))
 
         // Verify wrapper object property implementations
-        assertTrue(resourceWrapper.contains("override val publisher: Agent? by lazy {"))
-        assertTrue(resourceWrapper.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(resourceWrapper.contains("override val requiredContact: Agent by lazy {"))
+        assertTrue(resourceWrapper.contains("override val publisher: Agent? by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(resourceWrapper.contains("override val dataset: List<Dataset> by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(resourceWrapper.contains("override val requiredContact: Agent by MaterializationPolicy.lazyWithCurrentPolicy {"))
 
         // Verify object materialization
         assertTrue(resourceWrapper.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"), \""))
@@ -540,7 +540,7 @@ class OntologyProcessorIntegrationTest {
         assertTrue(streamInterface.contains("val title: List<String>"))
 
         assertTrue(streamWrapper.contains("internal class StreamTestWrapper"))
-        assertTrue(streamWrapper.contains("override val title: List<String> by lazy {"))
+        assertTrue(streamWrapper.contains("override val title: List<String> by MaterializationPolicy.lazyWithCurrentPolicy {"))
     }
 }
 

@@ -110,7 +110,14 @@ class GeneratedReaderRulesTest {
             val lenient = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
                 listOf(outcome { doc(badIri).homepage }, outcome { doc(badEnum).kind }, outcome { doc(badLiteral).title })
             }
-            return (strict + ("skip=" + lenient.joinToString(","))).joinToString("|")
+            // The policy is captured when the wrapper is created and applies to properties read later.
+            val escaped = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) { doc(badLiteral) }
+            val captured = doc(badLiteral)
+            val late = listOf(
+                "escaped=" + outcome { escaped.title },
+                "captured=" + outcome { MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) { captured.title } },
+            )
+            return (strict + ("skip=" + lenient.joinToString(",")) + late).joinToString("|")
         }
 
         fun violations(): String {
@@ -187,7 +194,7 @@ class GeneratedReaderRulesTest {
     fun `readers keep blank nodes for BlankNodeOrIRI and route unexpected term kinds through the policy`() {
         assertEquals(
             "ref=true|recordRef=true|written=true|kind=true|homepage=throws|recordHomepage=throws|enum=throws|" +
-                "recordEnum=throws|title=throws|recordTitle=throws|skip=null,null,null",
+                "recordEnum=throws|title=throws|recordTitle=throws|skip=null,null,null|escaped=null|captured=throws",
             call("gen.rules.ProbeKt", "reads"),
         )
     }

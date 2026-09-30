@@ -228,8 +228,8 @@ class OntologyProcessorEndToEndTest {
         val simpleCatalogWrapper = wrappers["SimpleCatalogWrapper"]?.let { java.io.StringWriter().also { w -> it.writeTo(w) }.toString() }
         assertNotNull(simpleCatalogWrapper)
         assertTrue(simpleCatalogWrapper!!.contains("internal class SimpleCatalogWrapper"))
-        assertTrue(simpleCatalogWrapper.contains("override val title: String by lazy {"))
-        assertTrue(simpleCatalogWrapper.contains("override val description: String? by lazy {"))
+        assertTrue(simpleCatalogWrapper.contains("override val title: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(simpleCatalogWrapper.contains("override val description: String? by MaterializationPolicy.lazyWithCurrentPolicy {"))
 
         // Verify that generated code follows Kotlin syntax rules
         assertTrue(simpleCatalogInterface.contains("package com.example.test"))
@@ -415,8 +415,8 @@ class OntologyProcessorEndToEndTest {
 
         // Verify Catalog wrapper has correct object property handling
         val catalogWrapper = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
-        assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by lazy {"))
-        assertTrue(catalogWrapper.contains("override val publisher: Agent? by lazy {"))
+        assertTrue(catalogWrapper.contains("override val dataset: List<Dataset> by MaterializationPolicy.lazyWithCurrentPolicy {"))
+        assertTrue(catalogWrapper.contains("override val publisher: Agent? by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         assertTrue(catalogWrapper.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
 

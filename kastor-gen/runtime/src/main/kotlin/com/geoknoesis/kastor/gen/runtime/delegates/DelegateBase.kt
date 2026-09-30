@@ -1,14 +1,19 @@
 package com.geoknoesis.kastor.gen.runtime.delegates
 
+import com.geoknoesis.kastor.gen.runtime.MaterializationPolicy
 import com.geoknoesis.kastor.gen.runtime.RdfBacked
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
 
 /**
  * Memoized [ReadOnlyProperty] over [RdfBacked], matching one-shot lazy semantics per wrapper instance.
+ *
+ * The delegate is created with its wrapper, so it captures the [MaterializationPolicy] ill-typed-value handling in
+ * effect then and applies it when the value is first read.
  */
 internal class LazyRdfProperty<T>(private val initializer: (RdfBacked) -> T) : ReadOnlyProperty<RdfBacked, T> {
   private val lock = Any()
+  private val handling = MaterializationPolicy.illTypedValues
 
   // UNSET distinguishes "not yet computed" from "computed as null". Using a plain
   // nullable `memo` would re-run the initializer on every access for properties
@@ -28,7 +33,7 @@ internal class LazyRdfProperty<T>(private val initializer: (RdfBacked) -> T) : R
         @Suppress("UNCHECKED_CAST")
         return current as T
       }
-      val v = initializer(thisRef)
+      val v = MaterializationPolicy.withIllTypedValues(handling) { initializer(thisRef) }
       memo = v
       return v
     }

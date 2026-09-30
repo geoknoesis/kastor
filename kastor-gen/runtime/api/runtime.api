@@ -152,6 +152,7 @@ public final class com/geoknoesis/kastor/gen/runtime/MaterializationPolicy {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/runtime/MaterializationPolicy;
 	public static final fun getIllTypedValues ()Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;
 	public static final fun illTyped (Lcom/geoknoesis/kastor/rdf/Literal;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Void;
+	public static final fun lazyWithCurrentPolicy (Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
 	public static final fun missingRequired (Ljava/lang/String;)Ljava/lang/Void;
 	public static final fun setIllTypedValues (Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;)V
 	public static final fun unexpectedTerm (Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Void;

@@ -367,9 +367,10 @@ public class OntologyWrapperGenerator(
 
         val initializer = valuesInitializer(property, ctx, shapeIri)
 
+        // The wrapper captures the MaterializationPolicy in effect when it is created; properties read later use it.
         propertyBuilder.delegate(
             CodeBlock.builder()
-                .add("lazy {\n").indent()
+                .add("%T.lazyWithCurrentPolicy {\n", materializationPolicy).indent()
                 .add(initializer)
                 .unindent().add("\n}")
                 .build()

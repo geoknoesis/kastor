@@ -119,15 +119,15 @@ class OntologyWrapperGeneratorTest {
         assertTrue(catalogCode.contains("Iri(\"http://www.w3.org/ns/dcat#dataset\")"))
         
         // Check property implementations
-        assertTrue(catalogCode.contains("override val title: String by lazy {"))
+        assertTrue(catalogCode.contains("override val title: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/title\"), \""))
         assertTrue(catalogCode.contains(".lexical"))
         
-        assertTrue(catalogCode.contains("override val description: String? by lazy {"))
+        assertTrue(catalogCode.contains("override val description: String? by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/description\"), \""))
         assertTrue(catalogCode.contains(".map { it.lexical }.firstOrNull()"))
         
-        assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
+        assertTrue(catalogCode.contains("override val dataset: List<Dataset> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
@@ -194,22 +194,22 @@ class OntologyWrapperGeneratorTest {
         val testCode = java.io.StringWriter().also { wrappers["TestWrapper"]!!.writeTo(it) }.toString()
         
         // Check string property
-        assertTrue(testCode.contains("override val stringProp: String by lazy {"))
+        assertTrue(testCode.contains("override val stringProp: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/stringProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
         
         // Check int property
-        assertTrue(testCode.contains("override val intProp: Int by lazy {"))
+        assertTrue(testCode.contains("override val intProp: Int by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/intProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.int("))
         
         // Check boolean property
-        assertTrue(testCode.contains("override val booleanProp: Boolean by lazy {"))
+        assertTrue(testCode.contains("override val booleanProp: Boolean by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/booleanProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.boolean("))
         
         // Check double property
-        assertTrue(testCode.contains("override val doubleProp: Double by lazy {"))
+        assertTrue(testCode.contains("override val doubleProp: Double by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/doubleProp\"), \""))
         assertTrue(testCode.contains("XsdLiterals.double("))
     }
@@ -262,16 +262,16 @@ class OntologyWrapperGeneratorTest {
         val testCode = java.io.StringWriter().also { wrappers["TestWrapper"]!!.writeTo(it) }.toString()
         
         // Single value property
-        assertTrue(testCode.contains("override val singleProp: String by lazy {"))
+        assertTrue(testCode.contains("override val singleProp: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/singleProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
         
         // Multiple value property
-        assertTrue(testCode.contains("override val multipleProp: List<String> by lazy {"))
+        assertTrue(testCode.contains("override val multipleProp: List<String> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains(".map { it.lexical }"))
         
         // Unbounded property
-        assertTrue(testCode.contains("override val unboundedProp: List<String> by lazy {"))
+        assertTrue(testCode.contains("override val unboundedProp: List<String> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains(".map { it.lexical }"))
     }
 
@@ -314,12 +314,12 @@ class OntologyWrapperGeneratorTest {
         val catalogCode = java.io.StringWriter().also { wrappers["CatalogWrapper"]!!.writeTo(it) }.toString()
         
         // List object property
-        assertTrue(catalogCode.contains("override val dataset: List<Dataset> by lazy {"))
+        assertTrue(catalogCode.contains("override val dataset: List<Dataset> by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://www.w3.org/ns/dcat#dataset\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Dataset::class.java)"))
         
         // Single object property
-        assertTrue(catalogCode.contains("override val publisher: Agent? by lazy {"))
+        assertTrue(catalogCode.contains("override val publisher: Agent? by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(catalogCode.contains("KastorGraphOps.getObjectValues(rdf.graph, rdf.node, Iri(\"http://purl.org/dc/terms/publisher\"), \""))
         assertTrue(catalogCode.contains("OntoMapper.materialize(RdfRef(child, rdf.graph), Agent::class.java)"))
         assertTrue(catalogCode.contains(".firstOrNull()"))
@@ -478,7 +478,7 @@ class OntologyWrapperGeneratorTest {
         val testCode = java.io.StringWriter().also { wrappers["TestWrapper"]!!.writeTo(it) }.toString().toString()
         
         // Unknown datatypes should default to String
-        assertTrue(testCode.contains("override val unknownProp: String by lazy {"))
+        assertTrue(testCode.contains("override val unknownProp: String by MaterializationPolicy.lazyWithCurrentPolicy {"))
         assertTrue(testCode.contains("KastorGraphOps.getLiteralValues(rdf.graph, rdf.node, Iri(\"http://example.org/unknownProp\"), \""))
         assertTrue(testCode.contains(".lexical"))
     }
