@@ -491,7 +491,7 @@ object Rdf {
                         if (!result.isCancelled) result.complete(parseFromInputStream(stream, format, body.baseIri))
                     }
                 } catch (e: Throwable) { result.completeExceptionally(e)
-                } finally { (active.get() as? java.net.HttpURLConnection)?.disconnect(); input.set(null) }
+                } finally { input.set(null) }
             }
         } } catch (e: java.util.concurrent.RejectedExecutionException) { result.completeExceptionally(e) }
         return result
