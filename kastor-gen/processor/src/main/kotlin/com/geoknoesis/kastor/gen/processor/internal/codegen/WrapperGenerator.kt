@@ -11,7 +11,6 @@ import com.squareup.kotlinpoet.*
 import com.squareup.kotlinpoet.KModifier.*
 
 private const val RUNTIME = "com.geoknoesis.kastor.gen.runtime"
-private const val DELEGATES = "com.geoknoesis.kastor.gen.runtime.delegates"
 private val KASTOR_GRAPH_OPS = ClassName(RUNTIME, "KastorGraphOps")
 private val ONTO_MAPPER = ClassName(RUNTIME, "OntoMapper")
 private val RDF_REF = ClassName(RUNTIME, "RdfRef")
@@ -133,28 +132,21 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     val element = RdfMemberTypes.element(property.kotlinType)
     val literal = requireNotNull(RdfMemberTypes.literal(element)) { "${property.name}: $element is not a literal type" }
     val typeName = memberType(property, literal.typeName)
-    val decoder = CodeBlock.of("%T::%N", XSD_LITERALS, literal.decoder)
+    // Values of another term kind and ill-typed literals follow MaterializationPolicy, like the SHACL-generated readers.
+    val values = CodeBlock.of(
+      "%L.mapNotNull { %T.%N(it) ?: %T.illTyped(it, %S, %S) }",
+      literalValues(property, pred), XSD_LITERALS, literal.decoder, MATERIALIZATION_POLICY, label(property), property.kotlinType,
+    )
     if (!property.mutable) {
-      val delegateExpr = when {
-        isList(property) && element == "String" -> CodeBlock.of("%M(%L)", MemberName(DELEGATES, "rdfStrings"), pred)
-        // Decoded values apply MaterializationPolicy to ill-typed values, like the SHACL-generated readers.
-        isList(property) -> CodeBlock.of("%M(%L, %L)", MemberName(DELEGATES, "rdfLiterals"), pred, decoder)
-        property.nullable -> CodeBlock.of("%M(%L, %L)", MemberName(DELEGATES, "rdfLiteralOrNull"), pred, decoder)
-        else -> CodeBlock.of("%M(%L, %L)", MemberName(DELEGATES, "rdfLiteral"), pred, decoder)
-      }
       return PropertySpec.builder(property.name, typeName)
         .addModifiers(OVERRIDE)
-        .delegate(delegateExpr)
+        .delegate(lazyValues(property, values))
         .build()
     }
     val getter = FunSpec.getterBuilder()
       .addCode(
         CodeBlock.builder()
-          .add("return %T.getLiteralValues(rdf.graph, rdf.node, %L).firstOrNull()", KASTOR_GRAPH_OPS, pred)
-          .add(
-            "?.let { %T.%N(it) ?: %T.illTyped(it, %S, %S) }",
-            XSD_LITERALS, literal.decoder, MATERIALIZATION_POLICY, label(property), property.kotlinType,
-          )
+          .add("return %L.firstOrNull()", values)
           .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
           .add("\n")
           .build(),
@@ -187,16 +179,29 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
         )
         return builder.delegate(lazyValues(property, values)).build()
       }
-      RdfEnumKind.CODE -> CodeBlock.of("{ lit -> %T.from(lit.lexical) }", enumType)
-      else -> CodeBlock.of("{ lit -> enumValues<%T>().firstOrNull { it.name == lit.lexical } }", enumType)
+      RdfEnumKind.CODE -> CodeBlock.of("%T.from(lit.lexical)", enumType)
+      else -> CodeBlock.of("enumValues<%T>().firstOrNull { it.name == lit.lexical }", enumType)
     }
-    val delegate = when {
-      isList(property) -> "rdfLiterals"
-      property.nullable -> "rdfLiteralOrNull"
-      else -> "rdfLiteral"
-    }
-    return builder.delegate(CodeBlock.of("%M(%L) %L", MemberName(DELEGATES, delegate), pred, decode)).build()
+    val values = CodeBlock.of(
+      "%L.mapNotNull { lit -> %L ?: %T.illTyped(lit, %S, %S) }",
+      literalValues(property, pred), decode, MATERIALIZATION_POLICY, label(property), property.kotlinType,
+    )
+    return builder.delegate(lazyValues(property, values)).build()
   }
+
+  /** Literal values of the member; values of another term kind follow MaterializationPolicy. */
+  private fun literalValues(property: PropertyModel, pred: CodeBlock): CodeBlock =
+    CodeBlock.of("%T.getLiteralValues(rdf.graph, rdf.node, %L, %S)", KASTOR_GRAPH_OPS, pred, label(property))
+
+  /** Materialized object values of the member; literals and triple terms follow MaterializationPolicy. */
+  private fun objectValues(property: PropertyModel, pred: CodeBlock, elementTypeName: TypeName): CodeBlock =
+    CodeBlock.builder()
+      .add("%T.getObjectValues(rdf.graph, rdf.node, %L, %S) { child ->\n", KASTOR_GRAPH_OPS, pred, label(property))
+      .indent()
+      .add("%T.materialize(%T(child, rdf.graph), %T::class.java)\n", ONTO_MAPPER, RDF_REF, elementTypeName)
+      .unindent()
+      .add("}")
+      .build()
 
   private fun termProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {
     val element = RdfMemberTypes.element(property.kotlinType)
@@ -211,19 +216,15 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
   private fun objectProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
     val elementTypeName = domainClassName(domainPackageName, property.kotlinType, property.typePackage)
     val typeName = if (property.nullable) elementTypeName.copy(nullable = true) else elementTypeName
+    val values = objectValues(property, pred, elementTypeName)
     if (!property.mutable) {
-      val delegate = if (property.nullable) "rdfObjectOrNull" else "rdfObject"
       return PropertySpec.builder(property.name, typeName)
         .addModifiers(OVERRIDE)
-        .delegate(CodeBlock.of("%M<%T>(%L)", MemberName(DELEGATES, delegate), elementTypeName, pred))
+        .delegate(lazyValues(property, values))
         .build()
     }
     val getterCode = CodeBlock.builder()
-      .add("return %T.getObjectValues(rdf.graph, rdf.node, %L) { child ->\n", KASTOR_GRAPH_OPS, pred)
-      .indent()
-      .addStatement("%T.materialize(%T(child, rdf.graph), %T::class.java)", ONTO_MAPPER, RDF_REF, elementTypeName)
-      .unindent()
-      .add("}.firstOrNull()")
+      .add("return %L.firstOrNull()", values)
       .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
       .add("\n")
       .build()
@@ -243,10 +244,9 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
   private fun objectListProperty(domainPackageName: String, property: PropertyModel, pred: CodeBlock): PropertySpec {
     val elementType = RdfMemberTypes.element(property.kotlinType)
     val elementTypeName = domainClassName(domainPackageName, elementType, property.typePackage)
-    val listType = KotlinPoetUtils.listOf(elementTypeName)
-    return PropertySpec.builder(property.name, listType)
+    return PropertySpec.builder(property.name, KotlinPoetUtils.listOf(elementTypeName))
       .addModifiers(OVERRIDE)
-      .delegate(CodeBlock.of("%M<%T>(%L)", MemberName(DELEGATES, "rdfObjects"), elementTypeName, pred))
+      .delegate(CodeBlock.of("%T.lazyWithCurrentPolicy { %L }", MATERIALIZATION_POLICY, objectValues(property, pred, elementTypeName)))
       .build()
   }
 
