@@ -2,12 +2,15 @@ package com.geoknoesis.kastor.ontoquality
 
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeCatalog
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeMetadata
+import com.geoknoesis.kastor.ontoquality.explanation.BlankNodeKeys
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
 import com.geoknoesis.kastor.ontoquality.explanation.escapeMarkdownInline
 import com.geoknoesis.kastor.ontoquality.explanation.sanitizeTerminalText
 import com.geoknoesis.kastor.ontoquality.integration.FindingPrioritizer
 import com.geoknoesis.kastor.ontoquality.integration.MetricsContext
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.shacl.ValidationReport
 import com.geoknoesis.kastor.rdf.shacl.ValidationViolation
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
@@ -146,13 +149,26 @@ data class QualityReport(
     }
 
     companion object {
+        /**
+         * @param dataGraph the validated graph; when given, findings on blank nodes get parse-independent
+         *   [QualityFinding.blankNodeKeys].
+         */
+        @JvmOverloads
         fun from(
             raw: ValidationReport,
             catalogs: List<ShapeCatalog>,
             metricsContext: MetricsContext? = null,
+            dataGraph: RdfGraph? = null,
         ): QualityReport {
             val meta = catalogs.fold(emptyMap<String, ShapeMetadata>()) { acc, c -> acc + c.shapeMetadata }
-            val rawFindings = raw.violations.map { v -> QualityFinding.from(v, meta) }
+            val keys =
+                dataGraph?.let { g -> BlankNodeKeys.compute(g, raw.violations.flatMapTo(HashSet()) { QualityFinding.blankNodesOf(it) }) }
+                    .orEmpty()
+            val rawFindings =
+                raw.violations.map { v ->
+                    val finding = QualityFinding.from(v, meta)
+                    if (keys.isEmpty()) finding else finding.copy(blankNodeKeys = QualityFinding.blankNodesOf(v).mapNotNull { b -> keys[b]?.let { b to it } }.toMap())
+                }
             val sorted =
                 metricsContext?.let { FindingPrioritizer.sort(rawFindings, it.entityImportance) }
                     ?: rawFindings
@@ -205,13 +221,26 @@ private fun markdownHeadline(message: String): String {
     return if (line.length <= 120) line else line.take(117).trimEnd() + "…"
 }
 
-data class QualityFinding(
+/**
+ * @property blankNodeKeys parse-independent keys for the blank nodes in [violation] (focus node, path, value), used
+ *   by [com.geoknoesis.kastor.ontoquality.explanation.FindingRef]; empty when the data graph was not available.
+ */
+data class QualityFinding @JvmOverloads constructor(
     val violation: ValidationViolation,
     val category: QualityCategory,
     val pitfall: PitfallReference?,
     val tier: QualityTier,
+    val blankNodeKeys: Map<BlankNode, String> = emptyMap(),
 ) {
     companion object {
+        /** Blank nodes referenced by [violation]. */
+        internal fun blankNodesOf(violation: ValidationViolation): Set<BlankNode> =
+            buildSet {
+                (violation.focusNode as? BlankNode)?.let(::add)
+                (violation.value as? BlankNode)?.let(::add)
+                violation.path?.forEach { (it as? BlankNode)?.let(::add) }
+            }
+
         fun from(violation: ValidationViolation, shapeMetadata: Map<String, ShapeMetadata>): QualityFinding {
             val meta =
                 violation.shapeUri?.let { shapeMetadata[it] }

@@ -131,13 +131,17 @@ public final class com/geoknoesis/kastor/ontoquality/QualityChecker$Companion {
 public final class com/geoknoesis/kastor/ontoquality/QualityFinding {
 	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/QualityFinding$Companion;
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;)V
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;Ljava/util/Map;)V
+	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
 	public final fun component2 ()Lcom/geoknoesis/kastor/ontoquality/QualityCategory;
 	public final fun component3 ()Lcom/geoknoesis/kastor/ontoquality/PitfallReference;
 	public final fun component4 ()Lcom/geoknoesis/kastor/ontoquality/QualityTier;
-	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;)Lcom/geoknoesis/kastor/ontoquality/QualityFinding;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/QualityFinding;Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/QualityFinding;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;Ljava/util/Map;)Lcom/geoknoesis/kastor/ontoquality/QualityFinding;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/QualityFinding;Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;Lcom/geoknoesis/kastor/ontoquality/QualityCategory;Lcom/geoknoesis/kastor/ontoquality/PitfallReference;Lcom/geoknoesis/kastor/ontoquality/QualityTier;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/QualityFinding;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBlankNodeKeys ()Ljava/util/Map;
 	public final fun getCategory ()Lcom/geoknoesis/kastor/ontoquality/QualityCategory;
 	public final fun getPitfall ()Lcom/geoknoesis/kastor/ontoquality/PitfallReference;
 	public final fun getTier ()Lcom/geoknoesis/kastor/ontoquality/QualityTier;
@@ -182,8 +186,10 @@ public final class com/geoknoesis/kastor/ontoquality/QualityReport {
 }
 
 public final class com/geoknoesis/kastor/ontoquality/QualityReport$Companion {
+	public final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 	public final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
-	public static synthetic fun from$default (Lcom/geoknoesis/kastor/ontoquality/QualityReport$Companion;Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public final fun from (Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
+	public static synthetic fun from$default (Lcom/geoknoesis/kastor/ontoquality/QualityReport$Companion;Lcom/geoknoesis/kastor/rdf/shacl/ValidationReport;Ljava/util/List;Lcom/geoknoesis/kastor/ontoquality/integration/MetricsContext;Lcom/geoknoesis/kastor/rdf/RdfGraph;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/QualityReport;
 }
 
 public final class com/geoknoesis/kastor/ontoquality/QualityTier : java/lang/Enum {

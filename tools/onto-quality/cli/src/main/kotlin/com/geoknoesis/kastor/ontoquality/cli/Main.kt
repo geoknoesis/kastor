@@ -1124,7 +1124,7 @@ internal fun findingsToJson(
                         put("category", f.category.name)
                         put("pitfall", pitfallLabel(f.pitfall))
                         put("tier", f.tier.name)
-                        put("focusNode", focusNodeToString(f.violation.focusNode))
+                        put("focusNode", focusNodeToString(f.violation.focusNode, f.blankNodeKeys))
                     }
                 }
             }
@@ -1154,10 +1154,11 @@ internal fun findingsToJson(
     return reportJson.encodeToString(JsonObject.serializer(), root)
 }
 
-private fun focusNodeToString(term: RdfTerm): String =
+/** Blank nodes are shown by their parse-independent key when known (see [QualityFinding.blankNodeKeys]). */
+private fun focusNodeToString(term: RdfTerm, blankNodeKeys: Map<BlankNode, String>): String =
     when (term) {
         is Iri -> term.value
-        is BlankNode -> term.toString()
+        is BlankNode -> blankNodeKeys[term] ?: term.toString()
         is Literal -> term.lexical
         else -> term.toString()
     }
