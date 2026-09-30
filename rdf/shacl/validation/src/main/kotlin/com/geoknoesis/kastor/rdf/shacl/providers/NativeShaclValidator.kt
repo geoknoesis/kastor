@@ -224,6 +224,11 @@ internal class NativeShaclValidator(
         var inGroup = false
         /** While a group with negative dependencies is refined, reads of its members answer undefined. */
         var readUndefined = false
+        /**
+         * Reads of registered but unsettled questions that the recording of this question missed. They are kept across
+         * solver restarts and added to the recorded dependencies, so the next dependency graph orders them correctly.
+         */
+        val missedReads = ArrayList<Dependency>()
     }
 
     /** State of one recursive-component solve (see class KDoc). */
@@ -233,7 +238,10 @@ internal class NativeShaclValidator(
         var recording: ArrayList<Dependency>? = null
         /** Set when an evaluation reads a question the recording did not register (the solve restarts). */
         var restart = false
-        var unregistered = 0
+        /** New questions or missed dependencies found since the last restart (each restart makes progress). */
+        var discovered = 0
+        /** Question whose evaluation is under way in step 2 (receives the dependencies its recording missed). */
+        var evaluating: Atom? = null
     }
 
     /** Evaluates a CharSequence for regex matching while consulting the deadline every 1024 character reads. */
@@ -577,11 +585,18 @@ internal class NativeShaclValidator(
         }
         val atom = solver.atoms[key]
         if (atom == null || (!atom.resolved && !atom.inGroup)) {
-            // Fail safe: a question the recording did not register is never answered by default.
+            // Fail safe: a question the recording did not register, or a dependency it did not record (so the
+            // question may not be settled yet), is never answered by default; the solve restarts with it recorded.
             solver.restart = true
             if (atom == null) {
                 solver.atoms[key] = Atom(value, ref)
-                solver.unregistered++
+                solver.discovered++
+            } else {
+                val reader = solver.evaluating
+                if (reader != null && reader.missedReads.none { it.key == key && it.negative == negative }) {
+                    reader.missedReads.add(Dependency(key, value, ref, negative))
+                    solver.discovered++
+                }
             }
             return Conformance.UNDEFINED
         }
@@ -600,10 +615,16 @@ internal class NativeShaclValidator(
                 recordDependencies(solver, toRecord, ctx, state)
                 evaluateGroups(solver, rootKey, ctx, state)
                 if (!solver.restart) break
-                check(solver.unregistered > 0) { "SHACL recursion solver read a question it had not evaluated" }
+                if (solver.discovered == 0) {
+                    // Unreachable: every restart registers a new question or a new missed dependency.
+                    throw ShaclValidationException(
+                        "Internal error in the SHACL recursion solver: an unsettled question was read again after its " +
+                            "dependency had been recorded (shape ${rootShape.displayId()}); please report this shapes graph",
+                    )
+                }
                 // The recorded dependency graph was incomplete: record every question again and re-evaluate.
                 solver.restart = false
-                solver.unregistered = 0
+                solver.discovered = 0
                 for (atom in solver.atoms.values) {
                     atom.resolved = false
                     atom.inGroup = false
@@ -639,6 +660,7 @@ internal class NativeShaclValidator(
                     solver.recording = saved
                 }
             atom.optimistic = result
+            reads.addAll(atom.missedReads)
             if (reads.isEmpty() || (result == Conformance.FAILS && reads.none { it.negative })) {
                 // No recursive read, or failing although every (positive) read conformed: decided by monotonicity.
                 atom.value = result
@@ -677,7 +699,7 @@ internal class NativeShaclValidator(
             atoms.forEach { it.inGroup = true; it.readUndefined = true }
             val decided = ArrayList<Atom>()
             for (atom in atoms) {
-                val result = evaluateConformance(atom.node, atom.shape, ctx, evaluationState)
+                val result = evaluateAtom(solver, atom, ctx, evaluationState)
                 if (solver.restart) return
                 if (result != Conformance.UNDEFINED) {
                     atom.value = result
@@ -695,6 +717,17 @@ internal class NativeShaclValidator(
             val restSet = rest.toHashSet()
             val split = stronglyConnectedComponents(rest, ctx.budget) { successors(it, restSet) }
             for (group in split.asReversed()) work.addFirst(group)
+        }
+    }
+
+    /** Evaluates a solver question in step 2, attributing reads the recording missed to it. */
+    private fun evaluateAtom(solver: RecursionSolver, atom: Atom, ctx: ValidationContext, state: DepthState): Conformance {
+        val saved = solver.evaluating
+        solver.evaluating = atom
+        try {
+            return evaluateConformance(atom.node, atom.shape, ctx, state)
+        } finally {
+            solver.evaluating = saved
         }
     }
 
@@ -716,7 +749,7 @@ internal class NativeShaclValidator(
             val atom = solver.atoms.getValue(key)
             // The recorded answer is the first iteration when every read outside the group conforms.
             val reusable = atom.dependencies.all { d -> d.key in memberSet || solver.atoms.getValue(d.key).value == Conformance.CONFORMS }
-            val value = if (reusable) atom.optimistic else evaluateConformance(atom.node, atom.shape, ctx, state)
+            val value = if (reusable) atom.optimistic else evaluateAtom(solver, atom, ctx, state)
             if (solver.restart) return
             if (value < atom.value) {
                 atom.value = value
@@ -728,7 +761,7 @@ internal class NativeShaclValidator(
             val key = work.removeFirst()
             queued.remove(key)
             val atom = solver.atoms.getValue(key)
-            val result = evaluateConformance(atom.node, atom.shape, ctx, state)
+            val result = evaluateAtom(solver, atom, ctx, state)
             if (solver.restart) return
             if (result < atom.value) {
                 atom.value = result
