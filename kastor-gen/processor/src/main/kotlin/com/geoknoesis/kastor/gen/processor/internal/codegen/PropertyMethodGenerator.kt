@@ -317,10 +317,10 @@ private fun addImmediateValidation(
 
     if (text != null) {
         c.minLength?.let {
-            functionBuilder.addStatement("require(%L.length >= %L) { %S }", text, it, "$name must have minLength >= $it")
+            functionBuilder.addStatement("require(%L.let { it.codePointCount(0, it.length) } >= %L) { %S }", text, it, "$name must have minLength >= $it")
         }
         c.maxLength?.let {
-            functionBuilder.addStatement("require(%L.length <= %L) { %S }", text, it, "$name must have maxLength <= $it")
+            functionBuilder.addStatement("require(%L.let { it.codePointCount(0, it.length) } <= %L) { %S }", text, it, "$name must have maxLength <= $it")
         }
         c.pattern?.let {
             // The lazily compiled constant is emitted once per file by InstanceDslGenerator.

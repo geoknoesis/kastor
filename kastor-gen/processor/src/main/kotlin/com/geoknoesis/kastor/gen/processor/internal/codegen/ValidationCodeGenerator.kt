@@ -65,12 +65,12 @@ internal class ValidationCodeGenerator(
                         literalClass, iriClass,
                     )
                     c.minLength?.let {
-                        functionBuilder.beginControlFlow("if (value == null || value.length < %L)", it)
+                        functionBuilder.beginControlFlow("if (value == null || value.codePointCount(0, value.length) < %L)", it)
                         functionBuilder.addStatement("violations.add(%S)", "$name must have minLength >= $it")
                         functionBuilder.endControlFlow()
                     }
                     c.maxLength?.let {
-                        functionBuilder.beginControlFlow("if (value == null || value.length > %L)", it)
+                        functionBuilder.beginControlFlow("if (value == null || value.codePointCount(0, value.length) > %L)", it)
                         functionBuilder.addStatement("violations.add(%S)", "$name must have maxLength <= $it")
                         functionBuilder.endControlFlow()
                     }

@@ -46,6 +46,7 @@ class GeneratedConstraintAlignmentTest {
         EX + "NoteShape", EX + "Note",
         listOf(
             prop("code", datatype = null).copy(pattern = "^u", minLength = 2, maxLength = 6),
+            prop("nick", datatype = null).copy(minLength = 2, maxLength = 2),
             prop("status", datatype = null).copy(
                 inValues = listOf("draft", "final"),
                 inValuesTyped = listOf(ShaclInValue("draft", false, "${XSD_NS}string"), ShaclInValue("final", false, "${XSD_NS}string")),
@@ -82,6 +83,9 @@ class GeneratedConstraintAlignmentTest {
                 "inOk=" + check(g, node("urn:f", "status", Literal("draft"))),
                 "inIri=" + check(g, node("urn:g", "status", Iri("urn:draft"))),
                 "inBlank=" + check(g, node("urn:h", "status", BlankNode("b2"))),
+                // SHACL string lengths count characters (code points), not UTF-16 units.
+                "emojiTwo=" + check(g, node("urn:i", "nick", Literal("\uD83D\uDE00\uD83D\uDE00"))),
+                "emojiOne=" + check(g, node("urn:j", "nick", Literal("\uD83D\uDE00"))),
             )
             return results.joinToString("|")
         }
@@ -99,6 +103,16 @@ class GeneratedConstraintAlignmentTest {
                 run(Literal("abc")),
                 run(Iri("urn:five")),
             ).joinToString(",")
+        }
+
+        fun dslLength(): String {
+            fun run(value: String): String {
+                val g = MemoryGraph()
+                val n = Iri("urn:n")
+                g.addTriple(RdfTriple(n, p("nick"), Literal(value)))
+                return try { DslProbe(n, g).validate(); "ok" } catch (e: ValidationException) { "fails" }
+            }
+            return listOf(run("\uD83D\uDE00\uD83D\uDE00"), run("\uD83D\uDE00"), run("ab"), run("abc")).joinToString(",")
         }
     """.trimIndent()
 
@@ -122,6 +136,14 @@ class GeneratedConstraintAlignmentTest {
                     isRequired = false,
                     isList = false,
                     constraints = PropertyConstraints(minInclusive = BigDecimal.ZERO, maxInclusive = BigDecimal.TEN),
+                ),
+                PropertyBuilderModel(
+                    propertyName = "nick",
+                    propertyIri = EX + "nick",
+                    kotlinType = STRING,
+                    isRequired = false,
+                    isList = false,
+                    constraints = PropertyConstraints(minLength = 2, maxLength = 2),
                 ),
             ),
             shapeIri = EX + "PersonShape",
@@ -153,9 +175,15 @@ class GeneratedConstraintAlignmentTest {
     fun `embedded string and sh-in constraints apply to IRIs and blank nodes`() {
         assertEquals(
             "literalOk=ok|iriOk=ok|iriLong=maxLength:code|iriPattern=pattern:code|" +
-                "blank=maxLength:code,minLength:code,pattern:code|inOk=ok|inIri=in:status|inBlank=in:status",
+                "blank=maxLength:code,minLength:code,pattern:code|inOk=ok|inIri=in:status|inBlank=in:status|" +
+                "emojiTwo=ok|emojiOne=minLength:nick",
             call("wrapper"),
         )
+    }
+
+    @Test
+    fun `DSL string lengths count code points`() {
+        assertEquals("ok,fails,ok,fails", call("dslLength"))
     }
 
     @Test
