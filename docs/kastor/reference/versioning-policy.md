@@ -2,6 +2,8 @@
 
 {% include version-banner.md %}
 
+> **Authoritative policy for 0.x:** the [compatibility policy](../../reference/release-contract.md#compatibility-policy) in the release contract. While Kastor is in 0.x, breaking changes bump the **minor** version, not the major version; where this page differs, the release contract applies.
+
 ## Overview
 
 Kastor RDF SDK follows [Semantic Versioning (Semver)](https://semver.org/) to ensure predictable versioning and clear communication about API changes. This document outlines our versioning strategy, backward compatibility guarantees, and deprecation policies.
