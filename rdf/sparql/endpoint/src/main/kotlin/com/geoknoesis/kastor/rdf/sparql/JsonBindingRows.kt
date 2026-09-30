@@ -7,8 +7,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** Incrementally frames JSON values. Only one binding row is materialized at a time. */
-internal class JsonBindingRows(input: InputStream) {
+/**
+ * Incrementally frames JSON values. Only one binding row is materialized at a time, and no single
+ * value (a row, or a skipped value such as `head`) may exceed [maxValueChars] characters.
+ */
+internal class JsonBindingRows(input: InputStream, private val maxValueChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS) {
     // Decoding in 8K chunks into a private buffer: no per-character lock (PushbackReader and the
     // buffered reader it wrapped synchronize every read call).
     private val source = InputStreamReader(input, Charsets.UTF_8)
@@ -39,6 +42,12 @@ internal class JsonBindingRows(input: InputStream) {
 
     private fun next(): Int { var c: Int; do { c = read() } while (c >= 0 && c.toChar().isWhitespace()); return c }
     private fun expect(c: Char) { check(next() == c.code) { "Malformed SPARQL JSON: expected $c" } }
+    private fun append(out: StringBuilder, ch: Char) {
+        check(out.length < maxValueChars) {
+            "SPARQL JSON result row or value exceeds $maxValueChars characters (maxResultRowChars)"
+        }
+        out.append(ch)
+    }
     private fun value(): String {
         val first = next()
         check(first >= 0) { "Truncated SPARQL JSON" }
@@ -51,14 +60,14 @@ internal class JsonBindingRows(input: InputStream) {
                 val c = read()
                 if (c < 0) break
                 if (c.toChar() in ",]}" || c.toChar().isWhitespace()) { unread(c); break }
-                out.append(c.toChar())
+                append(out, c.toChar())
             }
             return out.toString()
         }
         while (true) {
             val c = read()
             check(c >= 0) { "Truncated SPARQL JSON" }
-            val ch = c.toChar(); out.append(ch)
+            val ch = c.toChar(); append(out, ch)
             if (quoted) {
                 if (escaped) escaped = false
                 else if (ch == '\\') escaped = true

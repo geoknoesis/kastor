@@ -135,12 +135,17 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   exchange for buffered calls, time to response headers for streams; without it the read timeout
  *   bounds the wait for headers), the optional [SparqlEndpointConfig.streamingRequestTimeout] for
  *   streams, and the per-call timeout of `withSelectRows(query, bindings, timeout)`, which bounds
- *   the whole call.
+ *   the whole call. Whichever deadline ends first also ends the wait for the response headers.
  * - Requests are never retried automatically, so a failed UPDATE is not re-sent.
  * - Redirects are handled explicitly: `307`/`308` keep method and body; `301`/`302`/`303` are only
  *   followed for GET queries (a redirected POST would otherwise silently lose its body). Other
  *   origins are only followed with [SparqlEndpointConfig.followCrossOriginRedirects], and never
- *   receive custom headers or credentials.
+ *   receive custom headers or credentials. Redirects from `https` to plain `http` are always refused.
+ * - A successful SELECT/ASK response must declare a JSON Content-Type (`text/plain` is also
+ *   accepted for ASK); anything else, such as an HTML login page, fails with [RdfQueryException]
+ *   naming the returned type. A response without a Content-Type is parsed as JSON.
+ * - No single result row (or other JSON value) larger than
+ *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory.
  * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
  *   timeout share one HTTP client, which is shut down when the last of them is closed, so always
  *   [close] repositories you no longer use.
@@ -261,7 +266,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         var rows = 0
         try {
             val result = exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
-                val sequence = JsonBindingRows(input).rows()
+                val sequence = JsonBindingRows(input, config.maxResultRowChars).rows()
                     .map(SparqlJsonResults::row)
                     .guarded(sparql, checkDeadline)
                     .onEach { rows++ }
@@ -279,7 +284,10 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         ensureOpen()
         val startTime = System.currentTimeMillis()
         try {
-            val response = exchange(query.sparql, update = false, byteLimit = config.maxResponseBytes, timeouts = Timeouts.buffered(config.requestTimeout)) { input, _ ->
+            val response = exchange(
+                query.sparql, update = false, byteLimit = config.maxResponseBytes,
+                timeouts = Timeouts.buffered(config.requestTimeout), plainTextAllowed = true,
+            ) { input, _ ->
                 readResponse(query.sparql) { input.reader(Charsets.UTF_8).readText() }
             }
             // Parse the SPARQL Results JSON `{ "boolean": true }` form; fall back to
@@ -373,7 +381,8 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     /**
      * [headers] limits the wait for response headers (all redirect hops included); when it is `null`
      * the read timeout bounds that wait. [overall] limits the whole exchange including reading the
-     * body. Both are measured from the start of the call.
+     * body, so it also bounds the header wait when it ends first. Both are measured from the start of
+     * the call.
      */
     private class Timeouts(val headers: Duration?, val overall: Duration?) {
         companion object {
@@ -403,7 +412,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     /**
      * Perform one request (following permitted redirects) and hand the (bounded) response body to
      * [handle], with a function that fails once the overall deadline has passed (for work that does
-     * not read from the stream). Exceptions thrown by [handle] propagate unchanged;
+     * not read from the stream). A successful query response must be JSON (or, when
+     * [plainTextAllowed], `text/plain`); a missing Content-Type is accepted. Exceptions thrown by
+     * [handle] propagate unchanged;
      * [RdfQueryException]s raised after a timeout closed the stream are reported as that timeout.
      */
     private fun <T> exchange(
@@ -411,6 +422,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         update: Boolean,
         byteLimit: Long?,
         timeouts: Timeouts,
+        plainTextAllowed: Boolean = false,
         handle: (InputStream, checkDeadline: () -> Unit) -> T,
     ): T {
         val startNanos = System.nanoTime()
@@ -421,15 +433,14 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         var redirects = 0
         while (true) {
             val builder = HttpRequest.newBuilder(request.uri)
-            val headerLimit = timeouts.headers
-            if (headerLimit != null) {
-                val remaining = headerLimit.minusNanos(System.nanoTime() - startNanos)
-                if (remaining.isNegative || remaining.isZero) throw deadlineExceeded(sparql, headerLimit)
-                builder.timeout(remaining)
-            } else {
-                // Without a request deadline, waiting for the response is bounded like any read.
-                builder.timeout(config.readTimeout)
-            }
+            // The header wait ends at the earlier of the header deadline and the overall deadline.
+            // Without a header deadline it is also bounded like any read.
+            val deadline = listOfNotNull(timeouts.headers, timeouts.overall).minOrNull()
+            val remaining = deadline?.minusNanos(System.nanoTime() - startNanos)
+            if (deadline != null && (remaining!!.isNegative || remaining.isZero)) throw deadlineExceeded(sparql, deadline)
+            // The limit reported when the wait times out; `null` means the read timeout.
+            val waitLimit = if (remaining == null || (timeouts.headers == null && config.readTimeout < remaining)) null else deadline
+            builder.timeout(if (waitLimit == null) config.readTimeout else remaining!!)
             if (!update) builder.setHeader("Accept", RESULTS_JSON)
             request.contentType?.let { builder.setHeader("Content-Type", it) }
             if (sendCustomHeaders) config.headers.forEach { (name, value) -> builder.setHeader(name, value) }
@@ -437,7 +448,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
             val body = request.body
             if (body == null) builder.GET() else builder.POST(HttpRequest.BodyPublishers.ofByteArray(body))
 
-            val response = send(builder.build(), sparql, timeouts.headers)
+            val response = send(builder.build(), sparql, waitLimit)
             val status = response.statusCode()
             if (status in REDIRECT_STATUSES) {
                 val location = response.headers().firstValue("Location").orElse(null)
@@ -446,12 +457,15 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
                 if (++redirects > config.maxRedirects) {
                     throw RdfQueryException("SPARQL endpoint redirected more than ${config.maxRedirects} times", query = sparql)
                 }
+                redirectRefusal(request.uri, next, config.followCrossOriginRedirects)?.let { refusal ->
+                    throw RdfQueryException("SPARQL endpoint redirected (HTTP $status) $refusal", query = sparql)
+                }
                 if (!sameOrigin(request.uri, next)) {
-                    if (!config.followCrossOriginRedirects) {
-                        throw RdfQueryException(
-                            "SPARQL endpoint redirected (HTTP $status) to another origin (${origin(next)}); " +
-                                "configure that endpoint URL directly or enable followCrossOriginRedirects",
-                            query = sparql,
+                    if (sendCustomHeaders && (config.headers.isNotEmpty() || authorization != null)) {
+                        LOGGER.log(
+                            System.Logger.Level.WARNING,
+                            "SPARQL endpoint redirected (HTTP $status) from ${origin(request.uri)} to ${origin(next)}; " +
+                                "custom headers ${config.headers.keys} and credentials are not sent to the other origin",
                         )
                     }
                     sendCustomHeaders = false
@@ -468,6 +482,16 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
                     "SPARQL endpoint returned HTTP $status${if (detail.isEmpty()) "" else ": $detail"}",
                     query = sparql,
                 )
+            }
+            if (!update) {
+                val contentType = response.headers().firstValue("Content-Type").orElse(null)
+                if (!acceptableResultType(contentType, plainTextAllowed)) {
+                    closeQuietly(input)
+                    throw RdfQueryException(
+                        "SPARQL endpoint returned Content-Type '$contentType' instead of SPARQL JSON results ($RESULTS_JSON)",
+                        query = sparql,
+                    )
+                }
             }
             try {
                 return input.use { guarded ->
@@ -519,12 +543,12 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         return next
     }
 
-    private fun origin(uri: URI) = "${uri.scheme}://${uri.host}:${effectivePort(uri)}"
-
-    private fun effectivePort(uri: URI) = if (uri.port >= 0) uri.port else if (uri.scheme.equals("https", true)) 443 else 80
-
-    private fun sameOrigin(a: URI, b: URI) =
-        a.scheme.equals(b.scheme, ignoreCase = true) && a.host.equals(b.host, ignoreCase = true) && effectivePort(a) == effectivePort(b)
+    /** Whether [contentType] (a response header value, possibly `null`) can hold SPARQL JSON results. */
+    private fun acceptableResultType(contentType: String?, plainTextAllowed: Boolean): Boolean {
+        val media = contentType?.substringBefore(';')?.trim()?.lowercase()
+        if (media.isNullOrEmpty()) return true
+        return media == "application/json" || media.endsWith("+json") || (plainTextAllowed && media == "text/plain")
+    }
 
     private fun deadlineExceeded(sparql: String, limit: Duration) =
         RdfQueryException("SPARQL request exceeded its ${limit.toMillis()} ms deadline", query = sparql)
@@ -682,6 +706,27 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     internal companion object {
         /** Number of live shared HTTP clients (one per connect timeout in use by open repositories). */
         fun sharedHttpClientCount(): Int = SharedHttpClients.size()
+
+        /**
+         * Why a redirect from [from] to [to] must not be followed (completing "redirected (HTTP n) ..."),
+         * or `null` when it may be. An `https` to `http` downgrade is always refused: the query (and, for
+         * `307`/`308`, the request body) would travel in cleartext. Other cross-origin redirects are
+         * refused unless [followCrossOriginRedirects].
+         */
+        fun redirectRefusal(from: URI, to: URI, followCrossOriginRedirects: Boolean): String? = when {
+            from.scheme.equals("https", ignoreCase = true) && to.scheme.equals("http", ignoreCase = true) ->
+                "from https to plain http (${origin(to)}); the request would be sent unencrypted. " +
+                    "Configure an https endpoint, or the http URL directly if cleartext is intended"
+            sameOrigin(from, to) || followCrossOriginRedirects -> null
+            else -> "to another origin (${origin(to)}); configure that endpoint URL directly or enable followCrossOriginRedirects"
+        }
+
+        private fun origin(uri: URI) = "${uri.scheme}://${uri.host}:${effectivePort(uri)}"
+
+        private fun effectivePort(uri: URI) = if (uri.port >= 0) uri.port else if (uri.scheme.equals("https", true)) 443 else 80
+
+        private fun sameOrigin(a: URI, b: URI) =
+            a.scheme.equals(b.scheme, ignoreCase = true) && a.host.equals(b.host, ignoreCase = true) && effectivePort(a) == effectivePort(b)
 
         /** The warning logged (once per endpoint) when Basic credentials would travel over plain http, or `null`. */
         fun insecureAuthorizationWarning(config: SparqlEndpointConfig): String? {
@@ -888,12 +933,19 @@ class SparqlGraph(
         return existed
     }
 
+    /**
+     * Number of triples, counted by the endpoint. Throws [RdfQueryException] when the count is not an
+     * integer or does not fit in an [Int].
+     */
     override fun size(): Int {
         val query = "SELECT (COUNT(*) AS ?count) WHERE { ${pattern("?s ?p ?o")} }"
         val result = repository.select(SparqlSelectQuery(query))
-        return result.firstOrNull()?.get("count")?.let { term ->
-            if (term is Literal) Math.toIntExact(term.lexical.toLong()) else 0
-        } ?: 0
+        val term = result.firstOrNull()?.get("count") as? Literal ?: return 0
+        val count = term.lexical.trim().toLongOrNull()
+        if (count == null || count < 0 || count > Int.MAX_VALUE) {
+            throw RdfQueryException("SPARQL endpoint returned a triple count of '${term.lexical}', which is not a valid Int size", query = query)
+        }
+        return count.toInt()
     }
 
     private fun rejectBlankNode(node: BlankNode): String = throw IllegalArgumentException(
