@@ -1075,8 +1075,8 @@ internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
     val source =
         when {
             quote -> Regex.escape(pattern)
-            extended -> stripXPathRegexWhitespace(pattern)
-            else -> pattern
+            extended -> xpathDollar(stripXPathRegexWhitespace(pattern), RegexOption.MULTILINE in options)
+            else -> xpathDollar(pattern, RegexOption.MULTILINE in options)
         }
     return try {
         Regex(source, options)
@@ -1084,6 +1084,26 @@ internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
         throw ShapeCompileException("Invalid sh:pattern \"$pattern\": ${e.description}", e)
     }
 }
+
+/**
+ * Rewrites unescaped `$` outside character classes to XPath semantics: Java's `$` also matches before a final line
+ * terminator, while XPath's matches only at the end of input, or (flag `m`) before a `\n`.
+ */
+private fun xpathDollar(pattern: String, multiLine: Boolean): String =
+    buildString {
+        var inClass = false
+        var escaped = false
+        for (ch in pattern) {
+            when {
+                escaped -> { append(ch); escaped = false }
+                ch == '\\' -> { append(ch); escaped = true }
+                inClass -> { if (ch == ']') inClass = false; append(ch) }
+                ch == '[' -> { inClass = true; append(ch) }
+                ch == '$' -> append(if (multiLine) "(?=\\n|\\z)" else "\\z")
+                else -> append(ch)
+            }
+        }
+    }
 
 private fun stripXPathRegexWhitespace(pattern: String): String =
     buildString {
