@@ -101,4 +101,17 @@ class OutputReplacementTest {
         assertFalse(Files.exists(source))
         assertEquals(listOf("A.kt"), target.parent.toFile().list()!!.toList())
     }
+
+    @Test
+    fun `the file replacement hook is not serialized into the configuration cache`() {
+        // A field of lambdas that Gradle serializes into the configuration cache fails (or silently breaks) cached
+        // runs; @Internal alone does not exclude it from serialization, a transient field does.
+        val field = OntologyGenerationTask::class.java.getDeclaredField("fileReplacement")
+        assertTrue(java.lang.reflect.Modifier.isTransient(field.modifiers), "fileReplacement must be transient")
+        // After deserialization the field is null: the task falls back to the default replacement.
+        val t = task("Foo")
+        t.fileReplacement = null
+        t.generateOntology()
+        assertTrue(File(pkg(t), "Foo.kt").exists())
+    }
 }
