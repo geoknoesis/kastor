@@ -81,10 +81,12 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   before it is copied. The closure computed inside the inferencer's commit cannot be bounded by count.
  *
  * **Axiomatic triples:** the inferencer also materialises RDF/RDFS axioms about the vocabulary itself (e.g.
- * `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner these are dropped unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Exactly the axioms are dropped: the statements the
- * inferencer produces for an **empty** store (computed once). Real inferences about vocabulary terms, such as
- * `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
+ * `rdf:type rdfs:range rdfs:Class`, or `xsd:integer rdfs:subClassOf rdfs:Resource` once the data mentions
+ * `xsd:integer`). For parity with the memory and Jena reasoners these are not reported as inferences unless
+ * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped are the statements the inferencer produces
+ * for an **empty** store (computed once) and every other inferred statement whose subject, predicate and object are
+ * all `rdf:`, `rdfs:`, `owl:` or `xsd:` terms (pure vocabulary axioms triggered by the data). Inferences that involve
+ * any other term, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
  */
 class Rdf4jReasoner internal constructor(
     private val config: ReasonerConfig,
@@ -193,7 +195,14 @@ class Rdf4jReasoner internal constructor(
 
     /** True when [statement] is reported as inferred: not asserted and (by default) not one of the RDFS axioms. */
     private fun isInferred(statement: Statement, asserted: Model): Boolean =
-        statement !in asserted && (includeAxiomatic || statement !in AXIOMS)
+        statement !in asserted && (includeAxiomatic || (statement !in AXIOMS && !isPureVocabulary(statement)))
+
+    /** True when every position of [statement] is an `rdf:`, `rdfs:`, `owl:` or `xsd:` IRI. */
+    private fun isPureVocabulary(statement: Statement): Boolean =
+        isVocabulary(statement.subject) && isVocabulary(statement.predicate) && isVocabulary(statement.`object`)
+
+    private fun isVocabulary(value: org.eclipse.rdf4j.model.Value): Boolean =
+        value is IRI && VOCABULARY_NAMESPACES.any { value.stringValue().startsWith(it) }
 
     /** Closure statements that are neither asserted nor (by default) axiomatic, bounded by the threshold. */
     private fun inferredTriples(asserted: Model, closure: Model, budget: Budget): List<RdfTriple> {
@@ -380,6 +389,14 @@ class Rdf4jReasoner internal constructor(
         const val ABANDONED = 2
 
         val RDFS_RULES = setOf(ReasoningRule.RDFS_SUBCLASS, ReasoningRule.RDFS_SUBPROPERTY, ReasoningRule.RDFS_DOMAIN, ReasoningRule.RDFS_RANGE)
+
+        /** Namespaces of the built-in vocabularies whose pure axioms are not reported as inferences. */
+        val VOCABULARY_NAMESPACES = listOf(
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+            "http://www.w3.org/2000/01/rdf-schema#",
+            "http://www.w3.org/2002/07/owl#",
+            "http://www.w3.org/2001/XMLSchema#",
+        )
 
         /** The statements the inferencer produces for an empty store: the RDF/RDFS axioms. */
         val AXIOMS: Set<Statement> by lazy {

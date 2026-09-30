@@ -8,6 +8,8 @@ dependencies {
   api(project(":rdf:jena"))
   implementation(project(":rdf:reasoning"))
   implementation(libs.jena.arq)
+  // Cross-provider parity tests (ReasonerAxiomParityTest).
+  testImplementation(project(":rdf:rdf4j-reasoning"))
 }
 
 publishing {

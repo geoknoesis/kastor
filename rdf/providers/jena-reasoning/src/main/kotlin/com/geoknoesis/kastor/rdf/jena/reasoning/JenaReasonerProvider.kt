@@ -90,11 +90,13 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   before being read) and then incrementally for every inferred triple. The forward closure built by preparation
  *   itself cannot be bounded by count; only the timeout limits it.
  *
- * **Axiomatic triples:** the full RDFS and OWL rule sets also entail axioms about the RDF/RDFS/OWL vocabulary
- * itself (e.g. `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner these are dropped unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Exactly the axioms are dropped: the triples the
- * same reasoner entails from an **empty** graph (computed once per rule set). Real inferences about vocabulary terms,
- * such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
+ * **Axiomatic triples:** the full RDFS and OWL rule sets also entail axioms about the RDF/RDFS/OWL/XSD vocabulary
+ * itself (e.g. `rdf:type rdfs:range rdfs:Class`, or `xsd:integer a rdfs:Datatype` once the data uses an
+ * `xsd:integer` literal). For parity with the memory and RDF4J reasoners these are not reported as inferences unless
+ * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped are the triples the same reasoner entails
+ * from an **empty** graph (computed once per rule set) and every other inferred triple whose subject, predicate and
+ * object are all `rdf:`, `rdfs:`, `owl:` or `xsd:` terms (pure vocabulary axioms triggered by the data). Inferences
+ * that involve any other term, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
  */
 class JenaReasoner internal constructor(
     private val config: ReasonerConfig,
@@ -249,7 +251,19 @@ class JenaReasoner internal constructor(
      */
     private fun checkForwardDeductions(inf: InfModel, base: Model) {
         val deductions = (inf.graph as? org.apache.jena.reasoner.InfGraph)?.deductionsGraph?.size()?.toLong() ?: return
-        val lowerBound = deductions - base.size() - (if (includeAxiomatic) 0 else axiomatic.size)
+        var lowerBound = deductions - base.size() - (if (includeAxiomatic) 0 else axiomatic.size)
+        if (lowerBound > config.materializationThreshold && !includeAxiomatic) {
+            // Pure vocabulary deductions are not reported either; count them only when the bound is about to fail.
+            val iterator = (inf.graph as org.apache.jena.reasoner.InfGraph).deductionsGraph.find()
+            try {
+                while (iterator.hasNext()) {
+                    val triple = iterator.next()
+                    if (isPureVocabulary(triple) && triple !in axiomatic) lowerBound--
+                }
+            } finally {
+                iterator.close()
+            }
+        }
         require(lowerBound <= config.materializationThreshold) {
             "Inferred triples exceed materializationThreshold (${config.materializationThreshold}): " +
                 "the forward closure alone adds at least $lowerBound triples"
@@ -385,7 +399,7 @@ class JenaReasoner internal constructor(
                 budget.check()
                 val triple = iterator.next()
                 if (!(triple.subject.isURI || triple.subject.isBlank) || !triple.predicate.isURI || asserted.contains(triple)) continue
-                if (!includeAxiomatic && triple in axiomatic) continue
+                if (!includeAxiomatic && (triple in axiomatic || isPureVocabulary(triple))) continue
                 result.add(
                     RdfTriple(
                         rdfTermFromJena(infModel.asRDFNode(triple.subject)) as RdfResource,
@@ -425,6 +439,12 @@ class JenaReasoner internal constructor(
         )
     }
 
+    /** True when every position of [triple] is an `rdf:`, `rdfs:`, `owl:` or `xsd:` IRI. */
+    private fun isPureVocabulary(triple: org.apache.jena.graph.Triple): Boolean =
+        isVocabulary(triple.subject) && isVocabulary(triple.predicate) && isVocabulary(triple.`object`)
+
+    private fun isVocabulary(node: Node): Boolean = node.isURI && VOCABULARY_NAMESPACES.any { node.uri.startsWith(it) }
+
     private fun countTyped(model: Model, type: String): Int =
         model.listResourcesWithProperty(model.createProperty(RDF_TYPE), model.createResource(type)).toList().size
 
@@ -455,6 +475,14 @@ class JenaReasoner internal constructor(
         const val RUNNING = 0
         const val FINISHED = 1
         const val ABANDONED = 2
+
+        /** Namespaces of the built-in vocabularies whose pure axioms are not reported as inferences. */
+        val VOCABULARY_NAMESPACES = listOf(
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+            "http://www.w3.org/2000/01/rdf-schema#",
+            "http://www.w3.org/2002/07/owl#",
+            "http://www.w3.org/2001/XMLSchema#",
+        )
 
         /** Axioms (closure of the empty graph) per rule set, computed once. */
         val AXIOMS = java.util.concurrent.ConcurrentHashMap<String, Set<org.apache.jena.graph.Triple>>()
