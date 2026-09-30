@@ -141,6 +141,23 @@ class InitialBindingsJenaParityTest {
     }
 
     @Test
+    fun `a star written without surrounding spaces is still SELECT star`() {
+        assertSameAsJena("SELECT*WHERE", "SELECT*WHERE{ ?s <urn:p> ?o }", mapOf("s" to a))
+        assertSameAsJena(
+            "DISTINCT star in a sub-select",
+            "SELECT ?s ?o WHERE { { SELECT DISTINCT*{ ?s <urn:p> ?o } } }",
+            mapOf("s" to b),
+        )
+        assertSameAsJena("REDUCED star with WHERE", "SELECT ?o WHERE { { SELECT REDUCED*WHERE{ ?s <urn:p> ?o } } }", mapOf("s" to a))
+        assertSameAsJena(
+            "property path star",
+            "PREFIX ex: <urn:> SELECT ?s ?o WHERE { ?s ex:p* ?o . ?s <urn:p>+ ?o }",
+            mapOf("s" to a),
+        )
+        assertSameAsJena("COUNT star", "SELECT ?s (COUNT(*)AS ?c) WHERE { ?s <urn:p> ?o } GROUP BY ?s", mapOf("s" to a))
+    }
+
+    @Test
     fun `escaped characters in prefixed local names do not start comments`() {
         assertSameAsJena(
             "PN_LOCAL_ESC",
