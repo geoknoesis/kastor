@@ -36,6 +36,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
  * only stored (as a plain blank-node statement) when no such statement exists. Native stores cannot hold quoted
  * triples and store the plain form.
  *
+ * **Explicit `rdf:reifies` triples** keep set semantics regardless of write order: one added while it is implied is
+ * remembered (per repository, committed with the enclosing transaction) and stored as a plain statement once the last
+ * statement implying it is removed. Removing `_:r rdf:reifies <<t>>` while statements about `_:r` remain moves them to
+ * the plain reifier node, and later statements about `_:r` are stored there too, so the removed triple is not implied
+ * again until it is re-added (or every statement about `_:r` is gone). `clear()` forgets remembered triples; a SPARQL
+ * `UPDATE` first stores them as plain statements, since it may remove the statements that imply them.
+ *
  * **Language tags on native stores:** Kastor compares language tags ignoring case, but RDF4J's `NativeStore`
  * resolves a literal to its stored id with exact tag bytes whenever its small value-id cache misses (after a
  * restart, or once the entry is evicted). Lookups and removals by a [LangString] therefore fall back to scanning
@@ -68,6 +75,7 @@ internal class Rdf4jGraph(
     }
 
     private fun add(conn: RepositoryConnection, triple: RdfTriple) {
+        if (triple.obj is TripleTerm || Rdf4jTerms.mentionsStarReifier(triple.obj)) repo.noteTripleValue()
         if (!repo.starCapable || !involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             conn.add(
                 Rdf4jTerms.toRdf4jResource(triple.subject),
@@ -79,12 +87,29 @@ internal class Rdf4jGraph(
         }
         val quoted = (triple.subject as? BlankNode)?.let { Rdf4jTerms.quotedTripleOf(it.id) }
         val obj = Rdf4jTerms.toRdf4jStarValue(triple.obj)
-        if (quoted != null && triple.predicate == RDF.reifies && obj == quoted) {
-            // `_:r rdf:reifies <<( s p o )>>` is implied by every statement about the quoted triple.
-            if (conn.hasStatement(quoted, null, null, false, context)) return
-            conn.add(Rdf4jTerms.toRdf4jResource(triple.subject), Rdf4jTerms.toRdf4jIri(RDF.reifies), obj, context)
-            repo.noteQuotedWrite(Rdf4jTerms.quotedLevel(Rdf4jTerms.toRdf4jResource(triple.subject), obj))
-            return
+        if (quoted != null) {
+            val plainReifier = Rdf4jTerms.toRdf4jResource(triple.subject)
+            val reifiesIri = Rdf4jTerms.toRdf4jIri(RDF.reifies)
+            if (triple.predicate == RDF.reifies && obj == quoted) {
+                if (conn.hasStatement(quoted, null, null, false, context)) {
+                    // Implied by the statements about the quoted triple: not stored, but remembered as explicit so
+                    // that it survives the removal of the last of them.
+                    repo.setExplicitReifies(Rdf4jRepository.ReifiesKey(context, quoted), true)
+                    return
+                }
+                conn.add(plainReifier, reifiesIri, obj, context)
+                repo.noteQuotedWrite(Rdf4jTerms.quotedLevel(plainReifier, obj))
+                return
+            }
+            if (conn.hasStatement(plainReifier, null, null, false, context) &&
+                !conn.hasStatement(plainReifier, reifiesIri, quoted, false, context)
+            ) {
+                // Its `rdf:reifies` triple was removed while statements about the reifier remained (they were moved to
+                // the plain reifier node): keep it that way instead of implying `rdf:reifies` again.
+                repo.noteQuotedWrite(Rdf4jTerms.quotedLevel(plainReifier, obj))
+                conn.add(plainReifier, Rdf4jTerms.toRdf4jIri(triple.predicate), obj, context)
+                return
+            }
         }
         val subject = Rdf4jTerms.toRdf4jStarResource(triple.subject)
         repo.noteQuotedWrite(Rdf4jTerms.quotedLevel(subject, obj))
@@ -126,14 +151,22 @@ internal class Rdf4jGraph(
             return existed
         }
         var changed = false
+        if (repo.starCapable && triple.predicate == RDF.reifies) {
+            val quoted = (triple.subject as? BlankNode)?.let { Rdf4jTerms.quotedTripleOf(it.id) }
+            if (quoted != null && Rdf4jTerms.toRdf4jStarValue(triple.obj) == quoted) {
+                repo.setExplicitReifies(Rdf4jRepository.ReifiesKey(context, quoted), false)
+            }
+        }
         val candidates = LinkedHashSet<Statement>()
         candidateStatements(conn, triple.subject, triple.predicate, triple.obj, false) { candidates.add(it) }
+        val annotated = LinkedHashSet<org.eclipse.rdf4j.model.Triple>()
         for (statement in candidates) {
             val mapped = Rdf4jTerms.triplesOf(statement)
             val converted = mapped.first()
             when {
                 converted == triple -> {
                     conn.remove(statement.subject, statement.predicate, statement.`object`, context)
+                    (statement.subject as? org.eclipse.rdf4j.model.Triple)?.let(annotated::add)
                     changed = true
                 }
                 mapped.size > 1 && triple in mapped.subList(1, mapped.size) -> {
@@ -147,6 +180,14 @@ internal class Rdf4jGraph(
                     )
                     changed = true
                 }
+            }
+        }
+        for (quoted in annotated) {
+            // The last statement implying an explicitly added `rdf:reifies` triple is gone: store that triple itself.
+            val key = Rdf4jRepository.ReifiesKey(context, quoted)
+            if (repo.isExplicitReifies(key) && !conn.hasStatement(quoted, null, null, false, context)) {
+                conn.add(Rdf4jTerms.toRdf4jResource(Rdf4jTerms.reifierFor(quoted)), Rdf4jTerms.toRdf4jIri(RDF.reifies), quoted, context)
+                repo.setExplicitReifies(key, false)
             }
         }
         return changed
@@ -304,6 +345,7 @@ internal class Rdf4jGraph(
 
     override fun clear(): Boolean = repo.withWriteConnection { conn ->
         val changed = conn.hasStatement(null, null, null, false, context)
+        repo.forgetExplicitReifies { it.context == context }
         conn.clear(context)
         changed
     }
@@ -311,13 +353,21 @@ internal class Rdf4jGraph(
     /**
      * Agrees with [getTriples]: statements with RDF-star subjects count their extra `rdf:reifies` triples.
      *
-     * When the store cannot contain quoted-triple subjects (native stores) or the repository tracks that none exist,
-     * this is RDF4J's own statement count for the context; otherwise the statements are counted in one pass, converting
-     * only those that involve quoted subjects or reifier blank nodes.
+     * RDF4J's own statement count for the context is used when the store cannot contain quoted-triple subjects
+     * (native stores) or the repository tracks that none exist, and reads are strict or every stored statement is known
+     * to be convertible (lenient repositories created by a factory method and never changed by SPARQL `UPDATE`).
+     *
+     * The statements are counted in one pass (converting only those that involve quoted subjects or reifier blank
+     * nodes, or every statement for a lenient read) in the remaining cases:
+     * - inference repositories: RDF4J's count excludes inferred statements, which reads include;
+     * - stores that may hold quoted-triple subjects, or whose content is not tracked (wrapped, externally created
+     *   stores, or a tracked store right after a SPARQL update that may have created them, until one scan re-derives
+     *   the state): `rdf:reifies` triples are synthesized and may coincide with stored ones;
+     * - lenient reads over wrapped stores or after a SPARQL update: unconvertible statements are not counted.
      */
     override fun size(): Int = repo.withConnection { conn ->
         val level = repo.quotedSubjects(conn)
-        if (!repo.inference && !repo.lenientRead && level == QuotedLevel.NONE) {
+        if (!repo.inference && (!repo.lenientRead || repo.allStatementsConvertible) && level == QuotedLevel.NONE) {
             return@withConnection Math.toIntExact(conn.size(context))
         }
         var plain = 0L

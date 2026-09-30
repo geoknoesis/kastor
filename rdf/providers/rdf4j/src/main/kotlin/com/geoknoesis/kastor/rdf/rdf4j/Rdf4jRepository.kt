@@ -32,8 +32,12 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * are not affected.
  *
  * **RDF-star subject tracking:** repositories created through the factory methods track whether quoted-triple
- * subjects may exist, so `size()` and reifier lookups can use RDF4J's counts and indexes. SPARQL `UPDATE` makes the
- * state unknown until the next read re-derives it with one scan. Repositories wrapping an externally created store
+ * subjects may exist, so `size()` and reifier lookups can use RDF4J's counts and indexes. A SPARQL `UPDATE` that may
+ * create quoted subjects (it uses RDF-star syntax, `TRIPLE(...)`, `LOAD` or `SERVICE`, or triple terms have been
+ * written to the store) makes the state unknown until the next read re-derives it with one scan; inside a
+ * `transaction { }` that scan result is reused until the transaction ends (graph writes keep it current, a further
+ * update discards it). While the state is unknown or quoted subjects are nested, lookups that involve reifiers widen
+ * to the positions the reified form can satisfy (up to a scan). Repositories wrapping an externally created store
  * (whose content other code may change) are never tracked and always use the scanning paths.
  *
  * @param repository RDF4J Repository instance (internal implementation detail)
@@ -80,6 +84,31 @@ class Rdf4jRepository(
     private val quotedModifications = java.util.concurrent.atomic.AtomicLong()
     private val quotedWritersInFlight = java.util.concurrent.atomic.AtomicInteger()
 
+    /** Result of the quoted-subject scan made inside the current thread's transaction, reused until it ends. */
+    private val quotedScanInTransaction = ThreadLocal<QuotedLevel?>()
+
+    /**
+     * False while no RDF-star triple value (quoted subject or triple-term object) can have been written through this
+     * repository; a SPARQL update without RDF-star syntax, `LOAD` or `SERVICE` then cannot create quoted subjects.
+     * Only meaningful for tracked repositories; never lowered.
+     */
+    @Volatile private var tripleValuesMayExist = false
+
+    /** Set once a SPARQL update ran: it may have written statements that are not valid Kastor terms. */
+    @Volatile private var unvalidatedWrites = false
+
+    /**
+     * True when every statement is known to convert to Kastor terms, so a lenient read skips nothing: the repository
+     * is tracked (created by a factory method, changed only through this repository) and has only been written through
+     * the graph API and the (validating) parsers, not through SPARQL updates.
+     */
+    internal val allStatementsConvertible: Boolean get() = trackQuotedSubjects && !unvalidatedWrites
+
+    /** Records a write of a triple value (e.g. a triple-term object), see [tripleValuesMayExist]. */
+    internal fun noteTripleValue() {
+        tripleValuesMayExist = true
+    }
+
     /** Highest quoted-subject level written by the current thread's outermost transaction, if any. */
     private val quotedWrittenInTransaction = ThreadLocal<QuotedLevel?>()
 
@@ -89,6 +118,11 @@ class Rdf4jRepository(
      */
     internal fun noteQuotedWrite(level: QuotedLevel) {
         if (nativeBase || level == QuotedLevel.NONE) return
+        tripleValuesMayExist = true
+        quotedScanInTransaction.get()?.let { cached ->
+            if (level == QuotedLevel.UNKNOWN) quotedScanInTransaction.remove()
+            else if (level.ordinal > cached.ordinal) quotedScanInTransaction.set(level)
+        }
         val previous = quotedWrittenInTransaction.get()
         if (previous == null) quotedWritersInFlight.incrementAndGet()
         if (previous == null || level.ordinal > previous.ordinal) quotedWrittenInTransaction.set(level)
@@ -107,6 +141,8 @@ class Rdf4jRepository(
     internal fun quotedSubjects(conn: RepositoryConnection): QuotedLevel {
         val state = quotedState
         if (state != QuotedLevel.UNKNOWN || !trackQuotedSubjects) return state
+        val inTransaction = txConnection.get() != null
+        if (inTransaction) quotedScanInTransaction.get()?.let { return it }
         val start = quotedModifications.get()
         var level = QuotedLevel.NONE
         conn.getStatements(null, null, null, false).use { result ->
@@ -116,8 +152,11 @@ class Rdf4jRepository(
                 if (level == QuotedLevel.NESTED) break
             }
         }
-        // A scan inside a transaction may see uncommitted changes; only remember results over committed data.
-        if (txConnection.get() == null) {
+        // A scan inside a transaction may see uncommitted changes: remember it for the rest of that transaction only
+        // (graph writes keep it up to date, a SPARQL update discards it); remember results over committed data globally.
+        if (inTransaction) {
+            quotedScanInTransaction.set(level)
+        } else {
             synchronized(quotedLock) {
                 if (quotedModifications.get() == start && quotedWritersInFlight.get() == 0 && quotedState == QuotedLevel.UNKNOWN) {
                     quotedState = level
@@ -126,6 +165,51 @@ class Rdf4jRepository(
         }
         return level
     }
+
+    /** An explicitly added `_:r rdf:reifies <<quoted>>` triple in graph [context] (null for the default graph). */
+    internal data class ReifiesKey(val context: org.eclipse.rdf4j.model.Resource?, val quoted: org.eclipse.rdf4j.model.Triple)
+
+    /**
+     * Explicit `rdf:reifies` triples that are not stored because statements about the quoted triple imply them
+     * (RDF-star capable stores only). Remembered so that the triple survives the removal of the last such statement.
+     */
+    private val explicitReifies: MutableSet<ReifiesKey> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** Changes to [explicitReifies] made by the current thread's transaction, applied when it commits. */
+    private val explicitReifiesInTransaction = ThreadLocal<LinkedHashMap<ReifiesKey, Boolean>?>()
+
+    internal fun isExplicitReifies(key: ReifiesKey): Boolean =
+        explicitReifiesInTransaction.get()?.get(key) ?: (key in explicitReifies)
+
+    internal fun setExplicitReifies(key: ReifiesKey, present: Boolean) {
+        val pending = explicitReifiesInTransaction.get()
+        when {
+            pending != null -> pending[key] = present
+            present -> explicitReifies.add(key)
+            else -> explicitReifies.remove(key)
+        }
+    }
+
+    /** Explicit implied `rdf:reifies` triples visible to the current thread, restricted to [filter]. */
+    private fun explicitReifiesMatching(filter: (ReifiesKey) -> Boolean): List<ReifiesKey> =
+        (explicitReifies + explicitReifiesInTransaction.get()?.keys.orEmpty()).filter { filter(it) && isExplicitReifies(it) }
+
+    /** Forgets the explicit implied `rdf:reifies` triples of cleared graphs. */
+    internal fun forgetExplicitReifies(filter: (ReifiesKey) -> Boolean) =
+        explicitReifiesMatching(filter).forEach { setExplicitReifies(it, false) }
+
+    /**
+     * Stores every remembered explicit `rdf:reifies` triple as a plain statement, e.g. before a SPARQL update that may
+     * remove the statements implying it (and that this repository cannot follow).
+     */
+    private fun materialiseExplicitReifies(conn: RepositoryConnection) {
+        for (key in explicitReifiesMatching { true }) {
+            val reifier = valueFactory.createBNode(Rdf4jTerms.reifierFor(key.quoted).id)
+            conn.add(reifier, Rdf4jTerms.toRdf4jIri(com.geoknoesis.kastor.rdf.vocab.RDF.reifies), key.quoted, key.context)
+            setExplicitReifies(key, false)
+        }
+    }
+
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
         var result: Any? = null
@@ -228,7 +312,10 @@ class Rdf4jRepository(
         }
 
         /** A closing quote followed by an RDF 1.2 directional language tag, e.g. `"x"@ar--rtl`. */
-        private val DIRECTIONAL_LITERAL = Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
+        /** Update text that may introduce RDF-star triple values without them already being stored. */
+        private val MAY_CREATE_TRIPLE_VALUES = Regex("<<|(?i)\\btriple\\s*\\(|\\bload\\b|\\bservice\\b")
+
+        private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
     /** Provider variant this repository was created as (null for a wrapped, externally created repository). */
@@ -300,6 +387,7 @@ class Rdf4jRepository(
     override fun removeGraph(name: Iri): Boolean = withWriteConnection { conn ->
         val context = valueFactory.createIRI(name.value)
         val had = conn.hasStatement(null, null, null, false, context)
+        forgetExplicitReifies { it.context == context }
         conn.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
         had
     }
@@ -479,10 +567,17 @@ class Rdf4jRepository(
     override fun update(query: UpdateQuery) {
         withWriteConnection { conn ->
             val startTime = System.currentTimeMillis()
-            // An update may create quoted-triple subjects (RDF-star syntax, TRIPLE(), or moving triple terms).
-            noteQuotedWrite(QuotedLevel.UNKNOWN)
+            // An update may create quoted-triple subjects (RDF-star syntax, TRIPLE(), LOAD or SERVICE data, or moving
+            // stored triple terms into subject position).
+            unvalidatedWrites = true
+            val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
+            if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
+            // The update may remove the statements implying an explicit rdf:reifies triple; store those triples first.
+            materialiseExplicitReifies(conn)
             try {
                 conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).execute()
+                // Checked after executing, so a triple value written concurrently (and visible to the update) counts.
+                if (!quotedSyntax && tripleValuesMayExist) noteQuotedWrite(QuotedLevel.UNKNOWN)
                 RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
             } catch (e: Exception) {
                 RdfDebug.logQueryError("UPDATE", query.sparql, "Failed to execute: ${e.message}")
@@ -518,16 +613,22 @@ class Rdf4jRepository(
         repository.connection.use { conn ->
             txConnection.set(conn)
             readOnly.set(read)
+            val pendingReifies = LinkedHashMap<ReifiesKey, Boolean>()
+            explicitReifiesInTransaction.set(pendingReifies)
             try {
                 conn.begin()
                 operations(this)
                 conn.commit()
+                explicitReifiesInTransaction.remove()
+                pendingReifies.forEach { (key, present) -> setExplicitReifies(key, present) }
             } catch (e: Throwable) {
                 if (conn.isActive) conn.rollback()
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
+                explicitReifiesInTransaction.remove()
+                quotedScanInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
                     quotedWrittenInTransaction.remove()
@@ -540,6 +641,7 @@ class Rdf4jRepository(
 
     override fun clear(): Boolean = withWriteConnection { conn ->
         val wasEmpty = conn.isEmpty
+        forgetExplicitReifies { true }
         conn.clear()
         !wasEmpty
     }

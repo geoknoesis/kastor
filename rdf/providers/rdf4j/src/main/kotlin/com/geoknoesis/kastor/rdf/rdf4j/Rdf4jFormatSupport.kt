@@ -353,6 +353,7 @@ internal object Rdf4jFormatSupport {
                     override fun handleStatement(statement: Statement) {
                         checkedTriples(statement, null)
                         rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
+                        if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
                         val context = statement.context
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)

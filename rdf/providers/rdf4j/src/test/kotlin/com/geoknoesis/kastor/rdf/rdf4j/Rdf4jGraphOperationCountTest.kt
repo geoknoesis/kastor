@@ -115,6 +115,70 @@ class Rdf4jGraphOperationCountTest {
     }
 
     @Test
+    fun `size of a lenient factory store without RDF-star subjects uses the store count`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.lenient().use {
+            load(it)
+            Rdf4jProvider().parseDataset(it, "<http://example.org/x> <http://example.org/p> \"parsed\"@en .".byteInputStream(), "TURTLE")
+            counting.iterated.set(0)
+            assertEquals(size + 1, it.defaultGraph.size())
+            assertEquals(0, counting.iterated.get(), "size() must not iterate statements")
+            // A SPARQL update may write statements Kastor cannot represent: from then on size() counts convertible ones.
+            it.update(UpdateQuery("INSERT DATA { <http://example.org/y> <http://example.org/p> \"u\" }"))
+            assertEquals(size + 2, it.defaultGraph.size())
+        }
+    }
+
+    @Test
+    fun `a SPARQL update that cannot create quoted subjects does not force a rescan`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.use {
+            load(it)
+            it.update(UpdateQuery("INSERT DATA { <http://example.org/x> <http://example.org/p> \"extra\" }"))
+            it.update(UpdateQuery("DELETE { ?s <http://example.org/p> \"0\" } INSERT { ?s <http://example.org/p2> \"moved\" } WHERE { ?s <http://example.org/p> \"0\" }"))
+            counting.iterated.set(0)
+            assertEquals(size + 1, it.defaultGraph.size())
+            assertEquals(0, counting.iterated.get(), "size() after a plain update must not iterate statements")
+        }
+    }
+
+    @Test
+    fun `an update that moves stored triple terms into subject position is still seen`() {
+        val (repo, _) = counted(MemoryStore(), "memory")
+        repo.use {
+            val quoted = TripleTerm(RdfTriple(Iri("http://example.org/a"), Iri("http://example.org/b"), Iri("http://example.org/c")))
+            it.editDefaultGraph().addTriple(RdfTriple(Iri("http://example.org/s"), Iri("http://example.org/r"), quoted))
+            assertEquals(1, it.defaultGraph.size())
+            // No RDF-star syntax in the update, but it turns the stored triple term into a quoted subject.
+            it.update(UpdateQuery("INSERT { ?o <http://example.org/q> \"z\" } WHERE { ?s <http://example.org/r> ?o }"))
+            assertEquals(3, it.defaultGraph.size(), "the new statement plus its rdf:reifies triple")
+            assertEquals(1, it.defaultGraph.find(null, RDF.reifies, null).size)
+        }
+    }
+
+    @Test
+    fun `inside a transaction the quoted-subject scan after an update runs once`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.use {
+            load(it)
+            val quoted = TripleTerm(RdfTriple(Iri("http://example.org/a"), Iri("http://example.org/b"), Iri("http://example.org/c")))
+            val reifier = Rdf4jTerms.reifierFor(Rdf4jTerms.toRdf4jValue(quoted) as org.eclipse.rdf4j.model.Triple)
+            it.transaction {
+                update(UpdateQuery("INSERT DATA { << <http://example.org/a> <http://example.org/b> <http://example.org/c> >> <http://example.org/q> \"z\" }"))
+                val graph = editDefaultGraph()
+                counting.iterated.set(0)
+                repeat(5) { assertEquals(2, graph.find(reifier, null, null).size) }
+                assertTrue(counting.iterated.get() <= size + 50L, "one scan at most inside the transaction, iterated ${counting.iterated.get()}")
+                // A graph write in the same transaction keeps the cached result valid.
+                graph.addTriple(RdfTriple(reifier, Iri("http://example.org/q2"), Literal("w")))
+                counting.iterated.set(0)
+                repeat(5) { assertEquals(3, graph.find(reifier, null, null).size) }
+                assertTrue(counting.iterated.get() < 50L, "no rescan after a graph write, iterated ${counting.iterated.get()}")
+            }
+        }
+    }
+
+    @Test
     fun `a SPARQL update that creates quoted subjects is seen by size`() {
         val (repo, _) = counted(MemoryStore(), "memory")
         repo.use {
