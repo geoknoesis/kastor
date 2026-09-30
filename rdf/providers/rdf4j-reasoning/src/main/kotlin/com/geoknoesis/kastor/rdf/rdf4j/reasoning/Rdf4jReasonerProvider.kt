@@ -71,8 +71,8 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   reasoner for a subset). Non-RDFS rules in the set are ignored, as by every RDFS reasoner.
  * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. The inferencer computes the closure inside
  *   its `commit()`, which cannot be interrupted, so the load and commit run on a daemon worker thread that the caller
- *   waits for only until the deadline; an inference that misses it is abandoned, finishes in the background and shuts
- *   its store down itself. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
+ *   waits for only until the deadline; an inference that misses it is abandoned, finishes in the background, shuts
+ *   its store down itself and only then returns its concurrency permit. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
  *   one before its deadline fails with a clear "too many RDFS inferences in progress" error instead of piling up
  *   background work (the same pattern as the Jena and HermiT reasoners). After the commit the budget is checked for
  *   every statement read from the closure. A timed-out call fails with [IllegalStateException].
@@ -81,10 +81,12 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   before it is copied. The closure computed inside the inferencer's commit cannot be bounded by count.
  *
  * **Axiomatic triples:** the inferencer also materialises RDF/RDFS axioms about the vocabulary itself (e.g.
- * `rdf:type rdfs:range rdfs:Class`). For parity with the memory reasoner these are dropped unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Exactly the axioms are dropped: the statements the
- * inferencer produces for an **empty** store (computed once). Real inferences about vocabulary terms, such as
- * `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
+ * `rdf:type rdfs:range rdfs:Class`, or `xsd:integer rdfs:subClassOf rdfs:Resource` once the data mentions
+ * `xsd:integer`). For parity with the memory and Jena reasoners these are not reported as inferences unless
+ * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped are the statements the inferencer produces
+ * for an **empty** store (computed once) and every other inferred statement whose subject, predicate and object are
+ * all `rdf:`, `rdfs:`, `owl:` or `xsd:` terms (pure vocabulary axioms triggered by the data). Inferences that involve
+ * any other term, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
  */
 class Rdf4jReasoner internal constructor(
     private val config: ReasonerConfig,
@@ -193,7 +195,14 @@ class Rdf4jReasoner internal constructor(
 
     /** True when [statement] is reported as inferred: not asserted and (by default) not one of the RDFS axioms. */
     private fun isInferred(statement: Statement, asserted: Model): Boolean =
-        statement !in asserted && (includeAxiomatic || statement !in AXIOMS)
+        statement !in asserted && (includeAxiomatic || (statement !in AXIOMS && !isPureVocabulary(statement)))
+
+    /** True when every position of [statement] is an `rdf:`, `rdfs:`, `owl:` or `xsd:` IRI. */
+    private fun isPureVocabulary(statement: Statement): Boolean =
+        isVocabulary(statement.subject) && isVocabulary(statement.predicate) && isVocabulary(statement.`object`)
+
+    private fun isVocabulary(value: org.eclipse.rdf4j.model.Value): Boolean =
+        value is IRI && VOCABULARY_NAMESPACES.any { value.stringValue().startsWith(it) }
 
     /** Closure statements that are neither asserted nor (by default) axiomatic, bounded by the threshold. */
     private fun inferredTriples(asserted: Model, closure: Model, budget: Budget): List<RdfTriple> {
@@ -279,10 +288,14 @@ class Rdf4jReasoner internal constructor(
             } catch (t: Throwable) {
                 outcome.completeExceptionally(t)
             } finally {
-                inferences.release()
-                if (!state.compareAndSet(RUNNING, FINISHED)) {
-                    // Abandoned by a timed-out caller: this worker owns the repository now.
-                    try { repository.shutDown() } catch (_: Exception) { }
+                try {
+                    if (!state.compareAndSet(RUNNING, FINISHED)) {
+                        // Abandoned by a timed-out caller: this worker owns the repository now.
+                        try { repository.shutDown() } catch (_: Exception) { }
+                    }
+                } finally {
+                    // Only after cleanup: the permit bounds the work (and memory) still held by inferences.
+                    inferences.release()
                 }
             }
         }, INFERENCE_THREAD)
@@ -376,6 +389,14 @@ class Rdf4jReasoner internal constructor(
         const val ABANDONED = 2
 
         val RDFS_RULES = setOf(ReasoningRule.RDFS_SUBCLASS, ReasoningRule.RDFS_SUBPROPERTY, ReasoningRule.RDFS_DOMAIN, ReasoningRule.RDFS_RANGE)
+
+        /** Namespaces of the built-in vocabularies whose pure axioms are not reported as inferences. */
+        val VOCABULARY_NAMESPACES = listOf(
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+            "http://www.w3.org/2000/01/rdf-schema#",
+            "http://www.w3.org/2002/07/owl#",
+            "http://www.w3.org/2001/XMLSchema#",
+        )
 
         /** The statements the inferencer produces for an empty store: the RDF/RDFS axioms. */
         val AXIOMS: Set<Statement> by lazy {

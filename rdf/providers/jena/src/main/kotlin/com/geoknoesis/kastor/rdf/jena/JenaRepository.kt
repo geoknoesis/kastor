@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicLong
  *   then discarded and rebuilt for later readers.
  *
  * Named graphs are prepared lazily, when a read first touches them. A view is released when a newer snapshot
- * replaces it (after commits) and no read transaction uses it any more, after [VIEW_IDLE_MILLIS] without readers,
+ * replaces it (after commits) and no read transaction uses it any more, after the view idle timeout (default [DEFAULT_VIEW_IDLE_TIMEOUT]) without readers,
  * or when the repository is closed. A reader whose snapshot cannot be identified (a commit raced with its `begin`)
  * gets a private, uncached lazy view; inside a write transaction the view is built fresh so uncommitted changes are
  * visible.
@@ -59,22 +59,52 @@ class JenaRepository private constructor(
     private val dataset: Dataset,
     internal val inference: Boolean = false,
     private val variantId: String = if (inference) "memory-inference" else "memory",
+    /** A snapshot view nobody has used for this long is released (its worker ends its read transaction). */
+    private val viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT,
 ) : RdfRepository {
     private val closed = AtomicBoolean(false)
 
+    init {
+        require(!viewIdleTimeout.isNegative && !viewIdleTimeout.isZero) { "viewIdleTimeout must be positive, got $viewIdleTimeout" }
+    }
+
     companion object {
+        /**
+         * Default time an unused inference view (and, for TDB2, the read transaction its worker holds, which pins the
+         * store version and can delay compaction) is kept for reuse before it is released.
+         */
+        @JvmField
+        val DEFAULT_VIEW_IDLE_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(1)
+
         fun MemoryRepository(): JenaRepository = JenaRepository(DatasetFactory.createTxnMem())
-        fun MemoryRepositoryWithInference(): JenaRepository = JenaRepository(DatasetFactory.createTxnMem(), true)
+
+        /** In-memory store with lazy RDFS inference; an inference view unused for [viewIdleTimeout] is released. */
+        @JvmOverloads
+        fun MemoryRepositoryWithInference(viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT): JenaRepository =
+            JenaRepository(DatasetFactory.createTxnMem(), true, "memory-inference", viewIdleTimeout)
+
         fun Tdb2Repository(location: String): JenaRepository =
             JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), false, "tdb2")
-        fun Tdb2RepositoryWithInference(location: String): JenaRepository =
-            JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference")
+
+        /**
+         * TDB2 store with lazy RDFS inference. Each inference view's worker holds a TDB2 read transaction, which pins
+         * the store version (and can delay compaction) while the view is kept; a view unused for [viewIdleTimeout] is
+         * released, and [close] releases all of them.
+         */
+        @JvmOverloads
+        fun Tdb2RepositoryWithInference(location: String, viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT): JenaRepository =
+            JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference", viewIdleTimeout)
 
         private const val DEFAULT_GRAPH_KEY = ""
 
-        /** A snapshot view nobody has used for this long is released (its worker ends its read transaction). */
-        internal const val VIEW_IDLE_MILLIS = 10_000L
+        /** Longest time [close] waits for inference workers (still used by other threads' reads) to stop. */
+        private const val CLOSE_WAIT_SECONDS = 10L
     }
+
+    private val viewIdleNanos: Long = viewIdleTimeout.toNanos()
+
+    /** Every inference view whose worker has not been awaited yet; [close] retires and awaits them all. */
+    private val openViews: MutableSet<SnapshotView> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     private val tdb2: Boolean = variantId.startsWith("tdb2")
 
@@ -237,7 +267,7 @@ class JenaRepository private constructor(
      * documentation of [JenaRepository]).
      *
      * Lifecycle: each read transaction using the view holds it ([tryAcquire] / [release]); the view is retired when
-     * a newer snapshot replaces it, when it is poisoned by a cancelled step, after [VIEW_IDLE_MILLIS] without
+     * a newer snapshot replaces it, when it is poisoned by a cancelled step, after the view idle timeout without
      * holders, or when the repository closes. A retired view stops (its worker ends the read transaction and exits)
      * once it has no holders.
      */
@@ -264,7 +294,7 @@ class JenaRepository private constructor(
                 stopIfUnused()
                 holders == 0 && !retired
             }
-            if (idle) IDLE_TIMER.schedule({ retireIfIdle() }, VIEW_IDLE_MILLIS, TimeUnit.MILLISECONDS)
+            if (idle) IDLE_TIMER.schedule({ retireIfIdle() }, viewIdleNanos, TimeUnit.NANOSECONDS)
         }
 
         fun retire() = synchronized(this) {
@@ -274,7 +304,7 @@ class JenaRepository private constructor(
 
         private fun retireIfIdle() {
             val idle = synchronized(this) {
-                holders == 0 && !retired && System.nanoTime() - idleSince >= TimeUnit.MILLISECONDS.toNanos(VIEW_IDLE_MILLIS)
+                holders == 0 && !retired && System.nanoTime() - idleSince >= viewIdleNanos
             }
             if (!idle) return
             forgetView(this)
@@ -285,14 +315,15 @@ class JenaRepository private constructor(
             if (retired && holders == 0 && !stopped) {
                 stopped = true
                 graphs.clear()
-                worker.shutdown { if (dataset.isInTransaction) dataset.end() }
+                worker.shutdown {
+                    try { if (dataset.isInTransaction) dataset.end() } finally { openViews.remove(this) }
+                }
             }
         }
 
-        /** Waits for a stopped view's worker to finish (used by [close]). */
-        fun awaitStopped(millis: Long) {
-            if (synchronized(this) { stopped }) worker.awaitTermination(millis)
-        }
+        /** Waits for a stopped view's worker thread to exit (used by [close]); true when it has. */
+        fun awaitStopped(millis: Long): Boolean =
+            synchronized(this) { stopped } && worker.awaitTermination(millis)
 
         fun preparedGraphs(): Set<String> = graphs.keys.toSet()
         fun preparedGraph(graphKey: String): SharedInferenceGraph? = graphs[graphKey]
@@ -347,7 +378,11 @@ class JenaRepository private constructor(
             worker.shutdown(endTransaction)
             return null
         }
-        return SnapshotView(snapshot, worker)
+        val view = SnapshotView(snapshot, worker)
+        openViews.add(view)
+        // A view opened while close() ran is not seen by it: stop it here instead.
+        if (closed.get()) { view.retire(); openViews.remove(view); return null }
+        return view
     }
 
     /**
@@ -410,7 +445,21 @@ class JenaRepository private constructor(
         }
     }
 
+    /**
+     * Timed SELECT with initial bindings, applied with Jena's `substitution`. The query is first checked against the
+     * initial-bindings contract shared by every provider ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]):
+     * a query that is not a SELECT, that assigns a bound variable (`BIND(... AS ?v)`, `(expr AS ?v)`, `VALUES ?v`), or
+     * that uses it inside a sub-select that does not project it is rejected with [IllegalArgumentException], as on
+     * the RDF4J provider and the SPARQL endpoint adapter.
+     */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
+        consume: (Sequence<BindingSet>) -> T): T {
+        // Outside queryOperation: a query the contract rejects is the caller's error (IllegalArgumentException).
+        com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.validate(query.sparql, bindings.keys)
+        return withSelectRowsSubstituted(query, bindings, timeout, consume)
+    }
+
+    private fun <T> withSelectRowsSubstituted(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T = withRead {
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
@@ -475,9 +524,15 @@ class JenaRepository private constructor(
     override fun close() {
         check(!dataset.isInTransaction) { "Cannot close inside a transaction" }
         if (closed.compareAndSet(false, true)) {
-            val view = synchronized(viewLock) { currentView.also { currentView = null } }
-            view?.retire()
-            view?.awaitStopped(10_000)
+            synchronized(viewLock) { currentView = null }
+            // Retire every view (a view still used by another thread's read stops when that read ends), then wait
+            // for the workers so that no read transaction outlives close().
+            val views = openViews.toList()
+            views.forEach { it.retire() }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CLOSE_WAIT_SECONDS)
+            for (view in views) {
+                if (view.awaitStopped(TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).coerceAtLeast(1))) openViews.remove(view)
+            }
             dataset.close()
         }
     }

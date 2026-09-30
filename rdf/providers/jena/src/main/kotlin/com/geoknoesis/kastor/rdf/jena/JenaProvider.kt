@@ -42,17 +42,29 @@ class JenaProvider : RdfProvider {
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         return when (variantId) {
             "memory" -> JenaRepository.MemoryRepository()
-            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference()
+            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference(viewIdleTimeout(config))
             "tdb2" -> {
                 val location = config.options["location"] ?: "data"
                 JenaRepository.Tdb2Repository(location)
             }
             "tdb2-inference" -> {
                 val location = config.options["location"] ?: "data"
-                JenaRepository.Tdb2RepositoryWithInference(location)
+                JenaRepository.Tdb2RepositoryWithInference(location, viewIdleTimeout(config))
             }
             else -> throw IllegalArgumentException("Unsupported Jena repository variant: $variantId")
         }
+    }
+
+    /**
+     * Idle timeout of inference views: option `viewIdleTimeoutMillis` (a positive number of milliseconds), default
+     * [JenaRepository.DEFAULT_VIEW_IDLE_TIMEOUT].
+     */
+    private fun viewIdleTimeout(config: RdfConfig): java.time.Duration {
+        val raw = config.options["viewIdleTimeoutMillis"] ?: return JenaRepository.DEFAULT_VIEW_IDLE_TIMEOUT
+        val millis = requireNotNull(raw.trim().toLongOrNull()?.takeIf { it > 0 }) {
+            "viewIdleTimeoutMillis must be a positive number of milliseconds, got '$raw'"
+        }
+        return java.time.Duration.ofMillis(millis)
     }
 
     override fun getCapabilities(variantId: String?): ProviderCapabilities {

@@ -98,9 +98,12 @@ internal val IDLE_TIMER: java.util.concurrent.ScheduledExecutorService =
  * `onBroken` is invoked if the step had already started, because its shared state may now be inconsistent.
  */
 internal class InferenceWorker(name: String) {
+    /** Threads started by [executor] (at most one at a time), so [awaitTermination] can wait for them to exit. */
+    private val threads = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+
     private val executor = java.util.concurrent.ThreadPoolExecutor(
         1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue(),
-    ) { task -> Thread(task, name).apply { isDaemon = true } }
+    ) { task -> Thread(task, name).apply { isDaemon = true; threads.add(this) } }
 
     fun <T> call(onBroken: () -> Unit, block: () -> T): T {
         InferenceCancellation.checkNotCancelled()
@@ -145,8 +148,16 @@ internal class InferenceWorker(name: String) {
         executor.shutdown()
     }
 
-    fun awaitTermination(millis: Long) {
-        executor.awaitTermination(millis, java.util.concurrent.TimeUnit.MILLISECONDS)
+    /** Waits up to [millis] for the stopped worker's thread to exit; true when it has. */
+    fun awaitTermination(millis: Long): Boolean {
+        val deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(millis)
+        if (!executor.awaitTermination(millis, java.util.concurrent.TimeUnit.MILLISECONDS)) return false
+        for (thread in threads) {
+            val left = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (left <= 0) return !thread.isAlive
+            thread.join(left)
+        }
+        return threads.none { it.isAlive }
     }
 
     private companion object {

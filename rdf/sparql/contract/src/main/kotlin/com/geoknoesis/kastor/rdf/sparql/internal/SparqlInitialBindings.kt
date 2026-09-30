@@ -49,15 +49,30 @@ object SparqlInitialBindings {
      * terms already rendered with [SparqlLexical] (IRIs, literals). The constants are inserted as
      * given.
      */
-    fun apply(sparql: String, bindings: Map<String, String>): String {
+    fun apply(sparql: String, bindings: Map<String, String>): String = apply(sparql, bindings, emptyMap())
+
+    /**
+     * Like [apply], for constants whose syntax the target parser accepts in triple patterns and `BIND` but not in
+     * other expressions (RDF4J's `<< s p o >>`). A bound variable `v` in [expressionVariables] is written as its
+     * constant in triple patterns, and as the variable `?x` (`x = expressionVariables[v]`, a name the query does not
+     * use) in expression positions: the projection, `GROUP BY`, `HAVING`, `ORDER BY`, and anything inside parentheses
+     * in a WHERE group (FILTER, BIND, function calls; also RDF collections). Every group that uses `?x` starts with
+     * `BIND(constant AS ?x)`, so `?x` holds the constant wherever it is read and the query means the same.
+     */
+    fun apply(sparql: String, bindings: Map<String, String>, expressionVariables: Map<String, String>): String {
         if (bindings.isEmpty()) return sparql
+        require(bindings.keys.containsAll(expressionVariables.keys)) { "expressionVariables must only name bound variables" }
+        expressionVariables.values.forEach { SparqlLexical.varName(it) }
         bindings.keys.forEach { SparqlLexical.varName(it) }
         val decoded = decodeCodepointEscapes(sparql)
         val tokens = tokenize(decoded.text)
         val form = tokens.indexOfFirst { token -> QUERY_FORMS.any { token.isKeyword(it) } }
         require(form >= 0 && tokens[form].isKeyword("SELECT")) { "Initial bindings can only be applied to a SELECT query" }
         val replacements = HashMap<Int, String>()
-        Rewriter(tokens, bindings, replacements).query(form, tokens.size)
+        require(tokens.none { it.kind == Kind.VAR && it.name in expressionVariables.values }) {
+            "expressionVariables must be variables the query does not use"
+        }
+        Rewriter(tokens, bindings, expressionVariables, replacements).query(form, tokens.size)
         return buildString(sparql.length + 64) {
             var last = 0
             tokens.forEachIndexed { index, token ->
@@ -69,6 +84,18 @@ object SparqlInitialBindings {
             append(sparql, last, sparql.length)
         }
     }
+
+    /**
+     * Checks that initial bindings for [variables] (names without `?`) can be applied to [sparql] under the rules
+     * above, without rewriting it: throws [IllegalArgumentException] exactly when [apply] would. Providers that bind
+     * natively (Jena's `substitution`) call this first so that every provider accepts and rejects the same queries.
+     */
+    fun validate(sparql: String, variables: Set<String>) {
+        if (variables.isEmpty()) return
+        apply(sparql, variables.associateWith { VALIDATION_CONSTANT })
+    }
+
+    private const val VALIDATION_CONSTANT = "<urn:kastor:initial-binding>"
 
     private val QUERY_FORMS = listOf("SELECT", "ASK", "CONSTRUCT", "DESCRIBE")
 
@@ -83,8 +110,31 @@ object SparqlInitialBindings {
     private class Rewriter(
         private val tokens: List<Token>,
         private val bindings: Map<String, String>,
+        private val expressionVariables: Map<String, String>,
         private val out: MutableMap<Int, String>,
     ) {
+        /** A group (or query level) being rewritten: its opening brace, and the expression variables it reads. */
+        private class Frame(var open: Int = -1) {
+            val declared = LinkedHashSet<String>()
+        }
+
+        /** Innermost group last. */
+        private val frames = ArrayDeque<Frame>()
+
+        /** The text of bound variable [name] in an expression position; [declare] records the use in the current group. */
+        private fun expressionConstant(name: String, declare: Boolean = true): String {
+            val variable = expressionVariables[name] ?: return bindings.getValue(name)
+            if (declare) frames.last().declared.add(name)
+            return "?$variable"
+        }
+
+        /** Starts [frame]'s group with a `BIND` for every expression variable it reads. */
+        private fun close(frame: Frame) {
+            if (frame.declared.isEmpty() || frame.open < 0) return
+            out[frame.open] = frame.declared.joinToString(" ", prefix = "{ ") { name ->
+                "BIND(${bindings.getValue(name)} AS ?${expressionVariables.getValue(name)})"
+            }
+        }
         /** Token indices currently rendered as `(constant AS ?name)`. */
         private val aliased = HashSet<Int>()
 
@@ -93,7 +143,8 @@ object SparqlInitialBindings {
 
         private fun bound(index: Int): Boolean = tokens[index].kind == Kind.VAR && tokens[index].name in bindings
 
-        private fun substitute(index: Int) {
+        /** Substitutes a bound variable at [index]; [pattern] when it is in a triple-pattern position of a WHERE group. */
+        private fun substitute(index: Int, pattern: Boolean = false) {
             if (!bound(index)) return
             // `BOUND(constant)` is not legal SPARQL text (BOUND takes a variable); a bound variable is always
             // bound, which is how Jena evaluates its substituted `BOUND`. `(true)` is legal wherever BOUND(...) is,
@@ -107,11 +158,11 @@ object SparqlInitialBindings {
                 out[index + 1] = ""
                 return
             }
-            out[index] = bindings.getValue(tokens[index].name)
+            out[index] = if (pattern) bindings.getValue(tokens[index].name) else expressionConstant(tokens[index].name)
         }
 
         private fun alias(index: Int, name: String) {
-            out[index] = "(${bindings.getValue(name)} AS ?$name)"
+            out[index] = "(${expressionConstant(name)} AS ?$name)"
             aliased.add(index)
         }
 
@@ -122,7 +173,8 @@ object SparqlInitialBindings {
             while (fresh in taken) fresh = "${name}_bound${++n}"
             taken.add(fresh)
             for (index in indices) {
-                out[index] = if (index in aliased) "(${bindings.getValue(name)} AS ?$fresh)" else "?$fresh"
+                // Re-renders a sub-select's alias; its group already declares the expression variable.
+                out[index] = if (index in aliased) "(${expressionConstant(name, declare = false)} AS ?$fresh)" else "?$fresh"
             }
         }
 
@@ -134,6 +186,17 @@ object SparqlInitialBindings {
          * (the closing brace of a sub-select, or the end of the text).
          */
         fun query(select: Int, end: Int): Projection {
+            val level = Frame()
+            frames.addLast(level)
+            try {
+                return queryLevel(select, end, level)
+            } finally {
+                frames.removeLast()
+                close(level)
+            }
+        }
+
+        private fun queryLevel(select: Int, end: Int, level: Frame): Projection {
             // ---- projection
             var i = select + 1
             if (i < end && (tokens[i].isKeyword("DISTINCT") || tokens[i].isKeyword("REDUCED"))) i++
@@ -161,6 +224,7 @@ object SparqlInitialBindings {
             while (i < end && !tokens[i].isPunct('{')) i++
             require(i < end) { "Malformed SELECT query: no WHERE group" }
             val groupOpen = i
+            level.open = groupOpen
             val groupClose = matching(groupOpen, end)
             val children = group(groupOpen + 1, groupClose)
 
@@ -185,7 +249,7 @@ object SparqlInitialBindings {
                         }
                         // A bare constant is not an OrderCondition (an IRI would parse as a function
                         // call); a bracketed expression is, and ordering by a constant is a no-op.
-                        clause == "ORDER" && depth == 0 -> out[k] = "(${bindings.getValue(t.name)})"
+                        clause == "ORDER" && depth == 0 -> out[k] = "(${expressionConstant(t.name)})"
                         clause != "VALUES" -> substitute(k)
                     }
                 }
@@ -211,6 +275,9 @@ object SparqlInitialBindings {
         /** Rewrite the group content in [from, to); returns the projection tokens of its sub-selects. */
         private fun group(from: Int, to: Int): MutableMap<String, MutableList<Int>> {
             val exposed = HashMap<String, MutableList<Int>>()
+            // Parenthesis depth within the innermost enclosing braces: > 0 is an expression position.
+            var parens = 0
+            val outer = ArrayDeque<Int>()
             var i = from
             while (i < to) {
                 val t = tokens[i]
@@ -220,10 +287,21 @@ object SparqlInitialBindings {
                         subSelect(i + 1, close).forEach { (name, indices) -> exposed.getOrPut(name) { ArrayList() }.addAll(indices) }
                         i = close
                     }
+                    t.isPunct('{') -> {
+                        outer.addLast(parens)
+                        parens = 0
+                        frames.addLast(Frame(i))
+                    }
+                    t.isPunct('}') && outer.isNotEmpty() -> {
+                        parens = outer.removeLast()
+                        close(frames.removeLast())
+                    }
+                    t.isPunct('(') -> parens++
+                    t.isPunct(')') -> parens--
                     t.isKeyword("VALUES") -> valuesDeclaration(i, to)
                     t.kind == Kind.VAR && t.name in bindings -> {
                         if (i > from && tokens[i - 1].isKeyword("AS")) reject(t.name, "the query assigns it with BIND(... AS ?${t.name})")
-                        substitute(i)
+                        substitute(i, pattern = parens <= 0)
                     }
                 }
                 i++

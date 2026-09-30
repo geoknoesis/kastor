@@ -425,32 +425,57 @@ class Rdf4jRepository(
      * [timeout] is rounded **up** to the next second (minimum 1 s): a query is never cut off earlier than
      * requested, but may run up to one second longer.
      *
-     * IRI and literal bindings are applied by syntactic substitution
-     * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]), the same rules the Jena provider
-     * (Jena's `substitution`) and the SPARQL endpoint adapter use, so every provider returns the same rows:
-     * the constant restricts the query before aggregation, LIMIT and FILTER, and a projected bound variable
-     * is bound in every row. Queries that assign a bound variable (`BIND(... AS ?v)`, `(expr AS ?v)`,
-     * `VALUES ?v`) or use it inside a sub-select that does not project it are rejected with
-     * [IllegalArgumentException]. Blank nodes, triple terms and directional language strings (which RDF4J's
-     * SPARQL parser cannot spell) keep RDF4J's native `setBinding`.
+     * Bindings follow the initial-bindings contract shared by every provider
+     * ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings], the rules of Jena's `substitution`), so every
+     * provider returns the same rows: the constant restricts the query before aggregation, LIMIT and FILTER, a
+     * projected bound variable is bound in every row, and `SELECT *` does not return it. Queries that assign a bound
+     * variable (`BIND(... AS ?v)`, `(expr AS ?v)`, `VALUES ?v`) or use it inside a sub-select that does not project it
+     * are rejected with [IllegalArgumentException].
+     *
+     * IRIs and literals are written into the query text. Blank nodes and directional language strings (which RDF4J's
+     * SPARQL parser cannot spell) go through the same rewrite with a fresh placeholder variable in place of the
+     * constant, which is then bound with RDF4J's native `setBinding`; the placeholder is never returned in rows. The
+     * query therefore has the same shape (and the same results) as for a spelled-out constant. A triple term is written
+     * as `<< s p o >>` in triple patterns and, in expressions (where RDF4J's parser does not accept that syntax), as a
+     * fresh variable assigned with `BIND(<< s p o >> AS ?fresh)` at the start of each group that reads it. (RDF4J 5
+     * cannot bind a triple value natively: `setBinding` with one trips an internal assertion of its evaluator.)
+     * A triple term with a blank-node component cannot be written at all; it falls back to `setBinding`.
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
-        val (substituted, native) = bindings.entries.partition { sparqlConstant(it.value) != null }
+        // Fresh variables: bound natively with setBinding, or declared with BIND for triple terms in expressions.
+        val placeholders = LinkedHashMap<String, org.eclipse.rdf4j.model.Value>()
+        val expressions = HashMap<String, String>()
+        val constants = bindings.mapValues { (name, term) ->
+            val spelled = sparqlConstant(term)
+            when {
+                spelled == null -> placeholderFor(name, query.sparql, placeholders.keys + expressions.values)
+                    .also { placeholders[it] = Rdf4jTerms.toRdf4jValue(term) }.let { "?$it" }
+                term is TripleTerm -> spelled.also {
+                    expressions[name] = placeholderFor(name, query.sparql, placeholders.keys + expressions.values)
+                }
+                else -> spelled
+            }
+        }
         // Outside queryOperation: a query the substitution rejects is the caller's error (IllegalArgumentException).
-        val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(
-            query.sparql,
-            substituted.associate { it.key to sparqlConstant(it.value)!! },
-        )
+        val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(query.sparql, constants, expressions)
         return withConnection { conn ->
             val result = queryOperation(sparql) {
                 val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql)
-                native.forEach { (name, term) -> prepared.setBinding(name, Rdf4jTerms.toRdf4jValue(term)) }
+                placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
                 prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
                 prepared.evaluate()
             }
-            result.use { consume(it.rows(sparql)) }
+            result.use { consume(it.rows(sparql, hidden = placeholders.keys + expressions.values)) }
         }
+    }
+
+    /** A variable name for a natively bound term that occurs nowhere in [sparql] and is not in [taken]. */
+    private fun placeholderFor(name: String, sparql: String, taken: Set<String>): String {
+        var candidate = "kastorInitial_$name"
+        var n = 0
+        while (sparql.contains(candidate) || candidate in taken) candidate = "kastorInitial_${name}_${++n}"
+        return candidate
     }
 
     /**
@@ -467,13 +492,20 @@ class Rdf4jRepository(
                 else lexical.typedLiteral(term.lexical, term.datatype.value)
             is TrueLiteral -> "\"true\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
             is FalseLiteral -> "\"false\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
+            // RDF4J's SPARQL-star syntax for a triple term whose components can all be spelled (triple patterns only).
+            is TripleTerm -> {
+                val subject = (term.triple.subject as? Iri)?.let { sparqlConstant(it) } ?: return null
+                val obj = sparqlConstant(term.triple.obj) ?: return null
+                "<< $subject ${lexical.iriRef(term.triple.predicate.value)} $obj >>"
+            }
             else -> null
         }
     }
 
-    private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String): Sequence<BindingSet> =
+    private fun org.eclipse.rdf4j.query.TupleQueryResult.rows(sparql: String, hidden: Set<String> = emptySet()): Sequence<BindingSet> =
         iterator().asSequence().map { row ->
-            MapBindingSet(row.bindingNames.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
+            val names = if (hidden.isEmpty()) row.bindingNames else row.bindingNames.filterNot { it in hidden }
+            MapBindingSet(names.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
         }.guardedBy(sparql)
 
     /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */

@@ -112,6 +112,41 @@ class JenaReasonerBoundsTest {
     }
 
     @Test
+    fun `an abandoned preparation releases its permit only after closing its models`() {
+        val now = AtomicLong()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val model = java.util.concurrent.atomic.AtomicReference<org.apache.jena.rdf.model.InfModel>()
+        val blockingPrepare: (org.apache.jena.rdf.model.InfModel) -> Unit = {
+            model.set(it)
+            started.countDown()
+            release.await(10, TimeUnit.SECONDS)
+            it.prepare()
+        }
+        // Records, at the moment the permit is returned, whether the abandoned worker has already closed its models.
+        val openAtRelease = java.util.concurrent.CompletableFuture<Boolean>()
+        val acquired = java.util.concurrent.atomic.AtomicBoolean()
+        val permits = object : Semaphore(1) {
+            override fun tryAcquire(timeout: Long, unit: TimeUnit): Boolean =
+                super.tryAcquire(timeout, unit).also { if (it) acquired.set(true) }
+
+            override fun release() {
+                model.get()?.let { openAtRelease.complete(!it.isClosed) }
+                super.release()
+            }
+        }
+        // The injected clock passes the deadline once the preparation holds its permit, so the caller abandons it
+        // deterministically instead of waiting.
+        val clock = { if (acquired.get()) now.get() + Duration.ofHours(2).toNanos() else now.get() }
+        val reasoner = JenaReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofHours(1)), clock, blockingPrepare, permits)
+        assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+            assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(chain(3, 3)) }
+        }
+        release.countDown()
+        assertFalse(openAtRelease.get(10, TimeUnit.SECONDS), "permit released before the models were closed")
+    }
+
+    @Test
     fun `materialization threshold fails right after preparation when forward deductions exceed it`() {
         val prepared = AtomicInteger()
         // A forward (`->`) transitive rule: preparation itself builds the whole closure (~20,000 triples for 200 links).

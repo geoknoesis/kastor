@@ -85,4 +85,35 @@ class SparqlInitialBindingsTest {
             ),
         )
     }
+
+    @Test
+    fun `expression variables stand in for the constant outside triple patterns`() {
+        val t = "<< <urn:a> <urn:p> 1 >>"
+        val rewritten = SparqlInitialBindings.apply(
+            "SELECT ?o (COUNT(*) AS ?n) WHERE { ?s ?p ?o FILTER(sameTerm(?o, ?s)) FILTER EXISTS { ?x ?p ?o } " +
+                "{ ?s ?q ?o } UNION { ?s ?q ?z FILTER(?z = ?o) } } GROUP BY ?o HAVING(COUNT(?o) > 0) ORDER BY ?o",
+            mapOf("o" to t),
+            mapOf("o" to "k"),
+        )
+        assertEquals(
+            "SELECT ?o (COUNT(*) AS ?n) WHERE { BIND($t AS ?k) ?s ?p $t FILTER(sameTerm(?k, ?s)) FILTER EXISTS { ?x ?p $t } " +
+                "{ ?s ?q $t } UNION { BIND($t AS ?k) ?s ?q ?z FILTER(?z = ?k) } } GROUP BY (?k AS ?o) HAVING(COUNT(?k) > 0) ORDER BY (?k)",
+            rewritten,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            SparqlInitialBindings.apply("SELECT ?k WHERE { ?s ?p ?o }", mapOf("o" to t), mapOf("o" to "k"))
+        }
+    }
+
+    @Test
+    fun `validate rejects exactly what apply rejects`() {
+        SparqlInitialBindings.validate("SELECT ?s WHERE { ?s ?p ?o }", setOf("s"))
+        for (query in listOf(
+            "SELECT ?o WHERE { BIND(<urn:a> AS ?s) ?s <urn:p> ?o }",
+            "SELECT ?o WHERE { VALUES ?s { <urn:a> } ?s <urn:p> ?o }",
+            "ASK { ?s ?p ?o }",
+        )) {
+            assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.validate(query, setOf("s")) }, query)
+        }
+    }
 }

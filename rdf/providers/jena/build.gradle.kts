@@ -6,6 +6,7 @@ plugins {
 
 dependencies {
   api(project(":rdf:core"))
+  implementation(project(":rdf:sparql-contract"))
   api(libs.jena.libs) { isTransitive = true }
   api(libs.jena.arq)
   api(libs.jena.tdb2)
