@@ -302,6 +302,9 @@ println("Name: ${person.name}, Age: ${person.age}")
 String **objects** are always literals, and IRIs are explicit. Use `qname(...)` to expand a prefixed name with declared or built-in prefixes, and `iri(...)` for full IRIs:
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.*
+import com.geoknoesis.kastor.rdf.vocab.RDF
+
 repo.add {
     // Built-in prefixes need no declaration: rdf, rdfs, owl, sh, xsd, obo,
     // skos, prov, dcat, dcterms, void, geo, time
@@ -321,6 +324,10 @@ repo.add {
 ### Explicit literals
 
 ```kotlin
+import com.geoknoesis.kastor.rdf.*                  // Direction, add, iri, lit, string
+import com.geoknoesis.kastor.rdf.vocab.FOAF
+import com.geoknoesis.kastor.rdf.vocab.XSD
+
 repo.add {
     val person = iri("http://example.org/person")
 
