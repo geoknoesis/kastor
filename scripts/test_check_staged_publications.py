@@ -54,6 +54,27 @@ class StagedPublicationGate(unittest.TestCase):
         result = self.gate()
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_dependency_without_version_fails(self):
+        self.pom.write_text(POM.format(packaging="<dependencies><dependency><groupId>at.yawk.lz4</groupId>"
+                                                 "<artifactId>lz4-java</artifactId><scope>runtime</scope>"
+                                                 "</dependency></dependencies>"), encoding="utf-8")
+        result = self.gate()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("at.yawk.lz4:lz4-java", result.stdout + result.stderr)
+
+    def test_module_dependency_without_version_fails(self):
+        (self.directory / "library-1.module").write_text(json.dumps({"variants": [{"name": "runtimeElements",
+            "dependencies": [{"group": "at.yawk.lz4", "module": "lz4-java"}]}]}), encoding="utf-8")
+        result = self.gate()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("at.yawk.lz4:lz4-java", result.stdout + result.stderr)
+
+    def test_module_dependency_with_version_passes(self):
+        (self.directory / "library-1.module").write_text(json.dumps({"variants": [{"name": "runtimeElements",
+            "dependencies": [{"group": "g", "module": "m", "version": {"requires": "1.0"}}]}]}), encoding="utf-8")
+        result = self.gate()
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_pom_only_publication_does_not_require_jars(self):
         self.pom.write_text(POM.format(packaging="<packaging>pom</packaging>"), encoding="utf-8")
         for jar in self.directory.glob("*.jar"):

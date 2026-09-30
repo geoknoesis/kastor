@@ -50,6 +50,7 @@ and is kept as is; it was never published to Maven Central.
 - `onto-quality`: `--debug` prints the stack trace of a failed explanation; LLM prerequisites are checked before any model is loaded; `--explain-dry-run` needs neither the opt-in nor an API key.
 - `rdf-cli`: runtime errors print one line, and Jena warnings reach stderr.
 - README samples at the start of a section import everything they use, and CI checks them.
+- Published metadata: `rdf-rdf4j` declared `at.yawk.lz4:lz4-java` and `kastor-gen-gradle-plugin` declared `kotlin-stdlib` without a version (the version came from the unpublished build platform), so neither resolved outside this build. Both now carry versions, and the staged-publication gate rejects any versionless dependency in a POM or Gradle module file.
 
 ### Fixed (round four)
 

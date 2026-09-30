@@ -26,6 +26,20 @@ for pom in poms:
             and not ARTIFACT_ID.fullmatch(root.findtext("m:artifactId", "", ns).strip())):
         raise SystemExit(f"{pom}: artifactId breaks the naming scheme "
                          "(rdf-*, kastor-bom, kastor-gen-*, onto-quality[-*])")
+    # Every dependency must carry a version for consumers: a version supplied only by the internal build platform
+    # is lost on publication and makes the artifact unresolvable outside this build.
+    for dependency in root.findall("m:dependencies/m:dependency", ns):
+        if not dependency.findtext("m:version", "", ns).strip():
+            coordinates = f"{dependency.findtext('m:groupId', '', ns)}:{dependency.findtext('m:artifactId', '', ns)}"
+            raise SystemExit(f"{pom}: dependency {coordinates} has no version")
+    module = pom.with_suffix(".module")
+    if module.is_file():
+        for variant in json.loads(module.read_text(encoding="utf-8")).get("variants", []):
+            for dependency in variant.get("dependencies", []):
+                version = dependency.get("version") or {}
+                if not any(version.get(key) for key in ("requires", "strictly", "prefers")):
+                    raise SystemExit(f"{module}: dependency {dependency.get('group')}:{dependency.get('module')} "
+                                     f"has no version in variant {variant.get('name')}")
     if root.findtext("m:packaging", "jar", ns) == "pom":
         continue
     for classifier in ("binary", "sources", "javadoc"):

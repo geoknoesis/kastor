@@ -13,9 +13,6 @@ dependencies {
     // No kotlin-gradle-plugin dependency: source sets are wired reflectively (see KotlinSourceSetWiring),
     // so the plugin never ships a second copy of KGP classes into consumer builds.
 
-    // Kotlin
-    implementation("org.jetbrains.kotlin:kotlin-stdlib")
-
     // KSP
     implementation(libs.ksp.symbol.processing.api)
 
