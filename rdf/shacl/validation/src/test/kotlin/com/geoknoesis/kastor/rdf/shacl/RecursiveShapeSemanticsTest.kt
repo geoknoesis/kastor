@@ -99,13 +99,15 @@ class RecursiveShapeSemanticsTest {
         val data = g("ex:x ex:self ex:x ; ex:name 'x' .")
         val report = validate(data, shapes)
         assertFalse(report.isValid)
-        // The constraint is not evaluated: no sh:not violation, only the warning (which names the NOT constraint).
+        // The constraint is not evaluated: no definite sh:not violation, only the undefined result (which names the
+        // NOT constraint and carries the shape's severity).
         assertTrue(
-            report.violations.none { it.constraint.constraintType == ConstraintType.NOT && it.severity == ViolationSeverity.VIOLATION },
+            report.violations.none { it.constraint.constraintType == ConstraintType.NOT && !it.isUndefinedRecursion },
             report.violations.toString(),
         )
         val undefined = report.violations.single()
-        assertEquals(ViolationSeverity.WARNING, undefined.severity)
+        assertTrue(undefined.isUndefinedRecursion)
+        assertEquals(ViolationSeverity.VIOLATION, undefined.severity)
         assertTrue(undefined.message.contains("undefined"), undefined.message)
         assertThrows(ShaclValidationException::class.java) { validate(data, shapes, ValidationConfig(strictMode = true)) }
     }

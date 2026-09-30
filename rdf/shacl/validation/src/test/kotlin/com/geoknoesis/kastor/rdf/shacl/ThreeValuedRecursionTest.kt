@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.string
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -97,7 +98,7 @@ class ThreeValuedRecursionTest {
         for (shapes in listOf(xone, qualifiedMax)) {
             val report = validate(loop, shapes)
             assertFalse(report.isValid)
-            assertTrue(report.violations.all { it.severity == ViolationSeverity.WARNING && it.message.contains("undefined") }, report.violations.toString())
+            assertTrue(report.violations.all { it.isUndefinedRecursion && it.severity == ViolationSeverity.VIOLATION && it.message.contains("undefined") }, report.violations.toString())
             assertThrows(ShaclValidationException::class.java) { validate(loop, shapes, ValidationConfig(strictMode = true)) }
         }
     }
@@ -152,10 +153,11 @@ class ThreeValuedRecursionTest {
         assertEquals(
             setOf(
                 listOf(ex("f"), ConstraintType.NODE, ex("v1"), ViolationSeverity.VIOLATION),
-                listOf(ex("f"), ConstraintType.NODE, ex("v2"), ViolationSeverity.WARNING),
+                listOf(ex("f"), ConstraintType.NODE, ex("v2"), ViolationSeverity.VIOLATION),
             ),
             summary(report),
         )
+        assertEquals(listOf(ex("v2")), report.violations.filter { it.isUndefinedRecursion }.map { it.value })
     }
 
     @Test fun `qualified counts are decided from definite values when possible`() {
@@ -169,7 +171,7 @@ class ThreeValuedRecursionTest {
         val data = g("ex:f ex:knows ex:v1 , ex:v2 . ex:v1 ex:name 'n' . ex:v2 ex:self ex:v2 .")
         val report = validate(data, shapes)
         assertEquals(1, report.violations.size, report.violations.toString())
-        assertEquals(ViolationSeverity.WARNING, report.violations.single().severity)
+        assertTrue(report.violations.single().isUndefinedRecursion)
 
         // Undef count is at least 2 once both values are definitely conforming or undefined above the bound.
         val over = g("ex:f ex:knows ex:v1 , ex:v2 , ex:v3 . ex:v1 ex:name 'n' . ex:v3 ex:self ex:v3 .")
@@ -191,10 +193,99 @@ class ThreeValuedRecursionTest {
         val report = validate(data, shapes)
         assertFalse(report.isValid)
         val result = report.violations.single()
-        assertEquals(ViolationSeverity.WARNING, result.severity)
+        assertTrue(result.isUndefinedRecursion)
+        assertEquals(ViolationSeverity.VIOLATION, result.severity)
         assertEquals(ex("u"), result.focusNode)
         assertTrue(result.message.contains("sh:targetWhere"), result.message)
         assertThrows(ShaclValidationException::class.java) { validate(data, shapes, ValidationConfig(strictMode = true)) }
+    }
+
+    // --- undefined results: marker, severity and conformance ------------------------------------------------------
+
+    private val paradox = """
+        ex:S a sh:NodeShape ; sh:targetNode ex:x ;
+          sh:property [ sh:path ex:self ; SEVERITY sh:not ex:S ] .
+    """
+
+    @Test fun `an undefined result blocks conformance when only sh Violation disallows it`() {
+        val data = g("ex:x ex:self ex:x .")
+        val report = validate(data, paradox.replace("SEVERITY", ""), ValidationConfig(conformanceDisallows = setOf(SHACL.Violation)))
+        assertFalse(report.isValid, report.violations.toString())
+        val result = report.violations.single()
+        assertTrue(result.isUndefinedRecursion, result.toString())
+        // The result carries the shape's declared severity, as a failure of the constraint would.
+        assertEquals(ViolationSeverity.VIOLATION, result.severity)
+        assertEquals(ConstraintType.NOT, result.constraint.constraintType)
+    }
+
+    @Test fun `an undefined result keeps the declared severity and blocks exactly when a failure would`() {
+        val data = g("ex:x ex:self ex:x .")
+        val info = paradox.replace("SEVERITY", "sh:severity sh:Info ;")
+        val onlyViolations = validate(data, info, ValidationConfig(conformanceDisallows = setOf(SHACL.Violation)))
+        val result = onlyViolations.violations.single()
+        assertTrue(result.isUndefinedRecursion)
+        assertEquals(ViolationSeverity.INFO, result.severity)
+        // Whether ex:x conforms or fails, an sh:Info result never blocks here: the report conforms either way.
+        assertTrue(onlyViolations.isValid)
+        assertFalse(validate(data, info).isValid)
+    }
+
+    @Test fun `an undecidable targetWhere membership blocks when only sh Violation disallows it`() {
+        val shapes = """
+            ex:S a sh:NodeShape ; sh:targetWhere ex:W ; sh:property [ sh:path ex:name ; sh:minCount 1 ] .
+            ex:W sh:property [ sh:path ex:self ; sh:not ex:W ] .
+        """
+        val report = validate(g("ex:u ex:self ex:u ."), shapes, ValidationConfig(conformanceDisallows = setOf(SHACL.Violation)))
+        assertFalse(report.isValid)
+        assertTrue(report.violations.single().isUndefinedRecursion)
+    }
+
+    @Test fun `definite results are not marked undefined`() {
+        val report = validate(g("ex:f ex:knows ex:v1 ."), "ex:T sh:targetNode ex:f ; sh:property [ sh:path ex:knows ; sh:node ex:S ] . ex:S sh:property [ sh:path ex:name ; sh:minCount 1 ] .")
+        assertFalse(report.violations.single().isUndefinedRecursion)
+    }
+
+    // --- operand order and mixed components -----------------------------------------------------------------------
+
+    @Test fun `recursive sh or cycle gives the same report in every operand order`() {
+        val data = g(
+            """
+            ex:a a ex:Person ; ex:knows ex:b . ex:b a ex:Person ; ex:knows ex:a .
+            ex:c a ex:Person ; ex:knows ex:d . ex:d a ex:Person ; ex:name 'd' .
+            ex:e a ex:Person ; ex:knows ex:f . ex:f a ex:Person ; ex:knows ex:g . ex:g a ex:Person .
+            """,
+        )
+        fun shapes(operands: String) = """
+            ex:T sh:targetClass ex:Person ; sh:node ex:P .
+            ex:P sh:property [ sh:path ex:knows ; sh:minCount 1 ; sh:or ( $operands ) ] .
+            $named
+            ex:Loud sh:property [ sh:path ex:shout ; sh:minCount 1 ] .
+        """
+        val orders = listOf("ex:Named ex:P ex:Loud", "ex:P ex:Named ex:Loud", "ex:Loud ex:P ex:Named", "ex:P ex:Loud ex:Named")
+        val reports = orders.map { summary(validate(data, shapes(it))) }
+        // a, b: unnamed ring conforms (greatest fixpoint); c: knows named d; d, e, f, g: minCount fails down the chain.
+        assertEquals(
+            setOf("d", "e", "f", "g").map { listOf(ex(it), ConstraintType.NODE, ex(it), ViolationSeverity.VIOLATION) }.toSet(),
+            reports.first(),
+        )
+        reports.forEach { assertEquals(reports.first(), it) }
+    }
+
+    @Test fun `mixed positive and negative component settles the named neighbour and leaves the self loop undefined`() {
+        val shapes = """
+            ex:P a sh:NodeShape ; sh:targetNode ex:x , ex:n ;
+              sh:or ( ex:Named [ sh:property [ sh:path ex:knows ; sh:node ex:P ] ] ) ;
+              sh:property [ sh:path ex:self ; sh:not ex:P ] .
+            $named
+        """
+        val data = g("ex:x ex:self ex:x ; ex:knows ex:n . ex:n ex:name 'n' ; ex:knows ex:x .")
+        val report = validate(data, shapes)
+        assertFalse(report.isValid)
+        assertTrue(report.violations.none { it.focusNode == ex("n") }, report.violations.toString())
+        val result = report.violations.single()
+        assertEquals(ex("x"), result.focusNode)
+        assertTrue(result.isUndefinedRecursion, result.toString())
+        assertEquals(ConstraintType.NOT, result.constraint.constraintType)
     }
 
     // --- P3: cost --------------------------------------------------------------------------------------------------

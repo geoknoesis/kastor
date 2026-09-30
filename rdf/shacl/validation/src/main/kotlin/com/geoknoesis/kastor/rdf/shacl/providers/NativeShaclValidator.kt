@@ -93,9 +93,12 @@ import com.geoknoesis.kastor.rdf.shacl.native.stronglyConnectedComponents
  *      is the same whatever the group's answers are (evaluated with them undefined) are settled and the remainder is
  *      split again; questions still on a cycle through a negative dependency are **undefined**.
  *   A read the recording did not register is never answered by default: it is registered and the solve restarts.
- *   A top-level constraint whose outcome depends on an undefined answer produces a sh:Warning result stating that the
- *   recursive dependency is undefined (in [ValidationConfig.strictMode] validation fails instead), in addition to the
- *   definite results of the other value nodes. An undecidable `sh:targetWhere` membership is reported the same way.
+ *   A top-level constraint whose outcome depends on an undefined answer produces a result stating that the recursive
+ *   dependency is undefined (in [ValidationConfig.strictMode] validation fails instead), in addition to the definite
+ *   results of the other value nodes. An undecidable `sh:targetWhere` membership is reported the same way. Such a
+ *   result is marked [ValidationViolation.isUndefinedRecursion] and has the source shape's declared severity and the
+ *   constraint's component, so it affects conformance exactly as a failure would: the report conforms only when it
+ *   conforms whatever the undefined answers are.
  */
 internal class NativeShaclValidator(
     private val config: ValidationConfig,
@@ -782,10 +785,15 @@ internal class NativeShaclValidator(
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): whether ${displayTerm(node)} " +
             "conforms to ${shape.displayId()} cannot be decided, so this ${type.name} constraint could not be evaluated"
         if (config.strictMode) throw ShaclValidationException(message)
-        return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, ViolationSeverity.WARNING, null, emptyList())
+        // The declared severity of the source shape: the result blocks conformance exactly when a failure would.
+        return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
+            .copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
     }
 
-    /** Blocking result for a node whose `sh:targetWhere` membership is undefined (strict mode: failure). */
+    /**
+     * Result for a node whose `sh:targetWhere` membership is undefined (strict mode: failure). It has the target
+     * shape's declared severity, so it blocks conformance exactly when a failure of that shape would.
+     */
     private fun undecidableTargetResult(candidate: RdfTerm, shape: CompiledNodeShape, targetWhere: RdfResource): ValidationViolation {
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): sh:targetWhere membership of " +
             "${displayTerm(candidate)} in ${targetWhere.displayId()} cannot be decided, so ${shape.shapeNode.displayId()} " +
@@ -794,8 +802,8 @@ internal class NativeShaclValidator(
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, emptyList(), null)
         return violation(
             candidate, tpl, constraintStub(ConstraintType.NODE), message, value = candidate,
-            severity = ViolationSeverity.WARNING, severityIri = null, messages = emptyList(), sourceConstraint = targetWhere,
-        )
+            messages = emptyList(), sourceConstraint = targetWhere,
+        ).copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
     }
 
     private fun NodeLogicalPart.constraintType(): ConstraintType =

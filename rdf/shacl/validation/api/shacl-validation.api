@@ -583,6 +583,8 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationSummary {
 }
 
 public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
+	public static final field Companion Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation$Companion;
+	public static final field UNDEFINED_RECURSION_CODE Ljava/lang/String;
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
@@ -622,7 +624,11 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
 	public final fun getValue ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
 	public final fun getViolationCode ()Ljava/lang/String;
 	public fun hashCode ()I
+	public final fun isUndefinedRecursion ()Z
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation$Companion {
 }
 
 public final class com/geoknoesis/kastor/rdf/shacl/ValidationWarning {
