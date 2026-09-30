@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.rdf.cli
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -90,5 +91,57 @@ class KastorRdfCliTest {
     fun `to-turtle refuses to drop named graphs`() {
         val trig = file("d.trig", "<http://e/g> { <http://e/s> <http://e/p> 2 }\n")
         assertEquals(1, run("to-turtle", trig).code)
+    }
+
+    @Test
+    fun `extra arguments are usage errors`() {
+        val ttl = file("a.ttl", "<http://e/s> <http://e/p> <http://e/o> .\n")
+        for (args in listOf(arrayOf("parse", ttl, "TURTLE", "extra"), arrayOf("to-turtle", ttl, "TURTLE", "extra"), arrayOf("diff", ttl, ttl, "TURTLE", "extra"), arrayOf("help", "extra"))) {
+            val result = run(*args)
+            assertEquals(EXIT_USAGE, result.code, "${args.toList()}: ${result.err}")
+            assertTrue(result.err.contains("Unexpected argument"), result.err)
+        }
+    }
+
+    @Test
+    fun `an invalid path is a usage error with a one-line message`() {
+        val result = run("parse", "bad\u0000path.ttl")
+        assertEquals(EXIT_USAGE, result.code, result.err)
+        assertEquals(1, result.err.trim().lines().size, result.err)
+    }
+
+    @Test
+    fun `runtime failures map to a distinct exit status with a one-line message`() {
+        val failures =
+            listOf(
+                java.io.IOException("disk on fire"),
+                IllegalArgumentException("bad value"),
+                org.apache.jena.riot.RiotException("jena broke"),
+                IllegalStateException("internal"),
+            )
+        for (failure in failures) {
+            val err = java.io.ByteArrayOutputStream()
+            val code = exitCodeForFailure(failure, PrintStream(err, true, "UTF-8"))
+            val text = err.toString("UTF-8")
+            assertEquals(EXIT_RUNTIME_ERROR, code, text)
+            assertEquals(1, text.trim().lines().size, text)
+            assertTrue(text.startsWith("kastor-rdf: error: ${failure.javaClass.simpleName}: ${failure.message}"), text)
+        }
+        assertTrue(EXIT_RUNTIME_ERROR != EXIT_USAGE && EXIT_RUNTIME_ERROR != EXIT_NOT_ISOMORPHIC)
+    }
+
+    @Test
+    fun `usage lists the exit statuses`() {
+        val result = run("help")
+        assertEquals(EXIT_OK, result.code)
+        assertTrue(result.out.contains("Exit status: 0 success; 1 usage or input error"), result.out)
+    }
+
+    @Test
+    fun `an SLF4J binding prints library warnings to stderr at WARN level`() {
+        assertEquals("org.slf4j.simple.SimpleLoggerFactory", org.slf4j.LoggerFactory.getILoggerFactory().javaClass.name)
+        val log = org.slf4j.LoggerFactory.getLogger("org.apache.jena.riot")
+        assertTrue(log.isWarnEnabled)
+        assertFalse(log.isInfoEnabled)
     }
 }

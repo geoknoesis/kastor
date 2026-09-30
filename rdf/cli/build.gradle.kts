@@ -10,7 +10,10 @@ application {
 dependencies {
   implementation(project(":rdf:core"))
   implementation(project(":rdf:jena"))
+  // Runtime use: diff relies on RdfGraphIsomorphism / RdfDatasetIsomorphism / RdfGraphSnapshots from the testkit.
   implementation(project(":rdf:testkit"))
+  // SLF4J binding for the application: Jena RIOT warnings go to stderr at WARN (see simplelogger.properties).
+  runtimeOnly(libs.slf4j.simple)
 }
 
 publishing {
