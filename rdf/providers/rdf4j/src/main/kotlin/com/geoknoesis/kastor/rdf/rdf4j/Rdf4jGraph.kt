@@ -75,6 +75,7 @@ internal class Rdf4jGraph(
     }
 
     private fun add(conn: RepositoryConnection, triple: RdfTriple) {
+        if (triple.obj is TripleTerm || Rdf4jTerms.mentionsStarReifier(triple.obj)) repo.noteTripleValue()
         if (!repo.starCapable || !involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             conn.add(
                 Rdf4jTerms.toRdf4jResource(triple.subject),
