@@ -80,8 +80,8 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   rules, so OWL_MICRO / OWL_RL reject any rule set other than the type's default.
  * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. Jena's rule preparation (`prepare()`, which
  *   runs the forward/RETE rules over the data) cannot be interrupted, so it runs on a daemon worker thread that the
- *   caller waits for only until the deadline; a preparation that misses it is abandoned, finishes in the background
- *   and releases its models itself. At most [MAX_ABANDONED_PREPARATIONS] preparations may run at once: a call that
+ *   caller waits for only until the deadline; a preparation that misses it is abandoned, finishes in the background,
+ *   releases its models itself and only then returns its concurrency permit. At most [MAX_ABANDONED_PREPARATIONS] preparations may run at once: a call that
  *   cannot start one before its deadline fails with a clear "too many rule preparations in progress" error instead
  *   of piling up background work. After preparation the budget is checked for every inferred statement read. A
  *   timed-out call fails with [IllegalStateException].
@@ -209,10 +209,14 @@ class JenaReasoner internal constructor(
             } catch (t: Throwable) {
                 outcome.completeExceptionally(t)
             } finally {
-                preparations.release()
-                if (!state.compareAndSet(RUNNING, FINISHED)) {
-                    // Abandoned by a timed-out caller: this worker owns the models now.
-                    try { inf.close() } catch (_: Exception) { } finally { base.close() }
+                try {
+                    if (!state.compareAndSet(RUNNING, FINISHED)) {
+                        // Abandoned by a timed-out caller: this worker owns the models now.
+                        try { inf.close() } catch (_: Exception) { } finally { base.close() }
+                    }
+                } finally {
+                    // Only after cleanup: the permit bounds the work (and memory) still held by preparations.
+                    preparations.release()
                 }
             }
         }, PREPARE_THREAD)

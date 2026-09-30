@@ -71,8 +71,8 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   reasoner for a subset). Non-RDFS rules in the set are ignored, as by every RDFS reasoner.
  * - [ReasonerConfig.timeout] is a wall-clock budget for the whole call. The inferencer computes the closure inside
  *   its `commit()`, which cannot be interrupted, so the load and commit run on a daemon worker thread that the caller
- *   waits for only until the deadline; an inference that misses it is abandoned, finishes in the background and shuts
- *   its store down itself. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
+ *   waits for only until the deadline; an inference that misses it is abandoned, finishes in the background, shuts
+ *   its store down itself and only then returns its concurrency permit. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
  *   one before its deadline fails with a clear "too many RDFS inferences in progress" error instead of piling up
  *   background work (the same pattern as the Jena and HermiT reasoners). After the commit the budget is checked for
  *   every statement read from the closure. A timed-out call fails with [IllegalStateException].
@@ -279,10 +279,14 @@ class Rdf4jReasoner internal constructor(
             } catch (t: Throwable) {
                 outcome.completeExceptionally(t)
             } finally {
-                inferences.release()
-                if (!state.compareAndSet(RUNNING, FINISHED)) {
-                    // Abandoned by a timed-out caller: this worker owns the repository now.
-                    try { repository.shutDown() } catch (_: Exception) { }
+                try {
+                    if (!state.compareAndSet(RUNNING, FINISHED)) {
+                        // Abandoned by a timed-out caller: this worker owns the repository now.
+                        try { repository.shutDown() } catch (_: Exception) { }
+                    }
+                } finally {
+                    // Only after cleanup: the permit bounds the work (and memory) still held by inferences.
+                    inferences.release()
                 }
             }
         }, INFERENCE_THREAD)

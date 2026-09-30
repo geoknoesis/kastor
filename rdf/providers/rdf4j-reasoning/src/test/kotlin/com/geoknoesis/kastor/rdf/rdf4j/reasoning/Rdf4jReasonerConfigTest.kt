@@ -145,6 +145,36 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
+    fun `an abandoned inference releases its permit only after shutting its store down`() {
+        val now = java.util.concurrent.atomic.AtomicLong()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val repository = java.util.concurrent.atomic.AtomicReference<org.eclipse.rdf4j.repository.Repository>()
+        val blockingCommit: (org.eclipse.rdf4j.repository.RepositoryConnection) -> Unit = {
+            repository.set(it.repository)
+            started.countDown()
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            it.commit()
+        }
+        // Records, at the moment the permit is returned, whether the abandoned worker has already shut its store down.
+        val storeOpenAtRelease = java.util.concurrent.CompletableFuture<Boolean>()
+        val permits = object : java.util.concurrent.Semaphore(1) {
+            override fun release() {
+                repository.get()?.let { storeOpenAtRelease.complete(it.isInitialized) }
+                super.release()
+            }
+        }
+        // The injected clock passes the deadline as soon as the commit starts, so the call abandons it deterministically.
+        val clock = { if (started.count == 0L) now.get() + Duration.ofHours(1).toNanos() else now.get() }
+        val reasoner = Rdf4jReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofHours(1)), clock, blockingCommit, permits)
+        assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+            assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(chain(3, 3)) }
+        }
+        release.countDown()
+        assertFalse(storeOpenAtRelease.get(10, java.util.concurrent.TimeUnit.SECONDS), "permit released before the store was shut down")
+    }
+
+    @Test
     fun `waiting for the inferencer commit uses the injected clock`() {
         val now = java.util.concurrent.atomic.AtomicLong()
         // The injected clock is already past the deadline once the commit starts: the caller must not wait for it.
