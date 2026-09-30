@@ -75,6 +75,7 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaRdfInteropKt {
 
 public final class com/geoknoesis/kastor/rdf/jena/JenaRepository : com/geoknoesis/kastor/rdf/RdfRepository {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/jena/JenaRepository$Companion;
+	public static final field DEFAULT_VIEW_IDLE_TIMEOUT Ljava/time/Duration;
 	public fun ask (Lcom/geoknoesis/kastor/rdf/SparqlAsk;)Z
 	public fun clear ()Z
 	public fun close ()V
@@ -108,8 +109,12 @@ public final class com/geoknoesis/kastor/rdf/jena/JenaRepository : com/geoknoesi
 public final class com/geoknoesis/kastor/rdf/jena/JenaRepository$Companion {
 	public final fun MemoryRepository ()Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
 	public final fun MemoryRepositoryWithInference ()Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public final fun MemoryRepositoryWithInference (Ljava/time/Duration;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public static synthetic fun MemoryRepositoryWithInference$default (Lcom/geoknoesis/kastor/rdf/jena/JenaRepository$Companion;Ljava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
 	public final fun Tdb2Repository (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
 	public final fun Tdb2RepositoryWithInference (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public final fun Tdb2RepositoryWithInference (Ljava/lang/String;Ljava/time/Duration;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
+	public static synthetic fun Tdb2RepositoryWithInference$default (Lcom/geoknoesis/kastor/rdf/jena/JenaRepository$Companion;Ljava/lang/String;Ljava/time/Duration;ILjava/lang/Object;)Lcom/geoknoesis/kastor/rdf/jena/JenaRepository;
 }
 
 public final class com/geoknoesis/kastor/rdf/jena/JenaResultSet : com/geoknoesis/kastor/rdf/SparqlQueryResult {
