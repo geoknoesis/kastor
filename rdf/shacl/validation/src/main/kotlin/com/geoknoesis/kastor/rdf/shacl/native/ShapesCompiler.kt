@@ -298,6 +298,8 @@ internal object ShapesCompiler {
 
     // --- unsupported features -------------------------------------------------------------------------------------
 
+    /** SHACL 1.2 node expression vocabulary namespace (`shnex:`). */
+    private const val SHNEX_NAMESPACE = "http://www.w3.org/ns/shacl-node-expr#"
     private val shValues = Iri(SHACL.namespace + "values")
     private val shExpression = Iri(SHACL.namespace + "expression")
     private val shTarget = Iri(SHACL.namespace + "target")
@@ -318,20 +320,32 @@ internal object ShapesCompiler {
     }
 
     /**
-     * A blank node `sh:targetNode` value is a node expression when its own triples are expression syntax: SHACL
-     * vocabulary (`sh:path`, `sh:select`, a SHACL type…), an RDF list, or a single function call `[ ex:fn ( … ) ]`.
-     * A blank node that merely has data triples (shapes and data sharing one graph) is a plain target node.
+     * A blank node `sh:targetNode` value is a node expression when its own triples are expression syntax: SHACL or
+     * SHACL node-expression vocabulary (`sh:path`, `sh:select`, `shnex:concat`, a SHACL type…), an RDF list, or a
+     * single call `[ ex:fn ( … ) ]` of a **declared** function (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or
+     * described with SHACL function vocabulary such as `sh:parameter`). A blank node that merely has data triples
+     * (shapes and data sharing one graph), including `[ ex:items ( ex:x ) ]` for an undeclared `ex:items`, is a plain
+     * target node.
      */
     private fun isTargetNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean {
         if (term !is BlankNode) return false
         val predicates = index.predicates(term)
         if (predicates.isEmpty()) return false
-        fun inShaclNamespace(t: RdfTerm) = t is Iri && t.value.startsWith(SHACL.namespace)
+        fun inShaclNamespace(t: RdfTerm) =
+            t is Iri && (t.value.startsWith(SHACL.namespace) || t.value.startsWith(SHNEX_NAMESPACE))
         if (predicates.any { inShaclNamespace(it) || it == RDF.first || it == RDF.rest }) return true
         if (index.objects(term, RDF.type).any { inShaclNamespace(it) }) return true
         val call = predicates.singleOrNull() ?: return false
+        if (!isDeclaredFunction(call, index)) return false
         val argument = index.objects(term, call).singleOrNull() ?: return false
         return argument == RDF.nil || (argument is BlankNode && index.objects(argument, RDF.first).isNotEmpty())
+    }
+
+    /** A function IRI declared in the shapes graph: typed with a SHACL class or described with SHACL predicates. */
+    private fun isDeclaredFunction(function: RdfTerm, index: ShapeGraphIndex): Boolean {
+        val node = function as? RdfResource ?: return false
+        if (index.objects(node, RDF.type).any { it is Iri && it.value.startsWith(SHACL.namespace) }) return true
+        return index.predicates(node).any { it.value.startsWith(SHACL.namespace) }
     }
 
     private val shapeReferencePredicates: List<Iri> by lazy {
