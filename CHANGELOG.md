@@ -12,6 +12,56 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (round four)
+
+#### Breaking changes
+
+- **`rdf-core`:**
+  - Valid blank node ids that start with `ux_` are written with one extra `_` (`ux_x` → `ux__x`), so labels are injective again. Such labels grow by one character per parse/serialize round trip; other valid labels are unchanged.
+  - Graph isomorphism limits throw the new `GraphIsomorphismLimitException` (a subclass of `IllegalStateException`) with a `reason`.
+  - A dataset whose only default graph is the store's own default graph rejects `GRAPH` usage it cannot analyse with `IllegalArgumentException`, instead of copying the store.
+- **`rdf-sparql` (endpoint):**
+  - `SparqlEndpointConfig` has a new `maxResultRowChars` field (default 16 Mi chars); code compiled against the old constructor or `copy` must be recompiled.
+  - Redirects from `https` to `http` are always refused.
+  - SELECT/ASK responses whose `Content-Type` is not JSON (or `text/plain` for ASK) raise `RdfQueryException`.
+  - Endpoint URLs with a `#fragment` are rejected when the config is built.
+- **`rdf-shacl`:**
+  - Results for undecidable recursion keep the severity and component of their constraint (previously always `sh:Warning`) and are marked with `isUndefinedRecursion`. They block conformance whenever a failure of that constraint would.
+  - `[ ex:fn ( … ) ]` is treated as a node expression only when `ex:fn` is a declared SHACL function or in the `shnex:` namespace.
+- **`rdf-jena`:** blank-node graph names in TriG/N-Quads are skolemized to `urn:kastor:skolem:<uuid>` graph IRIs on every load path (previously they crashed some paths and were dropped on others).
+- **`rdf-rdf4j`:** quoted-triple nesting deeper than 64 levels, or reifier ids longer than 1 MiB, fail strict reads and are skipped by lenient reads.
+- **`kastor-gen`:**
+  - Generated wrappers capture the ill-typed-value policy when they are created (`MaterializationPolicy.lazyWithCurrentPolicy`), so `withIllTypedValues` applies to properties read after the block.
+  - Generated validation applies `sh:pattern`, `sh:minLength` and `sh:maxLength` to IRIs, reports blank nodes, compares `sh:in` as RDF terms, and DSL builders report values that cannot be compared with numeric bounds.
+
+#### Fixed
+
+- `rdf-core`:
+  - `GRAPH` queries on a dataset with only the store's default graph run in place on the source store (the patterns are rewritten to match nothing) instead of copying the whole store into memory.
+  - URL loading no longer allocates a buffer per read.
+  - New optional `VersionedRdfGraph.modificationStamp`, implemented by in-memory graphs.
+- `rdf-sparql`:
+  - `streamingRequestTimeout` also bounds the wait for response headers.
+  - A single oversized result value or row is capped (`maxResultRowChars`).
+  - `SELECT*WHERE{` and `DISTINCT*{` in sub-selects are recognised when applying initial bindings.
+  - `SparqlGraph.size()` reports out-of-range counts as `RdfQueryException`.
+  - A warning is logged when a followed cross-origin redirect drops custom headers or credentials.
+- `rdf-shacl`:
+  - `sh:reifierShape` no longer requires a reifier unless `sh:reificationRequired true` is set.
+  - The recursion solver recovers from reads it did not record instead of failing an internal check.
+- `rdf-jena`:
+  - Inference views stream results in chunks instead of draining every match under a lock; readers take turns, query timeouts and interrupts stop the reasoner's store reads, and named graphs are prepared only when queried.
+  - Dataset loads buffer at most 10,000 triples across all graphs.
+- `rdf-rdf4j`:
+  - An explicit `rdf:reifies` triple survives removal of the annotations that implied it, and is not brought back after it was removed.
+  - SPARQL updates force a quoted-subject rescan only when they can create quoted subjects, and the scan result is cached inside a transaction.
+  - `size()` uses the store's count for lenient repositories created by a factory, until a SPARQL update runs.
+  - RDFS inference commits run under a deadline and a concurrency cap, like the Jena and HermiT reasoners.
+- `kastor-gen`:
+  - RDF4J validation checks a graph's modification stamp before hashing its content, and caches up to 4 graphs with a lock each, so validating different graphs no longer serialises and repeated validation of an unchanged graph is cheap.
+  - Deactivated shapes no longer contribute constraints when merged with active ones or inherited.
+  - The Gradle plugin's file-replacement strategy is kept out of the configuration cache.
+
 ### Fixed (round three)
 
 #### Breaking changes
