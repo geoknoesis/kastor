@@ -185,6 +185,22 @@ public final class com/geoknoesis/kastor/rdf/GraphIsomorphismKt {
 	public static final fun isIsomorphicTo (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/Long;Ljava/time/Duration;)Z
 }
 
+public final class com/geoknoesis/kastor/rdf/GraphIsomorphismLimitException : java/lang/IllegalStateException {
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;Ljava/lang/String;)V
+	public final fun getReason ()Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+}
+
+public final class com/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason : java/lang/Enum {
+	public static final field INTERRUPTED Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static final field SEARCH_STATES Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static final field TIME Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static final field TRIPLE_TERM_DEPTH Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static final field WORK Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+	public static fun values ()[Lcom/geoknoesis/kastor/rdf/GraphIsomorphismLimitException$Reason;
+}
+
 public final class com/geoknoesis/kastor/rdf/GraphIsomorphismStructure {
 	public fun <init> ()V
 	public final fun addEdge (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V

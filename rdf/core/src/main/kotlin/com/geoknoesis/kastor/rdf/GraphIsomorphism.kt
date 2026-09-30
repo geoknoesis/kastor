@@ -51,8 +51,9 @@ class GraphIsomorphismStructure {
  * Compact structural refinement followed by exact, bijective blank-node matching.
  * A bounded search fails explicitly on excessively symmetric inputs rather than exhausting resources.
  *
- * **Limits** are cooperative (provider snapshots themselves cannot be preempted); exceeding one throws
- * [IllegalStateException]:
+ * **Limits** are cooperative (provider snapshots themselves cannot be preempted); exceeding one (or an interrupt)
+ * throws [GraphIsomorphismLimitException], an [IllegalStateException] whose [GraphIsomorphismLimitException.reason]
+ * names the limit - the graphs are then neither known to be isomorphic nor known not to be:
  * - [maxSearchStates] caps backtracking assignments.
  * - `maxWork` caps abstract work units (terms inspected, signatures built, candidates tried). `null`, the default,
  *   scales with the input: `max(50,000,000, 1,000 x (triples in both graphs))`, so large but easy graphs (long
@@ -98,15 +99,15 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
 
         /** Charges [cost] work units; interruption and the clock are polled every 1024 charges. */
         fun check(depth: Int = 0, cost: Long = 1) {
-            kotlin.check(depth < 128) { "Graph isomorphism triple-term depth limit exceeded (128)" }
+            limit(depth < 128, GraphIsomorphismLimitException.Reason.TRIPLE_TERM_DEPTH) { "Graph isomorphism triple-term depth limit exceeded (128)" }
             remaining -= cost
-            kotlin.check(remaining >= 0) { "Graph isomorphism work limit exceeded" }
+            limit(remaining >= 0, GraphIsomorphismLimitException.Reason.WORK) { "Graph isomorphism work limit exceeded" }
             if ((++calls and 0x3FF) == 0) poll()
         }
 
         fun poll() {
-            kotlin.check(!Thread.currentThread().isInterrupted) { "Graph isomorphism interrupted" }
-            kotlin.check(System.nanoTime() - started < nanos) { "Graph isomorphism time limit exceeded" }
+            limit(!Thread.currentThread().isInterrupted, GraphIsomorphismLimitException.Reason.INTERRUPTED) { "Graph isomorphism interrupted" }
+            limit(System.nanoTime() - started < nanos, GraphIsomorphismLimitException.Reason.TIME) { "Graph isomorphism time limit exceeded" }
         }
     }
 
@@ -306,7 +307,9 @@ class WeisfeilerLehmanIsomorphism(private val maxSearchStates: Int = 1_000_000) 
         }
         var states = 0
         fun assign(node: BlankNode, candidate: BlankNode, remaining: java.util.TreeSet<Int>): Boolean {
-            check(++states <= maxSearchStates) { "Graph isomorphism search limit exceeded ($maxSearchStates states)" }
+            limit(++states <= maxSearchStates, GraphIsomorphismLimitException.Reason.SEARCH_STATES) {
+                "Graph isomorphism search limit exceeded ($maxSearchStates states)"
+            }
             remaining.remove(indexInGroup.getValue(candidate))
             used.add(candidate)
             map[node] = candidate
@@ -377,15 +380,23 @@ private fun groundTermToken(term: RdfTerm): String = when (term) {
 /**
  * True if the graphs are equal up to blank-node renaming, with the default limits of [WeisfeilerLehmanIsomorphism]
  * (including its 60 second wall-clock limit).
+ *
+ * @throws GraphIsomorphismLimitException if a limit is exceeded or the thread is interrupted (no answer is known)
  */
 fun RdfGraph.isIsomorphicTo(other: RdfGraph): Boolean = WeisfeilerLehmanIsomorphism().areIsomorphic(this, other)
 
-/** A blank-node bijection making the graphs equal, or null; default limits of [WeisfeilerLehmanIsomorphism] (60 s). */
+/**
+ * A blank-node bijection making the graphs equal, or null; default limits of [WeisfeilerLehmanIsomorphism] (60 s).
+ *
+ * @throws GraphIsomorphismLimitException if a limit is exceeded or the thread is interrupted (no answer is known)
+ */
 fun RdfGraph.findBlankNodeMapping(other: RdfGraph): Map<BlankNode, BlankNode>? = WeisfeilerLehmanIsomorphism().mapping(this, other)
 
 /**
  * [isIsomorphicTo] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means no
  * wall-clock limit (the overload without limits uses 60 seconds).
+ *
+ * @throws GraphIsomorphismLimitException if a limit is exceeded or the thread is interrupted (no answer is known)
  */
 fun RdfGraph.isIsomorphicTo(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Boolean =
     WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).areIsomorphic(this, other)
@@ -393,6 +404,40 @@ fun RdfGraph.isIsomorphicTo(other: RdfGraph, maxWork: Long?, timeout: java.time.
 /**
  * [findBlankNodeMapping] with explicit limits: [maxWork] `null` scales with the graph size, [timeout] `null` means
  * no wall-clock limit (the overload without limits uses 60 seconds).
+ *
+ * @throws GraphIsomorphismLimitException if a limit is exceeded or the thread is interrupted (no answer is known)
  */
 fun RdfGraph.findBlankNodeMapping(other: RdfGraph, maxWork: Long?, timeout: java.time.Duration?): Map<BlankNode, BlankNode>? =
     WeisfeilerLehmanIsomorphism(1_000_000, maxWork, timeout).mapping(this, other)
+
+/**
+ * Thrown by [isIsomorphicTo], [findBlankNodeMapping] and [WeisfeilerLehmanIsomorphism] when the check is abandoned
+ * before an answer was found: a limit was exceeded or the thread was interrupted. It is not a "not isomorphic"
+ * answer. It extends [IllegalStateException] so existing handlers keep working; catch this type to tell a
+ * limit apart from other failures, and use [reason] to tell the limits apart.
+ *
+ * @property reason which limit stopped the check
+ */
+class GraphIsomorphismLimitException(val reason: Reason, message: String) : IllegalStateException(message) {
+    /** The limit that stopped an isomorphism check. */
+    enum class Reason {
+        /** The wall-clock `timeout` elapsed. */
+        TIME,
+
+        /** The `maxWork` budget was used up. */
+        WORK,
+
+        /** Backtracking tried more than `maxSearchStates` assignments. */
+        SEARCH_STATES,
+
+        /** Triple terms were nested more than 128 levels deep. */
+        TRIPLE_TERM_DEPTH,
+
+        /** The calling thread was interrupted (its interrupt flag is left set). */
+        INTERRUPTED,
+    }
+}
+
+private inline fun limit(ok: Boolean, reason: GraphIsomorphismLimitException.Reason, message: () -> String) {
+    if (!ok) throw GraphIsomorphismLimitException(reason, message())
+}

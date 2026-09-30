@@ -236,13 +236,24 @@ internal class DeadlineInputStream(
         if (remainingNanos() < 0) throw timeout()
     }
 
+    /** Buffer for helper-thread reads, reused across reads (no read runs after one is abandoned). */
+    private var helperBuffer: ByteArray? = null
+
+    /** True if a read may block without outlasting the deadline, so it can run on the calling thread. */
+    private fun readsDirectly(remaining: Long): Boolean = blockingReadNanos == null || remaining > blockingReadNanos
+
     /** Runs one read of the underlying stream without letting it outlast the deadline. */
-    private fun <T> timed(read: () -> T): T {
+    private fun <T> timed(read: () -> T): T = timed(remainingNanos()) { read() }
+
+    /**
+     * Runs one read of the underlying stream without letting it outlast the deadline; [read] is told whether it runs
+     * on the calling thread (decided from [remaining], the time left when the read was scheduled).
+     */
+    private fun <T> timed(remaining: Long, read: (direct: Boolean) -> T): T {
         abandoned?.let { throw timeout() }
-        val remaining = remainingNanos()
         try {
-            if (blockingReadNanos == null || remaining > blockingReadNanos) return read()
-            val task = java.util.concurrent.FutureTask(read)
+            if (readsDirectly(remaining)) return read(true)
+            val task = java.util.concurrent.FutureTask { read(false) }
             readHelpers.execute(task)
             try {
                 return task.get(remaining.coerceAtLeast(1), java.util.concurrent.TimeUnit.NANOSECONDS)
@@ -276,11 +287,15 @@ internal class DeadlineInputStream(
         if (ended) return -1
         if (len == 0) return 0
         checkDeadline()
-        // A helper read fills its own buffer, so an abandoned read never writes into the caller's array.
-        val buffer = ByteArray(len)
-        val n = timed { `in`.read(buffer, 0, len) }
+        // A read on the calling thread fills the caller's array directly. A helper read fills a private buffer (reused
+        // across reads), so an abandoned read never writes into the caller's array.
+        val remaining = remainingNanos()
+        val buffer = if (readsDirectly(remaining)) b else {
+            helperBuffer?.takeIf { it.size >= len } ?: ByteArray(len).also { helperBuffer = it }
+        }
+        val n = timed(remaining) { direct -> if (direct) `in`.read(b, off, len) else `in`.read(buffer, 0, len) }
         if (n < 0) { ended = true; return -1 }
-        System.arraycopy(buffer, 0, b, off, n)
+        if (buffer !== b) System.arraycopy(buffer, 0, b, off, n)
         checkDeadline()
         return n
     }

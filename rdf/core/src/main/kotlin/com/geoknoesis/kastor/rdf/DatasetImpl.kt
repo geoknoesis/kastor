@@ -10,8 +10,12 @@ import java.io.Closeable
  *    (default graphs are named graphs of that repository, named graphs keep their source name),
  *    queries are rewritten with dataset clauses and run in place (no materialization)
  * 2. A dataset whose only default graph is the repository's own default graph, with no named
- *    graphs, is queried unchanged - unless the query uses the `GRAPH` keyword: run in place it would
- *    see the repository's named graphs, so it is materialized instead (and sees no named graphs)
+ *    graphs, is queried in place. Queries without `GRAPH` run unchanged. Run as written, a `GRAPH` pattern
+ *    would read the repository's named graphs, and no dataset clause can express "this store's default graph
+ *    and no named graphs" (`FROM NAMED` alone empties the default graph, and the store's default graph has no
+ *    IRI for `FROM`), so every `GRAPH` pattern is rewritten to an empty pattern that keeps its variables in scope
+ *    ([SparqlDatasetClauses.withoutNamedGraphs]). The store is never copied. A `GRAPH` usage that cannot be
+ *    analysed is rejected with [IllegalArgumentException].
  * 3. Everything else - graphs from different repositories, untracked graphs, or the store's
  *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it) -
  *    is materialized into a temporary repository
@@ -143,10 +147,17 @@ internal class DatasetImpl(
      */
     private fun rewrite(queryText: String, plan: QueryPlan): String? {
         if (plan.from.isEmpty() && plan.fromNamed.isEmpty()) {
+            if (!SparqlDatasetClauses.usesGraphPattern(queryText)) return queryText
             // The dataset has no named graphs, but run in place GRAPH would read every named graph of the
-            // repository. There is no provider-portable way to empty the named-graph set without also replacing
-            // the store's default graph (FROM NAMED needs an IRI), so such queries are materialized.
-            return if (SparqlDatasetClauses.usesGraphPattern(queryText)) null else queryText
+            // repository. Dataset clauses cannot express "the store's default graph, no named graphs": FROM NAMED
+            // without FROM makes the default graph empty (SPARQL 1.1 section 13.2), and the store's default graph
+            // has no IRI to name in a FROM clause. Copying the store instead would be uncached, network-heavy for
+            // remote stores and need an in-memory provider, so the GRAPH patterns are rewritten to match nothing.
+            return SparqlDatasetClauses.withoutNamedGraphs(queryText) ?: throw IllegalArgumentException(
+                "The query uses GRAPH in a form Kastor cannot analyse (expected GRAPH followed by a variable or IRI " +
+                    "and a { ... } group). This dataset has no named graphs, so GRAPH patterns must match nothing; " +
+                    "fix the query syntax or query the source repository directly."
+            )
         }
         val clauses = (plan.from.map { "FROM <${it.value}>" } + plan.fromNamed.map { "FROM NAMED <${it.value}>" })
             .joinToString("\n")
@@ -218,6 +229,79 @@ internal object SparqlDatasetClauses {
     fun usesGraphPattern(query: String): Boolean {
         val tokens = tokenize(query) ?: return true
         return tokens.any { it.kind == Kind.WORD && it.end - it.start == 5 && query.regionMatches(it.start, "GRAPH", 0, 5, ignoreCase = true) }
+    }
+
+    /**
+     * Rewrites [query] so that every top-level-or-nested `GRAPH` pattern of its WHERE clause evaluates as it would
+     * against an empty named-graph set - no solutions - while the default graph is still read in place:
+     *
+     * - `GRAPH ?g { P }` becomes `{ VALUES ?g { } { P } }` (an empty table keeps `?g` and the variables of `P`
+     *   in scope, so `SELECT *` projects the same variables)
+     * - `GRAPH <iri> { P }` (or a prefixed name) becomes `{ { P } FILTER(false) }`
+     *
+     * Both replacements are standard SPARQL 1.1 and produce no solutions, exactly as a GRAPH pattern does when the
+     * dataset has no named graphs; joins, `OPTIONAL`, `UNION`, `MINUS` and `[NOT] EXISTS` around them therefore
+     * behave as specified. A `CONSTRUCT` template is left untouched (only the pattern is rewritten).
+     *
+     * @return the rewritten query, or null if a `GRAPH` keyword is not followed by a variable or IRI and a
+     *   balanced group (or the query has an unterminated string, or uses `GRAPH` in a `CONSTRUCT WHERE` short form).
+     */
+    fun withoutNamedGraphs(query: String): String? {
+        val tokens = tokenize(query) ?: return null
+        fun isGraph(t: Token) =
+            t.kind == Kind.WORD && t.end - t.start == 5 && query.regionMatches(t.start, "GRAPH", 0, 5, ignoreCase = true)
+        fun punct(t: Token, c: Char) = t.kind == Kind.PUNCT && query[t.start] == c
+        fun wordIs(t: Token, w: String) =
+            t.kind == Kind.WORD && t.end - t.start == w.length && query.regionMatches(t.start, w, 0, w.length, ignoreCase = true)
+
+        // Skip a CONSTRUCT template: GRAPH there (a Jena quad-template extension) describes output, not a pattern.
+        var firstPatternToken = 0
+        val construct = tokens.indexOfFirst { wordIs(it, "CONSTRUCT") }
+        if (construct >= 0 && tokens.subList(0, construct).none { punct(it, '{') }) {
+            val next = tokens.getOrNull(construct + 1)
+            if (next != null && wordIs(next, "WHERE")) {
+                if (tokens.any(::isGraph)) return null
+            } else if (next != null && punct(next, '{')) {
+                val close = matchingBrace(tokens, construct + 1, query) ?: return null
+                firstPatternToken = close + 1
+            }
+        }
+
+        class Edit(val start: Int, val end: Int, val text: String)
+        val edits = ArrayList<Edit>()
+        for (i in firstPatternToken until tokens.size) {
+            if (!isGraph(tokens[i])) continue
+            val term = tokens.getOrNull(i + 1) ?: return null
+            val open = tokens.getOrNull(i + 2) ?: return null
+            val isVariable = term.kind == Kind.VAR
+            val isIri = term.kind == Kind.IRI || (term.kind == Kind.WORD && query.substring(term.start, term.end).contains(':'))
+            if (!(isVariable || isIri) || !punct(open, '{')) return null
+            val close = matchingBrace(tokens, i + 2, query) ?: return null
+            if (isVariable) {
+                edits.add(Edit(tokens[i].start, term.end, "{ VALUES ${query.substring(term.start, term.end)} { }"))
+                edits.add(Edit(tokens[close].end, tokens[close].end, " }"))
+            } else {
+                edits.add(Edit(tokens[i].start, term.end, "{"))
+                edits.add(Edit(tokens[close].end, tokens[close].end, " FILTER(false) }"))
+            }
+        }
+        val out = StringBuilder(query)
+        edits.sortedByDescending { it.start }.forEach { out.replace(it.start, it.end, it.text) }
+        return out.toString()
+    }
+
+    /** Index of the `}` token closing the `{` at [openIndex], or null if unbalanced. */
+    private fun matchingBrace(tokens: List<Token>, openIndex: Int, query: String): Int? {
+        var depth = 0
+        for (j in openIndex until tokens.size) {
+            val t = tokens[j]
+            if (t.kind != Kind.PUNCT) continue
+            when (query[t.start]) {
+                '{' -> depth++
+                '}' -> if (--depth == 0) return j
+            }
+        }
+        return null
     }
 
     /**

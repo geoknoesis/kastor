@@ -314,10 +314,12 @@ value class BlankNode(val id: String) : RdfResource {
      * valid `BLANK_NODE_LABEL` is written as `ux_` followed by four lower-case hex digits per UTF-16 code unit.
      * The encoding covers unpaired surrogates, so distinct invalid ids always get distinct labels.
      *
-     * Valid ids, including ones that start with `ux_`, are written unchanged, so labels are stable across
-     * serialize/parse round trips and never grow. The one consequence: an id that is literally the encoded label of
-     * an invalid id (for example `ux_00610020` and `a b`) is written with the same label, which is what a parsed
-     * round trip of that invalid id produces anyway.
+     * Other valid ids are written unchanged, except those that start with `ux_`: they get one extra `_` after the
+     * prefix (`ux_00610020` is written `ux__00610020`), so they can never equal an encoded label (hex digits never
+     * include `_`). The mapping is therefore injective: distinct ids always get distinct labels, so two blank nodes
+     * are never merged when written. The price is that a label starting with `ux_`, once parsed back as an id,
+     * is written one character longer on the next serialization (blank node labels are document-scoped, so this
+     * does not change the meaning of the data).
      *
      * Use this (not `"_:" + id`) whenever a blank node is written as N-Triples, Turtle or SPARQL text.
      */
@@ -327,9 +329,15 @@ value class BlankNode(val id: String) : RdfResource {
 private const val ENCODED_BLANK_NODE_PREFIX = "ux_"
 private const val HEX_DIGITS = "0123456789abcdef"
 
-/** A `BLANK_NODE_LABEL` for [id]: the id itself when valid, otherwise an injective UTF-16 hex encoding. */
+/**
+ * An injective `BLANK_NODE_LABEL` for [id]: the id itself when valid and not starting with `ux_`; `ux__` + the rest
+ * when valid and starting with `ux_`; otherwise `ux_` + a UTF-16 hex encoding (the three forms never overlap).
+ */
 internal fun blankNodeLabel(id: String): String {
-    if (isValidBlankNodeLabel(id)) return id
+    if (isValidBlankNodeLabel(id)) {
+        if (!id.startsWith(ENCODED_BLANK_NODE_PREFIX)) return id
+        return ENCODED_BLANK_NODE_PREFIX + "_" + id.substring(ENCODED_BLANK_NODE_PREFIX.length)
+    }
     return buildString(ENCODED_BLANK_NODE_PREFIX.length + id.length * 4) {
         append(ENCODED_BLANK_NODE_PREFIX)
         for (unit in id) {
