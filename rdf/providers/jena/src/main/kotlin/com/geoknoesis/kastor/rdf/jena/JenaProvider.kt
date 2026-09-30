@@ -18,6 +18,11 @@ import org.apache.jena.riot.RiotException
  * - [parseGraph] rejects quad formats (TriG, N-Quads) with [RdfFormatException]: parsing them as a
  *   single graph would silently drop or merge named graphs. Use [parseDataset] instead.
  * - Syntax errors surface as [RdfFormatException].
+ * - [parseDataset] **skolemizes blank-node graph names** (TriG `_:g { }`, an N-Quads graph label `_:g`) on
+ *   every load path: Kastor repositories name graphs by IRI only, so each distinct blank graph name of one load
+ *   becomes a fresh IRI `urn:kastor:skolem:<uuid>` ([JenaParsing.SKOLEM_GRAPH_PREFIX]). The same label within
+ *   a document maps to the same graph; separate loads never share a skolem graph (blank nodes are
+ *   document-scoped). The graph is then listed by `listGraphs()` and readable with `getGraph(...)`.
  */
 class JenaProvider : RdfProvider {
 
@@ -215,6 +220,8 @@ class JenaProvider : RdfProvider {
      * - Other repositories that support transactions: streamed in batches of [DATASET_BATCH_SIZE] triples per graph
      *   into one `transaction { }` of the target, so memory stays bounded and a parse failure rolls the load back.
      * - Repositories without transactions: parsed completely first, so a syntax error never leaves partial data.
+     *
+     * Every path skolemizes blank-node graph names the same way (see the class documentation).
      */
     override fun parseDataset(repository: RdfRepository, inputStream: java.io.InputStream, format: String, baseIri: String?) {
         val lang = RDFLanguages.nameToLang(JenaBridge.normalizeJenaLang(format))
@@ -226,7 +233,7 @@ class JenaProvider : RdfProvider {
             jena.transaction {
                 JenaParsing.parseWithFormatErrors(format) {
                     JenaParsing.parser(inputStream, lang, baseIri)
-                        .parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))
+                        .parse(JenaParsing.validatingDataset(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))
                 }
             }
             return
@@ -234,7 +241,7 @@ class JenaProvider : RdfProvider {
         if (repository.getCapabilities().supportsTransactions) {
             repository.transaction {
                 val sink = BatchingDatasetSink(this)
-                JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(sink)) }
+                JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validatingDataset(sink)) }
                 sink.flushAll()
             }
             return
@@ -242,7 +249,7 @@ class JenaProvider : RdfProvider {
         // Repositories without transactions: parse fully first, so a syntax error never leaves partial data behind.
         val parsed = org.apache.jena.query.DatasetFactory.create()
         try {
-            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validating(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
+            JenaParsing.parseWithFormatErrors(format) { JenaParsing.parser(inputStream, lang, baseIri).parse(JenaParsing.validatingDataset(org.apache.jena.riot.system.StreamRDFLib.dataset(parsed.asDatasetGraph()))) }
             repository.transaction {
                 editDefaultGraph().addTriples(JenaGraph(parsed.defaultModel).getTriples())
                 parsed.listNames().forEachRemaining { editGraph(Iri(it)).addTriples(JenaGraph(parsed.getNamedModel(it)).getTriples()) }
@@ -261,6 +268,7 @@ class JenaProvider : RdfProvider {
 
         override fun triple(triple: org.apache.jena.graph.Triple) = add(null, triple)
 
+        // Blank-node graph names were skolemized by JenaParsing.validatingDataset before reaching this sink.
         override fun quad(quad: org.apache.jena.sparql.core.Quad) =
             add(if (quad.isDefaultGraph) null else quad.graph.uri, quad.asTriple())
 
@@ -362,6 +370,26 @@ internal object JenaParsing {
             if (knownIris.size > 100_000) knownIris.clear()
             knownIris.add(iri)
         }
+
+        /** Prefix of the IRIs that replace blank-node graph names when a dataset is loaded into a repository. */
+        const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
+
+        /**
+         * [validating] for loads into a Kastor repository: additionally skolemizes blank-node graph names, which
+         * repositories (graphs named by [Iri]) cannot represent. Each distinct blank graph name of this parse gets
+         * a fresh `urn:kastor:skolem:<uuid>` IRI.
+         */
+        fun validatingDataset(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =
+            validating(object : org.apache.jena.riot.system.StreamRDFWrapper(target) {
+                private val skolemized = HashMap<org.apache.jena.graph.Node, org.apache.jena.graph.Node>()
+                override fun quad(quad: org.apache.jena.sparql.core.Quad) {
+                    if (!quad.graph.isBlank) return super.quad(quad)
+                    val name = skolemized.getOrPut(quad.graph) {
+                        org.apache.jena.graph.NodeFactory.createURI(SKOLEM_GRAPH_PREFIX + java.util.UUID.randomUUID())
+                    }
+                    super.quad(org.apache.jena.sparql.core.Quad.create(name, quad.asTriple()))
+                }
+            })
 
         /** Wraps a parser sink so every triple/quad is validated before it is stored. */
         fun validating(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =

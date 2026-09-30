@@ -95,13 +95,19 @@ object ReferenceRdf {
         return digest.take(8).joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * Prefix of the IRIs a provider mints for blank-node graph names when loading into a repository (which names
+     * graphs by IRI only); such graphs are compared as the blank-node graph names they stand for.
+     */
+    const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
+
     /** Builds a dataset of Jena nodes from provider output. */
     fun dataset(quads: Collection<KastorQuad>): DatasetGraph {
         val dataset = DatasetGraphFactory.create()
         for ((graph, triple) in quads) {
             dataset.add(
                 Quad(
-                    graph?.let(NodeFactory::createURI) ?: Quad.defaultGraphIRI,
+                    graph?.let(::graphNode) ?: Quad.defaultGraphIRI,
                     node(triple.subject),
                     NodeFactory.createURI(triple.predicate.value),
                     node(triple.obj),
@@ -110,6 +116,9 @@ object ReferenceRdf {
         }
         return dataset
     }
+
+    private fun graphNode(name: String): Node =
+        if (name.startsWith(SKOLEM_GRAPH_PREFIX)) NodeFactory.createBlankNode(name) else NodeFactory.createURI(name)
 
     /** True when both datasets are isomorphic, with one blank-node bijection across all graphs. */
     fun isomorphic(expected: DatasetGraph, actual: DatasetGraph): Boolean = IsoMatcher.isomorphic(expected, actual)

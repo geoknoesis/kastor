@@ -13,13 +13,11 @@
 # Eval expectations are parsed by an independent reference parser (Jena RIOT, raw nodes) and compared as
 # datasets, so provider parser bugs cannot cancel out.
 #
-# Both providers: blank-node graph names (TriG `_:g { }`) cannot be read back because the Kastor RdfRepository
-# API names graphs by IRI only.
+# RDF4J: blank-node graph names (TriG `_:g { }`) cannot be read back because the Kastor RdfRepository API names
+# graphs by IRI only. (Jena's parseDataset skolemizes them to `urn:kastor:skolem:` IRIs, which the harness compares
+# as the blank-node graph names they stand for.)
 #
 # RDF4J 5.3.1 (Rio) entries are upstream parser gaps, generated from a strict run and reviewed by category.
-Jena	test-data/rdf/rdf11/rdf-trig/manifest.ttl#anonymous_blank_node_graph	Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)	\QEVAL-MISMATCH: expected 1 quads, actual 0, difference b6365f8303cada35\E
-Jena	test-data/rdf/rdf11/rdf-trig/manifest.ttl#labeled_blank_node_graph	Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)	\QEVAL-MISMATCH: expected 1 quads, actual 0, difference b6365f8303cada35\E
-Jena	test-data/rdf/rdf11/rdf-trig/manifest.ttl#alternating_bnode_graphs	Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)	\QEVAL-MISMATCH: expected 4 quads, actual 2, difference 658ca8c5adaeaab9\E
 Jena	test-data/rdf/rdf11/rdf-trig/manifest.ttl#lantag_with_subtag	Jena 6 canonicalises language-tag case when it creates literals (NodeFactory.createLiteralLang turns en-us into en-US); RDF Concepts permits this normalisation and Jena offers no way to keep the written case (upstream limitation)	\QEVAL-MISMATCH: expected 2 quads, actual 2, difference e5b0fbd95d8bb982\E
 Jena	test-data/rdf/rdf11/rdf-turtle/manifest.ttl#lantag_with_subtag	Jena 6 canonicalises language-tag case when it creates literals (NodeFactory.createLiteralLang turns en-us into en-US); RDF Concepts permits this normalisation and Jena offers no way to keep the written case (upstream limitation)	\QEVAL-MISMATCH: expected 1 quads, actual 1, difference f66c88e15989f264\E
 RDF4J	https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01	RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)	\Qorg.eclipse.rdf4j.rio.RDFParseException: IRI included an unencoded space:\E
