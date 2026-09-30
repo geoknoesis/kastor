@@ -3,7 +3,6 @@ package com.geoknoesis.kastor.rdf
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.provider.MemoryRepository
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -42,17 +41,44 @@ class BaseIriStreamingFallbackTest {
             val data = "a\nb\nc\n"
             Rdf.openTripleStream(data.byteInputStream(), RdfFormat.N_TRIPLES).use { assertEquals(3, it.count()) }
             assertEquals(0, provider.eagerParses)
-            assertFalse(EagerBaseIriFallback.warnedProviders.contains(NoBaseStreamingProvider::class.java.name))
 
             Rdf.openTripleStream(data.byteInputStream(), RdfFormat.N_TRIPLES, "http://example.org/base").use { rows ->
                 assertEquals(List(3) { RdfTriple(Iri("http://example.org/base"), p, string("$it")) }, rows.toList())
             }
             assertEquals(3, Rdf.parseStreaming(data.byteInputStream(), RdfFormat.N_TRIPLES, "http://example.org/base").count())
             assertEquals(2, provider.eagerParses)
-            assertTrue(EagerBaseIriFallback.warnedProviders.contains(NoBaseStreamingProvider::class.java.name))
-            assertEquals(1, EagerBaseIriFallback.warningsLogged(NoBaseStreamingProvider::class.java.name))
         } finally {
             RdfProviderRegistry.resetDelegate()
         }
+    }
+
+    @Test
+    fun `the eager fallback warning is emitted once per provider class, also under concurrent use`() {
+        val warnings = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val fallback = EagerBaseIriFallback(warnings::add)
+        val first = NoBaseStreamingProvider()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        try {
+            val start = java.util.concurrent.CountDownLatch(1)
+            val tasks = (1..32).map { pool.submit { start.await(); fallback.record(first) } }
+            start.countDown()
+            tasks.forEach { it.get(10, java.util.concurrent.TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
+        }
+        fallback.record(NoBaseStreamingProvider())
+        assertEquals(1, warnings.size)
+        assertTrue(warnings.single().contains("no-base-streaming") && warnings.single().contains(NoBaseStreamingProvider::class.java.name))
+
+        fallback.record(MemoryRepositoryProviderStub)
+        assertEquals(2, warnings.size)
+        fallback.record(MemoryRepositoryProviderStub)
+        assertEquals(2, warnings.size)
+    }
+
+    private object MemoryRepositoryProviderStub : RdfProvider {
+        override val id = "stub"
+        override fun variants(): List<RdfVariant> = listOf(RdfVariant("memory"))
+        override fun createRepository(variantId: String, config: RdfConfig): RdfRepository = MemoryRepository(config)
     }
 }

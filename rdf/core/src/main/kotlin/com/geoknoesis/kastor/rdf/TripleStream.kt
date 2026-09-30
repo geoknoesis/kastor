@@ -5,26 +5,27 @@ interface TripleStream : Sequence<RdfTriple>, java.io.Closeable
 
 /**
  * Reports providers that do not override the base-IRI streaming overloads of [RdfProvider] and therefore parse the
- * whole input eagerly when a base IRI is given. A warning is logged once per provider class.
+ * whole input eagerly when a base IRI is given. [warn] receives one message per provider class; [DEFAULT] logs it
+ * as an SLF4J warning.
  */
-internal object EagerBaseIriFallback {
-    private val logger = org.slf4j.LoggerFactory.getLogger(RdfProvider::class.java)
+internal class EagerBaseIriFallback(private val warn: (String) -> Unit) {
     private val warned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val logged = java.util.concurrent.ConcurrentHashMap<String, Int>()
-
-    val warnedProviders: Set<String> get() = warned.toSet()
-
-    fun warningsLogged(providerClass: String): Int = logged[providerClass] ?: 0
 
     fun record(provider: RdfProvider) {
         val key = provider.javaClass.name
         if (!warned.add(key)) return
-        logged.merge(key, 1, Int::plus)
-        logger.warn(
-            "RDF provider '{}' ({}) does not override the base-IRI streaming overloads of RdfProvider; parsing with a " +
-                "base IRI reads the whole input into memory before returning. This warning is logged once per provider.",
-            provider.id, key,
+        warn(
+            "RDF provider '${provider.id}' ($key) does not override the base-IRI streaming overloads of RdfProvider; " +
+                "parsing with a base IRI reads the whole input into memory before returning. This warning is logged " +
+                "once per provider.",
         )
+    }
+
+    companion object {
+        private val logger = org.slf4j.LoggerFactory.getLogger(RdfProvider::class.java)
+
+        /** The instance used by [RdfProvider]'s default methods. */
+        val DEFAULT = EagerBaseIriFallback { logger.warn(it) }
     }
 }
 

@@ -1697,7 +1697,7 @@ interface RdfProvider {
      */
     fun openTripleStream(inputStream: java.io.InputStream, format: String, baseIri: String?): TripleStream {
         if (baseIri == null) return openTripleStream(inputStream, format)
-        EagerBaseIriFallback.record(this)
+        EagerBaseIriFallback.DEFAULT.record(this)
         val rows = inputStream.use { parseGraph(it, format, baseIri).getTriplesSequence().constrainOnce() }
         return object : TripleStream {
             override fun iterator(): Iterator<RdfTriple> = rows.iterator()
@@ -1720,7 +1720,7 @@ interface RdfProvider {
      */
     fun parseStreaming(inputStream: java.io.InputStream, format: String, baseIri: String?): Sequence<RdfTriple> {
         if (baseIri == null) return parseStreaming(inputStream, format)
-        EagerBaseIriFallback.record(this)
+        EagerBaseIriFallback.DEFAULT.record(this)
         return parseGraph(inputStream, format, baseIri).getTriplesSequence()
     }
     
