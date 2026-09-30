@@ -6,8 +6,27 @@ object KastorMetricsVocab {
 
     const val depthOfInheritanceTree = "${NS}depthOfInheritanceTree"
     const val numberOfAncestorClasses = "${NS}numberOfAncestorClasses"
+
+    /** NOCOnto, published OQuaRE formula (Σ|Sub_C| / (|C| − |Root|)). */
+    const val numberOfChildrenOquare = "${NS}numberOfChildrenOquare"
+
+    /** CBOOnto, published OQuaRE formula (Σ|Sup_C| / (|C| − |Root|)). */
+    const val couplingBetweenObjectsOquare = "${NS}couplingBetweenObjectsOquare"
+
+    /**
+     * Retired: in 0.2.x this IRI carried a different formula (Σ|Sub_C| / (|C| − 1)). The published OQuaRE metric is [numberOfChildrenOquare];
+     * a metric IRI never changes meaning, so this one is no longer emitted.
+     */
+    @Deprecated("Retired 0.2.x metric (Σ|Sub_C| / (|C| − 1)); use numberOfChildrenOquare", ReplaceWith("KastorMetricsVocab.numberOfChildrenOquare"))
     const val numberOfChildren = "${NS}numberOfChildren"
+
+    /**
+     * Retired: in 0.2.x this IRI carried a different formula (Σ|Sup_C| / (|C| − 1)). The published OQuaRE metric is [couplingBetweenObjectsOquare];
+     * a metric IRI never changes meaning, so this one is no longer emitted.
+     */
+    @Deprecated("Retired 0.2.x metric (Σ|Sup_C| / (|C| − 1)); use couplingBetweenObjectsOquare", ReplaceWith("KastorMetricsVocab.couplingBetweenObjectsOquare"))
     const val couplingBetweenObjects = "${NS}couplingBetweenObjects"
+
     const val weightedMethodCount = "${NS}weightedMethodCount"
     const val responseForClass = "${NS}responseForClass"
     const val numberOfProperties = "${NS}numberOfProperties"
@@ -18,6 +37,15 @@ object KastorMetricsVocab {
     const val classRichness = "${NS}classRichness"
     const val annotationRichness = "${NS}annotationRichness"
     const val propertiesRichness = "${NS}propertiesRichness"
+
+    /** TMOnto, published OQuaRE formula (|C_DP| / |C|). */
+    const val tanglednessOquare = "${NS}tanglednessOquare"
+
+    /**
+     * Retired: in 0.2.x this IRI carried a different formula (owl:Thing-to-leaf paths / |leaves|). The published OQuaRE metric is [tanglednessOquare];
+     * a metric IRI never changes meaning, so this one is no longer emitted.
+     */
+    @Deprecated("Retired 0.2.x metric (paths / leaves); use tanglednessOquare", ReplaceWith("KastorMetricsVocab.tanglednessOquare"))
     const val tangledness = "${NS}tangledness"
 
     /** Kastor-adapted variants (not OQuaRE); see [KastorAdaptedMetrics]. */

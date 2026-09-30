@@ -12,7 +12,8 @@ vocabulary at `https://w3id.org/kastor/metrics#`.
 ### OQuaRE metrics (15)
 
 Structural: depthOfInheritanceTree (DITOnto), numberOfAncestorClasses
-(NACOnto), numberOfChildren (NOCOnto), couplingBetweenObjects (CBOOnto).
+(NACOnto), numberOfChildrenOquare (NOCOnto), couplingBetweenObjectsOquare
+(CBOOnto).
 
 Complexity: weightedMethodCount (WMCOnto), responseForClass (RFCOnto),
 numberOfProperties (NOMOnto), lackOfCohesionInMethods (LCOMOnto).
@@ -21,7 +22,22 @@ Richness: relationshipRichness (RROnto), inheritanceRichness (INROnto),
 attributeRichness (AROnto), classRichness (CROnto), annotationRichness
 (ANOnto), propertiesRichness (PROnto).
 
-Other: tangledness (TMOnto).
+Other: tanglednessOquare (TMOnto).
+
+### Metric IRI stability
+
+A metric IRI (`https://w3id.org/kastor/metrics#…`, also the JSON key and the
+text / Markdown row name) never changes meaning between releases. Release
+0.2.x emitted NOCOnto, CBOOnto and TMOnto under `kastor-m:numberOfChildren`,
+`kastor-m:couplingBetweenObjects` and `kastor-m:tangledness` with other
+formulas (Σ|Sub_C| / (|C| − 1), Σ|Sup_C| / (|C| − 1) and owl:Thing-to-leaf
+paths per leaf). Those three IRIs are **retired**: they stay in
+`kastor-metrics.ttl` with `owl:deprecated true` and `dct:isReplacedBy`, and
+are no longer emitted. The published formulas use the new IRIs
+`kastor-m:numberOfChildrenOquare`, `kastor-m:couplingBetweenObjectsOquare`
+and `kastor-m:tanglednessOquare`. The Kotlin constants
+`KastorMetricsVocab.numberOfChildren` / `couplingBetweenObjects` /
+`tangledness` are `@Deprecated`.
 
 Each metric is emitted with raw value, optional 1–5 score per the
 Duque-Ramos 2014 scoring scheme, and SKOS provenance to the OQuaRE

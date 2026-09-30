@@ -113,7 +113,7 @@ kastor-m:numberOfAncestorClasses
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NACOnto .
 
-kastor-m:numberOfChildren
+kastor-m:numberOfChildrenOquare
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "number of children" ;
     rdfs:comment   "Mean number of direct subclasses per non-root class (published OQuaRE definition). Formula: sum(|direct-subclasses(C)|) / (|classes| - |root classes|). Scored > 12 -> 1, (8, 12] -> 2, (6, 8] -> 3, (3, 6] -> 4, <= 3 -> 5. Source: Duque-Ramos et al. 2014 (OQuaRE NOCOnto)." ;
@@ -121,7 +121,7 @@ kastor-m:numberOfChildren
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:NOCOnto .
 
-kastor-m:couplingBetweenObjects
+kastor-m:couplingBetweenObjectsOquare
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "coupling between objects" ;
     rdfs:comment   "Mean number of direct superclasses per non-root class (published OQuaRE definition). Formula: sum(|direct-superclasses(C)|) / (|classes| - |root classes|). Scored > 8 -> 1, (6, 8] -> 2, (4, 6] -> 3, (2, 4] -> 4, <= 2 -> 5. Source: Duque-Ramos et al. 2014 (OQuaRE CBOOnto)." ;
@@ -209,13 +209,39 @@ kastor-m:propertiesRichness
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:PROnto .
 
-kastor-m:tangledness
+kastor-m:tanglednessOquare
     a              kastor-m:Metric , owl:DatatypeProperty ;
     rdfs:label     "tangledness" ;
     rdfs:comment   "Share of classes with more than one direct superclass (published OQuaRE definition). Formula: |classes with more than one direct superclass| / |classes|. Scored > 8 -> 1, (6, 8] -> 2, (4, 6] -> 3, (2, 4] -> 4, <= 2 -> 5; the value never exceeds 1, so it always scores 5 (see kastor-m:tanglednessKastor). Source: Duque-Ramos et al. 2014 (OQuaRE TMOnto)." ;
     rdfs:domain    kastor-m:MetricsReport ;
     rdfs:range     xsd:decimal ;
     skos:closeMatch kastor-m-oquare:TMOnto .
+
+# -----------------------------------------------------------------------------
+# Retired IRIs. These carried other formulas in 0.2.x; a metric IRI never
+# changes meaning, so they are deprecated and no longer emitted.
+# -----------------------------------------------------------------------------
+
+kastor-m:numberOfChildren
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "number of children (0.2.x, retired)" ;
+    rdfs:comment   "Retired. Emitted by Kastor 0.2.x with the formula sum(|direct-subclasses(C)|) / (|classes| - 1). Not emitted since; the published OQuaRE NOCOnto is kastor-m:numberOfChildrenOquare." ;
+    owl:deprecated true ;
+    dct:isReplacedBy kastor-m:numberOfChildrenOquare .
+
+kastor-m:couplingBetweenObjects
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "coupling between objects (0.2.x, retired)" ;
+    rdfs:comment   "Retired. Emitted by Kastor 0.2.x with the formula sum(|direct-superclasses(C)|) / (|classes| - 1). Not emitted since; the published OQuaRE CBOOnto is kastor-m:couplingBetweenObjectsOquare." ;
+    owl:deprecated true ;
+    dct:isReplacedBy kastor-m:couplingBetweenObjectsOquare .
+
+kastor-m:tangledness
+    a              kastor-m:Metric , owl:DatatypeProperty ;
+    rdfs:label     "tangledness (0.2.x, retired)" ;
+    rdfs:comment   "Retired. Emitted by Kastor 0.2.x with the formula |owl:Thing-to-leaf paths| / |leaves|. Not emitted since; the published OQuaRE TMOnto is kastor-m:tanglednessOquare." ;
+    owl:deprecated true ;
+    dct:isReplacedBy kastor-m:tanglednessOquare .
 
 # -----------------------------------------------------------------------------
 # Kastor-adapted variants. NOT OQuaRE metrics: own IRIs, names and score bands
