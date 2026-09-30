@@ -19,6 +19,7 @@ class UnsupportedFeatureDetectionTest {
     private val prefixes = """
         @prefix sh: <http://www.w3.org/ns/shacl#> .
         @prefix ex: <http://example.org/> .
+        @prefix shnex: <http://www.w3.org/ns/shacl-node-expr#> .
     """.trimIndent()
 
     private fun g(ttl: String): RdfGraph = Rdf.parse(prefixes + "\n" + ttl, RdfFormat.TURTLE)
@@ -30,6 +31,20 @@ class UnsupportedFeatureDetectionTest {
             ex:S a sh:NodeShape ; sh:targetNode _:ok , _:bad ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .
             _:ok ex:p 1 .
             _:bad ex:q 1 .
+            """,
+        )
+        val violation = report.violations.single()
+        assertEquals(ConstraintType.MIN_COUNT, violation.constraint.constraintType)
+        assertTrue(violation.focusNode is BlankNode)
+        assertTrue(report.warnings.isEmpty(), report.warnings.toString())
+    }
+
+    @Test fun `a data blank node shaped like a function call is a plain target node`() {
+        // `[ ex:items ( ex:x ) ]` has the syntax of a call, but ex:items is not a declared function.
+        val report = validateSelf(
+            """
+            ex:S a sh:NodeShape ; sh:targetNode _:list ; sh:property [ sh:path ex:items ; sh:minCount 1 ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .
+            _:list ex:items ( ex:x ) .
             """,
         )
         val violation = report.violations.single()
@@ -55,7 +70,9 @@ class UnsupportedFeatureDetectionTest {
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:values [ sh:path ex:q ] ] .",
             "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:node ex:T ] . ex:T sh:expression [ sh:path ex:q ] .",
             "ex:S a sh:NodeShape ; sh:targetNode [ sh:path ex:q ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .",
-            "ex:S a sh:NodeShape ; sh:targetNode [ ex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode [ shnex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] .",
+            "ex:S a sh:NodeShape ; sh:targetNode [ ex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] . ex:concat a sh:SPARQLFunction .",
+            "ex:S a sh:NodeShape ; sh:targetNode [ ex:concat ( ex:a ex:b ) ] ; sh:property [ sh:path ex:p ; sh:minCount 1 ] . ex:concat sh:parameter [ sh:path ex:x ] .",
         )
         for (shapes in cases) {
             val error = assertThrows(ShaclValidationException::class.java, { validateSelf("$shapes\nex:a ex:p 1 .") }, shapes)

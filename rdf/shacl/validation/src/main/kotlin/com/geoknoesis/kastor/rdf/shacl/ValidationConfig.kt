@@ -62,7 +62,9 @@ data class ValidationConfig(
      * SHACL 1.2 `sh:conformanceDisallows` (native, RDF4J and memory validators): the result severities — `sh:Violation`, `sh:Warning`,
      * `sh:Info`, `sh:Debug`, `sh:Trace` or a custom severity IRI — whose results make [ValidationReport.isValid]
      * false. `null` (default) applies the SHACL default: every severity except `sh:Debug` and `sh:Trace`. Results of
-     * other severities are still reported. Results about undefined recursive dependencies have severity `sh:Warning`.
+     * other severities are still reported. Results about undefined recursive dependencies
+     * ([ValidationViolation.isUndefinedRecursion]) carry the source shape's declared severity, so they block exactly when
+     * a failure of that shape would.
      */
     val conformanceDisallows: Set<Iri>? = null,
 ) {

@@ -126,6 +126,21 @@ data class ValidationViolation(
         }
         return sb.toString()
     }
+
+    /**
+     * True when this result does not report a failure but an **undefined** answer: the constraint's outcome depends
+     * on a recursive shape dependency through a non-monotone operator (`sh:not`, `sh:xone`, `sh:qualifiedMaxCount`,
+     * disjoint qualified value shapes), or a `sh:targetWhere` membership that is undefined for the same reason.
+     * Such a result keeps the source shape's declared severity and constraint component, so it affects
+     * [ValidationReport.isValid] exactly as a failure of that constraint would; its [violationCode] is
+     * [UNDEFINED_RECURSION_CODE].
+     */
+    val isUndefinedRecursion: Boolean get() = violationCode == UNDEFINED_RECURSION_CODE
+
+    companion object {
+        /** [violationCode] of results about undefined recursive shape dependencies (see [isUndefinedRecursion]). */
+        const val UNDEFINED_RECURSION_CODE: String = "kastor:UndefinedRecursion"
+    }
 }
 
 /**

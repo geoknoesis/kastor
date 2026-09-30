@@ -93,9 +93,12 @@ import com.geoknoesis.kastor.rdf.shacl.native.stronglyConnectedComponents
  *      is the same whatever the group's answers are (evaluated with them undefined) are settled and the remainder is
  *      split again; questions still on a cycle through a negative dependency are **undefined**.
  *   A read the recording did not register is never answered by default: it is registered and the solve restarts.
- *   A top-level constraint whose outcome depends on an undefined answer produces a sh:Warning result stating that the
- *   recursive dependency is undefined (in [ValidationConfig.strictMode] validation fails instead), in addition to the
- *   definite results of the other value nodes. An undecidable `sh:targetWhere` membership is reported the same way.
+ *   A top-level constraint whose outcome depends on an undefined answer produces a result stating that the recursive
+ *   dependency is undefined (in [ValidationConfig.strictMode] validation fails instead), in addition to the definite
+ *   results of the other value nodes. An undecidable `sh:targetWhere` membership is reported the same way. Such a
+ *   result is marked [ValidationViolation.isUndefinedRecursion] and has the source shape's declared severity and the
+ *   constraint's component, so it affects conformance exactly as a failure would: the report conforms only when it
+ *   conforms whatever the undefined answers are.
  */
 internal class NativeShaclValidator(
     private val config: ValidationConfig,
@@ -221,6 +224,11 @@ internal class NativeShaclValidator(
         var inGroup = false
         /** While a group with negative dependencies is refined, reads of its members answer undefined. */
         var readUndefined = false
+        /**
+         * Reads of registered but unsettled questions that the recording of this question missed. They are kept across
+         * solver restarts and added to the recorded dependencies, so the next dependency graph orders them correctly.
+         */
+        val missedReads = ArrayList<Dependency>()
     }
 
     /** State of one recursive-component solve (see class KDoc). */
@@ -230,7 +238,10 @@ internal class NativeShaclValidator(
         var recording: ArrayList<Dependency>? = null
         /** Set when an evaluation reads a question the recording did not register (the solve restarts). */
         var restart = false
-        var unregistered = 0
+        /** New questions or missed dependencies found since the last restart (each restart makes progress). */
+        var discovered = 0
+        /** Question whose evaluation is under way in step 2 (receives the dependencies its recording missed). */
+        var evaluating: Atom? = null
     }
 
     /** Evaluates a CharSequence for regex matching while consulting the deadline every 1024 character reads. */
@@ -574,11 +585,18 @@ internal class NativeShaclValidator(
         }
         val atom = solver.atoms[key]
         if (atom == null || (!atom.resolved && !atom.inGroup)) {
-            // Fail safe: a question the recording did not register is never answered by default.
+            // Fail safe: a question the recording did not register, or a dependency it did not record (so the
+            // question may not be settled yet), is never answered by default; the solve restarts with it recorded.
             solver.restart = true
             if (atom == null) {
                 solver.atoms[key] = Atom(value, ref)
-                solver.unregistered++
+                solver.discovered++
+            } else {
+                val reader = solver.evaluating
+                if (reader != null && reader.missedReads.none { it.key == key && it.negative == negative }) {
+                    reader.missedReads.add(Dependency(key, value, ref, negative))
+                    solver.discovered++
+                }
             }
             return Conformance.UNDEFINED
         }
@@ -597,10 +615,16 @@ internal class NativeShaclValidator(
                 recordDependencies(solver, toRecord, ctx, state)
                 evaluateGroups(solver, rootKey, ctx, state)
                 if (!solver.restart) break
-                check(solver.unregistered > 0) { "SHACL recursion solver read a question it had not evaluated" }
+                if (solver.discovered == 0) {
+                    // Unreachable: every restart registers a new question or a new missed dependency.
+                    throw ShaclValidationException(
+                        "Internal error in the SHACL recursion solver: an unsettled question was read again after its " +
+                            "dependency had been recorded (shape ${rootShape.displayId()}); please report this shapes graph",
+                    )
+                }
                 // The recorded dependency graph was incomplete: record every question again and re-evaluate.
                 solver.restart = false
-                solver.unregistered = 0
+                solver.discovered = 0
                 for (atom in solver.atoms.values) {
                     atom.resolved = false
                     atom.inGroup = false
@@ -636,6 +660,7 @@ internal class NativeShaclValidator(
                     solver.recording = saved
                 }
             atom.optimistic = result
+            reads.addAll(atom.missedReads)
             if (reads.isEmpty() || (result == Conformance.FAILS && reads.none { it.negative })) {
                 // No recursive read, or failing although every (positive) read conformed: decided by monotonicity.
                 atom.value = result
@@ -674,7 +699,7 @@ internal class NativeShaclValidator(
             atoms.forEach { it.inGroup = true; it.readUndefined = true }
             val decided = ArrayList<Atom>()
             for (atom in atoms) {
-                val result = evaluateConformance(atom.node, atom.shape, ctx, evaluationState)
+                val result = evaluateAtom(solver, atom, ctx, evaluationState)
                 if (solver.restart) return
                 if (result != Conformance.UNDEFINED) {
                     atom.value = result
@@ -692,6 +717,17 @@ internal class NativeShaclValidator(
             val restSet = rest.toHashSet()
             val split = stronglyConnectedComponents(rest, ctx.budget) { successors(it, restSet) }
             for (group in split.asReversed()) work.addFirst(group)
+        }
+    }
+
+    /** Evaluates a solver question in step 2, attributing reads the recording missed to it. */
+    private fun evaluateAtom(solver: RecursionSolver, atom: Atom, ctx: ValidationContext, state: DepthState): Conformance {
+        val saved = solver.evaluating
+        solver.evaluating = atom
+        try {
+            return evaluateConformance(atom.node, atom.shape, ctx, state)
+        } finally {
+            solver.evaluating = saved
         }
     }
 
@@ -713,7 +749,7 @@ internal class NativeShaclValidator(
             val atom = solver.atoms.getValue(key)
             // The recorded answer is the first iteration when every read outside the group conforms.
             val reusable = atom.dependencies.all { d -> d.key in memberSet || solver.atoms.getValue(d.key).value == Conformance.CONFORMS }
-            val value = if (reusable) atom.optimistic else evaluateConformance(atom.node, atom.shape, ctx, state)
+            val value = if (reusable) atom.optimistic else evaluateAtom(solver, atom, ctx, state)
             if (solver.restart) return
             if (value < atom.value) {
                 atom.value = value
@@ -725,7 +761,7 @@ internal class NativeShaclValidator(
             val key = work.removeFirst()
             queued.remove(key)
             val atom = solver.atoms.getValue(key)
-            val result = evaluateConformance(atom.node, atom.shape, ctx, state)
+            val result = evaluateAtom(solver, atom, ctx, state)
             if (solver.restart) return
             if (result < atom.value) {
                 atom.value = result
@@ -782,10 +818,15 @@ internal class NativeShaclValidator(
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): whether ${displayTerm(node)} " +
             "conforms to ${shape.displayId()} cannot be decided, so this ${type.name} constraint could not be evaluated"
         if (config.strictMode) throw ShaclValidationException(message)
-        return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, ViolationSeverity.WARNING, null, emptyList())
+        // The declared severity of the source shape: the result blocks conformance exactly when a failure would.
+        return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
+            .copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
     }
 
-    /** Blocking result for a node whose `sh:targetWhere` membership is undefined (strict mode: failure). */
+    /**
+     * Result for a node whose `sh:targetWhere` membership is undefined (strict mode: failure). It has the target
+     * shape's declared severity, so it blocks conformance exactly when a failure of that shape would.
+     */
     private fun undecidableTargetResult(candidate: RdfTerm, shape: CompiledNodeShape, targetWhere: RdfResource): ValidationViolation {
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): sh:targetWhere membership of " +
             "${displayTerm(candidate)} in ${targetWhere.displayId()} cannot be decided, so ${shape.shapeNode.displayId()} " +
@@ -794,8 +835,8 @@ internal class NativeShaclValidator(
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, emptyList(), null)
         return violation(
             candidate, tpl, constraintStub(ConstraintType.NODE), message, value = candidate,
-            severity = ViolationSeverity.WARNING, severityIri = null, messages = emptyList(), sourceConstraint = targetWhere,
-        )
+            messages = emptyList(), sourceConstraint = targetWhere,
+        ).copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
     }
 
     private fun NodeLogicalPart.constraintType(): ConstraintType =
@@ -1483,11 +1524,15 @@ internal class NativeShaclValidator(
         for (claim in claims) {
             val reifiers = ctx.data.reifiersForClaim(claim)
             if (reifiers.isEmpty()) {
+                // SHACL 1.2: sh:reifierShape only constrains existing reifiers; a missing reifier is a violation only
+                // under sh:reificationRequired true, reported by sh:ReifierShapeConstraintComponent when the property
+                // shape has a sh:reifierShape (sh:reificationRequired is one of its parameters).
+                if (!reifReq) continue
                 if (shapeRefs.isNotEmpty()) {
                     sink.fail {
-                        violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reifierShape: no reifier for triple $claim", value = claim.obj)
+                        violation(focus, tpl, constraintStub(ConstraintType.REIFIER_SHAPE, pathPredicate), "sh:reificationRequired: missing reifier for triple $claim", value = claim.obj)
                     }
-                } else if (reifReq) {
+                } else {
                     sink.fail {
                         violation(focus, tpl, constraintStub(ConstraintType.REIFICATION_REQUIRED, pathPredicate), "sh:reificationRequired: missing reifier for triple $claim", value = claim.obj)
                     }
