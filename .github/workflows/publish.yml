@@ -9,6 +9,8 @@
 #   3. The published bytes are the tested bytes: the publish job does NOT rebuild. It downloads the
 #      `staged-release-ubuntu-latest` artifact that readiness staged, tested and consumed in this run,
 #      verifies its checksums, signs every file with the release key, and zips that into the bundle.
+#      Every jar, POM, Gradle module file, CycloneDX SBOM and the bundle get a GitHub build provenance
+#      attestation (`gh attestation verify <file> --repo geoknoesis/kastor`).
 #   4. Re-runs are guarded: every upload records its deployment id as the artifact
 #      `central-deployment-<tag>`. Before uploading, all recorded ids for the tag are queried; any
 #      deployment that is not FAILED (PENDING, VALIDATING, VALIDATED, PUBLISHING, PUBLISHED) blocks a new
@@ -48,6 +50,8 @@ jobs:
     permissions:
       contents: read
       actions: read # list and download earlier `central-deployment-<tag>` records
+      id-token: write # OIDC token for the Sigstore signing certificate of the provenance attestation
+      attestations: write # store the build provenance attestation for the staged artifacts
     environment:
       name: release
     steps:
@@ -197,13 +201,26 @@ jobs:
           missing=""
           while IFS= read -r file; do
             [ -f "$file.asc" ] || missing="$missing $file"
-          done < <(find . -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \))
+          done < <(find . -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' -o -name '*-cyclonedx.json' -o -name '*-cyclonedx.xml' \))
           if [ -n "$missing" ]; then echo "::error::Unsigned artifacts:$missing"; exit 1; fi
           mkdir -p ../central
           bundle="../central/kastor-$VERSION-central-bundle.zip"
           find . -type f | LC_ALL=C sort | zip -q -X "$bundle" -@
           rm -rf "$GNUPGHOME"
           echo "Bundle sha256: $(sha256sum "$bundle" | cut -d' ' -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance of the staged artifacts
+        # SLSA build provenance (Sigstore-signed, stored by GitHub) for every published file and the bundle.
+        # Verify a downloaded artifact with: gh attestation verify <file> --repo geoknoesis/kastor
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            build/release-repository/**/*.jar
+            build/release-repository/**/*.pom
+            build/release-repository/**/*.module
+            build/release-repository/**/*-cyclonedx.json
+            build/release-repository/**/*-cyclonedx.xml
+            build/central/kastor-${{ steps.version.outputs.version }}-central-bundle.zip
 
       - name: Upload bundle to Maven Central Portal
         id: upload
