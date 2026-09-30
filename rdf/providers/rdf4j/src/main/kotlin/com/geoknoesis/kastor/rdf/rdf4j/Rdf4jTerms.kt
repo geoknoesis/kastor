@@ -10,6 +10,13 @@ import org.eclipse.rdf4j.model.Value
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
+/**
+ * A reifier blank-node id (see [Rdf4jTerms.reifierFor]) exceeds the supported quoted-triple nesting depth
+ * ([Rdf4jTerms.MAX_REIFIER_NESTING]) or id length ([Rdf4jTerms.MAX_REIFIER_ID_LENGTH]). Raised instead of decoding
+ * (or encoding) it, so that a crafted blank-node id cannot exhaust the stack or memory.
+ */
+internal class ReifierLimitException(message: String) : IllegalArgumentException(message)
+
 /** Where RDF-star quoted-triple subjects may occur in a store, ordered from cheapest to most expensive to look up. */
 internal enum class QuotedLevel { NONE, FLAT, NESTED, UNKNOWN }
 
@@ -103,14 +110,42 @@ internal object Rdf4jTerms {
      * nodes whose ids merely start with `kastor-star-` are never mistaken for reifiers.
      */
     fun reifierFor(triple: Triple): BlankNode {
-        val encoded = StringBuilder().also { encodeValue(triple, it) }.toString().toByteArray(Charsets.UTF_8)
+        val encoded = StringBuilder().also { encodeValue(triple, it, 1) }.toString().toByteArray(Charsets.UTF_8)
         val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(encoded)
-        return BlankNode("$STAR_REIFIER_PREFIX$payload-${checksum(encoded)}")
+        val id = "$STAR_REIFIER_PREFIX$payload-${checksum(encoded)}"
+        requireIdLength(id)
+        return BlankNode(id)
     }
 
-    /** The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier. */
+    /**
+     * Deepest quoted-triple nesting a reifier id may encode. Deeper triples (whether written to the store or forged
+     * into a blank-node id) fail with [ReifierLimitException] instead of recursing without bound.
+     */
+    const val MAX_REIFIER_NESTING: Int = 64
+
+    /** Longest reifier id (in characters) that is encoded or decoded; longer ones fail with [ReifierLimitException]. */
+    const val MAX_REIFIER_ID_LENGTH: Int = 1 shl 20
+
+    private fun requireNesting(depth: Int) {
+        if (depth > MAX_REIFIER_NESTING) {
+            throw ReifierLimitException("Quoted triple nesting in a reifier exceeds the limit of $MAX_REIFIER_NESTING levels")
+        }
+    }
+
+    private fun requireIdLength(id: String) {
+        if (id.length > MAX_REIFIER_ID_LENGTH) {
+            throw ReifierLimitException("Reifier blank-node id length ${id.length} exceeds the limit of $MAX_REIFIER_ID_LENGTH characters")
+        }
+    }
+
+    /**
+     * The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier.
+     * @throws ReifierLimitException when [id] carries the reifier prefix but is longer than [MAX_REIFIER_ID_LENGTH] or
+     *   encodes a triple nested deeper than [MAX_REIFIER_NESTING].
+     */
     fun quotedTripleOf(id: String): Triple? {
         if (!id.startsWith(STAR_REIFIER_PREFIX)) return null
+        requireIdLength(id)
         val separator = id.lastIndexOf('-')
         if (separator <= STAR_REIFIER_PREFIX.length) return null
         return try {
@@ -118,8 +153,10 @@ internal object Rdf4jTerms {
             if (checksum(bytes) != id.substring(separator + 1)) return null
             val text = String(bytes, Charsets.UTF_8)
             val cursor = intArrayOf(0)
-            val value = decodeValue(text, cursor)
+            val value = decodeValue(text, cursor, 0)
             if (cursor[0] != text.length) null else value as? Triple
+        } catch (e: ReifierLimitException) {
+            throw e
         } catch (_: IllegalArgumentException) {
             null
         } catch (_: IndexOutOfBoundsException) {
@@ -177,7 +214,7 @@ internal object Rdf4jTerms {
     }
 
     /** Injective, length-prefixed encoding: `I`/`B` + text, `L` + label + datatype, `G` + label + tag, `T` + s p o. */
-    private fun encodeValue(value: Value, out: StringBuilder) {
+    private fun encodeValue(value: Value, out: StringBuilder, depth: Int) {
         fun field(tag: Char, text: String) { out.append(tag).append(text.length).append(':').append(text) }
         when (value) {
             is IRI -> field('I', value.stringValue())
@@ -193,16 +230,21 @@ internal object Rdf4jTerms {
                 }
             }
             is Triple -> {
+                // [depth] counts the triples enclosing (and including) this one; the reified triple itself is depth 1.
+                requireNesting(depth)
                 out.append('T')
-                encodeValue(value.subject, out)
-                encodeValue(value.predicate, out)
-                encodeValue(value.`object`, out)
+                encodeValue(value.subject, out, depth + 1)
+                encodeValue(value.predicate, out, depth + 1)
+                encodeValue(value.`object`, out, depth + 1)
+                if (out.length > MAX_REIFIER_ID_LENGTH) {
+                    throw ReifierLimitException("Reifier blank-node id would exceed the limit of $MAX_REIFIER_ID_LENGTH characters")
+                }
             }
             else -> throw IllegalArgumentException("Unknown RDF4J Value type: ${value.javaClass}")
         }
     }
 
-    private fun decodeValue(text: String, cursor: IntArray): Value {
+    private fun decodeValue(text: String, cursor: IntArray, depth: Int): Value {
         fun field(expected: Char): String {
             require(text[cursor[0]] == expected) { "bad reifier encoding" }
             val colon = text.indexOf(':', cursor[0] + 1)
@@ -224,10 +266,11 @@ internal object Rdf4jTerms {
                 valueFactory.createLiteral(label, field('_'))
             }
             'T' -> {
+                requireNesting(depth + 1)
                 cursor[0]++
-                val subject = decodeValue(text, cursor) as? Resource ?: throw IllegalArgumentException("bad reifier encoding")
-                val predicate = decodeValue(text, cursor) as? IRI ?: throw IllegalArgumentException("bad reifier encoding")
-                valueFactory.createTriple(subject, predicate, decodeValue(text, cursor))
+                val subject = decodeValue(text, cursor, depth + 1) as? Resource ?: throw IllegalArgumentException("bad reifier encoding")
+                val predicate = decodeValue(text, cursor, depth + 1) as? IRI ?: throw IllegalArgumentException("bad reifier encoding")
+                valueFactory.createTriple(subject, predicate, decodeValue(text, cursor, depth + 1))
             }
             else -> throw IllegalArgumentException("bad reifier encoding")
         }
