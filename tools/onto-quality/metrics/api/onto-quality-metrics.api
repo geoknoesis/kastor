@@ -161,6 +161,7 @@ public final class com/geoknoesis/kastor/ontoquality/metrics/KastorMetricsVocab 
 	public static final field conceptCount Ljava/lang/String;
 	public static final field couplingBetweenObjects Ljava/lang/String;
 	public static final field couplingBetweenObjectsKastor Ljava/lang/String;
+	public static final field couplingBetweenObjectsOquare Ljava/lang/String;
 	public static final field definitionCoverage Ljava/lang/String;
 	public static final field depthOfInheritanceTree Ljava/lang/String;
 	public static final field inheritanceRichness Ljava/lang/String;
@@ -170,6 +171,7 @@ public final class com/geoknoesis/kastor/ontoquality/metrics/KastorMetricsVocab 
 	public static final field numberOfAncestorClasses Ljava/lang/String;
 	public static final field numberOfChildren Ljava/lang/String;
 	public static final field numberOfChildrenKastor Ljava/lang/String;
+	public static final field numberOfChildrenOquare Ljava/lang/String;
 	public static final field numberOfProperties Ljava/lang/String;
 	public static final field oquareANOnto Ljava/lang/String;
 	public static final field oquareAROnto Ljava/lang/String;
@@ -195,6 +197,7 @@ public final class com/geoknoesis/kastor/ontoquality/metrics/KastorMetricsVocab 
 	public static final field siblingCohortCount Ljava/lang/String;
 	public static final field tangledness Ljava/lang/String;
 	public static final field tanglednessKastor Ljava/lang/String;
+	public static final field tanglednessOquare Ljava/lang/String;
 	public static final field weightedMethodCount Ljava/lang/String;
 }
 

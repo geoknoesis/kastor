@@ -137,7 +137,7 @@ class VocabularyMetricsTest {
         assertEquals(setOf("couplingBetweenObjectsKastor", "numberOfChildrenKastor", "tanglednessKastor"), adapted.keys)
         assertEquals("TMOntoKastor", adapted.getValue("tanglednessKastor").jsonObject.getValue("oquareName").jsonPrimitive.content)
         assertEquals("2.0", adapted.getValue("tanglednessKastor").jsonObject.getValue("rawValue").jsonPrimitive.content)
-        assertEquals("0.25", json.getValue("oquare").jsonObject.getValue("tangledness").jsonObject.getValue("rawValue").jsonPrimitive.content)
+        assertEquals("0.25", json.getValue("oquare").jsonObject.getValue("tanglednessOquare").jsonObject.getValue("rawValue").jsonPrimitive.content)
 
         val m = ModelFactory.createDefaultModel()
         m.read(StringReader(r.toTurtle()), null, "TTL")

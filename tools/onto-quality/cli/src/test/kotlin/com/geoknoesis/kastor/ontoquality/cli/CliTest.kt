@@ -90,6 +90,15 @@ class CliTest {
         }
     }
 
+    /** LLM opt-in plus a (fake) OpenAI key: explanation prerequisites are met; enrichers are always fakes. */
+    private val llmEnv = { name: String ->
+        when (name) {
+            LLM_EXPLAIN_ENV -> "true"
+            LlmExplanationConfig.OPENAI_API_KEY -> "sk-test-not-a-real-key"
+            else -> null
+        }
+    }
+
     private class Run(val status: Int, val err: String)
 
     private fun run(argv: List<String>, environment: CliEnvironment = CliEnvironment()): Run {
@@ -249,10 +258,93 @@ class CliTest {
     }
 
     @Test
+    fun `--debug prints the stack trace of an LLM explanation failure, sanitised`() {
+        val hostile = "down\u001B[2J\u202Eevil"
+        val throwing = QualityExplanationEnricher { _, _ -> throw IllegalStateException(hostile) }
+        val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--explain", "--output", dir.resolve("o.txt").toString())
+
+        val quiet = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { throwing }, env = llmEnv)).test(argv)
+        assertFalse(quiet.stderr.contains("at com.geoknoesis.kastor.ontoquality.cli.MainKt"), quiet.stderr)
+
+        for (debugArgv in listOf(argv + "--debug", listOf("--debug") + argv)) {
+            val debug = ontoQualityApp(CliEnvironment(explanationEnricherFactory = { throwing }, env = llmEnv)).test(debugArgv)
+            assertEquals(EXIT_OK, debug.statusCode, debug.stderr)
+            assertTrue(debug.stderr.contains("java.lang.IllegalStateException: down\\u001B[2J\\u202Eevil"), debug.stderr)
+            assertTrue(debug.stderr.contains("at com.geoknoesis.kastor.ontoquality.cli.MainKt"), debug.stderr)
+            assertNoRawControls(debug.stderr)
+        }
+    }
+
+    @Test
+    fun `LLM prerequisites are validated before the model is loaded`() {
+        val onto = ontology("empty.ttl", emptyTtl).toString()
+        val out = dir.resolve("o.txt").toString()
+        val optInOnly = { name: String -> if (name == LLM_EXPLAIN_ENV) "true" else null }
+        var explainerCalls = 0
+        val enricher = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList()) }
+        fun environment(factory: FakeEnricherFactory, env: (String) -> String?) =
+            CliEnvironment(enricherFactory = factory, explanationEnricherFactory = { explainerCalls++; enricher }, env = env)
+
+        val cases =
+            listOf(
+                { _: String -> null } to LLM_EXPLAIN_ENV,
+                optInOnly to LlmExplanationConfig.OPENAI_API_KEY,
+            )
+        for ((env, missing) in cases) {
+            // Strict: fail with exit 3 before anything expensive runs.
+            val factory = FakeEnricherFactory()
+            val strict = ontoQualityApp(environment(factory, env)).test(listOf("pipeline", onto, "--catalog", "owl-quality", "--explain", "--fail-on-explain-error", "--output", out))
+            assertEquals(EXIT_EXPLAIN_ERROR, strict.statusCode, strict.stderr)
+            assertTrue(strict.stderr.startsWith("onto-qa: error: LLM explanations skipped: $missing"), strict.stderr)
+            assertEquals(0, factory.opened, "model must not be loaded when LLM prerequisites are missing")
+
+            // Lenient: the warning comes first, then the pipeline runs without explanations.
+            val lenientFactory = FakeEnricherFactory()
+            val lenient = ontoQualityApp(environment(lenientFactory, env)).test(listOf("pipeline", onto, "--catalog", "owl-quality", "--explain", "--output", out))
+            assertEquals(EXIT_OK, lenient.statusCode, lenient.stderr)
+            val lines = lenient.stderr.lines()
+            val warning = lines.indexOfFirst { it.startsWith("onto-qa: warning: LLM explanations skipped") && it.contains(missing) }
+            assertTrue(warning >= 0 && warning < lines.indexOfFirst { it.startsWith("Pipeline: enriching") }, lenient.stderr)
+            assertEquals(1, lenientFactory.opened)
+        }
+        assertEquals(0, explainerCalls)
+
+        // Anthropic needs its own key; Ollama needs none.
+        val anthropic = ontoQualityApp(environment(FakeEnricherFactory(), llmEnv)).test(listOf("check", onto, "--catalog", "owl-quality", "--explain", "--fail-on-explain-error", "--llm-provider", "anthropic", "--output", out))
+        assertEquals(EXIT_EXPLAIN_ERROR, anthropic.statusCode, anthropic.stderr)
+        assertTrue(anthropic.stderr.contains(LlmExplanationConfig.ANTHROPIC_API_KEY), anthropic.stderr)
+        val ollama = run(listOf("check", onto, "--catalog", "owl-quality", "--explain", "--fail-on-explain-error", "--llm-provider", "ollama", "--output", out), environment(FakeEnricherFactory(), optInOnly))
+        assertEquals(EXIT_OK, ollama.status, ollama.err)
+        assertEquals(1, explainerCalls)
+    }
+
+    @Test
+    fun `--explain-dry-run needs no opt-in or key, and requires --explain`() {
+        val onto = ontology("empty.ttl", emptyTtl).toString()
+        val out = dir.resolve("o.txt").toString()
+        var explainerCalls = 0
+        val environment = CliEnvironment(explanationEnricherFactory = { explainerCalls++; error("no LLM in a dry run") }, env = { null })
+
+        val dry = ontoQualityApp(environment).test(listOf("check", onto, "--catalog", "owl-quality", "--explain", "--explain-dry-run", "--fail-on-explain-error", "--output", out))
+        assertEquals(EXIT_OK, dry.statusCode, dry.stderr)
+        assertTrue(dry.stderr.contains("LLM explain dry-run: would send up to 0 findings"), dry.stderr)
+        assertFalse(dry.stderr.contains("skipped"), dry.stderr)
+        assertEquals(0, explainerCalls)
+
+        for (command in listOf("check", "pipeline")) {
+            val factory = FakeEnricherFactory()
+            val result = run(listOf(command, onto, "--explain-dry-run", "--output", out), CliEnvironment(enricherFactory = factory))
+            assertEquals(EXIT_USAGE, result.status, result.err)
+            assertTrue(result.err.contains("--explain-dry-run requires --explain"), result.err)
+            assertEquals(0, factory.opened)
+        }
+    }
+
+    @Test
     fun `LLM failure messages on stderr are sanitised`() {
         val hostile = "down\u001B[2J\u202Eevil\u0007"
         val visible = "down\\u001B[2J\\u202Eevil\\u0007"
-        val env = { name: String -> if (name == LLM_EXPLAIN_ENV) "true" else null }
+        val env = llmEnv
         val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--severity", "info", "--explain", "--output", dir.resolve("o.txt").toString())
 
         val incomplete = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList(), listOf(ExplanationFailure(emptyList(), hostile))) }
@@ -318,7 +410,7 @@ class CliTest {
     fun `--fail-on-explain-error turns LLM failures into exit status 3`() {
         val failing = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList(), listOf(ExplanationFailure(emptyList(), "down"))) }
         val throwing = QualityExplanationEnricher { _, _ -> throw IllegalStateException("no key") }
-        val env = { name: String -> if (name == LLM_EXPLAIN_ENV) "true" else null }
+        val env = llmEnv
         val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "all", "--severity", "info", "--explain", "--output", dir.resolve("o.txt").toString())
 
         for (enricher in listOf(failing, throwing)) {
@@ -497,7 +589,7 @@ class CliTest {
     fun `--llm-max-duration bounds the whole explanation run`() {
         val configs = mutableListOf<LlmExplanationConfig>()
         val enricher = QualityExplanationEnricher { report, _ -> ExplainedQualityReport(report, emptyList()) }
-        val env = { name: String -> if (name == LLM_EXPLAIN_ENV) "true" else null }
+        val env = llmEnv
         val environment = CliEnvironment(explanationEnricherFactory = { configs += it; enricher }, env = env)
         val argv = listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "all", "--explain", "--output", dir.resolve("o.txt").toString())
         assertEquals(EXIT_OK, run(argv, environment).status)

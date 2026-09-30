@@ -36,7 +36,7 @@ class QualityChecker private constructor(
     fun check(ontology: RdfGraph): QualityReport {
         val raw = validator.validate(ontology, mergedShapes)
         val metricsContext = computeMetricsContext(ontology)
-        return QualityReport.from(raw, catalogs, metricsContext)
+        return QualityReport.from(raw, catalogs, metricsContext, ontology)
     }
 
     /**
@@ -51,18 +51,18 @@ class QualityChecker private constructor(
         val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
         val metricsContext = computeMetricsContext(ontology)
         val raw = validator.validate(materialized.graph, mergedShapes)
-        val base = QualityReport.from(raw, catalogs, metricsContext)
+        val base = QualityReport.from(raw, catalogs, metricsContext, materialized.graph)
         val rr = materialized.reasoningResult ?: return base
         val extra = OntoQualityReasoning.inconsistencyViolationsForReport(rr)
         val consistencyWarnings = rr.consistencyCheck.warnings
         if (extra.isEmpty() && consistencyWarnings.isEmpty()) return base
         val merged = mergeValidationReport(base.underlying, extra, consistencyWarnings)
-        return QualityReport.from(merged, catalogs, metricsContext)
+        return QualityReport.from(merged, catalogs, metricsContext, materialized.graph)
     }
 
     fun checkResource(ontology: RdfGraph, resource: RdfResource): QualityReport {
         val raw = validator.validateResource(ontology, mergedShapes, resource)
-        return QualityReport.from(raw, catalogs, metricsContext = null)
+        return QualityReport.from(raw, catalogs, metricsContext = null, dataGraph = ontology)
     }
 
     /**

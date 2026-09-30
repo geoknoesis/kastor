@@ -14,6 +14,10 @@ import com.geoknoesis.kastor.ontoquality.metrics.MetricValue
  * definition; `NOCOntoKastor`, `CBOOntoKastor` and `TMOntoKastor` are Kastor adaptations with their own names and
  * bands, and are not OQuaRE metrics.
  *
+ * **IRI stability.** 0.2.x emitted NOCOnto, CBOOnto and TMOnto under `kastor-m:numberOfChildren`,
+ * `kastor-m:couplingBetweenObjects` and `kastor-m:tangledness` with other formulas. A metric IRI never changes meaning,
+ * so the published formulas use `…Oquare` IRIs and the 0.2.x IRIs are retired (deprecated, no longer emitted).
+ *
  * **Notation** (all over the *asserted* graph, after namespace exclusion):
  * - `C` named classes; `Root` classes with no named (non-cycle) superclass, i.e. direct children of owl:Thing;
  * - `Sup_C` / `Sub_C` direct named superclasses / subclasses of C; `|SubClassOf|` = Σ|Sup_C|;
@@ -66,10 +70,10 @@ internal object OquareCalculators {
     /** NOCOnto = Σ|Sub_C| / (|C| − |Root|) — published OQuaRE: direct subclasses per class, excluding owl:Thing's children. */
     fun numberOfChildren(q: IntermediateQuantities, scores: Boolean): MetricValue {
         val denom = nonRootClasses(q)
-        if (denom <= 0) return notComputable("numberOfChildren", "NOCOnto", "no non-root classes")
+        if (denom <= 0) return notComputable("numberOfChildrenOquare", "NOCOnto", "no non-root classes")
         val mean = q.subClassChildrenOf.values.sumOf { it.size }.toDouble() / denom
         return MetricValue(
-            metricIri = KastorMetricsVocab.numberOfChildren,
+            metricIri = KastorMetricsVocab.numberOfChildrenOquare,
             oquareName = "NOCOnto",
             rawValue = mean,
             score = if (scores) OquareScoring.scoreNOC(mean) else null,
@@ -81,10 +85,10 @@ internal object OquareCalculators {
     /** CBOOnto = Σ|Sup_C| / (|C| − |Root|) — published OQuaRE: direct superclasses per class, excluding owl:Thing's children. */
     fun couplingBetweenObjects(q: IntermediateQuantities, scores: Boolean): MetricValue {
         val denom = nonRootClasses(q)
-        if (denom <= 0) return notComputable("couplingBetweenObjects", "CBOOnto", "no non-root classes")
+        if (denom <= 0) return notComputable("couplingBetweenObjectsOquare", "CBOOnto", "no non-root classes")
         val mean = q.superClassesOf.values.sumOf { it.size }.toDouble() / denom
         return MetricValue(
-            metricIri = KastorMetricsVocab.couplingBetweenObjects,
+            metricIri = KastorMetricsVocab.couplingBetweenObjectsOquare,
             oquareName = "CBOOnto",
             rawValue = mean,
             score = if (scores) OquareScoring.scoreCBO(mean) else null,
@@ -304,11 +308,11 @@ internal object OquareCalculators {
      * separates tangled from untangled hierarchies.
      */
     fun tangledness(q: IntermediateQuantities, scores: Boolean): MetricValue {
-        if (q.namedClasses.isEmpty()) return notComputable("tangledness", "TMOnto", "no classes")
+        if (q.namedClasses.isEmpty()) return notComputable("tanglednessOquare", "TMOnto", "no classes")
         val tangled = q.superClassesOf.values.count { it.size > 1 }
         val value = tangled.toDouble() / q.namedClasses.size
         return MetricValue(
-            metricIri = KastorMetricsVocab.tangledness,
+            metricIri = KastorMetricsVocab.tanglednessOquare,
             oquareName = "TMOnto",
             rawValue = value,
             score = if (scores) OquareScoring.scoreTM(value) else null,

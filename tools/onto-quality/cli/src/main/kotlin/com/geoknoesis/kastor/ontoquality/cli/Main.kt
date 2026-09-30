@@ -311,7 +311,7 @@ internal fun validateBaseIri(value: String?): String? {
 }
 
 private class OntoQualityApp : CliktCommand(name = "onto-qa") {
-    private val debug by option("--debug", help = "Print stack traces for runtime errors").flag(default = false)
+    val debug by option("--debug", help = "Print stack traces for runtime errors and LLM explanation failures").flag(default = false)
 
     override fun help(context: Context): String = "Ontology quality checks, OQuaRE metrics and semantic enrichment."
 
@@ -328,7 +328,11 @@ private class OntoQualityApp : CliktCommand(name = "onto-qa") {
  */
 private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
     /** Also accepted after the command name; [runOntoQa] reads it from argv in either position. */
-    private val debugOpt by option("--debug", help = "Print stack traces for runtime errors").flag(default = false)
+    private val debugOpt by option("--debug", help = "Print stack traces for runtime errors and LLM explanation failures").flag(default = false)
+
+    /** `--debug` given before or after the command name. */
+    protected val debugEnabled: Boolean
+        get() = debugOpt || (currentContext.parent?.command as? OntoQualityApp)?.debug == true
 
     /** `--base-iri`; resolve with [validateBaseIri] before loading anything. */
     protected val baseIriOpt by option("--base-iri", help = BASE_IRI_HELP)
@@ -589,7 +593,11 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
             help = "Add LLM explanations via Koog (requires $LLM_EXPLAIN_ENV=true and provider credentials).",
         ).flag(default = false)
     val explainDryRun by
-        option("--explain-dry-run", help = "Print how many findings would be explained; no API call.").flag(default = false)
+        option(
+            "--explain-dry-run",
+            help = "With --explain: print how many findings would be explained; no API call, so neither $LLM_EXPLAIN_ENV nor an " +
+                "API key is needed. A usage error without --explain.",
+        ).flag(default = false)
     val failOnExplainError by
         option(
             "--fail-on-explain-error",
@@ -634,6 +642,7 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
 
     fun explainCli(): LlmExplainCli? =
         if (!explain) {
+            if (explainDryRun) throw usageError("--explain-dry-run requires --explain")
             null
         } else {
             LlmExplainCli(
@@ -668,8 +677,9 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
-        val llm = reportOptions.explainCli()
         val embeddingOptions = embedding.toOptions()
+        // LLM prerequisites (opt-in, API key) are checked before the ontology is parsed or a model is loaded.
+        val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val ontology = parseOntology(ontologyArg, format, baseIri)
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), withMetricsProvider = false)
 
@@ -700,7 +710,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
                     logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
                 }
                 val report = checker.check(enriched, reasoningProfile)
-                val outcome = maybeExplainReport(report, llm, environment) { echo(it, err = true) }
+                val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
                 emitReport(
                     report,
                     outcome.explained,
@@ -737,7 +747,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
-        val llm = reportOptions.explainCli()
+        val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
 
@@ -760,7 +770,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
             logger.info("Onto-quality reasoning profile: {}", reasoningProfile.name.lowercase())
         }
         val report = checker.check(graph, reasoningProfile)
-        val outcome = maybeExplainReport(report, llm, environment) { echo(it, err = true) }
+        val outcome = maybeExplainReport(report, llm, environment, debugEnabled) { echo(it, err = true) }
         emitReport(
             report,
             outcome.explained,
@@ -825,7 +835,47 @@ internal data class LlmExplainCli(
     val maxTotalDuration: Duration,
     /** `--fail-on-explain-error`. */
     val failOnError: Boolean = false,
-)
+    /** Provider API key read from the environment by [preflightLlm]. */
+    val apiKey: String? = null,
+    /** Set by [preflightLlm] when a prerequisite is missing: no LLM is called and the run counts as an explanation failure. */
+    val skipped: Boolean = false,
+) {
+    override fun toString(): String =
+        "LlmExplainCli(provider=$provider, dryRun=$dryRun, skipped=$skipped, apiKey=${if (apiKey == null) "null" else "***"})"
+}
+
+/** Environment variable holding the API key for [provider]; null when none is needed (Ollama). */
+private fun apiKeyEnv(provider: LlmProvider): String? =
+    when (provider) {
+        LlmProvider.OPENAI -> LlmExplanationConfig.OPENAI_API_KEY
+        LlmProvider.ANTHROPIC -> LlmExplanationConfig.ANTHROPIC_API_KEY
+        LlmProvider.OLLAMA -> null
+    }
+
+/**
+ * Checks the LLM prerequisites ([LLM_EXPLAIN_ENV] opt-in, provider API key) before any expensive work. A dry run needs
+ * neither. When one is missing: with `--fail-on-explain-error` the command stops with [EXIT_EXPLAIN_ERROR]; otherwise a
+ * warning is printed and the returned options are marked [LlmExplainCli.skipped].
+ */
+private fun preflightLlm(llm: LlmExplainCli?, environment: CliEnvironment, err: (String) -> Unit): LlmExplainCli? {
+    if (llm == null || llm.dryRun) return llm
+    val keyEnv = apiKeyEnv(llm.provider)
+    val key = keyEnv?.let { environment.env(it) }?.takeIf { it.isNotBlank() }
+    val problem =
+        when {
+            !environment.env(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true) ->
+                "$LLM_EXPLAIN_ENV is not set to true (required by --explain)"
+            keyEnv != null && key == null ->
+                "$keyEnv is not set (required by --explain --llm-provider ${llm.provider.name.lowercase()})"
+            else -> return llm.copy(apiKey = key)
+        }
+    if (llm.failOnError) {
+        err("onto-qa: error: LLM explanations skipped: $problem; failing because of --fail-on-explain-error.")
+        throw ProgramResult(EXIT_EXPLAIN_ERROR)
+    }
+    err("onto-qa: warning: LLM explanations skipped: $problem.")
+    return llm.copy(skipped = true)
+}
 
 private fun parseLlmProvider(s: String): LlmProvider =
     when (s.lowercase()) {
@@ -875,21 +925,12 @@ private fun maybeExplainReport(
     report: QualityReport,
     llm: LlmExplainCli?,
     environment: CliEnvironment,
+    debug: Boolean,
     err: (String) -> Unit,
 ): ExplainOutcome {
     if (llm == null) return ExplainOutcome(null, failed = false)
-    if (!environment.env(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true)) {
-        // --explain without the opt-in produced no explanations: a failure under --fail-on-explain-error.
-        if (llm.failOnError) {
-            err(
-                "onto-qa: error: LLM explanations skipped: $LLM_EXPLAIN_ENV is not set to true (required by --explain); " +
-                    "failing because of --fail-on-explain-error.",
-            )
-        } else {
-            err("onto-qa: warning: LLM explanations skipped: $LLM_EXPLAIN_ENV is not set to true (required by --explain).")
-        }
-        return ExplainOutcome(null, failed = true)
-    }
+    // Missing prerequisites were reported by preflightLlm; no explanations is a failure under --fail-on-explain-error.
+    if (llm.skipped) return ExplainOutcome(null, failed = true)
     if (llm.dryRun) {
         val n =
             report.findings
@@ -905,6 +946,7 @@ private fun maybeExplainReport(
         val cfg =
             LlmExplanationConfig(
                 provider = llm.provider,
+                apiKey = llm.apiKey,
                 modelId = llm.modelId,
                 modelPreset = llm.modelPreset,
                 baseUrl = llm.ollamaBase,
@@ -926,8 +968,8 @@ private fun maybeExplainReport(
         }
         ExplainOutcome(explained, failed = explained.hasExplanationFailures)
     } catch (e: Exception) {
-        logger.debug("LLM explanations failed", e)
         err("LLM explanations failed: ${e::class.simpleName}: ${sanitize(e.message)}")
+        if (debug) e.stackTraceToString().trimEnd().lines().forEach { err(sanitize(it)) }
         ExplainOutcome(null, failed = true)
     }
 }
@@ -1082,7 +1124,7 @@ internal fun findingsToJson(
                         put("category", f.category.name)
                         put("pitfall", pitfallLabel(f.pitfall))
                         put("tier", f.tier.name)
-                        put("focusNode", focusNodeToString(f.violation.focusNode))
+                        put("focusNode", focusNodeToString(f.violation.focusNode, f.blankNodeKeys))
                     }
                 }
             }
@@ -1112,10 +1154,11 @@ internal fun findingsToJson(
     return reportJson.encodeToString(JsonObject.serializer(), root)
 }
 
-private fun focusNodeToString(term: RdfTerm): String =
+/** Blank nodes are shown by their parse-independent key when known (see [QualityFinding.blankNodeKeys]). */
+private fun focusNodeToString(term: RdfTerm, blankNodeKeys: Map<BlankNode, String>): String =
     when (term) {
         is Iri -> term.value
-        is BlankNode -> term.toString()
+        is BlankNode -> blankNodeKeys[term] ?: term.toString()
         is Literal -> term.lexical
         else -> term.toString()
     }

@@ -14,6 +14,7 @@ import com.geoknoesis.kastor.rdf.testing.RdfDatasetIsomorphism
 import com.geoknoesis.kastor.rdf.testing.RdfGraphIsomorphism
 import com.geoknoesis.kastor.rdf.testing.RdfGraphSnapshots
 import java.io.PrintStream
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.extension
 import kotlin.io.path.inputStream
@@ -34,33 +35,66 @@ private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<Strin
     fun asDataset(): Map<Iri?, RdfGraph> = mapOf<Iri?, RdfGraph>(null to defaultGraph) + namedGraphs.mapKeys { Iri(it.key) }
 }
 
-private class CliError(message: String, val code: Int = 1) : RuntimeException(message)
+/** Exit status: success (for `diff`, the inputs are isomorphic). */
+internal const val EXIT_OK = 0
 
-/** Runs the CLI and returns the process exit code (0 ok, 1 usage/input error, 2 diff mismatch). */
+/** Exit status: usage error (bad or extra arguments, unknown format, missing file) or unparsable input. */
+internal const val EXIT_USAGE = 1
+
+/** Exit status: `diff` found the inputs not isomorphic. */
+internal const val EXIT_NOT_ISOMORPHIC = 2
+
+/** Exit status: runtime failure (I/O error, RDF provider failure, internal error). */
+internal const val EXIT_RUNTIME_ERROR = 3
+
+private class CliError(message: String, val code: Int = EXIT_USAGE) : RuntimeException(message)
+
+/** Runs the CLI and returns the process exit code ([EXIT_OK], [EXIT_USAGE], [EXIT_NOT_ISOMORPHIC], [EXIT_RUNTIME_ERROR]). */
 internal fun runCli(args: List<String>, out: PrintStream, err: PrintStream): Int {
     if (args.isEmpty()) {
         printUsage(out)
-        return 1
+        return EXIT_USAGE
     }
     return try {
         when (args[0]) {
-            "help", "--help", "-h" -> { printUsage(out); 0 }
+            "help", "--help", "-h" -> {
+                expectAtMost(args.drop(1), 0)
+                printUsage(out)
+                EXIT_OK
+            }
             "parse" -> cmdParse(args.drop(1), out)
             "to-turtle" -> cmdToTurtle(args.drop(1), out)
             "diff" -> cmdDiff(args.drop(1), out, err)
             else -> {
                 err.println("Unknown command: ${args[0]}")
                 printUsage(err)
-                1
+                EXIT_USAGE
             }
         }
     } catch (e: CliError) {
         err.println(e.message)
         e.code
     } catch (e: RdfFormatException) {
-        err.println("Parse error: ${e.message}")
-        1
+        err.println("Parse error: ${oneLine(e.message)}")
+        EXIT_USAGE
+    } catch (e: InvalidPathException) {
+        err.println("Invalid path: ${oneLine(e.message)}")
+        EXIT_USAGE
+    } catch (e: Exception) {
+        exitCodeForFailure(e, err)
     }
+}
+
+/** Unexpected failures (I/O, provider or internal errors): one line on [err], [EXIT_RUNTIME_ERROR]. */
+internal fun exitCodeForFailure(e: Throwable, err: PrintStream): Int {
+    err.println("kastor-rdf: error: ${e.javaClass.simpleName}: ${oneLine(e.message ?: "(no message)")}")
+    return EXIT_RUNTIME_ERROR
+}
+
+private fun oneLine(text: String?): String = (text ?: "").lines().joinToString(" ") { it.trim() }.trim()
+
+private fun expectAtMost(rest: List<String>, max: Int) {
+    if (rest.size > max) throw CliError("Unexpected argument: ${rest[max]}")
 }
 
 private fun printUsage(out: PrintStream) {
@@ -73,6 +107,9 @@ private fun printUsage(out: PrintStream) {
           kastor-rdf parse <file> [FORMAT]
           kastor-rdf to-turtle <file> [INPUT_FORMAT]
           kastor-rdf diff <file1> <file2> [FORMAT]
+
+        Exit status: 0 success; 1 usage or input error (bad or extra arguments, unknown format, missing file,
+        parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal).
 
         FORMAT defaults from the file extension when omitted (.ttl → TURTLE, .nt → NTRIPLES, .nq → NQUADS,
         .trig → TRIG, .jsonld/.json → JSON-LD, .rdf/.owl/.xml → RDFXML); other extensions require FORMAT.
@@ -107,6 +144,7 @@ private fun cmdToTurtle(rest: List<String>, out: PrintStream): Int {
 
 private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int {
     if (rest.size < 2) throw CliError("diff requires two file paths")
+    expectAtMost(rest, 3)
     val fmt = rest.getOrNull(2)
     val p1 = requireRegular(Path.of(rest[0]))
     val p2 = requireRegular(Path.of(rest[1]))
@@ -142,7 +180,7 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int
     }
     err.println("NOT ISOMORPHIC")
     differences.forEach { err.println("  $it") }
-    return 2
+    return EXIT_NOT_ISOMORPHIC
 }
 
 private fun read(path: Path, format: String): ParsedInput {
@@ -162,6 +200,7 @@ private fun read(path: Path, format: String): ParsedInput {
 
 private fun parseFileArgs(rest: List<String>): Pair<Path, String?> {
     if (rest.isEmpty()) throw CliError("Missing file path")
+    expectAtMost(rest, 2)
     return requireRegular(Path.of(rest[0])) to rest.getOrNull(1)
 }
 

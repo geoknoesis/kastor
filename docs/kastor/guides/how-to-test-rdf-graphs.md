@@ -88,7 +88,7 @@ Run via Gradle:
 | **`to-turtle`** | Parse with inferred or explicit format, print **Turtle** to stdout |
 | **`diff`** | **Isomorphism** check between two files; exit code **2** if they differ structurally |
 
-Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error, **2** diff mismatch.
+Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error (bad or extra arguments, unknown format, missing file, parse error), **2** diff mismatch, **3** runtime error (I/O, RDF provider or internal failure; one-line message on stderr). Library warnings (e.g. Jena RIOT) are printed on stderr at WARN level via slf4j-simple.
 
 > The CLI does not execute arbitrary Kotlin DSL scripts; build graphs in tests or apps, then **`to-turtle`** or **`diff`** serialized files.
 
