@@ -14,6 +14,19 @@ class ShaclPatternTranslationTest {
             .containsMatchIn(input)
 
     @Test
+    fun `dollar matches only at the very end of the input unless the m flag is set`() {
+        assertTrue(matches("^\\d+$", null, "123"))
+        assertFalse(matches("^\\d+$", null, "123\n"), "XPath end anchor does not match before a final newline")
+        assertFalse(matches("^\\d+$", "i", "123\n"))
+        assertTrue(matches("^a$", "m", "a\nb"), "with m, the end anchor matches before a newline")
+        assertTrue(matches("^b$", "m", "a\nb"))
+        assertFalse(matches("^a$", "m", "a\r\nb"), "only a newline ends a line in XPath")
+        assertTrue(matches("^[$]$", null, "$"), "a dollar inside a class is literal")
+        assertTrue(matches("^\\$$", null, "$"), "an escaped dollar is literal")
+        assertTrue(matches("a$", "q", "a$"), "q matches the pattern literally")
+    }
+
+    @Test
     fun `x flag removes whitespace outside character classes only and does not start comments`() {
         assertTrue(matches("^a b # c$", "x", "ab#c"))
         assertFalse(matches("^a b # c$", "x", "ab"))
