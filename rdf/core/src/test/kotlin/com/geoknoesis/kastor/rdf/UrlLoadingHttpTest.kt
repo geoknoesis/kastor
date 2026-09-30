@@ -57,7 +57,7 @@ class UrlLoadingHttpTest {
             when (exchange.requestURI.path) {
                 "/missing" -> exchange.reply(404, "<html><body>Not found</body></html>", "text/html")
                 "/moved" -> {
-                    exchange.responseHeaders.add("Location", "https://127.0.0.1:1/elsewhere")
+                    exchange.responseHeaders.add("Location", "ftp://127.0.0.1:1/elsewhere")
                     exchange.reply(302, "")
                 }
                 else -> exchange.reply(500, "oops", "text/plain")

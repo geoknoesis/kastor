@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 /**
  * Safety limits for loading RDF from a URL ([Rdf.parseFromUrl], [Rdf.parseFromUrlAsync],
@@ -18,14 +19,21 @@ import java.util.Locale
  * @property readTimeoutMillis Read timeout passed to the URL connection (the longest a single read may block)
  * @property totalTimeoutMillis Overall deadline for connecting and reading the whole body, measured from
  *   when the connection is opened; a server that trickles bytes just faster than [readTimeoutMillis] is
- *   stopped with [RdfLoadTimeoutException]. `0` disables the overall deadline. The deadline is hard: connect and
- *   read timeouts are lowered to the time remaining when each phase starts, and a body read that could block past
- *   the deadline is abandoned when it passes (its connection is then closed in the background). A read that reaches
- *   the end of the body is never reported as a timeout. Default: 5 minutes.
+ *   stopped with [RdfLoadTimeoutException]. `0` disables the overall deadline. The deadline is hard and covers the
+ *   whole load, including every redirect hop: connect and read timeouts are lowered to the time remaining when each
+ *   hop starts, each HTTP request (host name lookup, connect, TLS handshake and response headers) runs on a helper
+ *   thread that the caller waits for only until the deadline, and a body read that could block past the deadline is
+ *   abandoned when it passes. An abandoned request or read keeps its helper thread until its capped socket timeout
+ *   (or the system's host name lookup) returns, and then releases its connection. Helper threads are daemon threads
+ *   in a pool bounded to 32; when all are busy the work runs on the calling thread instead, bounded only by the capped
+ *   socket timeouts (a slow host name lookup is then not cut short). A read that reaches the end of the body is never
+ *   reported as a timeout. Default: 5 minutes.
  *
- * HTTP(S) requests send an `Accept` header for the requested format, and non-2xx responses (including
- * redirects the JDK does not follow, such as http to https) fail with [RdfHttpStatusException] before
- * anything is parsed.
+ * HTTP(S) requests send an `Accept` header for the requested format and `Connection: close`, and the connection is
+ * closed when the load ends. Redirects (301, 302, 303, 307, 308) are followed by Kastor, up to 10 hops, only to a URL
+ * with an allowed scheme that keeps the scheme or upgrades `http` to `https`, and only while
+ * [java.net.HttpURLConnection.getFollowRedirects] is true. Non-2xx responses, including redirects that are not
+ * followed, fail with [RdfHttpStatusException] before anything is parsed.
  */
 data class UrlLoadOptions(
     val allowedSchemes: Set<String> = setOf("http", "https"),
@@ -79,7 +87,7 @@ internal interface LimitedStream {
     val failure: java.io.IOException?
 }
 
-/** An opened URL response body and the connection it came from. */
+/** An opened URL response body and the connection it came from. Closing [stream] releases the connection. */
 internal class RdfUrlBody(
     val connection: java.net.URLConnection,
     val stream: InputStream,
@@ -113,17 +121,24 @@ internal fun RdfFormat.mediaType(): String = when (this) {
     RdfFormat.N_QUADS -> "application/n-quads"
 }
 
+/** Redirect statuses that are followed (all are safe to repeat as a GET without a body). */
+private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
+
+/** Maximum number of redirects followed for one load. */
+internal const val MAX_URL_REDIRECTS = 10
+
 /**
  * Validates [url] against [options], connects, and returns the response body.
  *
  * - The scheme must be allowed by [UrlLoadOptions.allowedSchemes].
- * - HTTP(S): sends `Accept` for [format] (any type when null) and fails with [RdfHttpStatusException] on a
- *   non-2xx status.
+ * - HTTP(S): sends `Accept` for [format] (any type when null), follows redirects as described on
+ *   [UrlLoadOptions], and fails with [RdfHttpStatusException] on a non-2xx status.
  * - A declared `Content-Length` above [UrlLoadOptions.maxBytes] fails fast; the body is bounded to it.
- * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the connection is opened.
+ * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the first connection is opened, across hops.
  *
- * [onConnection] receives the connection before it connects, so a caller can disconnect it to cancel.
- * On failure the connection is released before the exception propagates.
+ * [onConnection] receives each connection (one per redirect hop) before it connects, so a caller can disconnect it
+ * to cancel. On failure the connection is released before the exception propagates (or, if a request was abandoned
+ * at the deadline, once that request returns).
  */
 internal fun openRdfUrlStream(
     url: String,
@@ -131,6 +146,96 @@ internal fun openRdfUrlStream(
     options: UrlLoadOptions,
     onConnection: (java.net.URLConnection) -> Unit = {},
 ): RdfUrlBody {
+    var uri = checkedUri(url, options)
+    val started = System.nanoTime()
+    val total = options.totalTimeoutMillis
+    var redirects = 0
+    while (true) {
+        // When both socket timeouts of this hop are the time left, a socket timeout is the deadline expiring.
+        val hopRemaining = remainingMillis(started, total)
+        val timeoutsAreDeadline = total > 0 &&
+            listOf(options.connectTimeoutMillis, options.readTimeoutMillis).all { it == 0 || it >= hopRemaining }
+        val connection = uri.toURL().openConnection().apply {
+            connectTimeout = cappedTimeout(options.connectTimeoutMillis, remainingMillis(started, total))
+            readTimeout = cappedTimeout(options.readTimeoutMillis, remainingMillis(started, total))
+            setRequestProperty("Accept", format?.let { "${it.mediaType()}, */*;q=0.1" } ?: "*/*")
+        }
+        val http = connection as? java.net.HttpURLConnection
+        val followRedirects = http?.instanceFollowRedirects ?: false
+        http?.apply {
+            instanceFollowRedirects = false
+            // Every load disconnects when it ends, so the connection is never kept alive for reuse.
+            setRequestProperty("Connection", "close")
+        }
+        onConnection(connection)
+        // Set when the connection is released elsewhere: by an abandoned request once it returns, or by the body.
+        var releasedElsewhere = false
+        try {
+            if (http != null) {
+                val status = withinDeadline(started, total, onAbandon = { release(http) }) {
+                    http.connect()
+                    http.responseCode
+                }.getOrElse { e ->
+                    releasedElsewhere = e is RdfLoadTimeoutException || e is java.io.InterruptedIOException
+                    throw e
+                }
+                if (total > 0 && elapsedMillis(started) >= total) throw RdfLoadTimeoutException(total)
+                if (status in REDIRECT_STATUSES) {
+                    val location: String? = http.getHeaderField("Location")
+                    val target: Any = when {
+                        !followRedirects -> "redirects are disabled"
+                        location.isNullOrBlank() -> "no Location header"
+                        redirects >= MAX_URL_REDIRECTS -> "more than $MAX_URL_REDIRECTS redirects"
+                        else -> redirectTarget(uri, location, options)
+                    }
+                    if (target is java.net.URI) {
+                        release(http)
+                        redirects++
+                        uri = target
+                        continue
+                    }
+                    throw RdfHttpStatusException(
+                        uri.toString(), status,
+                        "HTTP $status redirect${location?.let { " to $it" } ?: ""} not followed ($target) " +
+                            "while loading RDF from $uri",
+                    )
+                }
+                if (status !in 200..299) {
+                    val reason = http.responseMessage?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
+                    throw RdfHttpStatusException(uri.toString(), status, "HTTP $status$reason while loading RDF from $uri")
+                }
+            }
+            if (connection.contentLengthLong > options.maxBytes) throw RdfInputTooLargeException(options.maxBytes)
+            val bounded = BoundedInputStream(connection.getInputStream(), options.maxBytes)
+            val releaseConnection = { release(connection) }
+            if (total > 0) {
+                // The socket keeps the read timeout it had when the request was sent, so a body read may block that
+                // long; the stream waits for such reads only as long as the deadline allows.
+                val socketReadMillis = http?.readTimeout?.toLong()
+                val deadline = DeadlineInputStream(bounded, started, total, socketReadMillis, releaseConnection)
+                releasedElsewhere = true
+                try {
+                    deadline.checkDeadline()
+                } catch (e: Throwable) {
+                    runCatching { deadline.close() }
+                    throw e
+                }
+                return RdfUrlBody(connection, deadline, listOf(deadline, bounded))
+            }
+            return RdfUrlBody(connection, ReleasingInputStream(bounded, releaseConnection), listOf(bounded))
+        } catch (e: Throwable) {
+            if (!releasedElsewhere) release(connection)
+            val timedOut = total > 0 && e is java.io.IOException && e !is RdfLoadTimeoutException &&
+                e !is RdfHttpStatusException && e !is RdfInputTooLargeException &&
+                (elapsedMillis(started) >= total || (e is java.net.SocketTimeoutException && timeoutsAreDeadline))
+            if (timedOut) throw RdfLoadTimeoutException(total).also { it.addSuppressed(e) }
+            throw e
+        }
+    }
+}
+
+/** Parses [url] and checks that it is absolute with an allowed scheme. */
+private fun checkedUri(url: String, options: UrlLoadOptions): java.net.URI {
     val uri = try {
         java.net.URI(url)
     } catch (e: java.net.URISyntaxException) {
@@ -141,55 +246,151 @@ internal fun openRdfUrlStream(
         "URL scheme '$scheme' is not allowed for RDF loading (allowed: ${options.allowedSchemes.sorted()}); " +
             "pass UrlLoadOptions(allowedSchemes = ...) to opt in"
     }
-    val started = System.nanoTime()
-    val total = options.totalTimeoutMillis
-    val connection = uri.toURL().openConnection().apply {
-        connectTimeout = cappedTimeout(options.connectTimeoutMillis, remainingMillis(started, total))
-        readTimeout = cappedTimeout(options.readTimeoutMillis, remainingMillis(started, total))
-        setRequestProperty("Accept", format?.let { "${it.mediaType()}, */*;q=0.1" } ?: "*/*")
+    return uri
+}
+
+/**
+ * The URI a redirect from [from] to [location] leads to, or a String saying why it is not followed: the target must
+ * be a valid absolute URL with an allowed scheme that is the same as the scheme of [from] or upgrades `http` to
+ * `https`.
+ */
+private fun redirectTarget(from: java.net.URI, location: String, options: UrlLoadOptions): Any {
+    val target = try {
+        from.resolve(java.net.URI(location.trim()))
+    } catch (_: Exception) {
+        return "invalid Location"
     }
-    onConnection(connection)
-    val http = connection as? java.net.HttpURLConnection
-    try {
-        if (http != null) {
-            http.connect()
-            if (total > 0) {
-                if (elapsedMillis(started) >= total) throw RdfLoadTimeoutException(total)
-                // Waiting for the response headers may only use what the connect left of the overall budget.
-                http.readTimeout = cappedTimeout(options.readTimeoutMillis, remainingMillis(started, total))
-            }
-            val status = http.responseCode
-            if (status !in 200..299) {
-                val reason = http.responseMessage?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
-                throw RdfHttpStatusException(url, status, "HTTP $status$reason while loading RDF from $url")
-            }
-        }
-        if (connection.contentLengthLong > options.maxBytes) throw RdfInputTooLargeException(options.maxBytes)
-        val bounded = BoundedInputStream(connection.getInputStream(), options.maxBytes)
-        if (total > 0) {
-            // The socket keeps the read timeout it had when the request was sent, so a body read may block that
-            // long; the stream waits for such reads only as long as the deadline allows.
-            val socketReadMillis = http?.readTimeout?.toLong()
-            val deadline = DeadlineInputStream(bounded, started, total, socketReadMillis).also { it.checkDeadline() }
-            return RdfUrlBody(connection, deadline, listOf(deadline, bounded))
-        }
-        return RdfUrlBody(connection, bounded, listOf(bounded))
-    } catch (e: Throwable) {
-        if (http != null) {
-            runCatching { http.errorStream?.close() }
-            http.disconnect()
-        } else {
-            runCatching { connection.getInputStream().close() }
-        }
-        val timedOut = total > 0 && e is java.io.IOException && e !is RdfLoadTimeoutException &&
-            e !is RdfHttpStatusException && e !is RdfInputTooLargeException && elapsedMillis(started) >= total
-        if (timedOut) throw RdfLoadTimeoutException(total).also { it.addSuppressed(e) }
-        throw e
+    val fromScheme = from.scheme.lowercase(Locale.ROOT)
+    val toScheme = target.scheme?.lowercase(Locale.ROOT) ?: return "invalid Location"
+    return when {
+        options.allowedSchemes.none { it.equals(toScheme, ignoreCase = true) } -> "scheme '$toScheme' is not allowed"
+        toScheme != fromScheme && !(fromScheme == "http" && toScheme == "https") -> "scheme change $fromScheme to $toScheme"
+        target.host.isNullOrEmpty() -> "invalid Location"
+        else -> target
     }
 }
 
+/** Releases [connection]: disconnects an HTTP connection, or closes the input stream of any other connection. */
+private fun release(connection: java.net.URLConnection) {
+    val http = connection as? java.net.HttpURLConnection
+    if (http != null) {
+        runCatching { http.errorStream?.close() }
+        runCatching { http.disconnect() }
+    } else {
+        runCatching { connection.getInputStream().close() }
+    }
+}
+
+/**
+ * Runs [action] on a helper thread and waits for it only until the deadline ([totalMillis] after [startedNanos]).
+ * If the deadline passes (or the caller is interrupted) first, [onAbandon] is scheduled to run once [action] returns
+ * and the result is a failed [RdfLoadTimeoutException] (or [java.io.InterruptedIOException]). Without a deadline, or
+ * when every helper thread is busy, [action] runs on the calling thread. Failures of [action] itself are rethrown.
+ */
+private fun <T> withinDeadline(
+    startedNanos: Long,
+    totalMillis: Long,
+    onAbandon: () -> Unit,
+    action: () -> T,
+): Result<T> {
+    if (totalMillis <= 0) return Result.success(action())
+    val call = HelperCall(action)
+    if (!call.start()) return Result.success(action())
+    return try {
+        Result.success(call.await(TimeUnit.MILLISECONDS.toNanos(totalMillis) - (System.nanoTime() - startedNanos)))
+    } catch (_: java.util.concurrent.TimeoutException) {
+        call.abandon(onAbandon)
+        Result.failure(RdfLoadTimeoutException(totalMillis))
+    } catch (e: InterruptedException) {
+        call.abandon(onAbandon)
+        Thread.currentThread().interrupt()
+        Result.failure(java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) })
+    }
+}
+
+/**
+ * Bounded pool of daemon threads for URL-loading work that may block past the overall deadline. A load uses at most
+ * one helper at a time; a helper whose work was abandoned stays busy until that work returns, which the capped socket
+ * timeouts bound (a host name lookup is bounded only by the system resolver).
+ */
+internal object UrlLoadHelpers {
+    const val MAX_THREADS = 32
+    const val THREAD_NAME_PREFIX = "kastor-url-helper-"
+    private val count = java.util.concurrent.atomic.AtomicInteger()
+
+    private val pool: java.util.concurrent.ThreadPoolExecutor by lazy {
+        java.util.concurrent.ThreadPoolExecutor(
+            0, MAX_THREADS, 10, TimeUnit.SECONDS, java.util.concurrent.SynchronousQueue(),
+            { runnable -> Thread(runnable, THREAD_NAME_PREFIX + count.incrementAndGet()).apply { isDaemon = true } },
+            java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+        )
+    }
+
+    /** Starts [task] on a helper thread; false (without running it) if all [MAX_THREADS] helpers are busy. */
+    fun tryExecute(task: Runnable): Boolean = try {
+        pool.execute(task)
+        true
+    } catch (_: java.util.concurrent.RejectedExecutionException) {
+        false
+    }
+}
+
+/**
+ * One blocking call run on a [UrlLoadHelpers] thread. If the caller stops waiting, [abandon] hands clean-up to the
+ * helper, which runs it once the call returns: the JDK's HTTP connections and streams cannot be closed from another
+ * thread while such a call blocks (closing waits for it), so this releases them without occupying a second thread.
+ */
+internal class HelperCall<T>(action: () -> T) {
+    private val lock = Any()
+    private var returned = false
+    private var cleanup: (() -> Unit)? = null
+    private val task = java.util.concurrent.FutureTask {
+        try {
+            action()
+        } finally {
+            val pending = synchronized(lock) { returned = true; cleanup }
+            pending?.let { runCatching(it) }
+        }
+    }
+
+    /** Starts the call; false if no helper thread is free (the call then never runs). */
+    fun start(): Boolean = UrlLoadHelpers.tryExecute(task)
+
+    /** Waits up to [nanos] for the result, rethrowing the call's own failure. */
+    fun await(nanos: Long): T = try {
+        task.get(nanos.coerceAtLeast(1), TimeUnit.NANOSECONDS)
+    } catch (e: java.util.concurrent.ExecutionException) {
+        throw e.cause ?: e
+    }
+
+    /** Runs [release] once the call has returned: now if it already has, otherwise on the helper thread afterwards. */
+    fun abandon(release: () -> Unit) {
+        val now = synchronized(lock) {
+            if (!returned) cleanup = release
+            returned
+        }
+        if (now) runCatching(release)
+    }
+}
+
+/**
+ * Input stream that releases its connection when closed. The release runs first: closing a JDK HTTP stream detaches
+ * it from its connection, so a later disconnect would leave the socket in the keep-alive cache.
+ */
+private class ReleasingInputStream(input: InputStream, private val release: () -> Unit) : FilterInputStream(input) {
+    override fun close() {
+        try {
+            release()
+        } finally {
+            super.close()
+        }
+    }
+
+    override fun markSupported(): Boolean = false
+}
+
 private fun elapsedMillis(startedNanos: Long): Long =
-    java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
+    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
 
 /** Milliseconds left of [totalMillis] (at least 1), or 0 when there is no overall deadline. */
 private fun remainingMillis(startedNanos: Long, totalMillis: Long): Long =
@@ -208,22 +409,27 @@ private fun cappedTimeout(timeoutMillis: Int, remainingMillis: Long): Int = when
  * - Reaching the end of the stream is never a timeout, even if the final read returns after the deadline.
  * - [blockingReadMillis] is the longest one read of the underlying stream can block (`0` = unbounded), or null if
  *   reads do not block. When less time than that remains, the read runs on a helper thread and the caller waits only
- *   until the deadline, so no read can overrun it. A read abandoned this way is closed asynchronously, because the
- *   JDK's HTTP streams only close once the blocked read returns.
+ *   until the deadline, so no read can overrun it. A read abandoned this way is closed by its helper thread once it
+ *   returns, because the JDK's HTTP streams only close once the blocked read returns. When every helper thread is
+ *   busy, the read runs on the calling thread.
  * - An I/O failure that happens after the deadline is reported as a timeout.
+ * - [onClose] runs when the stream is closed, before the underlying stream is closed (so an HTTP connection can still
+ *   be disconnected: closing its stream first forgets the connection), and after an abandoned read returns.
  */
 internal class DeadlineInputStream(
     input: InputStream,
     private val startedNanos: Long,
     private val timeoutMillis: Long,
     blockingReadMillis: Long? = null,
+    private val onClose: () -> Unit = {},
 ) : FilterInputStream(input), LimitedStream {
-    private val limitNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+    private val limitNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
     private val blockingReadNanos: Long? = blockingReadMillis?.let {
-        if (it <= 0) Long.MAX_VALUE else java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(it)
+        if (it <= 0) Long.MAX_VALUE else TimeUnit.MILLISECONDS.toNanos(it)
     }
     private var ended = false
-    private var abandoned: java.util.concurrent.Future<*>? = null
+    private var abandoned: HelperCall<*>? = null
+    private var closed = false
 
     override var failure: java.io.IOException? = null
         private set
@@ -253,23 +459,25 @@ internal class DeadlineInputStream(
         abandoned?.let { throw timeout() }
         try {
             if (readsDirectly(remaining)) return read(true)
-            val task = java.util.concurrent.FutureTask { read(false) }
-            readHelpers.execute(task)
+            val call = HelperCall { read(false) }
+            if (!call.start()) return read(false)
             try {
-                return task.get(remaining.coerceAtLeast(1), java.util.concurrent.TimeUnit.NANOSECONDS)
+                return call.await(remaining)
             } catch (_: java.util.concurrent.TimeoutException) {
-                abandoned = task
+                abandoned = call
                 throw timeout()
-            } catch (e: java.util.concurrent.ExecutionException) {
-                throw e.cause ?: e
             } catch (e: InterruptedException) {
-                abandoned = task
+                abandoned = call
                 Thread.currentThread().interrupt()
                 throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
             }
         } catch (e: java.io.IOException) {
-            if (e is RdfInputTooLargeException || e is RdfLoadTimeoutException || e is java.io.InterruptedIOException ||
-                remainingNanos() >= 0) throw e
+            // A read that was allowed to block past the deadline has a socket timeout no shorter than the time that was
+            // left, so its socket timeout is the deadline expiring (even if the clock says a moment is left).
+            val socketTimeout = e is java.net.SocketTimeoutException
+            val deadlinePassed = remainingNanos() < 0 || (socketTimeout && !readsDirectly(remaining))
+            if (e is RdfInputTooLargeException || e is RdfLoadTimeoutException || !deadlinePassed ||
+                (e is java.io.InterruptedIOException && !socketTimeout)) throw e
             throw timeout().also { if (it !== e) it.addSuppressed(e) }
         }
     }
@@ -306,24 +514,24 @@ internal class DeadlineInputStream(
     }
 
     override fun close() {
+        if (closed) return
+        closed = true
         val pending = abandoned
-        if (pending != null && !pending.isDone) {
-            readHelpers.execute { runCatching { `in`.close() } }
+        if (pending != null) {
+            pending.abandon {
+                runCatching { onClose() }
+                runCatching { `in`.close() }
+            }
         } else {
-            super.close()
+            try {
+                onClose()
+            } finally {
+                super.close()
+            }
         }
     }
 
     override fun markSupported(): Boolean = false
-
-    private companion object {
-        /** Threads for reads that might outlast the deadline; each load uses at most one at a time. */
-        val readHelpers: java.util.concurrent.ExecutorService by lazy {
-            java.util.concurrent.Executors.newCachedThreadPool { runnable ->
-                Thread(runnable, "kastor-url-read").apply { isDaemon = true }
-            }
-        }
-    }
 }
 
 /** Input stream that throws [RdfInputTooLargeException] once more than [limit] bytes have been read. */
