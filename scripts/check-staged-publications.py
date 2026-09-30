@@ -1,4 +1,5 @@
-"""Validate staged POM metadata and source/documentation artifacts before consumer testing."""
+"""Validate staged POM metadata, source/documentation artifacts and CycloneDX SBOMs before consumer testing."""
+import json
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -15,8 +16,9 @@ if not poms:
 for pom in poms:
     root = ET.parse(pom).getroot()
     for field in ("groupId", "artifactId", "version", "name", "description", "url",
-                  "licenses/license/name", "licenses/license/url", "scm/url",
-                  "developers/developer/id", "developers/developer/name"):
+                  "licenses/license/name", "licenses/license/url", "scm/url", "scm/connection",
+                  "scm/developerConnection", "issueManagement/url",
+                  "developers/developer/id", "developers/developer/name", "developers/developer/url"):
         query = "/".join(f"m:{part}" for part in field.split("/"))
         if not root.findtext(query, "", ns).strip():
             raise SystemExit(f"{pom}: missing or empty {field}")
@@ -37,4 +39,26 @@ for pom in poms:
                 raise SystemExit(f"Empty {classifier} content in {jar}")
             if archive.testzip() is not None:
                 raise SystemExit(f"Corrupt {classifier} content in {jar}")
-print(f"Validated metadata and required artifacts for {len(poms)} staged publications")
+    # CycloneDX SBOM of the module's runtime closure, in both encodings, describing this artifact.
+    group, artifact = root.findtext("m:groupId", "", ns).strip(), root.findtext("m:artifactId", "", ns).strip()
+    purl = f"pkg:maven/{group}/{artifact}@"
+    json_sbom, xml_sbom = (pom.with_name(pom.stem + f"-cyclonedx.{ext}") for ext in ("json", "xml"))
+    for sbom in (json_sbom, xml_sbom):
+        if not sbom.is_file():
+            raise SystemExit(f"Missing SBOM {sbom}")
+    try:
+        document = json.loads(json_sbom.read_text(encoding="utf-8"))
+        component = document["metadata"]["component"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise SystemExit(f"Invalid CycloneDX JSON {json_sbom}: {error}")
+    if document.get("bomFormat") != "CycloneDX" or not str(component.get("purl", "")).startswith(purl):
+        raise SystemExit(f"{json_sbom}: not a CycloneDX SBOM for {purl}")
+    try:
+        sbom_root = ET.parse(xml_sbom).getroot()
+    except ET.ParseError as error:
+        raise SystemExit(f"Invalid CycloneDX XML {xml_sbom}: {error}")
+    xml_ns = sbom_root.tag[1:].split("}")[0] if sbom_root.tag.startswith("{") else ""
+    xml_purl = sbom_root.findtext("c:metadata/c:component/c:purl", "", {"c": xml_ns}).strip()
+    if not xml_ns.startswith("http://cyclonedx.org/schema/bom/") or not xml_purl.startswith(purl):
+        raise SystemExit(f"{xml_sbom}: not a CycloneDX SBOM for {purl}")
+print(f"Validated metadata, required artifacts and SBOMs for {len(poms)} staged publications")

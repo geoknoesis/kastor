@@ -19,6 +19,7 @@ plugins {
   alias(libs.plugins.jmh) apply false
   alias(libs.plugins.dependency.analysis) apply false
   alias(libs.plugins.dokka) apply false
+  alias(libs.plugins.cyclonedx) apply false
 }
 
 apply(plugin = "com.autonomousapps.dependency-analysis")
@@ -252,6 +253,30 @@ subprojects {
         dependsOn("dokkaGeneratePublicationHtml")
         from(layout.buildDirectory.dir("dokka/html"))
       }
+      // CycloneDX SBOM of the published runtime closure, attached to the module's publication as
+      // <artifactId>-<version>-cyclonedx.{json,xml}. scripts/check-staged-publications.py requires both.
+      apply(plugin = "org.cyclonedx.bom")
+      val sbom = tasks.named<org.cyclonedx.gradle.CyclonedxDirectTask>("cyclonedxDirectBom") {
+        includeConfigs.set(listOf("runtimeClasspath"))
+      }
+      val isPluginMarker = { publication: MavenPublication -> publication.name.endsWith("PluginMarkerMaven") }
+      extensions.configure<PublishingExtension> {
+        publications.withType<MavenPublication>().matching { !isPluginMarker(it) }.configureEach {
+          artifact(sbom.flatMap { it.jsonOutput }) { classifier = "cyclonedx"; extension = "json"; builtBy(sbom) }
+          artifact(sbom.flatMap { it.xmlOutput }) { classifier = "cyclonedx"; extension = "xml"; builtBy(sbom) }
+        }
+      }
+      // Name the SBOM's root component after the published coordinates, not the Gradle project name.
+      // Lazy: java-gradle-plugin creates its publication (and modules rename artifactIds) after this runs.
+      val mainPublication = provider {
+        extensions.getByType<PublishingExtension>().publications.withType<MavenPublication>()
+          .first { !isPluginMarker(it) }
+      }
+      sbom.configure {
+        componentGroup.set(mainPublication.map { it.groupId })
+        componentName.set(mainPublication.map { it.artifactId })
+        componentVersion.set(mainPublication.map { it.version })
+      }
     }
     extensions.configure<PublishingExtension> {
       repositories { maven { name = "staging"; url = rootProject.layout.buildDirectory.dir("release-repository").get().asFile.toURI() } }
@@ -264,8 +289,13 @@ subprojects {
           description.convention("Kastor Kotlin RDF and ontology tools")
           url.set("https://github.com/geoknoesis/kastor")
           licenses { license { name.set("Apache License, Version 2.0"); url.set("https://www.apache.org/licenses/LICENSE-2.0.txt") } }
-          scm { url.set("https://github.com/geoknoesis/kastor"); connection.set("scm:git:https://github.com/geoknoesis/kastor.git") }
-          developers { developer { id.set("geoknoesis"); name.set("Geoknoesis") } }
+          scm {
+            url.set("https://github.com/geoknoesis/kastor")
+            connection.set("scm:git:https://github.com/geoknoesis/kastor.git")
+            developerConnection.set("scm:git:ssh://git@github.com/geoknoesis/kastor.git")
+          }
+          issueManagement { system.set("GitHub Issues"); url.set("https://github.com/geoknoesis/kastor/issues") }
+          developers { developer { id.set("geoknoesis"); name.set("Geoknoesis"); url.set("https://github.com/geoknoesis") } }
         }
       }
     }
