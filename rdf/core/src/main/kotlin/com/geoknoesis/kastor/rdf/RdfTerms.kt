@@ -1190,6 +1190,19 @@ interface RdfGraph {
 }
 
 /**
+ * A graph that exposes a cheap modification stamp, so callers that cache work derived from its content (for example
+ * a SHACL validator's copy of the data) can detect changes without scanning the triples.
+ *
+ * [modificationStamp] changes (it is never reused for the same graph instance) whenever the content of the graph
+ * changes; if two reads on the same instance return the same value, the content was not modified in between. A
+ * change of the stamp does not guarantee that the content differs (e.g. a triple added and then removed).
+ */
+interface VersionedRdfGraph : RdfGraph {
+    /** Monotonically increasing counter of content modifications of this graph instance. */
+    val modificationStamp: Long
+}
+
+/**
  * Mutable RDF graph operations.
  * 
  * Provides both read and write operations for RDF graphs.

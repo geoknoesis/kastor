@@ -1408,6 +1408,15 @@ public final class com/geoknoesis/kastor/rdf/VersionDeclaration {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface class com/geoknoesis/kastor/rdf/VersionedRdfGraph : com/geoknoesis/kastor/rdf/RdfGraph {
+	public abstract fun getModificationStamp ()J
+}
+
+public final class com/geoknoesis/kastor/rdf/VersionedRdfGraph$DefaultImpls {
+	public static fun find-BohvoVE (Lcom/geoknoesis/kastor/rdf/VersionedRdfGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
+	public static fun getTriplesSequence (Lcom/geoknoesis/kastor/rdf/VersionedRdfGraph;)Lkotlin/sequences/Sequence;
+}
+
 public final class com/geoknoesis/kastor/rdf/WeisfeilerLehmanIsomorphism {
 	public fun <init> ()V
 	public fun <init> (I)V
@@ -2034,7 +2043,7 @@ public final class com/geoknoesis/kastor/rdf/provider/EmptySparqlQueryResult : c
 	public fun toList ()Ljava/util/List;
 }
 
-public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoesis/kastor/rdf/MutableRdfGraph {
+public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoesis/kastor/rdf/MutableRdfGraph, com/geoknoesis/kastor/rdf/VersionedRdfGraph {
 	public fun <init> (Ljava/util/Collection;)V
 	public fun addTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)V
 	public fun addTriples (Ljava/lang/Iterable;)V
@@ -2042,6 +2051,7 @@ public final class com/geoknoesis/kastor/rdf/provider/MemoryGraph : com/geoknoes
 	public fun addTriples (Lkotlin/sequences/Sequence;)V
 	public fun clear ()Z
 	public fun find-BohvoVE (Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
+	public fun getModificationStamp ()J
 	public fun getTriples ()Ljava/util/List;
 	public fun getTriplesSequence ()Lkotlin/sequences/Sequence;
 	public fun hasTriple (Lcom/geoknoesis/kastor/rdf/RdfTriple;)Z

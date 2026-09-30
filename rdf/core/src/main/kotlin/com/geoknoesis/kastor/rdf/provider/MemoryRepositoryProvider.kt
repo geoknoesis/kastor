@@ -247,7 +247,7 @@ class MemoryGraph internal constructor(
     private val lock: ReentrantReadWriteLock,
     private val access: (Boolean) -> Unit,
     private val recordUndo: ((() -> Unit) -> Unit)?,
-) : MutableRdfGraph {
+) : MutableRdfGraph, VersionedRdfGraph {
     constructor() : this(emptyList())
     constructor(initialTriples: Collection<RdfTriple>) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
 
@@ -255,10 +255,14 @@ class MemoryGraph internal constructor(
     private val subjects = mutableMapOf<RdfResource, MutableSet<RdfTriple>>()
     private val predicates = mutableMapOf<Iri, MutableSet<RdfTriple>>()
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
+    /** Incremented (under the write lock) by every change of the content, including transaction rollbacks. */
+    @Volatile private var stamp = 0L
+    override val modificationStamp: Long get() = stamp
     init { if (initialTriples.isNotEmpty()) addTriples(initialTriples) }
 
     private fun addUnlocked(triple: RdfTriple) {
         if (triples.add(triple)) {
+            stamp++
             subjects.getOrPut(triple.subject) { linkedSetOf() }.add(triple)
             predicates.getOrPut(triple.predicate) { linkedSetOf() }.add(triple)
             objects.getOrPut(triple.obj) { linkedSetOf() }.add(triple)
@@ -268,6 +272,7 @@ class MemoryGraph internal constructor(
 
     private fun removeUnlocked(triple: RdfTriple): Boolean {
         if (!triples.remove(triple)) return false
+        stamp++
         fun <K> remove(index: MutableMap<K, MutableSet<RdfTriple>>, key: K) {
             index[key]?.let { it.remove(triple); if (it.isEmpty()) index.remove(key) }
         }
@@ -305,6 +310,7 @@ class MemoryGraph internal constructor(
             if (triples.isEmpty()) return@write false
             val snapshot = triples.toList()
             triples.clear(); subjects.clear(); predicates.clear(); objects.clear()
+            stamp++
             recordUndo?.invoke { addTriples(snapshot) }
             true
         }
