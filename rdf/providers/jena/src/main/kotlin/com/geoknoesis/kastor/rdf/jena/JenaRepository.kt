@@ -527,7 +527,7 @@ class JenaRepository private constructor(
             synchronized(viewLock) { currentView = null }
             // Retire every view (a view still used by another thread's read stops when that read ends), then wait
             // for the workers so that no read transaction outlives close().
-            val views = openViews.toList()
+            val views = snapshotOf(openViews)
             views.forEach { it.retire() }
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CLOSE_WAIT_SECONDS)
             for (view in views) {
@@ -565,3 +565,6 @@ class JenaRepository private constructor(
         }.constrainOnce()
     }
 }
+
+/** Copy of a concurrently modified collection that tolerates elements removed while copying (unlike `toList()`). */
+internal fun <T> snapshotOf(collection: Collection<T>): List<T> = ArrayList(collection)

@@ -98,7 +98,7 @@ object ValidatorRegistry {
     /**
      * Get all registered providers.
      */
-    fun getProviders(): List<ShaclValidatorProvider> = providers.values.toList()
+    fun getProviders(): List<ShaclValidatorProvider> = ArrayList(providers.values)
 
     /**
      * Get supported validation profiles.

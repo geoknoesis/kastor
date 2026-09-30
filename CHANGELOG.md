@@ -45,6 +45,7 @@ and is kept as is; it was never published to Maven Central.
 
 - `rdf-core`: URL loading uses at most 32 daemon helper threads and always disconnects; the eager base-IRI fallback no longer keeps a test-only counter.
 - `rdf-shacl`: refinement of recursive components with negative dependencies is incremental (near-linear instead of quadratic).
+- `rdf-jena`: `close()` on an inference repository no longer fails with `NoSuchElementException` when an idle inference view retires itself while `close()` collects the open views.
 - `rdf-jena` / `rdf-rdf4j`: initial bindings for blank nodes, directional literals and triple terms follow the shared rewrite on RDF4J; reasoner permits are released only after an abandoned worker has cleaned up; closing a Jena repository ends its inference-view workers.
 - `kastor-gen`: every `@Rdf` wrapper reader follows `MaterializationPolicy`; named-graph views of memory repositories carry modification stamps, so RDF4J validation skips digests for them.
 - `onto-quality`: `--debug` prints the stack trace of a failed explanation; LLM prerequisites are checked before any model is loaded; `--explain-dry-run` needs neither the opt-in nor an API key.
