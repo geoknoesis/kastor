@@ -49,6 +49,19 @@ internal object RdfMemberTypes {
 
     fun isList(kotlinType: String): Boolean = kotlinType.startsWith("List<")
 
+    /**
+     * Whether [qualifiedName] is a container other than `List` (`Set`, `Collection`, `Iterable`, `MutableList`, `Map`,
+     * arrays, `Sequence`, ...). Wrappers implement multi-valued members as `List` only, so such members are rejected
+     * at generation time instead of being treated as a single nested object (which would not compile).
+     */
+    fun isUnsupportedContainer(qualifiedName: String?): Boolean = qualifiedName != null && qualifiedName != LIST && (
+        qualifiedName.startsWith("kotlin.collections.") ||
+            qualifiedName == "kotlin.sequences.Sequence" ||
+            (qualifiedName.startsWith("kotlin.") && qualifiedName.endsWith("Array") && qualifiedName.count { it == '.' } == 1)
+        )
+
+    private const val LIST = "kotlin.collections.List"
+
     fun element(kotlinType: String): String = kotlinType.removePrefix("List<").removeSuffix(">")
 
     fun literal(elementType: String): LiteralType? = LITERALS[elementType]

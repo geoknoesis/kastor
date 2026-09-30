@@ -35,6 +35,9 @@ dependencies {
   // In-process Kotlin compiler used by tests that compile generated sources for tricky
   // ontology inputs (same artifact/version the Kotlin Gradle plugin already resolves).
   testImplementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:${libs.versions.kotlin.get()}")
+  // KSP2 in process, so tests run the real processors over Kotlin sources (same artifact the KSP Gradle plugin uses).
+  testImplementation(libs.ksp.symbol.processing.aa.embeddable)
+  testImplementation(libs.ksp.symbol.processing.common.deps)
   testRuntimeOnly(libs.junit.platform.launcher)
 }
 

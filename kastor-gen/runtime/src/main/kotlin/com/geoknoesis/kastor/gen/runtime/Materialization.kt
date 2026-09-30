@@ -293,6 +293,10 @@ object OntoMapper {
   private fun loadWrapperClass(type: Class<*>) {
     // Try the live-wrapper class first (interface + delegate pattern).
     tryLoad("${type.name}$WRAPPER_SUFFIX", type.classLoader)
+    // A nested interface `Outer$Inner` has the top-level wrapper `Outer_InnerWrapper`.
+    if (!registry.containsKey(type) && '$' in type.name) {
+      tryLoad("${type.name.replace('$', '_')}$WRAPPER_SUFFIX", type.classLoader)
+    }
     // If still unregistered, try the data-class factory (eager-projection pattern).
     if (!registry.containsKey(type)) {
       tryLoad("${type.name}$FACTORY_SUFFIX", type.classLoader)

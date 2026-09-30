@@ -43,14 +43,17 @@ private val CLEAR_OBJECTS = MemberName(RUNTIME, "clearPredicateObjects")
 internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger: KSPLogger) {
 
   fun generateWrapper(classModel: ClassModel): FileSpec {
-    val wrapperName = "${classModel.simpleName}Wrapper"
+    // A nested interface (`Outer.Inner`) gets a top-level `Outer_InnerWrapper`, the name OntoMapper looks up for the
+    // binary name `Outer$Inner`.
+    val nesting = classModel.qualifiedName.removePrefix("${classModel.packageName}.").split('.')
+    val wrapperName = nesting.joinToString("_") + "Wrapper"
     val properties = classModel.properties.sortedBy { it.predicateIri }
 
     val fileBuilder = FileSpec.builder(classModel.packageName, wrapperName)
       .addFileComment("GENERATED FILE - DO NOT EDIT")
 
     val knownIris = properties.map { it.predicateIri }.distinct().map { CodeBlock.of("%T(%S)", IRI, it) }.joinToCode(", ")
-    val domainInterface = ClassName(classModel.packageName, classModel.simpleName)
+    val domainInterface = ClassName(classModel.packageName, nesting)
     val classBuilder = TypeSpec.classBuilder(wrapperName)
       .addModifiers(INTERNAL)
       .primaryConstructor(

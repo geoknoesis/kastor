@@ -193,6 +193,17 @@ public class OntoMapperProcessor(
     val returnType = property.type.resolve()
     val isList = returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List"
     val elementDeclaration = (if (isList) returnType.arguments.firstOrNull()?.type?.resolve() else returnType)?.declaration
+    val container = listOf(returnType.declaration, elementDeclaration)
+      .firstOrNull { RdfMemberTypes.isUnsupportedContainer(it?.qualifiedName?.asString()) }
+    if (container != null) {
+      logger.error(
+        "@Rdf member '${property.simpleName.asString()}' of ${property.parentDeclaration?.qualifiedName?.asString()} has type " +
+          "$returnType; generated wrappers support multi-valued members only as List<…> of a literal, enum, RDF term " +
+          "or @Rdf type. Declare it as List<…> (use .toSet() at call sites if set semantics are needed).",
+        property,
+      )
+      return null
+    }
     val elementName = RdfMemberTypes.normalize(elementDeclaration?.qualifiedName?.asString())
     val kotlinType = if (isList) "List<$elementName>" else elementName
     val enumKind = (elementDeclaration as? KSClassDeclaration)?.let(::enumKindOf)
