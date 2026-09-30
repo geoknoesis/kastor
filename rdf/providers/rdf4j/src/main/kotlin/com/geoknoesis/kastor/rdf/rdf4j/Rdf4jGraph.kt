@@ -353,13 +353,21 @@ internal class Rdf4jGraph(
     /**
      * Agrees with [getTriples]: statements with RDF-star subjects count their extra `rdf:reifies` triples.
      *
-     * When the store cannot contain quoted-triple subjects (native stores) or the repository tracks that none exist,
-     * this is RDF4J's own statement count for the context; otherwise the statements are counted in one pass, converting
-     * only those that involve quoted subjects or reifier blank nodes.
+     * RDF4J's own statement count for the context is used when the store cannot contain quoted-triple subjects
+     * (native stores) or the repository tracks that none exist, and reads are strict or every stored statement is known
+     * to be convertible (lenient repositories created by a factory method and never changed by SPARQL `UPDATE`).
+     *
+     * The statements are counted in one pass (converting only those that involve quoted subjects or reifier blank
+     * nodes, or every statement for a lenient read) in the remaining cases:
+     * - inference repositories: RDF4J's count excludes inferred statements, which reads include;
+     * - stores that may hold quoted-triple subjects, or whose content is not tracked (wrapped, externally created
+     *   stores, or a tracked store right after a SPARQL update that may have created them, until one scan re-derives
+     *   the state): `rdf:reifies` triples are synthesized and may coincide with stored ones;
+     * - lenient reads over wrapped stores or after a SPARQL update: unconvertible statements are not counted.
      */
     override fun size(): Int = repo.withConnection { conn ->
         val level = repo.quotedSubjects(conn)
-        if (!repo.inference && !repo.lenientRead && level == QuotedLevel.NONE) {
+        if (!repo.inference && (!repo.lenientRead || repo.allStatementsConvertible) && level == QuotedLevel.NONE) {
             return@withConnection Math.toIntExact(conn.size(context))
         }
         var plain = 0L

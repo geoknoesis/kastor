@@ -115,6 +115,21 @@ class Rdf4jGraphOperationCountTest {
     }
 
     @Test
+    fun `size of a lenient factory store without RDF-star subjects uses the store count`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.lenient().use {
+            load(it)
+            Rdf4jProvider().parseDataset(it, "<http://example.org/x> <http://example.org/p> \"parsed\"@en .".byteInputStream(), "TURTLE")
+            counting.iterated.set(0)
+            assertEquals(size + 1, it.defaultGraph.size())
+            assertEquals(0, counting.iterated.get(), "size() must not iterate statements")
+            // A SPARQL update may write statements Kastor cannot represent: from then on size() counts convertible ones.
+            it.update(UpdateQuery("INSERT DATA { <http://example.org/y> <http://example.org/p> \"u\" }"))
+            assertEquals(size + 2, it.defaultGraph.size())
+        }
+    }
+
+    @Test
     fun `a SPARQL update that cannot create quoted subjects does not force a rescan`() {
         val (repo, counting) = counted(MemoryStore(), "memory")
         repo.use {

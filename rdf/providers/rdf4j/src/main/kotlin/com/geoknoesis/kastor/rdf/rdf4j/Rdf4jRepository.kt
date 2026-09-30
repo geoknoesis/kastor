@@ -94,6 +94,16 @@ class Rdf4jRepository(
      */
     @Volatile private var tripleValuesMayExist = false
 
+    /** Set once a SPARQL update ran: it may have written statements that are not valid Kastor terms. */
+    @Volatile private var unvalidatedWrites = false
+
+    /**
+     * True when every statement is known to convert to Kastor terms, so a lenient read skips nothing: the repository
+     * is tracked (created by a factory method, changed only through this repository) and has only been written through
+     * the graph API and the (validating) parsers, not through SPARQL updates.
+     */
+    internal val allStatementsConvertible: Boolean get() = trackQuotedSubjects && !unvalidatedWrites
+
     /** Records a write of a triple value (e.g. a triple-term object), see [tripleValuesMayExist]. */
     internal fun noteTripleValue() {
         tripleValuesMayExist = true
@@ -559,6 +569,7 @@ class Rdf4jRepository(
             val startTime = System.currentTimeMillis()
             // An update may create quoted-triple subjects (RDF-star syntax, TRIPLE(), LOAD or SERVICE data, or moving
             // stored triple terms into subject position).
+            unvalidatedWrites = true
             val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
             // The update may remove the statements implying an explicit rdf:reifies triple; store those triples first.
