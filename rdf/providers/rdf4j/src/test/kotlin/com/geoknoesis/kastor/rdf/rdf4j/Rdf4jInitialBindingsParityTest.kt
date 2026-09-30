@@ -1,5 +1,7 @@
 package com.geoknoesis.kastor.rdf.rdf4j
 
+import com.geoknoesis.kastor.rdf.BlankNode
+import com.geoknoesis.kastor.rdf.Direction
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
@@ -8,6 +10,8 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfRepository
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.TrueLiteral
 import com.geoknoesis.kastor.rdf.TypedLiteral
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
@@ -15,14 +19,16 @@ import com.geoknoesis.kastor.rdf.sparql.internal.SparqlLexical
 import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
 /**
- * `Rdf4jRepository.withSelectRows(query, bindings, timeout, consume)` applies IRI and literal bindings with the
- * shared `SparqlInitialBindings` substitution, so it returns the same rows as the Jena provider (Jena's
- * `substitution`) for the same data and bindings. Cases ported from `InitialBindingsJenaParityTest` (`:rdf:sparql`).
+ * Both providers implement one initial-bindings contract (`SparqlInitialBindings`): for the same data, query and
+ * bindings, `withSelectRows(query, bindings, timeout, consume)` returns the same rows, or fails with the same exception
+ * type, on RDF4J (shared text substitution, native `setBinding` for terms SPARQL text cannot spell) and on Jena
+ * (Jena's `substitution`, after the same validation). Every case runs against both providers.
+ * Cases ported from `InitialBindingsJenaParityTest` (`:rdf:sparql`).
  */
 class Rdf4jInitialBindingsParityTest {
 
@@ -55,6 +61,25 @@ class Rdf4jInitialBindingsParityTest {
         assertEquals(expected, rows(rdf4j, query, bindings), name)
     }
 
+    /** Rows with blank nodes replaced by a placeholder (their labels differ between stores), or the exception type. */
+    private fun outcome(repo: RdfRepository, query: String, bindings: Map<String, RdfTerm>): Any = try {
+        rows(repo, query, bindings).map { row -> row.mapValues { (_, term) -> if (term is BlankNode) "_:bnode" else term } }
+    } catch (e: Throwable) {
+        // Errors too: an engine assertion must show up as a mismatch, not abort the comparison.
+        e.javaClass
+    }
+
+    /** Runs [query] on both providers, with bindings built per repository by [bindings], and asserts the same outcome. */
+    private fun assertSameOutcome(name: String, query: String, bindings: (RdfRepository) -> Map<String, RdfTerm>): Any {
+        val expected = outcome(jena, query, bindings(jena))
+        assertEquals(expected, outcome(rdf4j, query, bindings(rdf4j)), name)
+        return expected
+    }
+
+    private fun assertBothReject(name: String, query: String, bindings: (RdfRepository) -> Map<String, RdfTerm>) {
+        assertEquals(IllegalArgumentException::class.java, assertSameOutcome(name, query, bindings), name)
+    }
+
     @Test
     fun `nested aggregates keep sub-select scoping`() {
         assertSameAsJena(
@@ -62,13 +87,10 @@ class Rdf4jInitialBindingsParityTest {
             "SELECT ?s ?c WHERE { ?s <urn:l> ?l { SELECT ?s (COUNT(*) AS ?c) WHERE { { SELECT ?s WHERE { ?s <urn:p> ?o } } } GROUP BY ?s } }",
             mapOf("s" to a),
         )
-        assertThrows(IllegalArgumentException::class.java) {
-            rows(
-                rdf4j,
-                "SELECT ?s ?c WHERE { ?s <urn:l> ?l { SELECT (COUNT(*) AS ?c) WHERE { { SELECT ?s WHERE { ?s <urn:p> ?o } } } } }",
-                mapOf("s" to a),
-            )
-        }
+        assertBothReject(
+            "bound variable local to a sub-select",
+            "SELECT ?s ?c WHERE { ?s <urn:l> ?l { SELECT (COUNT(*) AS ?c) WHERE { { SELECT ?s WHERE { ?s <urn:p> ?o } } } } }",
+        ) { mapOf("s" to a) }
     }
 
     @Test
@@ -148,8 +170,66 @@ class Rdf4jInitialBindingsParityTest {
             "SELECT ?o WHERE { ?x <urn:p> ?o { SELECT ?o WHERE { ?s <urn:p> ?o } } }",
         )
         for (query in rejected) {
-            assertThrows(IllegalArgumentException::class.java, { rows(rdf4j, query, mapOf("s" to a)) }, query)
+            assertBothReject(query, query) { mapOf("s" to a) }
+            // The same contract holds for terms RDF4J binds natively (blank nodes).
+            assertBothReject("blank node: $query", query) { mapOf("s" to blankSubject(it)) }
         }
+        assertBothReject("not a SELECT query", "ASK { ?s <urn:p> ?o }") { mapOf("s" to a) }
+    }
+
+    /** The blank node `[] <urn:bn> 7` of [repo] (blank node labels are store-specific). */
+    private fun blankSubject(repo: RdfRepository): RdfTerm =
+        repo.withSelectRows(SparqlSelectQuery("SELECT ?b WHERE { ?b <urn:bn> 7 }"), emptyMap(), Duration.ofSeconds(30)) { rows ->
+            rows.single().get("b")!!
+        }
+
+    private val tripleTerm = TripleTerm(RdfTriple(a, Iri("urn:p"), TypedLiteral("1", XSD.integer)))
+    private val directional = LangString("x", "ar", Direction.RTL)
+
+    init {
+        for (repo in listOf(rdf4j, jena)) {
+            repo.editDefaultGraph().addTriples(
+                listOf(
+                    RdfTriple(BlankNode("n1"), Iri("urn:bn"), TypedLiteral("7", XSD.integer)),
+                    RdfTriple(BlankNode("n1"), Iri("urn:bp"), TypedLiteral("5", XSD.integer)),
+                    RdfTriple(Iri("urn:r"), Iri("urn:reif"), tripleTerm),
+                    RdfTriple(Iri("urn:d"), Iri("urn:dl"), directional),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `terms that SPARQL text cannot spell follow the same contract`() {
+        val cases = listOf<Pair<String, (RdfRepository) -> Map<String, RdfTerm>>>(
+            "blank node" to { repo -> mapOf("s" to blankSubject(repo)) },
+            "triple term" to { _ -> mapOf("o" to tripleTerm) },
+            "directional language string" to { _ -> mapOf("o" to directional) },
+        )
+        val queries = listOf(
+            "SELECT ?s ?o WHERE { ?s ?p ?o }",
+            "SELECT * WHERE { ?s ?p ?o }",
+            "SELECT ?s (COUNT(*) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?s",
+            "SELECT ?s ?o WHERE { ?s ?p ?o FILTER(BOUND(?o) && BOUND(?s)) }",
+            "SELECT ?s ?o WHERE { { SELECT ?s ?o WHERE { ?s ?p ?o } } }",
+            "SELECT ?s ?o WHERE { ?s ?p ?o } ORDER BY ?o LIMIT 1",
+            "SELECT ?x WHERE { ?x <urn:q> 9 OPTIONAL { ?s ?p ?o } }",
+            "SELECT ?s ?x WHERE { ?s ?p ?x FILTER(?x = ?o || STR(?s) = \"urn:c\") }",
+            "SELECT ?s ?x WHERE { ?s ?p ?x FILTER(sameTerm(?x, ?o)) }",
+            "SELECT ?s ?x WHERE { { ?s <urn:q> ?x } UNION { ?s ?p ?x FILTER(sameTerm(?x, ?o)) } }",
+            "SELECT ?o (COUNT(*) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?o HAVING(COUNT(?o) > 0)",
+            "SELECT ?s ?o WHERE { ?s ?p ?o FILTER EXISTS { ?s ?p ?o } }",
+            "SELECT ?s ?o ?same WHERE { ?s ?p ?o BIND(sameTerm(?o, ?o) AS ?same) }",
+        )
+        val mismatches = ArrayList<String>()
+        for ((kind, bindings) in cases) {
+            for (query in queries) {
+                val expected = outcome(jena, query, bindings(jena))
+                val actual = outcome(rdf4j, query, bindings(rdf4j))
+                if (expected != actual || expected !is List<*>) mismatches.add("$kind: $query\n  jena:  $expected\n  rdf4j: $actual")
+            }
+        }
+        assertTrue(mismatches.isEmpty(), mismatches.joinToString("\n"))
     }
 
     /**

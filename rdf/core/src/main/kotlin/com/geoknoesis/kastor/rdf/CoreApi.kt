@@ -28,7 +28,17 @@ interface SparqlQueryable : Closeable {
     /** Consume rows inside their resource scope; do not retain the sequence. */
     fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T =
         consume(select(query).asSequence())
-    /** Execute with real initial bindings and a provider-enforced query timeout. */
+    /**
+     * Execute with real initial bindings and a provider-enforced query timeout.
+     *
+     * Every provider applies the same contract, SPARQL substitution semantics: each bound variable behaves as if its
+     * value were written in the query in its place (restricting the query before aggregation, LIMIT and FILTER), a
+     * bound variable listed in the projection is bound in every row, `SELECT *` does not return bound variables, and
+     * `BOUND(?v)` is true. A query that is not a SELECT, that assigns a bound variable (`BIND(... AS ?v)`,
+     * `(expr AS ?v)`, `VALUES ?v`), or that uses it inside a sub-select that does not project it is rejected with
+     * [IllegalArgumentException]. This holds for every kind of term, including blank nodes, triple terms and
+     * directional language strings.
+     */
     fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T =
         throw UnsupportedOperationException("This provider does not support bound, timed queries")

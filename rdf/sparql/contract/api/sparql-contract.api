@@ -87,6 +87,8 @@ public final class com/geoknoesis/kastor/rdf/UpdateQuery {
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/sparql/internal/SparqlInitialBindings;
 	public final fun apply (Ljava/lang/String;Ljava/util/Map;)Ljava/lang/String;
+	public final fun apply (Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;)Ljava/lang/String;
+	public final fun validate (Ljava/lang/String;Ljava/util/Set;)V
 }
 
 public final class com/geoknoesis/kastor/rdf/sparql/internal/SparqlLexical {

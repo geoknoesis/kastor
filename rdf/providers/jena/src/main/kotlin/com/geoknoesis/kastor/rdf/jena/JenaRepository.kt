@@ -445,7 +445,21 @@ class JenaRepository private constructor(
         }
     }
 
+    /**
+     * Timed SELECT with initial bindings, applied with Jena's `substitution`. The query is first checked against the
+     * initial-bindings contract shared by every provider ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]):
+     * a query that is not a SELECT, that assigns a bound variable (`BIND(... AS ?v)`, `(expr AS ?v)`, `VALUES ?v`), or
+     * that uses it inside a sub-select that does not project it is rejected with [IllegalArgumentException], as on
+     * the RDF4J provider and the SPARQL endpoint adapter.
+     */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
+        consume: (Sequence<BindingSet>) -> T): T {
+        // Outside queryOperation: a query the contract rejects is the caller's error (IllegalArgumentException).
+        com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.validate(query.sparql, bindings.keys)
+        return withSelectRowsSubstituted(query, bindings, timeout, consume)
+    }
+
+    private fun <T> withSelectRowsSubstituted(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T = withRead {
         val exec = queryOperation(query.sparql) {
             val initial = org.apache.jena.query.QuerySolutionMap()
