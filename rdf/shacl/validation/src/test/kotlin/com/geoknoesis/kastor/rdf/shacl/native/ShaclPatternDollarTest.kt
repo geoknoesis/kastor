@@ -17,8 +17,8 @@ class ShaclPatternDollarTest {
     private fun matches(pattern: String, flags: String?, value: String) = compileShaclPattern(pattern, flags).containsMatchIn(value)
 
     private val nel = "\u0085"
-    private val lineSeparator = " "
-    private val paragraphSeparator = " "
+    private val lineSeparator = "\u2028"
+    private val paragraphSeparator = "\u2029"
     private val javaOnlyLineTerminators = listOf("\r", nel, lineSeparator, paragraphSeparator)
 
     // --- $ ---------------------------------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ class ShaclPatternDollarTest {
         assertTrue(matches("^\\s+$", null, " \t\n\r"))
         assertFalse(matches("^\\s$", null, "\u000B"))
         assertFalse(matches("^\\s$", null, "\u000C"))
-        assertFalse(matches("^\\s$", null, " "))
+        assertFalse(matches("^\\s$", null, "\u00A0"))
         assertTrue(matches("^\\S$", null, "\u000B"))
         assertFalse(matches("^\\S$", null, " "))
     }
