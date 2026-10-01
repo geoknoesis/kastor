@@ -22,10 +22,11 @@ import org.slf4j.LoggerFactory
  *
  * The native engine has no SPARQL processor of its own. When the data graph is the default graph of a
  * SPARQL-capable dataset supplied by the caller (e.g. an [RdfRepository] passed to `validateDataset`) **that has no
- * named graphs**, queries run against it **in place** (the provider's read scope), never copying or closing it. A
- * query without a dataset clause sees an implementation-defined default graph (RDF4J: the union of all contexts;
- * Jena: the default graph only), so a dataset with named graphs is not queried in place: SHACL-SPARQL constraints
- * must see exactly the data graph the other constraints validate. Otherwise a SPARQL-capable Kastor provider with an
+ * named graphs**, queries run against it **in place** (the provider's read scope), never copying or closing it. The
+ * Kastor providers read the default graph only outside `GRAPH` (Jena and RDF4J alike), but a constraint query that
+ * uses `GRAPH`, or a third-party provider with a union default graph, would still read named graphs, so a dataset
+ * with named graphs is not queried in place: SHACL-SPARQL constraints must see exactly the data graph the other
+ * constraints validate. Otherwise a SPARQL-capable Kastor provider with an
  * in-memory variant (`rdf-jena` or `rdf-rdf4j`) is required **at runtime**, and the data graph is copied into a
  * private repository once per validation run, shared by every SPARQL constraint of that run.
  *
