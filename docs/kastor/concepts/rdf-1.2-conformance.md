@@ -17,7 +17,7 @@ For Gradle filtering or tooling: fixture-only tests use tag **`conformance-smoke
 
 ## What the W3C corpus covers
 
-Each approved row under [`w3c/rdf-tests` RDF 12](https://github.com/w3c/rdf-tests/tree/main/rdf12) becomes a JUnit 5 dynamic test:
+Each approved row under [`w3c/rdf-tests` RDF 12](https://github.com/w3c/rdf-tests/tree/main/rdf12) becomes a JUnit dynamic test:
 
 | Suite | Manifests under `test-data/rdf12/` | Test kinds |
 | ----- | ---------------------------------- | ---------- |
