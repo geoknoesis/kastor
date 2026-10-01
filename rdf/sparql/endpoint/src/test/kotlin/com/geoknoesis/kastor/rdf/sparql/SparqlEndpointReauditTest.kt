@@ -196,7 +196,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `initial bindings that cannot be substituted are rejected before sending`() = TestEndpoint { exchange, _ ->
+    fun `initial bindings that cannot be substituted are rejected before sending`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(0))
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -249,7 +249,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `same-origin redirects keep method body and headers and POST is never downgraded`() = TestEndpoint { exchange, request ->
+    fun `same-origin redirects keep method body and headers and POST is never downgraded`(): Unit = TestEndpoint { exchange, request ->
         when (request.path) {
             "/sparql" -> exchange.redirect(308, "/moved")
             "/found" -> exchange.redirect(302, "/moved")
@@ -287,7 +287,7 @@ class SparqlEndpointReauditTest {
     // ------------------------------------------------------------------ timeouts
 
     @Test
-    fun `request deadline aborts a stalled fixed-length body`() = TestEndpoint { exchange, _ ->
+    fun `request deadline aborts a stalled fixed-length body`(): Unit = TestEndpoint { exchange, _ ->
         exchange.sendResponseHeaders(200, 1_000)
         exchange.responseBody.write("{\"head\":{".toByteArray())
         exchange.responseBody.flush()
@@ -308,7 +308,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `request timeout covers stream headers but not slow consumers while a per-call timeout covers the whole stream`() = TestEndpoint { exchange, request ->
+    fun `request timeout covers stream headers but not slow consumers while a per-call timeout covers the whole stream`(): Unit = TestEndpoint { exchange, request ->
         if (request.path == "/slow-headers") {
             Thread.sleep(2_000)
             exchange.respond(200, rowsJson(1))
@@ -365,7 +365,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `a failed update is never re-sent automatically`() = TestEndpoint { exchange, request ->
+    fun `a failed update is never re-sent automatically`(): Unit = TestEndpoint { exchange, request ->
         if (request.contentType == "application/sparql-update") {
             // Drop the connection without answering, as a crashing proxy would.
         } else {
@@ -383,7 +383,7 @@ class SparqlEndpointReauditTest {
     // ------------------------------------------------------------------ misc endpoint behaviour
 
     @Test
-    fun `long GET queries fall back to a form POST`() = TestEndpoint { exchange, _ ->
+    fun `long GET queries fall back to a form POST`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         SparqlRepository(SparqlEndpointConfig(endpoint.url, queryMethod = SparqlQueryMethod.GET, maxGetUrlLength = 200)).use { repo ->
@@ -399,7 +399,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `every operation on a closed repository fails the same way`() = TestEndpoint { exchange, _ ->
+    fun `every operation on a closed repository fails the same way`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         val repo = SparqlRepository(endpoint.url)
@@ -539,7 +539,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `graph writes validate every batch before anything is sent`() = TestEndpoint { exchange, request ->
+    fun `graph writes validate every batch before anything is sent`(): Unit = TestEndpoint { exchange, request ->
         if (request.contentType == "application/sparql-update") exchange.respond(200, "") else exchange.respond(200, "{\"boolean\":true}")
     }.use { endpoint ->
         SparqlRepository(SparqlEndpointConfig(endpoint.url, insertBatchSize = 1)).use { repo ->
@@ -575,24 +575,24 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `repositories with the same connect timeout share one HTTP client until the last one is closed`() = TestEndpoint { exchange, _ ->
-        exchange.respond(200, rowsJson(1))
-    }.use { endpoint ->
-        val connectTimeout = Duration.ofMillis(12_345)
-        val before = SparqlRepository.sharedHttpClientCount()
-        val first = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout))
-        val second = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout, readTimeout = Duration.ofSeconds(5)))
-        assertEquals(before + 1, SparqlRepository.sharedHttpClientCount())
-        first.close()
-        first.close()
-        assertEquals(1, second.select(selectAll).count())
-        second.close()
-        assertEquals(before, SparqlRepository.sharedHttpClientCount())
-        assertThrows(IllegalStateException::class.java) { second.select(selectAll) }
+    fun `repositories with the same connect timeout share one HTTP client until the last one is closed`() {
+        TestEndpoint { exchange, _ -> exchange.respond(200, rowsJson(1)) }.use { endpoint ->
+            val connectTimeout = Duration.ofMillis(12_345)
+            val before = SparqlRepository.sharedHttpClientCount()
+            val first = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout))
+            val second = SparqlRepository(SparqlEndpointConfig(endpoint.url, connectTimeout = connectTimeout, readTimeout = Duration.ofSeconds(5)))
+            assertEquals(before + 1, SparqlRepository.sharedHttpClientCount())
+            first.close()
+            first.close()
+            assertEquals(1, second.select(selectAll).count())
+            second.close()
+            assertEquals(before, SparqlRepository.sharedHttpClientCount())
+            assertThrows(IllegalStateException::class.java) { second.select(selectAll) }
+        }
     }
 
     @Test
-    fun `parallel streams each enforce their own read timeout`() = TestEndpoint { exchange, request ->
+    fun `parallel streams each enforce their own read timeout`(): Unit = TestEndpoint { exchange, request ->
         if (request.path == "/stall") {
             exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
             exchange.sendResponseHeaders(200, 0)
@@ -625,7 +625,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `streamed rows are parsed across buffer boundaries`() = TestEndpoint { exchange, _ ->
+    fun `streamed rows are parsed across buffer boundaries`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(5_000) { "v\\\"$it\\\\ é€😀" })
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -658,7 +658,7 @@ class SparqlEndpointReauditTest {
 
     @Test
     @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `a short streaming request timeout also bounds the wait for response headers`() = withSilentServer { url ->
+    fun `a short streaming request timeout also bounds the wait for response headers`(): Unit = withSilentServer { url ->
         val config = SparqlEndpointConfig(
             url,
             readTimeout = Duration.ofSeconds(30),
@@ -685,7 +685,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `an oversized result row fails even when streamed responses are unbounded`() = TestEndpoint { exchange, request ->
+    fun `an oversized result row fails even when streamed responses are unbounded`(): Unit = TestEndpoint { exchange, request ->
         when (request.path) {
             "/head" -> exchange.respond(200, "{\"head\":{\"vars\":[\"${"x".repeat(5_000)}\"]},\"results\":{\"bindings\":[]}}")
             else -> exchange.respond(200, rowsJson(3) { if (it == 1) "y".repeat(5_000) else "ok" })
@@ -723,7 +723,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `a success response that is not SPARQL JSON fails with its content type`() = TestEndpoint { exchange, request ->
+    fun `a success response that is not SPARQL JSON fails with its content type`(): Unit = TestEndpoint { exchange, request ->
         when (request.path) {
             "/html" -> exchange.respond(200, "<html><body>login</body></html>", "text/html; charset=utf-8")
             "/xml" -> exchange.respond(200, "<sparql/>", "application/sparql-results+xml")
@@ -748,7 +748,7 @@ class SparqlEndpointReauditTest {
     }
 
     @Test
-    fun `a graph size beyond Int range fails as a query error`() = TestEndpoint { exchange, _ ->
+    fun `a graph size beyond Int range fails as a query error`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(
             200,
             "{\"head\":{\"vars\":[\"count\"]},\"results\":{\"bindings\":[{\"count\":{\"type\":\"literal\"," +

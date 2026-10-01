@@ -49,7 +49,7 @@ class BindingTypedAccessAndFlowTest {
     }
 
     @Test
-    fun `SparqlQueryResult asFlow validates each row`() = runBlocking {
+    fun `SparqlQueryResult asFlow validates each row`(): Unit = runBlocking {
         val rows = listOf(
             MapBindingSet(
                 mapOf(
@@ -66,18 +66,18 @@ class BindingTypedAccessAndFlowTest {
     }
 
     @Test
-    fun `asFlow fails when a row lacks a required variable`() = runBlocking {
+    fun `asFlow fails when a row lacks a required variable`() {
         val rows = listOf(
             MapBindingSet(mapOf("s" to Iri("http://example.org/s"))),
         )
         val result = sparqlQueryResult(rows)
         assertThrows<IllegalStateException> {
-            result.asFlow("s", "p").toList()
+            runBlocking { result.asFlow("s", "p").toList() }
         }
     }
 
     @Test
-    fun `parseStreamingFlow emits triples`() = runBlocking {
+    fun `parseStreamingFlow emits triples`(): Unit = runBlocking {
         val nt = """
             <http://a> <http://b> "1" .
             <http://a> <http://c> "2" .
@@ -90,7 +90,7 @@ class BindingTypedAccessAndFlowTest {
     }
 
     @Test
-    fun `Iterable asRdfTriplesFlow`() = runBlocking {
+    fun `Iterable asRdfTriplesFlow`(): Unit = runBlocking {
         val t = RdfTriple(Iri("http://a"), Iri("http://b"), string("c"))
         val out = listOf(t).asRdfTriplesFlow().toList()
         assertEquals(listOf(t), out)

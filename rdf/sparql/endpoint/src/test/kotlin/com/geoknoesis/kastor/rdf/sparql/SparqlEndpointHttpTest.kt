@@ -108,7 +108,7 @@ class SparqlEndpointHttpTest {
     private val selectAll = SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }")
 
     @Test
-    fun `HTTP error status and body are surfaced`() = TestEndpoint { exchange, _ ->
+    fun `HTTP error status and body are surfaced`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(503, "backend exploded: details", "text/plain")
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -125,7 +125,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `buffered responses are capped while streamed rows use their own limit`() = TestEndpoint { exchange, _ ->
+    fun `buffered responses are capped while streamed rows use their own limit`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(200))
     }.use { endpoint ->
         val config = SparqlEndpointConfig(endpoint.url, maxResponseBytes = 1_000)
@@ -141,7 +141,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `overall deadline aborts a response that keeps trickling within the read timeout`() = TestEndpoint { exchange, _ ->
+    fun `overall deadline aborts a response that keeps trickling within the read timeout`(): Unit = TestEndpoint { exchange, _ ->
         exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
         exchange.sendResponseHeaders(200, 0)
         exchange.responseBody.use { out ->
@@ -163,7 +163,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `result terms keep language datatype and blank node identifiers`() = TestEndpoint { exchange, _ ->
+    fun `result terms keep language datatype and blank node identifiers`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(
             200,
             """{"head":{"vars":["l","t","b","p","u"]},"results":{"bindings":[{""" +
@@ -185,7 +185,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `exceptions thrown by the row consumer propagate unchanged`() = TestEndpoint { exchange, _ ->
+    fun `exceptions thrown by the row consumer propagate unchanged`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(3))
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo ->
@@ -213,7 +213,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `custom headers credentials and request methods are applied`() = TestEndpoint { exchange, _ ->
+    fun `custom headers credentials and request methods are applied`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         val authority = endpoint.url.removePrefix("http://")
@@ -242,7 +242,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `connections are kept alive across requests`() = TestEndpoint { exchange, _ ->
+    fun `connections are kept alive across requests`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, """{"head":{},"boolean":true}""")
     }.use { endpoint ->
         SparqlRepository(endpoint.url).use { repo -> repeat(3) { assertTrue(repo.ask(SparqlAskQuery("ASK {}"))) } }
@@ -319,7 +319,7 @@ class SparqlEndpointHttpTest {
     }
 
     @Test
-    fun `provider passes options and reports the same truthful capabilities as the repository`() = TestEndpoint { exchange, _ ->
+    fun `provider passes options and reports the same truthful capabilities as the repository`(): Unit = TestEndpoint { exchange, _ ->
         exchange.respond(200, rowsJson(1))
     }.use { endpoint ->
         val provider = SparqlProvider()
