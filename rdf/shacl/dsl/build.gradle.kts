@@ -6,6 +6,8 @@ dependencies {
   api(project(":rdf:core"))
   api(project(":rdf:sparql-lang"))
   testRuntimeOnly(project(":rdf:jena"))
+  // DSL-built shapes graphs are validated with the native engine in tests.
+  testImplementation(project(":rdf:shacl-validation"))
 }
 
 publishing {
