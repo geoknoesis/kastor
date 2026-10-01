@@ -41,13 +41,17 @@ enum class SparqlUpdateMethod {
  *   streamed to the consumer; `null` (default) means unbounded.
  * @property connectTimeout TCP connect timeout.
  * @property readTimeout maximum wait for any single read of the response body. When
- *   [requestTimeout] is `null` it also bounds the wait for the response headers.
+ *   [requestTimeout] is `null` it also bounds the wait for the response headers: once for the whole
+ *   request, however many redirects are followed (not once per redirect).
  * @property requestTimeout deadline for one request. For buffered calls (select, ASK, UPDATE) it
  *   covers the whole exchange including reading the response. For streamed rows
  *   ([SparqlRepository.withSelectRows] without a per-call timeout) it only covers the time until the
- *   response headers arrive, so a slow row consumer is never cut off by it. `null` disables the
- *   deadline (the wait for response headers is then bounded by [readTimeout]). A per-call timeout
- *   passed to `withSelectRows(query, bindings, timeout)` replaces it and bounds the whole call.
+ *   response headers arrive (all redirects included), so a slow row consumer is never cut off by
+ *   it. `null` disables the deadline (the wait for response headers is then bounded by
+ *   [readTimeout]). A per-call timeout passed to `withSelectRows(query, bindings, timeout)` replaces
+ *   it and bounds the whole call. The adapter measures these waits itself and sets no timer on the
+ *   HTTP request, so the behaviour does not depend on how the JDK's HTTP client interprets a request
+ *   timeout (from JDK 26 it also covers reading the response body).
  * @property headers extra HTTP headers sent with every request (e.g. API keys). Never sent to a
  *   different origin after a redirect.
  * @property username HTTP Basic user; requires [password]. A warning is logged once per endpoint
@@ -80,6 +84,14 @@ enum class SparqlUpdateMethod {
  *   Default 4 Mi characters. A row is decoded once, straight from the stream, so the heap it needs
  *   is that of its decoded strings (up to two bytes per character, 8 MB at the default) plus a
  *   buffer of similar size while its largest string is being read.
+ * @property strictContentType whether a successful SELECT/ASK response must declare a JSON media
+ *   type (`application/sparql-results+json`, `application/json`, any `+json` type; `text/plain` is
+ *   also accepted for ASK; a response without a Content-Type is always parsed). Default `true`: any
+ *   other type, such as the HTML of a login page, fails with
+ *   [com.geoknoesis.kastor.rdf.RdfQueryException] naming the type. Set it to `false` for a legacy
+ *   server that labels its JSON results `text/json`, `application/javascript` or similar: the
+ *   Content-Type is then ignored and the body is parsed as SPARQL JSON results (a body that is not
+ *   such JSON still fails, as a result-format error).
  */
 data class SparqlEndpointConfig(
     val endpoint: String,
@@ -101,6 +113,7 @@ data class SparqlEndpointConfig(
     val maxGetUrlLength: Int = DEFAULT_MAX_GET_URL_LENGTH,
     val maxBlankNodeComponentTriples: Int = DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES,
     val maxResultRowChars: Int = DEFAULT_MAX_RESULT_ROW_CHARS,
+    val strictContentType: Boolean = true,
 ) {
     init {
         HttpTarget.parse(endpoint)
@@ -133,7 +146,7 @@ data class SparqlEndpointConfig(
             "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize, " +
             "streamingRequestTimeout=$streamingRequestTimeout, followCrossOriginRedirects=$followCrossOriginRedirects, " +
             "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples, " +
-            "maxResultRowChars=$maxResultRowChars)"
+            "maxResultRowChars=$maxResultRowChars, strictContentType=$strictContentType)"
 
     companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024 * 1024
@@ -156,7 +169,8 @@ data class SparqlEndpointConfig(
          * `streamingRequestTimeoutMillis`, `username`, `password`, `queryMethod`
          * (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`), `insertBatchSize`,
          * `followCrossOriginRedirects` (`true`/`false`), `maxRedirects`, `maxGetUrlLength`,
-         * `maxBlankNodeComponentTriples`, `maxResultRowChars`, and `header.<Name>` for custom headers.
+         * `maxBlankNodeComponentTriples`, `maxResultRowChars`, `strictContentType` (`true`/`false`),
+         * and `header.<Name>` for custom headers.
          * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
          * accept `none` for unbounded.
          */
@@ -201,6 +215,7 @@ data class SparqlEndpointConfig(
                 maxBlankNodeComponentTriples = long("maxBlankNodeComponentTriples")?.let(Math::toIntExact)
                     ?: defaults.maxBlankNodeComponentTriples,
                 maxResultRowChars = long("maxResultRowChars")?.let(Math::toIntExact) ?: defaults.maxResultRowChars,
+                strictContentType = boolean("strictContentType", defaults.strictContentType),
             )
         }
 

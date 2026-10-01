@@ -145,20 +145,21 @@ class SparqlEndpointHttpTest {
         exchange.responseHeaders.add("Content-Type", "application/sparql-results+json")
         exchange.sendResponseHeaders(200, 0)
         exchange.responseBody.use { out ->
-            repeat(100) {
+            // Keeps trickling for far longer than any slack: only the deadline can end the call.
+            repeat((STALL_MILLIS / 100).toInt()) {
                 out.write(' '.code)
                 out.flush()
                 Thread.sleep(100)
             }
         }
     }.use { endpoint ->
-        val config = SparqlEndpointConfig(endpoint.url, readTimeout = Duration.ofSeconds(30), requestTimeout = Duration.ofMillis(700))
+        val deadline = Duration.ofMillis(700)
+        val config = SparqlEndpointConfig(endpoint.url, readTimeout = Duration.ofSeconds(60), requestTimeout = deadline)
         SparqlRepository(config).use { repo ->
             val start = System.nanoTime()
             val e = assertThrows(RdfQueryException::class.java) { repo.select(selectAll) }
-            val elapsedMillis = (System.nanoTime() - start) / 1_000_000
-            assertTrue(elapsedMillis < 5_000, "deadline not enforced, took $elapsedMillis ms")
-            assertTrue(e.message!!.contains("deadline"), e.message)
+            assertTrue(e.message!!.contains("exceeded its 700 ms deadline"), e.message)
+            assertEndedAtLimit(deadline, start, "request deadline")
         }
     }
 
