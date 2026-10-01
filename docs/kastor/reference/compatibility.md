@@ -56,9 +56,9 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| Eclipse RDF4J | 5.3.1 | RDF store and query engine |
+| Eclipse RDF4J | 5.3.2 | RDF store and query engine |
 
-**Compatibility**: Built and tested against RDF4J 5.3.1. Other RDF4J versions are not verified.
+**Compatibility**: Built and tested against RDF4J 5.3.2. Other RDF4J versions are not verified.
 
 #### SPARQL Provider
 
@@ -97,7 +97,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 
 ### RDF4J Provider
 
-| Feature | RDF4J 5.3.1 | Notes |
+| Feature | RDF4J 5.3.2 | Notes |
 |---------|-------------|-------|
 | Memory Store | ✅ | Full support |
 | Native Store | ✅ | Full support |
