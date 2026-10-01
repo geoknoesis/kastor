@@ -24,7 +24,11 @@ internal object KspRunner {
 
     private const val GENERATED = "generated/"
 
-    fun run(provider: SymbolProcessorProvider, sources: Map<String, String>, options: Map<String, String> = emptyMap()): Result {
+    fun run(provider: SymbolProcessorProvider, sources: Map<String, String>, options: Map<String, String> = emptyMap()): Result =
+        run(listOf(provider), sources, options)
+
+    /** Runs several processors in one KSP execution (all rounds), as a consumer applying both would. */
+    fun run(providers: List<SymbolProcessorProvider>, sources: Map<String, String>, options: Map<String, String> = emptyMap()): Result {
         val root = Files.createTempDirectory("kastor-ksp").toFile()
         val src = File(root, "src").apply { mkdirs() }
         sources.forEach { (name, code) -> File(src, name).apply { parentFile.mkdirs(); writeText(code) } }
@@ -55,7 +59,7 @@ internal object KspRunner {
             changedClasses = emptyList()
         }.build()
         val logger = RecordingLogger()
-        val exit = KotlinSymbolProcessing(config, listOf(provider), logger).execute()
+        val exit = KotlinSymbolProcessing(config, providers, logger).execute()
         val generated = kotlinOut.walkTopDown().filter { it.isFile && it.extension == "kt" }
             .associate { GENERATED + it.relativeTo(kotlinOut).invariantSeparatorsPath to it.readText() }
         return Result(exit, logger.errors.toList(), logger.warnings.toList(), sources + generated)
