@@ -1204,9 +1204,33 @@ interface RdfGraph {
  * [modificationStamp] changes (it is never reused for the same graph instance) whenever the content of the graph
  * changes; if two reads on the same instance return the same value, the content was not modified in between. A
  * change of the stamp does not guarantee that the content differs (e.g. a triple added and then removed).
+ *
+ * **Consumers must read the stamp before the content.** The stamp and the content are two separate reads, and the
+ * graph may change between them:
+ *
+ * ```kotlin
+ * val stamp = graph.modificationStamp      // 1. stamp
+ * if (stamp != cached.stamp) {
+ *     cached = Cached(stamp, derive(graph)) // 2. content, stored under the stamp read before it
+ * }
+ * ```
+ *
+ * A change between the two reads then leaves newer content under an older stamp, which only costs a reload on the
+ * next call. In the opposite order (content, then stamp) older content would be stored under the newer stamp and
+ * served as current until the next change: a stale cache hit. To read both atomically, read them inside
+ * [RdfRepository.readTransaction] of the owning repository where the provider holds a lock for it (the memory
+ * provider does).
+ *
+ * Implementations must change the stamp no later than the moment the changed content becomes visible to other
+ * readers, must not reuse a value (also across removal and re-creation of a named graph, and after a rolled back
+ * transaction), and should fail a stamp read where a content read would fail (for example on a closed repository).
  */
 interface VersionedRdfGraph : RdfGraph {
-    /** Monotonically increasing counter of content modifications of this graph instance. */
+    /**
+     * A value that differs from every earlier value of this graph instance once its content has changed. Read it
+     * **before** the content it is meant to describe (see [VersionedRdfGraph]). Only equality is meaningful to
+     * consumers.
+     */
     val modificationStamp: Long
 }
 
