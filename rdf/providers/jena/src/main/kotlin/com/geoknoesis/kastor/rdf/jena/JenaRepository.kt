@@ -38,14 +38,31 @@ import java.util.concurrent.atomic.AtomicLong
  * - concurrent readers **interleave** chunk by chunk instead of waiting for whole result sets;
  * - no worker step runs while caller-supplied code runs, so consumers may freely wait on reads of other threads;
  * - a query **timeout** or an interrupted reader stops the reasoner: store reads check the cancellation of the
- *   step they belong to. A cancelled step may leave the shared goal tables half-updated, so the snapshot's view is
- *   then discarded and rebuilt for later readers.
+ *   step they belong to.
+ *
+ * **Poisoned views.** A step that was cancelled after it started, or that failed, may leave the shared goal tables
+ * half-updated, so the snapshot's view is then *poisoned*:
+ * - it is never handed to another read transaction; later readers get a fresh view of the snapshot;
+ * - every further step on it fails with [RdfInferenceException], whoever the reader is: an iterator that was open
+ *   on the view delivers the results it had already fetched and then fails, it never ends as if the results were
+ *   complete. (The reader whose step was cancelled gets the cancellation itself, as for any query timeout.)
+ * - a read transaction that held the view switches to a fresh view of the same snapshot for its *next* reads (of any
+ *   graph); the iterators it still has open on the poisoned view fail as described above. Retrying the read is safe.
+ *
+ * A step cancelled while it was still queued never ran and does not poison the view.
  *
  * Named graphs are prepared lazily, when a read first touches them. A view is released when a newer snapshot
- * replaces it (after commits) and no read transaction uses it any more, after the view idle timeout (default [DEFAULT_VIEW_IDLE_TIMEOUT]) without readers,
- * or when the repository is closed. A reader whose snapshot cannot be identified (a commit raced with its `begin`)
- * gets a private, uncached lazy view; inside a write transaction the view is built fresh so uncommitted changes are
- * visible.
+ * replaces it (after commits) and no read transaction uses it any more, after the view idle timeout (default
+ * [DEFAULT_VIEW_IDLE_TIMEOUT]) without readers (one cancellable idle check per view), or when the repository is
+ * closed. A reader whose snapshot cannot be identified (a commit raced with its `begin`) gets a private lazy view;
+ * inside a write transaction the view is private too, so uncommitted changes are visible. Private views are kept for
+ * the transaction and, in a write transaction, rebuilt after its next write.
+ *
+ * **Closing.** [close] retires every view and waits up to 10 seconds for the read transactions that still hold
+ * one, so that no worker's read transaction outlives the store. Readers still running at that limit are named in a
+ * WARN log entry; their views are then stopped and their further reads fail with [RdfRepositoryException]
+ * ([RdfErrorCode.REPOSITORY_CLOSED]). Operations started after [close] fail with [IllegalStateException]
+ * ("Repository is closed").
  *
  * Memory use of a view is Jena's own for lazy RDFS inference: the forward deductions (schema-level for the RDFS
  * rules) plus the backward-chaining tables of the goals queried so far in that snapshot, plus at most one chunk of
@@ -96,9 +113,6 @@ class JenaRepository private constructor(
             JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference", viewIdleTimeout)
 
         private const val DEFAULT_GRAPH_KEY = ""
-
-        /** Longest time [close] waits for inference workers (still used by other threads' reads) to stop. */
-        private const val CLOSE_WAIT_SECONDS = 10L
     }
 
     private val viewIdleNanos: Long = viewIdleTimeout.toNanos()
@@ -137,6 +151,18 @@ class JenaRepository private constructor(
     /** Store triples read by inference views so far (diagnostic: views must stream, not drain the store). */
     private val baseReads = AtomicLong()
 
+    /** Test seams of the inference views. */
+    internal val hooks = JenaInferenceHooks()
+
+    /** Transaction-private inference models built so far (diagnostic). */
+    private val privateViewsBuilt = AtomicLong()
+
+    /**
+     * Private inference models of this thread's transaction, by graph key (see [privateView]). Dropped when the
+     * transaction ends and, in a write transaction, by every write.
+     */
+    private val privateViews = ThreadLocal<HashMap<String, Model>?>()
+
     internal fun <T> withRead(block: () -> T): T = inTransaction(ReadWrite.READ, block)
 
     internal fun <T> withWrite(block: () -> T): T = inTransaction(ReadWrite.WRITE, block)
@@ -145,7 +171,15 @@ class JenaRepository private constructor(
         check(!closed.get()) { "Repository is closed" }
         if (dataset.isInTransaction) {
             check(mode != ReadWrite.WRITE || dataset.transactionMode() == ReadWrite.WRITE) { "Cannot write inside a read transaction" }
-            return block()
+            if (mode != ReadWrite.WRITE || !inference) return block()
+            // Every write of a transaction goes through a nested withWrite: the private inference models built
+            // before it are stale afterwards.
+            privateViews.remove()
+            try {
+                return block()
+            } finally {
+                privateViews.remove()
+            }
         }
         val before = generation.get()
         dataset.begin(mode)
@@ -159,8 +193,14 @@ class JenaRepository private constructor(
             throw e
         } finally {
             readSnapshot.remove()
+            privateViews.remove()
             transactionView.get()?.let { transactionView.remove(); it.release() }
-            dataset.end()
+            try {
+                dataset.end()
+            } catch (e: RuntimeException) {
+                // close() gave up waiting for this transaction and closed the store under it: nothing left to end.
+                if (!closed.get()) throw e
+            }
         }
     }
 
@@ -199,13 +239,17 @@ class JenaRepository private constructor(
     /**
      * Read view of [model] (identified by [graphKey]). Must be called inside a transaction.
      * Inference views are shared per snapshot of the current read transaction and prepared per graph on first use;
-     * inside a write transaction a fresh, uncached view is built so uncommitted changes are visible.
+     * inside a write transaction a private view is used so uncommitted changes are visible.
+     *
+     * A read transaction whose shared view was poisoned (see the class documentation) lets go of it here and
+     * continues on a fresh view of its snapshot; whatever it still has open on the poisoned view fails on its
+     * next step.
      */
     internal fun readModel(graphKey: String, model: Model): Model {
         if (!inference) return model
-        if (dataset.transactionMode() == ReadWrite.WRITE) return privateView(model)
+        if (dataset.transactionMode() == ReadWrite.WRITE) return privateView(graphKey, model)
         // Unprovable snapshot: a private lazy view, confined to this thread and never shared.
-        val snapshot = readSnapshot.get() ?: return privateView(model)
+        val snapshot = readSnapshot.get() ?: return privateView(graphKey, model)
         var view = transactionView.get()
         if (view != null && view.poisoned) {
             transactionView.remove()
@@ -213,36 +257,55 @@ class JenaRepository private constructor(
             view = null
         }
         if (view == null) {
-            view = acquireView(snapshot) ?: return privateView(model)
+            view = acquireView(snapshot) ?: return privateView(graphKey, model)
             transactionView.set(view)
         }
         return ModelFactory.createModelForGraph(view.graph(graphKey))
     }
 
-    private fun privateView(model: Model): Model =
-        ModelFactory.createInfModel(
-            org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null),
-            ModelFactory.createModelForGraph(CancellableGraph(model.graph, baseReads)),
-        )
+    /**
+     * Inference model private to the current thread's transaction. It is built once per graph and reused by the
+     * following reads of the transaction; a write transaction drops it at every write (see [inTransaction]), so the
+     * next read sees the uncommitted change.
+     */
+    private fun privateView(graphKey: String, model: Model): Model {
+        val cache = privateViews.get() ?: HashMap<String, Model>().also { privateViews.set(it) }
+        return cache.getOrPut(graphKey) {
+            privateViewsBuilt.incrementAndGet()
+            ModelFactory.createInfModel(
+                org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null),
+                ModelFactory.createModelForGraph(CancellableGraph(model.graph, baseReads) { hooks.onStoreRead() }),
+            )
+        }
+    }
 
     /** The shared view of [snapshot], acquired for the calling transaction; null when none can be opened. */
     private fun acquireView(snapshot: Snapshot): SnapshotView? {
         currentView?.takeIf { it.snapshot.sameAs(snapshot) && it.tryAcquire() }?.let { return it }
-        val (view, replaced) = synchronized(viewLock) {
-            currentView?.takeIf { it.snapshot.sameAs(snapshot) && it.tryAcquire() }?.let { return it }
-            val opened = openView(snapshot) ?: return null
-            opened.tryAcquire()
+        // Opened outside viewLock: starting the worker and beginning its read transaction may block, and commits
+        // (which retire the current view) must not wait for it. Readers racing for the same snapshot may each open
+        // a view; all but the first to publish its view discard theirs.
+        val opened = openView(snapshot) ?: return null
+        var replaced: SnapshotView? = null
+        val view = synchronized(viewLock) {
             val existing = currentView
-            // Never replace the view of a newer snapshot with one opened for an older reader: that one stays
-            // private to its reader and is released when the reader's transaction ends.
-            if (existing == null || !existing.usable() || snapshot.newerThan(existing.snapshot)) {
-                currentView = opened
-                opened to existing
+            if (existing != null && existing.snapshot.sameAs(snapshot) && existing.tryAcquire()) {
+                existing
+            } else if (!opened.tryAcquire()) {
+                null // close() retired it in the meantime
             } else {
-                opened.retire()
-                opened to null
+                // Never replace the view of a newer snapshot with one opened for an older reader: that one stays
+                // private to its reader and is released when the reader's transaction ends.
+                if (existing == null || !existing.usable() || snapshot.newerThan(existing.snapshot)) {
+                    currentView = opened
+                    replaced = existing
+                } else {
+                    opened.retire()
+                }
+                opened
             }
         }
+        if (view !== opened) opened.retire() // no holders: stops at once
         replaced?.retire()
         return view
     }
@@ -253,6 +316,15 @@ class JenaRepository private constructor(
 
     /** Store triples read by inference views so far (diagnostic: views must stream, not drain the store). */
     internal fun inferenceBaseReads(): Long = baseReads.get()
+
+    /** Transaction-private inference models built so far (diagnostic: they are cached until the next write). */
+    internal fun privateInferenceViewsBuilt(): Long = privateViewsBuilt.get()
+
+    /** Identity of the shared inference view of the newest snapshot, if any (diagnostic). */
+    internal fun currentInferenceView(): Any? = currentView
+
+    /** Steps waiting for the worker of the current shared view (diagnostic). */
+    internal fun queuedInferenceSteps(): Int = currentView?.queuedSteps() ?: 0
 
     /** Keys of the graphs whose inference view is prepared for the current snapshot (diagnostic). */
     internal fun preparedInferenceGraphs(): Set<String> = currentView?.preparedGraphs() ?: emptySet()
@@ -267,9 +339,9 @@ class JenaRepository private constructor(
      * documentation of [JenaRepository]).
      *
      * Lifecycle: each read transaction using the view holds it ([tryAcquire] / [release]); the view is retired when
-     * a newer snapshot replaces it, when it is poisoned by a cancelled step, after the view idle timeout without
-     * holders, or when the repository closes. A retired view stops (its worker ends the read transaction and exits)
-     * once it has no holders.
+     * a newer snapshot replaces it, when it is poisoned by a cancelled or failed step, after the view idle timeout
+     * without holders, or when the repository closes. A retired view stops (its worker ends the read transaction and
+     * exits) once it has no holders; [abandon] stops it under its holders when [close] gives up waiting for them.
      */
     private inner class SnapshotView(val snapshot: Snapshot, private val worker: InferenceWorker) : InferenceExecutor {
         private val graphs = java.util.concurrent.ConcurrentHashMap<String, SharedInferenceGraph>()
@@ -278,8 +350,17 @@ class JenaRepository private constructor(
         private var stopped = false
         private var idleSince = 0L
 
+        /** The single pending idle check of this view, if any. */
+        private var idleCheck: java.util.concurrent.ScheduledFuture<*>? = null
+
+        /** Released when the view has stopped (its worker was told to end the read transaction and exit). */
+        private val stoppedSignal = java.util.concurrent.CountDownLatch(1)
+
         @Volatile var poisoned = false
             private set
+
+        /** Set when [close] stopped this view under readers that were still holding it. */
+        @Volatile private var abandoned = false
 
         fun usable(): Boolean = !poisoned && synchronized(this) { !retired && !stopped }
 
@@ -287,43 +368,82 @@ class JenaRepository private constructor(
             if (retired || stopped || poisoned) false else { holders++; true }
         }
 
-        fun release() {
-            val idle = synchronized(this) {
-                holders--
-                if (holders == 0) idleSince = System.nanoTime()
+        fun release() = synchronized(this) {
+            holders--
+            if (holders == 0) {
+                idleSince = hooks.clock()
                 stopIfUnused()
-                holders == 0 && !retired
+                // At most one check per view: a pending one re-arms itself for the time that is left when it fires.
+                if (!retired && idleCheck == null) scheduleIdleCheck(viewIdleNanos)
             }
-            if (idle) IDLE_TIMER.schedule({ retireIfIdle() }, viewIdleNanos, TimeUnit.NANOSECONDS)
         }
 
         fun retire() = synchronized(this) {
             retired = true
+            idleCheck?.cancel(false)
+            idleCheck = null
             stopIfUnused()
         }
 
-        private fun retireIfIdle() {
+        private fun scheduleIdleCheck(delayNanos: Long) {
+            idleCheck = hooks.schedule(delayNanos, Runnable { idleCheckFired() })
+        }
+
+        private fun idleCheckFired() {
             val idle = synchronized(this) {
-                holders == 0 && !retired && System.nanoTime() - idleSince >= viewIdleNanos
+                idleCheck = null
+                if (retired || holders > 0) {
+                    false // in use (the release that makes it idle schedules the next check) or already retired
+                } else {
+                    val left = viewIdleNanos - (hooks.clock() - idleSince)
+                    if (left > 0) scheduleIdleCheck(left)
+                    left <= 0
+                }
             }
             if (!idle) return
             forgetView(this)
-            synchronized(this) { if (holders == 0) retire() }
+            // No longer reachable by new readers; a reader that acquired it just before keeps it until it is done.
+            retire()
         }
 
         private fun stopIfUnused() {
-            if (retired && holders == 0 && !stopped) {
-                stopped = true
-                graphs.clear()
-                worker.shutdown {
-                    try { if (dataset.isInTransaction) dataset.end() } finally { openViews.remove(this) }
-                }
-            }
+            if (retired && holders == 0) stop()
         }
 
-        /** Waits for a stopped view's worker thread to exit (used by [close]); true when it has. */
-        fun awaitStopped(millis: Long): Boolean =
-            synchronized(this) { stopped } && worker.awaitTermination(millis)
+        private fun stop() {
+            if (stopped) return
+            stopped = true
+            graphs.clear()
+            worker.shutdown {
+                try { if (dataset.isInTransaction) dataset.end() } finally { openViews.remove(this) }
+            }
+            stoppedSignal.countDown()
+        }
+
+        /** Stops the view although read transactions still hold it; their further steps fail with "closed". */
+        fun abandon() = synchronized(this) {
+            abandoned = true
+            retired = true
+            stop()
+        }
+
+        /**
+         * Waits until [deadlineNanos] (a [System.nanoTime] value) for the view to stop, that is for its last holder
+         * to release it, and then for its worker thread to exit. True when the worker has exited.
+         */
+        fun awaitStopped(deadlineNanos: Long): Boolean {
+            fun leftMillis() = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()).coerceAtLeast(1)
+            if (!stoppedSignal.await(leftMillis(), TimeUnit.MILLISECONDS)) return false
+            return worker.awaitTermination(leftMillis())
+        }
+
+        /** What still keeps this view running, for the warning of [close]. */
+        fun describe(): String = synchronized(this) {
+            val readers = if (holders == 1) "1 reader" else "$holders readers"
+            "inference view of snapshot ${snapshot.version} ($readers, ${worker.queuedSteps()} queued step(s))"
+        }
+
+        fun queuedSteps(): Int = worker.queuedSteps()
 
         fun preparedGraphs(): Set<String> = graphs.keys.toSet()
         fun preparedGraph(graphKey: String): SharedInferenceGraph? = graphs[graphKey]
@@ -337,12 +457,33 @@ class JenaRepository private constructor(
             val store = dataset.asDatasetGraph()
             val base = if (graphKey == DEFAULT_GRAPH_KEY) store.defaultGraph else store.getGraph(NodeFactory.createURI(graphKey))
             val inf = org.apache.jena.reasoner.rulesys.RDFSRuleReasonerFactory.theInstance().create(null)
-                .bind(CancellableGraph(base, baseReads))
+                .bind(CancellableGraph(base, baseReads) { hooks.onStoreRead() })
             inf.prepare()
             return SharedInferenceGraph(inf, this)
         }
 
-        override fun <T> call(block: () -> T): T = worker.call(onBroken = ::poison, block = block)
+        /**
+         * Runs [block] as a step on the worker. Fails without running it when the view is poisoned or was stopped by
+         * [close]; the check is repeated on the worker because a step may wait behind the one that poisons the view.
+         */
+        override fun <T> call(block: () -> T): T {
+            checkUsable()
+            return worker.call(onBroken = ::poison) {
+                checkUsable()
+                block()
+            }
+        }
+
+        private fun checkUsable() {
+            if (abandoned) throw RdfRepositoryException("Repository is closed", RdfErrorCode.REPOSITORY_CLOSED)
+            if (poisoned) {
+                throw RdfInferenceException(
+                    "The shared inference view of this snapshot was invalidated because a reasoning step of one of " +
+                        "its readers was cancelled or failed half-way; results read from it could be incomplete. " +
+                        "Retry the read: it is served by a fresh view.",
+                )
+            }
+        }
 
         override fun submitQuietly(block: () -> Unit) = worker.submitQuietly(block)
 
@@ -364,6 +505,7 @@ class JenaRepository private constructor(
         val worker = InferenceWorker("kastor-jena-inference")
         val endTransaction = { if (dataset.isInTransaction) dataset.end() }
         val opened = try {
+            hooks.onOpenView()
             worker.call(onBroken = {}) {
                 val before = generation.get()
                 dataset.begin(ReadWrite.READ)
@@ -526,16 +668,38 @@ class JenaRepository private constructor(
         if (closed.compareAndSet(false, true)) {
             synchronized(viewLock) { currentView = null }
             // Retire every view (a view still used by another thread's read stops when that read ends), then wait
-            // for the workers so that no read transaction outlives close().
+            // for those reads and for the workers, so that no read transaction outlives close().
             val views = snapshotOf(openViews)
             views.forEach { it.retire() }
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CLOSE_WAIT_SECONDS)
-            for (view in views) {
-                if (view.awaitStopped(TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).coerceAtLeast(1))) openViews.remove(view)
+            hooks.onCloseWaiting()
+            val waitNanos = hooks.closeWaitNanos
+            val deadline = System.nanoTime() + waitNanos
+            val inUse = views.filterNot { awaitAndForget(it, deadline) }
+            if (inUse.isNotEmpty()) {
+                // Described before they are stopped, so the entry names the readers that were still there.
+                val description = inUse.joinToString("; ") { it.describe() }
+                hooks.warn(
+                    "Closing Jena repository '$variantId' although ${inUse.size} inference view(s) were still in use after " +
+                        "${TimeUnit.NANOSECONDS.toMillis(waitNanos)} ms: $description. " +
+                        "Their views are stopped now; further reads of those readers fail with 'Repository is closed'.",
+                )
+                inUse.forEach { it.abandon() }
+                val grace = System.nanoTime() + hooks.closeGraceNanos
+                val running = inUse.filterNot { awaitAndForget(it, grace) }
+                if (running.isNotEmpty()) {
+                    hooks.warn(
+                        "Jena repository '$variantId': ${running.size} inference worker(s) are still running a reasoning " +
+                            "step and hold a read transaction while the store is closed: ${running.joinToString("; ") { it.describe() }}",
+                    )
+                }
             }
             dataset.close()
         }
     }
+
+    /** Waits for [view]'s worker to exit (see [SnapshotView.awaitStopped]) and then stops tracking it. */
+    private fun awaitAndForget(view: SnapshotView, deadlineNanos: Long): Boolean =
+        view.awaitStopped(deadlineNanos).also { stopped -> if (stopped) openViews.remove(view) }
 
     override fun getCapabilities(): ProviderCapabilities = JenaProvider().getCapabilities(variantId)
 
