@@ -5,7 +5,10 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
 
 private fun shCc(local: String): Iri = Iri(SHACL.namespace + local)
 
-/** Best-effort `sh:sourceConstraintComponent` IRIs for portable violations. */
+/**
+ * `sh:sourceConstraintComponent` IRIs for portable violations. Every IRI returned in the `sh:` namespace is a term of
+ * the SHACL 1.2 vocabulary; constraint types without a standard component map to `null`.
+ */
 internal fun ConstraintType.toSourceConstraintComponentIri(): Iri? =
     when (this) {
         ConstraintType.MIN_COUNT -> shCc("MinCountConstraintComponent")
@@ -51,8 +54,12 @@ internal fun ConstraintType.toSourceConstraintComponentIri(): Iri? =
         ConstraintType.ROOT_CLASS -> shCc("RootClassConstraintComponent")
         ConstraintType.UNIQUE_VALUES_FOR -> shCc("UniqueValuesForConstraintComponent")
         ConstraintType.SHAPE -> shCc("ShapeConstraintComponent")
-        ConstraintType.REIFIER_SHAPE -> shCc("ReifierShapeConstraintComponent")
-        ConstraintType.REIFICATION_REQUIRED -> shCc("ReificationRequiredConstraintComponent")
+        // SHACL 1.2 has a single component for reifiers: sh:reificationRequired is an (optional) parameter of
+        // sh:ReifierShapeConstraintComponent (W3C core/property/reifierShape-002). There is no
+        // sh:ReificationRequiredConstraintComponent, and no IRI is ever minted in the sh: namespace.
+        ConstraintType.REIFIER_SHAPE,
+        ConstraintType.REIFICATION_REQUIRED,
+        -> shCc("ReifierShapeConstraintComponent")
         ConstraintType.PROPERTY_SHAPE,
         ConstraintType.FLAGS,
         ConstraintType.JS_CONSTRAINT,
