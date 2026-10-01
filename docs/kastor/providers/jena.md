@@ -122,6 +122,8 @@ repo.update(
 )
 ```
 
+**Dataset of queries and updates.** Outside `GRAPH`, queries and the `WHERE` clause of updates read the default graph only (the store is not a union-default-graph dataset); inside `GRAPH` they read the named graphs. `DESCRIBE` describes resources from the default graph of the query's dataset: the store's default graph or, with `FROM` clauses, the merge of the `FROM` graphs (empty with only `FROM NAMED`). **Behaviour change:** `describe` used to return the triples of the described resource from every named graph of the store as well (the behaviour of Jena's own describe handler); query named graphs with `DESCRIBE <r> FROM <graph>`, or with `CONSTRUCT ... WHERE { GRAPH ?g { ... } }`. The RDF4J provider follows the same contract.
+
 ### 3. Transaction Management
 
 Built-in transaction support for data consistency:

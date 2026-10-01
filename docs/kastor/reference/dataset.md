@@ -40,7 +40,7 @@ interface Dataset : SparqlQueryable {
 - A query sees the dataset's graphs only: patterns outside `GRAPH` read the default graph union, `GRAPH` patterns read the dataset's named graphs. The contract is the same on every provider (Jena, RDF4J).
 - `Dataset { defaultGraph(repo) }` has **no named graphs**: `GRAPH` patterns match nothing, even though the repository has named graphs. The query runs in place (the store is not copied); `GRAPH` inside `SERVICE <endpoint> { ... }` is left to the remote endpoint.
 - Queries must not declare `FROM` / `FROM NAMED` (`IllegalArgumentException`): the dataset defines the graphs.
-- `DESCRIBE` returns only triples that are in a graph of the dataset. Which of the dataset's graphs an engine describes from is engine-defined (Jena also reads the dataset's named graphs, RDF4J only its default graph).
+- `DESCRIBE` returns only triples that are in a graph of the dataset. The Jena and RDF4J providers describe resources from the dataset's default graph; its named graphs are read by the `WHERE` clause (inside `GRAPH`), not by the description.
 - Codepoint escapes (`\uXXXX`, `\UXXXXXXXX`) are decoded before the query is analysed and sent, so an escaped keyword (`\u0047RAPH`) is treated as the keyword. A query whose escapes spell a quote, a backslash or a line break, or follow another backslash, cannot be analysed: it is rejected with `IllegalArgumentException` when the dataset is a repository's default graph, and run against a temporary copy of the dataset's graphs otherwise. Use the string escapes `\"`, `\\`, `\n` instead.
 - `CONSTRUCT WHERE { GRAPH ... }` (a non-standard short form) is rejected for a dataset without named graphs.
 

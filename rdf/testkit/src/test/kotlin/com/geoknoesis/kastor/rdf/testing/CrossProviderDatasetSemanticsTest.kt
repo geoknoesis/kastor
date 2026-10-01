@@ -53,8 +53,13 @@ class CrossProviderDatasetSemanticsTest {
         assertTrue(repo.ask(SparqlAskQuery("ASK { ?s ?p \"default\" }")))
         assertEquals(listOf("default"), repo.construct(SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")).objects())
         assertEquals(listOf("default"), repo.construct(SparqlConstructQuery("CONSTRUCT WHERE { ?s ?p ?o }")).objects())
-        // DESCRIBE is implementation-defined: Jena also describes the resource in every named graph.
-        assertTrue("default" in repo.describe(SparqlDescribeQuery("DESCRIBE <urn:s>")).objects())
+        // DESCRIBE describes from the default graph, also a resource the WHERE clause found in a named graph.
+        assertEquals(listOf("default"), repo.describe(SparqlDescribeQuery("DESCRIBE <urn:s>")).objects().distinct())
+        assertEquals(
+            listOf("default"),
+            repo.describe(SparqlDescribeQuery("DESCRIBE ?s { GRAPH <urn:g1> { ?s ?p ?o } }")).objects().distinct(),
+        )
+        assertEquals(listOf("named1"), repo.describe(SparqlDescribeQuery("DESCRIBE <urn:s> FROM <urn:g1>")).objects().distinct())
     }
 
     @TestFactory
@@ -134,11 +139,8 @@ class CrossProviderDatasetSemanticsTest {
         assertEquals(listOf("named2"), dataset.select(SparqlSelectQuery("SELECT ?o { GRAPH ?g { ?s ?p ?o } }")).strings("o"))
         assertFalse(dataset.ask(SparqlAskQuery("ASK { GRAPH <urn:g1> { ?s ?p ?o } }")))
         assertFalse(dataset.ask(SparqlAskQuery("ASK { ?s ?p \"default\" }")))
-        // DESCRIBE never leaves the dataset; whether it also reads the dataset's named graphs is up to the engine
-        // (Jena does, RDF4J does not).
-        val described = dataset.describe(SparqlDescribeQuery("DESCRIBE <urn:s>")).objects().distinct()
-        assertTrue("named1" in described && "default" !in described, described.toString())
-        assertEquals(if (repo is JenaRepository) listOf("named1", "named2") else listOf("named1"), described)
+        // DESCRIBE describes from the default graph of the dataset, not from its named graphs.
+        assertEquals(listOf("named1"), dataset.describe(SparqlDescribeQuery("DESCRIBE <urn:s>")).objects().distinct())
     }
 
     @TestFactory
@@ -173,17 +175,21 @@ class CrossProviderDatasetSemanticsTest {
         }
 
     /**
-     * Pins the remaining provider difference (documented on `Rdf4jRepository`): RDF4J matches the `WHERE` clause of
-     * an update against all contexts, Jena against the default graph only.
+     * SPARQL `UPDATE` follows the same contract on every provider (each form is covered by
+     * `Rdf4jUpdateDatasetParityTest` of the RDF4J provider): outside `GRAPH`, `WHERE` matches the default graph only
+     * and the templates change the default graph only.
      */
     @TestFactory
-    fun `update WHERE clauses differ between providers`() = each("UPDATE ... WHERE") { repo ->
+    fun `update WHERE clauses and templates use the default graph outside GRAPH`() = each("UPDATE ... WHERE") { repo ->
         repo.update(UpdateQuery("INSERT { GRAPH <urn:copy> { ?s ?p ?o } } WHERE { ?s ?p ?o FILTER(isLiteral(?o)) }"))
-        val copied = repo.getGraph(Iri("urn:copy")).getTriples().asSequence().objects()
-        if (repo is JenaRepository) {
-            assertEquals(listOf("default"), copied)
-        } else {
-            assertEquals(listOf("default", "named1", "named2"), copied)
-        }
+        assertEquals(listOf("default"), repo.getGraph(Iri("urn:copy")).getTriples().asSequence().objects())
+        repo.update(UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(isLiteral(?o)) }"))
+        assertEquals(emptyList(), repo.defaultGraph.getTriples().asSequence().objects())
+        assertEquals(listOf("named1"), repo.getGraph(g1).getTriples().asSequence().objects())
+        repo.update(UpdateQuery("DELETE DATA { <urn:s> <urn:p> \"named2\" }"))
+        assertEquals(listOf("named2"), repo.getGraph(g2).getTriples().asSequence().objects())
+        repo.update(UpdateQuery("WITH <urn:g2> DELETE { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(isLiteral(?o)) }"))
+        assertEquals(emptyList(), repo.getGraph(g2).getTriples().asSequence().objects())
+        assertEquals(listOf("named1"), repo.getGraph(g1).getTriples().asSequence().objects())
     }
 }
