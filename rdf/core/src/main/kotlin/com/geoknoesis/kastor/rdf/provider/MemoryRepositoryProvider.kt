@@ -229,6 +229,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     /**
      * Live view of a named graph; resolves the backing graph on every call. Its [modificationStamp] is the backing
      * graph's (stamps are unique across the repository), or the stamp recorded when the graph was removed.
+     * It is read like the stamp of the default graph: under the read lock, failing once the repository is closed.
      */
     private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph, VersionedRdfGraph {
         private val repository: MemoryRepository get() = this@MemoryRepository
@@ -286,7 +287,11 @@ class MemoryGraph internal constructor(
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
     /** Incremented (under the write lock) by every change of the content, including transaction rollbacks. */
     @Volatile private var stamp = nextStamp?.invoke() ?: 0L
-    override val modificationStamp: Long get() = stamp
+    /**
+     * Read under the read lock, like the content: it waits for a write or transaction of another thread, so it
+     * never reports a stamp from the middle of one, and it fails once the owning repository is closed.
+     */
+    override val modificationStamp: Long get() { access(false); return lock.read { stamp } }
 
     /** Moves the stamp to a new value; called while holding the write lock. */
     internal fun touch() { stamp = nextStamp?.invoke() ?: (stamp + 1) }
