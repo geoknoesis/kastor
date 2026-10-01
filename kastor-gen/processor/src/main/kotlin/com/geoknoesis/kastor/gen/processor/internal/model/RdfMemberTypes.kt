@@ -66,6 +66,9 @@ internal object RdfMemberTypes {
 
     fun literal(elementType: String): LiteralType? = LITERALS[elementType]
 
+    /** The literal member types, for diagnostics (`String, Int, ..., java.time.LocalDate, ...`). */
+    fun supportedLiteralTypes(): String = LITERALS.keys.joinToString(", ")
+
     fun term(elementType: String): Pair<ClassName, String>? = TERMS[elementType]
 
     fun propertyType(kotlinType: String, enumKind: RdfEnumKind?): PropertyType {

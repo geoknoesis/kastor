@@ -134,15 +134,21 @@ Package `com.geoknoesis.kastor.gen.validation.jena`, module `kastor-gen:validati
 class JenaValidation : ValidationContext {
     constructor()                      // shapes read from the data graph
     constructor(shapes: RdfGraph)      // separate shapes graph
+    constructor(shapes: RdfGraph?, maxCachedGraphs: Int)
+    val maxCachedGraphs: Int
     companion object {
+        const val DEFAULT_MAX_CACHED_GRAPHS = 16
+        const val MAX_CACHED_GRAPHS_PROPERTY = "kastor.validation.jena.maxCachedGraphs"
         fun fromTurtle(shapesTurtle: String): JenaValidation
     }
-    // close() is inherited from ValidationContext and does nothing
+    override fun close()               // drops the cached converted graphs
 }
 ```
 
 - Backed by Jena's `ShaclValidator`.
-- Jena-backed Kastor graphs are validated in place; other graphs are converted to a Jena graph per call.
+- Jena-backed Kastor graphs are validated directly. Other graphs are converted to a Jena graph, and the converted
+  copy is cached with the rules described under [Graph cache](#graph-cache): it is converted again only when the
+  graph is new or its content changed.
 
 ### Rdf4jValidation
 
@@ -153,7 +159,11 @@ Package `com.geoknoesis.kastor.gen.validation.rdf4j`, module `kastor-gen:validat
 class Rdf4jValidation : ValidationContext, AutoCloseable {
     constructor()                      // shapes read from the data graph
     constructor(shapes: RdfGraph)      // separate shapes graph
+    constructor(shapes: RdfGraph?, maxCachedGraphs: Int)
+    val maxCachedGraphs: Int
     companion object {
+        const val DEFAULT_MAX_CACHED_GRAPHS = 16
+        const val MAX_CACHED_GRAPHS_PROPERTY = "kastor.validation.rdf4j.maxCachedGraphs"
         fun fromTurtle(shapesTurtle: String): Rdf4jValidation
     }
     override fun close()
@@ -161,14 +171,10 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 ```
 
 - Backed by RDF4J's `ShaclSail`. A shapes graph is converted once at construction.
-- **One repository per validator.** ShaclSail validates data held in its own store, so the Kastor graph is
-  converted to RDF4J statements and loaded into a single in-memory repository. It is reloaded only when
-  `validate` receives a different graph instance or the graph's content changed. Changes are detected with
-  an order-independent digest of the triples: the SHA-256 of an unambiguous encoding of each triple, summed
-  modulo 2^256, together with the triple count. Computing it costs one pass over the triples but no
-  conversion or store writes, and unlike a sum of `hashCode()`s it does not miss changes such as a literal
-  `"Aa"` becoming `"BB"`. Validating many nodes of one graph therefore converts and loads it once. With the
-  no-arg constructor the embedded shapes are extracted at the same time.
+- **One repository per data graph.** ShaclSail validates data held in its own store, so the Kastor graph is
+  converted to RDF4J statements and loaded into an in-memory repository, which is kept and reloaded only when
+  the graph's content changed (see [Graph cache](#graph-cache)). Validating many nodes of one graph therefore
+  converts and loads it once. With the no-arg constructor the embedded shapes are extracted at the same time.
 - **Reloads are atomic.** The statements and embedded shapes are prepared first, then the store content is
   replaced in one transaction (rolled back on failure). The loaded graph, its digest and its embedded shapes
   are updated together only after the commit, so a failed conversion or load leaves the previously loaded
@@ -181,11 +187,39 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 - Fallbacks: for a **blank-node** focus (RDF4J does not accept a blank node as `sh:targetNode`) the selected
   shapes keep their own target declarations; shapes with other target kinds (e.g. SPARQL-based `sh:target`)
   are validated for all their targets. In both cases the report is filtered to the focus node.
-- Calls on one instance are serialized, so a validator can be shared between threads. Call `close()` (or
-  use `use { }`) to release the repository and the loaded data; `validate` after `close()` throws
-  `IllegalStateException`.
+- Calls for one data graph are serialized on that graph's repository; calls for different graphs run
+  concurrently, so a validator can be shared between threads. Call `close()` (or use `use { }`) to release
+  the repositories and the loaded data (a repository still used by a call is released when that call
+  returns); `validate` after `close()` throws `IllegalStateException`.
 - RDF4J 5.x has no base-direction support, so the direction of an RDF 1.2 directional language string is
   dropped (the language tag is kept).
+
+### Graph cache
+
+Both adapters keep the converted copy of recently validated data graphs (`GraphStateCache` in
+`kastor-gen:runtime`; the Jena adapter only for graphs that are not Jena-backed).
+
+- **Change detection.** Graphs that implement `VersionedRdfGraph` (`MemoryGraph`, the named graphs of the memory
+  repository) are checked in O(1) by their modification stamp. Other graphs (e.g. graphs of an RDF4J or Jena
+  repository) are identified by an order-independent digest of their triples: the SHA-256 of an unambiguous
+  encoding of each triple, summed modulo 2^256, together with the triple count. Computing it costs one pass
+  over the triples per call but no conversion or store writes, and unlike a sum of `hashCode()`s it does not
+  miss changes such as a literal `"Aa"` becoming `"BB"`.
+- **New handles hit the cache.** `repository.getGraph(name)` returns a new handle object per call. A stamped
+  handle is matched with `equals` when its class defines handle equality (the memory repository's named graphs
+  do), otherwise by identity; unstamped graphs are matched by content, whichever handle is used. So
+  `repo.getGraph(name).materialize<T>(node).validate()` in a loop converts the graph once.
+- **Size.** At most `maxCachedGraphs` copies are kept (default 16). Set it with the constructor argument, or
+  process-wide - which is how to size the validators shared by generated wrappers - with the system properties
+  `kastor.validation.rdf4j.maxCachedGraphs` / `kastor.validation.jena.maxCachedGraphs`. When the cache is full
+  the least recently used copy that no call is using is released. A call never waits for the validation of
+  another graph: when every copy is in use it validates in a private temporary copy that is released when the
+  call returns. Size the cache to the number of graphs that are validated repeatedly (every miss converts and
+  loads the whole graph).
+- **Release.** Copies of stamped graphs whose handle was garbage collected are released on the next call.
+  Copies identified by content stay until they are evicted or the validator is closed.
+- **Locking.** The data graph is read only while the validator holds no lock, so `validate` can be called
+  inside `repository.transaction { }` while other threads validate the same graph.
 
 ## Usage
 

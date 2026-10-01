@@ -268,6 +268,11 @@ initialisation.
 - **Cardinality counts every value.** `sh:minCount`/`sh:maxCount` count all values of the path whatever
   their term kind (IRIs, blank nodes, literals), including literal `sh:in` enum values. Checking the kind is
   left to `sh:datatype`, `sh:nodeKind` and `sh:class`.
+- **`sh:in` compares RDF terms.** A value must equal a member as a term: the same IRI, or a literal with the
+  same lexical form and the same language tag (ignoring case) or datatype. The member `"chat"@en` does not
+  accept `"chat"@fr` or the plain string `"chat"`, and the integer `5` does not accept the string `"5"`. The
+  parser keeps each member's datatype and language tag (`ShaclInValue`), and both the wrapper's `validate()`
+  and the DSL's `validate()` use them.
 - **Numeric bounds are exact.** Bounds are held as `BigDecimal` values in the model, so a bound such as
   `9223372036854775807` is not rounded. Wrapper `validate()`, instance-DSL setters and the DSL's `validate()`
   all compare values exactly against the bound's decimal form; `NaN` is never within bounds.
@@ -275,7 +280,10 @@ initialisation.
   `ShaclViolation.severity` (`sh:Warning` → `Warning`, `sh:Info` → `Info`, anything else → `Violation`), and
   its `sh:message` replaces the generated message. A node shape with `sh:deactivated true` validates nothing
   (its types are still generated); a property shape with `sh:deactivated true` contributes no constraints
-  and does not make its member required, so the member is typed as optional.
+  and does not make its member required, so the member is typed as optional. A subtype of a deactivated node
+  shape keeps the inherited Kotlin signatures (a member the parent types as required or single-valued stays
+  so even when the subtype restates the path without `sh:minCount` / `sh:maxCount`); only the parent's
+  validation constraints are dropped.
 
 With `validationMode = EXTERNAL` the wrapper's `validate()` uses the process-wide instance of
 `externalValidatorClass` from `SharedValidators`: one instance per validator class, created on first use

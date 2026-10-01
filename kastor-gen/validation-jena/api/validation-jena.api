@@ -1,9 +1,13 @@
 public final class com/geoknoesis/kastor/gen/validation/jena/JenaValidation : com/geoknoesis/kastor/gen/runtime/ValidationContext {
 	public static final field Companion Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation$Companion;
+	public static final field DEFAULT_MAX_CACHED_GRAPHS I
+	public static final field MAX_CACHED_GRAPHS_PROPERTY Ljava/lang/String;
 	public fun <init> ()V
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;)V
+	public fun <init> (Lcom/geoknoesis/kastor/rdf/RdfGraph;I)V
 	public fun close ()V
 	public static final fun fromTurtle (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/validation/jena/JenaValidation;
+	public final fun getMaxCachedGraphs ()I
 	public fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;
 }
 

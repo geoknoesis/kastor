@@ -148,7 +148,13 @@ object OntoMapper {
 The factory registry itself is private (a `ConcurrentHashMap`); use the functions below.
 
 **Registration:**
-- `register(type, factory)` — registers the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation. Registering the *same* factory instance again is a no-op; registering a *different* factory for a type that already has one throws `IllegalStateException` (for example when two generated modules claim the same interface), because it would silently change how the whole application materializes that type. **Class reloading:** when the already registered factory was defined by a *different* class loader than the new one (a hot-reload or plugin framework re-defined the wrapper in a new child class loader while `type` stays in a shared parent loader), the new factory replaces the stale one instead of throwing; the replacement is logged at debug level and the old factory, and with it its class loader, is no longer reachable from the registry.
+- `register(type, factory)` — registers the factory for `type`. Generated wrappers call it from their `companion object` `init` block and data-class factories from their `object` `init` block (`OntoMapper.register(Person::class.java) { handle -> PersonWrapper(handle) }`). You rarely call it yourself, except to plug in a hand-written implementation. A type has **one** factory, keyed by the interface **class**:
+  1. *Each class has its own registration.* An interface defined by two class loaders (two plugins that each bundle the generated code) is two types with independent factories.
+  2. *Registering the same factory class again is idempotent.* The same instance is a no-op; another instance of the same factory class (a capturing lambda evaluated again, e.g. in `@BeforeEach`) takes its place.
+  3. *A different factory class is a conflict* and throws `IllegalStateException` (for example when two generated modules claim the same interface), because it would silently change how the whole application materializes that type. Use `replace = true` or `unregister` first.
+  4. *Class reloading.* When the registered factory is the same-named factory class defined by a *different* class loader (a hot-reload framework re-defined the wrapper while `type` stays in a shared parent loader), the new factory replaces the stale one, and the old class loader is no longer reachable from the registry. This is indistinguishable from two live plugins bundling the same wrapper for a shared interface (the last one wins), so the replacement is logged as a **warning** naming both class loaders.
+
+  The registry holds registered classes weakly (the factory is stored with the class): when a module's class loader is discarded with its interfaces and wrappers, the registry does not keep it alive and no `unregister` is needed. A factory registered for an interface of a longer-lived class loader keeps its own class loader alive until it is replaced or unregistered.
 - `register(type, replace = true, factory)` — replaces an existing factory deliberately (tests, plugins). With `replace = false` it behaves like the two-argument form.
 - `unregister(type)` — removes a factory; returns `true` if one was registered.
 - `isRegistered(type)` / `registeredTypes()` — inspect the registry (a snapshot copy).
@@ -529,15 +535,32 @@ threads.
 
 ```kotlin
 val catalog = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
-    graph.materialize<Catalog>(node).also { it.title }   // read inside the block: wrappers read lazily
+    graph.materialize<Catalog>(node)        // the wrapper is created inside the block and keeps SKIP
+}
+catalog.title                               // read later, on any thread: still SKIP
+```
+
+**A wrapper uses the handling in effect when it was created.** Wrapper members are read on demand, so each
+wrapper captures the handling at creation (`OntoMapper.materialize` or a factory call) and applies it to every
+later read of every member: `val` members (lazy, read once) and the `var` members of `@Rdf` wrappers (read
+from the graph on every access) alike, after the block has ended and on other threads too. The converse also
+holds: a scope around a *read* does not change a wrapper that already exists.
+
+```kotlin
+val strict = graph.materialize<Catalog>(node)                       // created under THROW
+MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+    strict.title                                                    // still THROW: wrap materialize() instead
 }
 ```
 
-The override is thread-local: it does **not** propagate to other threads or coroutines. Work handed to an
-executor, or a coroutine that resumes on another thread, sees the process-wide default. Because wrapper
-members are read lazily, a value read after the block ends also uses the handling in effect at that time.
-Assigning `illTypedValues` changes the process-wide default; a scope running on the current thread still
-wins.
+Wrappers reached through an object member are created when that member is read, under the handling of the
+wrapper they are read from. Data-class factories read every value eagerly, under the handling in effect
+during the factory call.
+
+The override itself is thread-local: it does **not** propagate to other threads or coroutines, so a wrapper
+*created* on an executor thread, or in a coroutine that resumed on another thread, captures the process-wide
+default. Assigning `illTypedValues` changes the process-wide default; a scope running on the current thread
+still wins.
 
 The generic literal delegates in `com.geoknoesis.kastor.gen.runtime.delegates` apply the same policy:
 

@@ -104,6 +104,10 @@ public object GenerationNames {
      *   through [warn]) and a signature that is a valid Kotlin override: a single-valued member may become
      *   required, a `List` stays a `List`, and the value type stays the supertype's. Refinements that a signature
      *   cannot express remain in [EffectiveMember.constraints] and are enforced by validation.
+     * - A `sh:deactivated` supertype still declares its members with their Kotlin types; only its validation
+     *   constraints are dropped. A subtype that restates such a path without `sh:minCount` / `sh:maxCount` keeps
+     *   the inherited required / single-valued signature (reading a required member without a value still fails),
+     *   while its [EffectiveMember.constraints] carry no cardinality from the deactivated shape.
      * - When two supertypes expose the same path under different names, the type has both members.
      *
      * @throws InvalidConfigurationException when supertypes declare one path as a list and as a single value, or
@@ -224,10 +228,17 @@ public object GenerationNames {
             )
         }
         val isList = listKinds.single()
+        // The override must stay compatible with the inherited declarations whatever the merged constraints say: a
+        // deactivated supertype still declares its member as required / single-valued, but passes no sh:minCount /
+        // sh:maxCount on to `merged`. A required member stays required and a single value stays single; the looser
+        // cardinality is only reflected in [EffectiveMember.constraints] (i.e. in validation).
+        val inheritedRequired = !isList && parents.any { Cardinality.isRequiredSingle(it) }
+        val required = inheritedRequired || Cardinality.isRequired(merged)
         return base.copy(
-            minCount = merged.minCount,
-            maxCount = if (isList) merged.maxCount?.takeIf { it > 1 } else merged.maxCount,
+            minCount = if (required) kotlin.comparisons.maxOf(merged.minCount ?: 1, 1) else merged.minCount,
+            maxCount = if (isList) merged.maxCount?.takeIf { it > 1 } else merged.maxCount?.takeIf { it <= 1 } ?: base.maxCount,
             description = merged.description.ifBlank { base.description },
+            deactivated = if (required) false else base.deactivated,
         )
     }
 
@@ -258,7 +269,11 @@ public object GenerationNames {
             if (x == null) y else if (y == null) x else if (x >= y) x else y
         fun lo(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =
             if (x == null) y else if (y == null) x else if (x <= y) x else y
+        // Members are RDF terms: when both declarations carry typed members the intersection compares terms (so
+        // "chat"@en and "chat"@fr stay distinct); otherwise it falls back to the lexical values.
+        val inTyped = if (a.inValuesTyped != null && b.inValuesTyped != null) a.inValuesTyped.filter { it in b.inValuesTyped } else null
         val inValues = when {
+            inTyped != null -> inTyped.map { it.value }
             a.inValues == null -> b.inValues
             b.inValues == null -> a.inValues
             else -> a.inValues.filter { it in b.inValues }
@@ -278,7 +293,8 @@ public object GenerationNames {
             minExclusive = hi(a.minExclusive, b.minExclusive),
             maxExclusive = lo(a.maxExclusive, b.maxExclusive),
             inValues = inValues,
-            inValuesTyped = (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },
+            inValuesTyped = inTyped
+                ?: (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },
             enumName = a.enumName ?: b.enumName,
             hasValue = a.hasValue ?: b.hasValue,
             nodeKind = a.nodeKind ?: b.nodeKind,

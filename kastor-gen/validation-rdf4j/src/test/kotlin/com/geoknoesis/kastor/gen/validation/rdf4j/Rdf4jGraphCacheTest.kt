@@ -7,7 +7,9 @@ import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.Rdf
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
@@ -45,13 +47,13 @@ class Rdf4jGraphCacheTest {
         Rdf4jValidation.fromTurtle(shapes).use { v ->
             val g = personGraph(*Array(50) { "p$it" })
             repeat(20) { i -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p${i % 50}"))) }
-            assertEquals(0, v.digestCount.get(), "a graph with a modification stamp is never digested")
-            assertEquals(1, v.loadCount.get())
+            assertEquals(0, v.digestCount, "a graph with a modification stamp is never digested")
+            assertEquals(1, v.loadCount)
 
             g.removeTriple(RdfTriple(ex("p3"), ex("name"), Literal("p3")))
             assertTrue(v.validate(g, ex("p3")) is ValidationResult.Violations, "mutation is detected")
-            assertEquals(2, v.loadCount.get())
-            assertEquals(0, v.digestCount.get())
+            assertEquals(2, v.loadCount)
+            assertEquals(0, v.digestCount)
         }
     }
 
@@ -63,13 +65,13 @@ class Rdf4jGraphCacheTest {
             repo.editGraph(name).addTriples(personGraph("a", "b").getTriples())
             val g = repo.getGraph(name)
             repeat(5) { assertEquals(ValidationResult.Ok, v.validate(g, ex("a"))) }
-            assertEquals(0, v.digestCount.get(), "a named graph view has a modification stamp")
-            assertEquals(1, v.loadCount.get())
+            assertEquals(0, v.digestCount, "a named graph view has a modification stamp")
+            assertEquals(1, v.loadCount)
 
             repo.editGraph(name).removeTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
             assertTrue(v.validate(g, ex("b")) is ValidationResult.Violations, "mutation is detected")
-            assertEquals(2, v.loadCount.get())
-            assertEquals(0, v.digestCount.get())
+            assertEquals(2, v.loadCount)
+            assertEquals(0, v.digestCount)
         }
     }
 
@@ -80,11 +82,11 @@ class Rdf4jGraphCacheTest {
             val g = PlainGraph(inner)
             assertEquals(ValidationResult.Ok, v.validate(g, ex("a")))
             assertEquals(ValidationResult.Ok, v.validate(g, ex("a")))
-            assertEquals(1, v.loadCount.get())
-            assertTrue(v.digestCount.get() >= 2)
+            assertEquals(1, v.loadCount)
+            assertTrue(v.digestCount >= 2)
             inner.removeTriple(RdfTriple(ex("a"), ex("name"), Literal("a")))
             assertTrue(v.validate(g, ex("a")) is ValidationResult.Violations, "mutation is detected")
-            assertEquals(2, v.loadCount.get())
+            assertEquals(2, v.loadCount)
         }
     }
 
@@ -97,7 +99,7 @@ class Rdf4jGraphCacheTest {
                 assertEquals(ValidationResult.Ok, v.validate(g1, ex("a")))
                 assertTrue(v.validate(g2, ex("b")) is ValidationResult.Violations)
             }
-            assertEquals(2, v.loadCount.get())
+            assertEquals(2, v.loadCount)
         }
     }
 
@@ -136,11 +138,103 @@ class Rdf4jGraphCacheTest {
     }
 
     @Test
-    fun `the per-graph cache is bounded`() {
-        Rdf4jValidation.fromTurtle(shapes).use { v ->
-            val graphs = List(Rdf4jValidation.MAX_CACHED_GRAPHS + 3) { personGraph("p$it") }
+    fun `the per-graph cache is bounded by the configured size`() {
+        Rdf4jValidation(Rdf.parse(shapes, "TURTLE"), 3).use { v ->
+            assertEquals(3, v.maxCachedGraphs)
+            val graphs = List(6) { personGraph("p$it") }
             graphs.forEachIndexed { i, g -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p$i"))) }
-            assertTrue(v.cachedGraphCount() <= Rdf4jValidation.MAX_CACHED_GRAPHS)
+            assertEquals(3, v.cachedGraphCount())
+            // The three most recently used graphs are still loaded.
+            graphs.drop(3).forEachIndexed { i, g -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p${i + 3}"))) }
+            assertEquals(6, v.loadCount)
         }
+        assertThrows(IllegalArgumentException::class.java) { Rdf4jValidation(null, 0) }
+    }
+
+    @Test
+    fun `the default cache size holds more than four graphs and follows the system property`() {
+        Rdf4jValidation.fromTurtle(shapes).use { v ->
+            assertEquals(Rdf4jValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs)
+            val graphs = List(8) { personGraph("p$it") }
+            repeat(3) { graphs.forEachIndexed { i, g -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p$i"))) } }
+            assertEquals(8, v.loadCount, "eight active graphs do not thrash the cache")
+        }
+        System.setProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY, "2")
+        try {
+            Rdf4jValidation.fromTurtle(shapes).use { v -> assertEquals(2, v.maxCachedGraphs) }
+            Rdf4jValidation().use { v -> assertEquals(2, v.maxCachedGraphs) }
+            System.setProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY, "not a number")
+            Rdf4jValidation().use { v -> assertEquals(Rdf4jValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs) }
+        } finally {
+            System.clearProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY)
+        }
+    }
+
+    @Test
+    fun `a validation never waits for another graph and an eviction never takes a store in use`() {
+        Rdf4jValidation(Rdf.parse(shapes, "TURTLE"), 1).use { v ->
+            val g1 = personGraph("a")
+            val g2 = personGraph("b", named = false)
+            val g3 = personGraph("c")
+            val firstLoading = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            // The validation of g1 stays inside its store (holding its entry) until released.
+            v.beforeLoadCommit = {
+                if (Thread.currentThread().name == "first") {
+                    firstLoading.countDown()
+                    check(release.await(30, TimeUnit.SECONDS)) { "not released" }
+                }
+            }
+            val pool = Executors.newFixedThreadPool(2) { r -> Thread(r).apply { isDaemon = true } }
+            try {
+                val first = pool.submit<ValidationResult> {
+                    Thread.currentThread().name = "first"
+                    v.validate(g1, ex("a"))
+                }
+                assertTrue(firstLoading.await(20, TimeUnit.SECONDS))
+                // The cache (size 1) is saturated by g1, which is in use: these validations run in private stores.
+                val others = pool.submit<List<ValidationResult>> {
+                    Thread.currentThread().name = "others"
+                    listOf(v.validate(g2, ex("b")), v.validate(g3, ex("c")))
+                }
+                val results = others.get(30, TimeUnit.SECONDS)
+                assertTrue(results[0] is ValidationResult.Violations)
+                assertEquals(ValidationResult.Ok, results[1])
+                assertEquals(2, v.temporaryStoreCount)
+                assertEquals(1, v.cachedGraphCount())
+                release.countDown()
+                assertEquals(ValidationResult.Ok, first.get(30, TimeUnit.SECONDS), "g1's store survived the other validations")
+                v.beforeLoadCommit = null
+                assertEquals(ValidationResult.Ok, v.validate(g1, ex("a")))
+                assertEquals(3, v.loadCount, "g1 was not evicted while in use")
+            } finally {
+                release.countDown()
+                pool.shutdownNow()
+            }
+        }
+    }
+
+    @Test
+    fun `a store that fails to shut down does not prevent releasing the others`() {
+        val shutDowns = java.util.concurrent.atomic.AtomicInteger()
+        class FailingRepository : org.eclipse.rdf4j.repository.sail.SailRepository(
+            org.eclipse.rdf4j.sail.shacl.ShaclSail(org.eclipse.rdf4j.sail.memory.MemoryStore()),
+        ) {
+            override fun shutDownInternal() {
+                shutDowns.incrementAndGet()
+                super.shutDownInternal()
+                throw IllegalStateException("simulated shutdown failure")
+            }
+        }
+        val v = Rdf4jValidation(Rdf.parse(shapes, "TURTLE"), 2)
+        v.repositoryFactory = { FailingRepository().apply { init() } }
+        val graphs = List(3) { personGraph("p$it") }
+        // The third graph evicts the first: the failing shutdown of the evicted store does not fail this call.
+        graphs.forEachIndexed { i, g -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p$i"))) }
+        assertEquals(1, shutDowns.get())
+        val failure = assertThrows(IllegalStateException::class.java) { v.close() }
+        assertEquals(3, shutDowns.get(), "close attempted every remaining store")
+        assertEquals(1, failure.suppressed.size)
+        assertEquals("Rdf4jValidation has been closed", assertThrows(IllegalStateException::class.java) { v.validate(graphs[0], ex("p0")) }.message)
     }
 }

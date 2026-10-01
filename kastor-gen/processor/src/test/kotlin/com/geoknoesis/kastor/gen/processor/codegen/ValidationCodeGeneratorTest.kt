@@ -178,7 +178,7 @@ class ValidationCodeGeneratorTest {
         val method = generator.generateValidationMethod(classBuilder)
 
         val code = method.toString()
-        assertTrue(code.contains("value !in listOf"))
+        assertTrue(code.contains("value.lexical == \"active\""), code)
         assertTrue(code.contains("active"))
         assertTrue(code.contains("inactive"))
         assertTrue(code.contains("status must be one of"))

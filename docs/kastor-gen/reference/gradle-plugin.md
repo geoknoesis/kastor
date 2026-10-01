@@ -167,8 +167,12 @@ added later). Because the source directory is the task's output, compiling Kotli
 ### `OntologyGenerationTask`
 
 - `ontologyName` — the configuration name, used in diagnostics (`kastorGen ontology 'dcat': …`).
-- `shaclFile` / `contextFile` — `@InputFile` properties resolved from the paths, so editing an ontology
-  file re-runs the task; `contextFile` is `@Optional`.
+- `shaclCandidates` / `contextCandidates` — `@InputFiles`: the locations the paths may resolve to (project
+  directory, then `src/main/resources`). The first existing file is chosen when the task runs, so editing
+  an ontology file, or adding one at the preferred location, re-runs the task without invalidating the
+  configuration cache. `shaclInput` / `contextInput` return the file that will be read.
+- `shaclFile` / `contextFile` — optional `@InputFile` properties, unset by default; set one to name the file
+  directly instead of through a path.
 - `@CacheableTask`; execution does not touch `Project`, so the task is configuration-cache compatible.
 - **All-or-nothing:** every file is generated in memory first. SHACL/JSON-LD parse errors, name
   collisions, invalid packages or missing required settings fail the task *before* the output directory is

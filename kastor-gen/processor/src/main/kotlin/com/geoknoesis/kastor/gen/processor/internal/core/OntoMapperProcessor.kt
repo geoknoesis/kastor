@@ -3,17 +3,35 @@ package com.geoknoesis.kastor.gen.processor.internal.core
 import com.geoknoesis.kastor.gen.annotations.RDF_ANNOTATION_FQN
 import com.geoknoesis.kastor.gen.processor.internal.model.ClassModel
 import com.geoknoesis.kastor.gen.processor.internal.model.PropertyModel
+import com.geoknoesis.kastor.gen.processor.internal.model.PropertyType
 import com.geoknoesis.kastor.gen.processor.internal.model.RdfEnumKind
 import com.geoknoesis.kastor.gen.processor.internal.model.RdfMemberTypes
 import com.geoknoesis.kastor.gen.processor.internal.codegen.WrapperGenerator
 import com.geoknoesis.kastor.gen.processor.internal.utils.QNameResolver
 import com.google.devtools.ksp.getDeclaredFunctions
+import com.google.devtools.ksp.isAbstract
 import com.google.devtools.ksp.processing.*
 import com.google.devtools.ksp.symbol.*
 import com.google.devtools.ksp.validate
 
 /**
  * KSP processor for generating RDF-backed domain object wrappers from `@Rdf` interfaces.
+ *
+ * ## Diagnostics
+ * Everything the generator cannot handle is reported through KSP, naming the type or member, and no wrapper is
+ * generated for the affected interface:
+ * - **error**: two `@Rdf` types map to one wrapper name (a nested `Outer.Inner` and a top-level `Outer_Inner` both
+ *   give `Outer_InnerWrapper`);
+ * - **error**: an abstract property or function without `@Rdf` (the wrapper could not implement it); members with a
+ *   default implementation are left alone;
+ * - **error**: a member type without a reader: anything but the literal types of [RdfMemberTypes] (`String`, `Int`,
+ *   `Long`, `Float`, `Double`, `Boolean`, `BigInteger`, `BigDecimal`, `LocalDate`, `LangString`), enums, `Iri`,
+ *   `RdfResource`, types that are `@Rdf`-annotated (or have a `<Type>Wrapper` / `<Type>Factory`), and `List`s of
+ *   these. Type aliases are resolved first. `Short`, `Instant` and classes without `@Rdf` are rejected instead of
+ *   failing at the first read with "No wrapper factory registered";
+ * - **warning**: a class named `<Type>Wrapper` exists that is not an `RdfBacked` implementation of the interface, so
+ *   no wrapper is generated. (An existing `RdfBacked` implementation - generated from SHACL, or written by hand on
+ *   purpose - is used silently.)
  */
 public class OntoMapperProcessor(
   private val codeGenerator: CodeGenerator,
@@ -23,6 +41,8 @@ public class OntoMapperProcessor(
 
   private val wrapperGenerator = WrapperGenerator(logger)
   private val processedClasses = mutableSetOf<String>()
+  /** Qualified wrapper name (lower case: file names collide case-insensitively) to the type it was generated for. */
+  private val wrapperOwners = HashMap<String, String>()
 
   override fun process(resolver: Resolver): List<KSAnnotated> {
     logger.info("OntoMapper processor starting…")
@@ -47,28 +67,84 @@ public class OntoMapperProcessor(
       if (iriRaw.isBlank() || shaclRaw.isNotBlank()) {
         return@forEach
       }
+      val qualified = symbol.qualifiedName?.asString() ?: return@forEach
+      if (qualified in processedClasses) return@forEach
       // Interfaces generated from SHACL by OntologyProcessor also carry @Rdf(iri) and come with their own
       // wrapper; generating a second one would fail with FileAlreadyExistsException in the next round.
-      val qualified = symbol.qualifiedName?.asString()
-      if (qualified != null && resolver.getClassDeclarationByName(resolver.getKSNameFromString(qualified + "Wrapper")) != null) {
-        logger.info("Skipping $qualified: a wrapper already exists")
+      val wrapperName = "${symbol.packageName.asString()}.${WrapperGenerator.wrapperName(qualified, symbol.packageName.asString())}"
+        .removePrefix(".")
+      val existing = resolver.getClassDeclarationByName(resolver.getKSNameFromString(wrapperName))
+      if (existing != null) {
+        if (isWrapperOf(existing, qualified)) {
+          logger.info("Skipping $qualified: the wrapper $wrapperName already exists")
+        } else {
+          logger.warn(
+            "@Rdf type $qualified: no wrapper is generated because a class named $wrapperName already exists and it is " +
+              "not an RdfBacked implementation of $qualified. Materializing $qualified will fail with " +
+              "\"No wrapper factory registered\" unless a factory is registered with OntoMapper.register; rename " +
+              "that class to get the generated wrapper.",
+            symbol,
+          )
+        }
         return@forEach
       }
 
       val prefixMappings = prefixMappingsFor(symbol)
       logger.info("Resolved ${prefixMappings.size} prefix mappings for ${symbol.qualifiedName?.asString()}")
 
-      val classModel = analyzeClass(symbol, prefixMappings, rdfAnn)
+      val classModel = analyzeClass(symbol, prefixMappings, rdfAnn, resolver)
       if (classModel != null) {
         classModels.add(classModel to symbol)
       }
     }
 
+    // Two types whose wrappers would be written to the same file (a nested `Outer.Inner` and a top-level
+    // `Outer_Inner`): report both instead of failing with FileAlreadyExistsException on the second one.
+    val byWrapper = classModels.groupBy { (model, _) -> wrapperKey(model) }
+    val generatable = byWrapper.flatMap { (key, group) ->
+      val rivals = (group.map { it.first.qualifiedName } + listOfNotNull(wrapperOwners[key])).distinct().sorted()
+      if (rivals.size > 1) {
+        val (model, declaration) = group.first()
+        logger.error(
+          "@Rdf types ${rivals.joinToString(" and ")} map to the same wrapper class " +
+            "${WrapperGenerator.wrapperName(model.qualifiedName, model.packageName)}; rename one of them",
+          declaration,
+        )
+        emptyList()
+      } else {
+        group
+      }
+    }
+
     // Each wrapper depends only on its interface's file and its supertypes' files (whose properties it implements),
     // so editing an unrelated source does not invalidate every wrapper.
-    classModels.forEach { (model, declaration) -> generateWrapper(model, originatingFiles(declaration).toTypedArray()) }
+    generatable.forEach { (model, declaration) ->
+      wrapperOwners[wrapperKey(model)] = model.qualifiedName
+      generateWrapper(model, originatingFiles(declaration).toTypedArray())
+    }
 
     return symbols.filterNot { it.validate() }.toList()
+  }
+
+  private fun wrapperKey(model: ClassModel): String =
+    "${model.packageName}.${WrapperGenerator.wrapperName(model.qualifiedName, model.packageName)}".lowercase()
+
+  /** Whether [candidate] is a wrapper of the interface [qualified]: it implements the interface and `RdfBacked`. */
+  private fun isWrapperOf(candidate: KSClassDeclaration, qualified: String): Boolean {
+    val supertypes = HashSet<String>()
+    val pending = ArrayDeque(listOf(candidate))
+    val seen = HashSet<KSClassDeclaration>()
+    while (pending.isNotEmpty()) {
+      val current = pending.removeFirst()
+      if (!seen.add(current)) continue
+      current.superTypes.forEach { reference ->
+        (reference.resolve().declaration as? KSClassDeclaration)?.let { parent ->
+          parent.qualifiedName?.asString()?.let(supertypes::add)
+          pending += parent
+        }
+      }
+    }
+    return qualified in supertypes && RDF_BACKED_FQN in supertypes
   }
 
   /**
@@ -126,6 +202,7 @@ public class OntoMapperProcessor(
     classDecl: KSClassDeclaration,
     prefixMappings: Map<String, String>,
     rdfClassAnnotation: KSAnnotation,
+    resolver: Resolver,
   ): ClassModel? {
     val qualifiedName = classDecl.qualifiedName?.asString() ?: return null
 
@@ -133,13 +210,41 @@ public class OntoMapperProcessor(
       return null
     }
 
+    var complete = true
     val properties = mutableListOf<PropertyModel>()
     classDecl.getAllProperties().forEach { property ->
-      val propertyModel = analyzeProperty(property, prefixMappings)
+      if (rdfAnnotationOf(property) == null) {
+        // A member with a default implementation needs nothing from the wrapper; an abstract one cannot be
+        // implemented, and the generated wrapper would fail to compile with an error far from the cause.
+        if (property.isAbstract()) {
+          logger.error(
+            "Abstract property '${property.simpleName.asString()}' of ${property.parentDeclaration?.qualifiedName?.asString()} " +
+              "has no @Rdf(iri = ...) annotation, so the wrapper of $qualifiedName cannot implement it. Annotate it with " +
+              "@Rdf or give it a default getter.",
+            property,
+          )
+          complete = false
+        }
+        return@forEach
+      }
+      val propertyModel = analyzeProperty(property, prefixMappings, resolver)
       if (propertyModel != null) {
         properties.add(propertyModel)
+      } else {
+        complete = false
       }
     }
+    classDecl.getAllFunctions().filter { it.isAbstract }.forEach { function ->
+      logger.error(
+        "Abstract function '${function.simpleName.asString()}' of ${function.parentDeclaration?.qualifiedName?.asString()} " +
+          "cannot be implemented by the wrapper of $qualifiedName. Give it a default implementation (or move it to an " +
+          "extension function).",
+        function,
+      )
+      complete = false
+    }
+    // Every problem was reported as a KSP error: do not emit a wrapper that cannot compile.
+    if (!complete) return null
 
     val classIriRaw = rdfClassAnnotation.arguments
       .find { it.name?.asString() == "iri" }
@@ -166,11 +271,46 @@ public class OntoMapperProcessor(
     )
   }
 
-  private fun analyzeProperty(property: KSPropertyDeclaration, prefixMappings: Map<String, String>): PropertyModel? {
-    val rdfPropertyAnnotation = property.annotations.find { it.shortName.asString() == "Rdf" }
-      ?: property.getter?.annotations?.find { it.shortName.asString() == "Rdf" }
-      ?: property.setter?.annotations?.find { it.shortName.asString() == "Rdf" }
-      ?: return null
+  /** The `@Rdf` annotation of [property]: on the property, its getter or setter, or on a property it overrides. */
+  private fun rdfAnnotationOf(property: KSPropertyDeclaration): KSAnnotation? {
+    var current: KSPropertyDeclaration? = property
+    val seen = HashSet<KSPropertyDeclaration>()
+    while (current != null && seen.add(current)) {
+      val annotation = current.annotations.find { it.shortName.asString() == "Rdf" }
+        ?: current.getter?.annotations?.find { it.shortName.asString() == "Rdf" }
+        ?: current.setter?.annotations?.find { it.shortName.asString() == "Rdf" }
+      if (annotation != null) return annotation
+      current = current.findOverridee()
+    }
+    return null
+  }
+
+  /** [type] with type aliases replaced by the type they stand for (a nullable alias or use stays nullable). */
+  private fun expandAliases(type: KSType): KSType {
+    var current = type
+    var nullable = type.isMarkedNullable
+    val seen = HashSet<KSDeclaration>()
+    while (true) {
+      val alias = current.declaration as? KSTypeAlias ?: break
+      if (!seen.add(alias)) break
+      current = alias.type.resolve()
+      nullable = nullable || current.isMarkedNullable
+    }
+    return if (nullable) current.makeNullable() else current
+  }
+
+  /** Whether a member of type [declaration] can be materialized: it is `@Rdf`-annotated or has a wrapper / factory. */
+  private fun isMaterializable(declaration: KSClassDeclaration, resolver: Resolver): Boolean {
+    if (declaration.annotations.any { it.shortName.asString() == "Rdf" }) return true
+    val qualified = declaration.qualifiedName?.asString() ?: return false
+    val packageName = declaration.packageName.asString()
+    val wrapper = "$packageName.${WrapperGenerator.wrapperName(qualified, packageName)}".removePrefix(".")
+    return listOf(wrapper, "${qualified}Wrapper", "${qualified}Factory")
+      .any { resolver.getClassDeclarationByName(resolver.getKSNameFromString(it)) != null }
+  }
+
+  private fun analyzeProperty(property: KSPropertyDeclaration, prefixMappings: Map<String, String>, resolver: Resolver): PropertyModel? {
+    val rdfPropertyAnnotation = rdfAnnotationOf(property) ?: return null
 
     val predicateIriRaw = rdfPropertyAnnotation.arguments
       .find { it.name?.asString() == "iri" }
@@ -190,9 +330,10 @@ public class OntoMapperProcessor(
 
     // Literal member types follow the SHACL generators (XsdLiterals codecs): String, Int, Long, Float, Double,
     // Boolean, BigInteger, BigDecimal, LocalDate, LangString and enums. Iri / RdfResource members read RDF terms.
-    val returnType = property.type.resolve()
+    // Type aliases (of the member type and of a List element) are resolved to the types they stand for.
+    val returnType = expandAliases(property.type.resolve())
     val isList = returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List"
-    val elementDeclaration = (if (isList) returnType.arguments.firstOrNull()?.type?.resolve() else returnType)?.declaration
+    val elementDeclaration = (if (isList) returnType.arguments.firstOrNull()?.type?.resolve()?.let(::expandAliases) else returnType)?.declaration
     val container = listOf(returnType.declaration, elementDeclaration)
       .firstOrNull { RdfMemberTypes.isUnsupportedContainer(it?.qualifiedName?.asString()) }
     if (container != null) {
@@ -208,6 +349,23 @@ public class OntoMapperProcessor(
     val kotlinType = if (isList) "List<$elementName>" else elementName
     val enumKind = (elementDeclaration as? KSClassDeclaration)?.let(::enumKindOf)
     val propertyType = RdfMemberTypes.propertyType(kotlinType, enumKind)
+    if (propertyType == PropertyType.OBJECT || propertyType == PropertyType.OBJECT_LIST) {
+      // Neither a literal, an enum nor an RDF term: the value is materialized through OntoMapper, which needs a
+      // wrapper or factory for the type. Reject anything else now instead of failing at the first read.
+      val elementClass = elementDeclaration as? KSClassDeclaration
+      if (elementClass == null || !isMaterializable(elementClass, resolver)) {
+        val typeName = elementDeclaration?.qualifiedName?.asString() ?: property.type.toString()
+        logger.error(
+          "@Rdf member '${property.simpleName.asString()}' of ${property.parentDeclaration?.qualifiedName?.asString()} has " +
+            "type $typeName, which generated wrappers cannot read: it is not a supported literal type " +
+            "(${RdfMemberTypes.supportedLiteralTypes()}), an enum, Iri or RdfResource, and it is not an @Rdf type " +
+            "(reading it would fail with \"No wrapper factory registered\"). Use a supported type, or annotate " +
+            "$typeName with @Rdf.",
+          property,
+        )
+        return null
+      }
+    }
 
     val wantsMutable = property.isMutable
     val effectiveMutable = wantsMutable && RdfMemberTypes.supportsMutation(kotlinType, propertyType, enumKind)
@@ -283,6 +441,8 @@ internal fun originatingFiles(declaration: KSClassDeclaration): List<KSFile> {
   visit(declaration)
   return files.toList()
 }
+
+private const val RDF_BACKED_FQN = "com.geoknoesis.kastor.gen.runtime.RdfBacked"
 
 public class OntoMapperProcessorProvider : SymbolProcessorProvider {
   override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
