@@ -12,8 +12,9 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
 /**
  * A reifier blank-node id (see [Rdf4jTerms.reifierFor]) exceeds the supported quoted-triple nesting depth
- * ([Rdf4jTerms.MAX_REIFIER_NESTING]) or id length ([Rdf4jTerms.MAX_REIFIER_ID_LENGTH]). Raised instead of decoding
- * (or encoding) it, so that a crafted blank-node id cannot exhaust the stack or memory.
+ * ([Rdf4jTerms.MAX_REIFIER_NESTING]) or, when decoding, the id length ([Rdf4jTerms.MAX_REIFIER_ID_LENGTH]). Raised
+ * instead of decoding it, so that a crafted blank-node id cannot exhaust the stack or memory. Encoding only fails for
+ * nesting beyond the limit: a triple too large for an encoded id gets a bounded hashed id instead.
  */
 internal class ReifierLimitException(message: String) : IllegalArgumentException(message)
 
@@ -101,21 +102,108 @@ internal object Rdf4jTerms {
     const val STAR_REIFIER_PREFIX: String = "kastor-star-"
 
     /**
-     * Deterministic, **reversible** reifier for an RDF-star quoted triple: the same triple always maps to the same
-     * blank node, and the id encodes the triple itself, so lookups resolve a reifier back to its quoted triple
-     * without scanning the store (see [quotedTripleOf]).
+     * Deterministic reifier for an RDF-star quoted triple: the same triple always maps to the same blank node, and
+     * the id can be resolved back to the triple, so lookups by a reifier are index lookups on its quoted triple
+     * rather than scans (see [quotedTripleOf]).
      *
-     * Reserved scheme: `kastor-star-<base64url(encoded triple)>-<8 hex digits of its SHA-256>`. An id is only
-     * treated as a reifier when it decodes to a well-formed triple **and** the checksum matches, so ordinary blank
-     * nodes whose ids merely start with `kastor-star-` are never mistaken for reifiers.
+     * **Encoded ids** (the normal case): `kastor-star-<base64url(encoded triple)>-<8 hex digits of its SHA-256>`. The
+     * id carries the triple itself. An id is only treated as a reifier when it decodes to a well-formed triple **and**
+     * the checksum matches, so ordinary blank nodes whose ids merely start with `kastor-star-` are never mistaken for
+     * reifiers.
+     *
+     * **Hashed ids** (triples whose encoded id would be longer than [MAX_REIFIER_ID_LENGTH], e.g. a quoted triple with
+     * a literal of about 750 KB or more): `kastor-star-sha256-<64 hex digits>`, the SHA-256 of the same encoding. The
+     * id is short whatever the size of the triple, so reading valid data never fails on an id limit. It does not carry
+     * the triple: every hashed id this process produces is remembered (a bounded, softly referenced map from id to
+     * triple), and [quotedTripleOf] answers from that map. An id that is not in the map (after a restart, or once it
+     * was evicted) is resolved by [Rdf4jGraph] with one scan of the store for the triple with that hash; an id that
+     * resolves nowhere is an ordinary blank node. The two forms cannot be confused: `sha256-<64 hex>` never passes the
+     * 8-digit checksum of the encoded form.
+     *
+     * @throws ReifierLimitException when [triple] nests quoted triples deeper than [MAX_REIFIER_NESTING].
      */
     fun reifierFor(triple: Triple): BlankNode {
         val encoded = StringBuilder().also { encodeValue(triple, it, 1) }.toString().toByteArray(Charsets.UTF_8)
+        // Unpadded base64 length, plus the prefix, the separator and the checksum.
+        val idLength = STAR_REIFIER_PREFIX.length + (encoded.size * 4L + 2) / 3 + 1 + CHECKSUM_LENGTH
+        if (idLength > MAX_REIFIER_ID_LENGTH) return hashedReifierFor(triple, encoded)
         val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(encoded)
-        val id = "$STAR_REIFIER_PREFIX$payload-${checksum(encoded)}"
-        requireIdLength(id)
+        return BlankNode("$STAR_REIFIER_PREFIX$payload-${checksum(encoded)}")
+    }
+
+    private const val CHECKSUM_LENGTH = 8
+    private const val HASHED_MARKER = "sha256-"
+    private const val HASH_LENGTH = 64
+
+    /** Most hashed reifiers remembered at a time; older ones are resolved from the store again when needed. */
+    private const val MAX_REMEMBERED_HASHED_REIFIERS = 64
+
+    /** Hashed reifier id to its quoted triple, least recently used first; guarded by itself. */
+    private val hashedReifiers =
+        object : LinkedHashMap<String, java.lang.ref.SoftReference<Triple>>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, java.lang.ref.SoftReference<Triple>>): Boolean =
+                size > MAX_REMEMBERED_HASHED_REIFIERS
+        }
+
+    private fun hashedReifierFor(triple: Triple, encoded: ByteArray): BlankNode {
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(encoded)
+        val id = STAR_REIFIER_PREFIX + HASHED_MARKER + hex(digest, digest.size)
+        synchronized(hashedReifiers) {
+            // A copy made of plain values, so the map never keeps a store's own value objects alive.
+            if (hashedReifiers[id]?.get() == null) hashedReifiers[id] = java.lang.ref.SoftReference(detached(triple) as Triple)
+        }
         return BlankNode(id)
     }
+
+    private fun detached(value: Value): Value = when (value) {
+        is Triple -> valueFactory.createTriple(detached(value.subject) as Resource, detached(value.predicate) as IRI, detached(value.`object`))
+        is IRI -> valueFactory.createIRI(value.stringValue())
+        is BNode -> valueFactory.createBNode(value.id)
+        is Rdf4jLiteral -> {
+            val language = value.language.orElse(null)
+            if (language != null) valueFactory.createLiteral(value.label, language) else valueFactory.createLiteral(value.label, value.datatype)
+        }
+        else -> value
+    }
+
+    /** True when [id] has the form of a hashed reifier id (whether or not its triple is currently known). */
+    fun isHashedReifierId(id: String): Boolean {
+        val start = STAR_REIFIER_PREFIX.length + HASHED_MARKER.length
+        if (id.length != start + HASH_LENGTH || !id.startsWith(STAR_REIFIER_PREFIX) || !id.startsWith(HASHED_MARKER, STAR_REIFIER_PREFIX.length)) return false
+        for (i in start until id.length) if (id[i] !in '0'..'9' && id[i] !in 'a'..'f') return false
+        return true
+    }
+
+    /** Hashed reifier ids in [term] (also inside triple terms) whose quoted triple this process does not know. */
+    fun unresolvedHashedReifiers(term: RdfTerm?, out: MutableSet<String>) {
+        when (term) {
+            is BlankNode -> if (isHashedReifierId(term.id) && quotedTripleOf(term.id) == null) out.add(term.id)
+            is TripleTerm -> {
+                unresolvedHashedReifiers(term.triple.subject, out)
+                unresolvedHashedReifiers(term.triple.obj, out)
+            }
+            else -> Unit
+        }
+    }
+
+    /**
+     * Remembers the hashed reifiers of the quoted triples in [value] (at any depth), so that their ids resolve.
+     * Used to resolve a hashed id from the content of a store.
+     */
+    fun rememberHashedReifiers(value: Value) {
+        if (value !is Triple) return
+        try {
+            reifierFor(value)
+        } catch (_: ReifierLimitException) {
+            // nested too deeply to have a reifier at all
+            return
+        }
+        rememberHashedReifiers(value.subject)
+        rememberHashedReifiers(value.`object`)
+    }
+
+    /** Forgets every remembered hashed reifier, as a new process would have (for tests). */
+    internal fun forgetHashedReifiers() = synchronized(hashedReifiers) { hashedReifiers.clear() }
 
     /**
      * Deepest quoted-triple nesting a reifier id may encode. Deeper triples (whether written to the store or forged
@@ -123,7 +211,10 @@ internal object Rdf4jTerms {
      */
     const val MAX_REIFIER_NESTING: Int = 64
 
-    /** Longest reifier id (in characters) that is encoded or decoded; longer ones fail with [ReifierLimitException]. */
+    /**
+     * Longest encoded reifier id (in characters). A longer id is never produced (the triple gets a hashed id instead,
+     * see [reifierFor]) and never decoded: [quotedTripleOf] rejects it with [ReifierLimitException].
+     */
     const val MAX_REIFIER_ID_LENGTH: Int = 1 shl 20
 
     private fun requireNesting(depth: Int) {
@@ -139,12 +230,14 @@ internal object Rdf4jTerms {
     }
 
     /**
-     * The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier.
+     * The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier
+     * (for a hashed id: when its triple is not currently remembered, see [reifierFor]).
      * @throws ReifierLimitException when [id] carries the reifier prefix but is longer than [MAX_REIFIER_ID_LENGTH] or
      *   encodes a triple nested deeper than [MAX_REIFIER_NESTING].
      */
     fun quotedTripleOf(id: String): Triple? {
         if (!id.startsWith(STAR_REIFIER_PREFIX)) return null
+        if (isHashedReifierId(id)) return synchronized(hashedReifiers) { hashedReifiers[id]?.get() }
         requireIdLength(id)
         val separator = id.lastIndexOf('-')
         if (separator <= STAR_REIFIER_PREFIX.length) return null
@@ -206,10 +299,12 @@ internal object Rdf4jTerms {
         }
     }
 
-    private fun checksum(bytes: ByteArray): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-        val hex = StringBuilder(8)
-        for (i in 0 until 4) hex.append(Character.forDigit((digest[i].toInt() shr 4) and 0xF, 16)).append(Character.forDigit(digest[i].toInt() and 0xF, 16))
+    private fun checksum(bytes: ByteArray): String =
+        hex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes), CHECKSUM_LENGTH / 2)
+
+    private fun hex(bytes: ByteArray, count: Int): String {
+        val hex = StringBuilder(count * 2)
+        for (i in 0 until count) hex.append(Character.forDigit((bytes[i].toInt() shr 4) and 0xF, 16)).append(Character.forDigit(bytes[i].toInt() and 0xF, 16))
         return hex.toString()
     }
 
@@ -236,9 +331,6 @@ internal object Rdf4jTerms {
                 encodeValue(value.subject, out, depth + 1)
                 encodeValue(value.predicate, out, depth + 1)
                 encodeValue(value.`object`, out, depth + 1)
-                if (out.length > MAX_REIFIER_ID_LENGTH) {
-                    throw ReifierLimitException("Reifier blank-node id would exceed the limit of $MAX_REIFIER_ID_LENGTH characters")
-                }
             }
             else -> throw IllegalArgumentException("Unknown RDF4J Value type: ${value.javaClass}")
         }

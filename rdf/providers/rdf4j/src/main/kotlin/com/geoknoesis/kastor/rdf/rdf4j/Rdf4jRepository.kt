@@ -36,9 +36,13 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * create quoted subjects (it uses RDF-star syntax, `TRIPLE(...)`, `LOAD` or `SERVICE`, or triple terms have been
  * written to the store) makes the state unknown until the next read re-derives it with one scan; inside a
  * `transaction { }` that scan result is reused until the transaction ends (graph writes keep it current, a further
- * update discards it). While the state is unknown or quoted subjects are nested, lookups that involve reifiers widen
- * to the positions the reified form can satisfy (up to a scan). Repositories wrapping an externally created store
- * (whose content other code may change) are never tracked and always use the scanning paths.
+ * update discards it). While the state is unknown or quoted subjects are nested, lookups that involve reifiers still
+ * use the store indexes for a reifier's own statements and add a scan only for what the indexes cannot answer (see
+ * [Rdf4jGraph]). Repositories wrapping an externally created store (whose content other code may change) are never
+ * tracked: their state is always unknown, and `size()` always counts in one pass.
+ *
+ * **No state outside the store:** which `rdf:reifies` triples are explicit is recorded by stored statements (see
+ * [Rdf4jGraph]), so several repositories may wrap one RDF4J repository, and a persistent store can be reopened.
  *
  * @param repository RDF4J Repository instance (internal implementation detail)
  * @param inference Whether the wrapped store provides inferred statements
@@ -166,49 +170,11 @@ class Rdf4jRepository(
         return level
     }
 
-    /** An explicitly added `_:r rdf:reifies <<quoted>>` triple in graph [context] (null for the default graph). */
-    internal data class ReifiesKey(val context: org.eclipse.rdf4j.model.Resource?, val quoted: org.eclipse.rdf4j.model.Triple)
-
     /**
-     * Explicit `rdf:reifies` triples that are not stored because statements about the quoted triple imply them
-     * (RDF-star capable stores only). Remembered so that the triple survives the removal of the last such statement.
+     * True when the store may hold RDF-star triple values at all (as a subject or as an object): it can store them,
+     * and it is not a tracked repository through which none has been written yet.
      */
-    private val explicitReifies: MutableSet<ReifiesKey> = java.util.concurrent.ConcurrentHashMap.newKeySet()
-
-    /** Changes to [explicitReifies] made by the current thread's transaction, applied when it commits. */
-    private val explicitReifiesInTransaction = ThreadLocal<LinkedHashMap<ReifiesKey, Boolean>?>()
-
-    internal fun isExplicitReifies(key: ReifiesKey): Boolean =
-        explicitReifiesInTransaction.get()?.get(key) ?: (key in explicitReifies)
-
-    internal fun setExplicitReifies(key: ReifiesKey, present: Boolean) {
-        val pending = explicitReifiesInTransaction.get()
-        when {
-            pending != null -> pending[key] = present
-            present -> explicitReifies.add(key)
-            else -> explicitReifies.remove(key)
-        }
-    }
-
-    /** Explicit implied `rdf:reifies` triples visible to the current thread, restricted to [filter]. */
-    private fun explicitReifiesMatching(filter: (ReifiesKey) -> Boolean): List<ReifiesKey> =
-        (explicitReifies + explicitReifiesInTransaction.get()?.keys.orEmpty()).filter { filter(it) && isExplicitReifies(it) }
-
-    /** Forgets the explicit implied `rdf:reifies` triples of cleared graphs. */
-    internal fun forgetExplicitReifies(filter: (ReifiesKey) -> Boolean) =
-        explicitReifiesMatching(filter).forEach { setExplicitReifies(it, false) }
-
-    /**
-     * Stores every remembered explicit `rdf:reifies` triple as a plain statement, e.g. before a SPARQL update that may
-     * remove the statements implying it (and that this repository cannot follow).
-     */
-    private fun materialiseExplicitReifies(conn: RepositoryConnection) {
-        for (key in explicitReifiesMatching { true }) {
-            val reifier = valueFactory.createBNode(Rdf4jTerms.reifierFor(key.quoted).id)
-            conn.add(reifier, Rdf4jTerms.toRdf4jIri(com.geoknoesis.kastor.rdf.vocab.RDF.reifies), key.quoted, key.context)
-            setExplicitReifies(key, false)
-        }
-    }
+    internal fun tripleValuesPossible(): Boolean = starCapable && (!trackQuotedSubjects || tripleValuesMayExist)
 
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
@@ -337,7 +303,7 @@ class Rdf4jRepository(
      * Error message for a failed query. RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language
      * literals (`"x"@ar--rtl`); that case gets an explicit explanation instead of a bare lexer error.
      */
-    private fun failureMessage(prefix: String, query: String, e: Exception): String {
+    private fun failureMessage(prefix: String, query: String, e: Throwable): String {
         val malformed = generateSequence<Throwable>(e) { it.cause }.any { it is org.eclipse.rdf4j.query.MalformedQueryException }
         return if (malformed && DIRECTIONAL_LITERAL.containsMatchIn(query)) {
             "$prefix: RDF4J's SPARQL 1.1 parser cannot read RDF 1.2 directional language literals (\"...\"@lang--dir). " +
@@ -363,12 +329,11 @@ class Rdf4jRepository(
     }
 
     override fun listGraphs(): List<Iri> = withConnection { conn ->
-        // RDF4J's `contextIDs` includes blank-node contexts (graph names that
-        // were generated for an unnamed `GRAPH _:b { ... }` block in TriG).
-        // Those are reported as `BNode` values whose string form (`genid-...-g`)
-        // is not a valid absolute IRI - constructing an `Iri` from them
-        // throws. RDF 1.1/1.2 only allows IRI-named graphs to be referenced
-        // via `GRAPH <iri> { ... }`, so we filter out blank-node contexts here.
+        // Datasets loaded through this provider never have blank-node contexts: `parseDataset` skolemizes
+        // blank-node graph names to `urn:kastor:skolem:` IRIs (see Rdf4jFormatSupport.parseDataset). A store
+        // written by other RDF4J code (or by SPARQL `LOAD`) may still report `BNode` contexts in `contextIDs`;
+        // their string form (`genid-...`) is not a valid absolute IRI and they cannot be named in
+        // `GRAPH <iri> { ... }`, so they are left out here.
         conn.contextIDs.use { iter ->
             val out = mutableListOf<Iri>()
             while (iter.hasNext()) {
@@ -387,7 +352,6 @@ class Rdf4jRepository(
     override fun removeGraph(name: Iri): Boolean = withWriteConnection { conn ->
         val context = valueFactory.createIRI(name.value)
         val had = conn.hasStatement(null, null, null, false, context)
-        forgetExplicitReifies { it.context == context }
         conn.remove(null as org.eclipse.rdf4j.model.Resource?, null as org.eclipse.rdf4j.model.IRI?, null as org.eclipse.rdf4j.model.Value?, context)
         had
     }
@@ -439,7 +403,9 @@ class Rdf4jRepository(
      * as `<< s p o >>` in triple patterns and, in expressions (where RDF4J's parser does not accept that syntax), as a
      * fresh variable assigned with `BIND(<< s p o >> AS ?fresh)` at the start of each group that reads it. (RDF4J 5
      * cannot bind a triple value natively: `setBinding` with one trips an internal assertion of its evaluator.)
-     * A triple term with a blank-node component cannot be written at all; it falls back to `setBinding`.
+     * A triple term with a component that SPARQL text cannot spell (a blank node or a directional language string, at
+     * any depth) can therefore not be bound at all on RDF4J: such a binding is rejected with
+     * [IllegalArgumentException] before the query is prepared.
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
@@ -449,6 +415,12 @@ class Rdf4jRepository(
         val constants = bindings.mapValues { (name, term) ->
             val spelled = sparqlConstant(term)
             when {
+                spelled == null && term is TripleTerm -> throw IllegalArgumentException(
+                    "Initial binding ?$name is a triple term that contains a blank node or a directional language string. " +
+                        "RDF4J can neither write such a triple term into the query text nor bind a triple value natively; " +
+                        "bind its components to separate variables and match the triple term in the query " +
+                        "(e.g. ?x ?y << ?s ?p ?o >>) instead."
+                )
                 spelled == null -> placeholderFor(name, query.sparql, placeholders.keys + expressions.values)
                     .also { placeholders[it] = Rdf4jTerms.toRdf4jValue(term) }.let { "?$it" }
                 term is TripleTerm -> spelled.also {
@@ -492,7 +464,8 @@ class Rdf4jRepository(
                 else lexical.typedLiteral(term.lexical, term.datatype.value)
             is TrueLiteral -> "\"true\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
             is FalseLiteral -> "\"false\"^^" + lexical.iriRef(com.geoknoesis.kastor.rdf.vocab.XSD.boolean.value)
-            // RDF4J's SPARQL-star syntax for a triple term whose components can all be spelled (triple patterns only).
+            // RDF4J's SPARQL-star syntax for a triple term whose components can all be spelled (triple patterns only);
+            // null when a component is a blank node or a directional language string (the caller rejects the binding).
             is TripleTerm -> {
                 val subject = (term.triple.subject as? Iri)?.let { sparqlConstant(it) } ?: return null
                 val obj = sparqlConstant(term.triple.obj) ?: return null
@@ -508,13 +481,20 @@ class Rdf4jRepository(
             MapBindingSet(names.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
         }.guardedBy(sparql)
 
-    /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
+    /**
+     * Wraps failures of the query engine itself; never used around caller-supplied consumers. Besides exceptions this
+     * covers an [AssertionError]: RDF4J's evaluator checks some of its invariants with `assert`, which (with assertions
+     * enabled) reports an unsupported query as an `Error`. Every other `Error` (out of memory, stack overflow, linkage
+     * errors) propagates unchanged.
+     */
     private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
         operation()
     } catch (e: RdfException) {
         throw e
     } catch (e: Exception) {
         throw RdfQueryException(failureMessage("SPARQL execution failed", query, e), query = query, cause = e)
+    } catch (e: AssertionError) {
+        throw RdfQueryException(failureMessage("SPARQL execution failed (RDF4J internal assertion)", query, e), query = query, cause = e)
     }
 
     /** Engine failures raised while iterating results become [RdfQueryException]; consumer code is not wrapped. */
@@ -604,8 +584,6 @@ class Rdf4jRepository(
             unvalidatedWrites = true
             val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
-            // The update may remove the statements implying an explicit rdf:reifies triple; store those triples first.
-            materialiseExplicitReifies(conn)
             try {
                 conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).execute()
                 // Checked after executing, so a triple value written concurrently (and visible to the update) counts.
@@ -645,21 +623,16 @@ class Rdf4jRepository(
         repository.connection.use { conn ->
             txConnection.set(conn)
             readOnly.set(read)
-            val pendingReifies = LinkedHashMap<ReifiesKey, Boolean>()
-            explicitReifiesInTransaction.set(pendingReifies)
             try {
                 conn.begin()
                 operations(this)
                 conn.commit()
-                explicitReifiesInTransaction.remove()
-                pendingReifies.forEach { (key, present) -> setExplicitReifies(key, present) }
             } catch (e: Throwable) {
                 if (conn.isActive) conn.rollback()
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
-                explicitReifiesInTransaction.remove()
                 quotedScanInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
@@ -673,7 +646,6 @@ class Rdf4jRepository(
 
     override fun clear(): Boolean = withWriteConnection { conn ->
         val wasEmpty = conn.isEmpty
-        forgetExplicitReifies { true }
         conn.clear()
         !wasEmpty
     }

@@ -189,4 +189,78 @@ class Rdf4jGraphOperationCountTest {
             assertEquals(size, it.defaultGraph.size())
         }
     }
+
+    private val ex = "http://example.org/"
+    private val quoted = TripleTerm(RdfTriple(Iri(ex + "a"), Iri(ex + "b"), Iri(ex + "c")))
+    private val reifier = Rdf4jTerms.reifierFor(Rdf4jTerms.toRdf4jValue(quoted) as org.eclipse.rdf4j.model.Triple)
+    private val reifies = RdfTriple(reifier, RDF.reifies, quoted)
+    private val annotation = RdfTriple(reifier, Iri(ex + "q"), Literal("z"))
+
+    /** Lookups through a known reifier, which the top-level statements about its quoted triple answer. */
+    private fun assertTargetedReifierLookups(repo: Rdf4jRepository, counting: CountingRepository, what: String) {
+        val graph = repo.editDefaultGraph()
+        counting.iterated.set(0)
+        assertEquals(setOf(annotation, reifies), graph.find(reifier, null, null).toSet(), what)
+        assertEquals(listOf(annotation), graph.find(reifier, Iri(ex + "q"), null), what)
+        assertTrue(graph.hasTriple(annotation), what)
+        assertTrue(graph.hasTriple(reifies), what)
+        assertEquals(listOf(reifies), graph.find(reifier, RDF.reifies, null), what)
+        assertEquals(listOf(reifies), graph.find(null, RDF.reifies, quoted), what)
+        assertEquals(emptyList(), graph.find(reifier, Iri(ex + "none"), null), what)
+        assertTrue(!graph.hasTriple(RdfTriple(reifier, Iri(ex + "q"), Literal("other"))), what)
+        assertTrue(counting.iterated.get() < 40, "$what: reifier lookups must be targeted, iterated ${counting.iterated.get()}")
+        counting.iterated.set(0)
+        assertTrue(graph.removeTriple(annotation), what)
+        assertTrue(counting.iterated.get() < 20, "$what: removing an annotation must be targeted, iterated ${counting.iterated.get()}")
+        assertTrue(!graph.hasTriple(annotation), what)
+    }
+
+    @Test
+    fun `reifier lookups on a wrapped store whose quoted subjects are unknown are index lookups`() {
+        val base = SailRepository(MemoryStore()).also { it.init() }
+        val counting = CountingRepository(base)
+        Rdf4jRepository(counting).use { repo ->
+            load(repo)
+            repo.editDefaultGraph().addTriple(annotation)
+            assertTargetedReifierLookups(repo, counting, "wrapped store")
+        }
+    }
+
+    @Test
+    fun `reifier lookups on a store with nested quoted subjects are index lookups`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.use {
+            load(it)
+            val nested = "<< << <${ex}n1> <${ex}n2> <${ex}n3> >> <${ex}m> \"1\" >> <${ex}r> \"w\" ."
+            Rdf4jProvider().parseDataset(it, nested.byteInputStream(), "TURTLE")
+            val graph = it.editDefaultGraph()
+            graph.addTriple(annotation)
+            assertTargetedReifierLookups(it, counting, "nested store")
+
+            // A quoted triple that only occurs nested is still found (by the scan that the index lookups fall back to).
+            val inner = TripleTerm(RdfTriple(Iri(ex + "n1"), Iri(ex + "n2"), Iri(ex + "n3")))
+            val innerReifier = Rdf4jTerms.reifierFor(Rdf4jTerms.toRdf4jValue(inner) as org.eclipse.rdf4j.model.Triple)
+            val innerReifies = RdfTriple(innerReifier, RDF.reifies, inner)
+            assertTrue(graph.hasTriple(innerReifies))
+            assertEquals(listOf(innerReifies), graph.find(innerReifier, RDF.reifies, null))
+            assertEquals(listOf(innerReifies), graph.find(null, RDF.reifies, inner))
+            assertEquals(setOf(innerReifies), graph.find(innerReifier, null, null).toSet())
+            assertEquals(2, graph.find(null, RDF.reifies, null).size)
+            // Removing that rdf:reifies triple rewrites the nested statement, like before.
+            assertTrue(graph.removeTriple(innerReifies))
+            assertTrue(!graph.hasTriple(innerReifies))
+        }
+    }
+
+    @Test
+    fun `an rdf-reifies lookup with a non-triple object does not scan`() {
+        val (repo, counting) = counted(MemoryStore(), "memory")
+        repo.use {
+            load(it)
+            it.editDefaultGraph().addTriple(annotation)
+            counting.iterated.set(0)
+            assertEquals(emptyList(), it.defaultGraph.find(null, RDF.reifies, Iri(ex + "a")))
+            assertTrue(counting.iterated.get() < 20, "iterated ${counting.iterated.get()}")
+        }
+    }
 }
