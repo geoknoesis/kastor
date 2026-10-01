@@ -263,67 +263,67 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_QUADS] N-Quads-12 - Blank node subject",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-bnode-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested object term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-nested-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_QUADS] N-Quads-12 - Nested, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-01: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_QUADS] N-Quads-12 - object triple term, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-02: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-quads/syntax#nquads12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples - Bad - literal with missing language tag",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-3: RDF4J 5.3.1 Rio silently rewrites \"...\"^^rdf:langString without a language tag into a plain literal"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples-langdir-bad-3: RDF4J 5.3.2 Rio silently rewrites \"...\"^^rdf:langString without a language tag into a plain literal"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Blank node subject",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-bnode-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested object term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-nested-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples-12 - Nested, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: IRI included an unencoded space:)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/N_TRIPLES] N-Triples-12 - object triple term, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-02: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-n-triples/syntax#ntriples12-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unexpected character U+3C at index 0: <(<http://example/s2)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -473,343 +473,325 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation - nested",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-04: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-04: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation - predicate and object lists",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-03: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-03: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation example",
    "count": 2,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-02: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax | ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-2: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-02: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax | ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-2: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation followed by predicate/object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-4: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-4: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form",
    "count": 2,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-01: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax | ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-1: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-01: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax | ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-1: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with IRI reifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-13: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer>)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-13: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer>)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with alternating reifiers and annotation blocks",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-12: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '|')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-12: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '|')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with annotation block followed by reifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-11: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-11: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with explicit identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-08: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with multiple annotation blocks",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-10: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-10: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation form with multiple reifiers",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-09: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-09: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation object list",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-05: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-05: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation on triple with reified triple object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-03: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-03: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation on triple with reified triple subject",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-02: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-02: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation predicateObjecetList",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-3: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-3: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-06: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-06: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Annotation with reified triples",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-01: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-reified-triples-annotation-01: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Different annotations have different default identifiers",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-07: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-annotation-07: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Empty reifier with annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-8: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-8: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Empty reifier without annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-6: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-6: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Reifier with annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-7: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-7: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - Reifier without annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-5: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-ann-5: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '}', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - bad - empty annotation",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-1: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-1: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - bad - triple as annotation",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-2: RDF4J 5.3.1 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bad-ann-2: RDF4J 5.3.2 Rio crashes with NullPointerException (statement may not be null) on RDF 1.2 annotation syntax"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - blank node",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-bnode-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - blank node labels",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-bnode-2: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-bnode-2: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - object reification",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-02: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-02: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - object reification with bnode identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-06: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-06: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - object reification with empty identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-08: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - object reification with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-04: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - reified triple outside triple",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-4: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-4: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - reified triple with IRI identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - reified triple with blank node identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-4: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-inside-4: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with bnode identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-05: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-05: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with empty identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-07: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-07: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - subject reification with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/eval#trig12-rt-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] TriG 1.2 - triple term object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] alternating_bnode_graphs",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#alternating_bnode_graphs: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] anonymous_blank_node_graph",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#anonymous_blank_node_graph: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] labeled_blank_node_graph",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#labeled_blank_node_graph: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-trig/syntax#trig12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-bnode-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01: RDF4J 5.3.2 Rio accepts a malformed blank node label (_::a)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-02: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-03: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-04: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-n3-extras-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01: RDF4J 5.3.1 Rio accepts an N3 formula {...} in subject position"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-n3-extras-01: RDF4J 5.3.2 Rio accepts an N3 formula {...} in subject position"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-num-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-num-02: RDF4J 5.3.2 Rio accepts a malformed double literal (123e)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-01: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-02: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-03: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-04: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-05",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-05: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-06",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-06: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-07",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-07: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-08",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-08: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-09",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-09: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-numeric-escape-10",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-numeric-escape-10: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -839,343 +821,343 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Blank node object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-bnode-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-bnode-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested subject term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-nested-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-nested-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - Nested, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - triple term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-1: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-1: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] N-Triples 1.2 as Turtle 1.2 - whitespace and terms",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-2: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#nt-ttl12-2: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - @version",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-02: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - @version in data",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-04: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - @version other version string",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-06: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-06: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with IRI refier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-13: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-13: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with alternating reifiers and annotation blocks",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-12: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-12: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with annotation block followed by reifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-11: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-11: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with explicit identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-08: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with multiple annotation blocks",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-10: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '{')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-10: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '{')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation form with multiple reifiers",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-09: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-09: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation on triple with reified triple object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-03: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-03: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation predicateObjecetList",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '|')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '|')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-06: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-06: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Annotation with reified triples",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-01: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-reified-triples-annotation-01: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogate pair numeric escape sequence",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogate-pair-bad-01: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogate-pair-bad-01: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogate pair via numeric escape sequence",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogate-pair-bad-02: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogate-pair-bad-02: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - high-high",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-02: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-02: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone high surrogate",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-04: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-04: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - lone low surrogate",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-05: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-05: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - low-low",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-03: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-03: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Bad - Surrogates - wrong order",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-01: RDF4J 5.3.1 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-surrogates-bad-01: RDF4J 5.3.2 Rio accepts surrogate code points written as numeric escape sequences, which RDF 1.2 Turtle forbids"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Different annotations have different default identifiers",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-07: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-annotation-07: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Empty reifier with annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-8: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-8: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Empty reifier without annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-6: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-6: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested object term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-04: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Nested, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Reifier with annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-7: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-7: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - Reifier without annotation block",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-5: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-ann-5: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '.', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-01: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION in data",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - VERSION other version string",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-05: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-05: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-bnode-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-bnode-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '[')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - blank node labels",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-bnode-02: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-bnode-02: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - literals in object position",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-05: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-05: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - many versions",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-08: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected ':', found ' ')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - mixed versions",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-07: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-version-07: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Unknown directive \"@version\")"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-02: RDF4J 5.3.1 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-02: RDF4J 5.3.2 Rio reads RDF 1.2 reified-triple/annotation syntax as RDF-star: quoted triples in object position stay triple terms and repeated annotations of one triple share one reifier, so the dataset differs from the RDF 1.2 reified form"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with bnode identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-06: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-06: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with empty identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-08: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-08: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object reification with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-04: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-04: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-01: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-01: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - object triple term, no whitespace",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-02: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-tt-02: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple outside triple",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-4: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-4: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with IRI identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with blank node identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-4: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-inside-4: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with keyword object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-6: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-6: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - reified triple with literal object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-5: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-5: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Illegal predicate value: \"\"^^<http://www.w3.org/2001/XMLSchema#integer)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with bnode identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-05: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-05: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with empty identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-07: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-07: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - subject reification with identifier",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-03: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/eval#turtle12-rt-03: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected '>', found '~')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-3: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-3: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with keyword object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-8: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-8: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] Turtle 1.2 - triple term with literal object",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-7: RDF4J 5.3.1 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
+   "reason": "ALLOWLISTED RDF4J https://w3c.github.io/rdf-tests/rdf/rdf12/rdf-turtle/syntax#turtle12-7: RDF4J 5.3.2 Rio does not implement this RDF 1.2 syntax (Rio: Expected an RDF value here, found '(')"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
@@ -1205,97 +1187,97 @@
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-bnode-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01: RDF4J 5.3.1 Rio accepts a malformed blank node label (_::a)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01: RDF4J 5.3.2 Rio accepts a malformed blank node label (_::a)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-01: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-02: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-03: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-esc-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04: RDF4J 5.3.1 Rio accepts an invalid string escape sequence"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-esc-04: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-num-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02: RDF4J 5.3.1 Rio accepts a malformed double literal (123e)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-num-02: RDF4J 5.3.2 Rio accepts a malformed double literal (123e)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-01",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-01: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-02",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-02: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-03",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-03: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-04",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-04: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-05",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-05: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-06",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-06: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-07",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-07: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-08",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-08: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-09",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-09: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-10",
    "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.1 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
   }
  ]
 }

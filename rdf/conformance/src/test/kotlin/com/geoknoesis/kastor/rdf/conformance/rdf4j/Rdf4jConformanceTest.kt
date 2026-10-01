@@ -13,7 +13,7 @@ import org.junit.jupiter.api.TestFactory
 /**
  * Runs the W3C RDF 1.2 syntax test suites against Kastor's RDF4J provider.
  *
- * RDF4J 5.3.1 predates much of the RDF 1.2 syntax (the `VERSION` directive, the `~` reifier
+ * RDF4J 5.3.2 predates much of the RDF 1.2 syntax (the `VERSION` directive, the `~` reifier
  * shorthand, `<<( s p o )>>` triple-term syntax, annotations). Tests that fail for that reason are
  * listed **by IRI with a reason and the expected failure signature** in `conformance-allowlist.tsv`,
  * and are only skipped when the observed failure matches that signature. Anything else (an unlisted
