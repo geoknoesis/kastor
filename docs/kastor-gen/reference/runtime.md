@@ -535,15 +535,32 @@ threads.
 
 ```kotlin
 val catalog = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
-    graph.materialize<Catalog>(node).also { it.title }   // read inside the block: wrappers read lazily
+    graph.materialize<Catalog>(node)        // the wrapper is created inside the block and keeps SKIP
+}
+catalog.title                               // read later, on any thread: still SKIP
+```
+
+**A wrapper uses the handling in effect when it was created.** Wrapper members are read on demand, so each
+wrapper captures the handling at creation (`OntoMapper.materialize` or a factory call) and applies it to every
+later read of every member: `val` members (lazy, read once) and the `var` members of `@Rdf` wrappers (read
+from the graph on every access) alike, after the block has ended and on other threads too. The converse also
+holds: a scope around a *read* does not change a wrapper that already exists.
+
+```kotlin
+val strict = graph.materialize<Catalog>(node)                       // created under THROW
+MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+    strict.title                                                    // still THROW: wrap materialize() instead
 }
 ```
 
-The override is thread-local: it does **not** propagate to other threads or coroutines. Work handed to an
-executor, or a coroutine that resumes on another thread, sees the process-wide default. Because wrapper
-members are read lazily, a value read after the block ends also uses the handling in effect at that time.
-Assigning `illTypedValues` changes the process-wide default; a scope running on the current thread still
-wins.
+Wrappers reached through an object member are created when that member is read, under the handling of the
+wrapper they are read from. Data-class factories read every value eagerly, under the handling in effect
+during the factory call.
+
+The override itself is thread-local: it does **not** propagate to other threads or coroutines, so a wrapper
+*created* on an executor thread, or in a coroutine that resumed on another thread, captures the process-wide
+default. Assigning `illTypedValues` changes the process-wide default; a scope running on the current thread
+still wins.
 
 The generic literal delegates in `com.geoknoesis.kastor.gen.runtime.delegates` apply the same policy:
 

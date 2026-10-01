@@ -18,6 +18,10 @@ private val RDF_HANDLE = ClassName(RUNTIME, "RdfHandle")
 private val RDF_BACKED = ClassName(RUNTIME, "RdfBacked")
 private val XSD_LITERALS = ClassName(RUNTIME, "XsdLiterals")
 private val MATERIALIZATION_POLICY = ClassName(RUNTIME, "MaterializationPolicy")
+private val ILL_TYPED_VALUE_HANDLING = ClassName(RUNTIME, "IllTypedValueHandling")
+
+/** Wrapper field holding the ill-typed-value handling captured at creation (used by the getters of `var` members). */
+private const val CAPTURED_POLICY = "kastorCapturedIllTypedValues"
 private val RDF_LITERAL = ClassName("com.geoknoesis.kastor.rdf", "Literal")
 private val IRI = ClassName("com.geoknoesis.kastor.rdf", "Iri")
 private val WITH_KNOWN_PREDICATES = MemberName(RUNTIME, "withKnownPredicates")
@@ -34,6 +38,11 @@ private val CLEAR_OBJECTS = MemberName(RUNTIME, "clearPredicateObjects")
  * spliced into a format string. Readers follow `MaterializationPolicy` like the SHACL-generated ones: ill-typed
  * values throw `MaterializationException` (or are skipped under `IllTypedValueHandling.SKIP`), a non-null member
  * without a value throws `MaterializationException`, a nullable member without a value reads `null`.
+ *
+ * **One policy rule for every member:** a wrapper applies the `MaterializationPolicy.illTypedValues` in effect when it
+ * was created. `val` members are lazy values created with `MaterializationPolicy.lazyWithCurrentPolicy`; `var` members
+ * read the graph on every access (their value can change) and run each read under the handling the wrapper captured
+ * at creation. A `withIllTypedValues { }` scope around a later read of an existing wrapper therefore has no effect.
  *
  * Literal members support every type the SHACL generators map datatypes to (`String`, `Int`, `Long`, `Float`,
  * `Double`, `Boolean`, `BigInteger`, `BigDecimal`, `LocalDate`, `LangString`), decoded with the same `XsdLiterals`
@@ -70,6 +79,17 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
           .initializer("input.%M(KNOWN)", WITH_KNOWN_PREDICATES)
           .build(),
       )
+
+    if (properties.any { it.mutable }) {
+      // Captured once, when the wrapper is created: the getters of `var` members apply it on every read, so they
+      // follow the same rule as the lazy `val` members (MaterializationPolicy.lazyWithCurrentPolicy).
+      classBuilder.addProperty(
+        PropertySpec.builder(CAPTURED_POLICY, ILL_TYPED_VALUE_HANDLING)
+          .addModifiers(PRIVATE)
+          .initializer("%T.illTypedValues", MATERIALIZATION_POLICY)
+          .build(),
+      )
+    }
 
     properties.forEach { property ->
       classBuilder.addProperty(generatePropertyImplementation(classModel.packageName, property))
@@ -131,6 +151,17 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
     )
   }
 
+  /**
+   * Getter body of a `var` member: reads the current value from the graph under the ill-typed-value handling the
+   * wrapper captured when it was created (not the one in effect at the read).
+   */
+  private fun capturedPolicyRead(property: PropertyModel, values: CodeBlock): CodeBlock =
+    CodeBlock.builder()
+      .add("return %T.withIllTypedValues(%N) { %L.firstOrNull()", MATERIALIZATION_POLICY, CAPTURED_POLICY, values)
+      .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
+      .add(" }\n")
+      .build()
+
   private fun literalProperty(property: PropertyModel, pred: CodeBlock): PropertySpec {
     val element = RdfMemberTypes.element(property.kotlinType)
     val literal = requireNotNull(RdfMemberTypes.literal(element)) { "${property.name}: $element is not a literal type" }
@@ -146,15 +177,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
         .delegate(lazyValues(property, values))
         .build()
     }
-    val getter = FunSpec.getterBuilder()
-      .addCode(
-        CodeBlock.builder()
-          .add("return %L.firstOrNull()", values)
-          .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
-          .add("\n")
-          .build(),
-      )
-      .build()
+    val getter = FunSpec.getterBuilder().addCode(capturedPolicyRead(property, values)).build()
     val term = literal.writeDatatype?.let { CodeBlock.of("%T.encode(value, %T(%S))", XSD_LITERALS, IRI, it) }
       ?: CodeBlock.of("%T(value)", RDF_LITERAL)
     val setterBody = if (property.nullable) {
@@ -226,11 +249,7 @@ internal class WrapperGenerator(@Suppress("UNUSED_PARAMETER") private val logger
         .delegate(lazyValues(property, values))
         .build()
     }
-    val getterCode = CodeBlock.builder()
-      .add("return %L.firstOrNull()", values)
-      .apply { if (!property.nullable) add(" ?: %T.missingRequired(%S)", MATERIALIZATION_POLICY, label(property)) }
-      .add("\n")
-      .build()
+    val getterCode = capturedPolicyRead(property, values)
     val setterBody = if (property.nullable) {
       CodeBlock.of("if (value == null) %M(%L) else %M(%L, value.%M().node)\n", CLEAR_OBJECTS, pred, REPLACE_OBJECT, pred, AS_RDF)
     } else {

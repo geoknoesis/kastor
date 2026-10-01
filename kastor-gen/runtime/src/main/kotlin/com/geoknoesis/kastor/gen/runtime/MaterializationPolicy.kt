@@ -35,9 +35,16 @@ enum class IllTypedValueHandling {
  * without racing other threads. The override is thread-local: work handed to other threads (executors, coroutines
  * resuming on another thread) sees the process-wide default.
  *
- * Generated wrappers read their properties lazily, so each wrapper captures the handling in effect when it is created
- * (by `OntoMapper.materialize` or a factory) and applies it whenever a property is first read, even after the
- * [withIllTypedValues] block has ended or on another thread. Data-class factories read every value eagerly.
+ * ## Wrappers capture the handling when they are created
+ * Generated wrappers read their properties on demand, so each wrapper captures the handling in effect **when it is
+ * created** (by `OntoMapper.materialize` or a factory) and applies it to every later read of every member, even after
+ * the [withIllTypedValues] block has ended or on another thread. This holds for `val` members (lazy, read once) and
+ * for the `var` members of `@Rdf` wrappers (read from the graph on every access). Consequently
+ * `withIllTypedValues(SKIP) { existingWrapper.property }` does **not** affect a wrapper that already exists: wrap the
+ * `materialize` call that creates the wrapper instead, e.g.
+ * `val w = withIllTypedValues(SKIP) { graph.materialize<T>(node) }`. Wrappers reached through an object member are
+ * created when that member is read, under the handling of the wrapper they are read from. Data-class factories read
+ * every value eagerly, under the handling in effect during the factory call.
  */
 object MaterializationPolicy {
 
