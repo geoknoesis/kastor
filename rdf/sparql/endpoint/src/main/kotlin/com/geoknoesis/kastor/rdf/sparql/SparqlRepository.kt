@@ -11,9 +11,13 @@ import java.net.http.HttpClient
 import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.net.http.HttpTimeoutException
 import java.time.Duration
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.LockSupport
@@ -122,6 +126,15 @@ private object SharedHttpClients {
     fun size(): Int = entries.size
 }
 
+/**
+ * Starts one HTTP exchange; the future completes when the response headers have arrived, and
+ * cancelling it (`cancel(true)`) aborts the exchange. Production code uses the shared [HttpClient];
+ * tests substitute their own to observe requests or to play a server they cannot run locally.
+ */
+internal fun interface HttpTransport {
+    fun send(request: HttpRequest): CompletableFuture<HttpResponse<InputStream>>
+}
+
 private val LOGGER: System.Logger = System.getLogger(SparqlRepository::class.java.name)
 private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
 
@@ -135,7 +148,9 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   exchange for buffered calls, time to response headers for streams; without it the read timeout
  *   bounds the wait for headers), the optional [SparqlEndpointConfig.streamingRequestTimeout] for
  *   streams, and the per-call timeout of `withSelectRows(query, bindings, timeout)`, which bounds
- *   the whole call. Whichever deadline ends first also ends the wait for the response headers.
+ *   the whole call. Whichever deadline ends first also ends the wait for the response headers. That
+ *   wait is one budget for the whole call, redirects included. The adapter enforces all of these
+ *   itself and sets no timeout on the HTTP request, whose meaning differs between JDK versions.
  * - Requests are never retried automatically, so a failed UPDATE is not re-sent.
  * - Redirects are handled explicitly: `307`/`308` keep method and body; `301`/`302`/`303` are only
  *   followed for GET queries (a redirected POST would otherwise silently lose its body). Other
@@ -143,9 +158,11 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   receive custom headers or credentials. Redirects from `https` to plain `http` are always refused.
  * - A successful SELECT/ASK response must declare a JSON Content-Type (`text/plain` is also
  *   accepted for ASK); anything else, such as an HTML login page, fails with [RdfQueryException]
- *   naming the returned type. A response without a Content-Type is parsed as JSON.
+ *   naming the returned type. A response without a Content-Type is parsed as JSON. Legacy servers
+ *   that label JSON results differently need [SparqlEndpointConfig.strictContentType] `false`.
  * - No single result row (or other JSON value) larger than
- *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory.
+ *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory; rows are decoded one
+ *   at a time, straight from the stream.
  * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
  *   timeout share one HTTP client, which is shut down when the last of them is closed, so always
  *   [close] repositories you no longer use.
@@ -154,7 +171,12 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   closed repository throws [IllegalStateException] from every operation.
  * - No transactions; CONSTRUCT/DESCRIBE are unsupported (this module has no RDF parser).
  */
-class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
+class SparqlRepository internal constructor(
+    val config: SparqlEndpointConfig,
+    transport: HttpTransport?,
+) : RdfRepository {
+
+    constructor(config: SparqlEndpointConfig) : this(config, null)
 
     constructor(
         endpoint: String,
@@ -176,6 +198,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
     private val configuredAuthorization =
         config.username?.let { HttpTarget.basicAuthorization(it, config.password.orEmpty()) }
     private val client: HttpClient = SharedHttpClients.acquire(config.connectTimeout)
+    private val transport: HttpTransport = transport ?: HttpTransport { client.sendAsync(it, HttpResponse.BodyHandlers.ofInputStream()) }
 
     init {
         insecureAuthorizationWarning(config)?.let { warning ->
@@ -243,7 +266,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
      * restrict the WHERE clause before aggregation, LIMIT, FILTER and sub-selects, and projected
      * bound variables stay in the results. Queries that assign a bound variable (BIND/AS/VALUES) or
      * use it inside a sub-select that does not project it are rejected with
-     * [IllegalArgumentException]. Blank nodes cannot be used as bindings.
+     * [IllegalArgumentException]. So is a literal bound to a variable that the query uses as a
+     * predicate or as the name of a GRAPH or SERVICE: only an IRI is legal there (the Jena and RDF4J
+     * providers reject it the same way). Blank nodes cannot be used as bindings.
      */
     override fun <T> withSelectRows(
         query: SparqlSelect,
@@ -380,9 +405,9 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
 
     /**
      * [headers] limits the wait for response headers (all redirect hops included); when it is `null`
-     * the read timeout bounds that wait. [overall] limits the whole exchange including reading the
-     * body, so it also bounds the header wait when it ends first. Both are measured from the start of
-     * the call.
+     * the read timeout bounds that wait, also once for all hops. [overall] limits the whole exchange
+     * including reading the body, so it also bounds the header wait when it ends first. All are
+     * measured from the start of the call.
      */
     private class Timeouts(val headers: Duration?, val overall: Duration?) {
         companion object {
@@ -431,16 +456,28 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         var authorization = configuredAuthorization ?: target.userInfoAuthorization
         var sendCustomHeaders = true
         var redirects = 0
+        // The wait for response headers ends at the earlier of the header deadline and the overall
+        // deadline; without a header deadline it is also bounded like any read. It is one budget,
+        // measured from the start of the call, for all redirect hops together.
+        val deadline = listOfNotNull(timeouts.headers, timeouts.overall).minOrNull()
+        val boundedByReadTimeout = timeouts.headers == null && (deadline == null || config.readTimeout < deadline)
+        val headerLimit = if (boundedByReadTimeout) config.readTimeout else deadline!!
+        val headerLimitNanos = try { headerLimit.toNanos() } catch (_: ArithmeticException) { Long.MAX_VALUE }
+        val headerWaitExceeded = { cause: Throwable? ->
+            RdfQueryException(
+                if (boundedByReadTimeout) "SPARQL request timed out after ${headerLimit.toMillis()} ms waiting for the response"
+                else "SPARQL request exceeded its ${headerLimit.toMillis()} ms deadline waiting for the response",
+                query = sparql,
+                cause = cause,
+            )
+        }
         while (true) {
+            val remainingNanos = headerLimitNanos - (System.nanoTime() - startNanos)
+            if (remainingNanos <= 0) throw headerWaitExceeded(null)
+            // No timeout is set on the request: the JDK applies it to the header wait only up to JDK 25
+            // and to the whole exchange, body included, from JDK 26 (JDK-8208693). The header wait is
+            // bounded by send() below and the body by GuardedInputStream, on every JDK.
             val builder = HttpRequest.newBuilder(request.uri)
-            // The header wait ends at the earlier of the header deadline and the overall deadline.
-            // Without a header deadline it is also bounded like any read.
-            val deadline = listOfNotNull(timeouts.headers, timeouts.overall).minOrNull()
-            val remaining = deadline?.minusNanos(System.nanoTime() - startNanos)
-            if (deadline != null && (remaining!!.isNegative || remaining.isZero)) throw deadlineExceeded(sparql, deadline)
-            // The limit reported when the wait times out; `null` means the read timeout.
-            val waitLimit = if (remaining == null || (timeouts.headers == null && config.readTimeout < remaining)) null else deadline
-            builder.timeout(if (waitLimit == null) config.readTimeout else remaining!!)
             if (!update) builder.setHeader("Accept", RESULTS_JSON)
             request.contentType?.let { builder.setHeader("Content-Type", it) }
             if (sendCustomHeaders) config.headers.forEach { (name, value) -> builder.setHeader(name, value) }
@@ -448,7 +485,7 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
             val body = request.body
             if (body == null) builder.GET() else builder.POST(HttpRequest.BodyPublishers.ofByteArray(body))
 
-            val response = send(builder.build(), sparql, waitLimit)
+            val response = send(builder.build(), sparql, remainingNanos, headerWaitExceeded)
             val status = response.statusCode()
             if (status in REDIRECT_STATUSES) {
                 val location = response.headers().firstValue("Location").orElse(null)
@@ -483,12 +520,13 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
                     query = sparql,
                 )
             }
-            if (!update) {
+            if (!update && config.strictContentType) {
                 val contentType = response.headers().firstValue("Content-Type").orElse(null)
                 if (!acceptableResultType(contentType, plainTextAllowed)) {
                     closeQuietly(input)
                     throw RdfQueryException(
-                        "SPARQL endpoint returned Content-Type '$contentType' instead of SPARQL JSON results ($RESULTS_JSON)",
+                        "SPARQL endpoint returned Content-Type '$contentType' instead of SPARQL JSON results ($RESULTS_JSON); " +
+                            "if the body is such JSON under another label, set strictContentType = false",
                         query = sparql,
                     )
                 }
@@ -504,22 +542,48 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         }
     }
 
-    private fun send(request: HttpRequest, sparql: String, headerTimeout: Duration?): HttpResponse<InputStream> = try {
-        client.send(request, HttpResponse.BodyHandlers.ofInputStream())
-    } catch (e: HttpConnectTimeoutException) {
-        throw RdfQueryException("SPARQL request failed: connect timed out after ${config.connectTimeout.toMillis()} ms", query = sparql, cause = e)
-    } catch (e: HttpTimeoutException) {
-        throw RdfQueryException(
-            if (headerTimeout != null) "SPARQL request exceeded its ${headerTimeout.toMillis()} ms deadline waiting for the response"
-            else "SPARQL request timed out after ${config.readTimeout.toMillis()} ms waiting for the response",
-            query = sparql,
-            cause = e,
-        )
-    } catch (e: IOException) {
-        throw RdfQueryException("SPARQL request failed: ${e.message}", query = sparql, cause = e)
-    } catch (e: InterruptedException) {
-        Thread.currentThread().interrupt()
-        throw RdfQueryException("SPARQL request was interrupted", query = sparql, cause = e)
+    /**
+     * Starts the exchange and waits at most [waitNanos] for its response headers. When the wait ends
+     * without them the exchange is cancelled, which closes its connection.
+     */
+    private fun send(
+        request: HttpRequest,
+        sparql: String,
+        waitNanos: Long,
+        headerWaitExceeded: (Throwable?) -> RdfQueryException,
+    ): HttpResponse<InputStream> {
+        val exchange = transport.send(request)
+        try {
+            return exchange.get(waitNanos, TimeUnit.NANOSECONDS)
+        } catch (e: TimeoutException) {
+            abandon(exchange)
+            throw headerWaitExceeded(e)
+        } catch (e: InterruptedException) {
+            abandon(exchange)
+            Thread.currentThread().interrupt()
+            throw RdfQueryException("SPARQL request was interrupted", query = sparql, cause = e)
+        } catch (e: CancellationException) {
+            throw RdfQueryException("SPARQL request was cancelled", query = sparql, cause = e)
+        } catch (e: ExecutionException) {
+            val cause = e.cause ?: e
+            if (cause is Error) throw cause
+            throw RdfQueryException(
+                if (cause is HttpConnectTimeoutException) "SPARQL request failed: connect timed out after ${config.connectTimeout.toMillis()} ms"
+                else "SPARQL request failed: ${cause.message ?: cause.javaClass.simpleName}",
+                query = sparql,
+                cause = cause,
+            )
+        }
+    }
+
+    /** Cancels an exchange nobody waits for any more; a response that arrived in the meantime is closed. */
+    private fun abandon(exchange: CompletableFuture<HttpResponse<InputStream>>) {
+        if (exchange.cancel(true)) return
+        try {
+            exchange.getNow(null)?.body()?.close()
+        } catch (_: Exception) {
+            // It failed on its own; nothing to release.
+        }
     }
 
     private fun redirectTarget(current: Request, status: Int, location: String?, sparql: String): URI {
@@ -549,9 +613,6 @@ class SparqlRepository(val config: SparqlEndpointConfig) : RdfRepository {
         if (media.isNullOrEmpty()) return true
         return media == "application/json" || media.endsWith("+json") || (plainTextAllowed && media == "text/plain")
     }
-
-    private fun deadlineExceeded(sparql: String, limit: Duration) =
-        RdfQueryException("SPARQL request exceeded its ${limit.toMillis()} ms deadline", query = sparql)
 
     private fun readErrorBody(input: InputStream): String = try {
         String(input.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8).trim()

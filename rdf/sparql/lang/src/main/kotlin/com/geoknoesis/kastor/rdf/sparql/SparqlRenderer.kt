@@ -385,17 +385,26 @@ object SparqlRenderer {
         val expr = renderExpression(clause.expression)
         // SPARQL 1.1 grammar (OrderCondition):
         //   ( ('ASC' | 'DESC') BrackettedExpression ) | ( Constraint | Var )
-        // Ascending is the default, so a bare variable or call is emitted for ASC
-        // (`ORDER BY ?x`); anything else, and DESC, must be bracketed.
+        // Ascending is the default, so a bare variable, call or bracketed expression is emitted for
+        // ASC (`ORDER BY ?x`); anything else, and DESC, must be bracketed.
         return when (clause.direction) {
-            OrderDirection.ASC -> {
-                val bare = (clause.expression as? TermExpressionAst)?.term is Var ||
-                    clause.expression is FunctionCallAst || clause.expression is AggregateExpressionAst ||
-                    expr.startsWith("(")
-                if (bare) expr else "ASC($expr)"
-            }
+            OrderDirection.ASC -> if (isOrderConstraintOrVar(clause.expression)) expr else "ASC($expr)"
             OrderDirection.DESC -> "DESC($expr)"
         }
+    }
+
+    /**
+     * Whether [renderExpression] writes [expression] as a `Var` or a `Constraint` (a call, or an
+     * expression enclosed in one pair of brackets). Decided by the node type: a comparison whose left
+     * operand is bracketed, `(?a = ?b) = ?c`, starts with a bracket without being a bracketed
+     * expression.
+     */
+    private fun isOrderConstraintOrVar(expression: ExpressionAst): Boolean = when (expression) {
+        is TermExpressionAst -> expression.term is Var
+        is FunctionCallAst, is AggregateExpressionAst -> true
+        // Rendered as `(left op right)`.
+        is AndExpressionAst, is OrExpressionAst, is ArithmeticExpressionAst -> true
+        is ComparisonExpressionAst, is NotExpressionAst, is ConditionalExpressionAst -> false
     }
 
     // ============================================================================

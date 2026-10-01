@@ -450,12 +450,17 @@ class JenaRepository private constructor(
      * initial-bindings contract shared by every provider ([com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings]):
      * a query that is not a SELECT, that assigns a bound variable (`BIND(... AS ?v)`, `(expr AS ?v)`, `VALUES ?v`), or
      * that uses it inside a sub-select that does not project it is rejected with [IllegalArgumentException], as on
-     * the RDF4J provider and the SPARQL endpoint adapter.
+     * the RDF4J provider and the SPARQL endpoint adapter. So is a literal or triple term bound to a variable that the
+     * query uses as a predicate or as the name of a GRAPH or SERVICE, where only an IRI is legal.
      */
     override fun <T> withSelectRows(query: SparqlSelect, bindings: Map<String, RdfTerm>, timeout: java.time.Duration,
         consume: (Sequence<BindingSet>) -> T): T {
         // Outside queryOperation: a query the contract rejects is the caller's error (IllegalArgumentException).
-        com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.validate(query.sparql, bindings.keys)
+        com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.validate(
+            query.sparql,
+            bindings.keys,
+            bindings.filterValues { it is com.geoknoesis.kastor.rdf.Literal || it is TripleTerm }.keys,
+        )
         return withSelectRowsSubstituted(query, bindings, timeout, consume)
     }
 
