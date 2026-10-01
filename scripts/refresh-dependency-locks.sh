@@ -21,8 +21,12 @@ commit=false
 gradlew=./gradlew
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) gradlew=./gradlew.bat ;; esac
 
-"$gradlew" resolveAndLockAll --write-locks --no-configuration-cache
+# Order matters: verification is strict, so the new checksums must be recorded before the locks can be
+# rewritten, and again afterwards for whatever the new locks resolve. cyclonedxDirectBom is included because
+# the SBOM tasks read dependency POMs that ordinary resolution of Gradle-metadata modules never downloads.
 "$gradlew" --write-verification-metadata sha256 resolveAndLockAll --no-configuration-cache
+"$gradlew" resolveAndLockAll --write-locks --no-configuration-cache
+"$gradlew" --write-verification-metadata sha256 resolveAndLockAll cyclonedxDirectBom --no-configuration-cache
 
 git status --short -- '*.lockfile' gradle/verification-metadata.xml
 if $commit; then
