@@ -333,4 +333,52 @@ class SparqlReauditRendererTest {
         assertTrue(http.contains("<https://example.com/.well-known/genid/"), http)
         assertParsesQuery(http)
     }
+
+    // ---------------------------------------------------------------- ORDER BY bracketing
+
+    @Test
+    fun `ORDER BY conditions are bracketed by their structure and not by their first character`() {
+        val c = `var`("c")
+        fun eq(left: ExpressionAst, right: ExpressionAst) = ComparisonExpressionAst(left, ComparisonOperator.EQ, right)
+        fun render(expression: ExpressionAst, direction: OrderDirection) = SparqlRenderer.render(
+            SelectQueryAst(
+                listOf(VariableSelectItemAst(s)),
+                where = GroupPatternAst(listOf(TriplePatternAst(s, p, o), TriplePatternAst(s, b, c))),
+                orderBy = listOf(OrderClauseAst(expression, direction)),
+            )
+        )
+        // A comparison whose left operand is itself bracketed starts with "(" but is not a bracketed expression.
+        val nested = eq(eq(s.expr(), o.expr()), c.expr())
+        val ascending = render(nested, OrderDirection.ASC)
+        assertTrue(ascending.contains("ORDER BY ASC((?s = ?o) = ?c)"), ascending)
+        assertParsesQuery(ascending)
+
+        val sum = ArithmeticExpressionAst(o.expr(), ArithmeticOperator.ADD, c.expr())
+        val shapes = listOf(
+            nested,
+            eq(s.expr(), eq(o.expr(), c.expr())),
+            eq(s.expr(), o.expr()),
+            eq(sum, c.expr()),
+            eq(AndExpressionAst(eq(s.expr(), o.expr()), eq(o.expr(), c.expr())), c.expr()),
+            AndExpressionAst(eq(s.expr(), o.expr()), eq(o.expr(), c.expr())),
+            OrExpressionAst(eq(s.expr(), o.expr()), eq(o.expr(), c.expr())),
+            NotExpressionAst(eq(s.expr(), o.expr())),
+            sum,
+            ArithmeticExpressionAst(sum, ArithmeticOperator.MULTIPLY, sum),
+            FunctionCallAst("STR", listOf(s.expr())),
+            ConditionalExpressionAst(eq(s.expr(), o.expr()), o.expr(), c.expr()),
+            TermExpressionAst(Literal("x")),
+            TermExpressionAst(a),
+            s.expr(),
+        )
+        for (shape in shapes) {
+            for (direction in OrderDirection.values()) {
+                assertParsesQuery(render(shape, direction))
+            }
+        }
+        // Forms the grammar accepts bare stay bare.
+        assertTrue(render(s.expr(), OrderDirection.ASC).contains("ORDER BY ?s"))
+        assertTrue(render(FunctionCallAst("STR", listOf(s.expr())), OrderDirection.ASC).contains("ORDER BY STR(?s)"))
+        assertTrue(render(sum, OrderDirection.ASC).contains("ORDER BY (?o + ?c)"))
+    }
 }
