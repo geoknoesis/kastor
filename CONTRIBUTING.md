@@ -62,7 +62,7 @@ scripts/refresh-dependency-locks.sh --commit    # resolveAndLockAll --write-lock
 git push
 ```
 
-Check that new checksums belong to the artifacts the PR updates. This step is deliberately not automated: a `pull_request_target` job would run Gradle from the PR with a write-scoped token. Minor and patch bumps are grouped into one weekly PR (`.github/dependabot.yml`); major upgrades follow the upgrade plan. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
+Check that new checksums belong to the artifacts the PR updates. This step is deliberately not automated: a `pull_request_target` job would run Gradle from the PR with a write-scoped token. Minor and patch bumps are grouped into one weekly PR (`.github/dependabot.yml`); major upgrades follow the upgrade plan. The JUnit artifacts (`org.junit*`) share one catalog version, so they have their own group covering every update type. Repositories are declared only in `settings.gradle.kts` (`FAIL_ON_PROJECT_REPOS`); `mavenLocal()` is not used. Third-party security floors belong in [`gradle/build-platform`](gradle/build-platform/build.gradle.kts), which is never published. [`kastor-bom`](bom/build.gradle.kts) lists Kastor modules only. See the [dependency upgrade plan](docs/reference/dependency-upgrade-plan.md).
 
 ### Tests that skip
 
