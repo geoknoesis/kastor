@@ -14,6 +14,12 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Changed (dependencies)
+
+- Runtime dependencies seen by consumers: kotlinx-coroutines 1.11.0, kotlinx-serialization-json 1.11.0, KotlinPoet 2.4.0, SLF4J 2.0.20, RDF4J 5.3.2, clikt 5.1.0, ONNX Runtime 1.30.0 with DJL tokenizers 0.38.0 (`onto-quality-embed`), httpcore5 5.4.4 and lz4-java 1.12.0.
+- Build only: Gradle 9.8.0, JUnit 6.1.3, dependency-analysis 3.19.2 (the `kotlin-metadata-jvm` buildscript pin is gone), JaCoCo 0.8.15.
+- RDF4J 6 is not adopted: it requires Java 25 and removes the RDF-star `Triple` model (see `docs/reference/dependency-upgrade-plan.md`).
+
 ### Fixed (round five)
 
 #### Breaking changes

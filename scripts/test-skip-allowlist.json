@@ -201,24 +201,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
-   "test": "[Jena/TRIG] alternating_bnode_graphs",
-   "count": 1,
-   "reason": "ALLOWLISTED Jena rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#alternating_bnode_graphs: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
-   "test": "[Jena/TRIG] anonymous_blank_node_graph",
-   "count": 1,
-   "reason": "ALLOWLISTED Jena rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#anonymous_blank_node_graph: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
-   "test": "[Jena/TRIG] labeled_blank_node_graph",
-   "count": 1,
-   "reason": "ALLOWLISTED Jena rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#labeled_blank_node_graph: Kastor RdfRepository exposes named graphs by IRI only (listGraphs/getGraph); blank-node graph names cannot be read back (core API limitation)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest",
    "test": "[Jena/TRIG] lantag_with_subtag",
    "count": 1,
    "reason": "Jena 6 canonicalises language-tag case when it creates literals (NodeFactory.createLiteralLang turns en-us into en-US); RDF Concepts permits this normalisation and Jena offers no way to keep the written case (upstream limitation, rdf/conformance/src/test/resources/conformance-allowlist.tsv)"
