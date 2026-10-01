@@ -112,6 +112,24 @@ class JenaReasonerBoundsTest {
     }
 
     @Test
+    fun `a worker thread that cannot be started returns its permit and leaves the reasoner usable`() {
+        val permits = Semaphore(2)
+        val graph = chain(3, 3)
+        val failing = java.util.concurrent.ThreadFactory { throw OutOfMemoryError("unable to create native thread") }
+        val reasoner = JenaReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.prepare() }, permits, failing)
+        repeat(5) {
+            assertThrows(OutOfMemoryError::class.java) { reasoner.getInferredTriples(graph) }
+            assertEquals(2, permits.availablePermits(), "the permit of a worker that never ran must be returned")
+        }
+        val unstartable = java.util.concurrent.ThreadFactory { task -> object : Thread(task) { override fun start() { throw IllegalThreadStateException("no start") } } }
+        assertThrows(IllegalThreadStateException::class.java) {
+            JenaReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.prepare() }, permits, unstartable).getInferredTriples(graph)
+        }
+        assertEquals(2, permits.availablePermits())
+        assertFalse(JenaReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.prepare() }, permits).getInferredTriples(graph).isEmpty())
+    }
+
+    @Test
     fun `an abandoned preparation releases its permit only after closing its models`() {
         val now = AtomicLong()
         val started = CountDownLatch(1)

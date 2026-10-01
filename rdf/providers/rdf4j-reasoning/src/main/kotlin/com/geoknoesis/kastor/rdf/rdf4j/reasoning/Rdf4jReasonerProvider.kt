@@ -75,18 +75,37 @@ class Rdf4jReasonerProvider : RdfReasonerProvider {
  *   its store down itself and only then returns its concurrency permit. At most `max(2, availableProcessors)` inferences may run at once: a call that cannot start
  *   one before its deadline fails with a clear "too many RDFS inferences in progress" error instead of piling up
  *   background work (the same pattern as the Jena and HermiT reasoners). After the commit the budget is checked for
- *   every statement read from the closure. A timed-out call fails with [IllegalStateException].
+ *   every statement read from the closure. A timed-out call fails with [IllegalStateException]. If the worker
+ *   thread cannot be started, the permit is returned at once and the failure propagates.
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
  *   It is checked incrementally while the closure is read back from the inferencer, so an oversized closure fails
- *   before it is copied. The closure computed inside the inferencer's commit cannot be bounded by count.
+ *   before it is copied.
  *
- * **Axiomatic triples:** the inferencer also materialises RDF/RDFS axioms about the vocabulary itself (e.g.
- * `rdf:type rdfs:range rdfs:Class`, or `xsd:integer rdfs:subClassOf rdfs:Resource` once the data mentions
- * `xsd:integer`). For parity with the memory and Jena reasoners these are not reported as inferences unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped are the statements the inferencer produces
- * for an **empty** store (computed once) and every other inferred statement whose subject, predicate and object are
- * all `rdf:`, `rdfs:`, `owl:` or `xsd:` terms (pure vocabulary axioms triggered by the data). Inferences that involve
- * any other term, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
+ * **Memory limit (not enforced):** the inferencer materialises the **complete** closure in its in-memory store
+ * inside `commit()`, before this class sees a single statement, and RDF4J offers no hook to count or stop it. Neither
+ * [ReasonerConfig.materializationThreshold] nor [ReasonerConfig.maxMemoryUsage] bounds that step; only the heap
+ * does. Heap use is roughly proportional to *asserted + inferred* statements (every statement is held once in the
+ * inferencer's store, and the asserted ones a second time in the input copy), and RDFS closures can be far larger
+ * than the input: every instance gets one `rdf:type` statement per (transitive) superclass and
+ * `rdf:type rdfs:Resource`, and every statement is repeated for each superproperty. A call that exceeds the
+ * threshold therefore fails only *after* the closure was built, and a call abandoned at its timeout keeps its
+ * closure alive until the commit finishes (at most `max(2, availableProcessors)` such closures exist at once). For
+ * inputs whose closure may not fit the heap, reason over smaller parts of the data, or query a Jena `*-inference`
+ * repository variant, which computes entailments on demand instead of materialising them.
+ *
+ * **Axiomatic triples:** the inferencer also materialises triples that hold without any data (e.g.
+ * `rdf:type rdfs:range rdfs:Class`). For parity with the memory and Jena reasoners these are not reported as
+ * inferences unless `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped is exactly the closure of
+ * the **empty** graph:
+ * - the statements the inferencer produces for an empty store (computed once), and
+ * - the members of that closure which the inferencer materialises only once the data mentions the term they are
+ *   about, as defined by [RdfsAxioms.isEntailedByEmptyGraph]: datatype axioms of the recognised datatypes (after
+ *   `ex:age rdfs:range xsd:integer`: `xsd:integer a rdfs:Class`, `xsd:integer rdfs:subClassOf rdfs:Resource`, ...)
+ *   and reflexive / typing statements about RDF and RDFS vocabulary terms.
+ *
+ * Every other inferred statement is reported, **also when all three of its terms are vocabulary terms**: for example
+ * `owl:FunctionalProperty rdfs:subClassOf rdf:Property` derived from asserted `rdfs:subClassOf` statements, or
+ * `owl:ObjectProperty a rdfs:Class`, follow from the data and are inferences.
  */
 class Rdf4jReasoner internal constructor(
     private val config: ReasonerConfig,
@@ -96,6 +115,8 @@ class Rdf4jReasoner internal constructor(
     private val commit: (RepositoryConnection) -> Unit,
     /** Limits concurrently running (including abandoned) inferences; replaceable in tests. */
     private val inferences: java.util.concurrent.Semaphore,
+    /** Creates the inference worker threads; replaceable in tests. */
+    private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, INFERENCE_THREAD) },
 ) : RdfReasoner {
 
     constructor(config: ReasonerConfig) : this(config, System::nanoTime)
@@ -195,14 +216,17 @@ class Rdf4jReasoner internal constructor(
 
     /** True when [statement] is reported as inferred: not asserted and (by default) not one of the RDFS axioms. */
     private fun isInferred(statement: Statement, asserted: Model): Boolean =
-        statement !in asserted && (includeAxiomatic || (statement !in AXIOMS && !isPureVocabulary(statement)))
+        statement !in asserted && (includeAxiomatic || (statement !in AXIOMS && !isLazyAxiom(statement)))
 
-    /** True when every position of [statement] is an `rdf:`, `rdfs:`, `owl:` or `xsd:` IRI. */
-    private fun isPureVocabulary(statement: Statement): Boolean =
-        isVocabulary(statement.subject) && isVocabulary(statement.predicate) && isVocabulary(statement.`object`)
-
-    private fun isVocabulary(value: org.eclipse.rdf4j.model.Value): Boolean =
-        value is IRI && VOCABULARY_NAMESPACES.any { value.stringValue().startsWith(it) }
+    /**
+     * True when [statement] belongs to the closure of the empty graph although the inferencer derives it only once
+     * the data mentions its subject (see [RdfsAxioms.isEntailedByEmptyGraph]).
+     */
+    private fun isLazyAxiom(statement: Statement): Boolean {
+        val subject = statement.subject as? IRI ?: return false
+        val obj = statement.`object` as? IRI ?: return false
+        return RdfsAxioms.isEntailedByEmptyGraph(subject.stringValue(), statement.predicate.stringValue(), obj.stringValue())
+    }
 
     /** Closure statements that are neither asserted nor (by default) axiomatic, bounded by the threshold. */
     private fun inferredTriples(asserted: Model, closure: Model, budget: Budget): List<RdfTriple> {
@@ -263,6 +287,8 @@ class Rdf4jReasoner internal constructor(
      * Loads [model] and commits it on a daemon worker (the inferencer computes the closure inside `commit()`, which
      * cannot be interrupted), waiting at most until the budget's deadline. On timeout the inference is abandoned: it
      * keeps its [inferences] permit until it finishes and then shuts [repository] down itself.
+     *
+     * The closure is built in memory inside that commit and cannot be bounded here (see the class documentation).
      */
     private fun commitWithinDeadline(repository: SailRepository, model: Model, budget: Budget) {
         val acquired = try {
@@ -277,7 +303,7 @@ class Rdf4jReasoner internal constructor(
         }
         val state = java.util.concurrent.atomic.AtomicInteger(RUNNING)
         val outcome = java.util.concurrent.CompletableFuture<Unit>()
-        val worker = Thread({
+        val body = Runnable {
             try {
                 repository.connection.use { connection ->
                     connection.begin()
@@ -298,9 +324,16 @@ class Rdf4jReasoner internal constructor(
                     inferences.release()
                 }
             }
-        }, INFERENCE_THREAD)
-        worker.isDaemon = true
-        worker.start()
+        }
+        try {
+            val worker = threads.newThread(body)
+            worker.isDaemon = true
+            worker.start()
+        } catch (t: Throwable) {
+            // The worker never ran, so it will never return the permit; the caller still owns the repository.
+            inferences.release()
+            throw t
+        }
         try {
             // Waits in slices so that the deadline follows the (injectable) budget clock.
             while (true) {
@@ -389,14 +422,6 @@ class Rdf4jReasoner internal constructor(
         const val ABANDONED = 2
 
         val RDFS_RULES = setOf(ReasoningRule.RDFS_SUBCLASS, ReasoningRule.RDFS_SUBPROPERTY, ReasoningRule.RDFS_DOMAIN, ReasoningRule.RDFS_RANGE)
-
-        /** Namespaces of the built-in vocabularies whose pure axioms are not reported as inferences. */
-        val VOCABULARY_NAMESPACES = listOf(
-            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "http://www.w3.org/2000/01/rdf-schema#",
-            "http://www.w3.org/2002/07/owl#",
-            "http://www.w3.org/2001/XMLSchema#",
-        )
 
         /** The statements the inferencer produces for an empty store: the RDF/RDFS axioms. */
         val AXIOMS: Set<Statement> by lazy {
