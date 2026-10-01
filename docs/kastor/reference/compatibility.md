@@ -40,7 +40,7 @@ This document provides detailed compatibility information for Kastor RDF SDK, in
 |------------|---------|---------|
 | Kotlin     | 2.4.20  | Language runtime (repo build; KSP 2.3.12; align with your toolchain) |
 | SLF4J      | 2.0.13  | Logging framework |
-| JUnit 5   | 5.10.3  | Testing framework |
+| JUnit     | 6.1.3   | Testing framework (repo build) |
 
 ### Provider Dependencies
 
@@ -214,7 +214,7 @@ Kastor uses the following Java features:
 
 | Framework | Version | Status |
 |-----------|---------|--------|
-| JUnit 5   | 5.10.3  | ✅ Supported |
+| JUnit     | 6.1.3   | ✅ Supported |
 | Kotlin Test | 2.4.20 | ✅ Supported |
 | Mockito   | N/A     | Not used |
 

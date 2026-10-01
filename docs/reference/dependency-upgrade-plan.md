@@ -23,7 +23,7 @@ follow-up pull requests, **one family per PR**, in the order below.
 | 3 | `kotlinx-coroutines` | 1.10.2 | 1.11.x | Check Kotlin 2.4 compatibility; public API exposure in `rdf-core` flows. |
 | 4 | `kotlinpoet` / `kotlinpoet-ksp` | 2.2.0 | 2.3.x | Code generator output may change formatting. Regenerate the gen golden snapshots and review. |
 | 5 | `kotlinx-serialization-json` | 1.8.1 | 1.11.x | Used by onto-quality LLM tooling and benchmarks. Align the serialization compiler plugin (Kotlin 2.4). Also replace the literal `1.8.1` in `benchmarks/shacl/jmh/build.gradle.kts` with the catalog entry. |
-| 6 | JUnit Jupiter / Platform | 5.13.4 / 1.13.4 | 6.1.x | Major version (JDK 17+ baseline, removed deprecated APIs). Check the `@EnabledIf`/assumption usage behind the skip allowlist and update `scripts/test-skip-allowlist.json` if names change. |
+| 6 | JUnit Jupiter / Platform | **done 2026-10-01**: 6.1.3 (one `junit` catalog version for both) | 6.1.x | Major version (JDK 17+ baseline, removed deprecated APIs). No test code used a removed API. The same tests run and skip as on 5.13.4, so `scripts/test-skip-allowlist.json` and the executed-test floors are unchanged. Only visible change: JUnit 6 quotes string arguments in `@ParameterizedTest` display names (`[1] "jena"` instead of `[1] jena`); no allowlist entry or required suite depends on those names. Supersedes Dependabot PRs #24 and #25. |
 | 7 | ONNX Runtime | 1.18.0 | 1.26.x | Native binaries: verify the ownership/close lifecycle with `native-lifecycle.yml` on Linux and Windows before merging. Large verification-metadata churn. |
 | 8 | `ai.koog:koog-agents` | 0.8.0 (pre-1.0) | 1.0.x | Breaking API changes expected. Isolated to `onto-quality-llm-koog`. Coordinate with its explanation tests (OpenAI tests stay opt-in). |
 | 9 | OWL API + HermiT | 4.5.29 + 1.4.5.519 | OWL API 5.x with a maintained HermiT build | Largest change: OWL API 5 changes the Guava/RDF4J transitive graph and package APIs. Needs a spike: run the reasoning-hermit tests, the release-contract resource/timeout checks and a dependency audit. Consider an alternative reasoner if HermiT has no OWL API 5 build. |
@@ -38,7 +38,7 @@ Majors are never applied by the grouped minor/patch PR. Each gets its own branch
 
 | Dependabot PR | Upgrade | Decision | Reason / preconditions |
 |---|---|---|---|
-| #25 + #24 | JUnit Jupiter 5.13.4 -> 6.1.3, Platform launcher 1.13.4 -> 6.1.3 | **Deferred, planned (step 6)** | Must move together (one PR; close one of the two). JUnit 6 raises the baseline to Java 17 (we build on 21) and removes deprecated APIs. Check the conditional-execution annotations behind `scripts/test-skip-allowlist.json` and the executed-test floors in `ci.yml`/`release-readiness.yml` still count the same tests. |
+| #25 + #24 | JUnit Jupiter 5.13.4 -> 6.1.3, Platform launcher 1.13.4 -> 6.1.3 | **Done 2026-10-01 (step 6)** | Applied together on one branch; close both PRs as superseded. JUnit 6 raises the baseline to Java 17 (we build on 21) and removes deprecated APIs, none of which the tests used. The conditional-execution annotations behind `scripts/test-skip-allowlist.json` skip the same tests, and the executed-test floors in `ci.yml`/`release-readiness.yml` count the same tests (4,419 locally, as before). `.github/dependabot.yml` now groups `org.junit*` for all update types so the two artifacts are never proposed separately again. |
 | #23 | RDF4J 5.3.1 -> 6.0.1 | **Deferred, needs a spike** | Public API exposure: `rdf-rdf4j`, `rdf-rdf4j-reasoning` and `kastor-gen-validation-rdf4j` surface RDF4J types, so this is a breaking change for Kastor consumers and needs a minor Kastor release note. Check the RDF4J 6 migration notes (Java baseline, removed deprecated `Repository`/`Sail` APIs, SHACL sail changes), rerun the RDF 1.2 conformance corpus and the persistence/lifecycle tests, and review OWL API 4's transitive RDF4J pin (step 9) which may conflict. |
 | #22 (group) | onnxruntime 1.29.0, djl tokenizers 0.38.0, kotlinpoet 2.4.0, serialization 1.11.0, coroutines 1.11.0, clikt 5.1.0, slf4j 2.0.19, dependency-analysis 3.19.1, wrapper 9.7.1 | **Pending** (only the jmh plugin was taken) | Minor versions but with the risks listed in steps 3-5 and 7. dependency-analysis 3.19.1 may bundle a kotlin-metadata-jvm that reads Kotlin 2.4 metadata. If so, drop the buildscript pin (see below). |
 | #12 | httpclient5 5.6.1 | **Close** | Older than the 5.6.4 security floor already in `gradle/build-platform`. |
@@ -67,8 +67,8 @@ already newer. Close or rebase them rather than merging as-is:
 | `dependabot/gradle/me.champeau.jmh-0.7.3` | jmh plugin 0.7.3 | Step 2. |
 | `dependabot/gradle/org.apache.httpcomponents.client5-httpclient5-5.6.1` | httpclient5 5.6.1 | Older than the current 5.6.4 floor: close. |
 | `dependabot/gradle/org.jetbrains.kotlinx-kotlinx-serialization-json-1.11.0` | serialization 1.11.0 | Step 5. |
-| `dependabot/gradle/org.junit.jupiter-junit-jupiter-6.0.3` | JUnit Jupiter 6.0.3 | Step 6 (together with the platform launcher branch). |
-| `dependabot/gradle/org.junit.platform-junit-platform-launcher-6.0.3` | JUnit Platform 6.0.3 | Step 6. |
+| `dependabot/gradle/org.junit.jupiter-junit-jupiter-6.0.3` | JUnit Jupiter 6.0.3 | Step 6, done with 6.1.3: close. |
+| `dependabot/gradle/org.junit.platform-junit-platform-launcher-6.0.3` | JUnit Platform 6.0.3 | Step 6, done with 6.1.3: close. |
 
 Dependabot PRs cannot pass on their own because they don't refresh lockfiles or verification
 metadata. Check out the branch, run steps 2–4 of the procedure, and push.
