@@ -85,13 +85,19 @@ Each configured ontology gets an `OntologyGenerationTask` (`generateOntology<Nam
 
 | Property | Annotation | Notes |
 |---|---|---|
-| `shaclFile` | `@InputFile`, `@PathSensitive(RELATIVE)` | resolved from `shaclPath` (project directory, then `src/main/resources`) |
-| `contextFile` | `@InputFile`, `@Optional`, `@PathSensitive(RELATIVE)` | resolved from `contextPath`; absent when no context is configured |
+| `shaclCandidates` | `@InputFiles`, `@PathSensitive(RELATIVE)` | the locations `shaclPath` may resolve to (project directory, then `src/main/resources`); the first existing one is chosen when the task runs |
+| `contextCandidates` | `@InputFiles`, `@PathSensitive(RELATIVE)` | the same for `contextPath`; empty when no context is configured |
+| `shaclFile`, `contextFile` | `@InputFile`, `@Optional`, `@PathSensitive(RELATIVE)` | unset by default; set one to name the file directly instead of a path |
 | `interfacePackage`, `wrapperPackage`, `vocabularyPackage`, `dslPackage` | `@Input @Optional` | |
 | `generateInterfaces`, `generateWrappers`, `generateVocabulary`, `generateDsl` | `@Input @Optional` | |
 | `vocabularyName`, `vocabularyNamespace`, `vocabularyPrefix`, `dslName` | `@Input @Optional` | |
 | `outputDirectory` | `@OutputDirectory` | default `build/generated/sources/kastor-gen/<name>` |
 | `ontologyName`, `shaclPath`, `contextPath` | `@Internal` | used for resolution and diagnostics only |
+
+The lookup of a relative path (project directory first, then `src/main/resources`) happens when the task
+**runs**, not while the build is configured, and both locations are inputs. A file that appears at, or
+disappears from, the preferred location therefore re-runs the task and is picked up, and the configuration
+cache entry stays valid (no file-system check is made at configuration time).
 
 Because the ontology **contents** are inputs, editing either file re-runs the task; no manual
 `inputs.files(...)` configuration is needed. The task is `@CacheableTask`, so its output can be restored

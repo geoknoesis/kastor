@@ -20,7 +20,9 @@ import com.squareup.kotlinpoet.KModifier
 import com.squareup.kotlinpoet.TypeSpec
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.*
@@ -55,22 +57,49 @@ abstract class OntologyGenerationTask : DefaultTask() {
     @get:Internal
     abstract val contextPath: Property<String>
 
+    /**
+     * The SHACL file, when configured directly. Unset by default: the file is then looked up from [shaclPath] when
+     * the task runs (see [shaclCandidates]).
+     */
     @get:InputFile
+    @get:Optional
     @get:PathSensitive(PathSensitivity.RELATIVE)
     open val shaclFile: RegularFileProperty = project.objects.fileProperty()
 
-    /** JSON-LD context; optional (without it type and property names come from IRIs and `sh:name`). */
+    /**
+     * The JSON-LD context, when configured directly; optional (without a context, type and property names come from
+     * IRIs and `sh:name`). Unset by default: the file is then looked up from [contextPath] when the task runs.
+     */
     @get:InputFile
     @get:Optional
     @get:PathSensitive(PathSensitivity.RELATIVE)
     open val contextFile: RegularFileProperty = project.objects.fileProperty()
 
-    // Preserve the legacy getters while keeping execution independent of Project.
+    /**
+     * The locations a relative [shaclPath] may resolve to, in order of precedence: the project directory, then
+     * `src/main/resources` (an absolute path is its only candidate). All of them are task inputs and the first one that
+     * exists is chosen when the task **runs**, never while the build is configured: a file that appears at, or
+     * disappears from, a location re-runs the task and is picked up, also when the configuration is reused from the
+     * configuration cache.
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    val shaclCandidates: ConfigurableFileCollection = project.objects.fileCollection()
+
+    /** The locations [contextPath] may resolve to; see [shaclCandidates]. Empty when no context is configured. */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    val contextCandidates: ConfigurableFileCollection = project.objects.fileCollection()
+
+    /** The SHACL file the task reads: [shaclFile] when set, otherwise the first existing [shaclCandidates] entry. */
     @get:Internal
-    val shaclInput: File get() = shaclFile.get().asFile
-    /** The context file; throws when no context is configured (see [contextFile]). */
+    val shaclInput: File get() = resolveInput("SHACL file", "shaclPath", shaclFile, shaclCandidates)
+        ?: throw GradleException("kastorGen ontology '${ontologyName.getOrElse(name)}': shaclPath must be set")
+
+    /** The context file the task reads; throws when no context is configured (see [contextFile]). */
     @get:Internal
-    val contextInput: File get() = contextFile.get().asFile
+    val contextInput: File get() = resolveInput("JSON-LD context", "contextPath", contextFile, contextCandidates)
+        ?: throw GradleException("kastorGen ontology '${ontologyName.getOrElse(name)}': no JSON-LD context is configured")
 
     /** Test hook: called before each generated file is written to the staging directory. */
     @get:Internal
@@ -78,8 +107,22 @@ abstract class OntologyGenerationTask : DefaultTask() {
 
     init {
         val root = project.layout.projectDirectory.asFile
-        shaclFile.convention(project.layout.file(shaclPath.map { resolveOntologyInput(root, it) }))
-        contextFile.convention(project.layout.file(contextPath.map { resolveOntologyInput(root, it) }))
+        shaclCandidates.from(shaclPath.map { ontologyInputCandidates(root, it) }.orElse(emptyList()))
+        contextCandidates.from(contextPath.map { ontologyInputCandidates(root, it) }.orElse(emptyList()))
+    }
+
+    /**
+     * The file configured through [explicit], else the first existing file of [candidates]; null when nothing is
+     * configured. Called at execution time only.
+     */
+    private fun resolveInput(what: String, pathProperty: String, explicit: RegularFileProperty, candidates: FileCollection): File? {
+        explicit.orNull?.asFile?.let { return it }
+        val files = candidates.files
+        if (files.isEmpty()) return null
+        return files.firstOrNull { it.isFile } ?: throw GradleException(
+            "kastorGen ontology '${ontologyName.getOrElse(name)}': $what not found for $pathProperty; looked for " +
+                files.joinToString(", then ") { it.invariantSeparatorsPath }
+        )
     }
 
     @get:Input
@@ -139,8 +182,8 @@ abstract class OntologyGenerationTask : DefaultTask() {
         fun fail(message: String, cause: Throwable? = null): Nothing =
             throw GradleException("kastorGen ontology '$label': $message", cause)
 
-        val shaclFile = this.shaclFile.get().asFile
-        val contextFile = this.contextFile.orNull?.asFile
+        val shaclFile = resolveInput("SHACL file", "shaclPath", this.shaclFile, shaclCandidates) ?: fail("shaclPath must be set")
+        val contextFile = resolveInput("JSON-LD context", "contextPath", this.contextFile, contextCandidates)
         val kspLogger = GradleKspLogger(logger)
         fun failOnRecordedErrors() {
             if (kspLogger.errors.isNotEmpty()) fail("generation reported errors:\n  " + kspLogger.errors.joinToString("\n  "))
@@ -343,10 +386,13 @@ abstract class OntologyGenerationTask : DefaultTask() {
     }
 }
 
-private fun resolveOntologyInput(root: File, path: String): File {
-    require(path.isNotBlank()) { "Ontology input path must not be blank" }
+/**
+ * Where an ontology input [path] may be: itself when absolute, otherwise the project directory and then
+ * `src/main/resources`. A blank path has no candidates. Pure path arithmetic: nothing is read from the file system
+ * while the build is configured.
+ */
+private fun ontologyInputCandidates(root: File, path: String): List<File> {
+    if (path.isBlank()) return emptyList()
     val requested = File(path)
-    if (requested.isAbsolute) return requested
-    val projectFile = File(root, path)
-    return if (projectFile.exists()) projectFile else File(root, "src/main/resources/$path")
+    return if (requested.isAbsolute) listOf(requested) else listOf(File(root, path), File(root, "src/main/resources/$path"))
 }
