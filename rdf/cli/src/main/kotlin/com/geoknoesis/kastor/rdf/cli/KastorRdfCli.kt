@@ -6,13 +6,17 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfFormatException
+import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.TripleTerm
+import com.geoknoesis.kastor.rdf.isIsomorphicTo
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.serialize
-import com.geoknoesis.kastor.rdf.testing.RdfDatasetIsomorphism
-import com.geoknoesis.kastor.rdf.testing.RdfGraphIsomorphism
-import com.geoknoesis.kastor.rdf.testing.RdfGraphSnapshots
+import java.io.BufferedOutputStream
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.OutputStream
 import java.io.PrintStream
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -23,16 +27,40 @@ import kotlin.io.path.name
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    val code = runCli(args.toList(), System.out, System.err)
+    // RDF and messages are written as UTF-8 whatever the platform charset: a Windows code page would turn
+    // unmappable characters into '?' when the output is redirected to a file.
+    val out = utf8PrintStream(FileOutputStream(FileDescriptor.out))
+    val err = utf8PrintStream(FileOutputStream(FileDescriptor.err))
+    System.setOut(out)
+    System.setErr(err)
+    val code = runCli(args.toList(), out, err)
+    out.flush()
+    err.flush()
     if (code != 0) exitProcess(code)
 }
+
+/** A line-flushed UTF-8 [PrintStream] over [stream]. */
+internal fun utf8PrintStream(stream: OutputStream): PrintStream = PrintStream(BufferedOutputStream(stream), true, Charsets.UTF_8)
 
 /** Parsed input: the default graph plus named graphs (empty for graph formats). */
 private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<String, RdfGraph>) {
     val tripleCount: Int get() = defaultGraph.size() + namedGraphs.values.sumOf { it.size() }
 
-    /** Graph name to graph, with the default graph under the `null` key. */
-    fun asDataset(): Map<Iri?, RdfGraph> = mapOf<Iri?, RdfGraph>(null to defaultGraph) + namedGraphs.mapKeys { Iri(it.key) }
+    /**
+     * The dataset as one graph: every quad becomes `<graph> <urn:kastor:rdf-cli:contains> <<( s p o )>>`, so one graph
+     * isomorphism check maps blank nodes consistently across the default graph and all named graphs.
+     */
+    fun asQuadGraph(): RdfGraph =
+        MemoryGraph(
+            (listOf(DEFAULT_GRAPH to defaultGraph) + namedGraphs.map { Iri(it.key) to it.value }).flatMap { (name, graph) ->
+                graph.getTriples().map { RdfTriple(name, CONTAINS, TripleTerm(it)) }
+            },
+        )
+
+    private companion object {
+        val DEFAULT_GRAPH = Iri("urn:kastor:rdf-cli:default-graph")
+        val CONTAINS = Iri("urn:kastor:rdf-cli:contains")
+    }
 }
 
 /** Exit status: success (for `diff`, the inputs are isomorphic). */
@@ -44,7 +72,7 @@ internal const val EXIT_USAGE = 1
 /** Exit status: `diff` found the inputs not isomorphic. */
 internal const val EXIT_NOT_ISOMORPHIC = 2
 
-/** Exit status: runtime failure (I/O error, RDF provider failure, internal error). */
+/** Exit status: runtime failure (I/O error, RDF provider failure, internal error, out of memory, stack overflow). */
 internal const val EXIT_RUNTIME_ERROR = 3
 
 private class CliError(message: String, val code: Int = EXIT_USAGE) : RuntimeException(message)
@@ -80,14 +108,20 @@ internal fun runCli(args: List<String>, out: PrintStream, err: PrintStream): Int
     } catch (e: InvalidPathException) {
         err.println("Invalid path: ${oneLine(e.message)}")
         EXIT_USAGE
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
+        // Errors as well (OutOfMemoryError, StackOverflowError, LinkageError): the JVM default is a stack trace and
+        // status 1, which this tool reserves for usage and input errors.
         exitCodeForFailure(e, err)
     }
 }
 
-/** Unexpected failures (I/O, provider or internal errors): one line on [err], [EXIT_RUNTIME_ERROR]. */
+/** Unexpected failures (I/O, provider or internal errors, JVM errors): one line on [err], [EXIT_RUNTIME_ERROR]. */
 internal fun exitCodeForFailure(e: Throwable, err: PrintStream): Int {
-    err.println("kastor-rdf: error: ${e.javaClass.simpleName}: ${oneLine(e.message ?: "(no message)")}")
+    try {
+        err.println("kastor-rdf: error: ${e.javaClass.simpleName}: ${oneLine(e.message ?: "(no message)")}")
+    } catch (_: Throwable) {
+        // Nothing more can be reported (for example no memory left to build the message); the status still tells.
+    }
     return EXIT_RUNTIME_ERROR
 }
 
@@ -109,7 +143,12 @@ private fun printUsage(out: PrintStream) {
           kastor-rdf diff <file1> <file2> [FORMAT]
 
         Exit status: 0 success; 1 usage or input error (bad or extra arguments, unknown format, missing file,
-        parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal).
+        parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal, out of memory).
+        onto-qa uses a different convention: 0 success; 1 findings at or above --severity; 2 the ontology could not
+        be parsed; 3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error;
+        5 runtime error.
+
+        Output on stdout and stderr is UTF-8, whatever the platform charset.
 
         FORMAT defaults from the file extension when omitted (.ttl → TURTLE, .nt → NTRIPLES, .nq → NQUADS,
         .trig → TRIG, .jsonld/.json → JSON-LD, .rdf/.owl/.xml → RDFXML); other extensions require FORMAT.
@@ -159,16 +198,16 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int
         first.namedGraphs.keys.intersect(second.namedGraphs.keys).sorted()
             .map { "<$it>" to (first.namedGraphs.getValue(it) to second.namedGraphs.getValue(it)) }
     for ((label, graphs) in pairs) {
-        if (!RdfGraphIsomorphism.isIsomorphic(graphs.first, graphs.second)) {
+        if (!graphs.first.isIsomorphicTo(graphs.second)) {
             differences += "$label is not isomorphic"
             err.println("--- $label in ${p1.name} (sorted N-Triples, first lines) ---")
-            err.println(RdfGraphSnapshots.formatSnippet(graphs.first))
+            err.println(sortedNTriplesSnippet(graphs.first))
             err.println("--- $label in ${p2.name} (sorted N-Triples, first lines) ---")
-            err.println(RdfGraphSnapshots.formatSnippet(graphs.second))
+            err.println(sortedNTriplesSnippet(graphs.second))
         }
     }
     // Graph-by-graph isomorphism ignores blank nodes shared across graphs; the dataset must match as a whole.
-    if (differences.isEmpty() && !RdfDatasetIsomorphism.isIsomorphic(first.asDataset(), second.asDataset())) {
+    if (differences.isEmpty() && !first.asQuadGraph().isIsomorphicTo(second.asQuadGraph())) {
         differences += "every graph is isomorphic on its own, but blank nodes shared across graphs do not correspond"
     }
     if (differences.isEmpty()) {
@@ -181,6 +220,16 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int
     err.println("NOT ISOMORPHIC")
     differences.forEach { err.println("  $it") }
     return EXIT_NOT_ISOMORPHIC
+}
+
+private const val SNIPPET_LINES = 64
+
+/** The first [SNIPPET_LINES] lines of [graph] as sorted N-Triples (blank node labels are implementation-specific). */
+private fun sortedNTriplesSnippet(graph: RdfGraph): String {
+    val lines = graph.serialize(RdfFormat.N_TRIPLES).lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.sorted().toList()
+    val head = lines.take(SNIPPET_LINES).joinToString("\n")
+    val omitted = lines.size - SNIPPET_LINES
+    return if (omitted > 0) "$head\n... ($omitted more lines)" else head
 }
 
 private fun read(path: Path, format: String): ParsedInput {

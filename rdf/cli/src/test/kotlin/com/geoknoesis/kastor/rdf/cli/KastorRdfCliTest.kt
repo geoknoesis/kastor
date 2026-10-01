@@ -130,11 +130,54 @@ class KastorRdfCliTest {
         assertTrue(EXIT_RUNTIME_ERROR != EXIT_USAGE && EXIT_RUNTIME_ERROR != EXIT_NOT_ISOMORPHIC)
     }
 
+    /** Standard output that fails on every write: the failure surfaces inside the command, as an I/O error would. */
+    private class FailingOut(private val failure: Throwable) : PrintStream(ByteArrayOutputStream()) {
+        override fun println(x: String?) {
+            throw failure
+        }
+
+        override fun print(s: String?) {
+            throw failure
+        }
+    }
+
     @Test
-    fun `usage lists the exit statuses`() {
+    fun `runCli maps failures raised inside a command to the runtime status with one line`() {
+        val ttl = file("a.ttl", "<http://e/s> <http://e/p> <http://e/o> .\n")
+        val failures =
+            listOf(
+                java.io.IOException("disk on fire"),
+                java.io.UncheckedIOException(java.io.IOException("pipe closed")),
+                IllegalStateException("internal\nsecond line"),
+                StackOverflowError(),
+                OutOfMemoryError("Java heap space"),
+                NoClassDefFoundError("org/example/Missing"),
+            )
+        for (failure in failures) {
+            for (command in listOf(arrayOf("parse", ttl), arrayOf("to-turtle", ttl), arrayOf("diff", ttl, ttl))) {
+                val err = ByteArrayOutputStream()
+                val code = runCli(command.toList(), FailingOut(failure), PrintStream(err, true, "UTF-8"))
+                val text = err.toString("UTF-8")
+                assertEquals(EXIT_RUNTIME_ERROR, code, "${failure.javaClass.simpleName} in ${command[0]}: $text")
+                assertEquals(1, text.trim().lines().size, text)
+                assertTrue(text.startsWith("kastor-rdf: error: ${failure.javaClass.simpleName}"), text)
+            }
+        }
+    }
+
+    @Test
+    fun `usage lists the exit statuses of both command-line tools`() {
         val result = run("help")
         assertEquals(EXIT_OK, result.code)
         assertTrue(result.out.contains("Exit status: 0 success; 1 usage or input error"), result.out)
+        assertTrue(result.out.contains("3 runtime error (I/O, RDF provider, internal, out of memory)"), result.out)
+        assertTrue(result.out.contains("onto-qa uses a different convention: 0 success; 1 findings"), result.out)
+    }
+
+    @Test
+    fun `the command-line tool does not depend on the test kit`() {
+        val testKit = runCatching { Class.forName("com.geoknoesis.kastor.rdf.testing.RdfGraphIsomorphism") }
+        assertTrue(testKit.isFailure, "rdf-testkit is on the rdf-cli class path")
     }
 
     @Test
