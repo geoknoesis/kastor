@@ -22,6 +22,10 @@ import java.util.regex.PatternSyntaxException
  *   terminator, so `^\d+$` would accept "123" followed by a newline. With the `m` flag `$` matches before a newline
  *   or at the end, and `^` at the start or after a newline: only a newline (U+000A) ends a line in XPath, whereas
  *   Java's line anchors also treat carriage return, U+0085, U+2028 and U+2029 as line terminators;
+ * - without the `s` flag `.` matches every character except newline (U+000A) and carriage return (U+000D); Java's
+ *   `.` also excludes U+0085, U+2028 and U+2029. With `s` it matches every character (`DOT_MATCHES_ALL`);
+ * - a `\Q...\E` quotation (a java.util.regex extension that XPath does not define) is copied verbatim, so the
+ *   characters inside it stay literal instead of being rewritten as anchors, dots or classes;
  * - a literal `&` or `[` inside a class is escaped (they are operators in Java classes);
  * - the `x` flag removes whitespace outside character classes during translation. It is not mapped to Java's
  *   `COMMENTS` mode, which would also treat `#` as a comment start and drop whitespace inside classes.
@@ -39,19 +43,39 @@ internal object ShaclPatterns {
     fun toJava(pattern: String, flags: String?): String {
         val f = flags.orEmpty()
         if ('q' in f) return pattern
-        return Translator(pattern, extended = 'x' in f, multiline = 'm' in f).translate()
+        return Translator(pattern, extended = 'x' in f, multiline = 'm' in f, dotAll = 's' in f).translate()
     }
 
-    private class Translator(private val p: String, private val extended: Boolean, private val multiline: Boolean) {
+    private class Translator(
+        private val p: String,
+        private val extended: Boolean,
+        private val multiline: Boolean,
+        private val dotAll: Boolean,
+    ) {
         private var i = 0
+
+        /** Whether a `\Q` quotation starts at [i]. */
+        private fun atQuotation(): Boolean = p.startsWith("\\Q", i)
+
+        /** Copies the quotation starting at [i] up to and including its `\E` (or to the end of the pattern). */
+        private fun quotation(): String {
+            val end = p.indexOf("\\E", i + 2)
+            val stop = if (end < 0) p.length else end + 2
+            return p.substring(i, stop).also { i = stop }
+        }
 
         fun translate(): String {
             val out = StringBuilder(p.length + 16)
             while (i < p.length) {
                 val c = p[i]
                 when {
+                    atQuotation() -> out.append(quotation())
                     c == '\\' && i + 1 < p.length -> out.append(escape(inClass = false))
                     c == '[' -> out.append(charClass())
+                    c == '.' && !dotAll -> {
+                        out.append("[^\\n\\r]")
+                        i++
+                    }
                     c == '$' -> {
                         out.append(if (multiline) "(?=\\n|\\z)" else "\\z")
                         i++
@@ -112,6 +136,7 @@ internal object ShaclPatterns {
                         val base = if (negated) "[^$group]" else "[$group]"
                         return if (subtraction == null) base else "[$base&&[^$subtraction]]"
                     }
+                    atQuotation() -> group.append(quotation())
                     c == '\\' && i + 1 < p.length -> group.append(escape(inClass = true))
                     c == '-' && i + 1 < p.length && p[i + 1] == '[' -> {
                         i++
