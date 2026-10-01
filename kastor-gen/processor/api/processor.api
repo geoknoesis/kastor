@@ -601,14 +601,15 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyBuilder
 public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints {
 	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;)V
-	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/Integer;
 	public final fun component10 ()Ljava/lang/String;
 	public final fun component11 ()Ljava/lang/String;
 	public final fun component12 ()Ljava/lang/String;
 	public final fun component13 ()Ljava/lang/Integer;
 	public final fun component14 ()Ljava/lang/Integer;
+	public final fun component15 ()Ljava/util/List;
 	public final fun component2 ()Ljava/lang/Integer;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
@@ -617,11 +618,12 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstra
 	public final fun component7 ()Ljava/math/BigDecimal;
 	public final fun component8 ()Ljava/math/BigDecimal;
 	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getHasValue ()Ljava/lang/String;
 	public final fun getInValues ()Ljava/util/List;
+	public final fun getInValuesTyped ()Ljava/util/List;
 	public final fun getMaxExclusive ()Ljava/math/BigDecimal;
 	public final fun getMaxInclusive ()Ljava/math/BigDecimal;
 	public final fun getMaxLength ()Ljava/lang/Integer;
@@ -664,15 +666,17 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ReturnType : ja
 }
 
 public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclInValue {
-	public fun <init> (Ljava/lang/String;ZLjava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Z
 	public final fun component3 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;ZLjava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;Ljava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;Ljava/lang/String;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclInValue;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getDatatype ()Ljava/lang/String;
+	public final fun getLanguage ()Ljava/lang/String;
 	public final fun getValue ()Ljava/lang/String;
 	public fun hashCode ()I
 	public final fun isIri ()Z

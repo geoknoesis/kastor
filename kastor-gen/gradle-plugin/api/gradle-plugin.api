@@ -82,6 +82,7 @@ public final class com/geoknoesis/kastor/gen/gradle/VocabularyTerm {
 public abstract class com/geoknoesis/kastor/gen/gradle/tasks/OntologyGenerationTask : org/gradle/api/DefaultTask {
 	public fun <init> ()V
 	public final fun generateOntology ()V
+	public final fun getContextCandidates ()Lorg/gradle/api/file/ConfigurableFileCollection;
 	public fun getContextFile ()Lorg/gradle/api/file/RegularFileProperty;
 	public final fun getContextInput ()Ljava/io/File;
 	public abstract fun getContextPath ()Lorg/gradle/api/provider/Property;
@@ -94,6 +95,7 @@ public abstract class com/geoknoesis/kastor/gen/gradle/tasks/OntologyGenerationT
 	public abstract fun getInterfacePackage ()Lorg/gradle/api/provider/Property;
 	public abstract fun getOntologyName ()Lorg/gradle/api/provider/Property;
 	public abstract fun getOutputDirectory ()Lorg/gradle/api/file/DirectoryProperty;
+	public final fun getShaclCandidates ()Lorg/gradle/api/file/ConfigurableFileCollection;
 	public fun getShaclFile ()Lorg/gradle/api/file/RegularFileProperty;
 	public final fun getShaclInput ()Ljava/io/File;
 	public abstract fun getShaclPath ()Lorg/gradle/api/provider/Property;
