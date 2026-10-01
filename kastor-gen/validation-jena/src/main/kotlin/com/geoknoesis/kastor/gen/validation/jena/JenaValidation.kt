@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
+import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
 import com.geoknoesis.kastor.gen.runtime.ValidationContext
@@ -41,19 +42,73 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
  *   [ValidationResult.Ok].
  *
  * [validate] evaluates only the shapes that target the given focus node and returns the results
- * whose `sh:focusNode` is that node. Jena-backed Kastor graphs are validated in place (no copy);
- * other graphs are converted to a Jena graph per call.
+ * whose `sh:focusNode` is that node.
+ *
+ * ## Cost model
+ * Jena-backed Kastor graphs are validated directly (a standalone Jena graph in place, a graph of a Jena repository
+ * through the provider's native copy of its read view). Other graphs are converted to a Jena graph, and the
+ * converted copy (with the shapes parsed from it, for embedded shapes) is cached per data graph, for up to
+ * [maxCachedGraphs] graphs, with the rules of [GraphStateCache]: a graph is converted again only when it is new or
+ * its content changed. Graphs with a modification stamp (`MemoryGraph`, named graphs of the memory repository) are
+ * checked in O(1) and a new handle of the same named graph finds the copy of an equal handle; other graphs are
+ * identified by a digest of their triples (one pass per call, no conversion). The data graph is read while the
+ * validator holds no lock, so [validate] may be called inside a repository transaction. Validations of one graph run
+ * concurrently on its converted copy.
+ *
+ * The cache size defaults to [DEFAULT_MAX_CACHED_GRAPHS]; set it with the constructor argument or process-wide with
+ * the system property [MAX_CACHED_GRAPHS_PROPERTY] (read when a validator is created). When every cached copy is in
+ * use, a call converts into a private temporary copy instead of waiting. [close] drops the cached copies.
  *
  * Engine failures (malformed shapes, unsupported focus terms, ...) are thrown rather than being
  * reported as violations or silently accepted.
  */
-class JenaValidation private constructor(private val fixedShapes: Shapes?) : ValidationContext {
+class JenaValidation private constructor(
+  private val fixedShapes: Shapes?,
+  /** Maximum number of non-Jena data graphs whose converted copy is kept. */
+  val maxCachedGraphs: Int,
+) : ValidationContext {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
-  constructor() : this(null as Shapes?)
+  constructor() : this(null as Shapes?, configuredMaxCachedGraphs())
 
   /** Validates against the SHACL shapes in [shapes] (copied and parsed once). */
-  constructor(shapes: RdfGraph) : this(parseShapes(copyOf(JenaBridge.toJenaGraph(shapes))))
+  constructor(shapes: RdfGraph) : this(parseShapes(copyOf(JenaBridge.toJenaGraph(shapes))), configuredMaxCachedGraphs())
+
+  /**
+   * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph), keeping the
+   * converted copies of at most [maxCachedGraphs] non-Jena data graphs.
+   *
+   * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+   */
+  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) :
+    this(shapes?.let { parseShapes(copyOf(JenaBridge.toJenaGraph(it))) }, maxCachedGraphs)
+
+  /** The Jena copy of a non-Jena data graph, with the shapes embedded in it (parsed on first use). */
+  private class Converted(val graph: Graph) {
+    val embeddedShapes: Shapes? by lazy { if (declaresShapes(graph)) parseShapes(graph) else null }
+  }
+
+  /** A fixed list of triples as a graph, for the provider's converter. */
+  private class Snapshot(private val triples: List<RdfTriple>) : RdfGraph {
+    override fun hasTriple(triple: RdfTriple): Boolean = triple in triples
+    override fun getTriples(): List<RdfTriple> = triples
+    override fun size(): Int = triples.size
+  }
+
+  private val cache = GraphStateCache<Converted>(
+    maxEntries = maxCachedGraphs,
+    // A converted copy is only read, so validations of one graph share it concurrently.
+    exclusive = false,
+    load = { triples, _ -> Converted(JenaBridge.toJenaGraph(Snapshot(triples))) },
+    // Nothing to release: an in-memory Jena graph is reclaimed by the garbage collector (and may still be read).
+    release = { },
+    owner = "JenaValidation",
+  )
+
+  /** Test hook: number of graphs converted. */
+  internal val loadCount: Int get() = cache.loadCount
+  /** Test hook: number of converted graphs currently cached. */
+  internal fun cachedGraphCount(): Int = cache.size
 
   companion object {
     private const val SH = "http://www.w3.org/ns/shacl#"
@@ -70,11 +125,26 @@ class JenaValidation private constructor(private val fixedShapes: Shapes?) : Val
     )
     private val SH_MESSAGE: Node = NodeFactory.createURI("${SH}message")
 
+    /** Default maximum number of non-Jena data graphs whose converted copy is kept. */
+    const val DEFAULT_MAX_CACHED_GRAPHS: Int = 16
+
+    /**
+     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size
+     * (a positive integer; other values are ignored).
+     */
+    const val MAX_CACHED_GRAPHS_PROPERTY: String = "kastor.validation.jena.maxCachedGraphs"
+
+    private fun configuredMaxCachedGraphs(): Int =
+      System.getProperty(MAX_CACHED_GRAPHS_PROPERTY)?.trim()?.toIntOrNull()?.takeIf { it >= 1 } ?: DEFAULT_MAX_CACHED_GRAPHS
+
+    private fun declaresShapes(graph: Graph): Boolean =
+      SHAPE_MARKERS.any { (p, o) -> graph.contains(Node.ANY, p, o ?: Node.ANY) }
+
     /** Creates a validator from SHACL shapes written in Turtle. */
     @JvmStatic
     fun fromTurtle(shapesTurtle: String): JenaValidation {
       val graph = RDFParser.create().fromString(shapesTurtle).lang(Lang.TURTLE).toGraph()
-      return JenaValidation(parseShapes(graph))
+      return JenaValidation(parseShapes(graph), configuredMaxCachedGraphs())
     }
 
     private fun parseShapes(graph: Graph): Shapes = Shapes.parse(graph)
@@ -85,11 +155,27 @@ class JenaValidation private constructor(private val fixedShapes: Shapes?) : Val
 
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
     val focusNode = toFocusNode(focus)
-    val dataGraph = JenaBridge.toJenaGraph(data)
-    val shapes = fixedShapes ?: run {
-      if (!declaresShapes(dataGraph)) return ValidationResult.Ok
-      parseShapes(dataGraph)
+    if (JenaBridge.isJenaBacked(data)) {
+      val dataGraph = JenaBridge.toJenaGraph(data)
+      val shapes = fixedShapes ?: run {
+        if (!declaresShapes(dataGraph)) return ValidationResult.Ok
+        parseShapes(dataGraph)
+      }
+      return validate(shapes, dataGraph, focusNode)
     }
+    // The cache reads the data graph (stamp or triples) before it takes any lock.
+    return cache.use(data) { converted ->
+      val shapes = fixedShapes ?: converted.embeddedShapes
+      if (shapes == null) ValidationResult.Ok else validate(shapes, converted.graph, focusNode)
+    }
+  }
+
+  /** Drops the cached copies of converted data graphs. */
+  override fun close() {
+    cache.close()
+  }
+
+  private fun validate(shapes: Shapes, dataGraph: Graph, focusNode: Node): ValidationResult {
 
     val report = ShaclValidator.get().validate(shapes, dataGraph, focusNode)
     if (report.conforms()) return ValidationResult.Ok
@@ -99,9 +185,6 @@ class JenaValidation private constructor(private val fixedShapes: Shapes?) : Val
       .map { toViolation(it, shapes.graph) }
     return if (items.isEmpty()) ValidationResult.Ok else ValidationResult.Violations(items)
   }
-
-  private fun declaresShapes(graph: Graph): Boolean =
-    SHAPE_MARKERS.any { (p, o) -> graph.contains(Node.ANY, p, o ?: Node.ANY) }
 
   private fun toFocusNode(focus: RdfTerm): Node = when (focus) {
     is Iri -> NodeFactory.createURI(focus.value)
