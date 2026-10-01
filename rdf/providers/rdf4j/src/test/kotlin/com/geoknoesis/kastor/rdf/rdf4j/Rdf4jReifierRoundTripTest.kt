@@ -41,9 +41,11 @@ class Rdf4jReifierRoundTripTest {
             val storedBefore = countAll(repo)
 
             graph.addTriples(view)
+            // The view's rdf:reifies triple is now explicit: it is stored once (see Rdf4jGraph), the annotations are not.
+            assertEquals(storedBefore + 1, countAll(repo), "SPARQL must not see duplicate statements")
             view.forEach { graph.addTriple(it) }
 
-            assertEquals(storedBefore, countAll(repo), "SPARQL must not see duplicate statements")
+            assertEquals(storedBefore + 1, countAll(repo), "writing the view again changes nothing")
             assertEquals(view.toSet(), graph.getTriples().toSet())
             assertEquals(4, graph.size())
         }
