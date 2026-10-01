@@ -269,7 +269,11 @@ public object GenerationNames {
             if (x == null) y else if (y == null) x else if (x >= y) x else y
         fun lo(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =
             if (x == null) y else if (y == null) x else if (x <= y) x else y
+        // Members are RDF terms: when both declarations carry typed members the intersection compares terms (so
+        // "chat"@en and "chat"@fr stay distinct); otherwise it falls back to the lexical values.
+        val inTyped = if (a.inValuesTyped != null && b.inValuesTyped != null) a.inValuesTyped.filter { it in b.inValuesTyped } else null
         val inValues = when {
+            inTyped != null -> inTyped.map { it.value }
             a.inValues == null -> b.inValues
             b.inValues == null -> a.inValues
             else -> a.inValues.filter { it in b.inValues }
@@ -289,7 +293,8 @@ public object GenerationNames {
             minExclusive = hi(a.minExclusive, b.minExclusive),
             maxExclusive = lo(a.maxExclusive, b.maxExclusive),
             inValues = inValues,
-            inValuesTyped = (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },
+            inValuesTyped = inTyped
+                ?: (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },
             enumName = a.enumName ?: b.enumName,
             hasValue = a.hasValue ?: b.hasValue,
             nodeKind = a.nodeKind ?: b.nodeKind,

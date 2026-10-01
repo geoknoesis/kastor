@@ -29,9 +29,18 @@ public data class EnumModel(
     val members: List<EnumMember>,
 )
 
-/** A typed sh:in member captured during parsing (preserves IRI-vs-literal kind). */
+/**
+ * A typed sh:in member captured during parsing: the RDF term a value node must equal.
+ *
+ * @param value the IRI, or the lexical form of a literal
+ * @param isIri whether the member is an IRI (otherwise a literal)
+ * @param datatype datatype IRI of a literal member (`rdf:langString` for a language-tagged one); null in hand-built
+ *   models means "a literal of the property's `sh:datatype`"
+ * @param language language tag of a language-tagged literal member (compared ignoring case), else null
+ */
 public data class ShaclInValue(
     val value: String,
     val isIri: Boolean,
     val datatype: String? = null,
+    val language: String? = null,
 )

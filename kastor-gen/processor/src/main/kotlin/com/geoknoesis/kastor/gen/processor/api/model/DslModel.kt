@@ -86,7 +86,9 @@ public data class PropertyConstraints(
     val nodeKind: String? = null,
     val qualifiedValueShape: String? = null,
     val qualifiedMinCount: Int? = null,
-    val qualifiedMaxCount: Int? = null
+    val qualifiedMaxCount: Int? = null,
+    /** The `sh:in` members as RDF terms (IRI, or literal with datatype and language tag); see [inValues]. */
+    val inValuesTyped: List<ShaclInValue>? = null,
 ) {
     public companion object {
         /**
@@ -103,6 +105,7 @@ public data class PropertyConstraints(
                 minExclusive = property.minExclusive,
                 maxExclusive = property.maxExclusive,
                 inValues = property.inValues,
+                inValuesTyped = property.inValuesTyped,
                 hasValue = property.hasValue,
                 nodeKind = property.nodeKind,
                 qualifiedValueShape = property.qualifiedValueShape,

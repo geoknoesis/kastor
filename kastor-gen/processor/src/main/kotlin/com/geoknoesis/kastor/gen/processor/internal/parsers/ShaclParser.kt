@@ -293,7 +293,12 @@ public class ShaclParser(private val logger: KSPLogger) {
                         member.isURIResource -> ShaclInValue(value = member.asResource().uri, isIri = true)
                         member.isLiteral -> {
                             val literal: Literal = member.asLiteral()
-                            ShaclInValue(value = literal.lexicalForm, isIri = false, datatype = literal.datatypeURI)
+                            ShaclInValue(
+                                value = literal.lexicalForm,
+                                isIri = false,
+                                datatype = literal.datatypeURI,
+                                language = literal.language?.takeIf { it.isNotEmpty() },
+                            )
                         }
                         else -> {
                             logger.warn("$context: blank node in sh:in ignored")

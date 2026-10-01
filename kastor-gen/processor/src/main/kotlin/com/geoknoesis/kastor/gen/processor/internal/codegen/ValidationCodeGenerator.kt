@@ -52,13 +52,13 @@ internal class ValidationCodeGenerator(
                 val c = property.constraints
                 val name = property.propertyName
 
-                val hasConstraints = c.minLength != null || c.maxLength != null || c.pattern != null ||
-                    !c.inValues.isNullOrEmpty()
+                val inMembers = ShaclInCode.members(c.inValuesTyped, c.inValues, iriValued = property.isIriValued)
+                val hasConstraints = c.minLength != null || c.maxLength != null || c.pattern != null
 
                 if (hasConstraints) {
                     functionBuilder.addComment("Validate %L constraints", name)
                     // Like embedded validation (SHACL): string constraints use the lexical form of a literal or the
-                    // string of an IRI; a blank node has no string and violates them. sh:in compares the same string.
+                    // string of an IRI; a blank node has no string and violates them.
                     functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
                     functionBuilder.addStatement(
                         "val value: String? = when (val obj = triple.obj) { is %T -> obj.lexical; is %T -> obj.value; else -> null }",
@@ -79,13 +79,19 @@ internal class ValidationCodeGenerator(
                         functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $it")
                         functionBuilder.endControlFlow()
                     }
-                    c.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
-                        functionBuilder.beginControlFlow(
-                            "if (value !in listOf(%L))", values.map { CodeBlock.of("%S", it) }.joinToCode(", ")
-                        )
-                        functionBuilder.addStatement("violations.add(%S)", "$name must be one of: ${values.joinToString()}")
-                        functionBuilder.endControlFlow()
-                    }
+                    functionBuilder.endControlFlow()
+                }
+
+                inMembers?.let { members ->
+                    functionBuilder.addComment("Validate %L sh:in", name)
+                    // Like embedded validation (SHACL): every value node must equal a member as an RDF term (same IRI,
+                    // or same lexical form with the same language tag / datatype), so "chat"@fr is not the member
+                    // "chat"@en and the string "5" is not the integer 5.
+                    functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
+                    functionBuilder.addStatement("val value = triple.obj")
+                    functionBuilder.beginControlFlow("if (!(%L))", ShaclInCode.isMember("value", members, property.datatype))
+                    functionBuilder.addStatement("violations.add(%S)", "$name must be one of: ${members.joinToString { it.value }}")
+                    functionBuilder.endControlFlow()
                     functionBuilder.endControlFlow()
                 }
 

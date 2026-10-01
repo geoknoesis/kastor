@@ -337,22 +337,17 @@ public class OntologyWrapperGenerator(
                 functionBuilder.endControlFlow()
             }
 
-            // sh:in: every value node (of any term kind) must be one of the members. Typed members compare as RDF terms
-            // (IRI, or literal lexical form and datatype; language-tagged members by lexical form); untyped members
-            // (literal-valued properties only) by lexical form.
-            val inMembers: List<CodeBlock>? = property.inValuesTyped?.takeIf { it.isNotEmpty() }?.map { v ->
-                when {
-                    v.isIri -> CodeBlock.of("value == %T(%S)", iriClass, v.value)
-                    v.datatype == null || v.datatype == RDF_LANG_STRING ->
-                        CodeBlock.of("(value is %T && value.lexical == %S)", literalClass, v.value)
-                    else -> CodeBlock.of("(value is %T && value.lexical == %S && value.datatype.value == %S)", literalClass, v.value, v.datatype)
-                }
-            } ?: property.inValues?.takeIf { it.isNotEmpty() && literalKind }?.map { v ->
-                CodeBlock.of("(value is %T && value.lexical == %S)", literalClass, v)
-            }
+            // sh:in: every value node (of any term kind) must be one of the members, compared as RDF terms: an IRI, a
+            // language-tagged literal (lexical form and language tag) or a literal (lexical form and datatype). Members
+            // of a hand-built model without typed members (literal-valued properties only) are literals of the
+            // property's sh:datatype, or compare by lexical form when there is none.
+            val inMembers = ShaclInCode.members(property.inValuesTyped, property.inValues?.takeIf { literalKind }, iriValued = false)
             inMembers?.let { members ->
                 functionBuilder.beginControlFlow("%L.forEach { value ->", values)
-                check(CodeBlock.of("!(%L)", members.joinToCode(" || ")), "in", pred, "sh:in violated for $pred", CodeBlock.of("value"))
+                check(
+                    CodeBlock.of("!(%L)", ShaclInCode.isMember("value", members, property.datatype)),
+                    "in", pred, "sh:in violated for $pred", CodeBlock.of("value"),
+                )
                 functionBuilder.endControlFlow()
             }
         }
@@ -502,4 +497,3 @@ public class OntologyWrapperGenerator(
 
 }
 
-private const val RDF_LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
