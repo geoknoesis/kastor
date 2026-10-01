@@ -40,6 +40,42 @@ class Rdf4jReasonerConfigTest {
     }
 
     @Test
+    fun `inferences that relate vocabulary terms are kept when they follow from asserted schema`() {
+        val owl = "http://www.w3.org/2002/07/owl#"
+        val rdfProperty = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")
+        val range = Iri("http://www.w3.org/2000/01/rdf-schema#range")
+        val xsdString = Iri("http://www.w3.org/2001/XMLSchema#string")
+        val graph = MemoryGraph(listOf(
+            RdfTriple(Iri(owl + "ObjectProperty"), subClassOf, rdfProperty),
+            RdfTriple(Iri(owl + "FunctionalProperty"), subClassOf, Iri(owl + "ObjectProperty")),
+            RdfTriple(iri("p"), range, xsdString),
+        ))
+        val inferred = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(graph).toSet()
+        assertTrue(RdfTriple(Iri(owl + "FunctionalProperty"), subClassOf, rdfProperty) in inferred, "$inferred")
+        assertTrue(RdfTriple(Iri(owl + "ObjectProperty"), type, Iri("http://www.w3.org/2000/01/rdf-schema#Class")) in inferred, "$inferred")
+        // Datatype axioms hold without any data: they are not inferences even though the schema mentions xsd:string.
+        assertTrue(inferred.none { it.subject == xsdString }, "${inferred.filter { it.subject == xsdString }}")
+    }
+
+    @Test
+    fun `a worker thread that cannot be started returns its permit and leaves the reasoner usable`() {
+        val permits = java.util.concurrent.Semaphore(2)
+        val failing = java.util.concurrent.ThreadFactory { throw OutOfMemoryError("unable to create native thread") }
+        val reasoner = Rdf4jReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.commit() }, permits, failing)
+        repeat(5) {
+            assertThrows(OutOfMemoryError::class.java) { reasoner.getInferredTriples(schema) }
+            assertEquals(2, permits.availablePermits(), "the permit of a worker that never ran must be returned")
+        }
+        val unstartable = java.util.concurrent.ThreadFactory { task -> object : Thread(task) { override fun start() { throw IllegalThreadStateException("no start") } } }
+        assertThrows(IllegalThreadStateException::class.java) {
+            Rdf4jReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.commit() }, permits, unstartable).getInferredTriples(schema)
+        }
+        assertEquals(2, permits.availablePermits())
+        val working = Rdf4jReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.commit() }, permits)
+        assertTrue(RdfTriple(iri("x"), type, iri("B")) in working.getInferredTriples(schema))
+    }
+
+    @Test
     fun `exactly the axiomatic triples are dropped by default`() {
         val inferred = Rdf4jReasoner(ReasonerConfig.rdfs()).getInferredTriples(schema).toSet()
         assertTrue(RdfTriple(iri("x"), type, iri("B")) in inferred)

@@ -66,6 +66,80 @@ class KspWrapperCompilationTest {
         assertEquals("T|missing|missing|L", output)
     }
 
+    private val policyIface = """
+        package gen.policy
+
+        interface Friend {
+            val name: String
+        }
+
+        interface Doc {
+            val fixed: Int?
+            var count: Int?
+            var best: Friend?
+        }
+    """.trimIndent()
+
+    private val policyProbe = """
+        package gen.policy
+
+        import com.geoknoesis.kastor.gen.runtime.*
+        import com.geoknoesis.kastor.rdf.*
+        import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+
+        private fun read(block: () -> Any?): String =
+            try { block().toString() } catch (e: MaterializationException) { "rejected" }
+
+        fun probe(): String {
+            fun p(local: String) = Iri("https://example.test/" + local)
+            val bad = TypedLiteral("abc", Iri("http://www.w3.org/2001/XMLSchema#int"))
+            val g = MemoryGraph()
+            val n = Iri("urn:doc")
+            g.addTriple(RdfTriple(n, p("fixed"), bad))
+            g.addTriple(RdfTriple(n, p("count"), bad))
+            g.addTriple(RdfTriple(n, p("best"), Literal("not an object")))
+            // Created under THROW: a later SKIP scope around a read does not change the wrapper's policy.
+            val strict = OntoMapper.materialize(RdfRef(n, g), Doc::class.java)
+            val strictReads = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+                listOf(read { strict.fixed }, read { strict.count }, read { strict.best })
+            }
+            // Created under SKIP: reads after the scope has ended still skip.
+            val lenient = MaterializationPolicy.withIllTypedValues(IllTypedValueHandling.SKIP) {
+                OntoMapper.materialize(RdfRef(n, g), Doc::class.java)
+            }
+            val lenientReads = listOf(read { lenient.fixed }, read { lenient.count }, read { lenient.best })
+            return strictReads.joinToString(",") + "|" + lenientReads.joinToString(",")
+        }
+    """.trimIndent()
+
+    @Test
+    fun `val and var members both use the policy captured when the wrapper was created`() {
+        fun p(name: String, type: String, kind: PropertyType, mutable: Boolean = false, nullable: Boolean = false) =
+            PropertyModel(name, type, "https://example.test/$name", kind, mutable = mutable, nullable = nullable)
+        val friend = ClassModel(
+            qualifiedName = "gen.policy.Friend", simpleName = "Friend", packageName = "gen.policy",
+            classIri = "https://example.test/Friend",
+            properties = listOf(p("name", "String", PropertyType.LITERAL)),
+        )
+        val doc = ClassModel(
+            qualifiedName = "gen.policy.Doc", simpleName = "Doc", packageName = "gen.policy",
+            classIri = "https://example.test/Doc",
+            properties = listOf(
+                p("fixed", "Int", PropertyType.LITERAL, nullable = true),
+                p("count", "Int", PropertyType.LITERAL, mutable = true, nullable = true),
+                p("best", "Friend", PropertyType.OBJECT, mutable = true, nullable = true),
+            ),
+        )
+        val generator = WrapperGenerator(RecordingLogger())
+        val result = KotlinSourceCompiler.compile(
+            listOf(generator.generateWrapper(friend), generator.generateWrapper(doc)),
+            mapOf("gen/policy/Doc.kt" to policyIface, "gen/policy/Probe.kt" to policyProbe),
+        )
+        result.assertOk()
+        val output = result.classLoader().loadClass("gen.policy.ProbeKt").getMethod("probe").invoke(null)
+        assertEquals("rejected,rejected,rejected|null,null,null", output)
+    }
+
     private val kindIface = """
         package gen.kind
 

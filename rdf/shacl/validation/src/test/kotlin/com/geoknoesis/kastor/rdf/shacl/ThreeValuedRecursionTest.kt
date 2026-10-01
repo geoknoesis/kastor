@@ -378,23 +378,24 @@ class ThreeValuedRecursionTest {
             for (i in 0 until n) ex("p$i") - ex("knows") - ex("p${(i + 1) % n}")
             if (tail) ex("p${n - 1}") - ex("knows") - ex("dead")
         }
-        val started = System.nanoTime()
-        // An unnamed ring of 100k questions in one component conforms (greatest fixpoint).
-        assertTrue(validate(ring(tail = false), shapes).isValid)
-        // One node also knows a node that knows nobody: the failure propagates around the whole ring.
-        val failing = validate(ring(tail = true), shapes)
+        // An unnamed ring of 100k questions in one component conforms (greatest fixpoint). Each ring node costs one
+        // recorded evaluation of ex:P (node + property shape) and one memoized check of ex:Named (node + property
+        // shape): linear in the ring, whatever the machine speed.
+        val conforming = NativeShaclValidator(ValidationConfig.default())
+        assertTrue(conforming.validate(ring(tail = false), g(shapes)).isValid)
+        assertTrue(conforming.shapeEvaluations <= 4L * n + 16, "shape evaluations: ${conforming.shapeEvaluations}")
+        // One node also knows a node that knows nobody: the failure propagates around the whole ring, re-evaluating
+        // each question once more when its successor is lowered.
+        val failingValidator = NativeShaclValidator(ValidationConfig.default())
+        val failing = failingValidator.validate(ring(tail = true), g(shapes))
         val violation = failing.violations.single()
         assertEquals(ex("p0"), violation.focusNode)
         assertFalse(violation.isUndefinedRecursion, violation.toString())
-        val seconds = (System.nanoTime() - started) / 1e9
-        assertTrue(seconds < 20, "deep recursion took ${seconds}s")
+        assertTrue(failingValidator.shapeEvaluations <= 6L * n + 16, "shape evaluations: ${failingValidator.shapeEvaluations}")
     }
 
-    @Test fun `deep negative chain is refined in near-linear time`() {
-        val started = System.nanoTime()
+    @Test fun `deep negative chain is refined with a linear number of evaluations`() {
         val evaluations = negativeChainEvaluations(20_000)
-        val seconds = (System.nanoTime() - started) / 1e9
         assertTrue(evaluations <= 20L * 20_000, "evaluations: $evaluations")
-        assertTrue(seconds < 20, "negative chain took ${seconds}s")
     }
 }

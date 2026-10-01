@@ -30,7 +30,10 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  * - the query is not a SELECT query;
  * - the variable is assigned by the query (`BIND(... AS ?var)`, `(expr AS ?var)`, `VALUES ?var`);
  * - the variable is used inside a sub-select that does not project it. Such a variable is local to
- *   the sub-select, so an outer binding must not apply to it (Jena substitutes it anyway).
+ *   the sub-select, so an outer binding must not apply to it (Jena substitutes it anyway);
+ * - the variable is bound to a literal or a triple term and is used as the predicate of a triple
+ *   pattern, or as the name of a GRAPH or SERVICE. Only an IRI is legal there, so the substituted
+ *   text would not parse (Jena's own substitution silently matches nothing).
  *
  * Lexical handling:
  * - SPARQL 1.1 codepoint escapes (backslash-u plus 4 hex digits, backslash-U plus 8 hex digits;
@@ -41,13 +44,17 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  *   pre-pass, so they tokenize identically either way.
  * - Comments, string literals and IRIs are skipped, so text inside them is never rewritten.
  *   Escaped characters in prefixed local names (`ex:a\#b`) belong to the name.
+ * - A number ends where its digits end, as in the SPARQL grammar: `(1AS ?x)` is the number `1`
+ *   followed by the keyword `AS`.
  */
 object SparqlInitialBindings {
 
     /**
      * Rewrite [sparql] with [bindings], which maps variable names (without `?`) to SPARQL constant
      * terms already rendered with [SparqlLexical] (IRIs, literals). The constants are inserted as
-     * given.
+     * given. A constant that is not an IRI (it starts like a string, a number, a boolean or a triple
+     * term `<<`) is rejected where only an IRI is legal; a constant written as a variable (a
+     * placeholder the caller binds natively) is not checked.
      */
     fun apply(sparql: String, bindings: Map<String, String>): String = apply(sparql, bindings, emptyMap())
 
@@ -72,7 +79,9 @@ object SparqlInitialBindings {
         require(tokens.none { it.kind == Kind.VAR && it.name in expressionVariables.values }) {
             "expressionVariables must be variables the query does not use"
         }
-        Rewriter(tokens, bindings, expressionVariables, replacements).query(form, tokens.size)
+        val nonIris = bindings.filterValues(::isNotAnIri).keys
+        val iriOnly = if (nonIris.isEmpty()) emptySet() else IriOnlyPositions(tokens).scan()
+        Rewriter(tokens, bindings, expressionVariables, replacements, nonIris, iriOnly).query(form, tokens.size)
         return buildString(sparql.length + 64) {
             var last = 0
             tokens.forEachIndexed { index, token ->
@@ -90,12 +99,21 @@ object SparqlInitialBindings {
      * above, without rewriting it: throws [IllegalArgumentException] exactly when [apply] would. Providers that bind
      * natively (Jena's `substitution`) call this first so that every provider accepts and rejects the same queries.
      */
-    fun validate(sparql: String, variables: Set<String>) {
+    fun validate(sparql: String, variables: Set<String>) = validate(sparql, variables, emptySet())
+
+    /**
+     * Like [validate], also saying which of the [variables] are bound to a literal or a triple term
+     * ([literalVariables]): those are rejected where only an IRI is legal (a predicate, the name of a GRAPH or
+     * SERVICE), exactly as [apply] rejects a constant that is not an IRI there.
+     */
+    fun validate(sparql: String, variables: Set<String>, literalVariables: Set<String>) {
+        require(variables.containsAll(literalVariables)) { "literalVariables must only name bound variables" }
         if (variables.isEmpty()) return
-        apply(sparql, variables.associateWith { VALIDATION_CONSTANT })
+        apply(sparql, variables.associateWith { if (it in literalVariables) VALIDATION_LITERAL else VALIDATION_CONSTANT })
     }
 
     private const val VALIDATION_CONSTANT = "<urn:kastor:initial-binding>"
+    private const val VALIDATION_LITERAL = "\"kastor:initial-binding\""
 
     private val QUERY_FORMS = listOf("SELECT", "ASK", "CONSTRUCT", "DESCRIBE")
 
@@ -112,6 +130,10 @@ object SparqlInitialBindings {
         private val bindings: Map<String, String>,
         private val expressionVariables: Map<String, String>,
         private val out: MutableMap<Int, String>,
+        /** Bound variables whose constant is not an IRI. */
+        private val nonIris: Set<String>,
+        /** Variable tokens in predicate position or naming a GRAPH or SERVICE. */
+        private val iriOnly: Set<Int>,
     ) {
         /** A group (or query level) being rewritten: its opening brace, and the expression variables it reads. */
         private class Frame(var open: Int = -1) {
@@ -146,6 +168,9 @@ object SparqlInitialBindings {
         /** Substitutes a bound variable at [index]; [pattern] when it is in a triple-pattern position of a WHERE group. */
         private fun substitute(index: Int, pattern: Boolean = false) {
             if (!bound(index)) return
+            if (index in iriOnly && tokens[index].name in nonIris) {
+                reject(tokens[index].name, "it is used as a predicate or as the name of a GRAPH or SERVICE, where only an IRI can be bound")
+            }
             // `BOUND(constant)` is not legal SPARQL text (BOUND takes a variable); a bound variable is always
             // bound, which is how Jena evaluates its substituted `BOUND`. `(true)` is legal wherever BOUND(...) is,
             // including directly after FILTER.
@@ -458,14 +483,332 @@ object SparqlInitialBindings {
                 c == '<' || c == '?' || c == '$' || c == '*' -> { tokens.add(Token(Kind.WORD, c.toString(), i, i + 1)); i++ }
                 else -> {
                     val start = i
+                    // Inside a name (keyword, prefixed name, language tag) digits, `-` and `.` continue the name.
+                    var inName = false
                     while (i < n && !text[i].isWhitespace() && text[i] !in WORD_BREAK) {
-                        // PN_LOCAL_ESC (`ex:a\#b`): the escaped character belongs to the name.
-                        i += if (text[i] == '\\' && i + 1 < n) 2 else 1
+                        val ch = text[i]
+                        if (ch == '\\' && i + 1 < n) {
+                            // PN_LOCAL_ESC (`ex:a\#b`): the escaped character belongs to the name.
+                            i += 2
+                            inName = true
+                            continue
+                        }
+                        if (!inName && ch in '0'..'9') {
+                            // A number ends its word: `1AS` is the number 1 followed by the keyword AS.
+                            i = numberEnd(text, i)
+                            break
+                        }
+                        inName = if (inName) isVarChar(ch) || ch in NAME_PUNCTUATION else isVarChar(ch) || ch == ':'
+                        i++
                     }
                     tokens.add(Token(Kind.WORD, text.substring(start, minOf(i, n)), start, minOf(i, n)))
                 }
             }
         }
         return tokens
+    }
+
+    /** Characters that continue a prefixed name or language tag once it has started. */
+    private const val NAME_PUNCTUATION = ":-.%"
+
+    private fun digitsEnd(text: String, from: Int): Int {
+        var i = from
+        while (i < text.length && text[i] in '0'..'9') i++
+        return i
+    }
+
+    /** The end of the exponent (`e`, optional sign, digits) at [from], or [from] when there is none. */
+    private fun exponentEnd(text: String, from: Int): Int {
+        if (from >= text.length || (text[from] != 'e' && text[from] != 'E')) return from
+        var i = from + 1
+        if (i < text.length && (text[i] == '+' || text[i] == '-')) i++
+        val end = digitsEnd(text, i)
+        return if (end > i) end else from
+    }
+
+    /** The end of the INTEGER, DECIMAL or DOUBLE whose first digit is at [from]. */
+    private fun numberEnd(text: String, from: Int): Int {
+        var i = digitsEnd(text, from)
+        if (i < text.length && text[i] == '.') {
+            val fraction = digitsEnd(text, i + 1)
+            // `1.` is the integer 1 and a dot, unless digits or an exponent follow (`1.5`, `1.e3`).
+            if (fraction > i + 1 || exponentEnd(text, fraction) > fraction) i = fraction
+        }
+        return exponentEnd(text, i)
+    }
+
+    // ------------------------------------------------------------------ IRI-only positions
+
+    /** A constant that is certainly not an IRI: a literal (quoted, numeric or boolean) or a triple term. */
+    private fun isNotAnIri(constant: String): Boolean {
+        val first = constant.firstOrNull() ?: return false
+        return first == '"' || first == '\'' || first in '0'..'9' || first == '+' || first == '-' || first == '.' ||
+            constant.startsWith("<<") || constant.equals("true", ignoreCase = true) || constant.equals("false", ignoreCase = true)
+    }
+
+    private val PATTERN_KEYWORDS = setOf("OPTIONAL", "MINUS", "UNION", "LATERAL", "GRAPH", "SERVICE", "SILENT", "FILTER", "BIND", "VALUES", "NOT", "EXISTS")
+
+    /**
+     * Finds the variable tokens that stand where the grammar allows an IRI but no other constant: the verb of a
+     * triple pattern, and the name of a GRAPH or SERVICE.
+     *
+     * It follows the triple-pattern grammar on tokens (subject, verb or property path, object lists, blank node
+     * property lists, collections, and the keywords that start other patterns) only as far as needed to tell which
+     * term is the verb. Where it meets syntax it does not know (RDF 1.2 triple terms, for example) it reports nothing
+     * until the next `.`, `;`, brace or pattern keyword, so it never reports a position that is not a verb.
+     */
+    private class IriOnlyPositions(private val tokens: List<Token>) {
+        private enum class Scope { QUERY, GROUP, DATA, PROPERTY_LIST, COLLECTION, EXPRESSION, PATH }
+
+        private enum class Expect {
+            /** A subject, or a keyword starting another pattern. */
+            SUBJECT,
+            /** A verb: a variable, or the start (or next element) of a property path. */
+            VERB,
+            /** A path element was read: a path operator, or the object. */
+            PATH_OR_OBJECT,
+            OBJECT,
+            /** An object was read: `,`, `;`, `.`, or the end of the triples. */
+            SEPARATOR,
+            /** The name after GRAPH or SERVICE. */
+            NAME,
+            /** After FILTER or BIND: a bracketed expression, a call, or `[NOT] EXISTS { }`. */
+            CONSTRAINT,
+            /** After VALUES: the variable (list) and the data block. */
+            VALUES,
+            /** Unknown syntax: nothing is reported until the next reset. */
+            LOST,
+        }
+
+        private class Frame(val scope: Scope, var expect: Expect)
+
+        private val frames = ArrayDeque<Frame>().apply { addLast(Frame(Scope.QUERY, Expect.LOST)) }
+        private val found = HashSet<Int>()
+
+        /** The state after a complete term (variable, IRI, literal, blank node, collection) in state [expect]. */
+        private fun afterTerm(expect: Expect): Expect = when (expect) {
+            Expect.SUBJECT -> Expect.VERB
+            Expect.PATH_OR_OBJECT, Expect.OBJECT -> Expect.SEPARATOR
+            Expect.NAME -> Expect.SUBJECT
+            Expect.CONSTRAINT, Expect.VALUES -> expect
+            Expect.VERB, Expect.SEPARATOR, Expect.LOST -> Expect.LOST
+        }
+
+        private fun push(scope: Scope, expect: Expect = Expect.LOST) = frames.addLast(Frame(scope, expect))
+
+        /** Leaves the innermost scope of one of [scopes], closing unbalanced inner scopes with it; never the outermost query. */
+        private fun pop(vararg scopes: Scope) {
+            val depth = frames.indexOfLast { it.scope in scopes }
+            if (depth <= 0) return
+            while (frames.size > depth) frames.removeLast()
+        }
+
+        fun scan(): Set<Int> {
+            var i = 0
+            while (i < tokens.size) {
+                val token = tokens[i]
+                val frame = frames.last()
+                when (frame.scope) {
+                    Scope.DATA -> if (token.isPunct('}')) pop(Scope.DATA)
+                    Scope.QUERY -> when {
+                        token.isKeyword("VALUES") -> frame.expect = Expect.VALUES
+                        token.isPunct('{') && frame.expect == Expect.VALUES -> {
+                            frame.expect = Expect.LOST
+                            push(Scope.DATA)
+                        }
+                        token.isPunct('{') -> open(i)
+                        token.isPunct('}') -> pop(Scope.QUERY)
+                    }
+                    Scope.PATH -> when {
+                        token.isPunct('(') -> push(Scope.PATH)
+                        token.isPunct(')') -> pop(Scope.PATH)
+                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                    }
+                    Scope.EXPRESSION -> when {
+                        token.isPunct('(') -> push(Scope.EXPRESSION)
+                        token.isPunct(')') -> pop(Scope.EXPRESSION)
+                        token.isPunct('{') -> open(i)
+                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                    }
+                    Scope.COLLECTION -> when {
+                        token.isPunct('(') -> push(Scope.COLLECTION)
+                        token.isPunct(')') -> pop(Scope.COLLECTION)
+                        token.isPunct('[') -> push(Scope.PROPERTY_LIST, Expect.VERB)
+                        token.isPunct('{') -> open(i)
+                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                    }
+                    Scope.GROUP, Scope.PROPERTY_LIST -> i = pattern(i, frame)
+                }
+                i++
+            }
+            return found
+        }
+
+        /** Opens the group or sub-select whose `{` is at [index]. */
+        private fun open(index: Int) {
+            if (index + 1 < tokens.size && tokens[index + 1].isKeyword("SELECT")) push(Scope.QUERY) else push(Scope.GROUP, Expect.SUBJECT)
+        }
+
+        /** Handles the token at [index] in a group or blank node property list; returns the index of the last token consumed. */
+        private fun pattern(index: Int, frame: Frame): Int {
+            val token = tokens[index]
+            when (token.kind) {
+                Kind.PUNCT -> punctuation(token.text[0], index, frame)
+                Kind.VAR -> {
+                    if (frame.expect == Expect.VERB || frame.expect == Expect.NAME) found.add(index)
+                    frame.expect = if (frame.expect == Expect.VERB) Expect.OBJECT else afterTerm(frame.expect)
+                }
+                Kind.IRI -> frame.expect = if (frame.expect == Expect.VERB) Expect.PATH_OR_OBJECT else afterTerm(frame.expect)
+                Kind.STRING -> {
+                    frame.expect = afterTerm(frame.expect)
+                    return literalEnd(index, frame)
+                }
+                Kind.WORD -> word(token.text, frame)
+            }
+            return index
+        }
+
+        private fun punctuation(c: Char, index: Int, frame: Frame) {
+            when (c) {
+                '{' -> if (frame.expect == Expect.VALUES) {
+                    frame.expect = Expect.SUBJECT
+                    push(Scope.DATA)
+                } else {
+                    // Whatever the braces hold (a group, a sub-select, the pattern of EXISTS), a new pattern follows them.
+                    frame.expect = Expect.SUBJECT
+                    open(index)
+                }
+                '}' -> pop(Scope.GROUP, Scope.QUERY)
+                '[' -> {
+                    frame.expect = afterTerm(frame.expect)
+                    push(Scope.PROPERTY_LIST, Expect.VERB)
+                }
+                ']' -> pop(Scope.PROPERTY_LIST)
+                '(' -> when (frame.expect) {
+                    Expect.CONSTRAINT -> {
+                        frame.expect = Expect.SUBJECT
+                        push(Scope.EXPRESSION)
+                    }
+                    Expect.VALUES -> push(Scope.EXPRESSION)
+                    Expect.VERB -> {
+                        frame.expect = Expect.PATH_OR_OBJECT
+                        push(Scope.PATH)
+                    }
+                    Expect.SUBJECT, Expect.OBJECT, Expect.PATH_OR_OBJECT -> {
+                        frame.expect = afterTerm(frame.expect)
+                        push(Scope.COLLECTION)
+                    }
+                    Expect.SEPARATOR, Expect.NAME, Expect.LOST -> {
+                        frame.expect = Expect.LOST
+                        push(Scope.EXPRESSION)
+                    }
+                }
+                ')' -> Unit
+                ',' -> frame.expect = if (frame.expect == Expect.SEPARATOR) Expect.OBJECT else Expect.LOST
+                ';' -> frame.expect = when (frame.expect) {
+                    // `;` may be repeated, and may end the property list.
+                    Expect.SEPARATOR, Expect.VERB, Expect.LOST -> Expect.VERB
+                    else -> Expect.LOST
+                }
+            }
+        }
+
+        /** Skips the language tag or datatype of the string literal at [index]; returns the index of its last token. */
+        private fun literalEnd(index: Int, frame: Frame): Int {
+            val suffix = tokens.getOrNull(index + 1)?.takeIf { it.kind == Kind.WORD } ?: return index
+            if (suffix.text.startsWith("@")) {
+                if (endsTriples(suffix.text)) dot(frame)
+                return index + 1
+            }
+            if (suffix.text == "^^") return if (tokens.getOrNull(index + 2)?.kind == Kind.IRI) index + 2 else index + 1
+            if (suffix.text.startsWith("^^")) {
+                if (endsTriples(suffix.text)) dot(frame)
+                return index + 1
+            }
+            return index
+        }
+
+        /** Whether [word] ends with the `.` that ends a triples block (names and numbers never end with a dot). */
+        private fun endsTriples(word: String): Boolean =
+            word.length > 1 && word.endsWith(".") && word[word.length - 2] != '\\'
+
+        private fun dot(frame: Frame) {
+            frame.expect = if (frame.scope == Scope.GROUP) Expect.SUBJECT else Expect.LOST
+        }
+
+        private fun word(text: String, frame: Frame) {
+            var core = text
+            // A dot written without white space before the next term (`. ex:s`) or after a term (`ex:o.`).
+            if (core.startsWith(".") && (core.length == 1 || core[1] !in '0'..'9')) {
+                dot(frame)
+                core = core.substring(1)
+                if (core.isEmpty()) return
+            }
+            val dotAfter = endsTriples(core)
+            if (dotAfter) core = core.dropLast(1)
+            element(core, frame)
+            if (dotAfter) dot(frame)
+        }
+
+        /** One word without leading or trailing dot: a keyword, a term, or a piece of a property path. */
+        private fun element(core: String, frame: Frame) {
+            val keyword = core.uppercase().takeIf { it in PATTERN_KEYWORDS && frame.scope == Scope.GROUP }
+            frame.expect = when {
+                keyword == "OPTIONAL" || keyword == "MINUS" || keyword == "UNION" || keyword == "LATERAL" -> Expect.SUBJECT
+                keyword == "GRAPH" || keyword == "SERVICE" -> Expect.NAME
+                keyword == "FILTER" || keyword == "BIND" -> Expect.CONSTRAINT
+                keyword == "VALUES" -> Expect.VALUES
+                keyword == "SILENT" -> if (frame.expect == Expect.NAME) Expect.NAME else Expect.LOST
+                // NOT, EXISTS and function names belong to the constraint being read.
+                frame.expect == Expect.CONSTRAINT || frame.expect == Expect.VALUES -> frame.expect
+                keyword != null -> Expect.LOST
+                frame.expect == Expect.VERB -> verb(core)
+                frame.expect == Expect.PATH_OR_OBJECT && continuesPath(core) -> afterPathPiece(core)
+                isTerm(core) -> afterTerm(frame.expect)
+                else -> Expect.LOST
+            }
+        }
+
+        /** A constant term written as a word: a prefixed name, blank node label, number or boolean. */
+        private fun isTerm(core: String): Boolean {
+            val first = core[0]
+            return when {
+                first in '0'..'9' -> true
+                first == '+' || first == '-' || first == '.' -> core.length > 1 && (core[1] in '0'..'9' || core[1] == '.')
+                core.equals("true", ignoreCase = true) || core.equals("false", ignoreCase = true) -> true
+                else -> (first == ':' || first == '_' || first.isLetter() || Character.isSurrogate(first)) && ':' in core
+            }
+        }
+
+        /** The state after the word [core] in verb position: `a`, a prefixed name, or path operators around them. */
+        private fun verb(core: String): Expect {
+            val name = core.trimStart('^', '!')
+            return when {
+                // `^` or `!` on its own: the element they apply to follows.
+                name.isEmpty() -> Expect.VERB
+                name == "a" || ((name[0] == ':' || name[0].isLetter() || Character.isSurrogate(name[0])) && ':' in name) || name[0] == 'a' && name.length > 1 && name[1] in PATH_OPERATORS ->
+                    afterPathPiece(name)
+                else -> Expect.LOST
+            }
+        }
+
+        /** Whether [core], read after a path element, continues the path instead of being the object. */
+        private fun continuesPath(core: String): Boolean = when (core[0]) {
+            '/', '|', '*', '?' -> true
+            // `+` is a path modifier, `+1` a number.
+            '+' -> core.length == 1 || (core[1] !in '0'..'9' && core[1] != '.')
+            else -> false
+        }
+
+        /** After a piece of a path: another element is due when it ends with an operator that takes one. */
+        private fun afterPathPiece(core: String): Expect {
+            val last = core.last()
+            val escaped = core.length > 1 && core[core.length - 2] == '\\'
+            return if (!escaped && (last == '/' || last == '|' || last == '^' || last == '!')) Expect.VERB else Expect.PATH_OR_OBJECT
+        }
+
+        private companion object {
+            const val PATH_OPERATORS = "/|*+?"
+        }
     }
 }

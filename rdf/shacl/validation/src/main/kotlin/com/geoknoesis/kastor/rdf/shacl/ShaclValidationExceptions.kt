@@ -36,6 +36,12 @@ enum class UnsupportedShaclFeature {
 
     /** SPARQL-based or custom targets (`sh:target`). */
     CUSTOM_TARGET,
+
+    /**
+     * SHACL 1.2 `sh:reifierShape` / `sh:reificationRequired true` on a property shape whose `sh:path` is not a
+     * predicate IRI: the engine only knows which triples a predicate path traverses.
+     */
+    REIFIER_CONSTRAINT_ON_COMPLEX_PATH,
 }
 
 /**

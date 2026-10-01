@@ -20,6 +20,61 @@ and is kept as is; it was never published to Maven Central.
 - Build only: Gradle 9.8.0, JUnit 6.1.3, dependency-analysis 3.19.2 (the `kotlin-metadata-jvm` buildscript pin is gone), JaCoCo 0.8.15.
 - RDF4J 6 is not adopted: it requires Java 25 and removes the RDF-star `Triple` model (see `docs/reference/dependency-upgrade-plan.md`).
 
+### Fixed (round six)
+
+#### Breaking changes
+
+- **`rdf-rdf4j`:**
+  - SPARQL queries and updates follow Kastor's dataset contract, as the Jena provider does: outside `GRAPH`, patterns read the repository's default graph only. Previously RDF4J matched them against the union of all named graphs.
+  - Blank-node graph names in TriG/N-Quads are skolemized on load to `urn:kastor:skolem:<load>:<blank node id>` (the Jena provider uses the same form now; it was `urn:kastor:skolem:<uuid>`).
+  - An explicit `rdf:reifies` triple is always stored as a statement, so SPARQL sees it and it survives restarts and several repository instances over one store.
+  - A triple-term initial binding that contains a blank node or a directional literal is rejected with `IllegalArgumentException`.
+- **`rdf-jena`:**
+  - Readers of an inference view whose step was cancelled or failed get `RdfInferenceException` instead of possibly incomplete results; the transaction continues on a fresh view.
+  - `close()` waits up to 10 s for readers of inference views, then logs a warning and stops them.
+  - `DESCRIBE` reads the default graph only, unless the query declares a dataset.
+  - A literal bound to a variable in predicate, `GRAPH` or `SERVICE` position throws `IllegalArgumentException` (all providers).
+- **Reasoners (Jena, RDF4J):** only triples entailed by the empty graph are dropped as axiomatic, so vocabulary-only inferences that follow from user-asserted schema are reported again.
+- **`rdf-core`:**
+  - `Dataset.describe` returns only triples of the dataset's graphs.
+  - On a dataset with only the store's default graph, a query whose codepoint escapes spell a quote, backslash or line break is rejected with `IllegalArgumentException`.
+  - `UrlLoadOptions` has a new `redirectPolicy` (`copy` is binary-incompatible).
+- **`rdf-sparql` (endpoint):** `maxResultRowChars` defaults to 4 Mi chars (was 16 Mi), JSON nesting is capped at 128 levels, malformed JSON numbers and literals are rejected, and `SparqlEndpointConfig` has a new `strictContentType` field (constructor and `copy` changed).
+- **`rdf-shacl`:**
+  - `sh:pattern` follows XML Schema regular expressions more closely: `^` under flag `m` matches only after a line feed, `.` matches anything but line feed and carriage return, and `\d`, `\w`, `\s` are Unicode-aware. `\w` no longer matches `_`.
+  - A blank-node `sh:targetNode` that is not a node of the data graph is reported (unsupported node expression, or a warning) instead of being validated as an empty node.
+  - Ill-formed RDF lists in shapes raise `ShapeCompileException`.
+  - `sh:reificationRequired` failures are reported under `sh:ReifierShapeConstraintComponent`; Kastor no longer emits `sh:ReificationRequiredConstraintComponent`.
+  - The `memory` validator delegates to the native engine. `ValidationConfig` has a new `patternTimeout` field (default 1 s per value; constructor and `copy` changed).
+- **`kastor-gen`:**
+  - `@Rdf` members of type `Short` or `Instant`, wrapper-name collisions and un-annotated abstract members are KSP errors.
+  - `var` members read under the policy captured when the wrapper was created, like `val` members.
+  - Registering a different factory class for the same interface throws unless `replace = true`.
+  - `ShaclInValue` and `PropertyConstraints` gained a field; the Gradle task's `shaclFile`/`contextFile` are unset by default (use `shaclInput`/`contextInput`).
+- **`onto-quality` / `rdf-cli`:**
+  - Finding refs and `focusNode` keys of blank-node findings changed (they are now unique within a report).
+  - `onto-qa`: unreadable input exits 5 (was 2); `--format turtle --explain` is a usage error; an output path equal to the input is refused without `--overwrite-input`.
+  - `kastor-rdf`: JVM errors exit 3 (was 1); `diff` uses the core isomorphism check and its 60-second limit.
+
+#### Fixed
+
+- `rdf-cli`: `kastor-rdf` starts again (the build named a main class that did not exist). `onto-qa`'s Windows start script no longer exceeds the command-line limit.
+- Both CLIs write stdout and stderr as UTF-8, and write output files atomically.
+- `rdf-core`:
+  - The `GRAPH` rewrite for default-graph-only datasets handles `GRAPH` directly after `}`, leaves `GRAPH` inside `SERVICE` alone, and its tokenizer no longer misses `GRAPH`/`FROM` after numbers, booleans or codepoint escapes.
+  - Redirect `Location` values with an empty base path, spaces, `|` or non-ASCII characters resolve correctly.
+  - `modificationStamp` reads are consistent between graph kinds.
+- `rdf-jena`: a cancelled inference step now discards the shared view (the check was inverted); idle checks no longer pile up in the timer queue; inference models are cached per write transaction; skolem graph names need no lookup table.
+- `rdf-rdf4j`: quoted triples with very large literals can be read (hash-based reifier ids); a reifier blank node used as an object round-trips; fewer full scans for `rdf:reifies` lookups; engine assertion errors surface as `RdfQueryException`.
+- Reasoners: a failed thread start no longer leaks a concurrency permit.
+- `rdf-sparql`: the header wait no longer relies on the JDK request timer (which covers the body from JDK 26); one header budget across redirects; `ORDER BY` with nested comparisons renders valid SPARQL; `(1AS ?x)` is tokenized correctly; result rows are decoded in one pass.
+- `rdf-shacl`: `sh:targetNode` expressions in the `sparql:` namespace are recognised; failing reifiers are reported one result each, naming the reifier; reifier constraints on complex paths are reported as unsupported; undefined-recursion results carry `ksh:resultStatus ksh:UndefinedRecursion` in RDF reports; the DSL can express property paths.
+- `kastor-gen`:
+  - RDF4J and Jena validation share a cache that never holds its lock while reading the graph (it could deadlock with a repository transaction), matches graph handles by equality, keeps 16 graphs by default (`kastor.validation.{rdf4j,jena}.maxCachedGraphs`) and never evicts or waits on a graph in use.
+  - Generated interfaces below a deactivated parent shape compile; `sh:in` compares full RDF terms (language tags and datatypes); the factory registry no longer pins class loaders.
+- `onto-quality`: `--debug` prints the cause of a failed LLM request; LLM error text and prompt fields are capped; labels are tokenised per batch.
+- Tests: two tests that never ran (their bodies returned a value) run now.
+
 ### Fixed (round five)
 
 #### Breaking changes

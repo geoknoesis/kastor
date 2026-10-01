@@ -30,6 +30,27 @@ import java.util.concurrent.TimeUnit
  */
 internal object Rdf4jFormatSupport {
 
+    /**
+     * Prefix of the IRIs that replace blank-node graph names when a dataset is loaded into a repository (the same
+     * scheme as the Jena provider's).
+     */
+    const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
+
+    /** `urn:kastor:skolem:<load>:<label>`, with every byte of [label] outside `[A-Za-z0-9._-]` percent-encoded. */
+    fun skolemGraphName(load: String, label: String): String {
+        val name = StringBuilder(SKOLEM_GRAPH_PREFIX.length + load.length + 1 + label.length)
+            .append(SKOLEM_GRAPH_PREFIX).append(load).append(':')
+        for (byte in label.toByteArray(Charsets.UTF_8)) {
+            val c = byte.toInt().toChar()
+            if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '_' || c == '-') {
+                name.append(c)
+            } else {
+                name.append('%').append("%02X".format(byte.toInt() and 0xFF))
+            }
+        }
+        return name.toString()
+    }
+
     /** Formats RDF4J 5.3 really implements (RDF 1.1 syntaxes; no RDF 1.2 `-1.2` aliases). */
     val ADVERTISED_FORMATS = listOf(
         "TURTLE", "TTL",
@@ -325,7 +346,8 @@ internal object Rdf4jFormatSupport {
     }
 
     /**
-     * Parse RDF dataset data from an input stream into a Kastor repository using RDF4J.
+     * Parse RDF dataset data from an input stream into a Kastor repository using RDF4J (no base IRI).
+     * Blank-node graph names are skolemized, see the overload with a base IRI.
      */
     fun parseDataset(repository: RdfRepository, inputStream: InputStream, format: String) {
         parseDataset(repository, inputStream, format, "")
@@ -333,6 +355,15 @@ internal object Rdf4jFormatSupport {
 
     /**
      * Parse a dataset using an explicit base IRI.
+     *
+     * **Blank-node graph names are skolemized** (TriG `_:g { }` or `[] { }`, an N-Quads graph label `_:g`), like the
+     * Jena provider does: Kastor repositories name graphs by [Iri], so a blank-node context would be stored but
+     * unreachable through `listGraphs` / `getGraph`. A blank graph name becomes
+     * `urn:kastor:skolem:<load>:<blank node id>` ([skolemGraphName]), the same form the Jena provider uses, with one
+     * random `<load>` id (32 hex digits) per call: the same label within a document names the same graph, and
+     * separate loads never share a skolem graph (blank nodes are scoped to the document). Only the graph name is
+     * replaced; the same blank node used as a subject or object inside the data stays a blank node, and the id in
+     * the graph name is its [org.eclipse.rdf4j.model.BNode.getID]. The mapping is stateless.
      */
     fun parseDataset(
         repository: RdfRepository,
@@ -349,12 +380,16 @@ internal object Rdf4jFormatSupport {
             // thread), so a parse failure mid-stream rolls back instead of leaving partial data.
             formatErrors("$format dataset") {
                 val parser = Rio.createParser(rdf4jFormat)
+                val load = java.util.UUID.randomUUID().toString().replace("-", "")
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
                         checkedTriples(statement, null)
                         rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
                         if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
-                        val context = statement.context
+                        val context = when (val name = statement.context) {
+                            is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
+                            else -> name
+                        }
                         if (context != null) {
                             connection.add(statement.subject, statement.predicate, statement.`object`, context)
                         } else {

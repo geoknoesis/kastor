@@ -89,14 +89,8 @@ class OnnxEmbeddingModel private constructor(
 
     override fun embed(texts: List<String>): List<FloatArray> = inferenceLock.withLock {
         check(!closed) { "Embedding model is closed" }
-        if (texts.isEmpty()) return@withLock emptyList()
-        val encodings = texts.map { tokenizer.encode(it, true, false) }
-        val results = arrayOfNulls<FloatArray>(texts.size)
-        for (batch in EmbeddingBatching.plan(encodings.map { it.ids.size }, BATCH_SIZE)) {
-            val vectors = embedBatch(batch.map { encodings[it] })
-            batch.forEachIndexed { position, index -> results[index] = vectors[position] }
-        }
-        results.map { checkNotNull(it) }
+        // Tokenised one batch at a time: the encodings of a large vocabulary are never all in memory.
+        EmbeddingBatching.embedInBatches(texts, BATCH_SIZE, { tokenizer.encode(it, true, false) }, ::embedBatch)
     }
     override fun close(): Unit = inferenceLock.withLock {
         if (!closed) {

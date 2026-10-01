@@ -46,6 +46,8 @@ class HermitRdfReasoner internal constructor(
     private val engineFactory: (OWLOntology, org.semanticweb.HermiT.Configuration) -> OWLReasoner,
     /** Limits background loads in flight, abandoned ones included; replaceable in tests. */
     private val loadPermits: java.util.concurrent.Semaphore,
+    /** Creates the loader threads; replaceable in tests. */
+    private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-hermit-loader") },
 ) : RdfReasoner {
 
     internal constructor(
@@ -175,6 +177,7 @@ class HermitRdfReasoner internal constructor(
      * finishes, then disposes the engine it created and releases the manager's ontologies itself.
      *
      * The created engine is published to [engineRef] as soon as it exists, so the watchdog can interrupt it.
+     * If the loader thread cannot be started, its permit is returned at once and the failure propagates.
      */
     private fun loadWithinDeadline(
         graph: RdfGraph,
@@ -205,7 +208,7 @@ class HermitRdfReasoner internal constructor(
         }
         val state = java.util.concurrent.atomic.AtomicInteger(Loads.RUNNING)
         val load = java.util.concurrent.CompletableFuture<Pair<OWLOntology, OWLReasoner>>()
-        val loader = Thread({
+        val body = Runnable {
             var engine: OWLReasoner? = null
             try {
                 val ontology = manager.loadOntologyFromOntologyDocument(StringDocumentSource(turtle, IRI.create("urn:kastor:hermit-input")))
@@ -227,8 +230,16 @@ class HermitRdfReasoner internal constructor(
                     loadPermits.release()
                 }
             }
-        }, "kastor-hermit-loader").apply { isDaemon = true }
-        loader.start()
+        }
+        try {
+            val loader = threads.newThread(body)
+            loader.isDaemon = true
+            loader.start()
+        } catch (t: Throwable) {
+            // The loader never ran, so it will never return the permit; compute() still owns the manager.
+            loadPermits.release()
+            throw t
+        }
         return try {
             load.get(remainingNanos().coerceAtLeast(1), TimeUnit.NANOSECONDS)
         } catch (e: java.util.concurrent.TimeoutException) {

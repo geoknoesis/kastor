@@ -213,7 +213,7 @@ Library callers can tune `LlmExplanationConfig.requestTimeout` (default 60 s per
 
 Finding text comes from the ontology and is treated as untrusted. It is sent as JSON-encoded data inside explicit data tags, with `<` and `>` escaped, plus an instruction to ignore any instructions it contains. The JSON repair request frames the model's previous reply the same way, because that reply may echo injected ontology text.
 
-**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain --explain-dry-run` to preview counts without an API call (a dry run needs neither `KASTOR_ONTO_QUALITY_LLM` nor an API key; `--explain-dry-run` without `--explain` is a usage error, status 4). Tune calls with `--llm-timeout` (seconds per request, 1–3600, default 60), `--llm-retries` (0–10, default 2; transient failures only), `--llm-max-duration` (seconds for all requests, retries and waits, 1–86400, default 600), `--explain-max` (1–500) and `--explain-batch` (1–100). Explanation failures are reported on stderr; add `--fail-on-explain-error` to exit with status 3. The prerequisites — `KASTOR_ONTO_QUALITY_LLM=true` and, for `openai` / `anthropic`, `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — are checked before the ontology is parsed or an embedding model is loaded. If one is missing, no explanations are produced and a warning is printed on stderr; with `--fail-on-explain-error` the command stops immediately with status 3. `--debug` prints the stack trace of an explanation failure on stderr. JSON output (kotlinx.serialization) includes **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**.
+**CLI:** `export KASTOR_ONTO_QUALITY_LLM=true` then e.g. `onto-qa check ontology.ttl --explain --llm-provider openai`. Use `--llm-model` for a raw provider id or `--llm-model-preset` when omitting `--llm-model`. Use `--explain --explain-dry-run` to preview counts without an API call (a dry run needs neither `KASTOR_ONTO_QUALITY_LLM` nor an API key; `--explain-dry-run` without `--explain` is a usage error, status 4). Tune calls with `--llm-timeout` (seconds per request, 1–3600, default 60), `--llm-retries` (0–10, default 2; transient failures only), `--llm-max-duration` (seconds for all requests, retries and waits, 1–86400, default 600), `--explain-max` (1–500) and `--explain-batch` (1–100). Explanation failures are reported on stderr; add `--fail-on-explain-error` to exit with status 3. Prompts and failure reasons are bounded: finding fields are cut to 1,000 characters, a prompt over 120,000 characters is not sent (use a smaller `--explain-batch`), and a failure reason is one sanitised line of at most 500 characters. The prerequisites — `KASTOR_ONTO_QUALITY_LLM=true` and, for `openai` / `anthropic`, `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — are checked before the ontology is parsed or an embedding model is loaded. If one is missing, no explanations are produced and a warning is printed on stderr; with `--fail-on-explain-error` the command stops immediately with status 3. `--debug` prints the stack trace of an explanation failure on stderr. JSON output (kotlinx.serialization) includes **`findings`**, **`llmExplanations`** and **`llmExplanationFailures`**.
 
 ## CLI (`onto-qa`)
 
@@ -235,7 +235,11 @@ Relative IRIs resolve against the default base IRI **`urn:onto-qa:input/<file na
 
 Options are validated before any model download or ontology load. `pipeline` keeps the enriched graph in memory and writes it to a temporary file only with `--keep-intermediate`.
 
-Errors print a one-line message. To also print stack traces, add **`--debug`** before or after the subcommand (`onto-qa --debug check …` or `onto-qa check x.ttl --debug`).
+Errors print a one-line message. To also print stack traces, add **`--debug`** before or after the subcommand (`onto-qa --debug check …` or `onto-qa check x.ttl --debug`). With `--explain`, `--debug` also prints the exception behind a failed LLM request (HTTP 401, timeout, 5xx; at most three distinct ones). Every line of a stack trace is sanitised like any other message, and provider API keys are replaced by `***`.
+
+**Output.** stdout and stderr are UTF-8 whatever the platform charset, so redirecting a report to a file works on Windows as well. `--output` files, and the result of `enrich`, are written atomically (temporary file, then move): parent directories are created and an existing file is replaced. An `--output` that is the input ontology is refused (status 4) unless you pass **`--overwrite-input`**. `--explain` cannot be combined with `--format turtle` (status 4, before any LLM call), because a SHACL validation report has no place for explanations: use `text`, `markdown` or `json`.
+
+**Blank nodes.** Findings on blank nodes (restrictions, class expressions) show the node as a key such as `_:k3f9a…` instead of a parser label. The key covers the node and its context, is unique within the ontology, and is the same on every parse and with any `--reasoner`. See [Stable finding references](../../../tools/onto-quality/library/README.md#stable-finding-references).
 
 **Warnings** go to stderr. Two cases produce one: `--explain` without `KASTOR_ONTO_QUALITY_LLM=true`, and an embedding catalogue on a graph with no `oqsh:semanticallyCloseTo` triples. The CLI also ships the `slf4j-simple` binding at WARN level, writing to stderr, so library warnings are visible too (for example, a corrupt model cache being downloaded again). Untrusted text in these messages, such as exception messages, paths and LLM failure reasons, is sanitised (see **Report output** below).
 
@@ -252,10 +256,21 @@ See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-c
 |-------------|---------|
 | **0** | Success; no findings at or above `--severity` (default `violation`). |
 | **1** | At least one finding is at or above `--severity`; with `--severity info` any finding fails. Used for nothing else. |
-| **2** | The input ontology could not be parsed in the selected RDF syntax. |
+| **2** | The input ontology could not be parsed in the selected RDF syntax. A file that cannot be read is status 5. |
 | **3** | `--fail-on-explain-error` was set and LLM explanations failed or were incomplete (status 1 takes precedence). |
-| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, an input path that is a directory, a `--base-iri` that is not an absolute IRI, `--reasoner hermit` when HermiT is not on the classpath (the message says how to fix it), inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`. |
-| **5** | Runtime error: embedding model download or loading, similarity search budget exceeded, I/O (for example the output cannot be written), or an unexpected internal error. Add `--debug` (before or after the command) for the stack trace. |
+| **4** | Usage or configuration error; nothing was run. Examples: unknown option or bad value, missing or non-existent input file, an input path that is a directory, a `--base-iri` that is not an absolute IRI, `--reasoner hermit` when HermiT is not on the classpath (the message says how to fix it), inconsistent embedding options (`--model custom` without `--onnx`), `metrics --include` with `--format json` or `turtle`, `--explain` with `--format turtle`, an `--output` that is the input file without `--overwrite-input`. |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), no RDF provider for the input syntax, embedding model download or loading, similarity search budget exceeded, or an unexpected internal error. Add `--debug` (before or after the command) for the stack trace. |
+
+  `kastor-rdf` (see [How to test RDF graphs](how-to-test-rdf-graphs.md#kastor-rdf-cli)) uses a different, older convention. Side by side (both are printed by `--help` of either tool):
+
+| Status | `onto-qa` | `kastor-rdf` |
+|--------|-----------|--------------|
+| **0** | Success; no findings at or above `--severity`. | Success; for `diff`, the inputs are isomorphic. |
+| **1** | Findings at or above `--severity`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
+| **2** | The ontology could not be parsed. | `diff` found the inputs not isomorphic. |
+| **3** | LLM explanations failed (with `--fail-on-explain-error`). | Runtime error: I/O, RDF provider, internal error, out of memory or stack overflow. |
+| **4** | Usage or configuration error; nothing was run. | not used |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity or LLM budget, internal error. | not used |
 
   Scripts that treated status 1 as "findings or bad usage" should also check 4 and 5. See the [module README](../../../tools/onto-quality/library/README.md#cli-exit-codes-and-input-formats).
 - The SHACL benchmark CLI (`benchmarks/shacl/era-cli`) uses the same convention for the statuses it has: 0, 2, 4 and 5. It prints errors as one sanitised stderr line. See its [README](../../../benchmarks/shacl/era-cli/README.md#exit-status).

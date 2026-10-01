@@ -409,6 +409,95 @@ class DefaultQualityExplanationEnricherTest {
     }
 
     @Test
+    fun `request failures keep their cause for debug output`() {
+        runBlocking {
+            val unauthorized = FakeHttpException(401, "Status code: 401 Unauthorized")
+            val session = FakeSession { _, _ -> throw unauthorized }
+            val explained = enricher(session).enrich(report("x"), ExplanationOptions())
+            val failure = explained.failures.single()
+            assertTrue(failure.cause === unauthorized, "cause: ${failure.cause}")
+
+            val slow = FakeSession { _, _ -> awaitCancellation() }
+            val config = LlmExplanationConfig(provider = LlmProvider.OLLAMA, requestTimeout = Duration.ofMillis(20), maxRetries = 0)
+            val timedOut = enricher(slow, config).enrich(report("x"), ExplanationOptions()).failures.single()
+            assertTrue(timedOut.cause is kotlinx.coroutines.TimeoutCancellationException, "cause: ${timedOut.cause}")
+        }
+    }
+
+    @Test
+    fun `provider error text in failure reasons is capped, sanitised and free of the API key`() {
+        runBlocking {
+            val key = "sk-test-secret-123456"
+            val text = "Incorrect API key provided: $key \u001B[2J\u202E\nsecond line " + "x".repeat(100_000)
+            val session = FakeSession { _, _ -> throw IllegalStateException(text) }
+            val config = LlmExplanationConfig(provider = LlmProvider.OPENAI, apiKey = key, circuitBreakerThreshold = 1)
+            val explained = enricher(session, config).enrich(report("a", "b"), ExplanationOptions(batchSize = 1))
+            assertEquals(2, explained.failures.size)
+            for (failure in explained.failures) {
+                val reason = failure.reason
+                assertTrue(reason.length <= DefaultQualityExplanationEnricher.MAX_FAILURE_REASON_CHARS, "reason has ${reason.length} characters")
+                assertFalse(reason.contains(key), reason)
+                assertFalse(reason.any { it.isISOControl() || it == '\u202E' }, reason)
+            }
+            assertTrue(explained.failures[0].reason.contains("Incorrect API key provided: ***"), explained.failures[0].reason)
+            assertTrue(explained.failures[0].reason.endsWith("[truncated]"), explained.failures[0].reason.takeLast(40))
+        }
+    }
+
+    @Test
+    fun `prompt fields are capped and an oversized batch is not sent`() {
+        runBlocking {
+            val long = "m".repeat(50_000)
+            val one = report(long)
+            val message = DefaultQualityExplanationEnricher.buildUserMessage(one, one.findings.mapIndexed { i, f -> i to f })
+            assertTrue(message.length < 3_000, "prompt has ${message.length} characters")
+            val data = message.substringAfter(DefaultQualityExplanationEnricher.DATA_OPEN).substringBefore(DefaultQualityExplanationEnricher.DATA_CLOSE)
+            val item = Json.parseToJsonElement(data).jsonArray.single().jsonObject
+            assertEquals(FindingRef.from(one.findings.single()).hexSha256, item.getValue("findingRef").jsonPrimitive.content)
+            val sent = item.getValue("message").jsonPrimitive.content
+            assertTrue(sent.length <= DefaultQualityExplanationEnricher.MAX_PROMPT_FIELD_CHARS && sent.endsWith("[truncated]"), sent.takeLast(40))
+
+            val many = report(*Array(200) { "$it $long" })
+            val session = FakeSession { _, msg -> validReply(msg) }
+            val explained = enricher(session).enrich(many, ExplanationOptions(maxFindings = 200, batchSize = 200))
+            assertEquals(0, session.messages.size, "an oversized prompt must not be sent")
+            val reason = explained.failures.single().reason
+            assertTrue(reason.contains("exceeds the limit of ${DefaultQualityExplanationEnricher.MAX_PROMPT_CHARS} characters"), reason)
+            assertEquals(200, explained.failures.single().findingRefs.size)
+
+            val small = FakeSession { _, msg -> validReply(msg) }
+            val ok = enricher(small).enrich(many, ExplanationOptions(maxFindings = 24, batchSize = 12))
+            assertEquals(24, ok.explanations.size)
+            assertTrue(small.messages.all { it.length <= DefaultQualityExplanationEnricher.MAX_PROMPT_CHARS })
+
+            val repair = DefaultQualityExplanationEnricher.buildRepairMessage("r".repeat(500_000))
+            assertTrue(repair.length < DefaultQualityExplanationEnricher.MAX_REPAIR_REPLY_CHARS + 1_000, "repair prompt has ${repair.length} characters")
+        }
+    }
+
+    @Test
+    fun `prompt and promptRunId use stable blank node keys instead of parser labels`() {
+        fun blankReport(label: String, shapeLabel: String): QualityReport {
+            val node = com.geoknoesis.kastor.rdf.BlankNode(label)
+            val base = report("x")
+            val violation =
+                base.findings.single().violation.copy(focusNode = node, message = "Restriction _:$label has no filler", shapeUri = "_:$shapeLabel", path = listOf(node))
+            val finding = base.findings.single().copy(violation = violation, blankNodeKeys = mapOf(node to "_:k0f0f"))
+            return base.copy(findings = listOf(finding))
+        }
+        val first = blankReport("b17", "s1")
+        val second = blankReport("genid42", "s2")
+        fun message(r: QualityReport) = DefaultQualityExplanationEnricher.buildUserMessage(r, r.findings.mapIndexed { i, f -> i to f })
+        assertEquals(message(first), message(second))
+        assertFalse(message(first).contains("b17") || message(first).contains("_:s1"), message(first))
+        assertTrue(message(first).contains("\"focusNode\":\"_:k0f0f\"") && message(first).contains("Restriction _:k0f0f has no filler"), message(first))
+        assertEquals(
+            DefaultQualityExplanationEnricher.promptRunId(first.findings, message(first), "k"),
+            DefaultQualityExplanationEnricher.promptRunId(second.findings, message(second), "k"),
+        )
+    }
+
+    @Test
     fun `config toString redacts the api key`() {
         val config = LlmExplanationConfig(provider = LlmProvider.OPENAI, apiKey = "sk-secret-123")
         assertFalse(config.toString().contains("sk-secret-123"))

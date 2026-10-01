@@ -72,6 +72,12 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
         return out
     }
 
+    /**
+     * Members of the RDF list starting at [head]. The list must be well-formed: every cell is a blank node with
+     * exactly one `rdf:first` and exactly one `rdf:rest`, ending in `rdf:nil`. A missing or repeated `rdf:rest` /
+     * `rdf:first` raises [ShapeCompileException]: it would otherwise silently truncate (or fork) `sh:in`, `sh:or`,
+     * path lists and the like.
+     */
     fun parseRdfList(head: RdfTerm): List<RdfTerm> {
         val out = mutableListOf<RdfTerm>()
         var cur: RdfTerm? = head
@@ -85,10 +91,16 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
                     throw ShapeCompileException("Invalid RDF collection head (expected blank node list cell): $cur")
                 }
                 is BlankNode -> {
-                    val first = objectSingle(cur, RDF.first)
-                        ?: throw ShapeCompileException("RDF list cell missing rdf:first on $cur")
-                    val rest = objectSingle(cur, RDF.rest) ?: RDF.nil
-                    out.add(first)
+                    val firsts = objects(cur, RDF.first)
+                    if (firsts.size != 1) {
+                        throw ShapeCompileException("Ill-formed RDF list: cell $cur has ${firsts.size} rdf:first values (exactly one required)")
+                    }
+                    val rests = objects(cur, RDF.rest)
+                    if (rests.size != 1) {
+                        throw ShapeCompileException("Ill-formed RDF list: cell $cur has ${rests.size} rdf:rest values (exactly one required)")
+                    }
+                    val rest = rests[0]
+                    out.add(firsts[0])
                     if (rest is Iri && rest == RDF.nil) break
                     cur = rest
                 }

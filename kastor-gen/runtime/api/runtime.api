@@ -107,6 +107,18 @@ public final class com/geoknoesis/kastor/gen/runtime/GraphAccess$DefaultImpls {
 	public static fun read (Lcom/geoknoesis/kastor/gen/runtime/GraphAccess;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
 }
 
+public final class com/geoknoesis/kastor/gen/runtime/GraphStateCache : java/lang/AutoCloseable {
+	public fun <init> (IZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)V
+	public synthetic fun <init> (IZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun getDigestCount ()I
+	public final fun getLoadCount ()I
+	public final fun getMaxEntries ()I
+	public final fun getSize ()I
+	public final fun getTemporaryCount ()I
+	public final fun use (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
 public final class com/geoknoesis/kastor/gen/runtime/IllTypedValueHandling : java/lang/Enum {
 	public static final field SKIP Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;
 	public static final field THROW Lcom/geoknoesis/kastor/gen/runtime/IllTypedValueHandling;

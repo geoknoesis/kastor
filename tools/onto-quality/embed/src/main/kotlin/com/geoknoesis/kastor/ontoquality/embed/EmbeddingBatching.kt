@@ -21,6 +21,28 @@ internal object EmbeddingBatching {
     }
 
     /**
+     * Embeds [texts] in batches of at most [batchSize], tokenising ([encode]) one batch at a time, so at most
+     * [batchSize] encodings are alive at once whatever the number of texts. Batches group texts of similar character
+     * length (a proxy for token length that needs no tokenisation), so each batch pads only to its own longest
+     * member. Vectors are returned in the order of [texts].
+     */
+    fun <E> embedInBatches(
+        texts: List<String>,
+        batchSize: Int,
+        encode: (String) -> E,
+        embedBatch: (List<E>) -> List<FloatArray>,
+    ): List<FloatArray> {
+        if (texts.isEmpty()) return emptyList()
+        val results = arrayOfNulls<FloatArray>(texts.size)
+        for (batch in plan(texts.map { it.length }, batchSize)) {
+            val vectors = embedBatch(batch.map { encode(texts[it]) })
+            check(vectors.size == batch.size) { "Expected ${batch.size} vectors for a batch, got ${vectors.size}" }
+            batch.forEachIndexed { position, index -> results[index] = vectors[position] }
+        }
+        return results.map { checkNotNull(it) }
+    }
+
+    /**
      * Copies [src] into a zero-padded array of [seqLen]. When [src] is longer and [keepLastToken] is set
      * (the final token is a special token such as `[SEP]`), the head is cut instead of the closing token.
      */

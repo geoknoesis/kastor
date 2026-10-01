@@ -96,6 +96,57 @@ class JenaDatasetLoadTest {
     }
 
     @Test
+    fun `a skolem graph name is derived from the blank node label so terms stay linked to their graph`() {
+        val ex = "http://example.org/"
+        val data = mapOf(
+            "TRIG" to "PREFIX ex: <$ex>\n_:g { _:g ex:p ex:o . ex:s ex:q _:g . _:other ex:p ex:o . }\n",
+            "N-QUADS" to "_:g <${ex}p> <${ex}o> _:g .\n<${ex}s> <${ex}q> _:g _:g .\n_:other <${ex}p> <${ex}o> _:g .\n",
+        )
+        val form = Regex(Regex.escape(JenaParsing.SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:[A-Za-z0-9._%-]+")
+        for ((path, create) in loadPaths()) {
+            for ((format, text) in data) {
+                create().use { repo ->
+                    JenaProvider().parseDataset(repo, text.byteInputStream(), format)
+                    val graph = repo.listGraphs().single()
+                    assertTrue(form.matches(graph.value), "$path $format: ${graph.value}")
+                    // (inference repositories add entailments; only the loaded statements matter here)
+                    val triples = repo.getGraph(graph).getTriples().filter { it.predicate == Iri(ex + "p") || it.predicate == Iri(ex + "q") }
+                    val self = triples.single { it.predicate == Iri(ex + "p") && it.subject == triples.single { t -> t.predicate == Iri(ex + "q") }.obj }
+                    val label = (self.subject as com.geoknoesis.kastor.rdf.BlankNode).id
+                    assertEquals(JenaParsing.blankNodeIdOfSkolemGraph(graph.value), label, "$path $format: the graph name carries the blank node id")
+                    assertEquals(3, triples.size, "$path $format")
+                    assertEquals(2, triples.flatMap { listOf(it.subject, it.obj) }.filterIsInstance<com.geoknoesis.kastor.rdf.BlankNode>().distinct().size, "$path $format")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `skolemizing needs no per-load state and separate loads never share a graph`() {
+        // The name is a function of the load and the label alone, so the sink keeps nothing per graph name.
+        val collected = ArrayList<org.apache.jena.graph.Node>()
+        fun sink() = JenaParsing.validatingDataset(object : org.apache.jena.riot.system.StreamRDFBase() {
+            override fun quad(quad: org.apache.jena.sparql.core.Quad) { collected.add(quad.graph) }
+        })
+        val s = org.apache.jena.graph.NodeFactory.createURI("http://example.org/s")
+        fun quad(label: String) = org.apache.jena.sparql.core.Quad.create(org.apache.jena.graph.NodeFactory.createBlankNode(label), s, s, s)
+        val first = sink()
+        first.quad(quad("a")); first.quad(quad("b")); first.quad(quad("a"))
+        assertEquals(collected[0], collected[2], "the same label names the same graph within a load")
+        assertTrue(collected[0] != collected[1])
+        assertTrue(collected.all { it.isURI })
+        val second = sink()
+        second.quad(quad("a"))
+        assertTrue(collected[3] != collected[0], "another load of the same document creates new graphs")
+        assertEquals("a", JenaParsing.blankNodeIdOfSkolemGraph(collected[3].uri))
+        // Labels are escaped so the name is always a valid IRI, and the escape is reversible.
+        val odd = sink()
+        odd.quad(quad("-7f:1 b/%"))
+        com.geoknoesis.kastor.rdf.Iri(collected[4].uri)
+        assertEquals("-7f:1 b/%", JenaParsing.blankNodeIdOfSkolemGraph(collected[4].uri))
+    }
+
+    @Test
     fun `the default graph block and IRI-named graphs still load on every path`() {
         val data = "PREFIX ex: <http://example.org/>\n{ ex:s ex:p ex:o . }\nex:g { ex:s ex:p ex:o2 . }\n"
         for ((path, create) in loadPaths()) {

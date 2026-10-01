@@ -7,6 +7,7 @@ import com.geoknoesis.kastor.ontoquality.MarkdownReportOptions
 import com.geoknoesis.kastor.ontoquality.OutputSanitizer
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
+import com.geoknoesis.kastor.ontoquality.explanation.ExplanationFailure
 import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
 import com.geoknoesis.kastor.ontoquality.explanation.FindingRef
 import com.geoknoesis.kastor.ontoquality.explanation.QualityExplanationEnricher
@@ -29,6 +30,7 @@ import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchBudgetExceededExc
 import com.geoknoesis.kastor.ontoquality.embed.SimilaritySearchMode
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfProvider
 import com.geoknoesis.kastor.rdf.RdfProviderRegistry
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.BlankNode
@@ -67,15 +69,38 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.slf4j.LoggerFactory
+import java.io.BufferedOutputStream
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.FilterInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.PrintStream
 import java.net.URI
 import java.net.URISyntaxException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import java.time.Duration
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    exitProcess(runOntoQa(args.toList()))
+    installUtf8StandardStreams()
+    val status = runOntoQa(args.toList())
+    System.out.flush()
+    System.err.flush()
+    exitProcess(status)
+}
+
+/**
+ * Reports, RDF and messages are written as UTF-8 whatever the platform charset: a Windows code page would turn
+ * unmappable characters into `?` when the output is redirected (`onto-qa check --format json > report.json`).
+ */
+internal fun installUtf8StandardStreams() {
+    System.setOut(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.out)), true, Charsets.UTF_8))
+    System.setErr(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.err)), true, Charsets.UTF_8))
 }
 
 private val logger = LoggerFactory.getLogger("onto-qa")
@@ -86,7 +111,7 @@ internal const val EXIT_OK = 0
 /** Exit status when findings reach `--severity`. */
 internal const val EXIT_FINDINGS = 1
 
-/** Exit status when the input ontology cannot be parsed in the selected RDF syntax. */
+/** Exit status when the input ontology cannot be parsed in the selected RDF syntax (reading it failing is [EXIT_RUNTIME_ERROR]). */
 internal const val EXIT_INPUT_ERROR = 2
 
 /** Exit status when `--fail-on-explain-error` is set and LLM explanations failed (fully or partially). */
@@ -102,7 +127,16 @@ private const val EXIT_STATUS_HELP =
     "Exit status: 0 success; 1 findings at or above --severity; 2 the ontology could not be parsed; " +
         "3 LLM explanations failed (with --fail-on-explain-error); 4 usage or configuration error; " +
         "5 runtime error (model download or loading, similarity or LLM budget, I/O, internal). " +
-        "Use --debug (before or after the command) for stack traces."
+        "Use --debug (before or after the command) for stack traces.\n\n" +
+        "kastor-rdf uses a different convention: 0 success; 1 usage or input error; 2 diff found the inputs not isomorphic; " +
+        "3 runtime error.\n\n" +
+        "Output on stdout and stderr is UTF-8, whatever the platform charset. --output files are written atomically " +
+        "(temporary file, then move); parent directories are created and an existing file is replaced."
+
+private const val OUTPUT_HELP =
+    "Write output to this file instead of stdout (parent directories are created; an existing file is replaced atomically)"
+
+private const val OVERWRITE_INPUT_HELP = "Allow --output to be the input ontology file (refused by default)"
 
 private const val SIMILARITY_BUDGET_HINT =
     "Re-run with a larger --similarity-max-work (distance evaluations) or --similarity-timeout (seconds), " +
@@ -257,13 +291,38 @@ internal fun runOntoQa(
         EXIT_OK
     } catch (e: CliktError) {
         app.getFormattedHelp(e)?.let { if (e.printError) err(it) else println(it) }
-        if (debug) e.cause?.let { err(it.stackTraceToString()) }
+        if (debug) e.cause?.let { printStackTrace(it, secretsOf(environment), err) }
         exitStatusFor(e)
     } catch (e: Throwable) {
         err("onto-qa: internal error: ${describeFailure(e)}")
-        if (debug) err(e.stackTraceToString())
+        if (debug) printStackTrace(e, secretsOf(environment), err)
         EXIT_RUNTIME_ERROR
     }
+}
+
+/** API keys shorter than this are not treated as secrets to redact (too likely to match ordinary text). */
+private const val MIN_SECRET_CHARS = 8
+
+/** Provider API keys visible to this run; they are replaced by `***` in everything the CLI prints or writes. */
+internal fun secretsOf(environment: CliEnvironment, extra: String? = null): List<String> =
+    listOfNotNull(extra, environment.env(LlmExplanationConfig.OPENAI_API_KEY), environment.env(LlmExplanationConfig.ANTHROPIC_API_KEY))
+        .filter { it.length >= MIN_SECRET_CHARS }
+        .distinct()
+
+private fun redact(text: String, secrets: List<String>): String = secrets.fold(text) { acc, secret -> acc.replace(secret, "***") }
+
+/**
+ * `--debug` stack trace of [failure], line by line. Exception messages carry untrusted text (ontology content in parse
+ * errors, provider error bodies), so every line is sanitised like any other message, and [secrets] are redacted.
+ */
+private fun printStackTrace(failure: Throwable, secrets: List<String>, err: (String) -> Unit) {
+    val trace =
+        try {
+            failure.stackTraceToString()
+        } catch (_: Throwable) {
+            "${failure.javaClass.name} (stack trace unavailable)"
+        }
+    trace.trimEnd().lines().forEach { err(sanitize(redact(it, secrets))) }
 }
 
 /** Clikt raises usage problems as [UsageError] (or help-on-error) with status 1; they map to [EXIT_USAGE]. */
@@ -337,6 +396,14 @@ private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
     /** `--base-iri`; resolve with [validateBaseIri] before loading anything. */
     protected val baseIriOpt by option("--base-iri", help = BASE_IRI_HELP)
 
+    private val overwriteInputOpt by option("--overwrite-input", help = OVERWRITE_INPUT_HELP).flag(default = false)
+
+    /** Usage error when [output] is the [input] file and `--overwrite-input` was not given; call before any work. */
+    protected fun requireOutputIsNotInput(input: Path, output: Path?) {
+        if (output == null || overwriteInputOpt || !isSameFile(input, output)) return
+        throw usageError("--output is the input file (${sanitize(input.toString())}); choose another path or pass --overwrite-input")
+    }
+
     override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
 
     abstract fun execute()
@@ -385,22 +452,69 @@ internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
  * the provider-level `RdfProvider.parseGraph(stream, format, baseIri)` overload, trying providers in registry priority
  * order.
  */
-internal fun parseOntology(path: Path, format: RdfFormat, baseIri: String? = null): RdfGraph {
+internal fun parseOntology(
+    path: Path,
+    format: RdfFormat,
+    baseIri: String? = null,
+    providers: List<RdfProvider> = RdfProviderRegistry.discoverProviders().filter { it.supportsInputFormat(format.formatName) },
+): RdfGraph {
     val base = baseIri ?: defaultBaseIri(path)
-    return try {
-        val providers = RdfProviderRegistry.discoverProviders().filter { it.supportsInputFormat(format.formatName) }
-        var parsed: RdfGraph? = null
-        for (provider in providers) {
+    fun readError(e: IOException) = CliktError("Failed to read ${sanitize(path.toString())}: ${describeFailure(e)}", e, EXIT_RUNTIME_ERROR)
+    for (provider in providers) {
+        val stream =
             try {
-                parsed = Files.newInputStream(path).use { provider.parseGraph(it, format.formatName, base) }
-                break
-            } catch (_: UnsupportedOperationException) {
-                continue
+                IoTrackingInputStream(Files.newInputStream(path))
+            } catch (e: IOException) {
+                throw readError(e)
             }
+        try {
+            return stream.use { provider.parseGraph(it, format.formatName, base) }
+        } catch (_: UnsupportedOperationException) {
+            continue
+        } catch (e: Exception) {
+            // The file could not be read (status 5), as opposed to read but not understood (status 2).
+            stream.failure?.let { throw readError(it) }
+            throw CliktError("Failed to parse ${sanitize(path.toString())} as ${format.formatName}: ${sanitize(e.message)}", e, EXIT_INPUT_ERROR)
         }
-        parsed ?: throw IllegalStateException("no RDF provider can parse ${format.formatName}")
-    } catch (e: Exception) {
-        throw CliktError("Failed to parse ${sanitize(path.toString())} as ${format.formatName}: ${sanitize(e.message)}", e, EXIT_INPUT_ERROR)
+    }
+    throw CliktError(
+        "Failed to parse ${sanitize(path.toString())} as ${format.formatName}: no RDF provider can parse ${format.formatName} " +
+            "(is an RDF provider such as rdf-jena on the class path?)",
+        null,
+        EXIT_RUNTIME_ERROR,
+    )
+}
+
+/** Remembers an [IOException] raised while reading, so a read failure is not reported as a syntax error. */
+private class IoTrackingInputStream(delegate: InputStream) : FilterInputStream(delegate) {
+    var failure: IOException? = null
+        private set
+
+    override fun read(): Int =
+        try {
+            super.read()
+        } catch (e: IOException) {
+            failure = e
+            throw e
+        }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int =
+        try {
+            super.read(b, off, len)
+        } catch (e: IOException) {
+            failure = e
+            throw e
+        }
+}
+
+/** True when [a] and [b] name the same file (through links when both exist, else by normalised absolute path). */
+internal fun isSameFile(a: Path, b: Path): Boolean {
+    val normalised = a.toAbsolutePath().normalize() == b.toAbsolutePath().normalize()
+    if (normalised) return true
+    return try {
+        Files.exists(a) && Files.exists(b) && Files.isSameFile(a, b)
+    } catch (_: IOException) {
+        false
     }
 }
 
@@ -408,7 +522,7 @@ private class MetricsCommand : OntoQaCommand(name = "metrics") {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val formatOpt by option("--format", help = "text | markdown | json | turtle").choice(*FORMAT_CHOICES, ignoreCase = true).default("text")
-    private val outputOpt by option("--output", help = "Write output to this file instead of stdout").path()
+    private val outputOpt by option("--output", help = OUTPUT_HELP).path()
     private val includeOpt by
         option("--include", help = "owl | skos | graph | all (text and markdown only; json and turtle always include all)")
             .choice("owl", "skos", "graph", "all", ignoreCase = true)
@@ -423,6 +537,7 @@ private class MetricsCommand : OntoQaCommand(name = "metrics") {
         if (format in setOf("json", "turtle") && include != "all") {
             throw usageError("--include $includeOpt is only supported with --format text or markdown ($format output always contains every section)")
         }
+        requireOutputIsNotInput(ontologyArg, outputOpt)
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         val cfg =
             MetricsConfig(
@@ -488,25 +603,28 @@ private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCom
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
-    private val outputOpt by option("--output", help = "Output Turtle path").path()
+    private val outputOpt by
+        option(
+            "--output",
+            help = "Output Turtle path (default: <ontology name>.enriched.ttl next to the input; parent directories are created; " +
+                "an existing file is replaced atomically)",
+        ).path()
 
     override fun execute() {
         val options = embedding.toOptions()
+        val out =
+            outputOpt ?: run {
+                val name = ontologyArg.fileName.toString().substringBeforeLast('.')
+                ontologyArg.parent?.resolve("$name.enriched.ttl")
+                    ?: Path.of("$name.enriched.ttl")
+            }
+        requireOutputIsNotInput(ontologyArg, out)
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         openEnricher(environment, options).use { enricher ->
             echo("Embedding and building similarity index (threshold=${embedding.threshold}, mode=${options.similarityMode.label})…", err = true)
             val enriched = enricher.enrich(graph)
-
-            val out =
-                outputOpt ?: run {
-                    val name = ontologyArg.fileName.toString().substringBeforeLast('.')
-                    ontologyArg.parent?.resolve("$name.enriched.ttl")
-                        ?: Path.of("$name.enriched.ttl")
-                }
-            val turtle = enriched.serialize(RdfFormat.TURTLE)
-            out.toAbsolutePath().parent?.toFile()?.mkdirs()
-            out.toFile().writeText(turtle)
-            echo("Wrote enriched ontology to $out", err = true)
+            writeFileAtomically(out, enriched.serialize(RdfFormat.TURTLE))
+            echo("Wrote enriched ontology to ${sanitize(out.toString())}", err = true)
         }
     }
 }
@@ -586,11 +704,12 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
         option("--severity", help = "violation | warning | info — exit $EXIT_FINDINGS when any finding is at or above this level")
             .choice(*SEVERITY_CHOICES, ignoreCase = true)
             .default("violation")
-    val output by option("--output", help = "Write output to this file instead of stdout").path()
+    val output by option("--output", help = OUTPUT_HELP).path()
     val explain by
         option(
             "--explain",
-            help = "Add LLM explanations via Koog (requires $LLM_EXPLAIN_ENV=true and provider credentials).",
+            help = "Add LLM explanations via Koog (requires $LLM_EXPLAIN_ENV=true and provider credentials). " +
+                "Not available with --format turtle.",
         ).flag(default = false)
     val explainDryRun by
         option(
@@ -640,8 +759,18 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
             help = "With --format markdown: use [VIOLATION]/[WARNING] markers instead of emoji.",
         ).flag(default = false)
 
+    /**
+     * `--explain` options, validated before anything is parsed, loaded or sent. The SHACL validation report
+     * vocabulary has no place for explanations, so `--format turtle --explain` is refused rather than paying for LLM
+     * calls whose result would be dropped.
+     */
     fun explainCli(): LlmExplainCli? =
-        if (!explain) {
+        if (explain && format.equals("turtle", ignoreCase = true)) {
+            throw usageError(
+                "--explain cannot be combined with --format turtle: the Turtle output is a SHACL validation report, which has no " +
+                    "place for LLM explanations. Use --format text, markdown or json, or drop --explain.",
+            )
+        } else if (!explain) {
             if (explainDryRun) throw usageError("--explain-dry-run requires --explain")
             null
         } else {
@@ -677,6 +806,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
+        requireOutputIsNotInput(ontologyArg, reportOptions.output)
         val embeddingOptions = embedding.toOptions()
         // LLM prerequisites (opt-in, API key) are checked before the ontology is parsed or a model is loaded.
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
@@ -747,6 +877,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
+        requireOutputIsNotInput(ontologyArg, reportOptions.output)
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
@@ -942,6 +1073,7 @@ private fun maybeExplainReport(
         err("LLM explain dry-run: would send up to $n findings (provider=${llm.provider}, model=$modelDesc)")
         return ExplainOutcome(null, failed = false)
     }
+    val secrets = secretsOf(environment, llm.apiKey)
     return try {
         val cfg =
             LlmExplanationConfig(
@@ -961,16 +1093,39 @@ private fun maybeExplainReport(
                 batchSize = llm.batchSize,
                 minSeverity = llm.minSeverity,
             )
-        val explained = runBlocking { enricher.enrich(report, opts) }
+        val raw = runBlocking { enricher.enrich(report, opts) }
+        // The API key never reaches a report, even when a provider echoes it in an error.
+        val explained =
+            if (raw.failures.none { failure -> secrets.any { it in failure.reason } }) {
+                raw
+            } else {
+                raw.copy(failures = raw.failures.map { ExplanationFailure(it.findingRefs, redact(it.reason, secrets), it.cause) })
+            }
         if (explained.hasExplanationFailures) {
             val missing = explained.failures.sumOf { it.findingRefs.size }
             err("LLM explanations incomplete: $missing finding(s) not explained (${sanitize(explained.failures.first().reason)})")
+            if (debug) printFailureCauses(explained.failures, secrets, err)
         }
         ExplainOutcome(explained, failed = explained.hasExplanationFailures)
     } catch (e: Exception) {
-        err("LLM explanations failed: ${e::class.simpleName}: ${sanitize(e.message)}")
-        if (debug) e.stackTraceToString().trimEnd().lines().forEach { err(sanitize(it)) }
+        err("LLM explanations failed: ${e::class.simpleName}: ${sanitize(redact(e.message ?: "", secrets))}")
+        if (debug) printStackTrace(e, secrets, err)
         ExplainOutcome(null, failed = true)
+    }
+}
+
+/** Stack traces printed for LLM request failures under `--debug`; further distinct causes are only counted. */
+private const val MAX_DEBUG_FAILURE_TRACES = 3
+
+/** `--debug`: the exceptions behind failed LLM requests (HTTP 401, timeouts, 5xx, …), each distinct one once. */
+private fun printFailureCauses(failures: List<ExplanationFailure>, secrets: List<String>, err: (String) -> Unit) {
+    val causes = failures.mapNotNull { it.cause }.distinctBy { it.javaClass.name to it.message }
+    for (cause in causes.take(MAX_DEBUG_FAILURE_TRACES)) {
+        err("LLM explanation failure cause:")
+        printStackTrace(cause, secrets, err)
+    }
+    if (causes.size > MAX_DEBUG_FAILURE_TRACES) {
+        err("(${causes.size - MAX_DEBUG_FAILURE_TRACES} more distinct LLM failure cause(s) not shown)")
     }
 }
 
@@ -1028,9 +1183,41 @@ private fun buildChecker(
     return builder.build()
 }
 
+/**
+ * Writes [text] (UTF-8) to [output] through a temporary file in the same directory that is then moved over the
+ * target, so a reader never sees a half-written file and a failed write leaves the previous content in place.
+ * Parent directories are created; an existing file is replaced (keeping its POSIX permissions); a directory is not.
+ */
+internal fun writeFileAtomically(output: Path, text: String) {
+    var target = output.toAbsolutePath().normalize()
+    if (Files.isSymbolicLink(target)) target = target.toRealPath()
+    if (Files.isDirectory(target)) throw IOException("$output is a directory")
+    val parent = target.parent ?: throw IOException("$output has no parent directory")
+    Files.createDirectories(parent)
+    val temp = parent.resolve(".${target.fileName}.${java.util.UUID.randomUUID()}.tmp")
+    try {
+        // CREATE_NEW with the default permissions of new files (a createTempFile would restrict them to the owner).
+        Files.newBufferedWriter(temp, Charsets.UTF_8, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { it.write(text) }
+        if (Files.exists(target)) {
+            try {
+                Files.setPosixFilePermissions(temp, Files.getPosixFilePermissions(target))
+            } catch (_: UnsupportedOperationException) {
+                // Not a POSIX file system.
+            }
+        }
+        try {
+            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        Files.deleteIfExists(temp)
+    }
+}
+
 private fun writeOutput(text: String, output: Path?, stdout: (String) -> Unit) {
     if (output != null) {
-        output.toFile().writeText(text)
+        writeFileAtomically(output, text)
     } else {
         stdout(text)
     }
@@ -1119,7 +1306,7 @@ internal fun findingsToJson(
                     addJsonObject {
                         put("findingRef", FindingRef.from(f).hexSha256)
                         put("severity", f.violation.severity.name)
-                        put("message", f.violation.message)
+                        put("message", f.stableMessage)
                         put("shapeUri", f.violation.shapeUri)
                         put("category", f.category.name)
                         put("pitfall", pitfallLabel(f.pitfall))

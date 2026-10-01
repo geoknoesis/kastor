@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
+import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
 import com.geoknoesis.kastor.gen.runtime.ValidationContext
@@ -35,10 +36,6 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
 import com.geoknoesis.kastor.rdf.VersionedRdfGraph
-import java.lang.ref.WeakReference
-import java.nio.ByteBuffer
-import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicInteger
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
@@ -54,14 +51,31 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  *
  * ## Cost model
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
- * validator keeps one in-memory repository per data graph instance, for up to [MAX_CACHED_GRAPHS] graphs (the least
- * recently used one is released when another graph arrives; entries whose graph was garbage collected are released
- * first). A graph is (re)loaded only when it is new or its content changed. Change detection is O(1) for graphs that
- * implement [VersionedRdfGraph] (such as `MemoryGraph`): the modification stamp is compared with the one of the loaded
- * copy. Other graphs are checked with an order-independent SHA-256-based digest of their triples, which costs one pass
- * over the triples but no conversion or store writes. Validating many nodes of one graph therefore converts and loads
- * it once. A reload is atomic: the data, the change marker and the embedded shapes are replaced together after the
- * store transaction commits, so a failed conversion or load leaves the previous state intact.
+ * validator keeps one in-memory repository per data graph, for up to [maxCachedGraphs] graphs (see
+ * [GraphStateCache] for the exact rules). A graph is (re)loaded only when it is new or its content changed:
+ * - Graphs that implement [VersionedRdfGraph] (such as `MemoryGraph` and the named graphs of the memory repository)
+ *   are checked in O(1) by comparing the modification stamp with the one of the loaded copy. A new handle of the same
+ *   named graph (`repository.getGraph(name)` on every call) finds the copy loaded for an equal handle.
+ * - Other graphs (e.g. graphs of an RDF4J or Jena repository) are identified by an order-independent SHA-256-based
+ *   digest of their triples, which costs one pass over the triples per call but no conversion or store writes; a new
+ *   handle with unchanged content finds the loaded copy.
+ *
+ * Validating many nodes of one graph therefore converts and loads it once. A reload is atomic: the data, the change
+ * marker and the embedded shapes are replaced together after the store transaction commits, so a failed conversion
+ * or load leaves the previous state intact.
+ *
+ * ## Cache size
+ * The number of cached graphs defaults to [DEFAULT_MAX_CACHED_GRAPHS] and can be set per validator (constructor
+ * argument) or process-wide with the system property [MAX_CACHED_GRAPHS_PROPERTY] (read when a validator is created;
+ * this is how to size the validators shared by generated wrappers). When more graphs than that are validated, the
+ * least recently used copy that no call is using is released. A call never waits for the validation of another
+ * graph: when every cached copy is in use, the call validates in a private temporary store that is released when
+ * the call returns. Raise the limit when more graphs than the default are validated repeatedly (each miss converts
+ * and loads the whole graph).
+ *
+ * ## Locking
+ * The data graph is read only while the validator holds no lock, so [validate] may be called inside a repository
+ * transaction (`repository.transaction { wrapper.validate() }`) while other threads validate the same graph.
  *
  * Each [validate] call evaluates only the shapes that target the focus node: the target declarations
  * (`sh:targetClass` including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`,
@@ -72,8 +86,8 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * are validated for all their targets and the results are filtered to the focus node.
  *
  * Calls for the same data graph are serialized on that graph's repository; calls for different graphs run
- * concurrently. [close] releases every repository (together with the loaded data). A validator is safe to share
- * between threads.
+ * concurrently. [close] releases every repository (together with the loaded data); a repository that a call is
+ * still using is released when that call returns. A validator is safe to share between threads.
  *
  * [validate] returns the `sh:ValidationResult`s whose `sh:focusNode` is the requested node. Engine failures other
  * than SHACL validation results are rethrown, never mapped to `Ok` or to a violation.
@@ -84,26 +98,49 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  */
 class Rdf4jValidation private constructor(
   private val fixedShapes: List<Statement>?,
+  /** Maximum number of data graphs whose converted copy is kept (one in-memory store each). */
+  val maxCachedGraphs: Int,
 ) : ValidationContext, AutoCloseable {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
-  constructor() : this(null as List<Statement>?)
+  constructor() : this(null as List<Statement>?, configuredMaxCachedGraphs())
 
   /** Validates against the SHACL shapes in [shapes] (converted once at construction). */
-  constructor(shapes: RdfGraph) : this(toStatements(shapes))
+  constructor(shapes: RdfGraph) : this(toStatements(shapes.getTriples()), configuredMaxCachedGraphs())
 
-  /** Guards [slots], [closed] and [useCounter]; never held while a slot lock is acquired. */
-  private val slotsLock = Any()
-  private val slots = ArrayList<Slot>()
-  private var closed = false
-  private var useCounter = 0L
+  /**
+   * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph), keeping the
+   * converted copies of at most [maxCachedGraphs] data graphs.
+   *
+   * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+   */
+  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) : this(shapes?.let { toStatements(it.getTriples()) }, maxCachedGraphs)
 
   /** Test hook: runs inside the load transaction, before commit (to simulate a store failure). */
   @Volatile internal var beforeLoadCommit: (() -> Unit)? = null
+  /** Test hook: creates the store of a data graph. */
+  @Volatile internal var repositoryFactory: () -> SailRepository = ::newRepository
+
+  /**
+   * The converted copy of one data graph: its store and the shapes embedded in the data. A reload updates it in
+   * place (under the cache entry lock, which also guards [embeddedShapes]).
+   */
+  private class Store(val repository: SailRepository, var embeddedShapes: ShapeIndex?)
+
+  private val cache = GraphStateCache<Store>(
+    maxEntries = maxCachedGraphs,
+    exclusive = true,
+    load = ::load,
+    release = { it.repository.shutDown() },
+    owner = "Rdf4jValidation",
+  )
+
   /** Test hook: number of content digests computed. */
-  internal val digestCount = AtomicInteger()
+  internal val digestCount: Int get() = cache.digestCount
   /** Test hook: number of graphs converted and loaded into a store. */
-  internal val loadCount = AtomicInteger()
+  internal val loadCount: Int get() = cache.loadCount
+  /** Test hook: number of validations that ran in a private temporary store. */
+  internal val temporaryStoreCount: Int get() = cache.temporaryCount
   private val fixedShapeIndex: ShapeIndex? by lazy(LazyThreadSafetyMode.PUBLICATION) {
     fixedShapes?.let { ShapeIndex(it) }
   }
@@ -114,15 +151,30 @@ class Rdf4jValidation private constructor(
       setOf(SHACL.TARGET_CLASS, SHACL.TARGET_NODE, SHACL.TARGET_SUBJECTS_OF, SHACL.TARGET_OBJECTS_OF)
     private const val MAX_SHAPE_ANCESTOR_DEPTH = 16
 
-    /** Maximum number of data graphs whose converted copy is kept (one in-memory store each). */
-    const val MAX_CACHED_GRAPHS: Int = 4
+    /** Default maximum number of data graphs whose converted copy is kept (one in-memory store each). */
+    const val DEFAULT_MAX_CACHED_GRAPHS: Int = 16
+
+    /**
+     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size
+     * (a positive integer; other values are ignored).
+     */
+    const val MAX_CACHED_GRAPHS_PROPERTY: String = "kastor.validation.rdf4j.maxCachedGraphs"
+
+    @Deprecated(
+      "The cache size is configurable: see maxCachedGraphs, DEFAULT_MAX_CACHED_GRAPHS and MAX_CACHED_GRAPHS_PROPERTY",
+      ReplaceWith("Rdf4jValidation.DEFAULT_MAX_CACHED_GRAPHS"),
+    )
+    const val MAX_CACHED_GRAPHS: Int = DEFAULT_MAX_CACHED_GRAPHS
+
+    private fun configuredMaxCachedGraphs(): Int =
+      System.getProperty(MAX_CACHED_GRAPHS_PROPERTY)?.trim()?.toIntOrNull()?.takeIf { it >= 1 } ?: DEFAULT_MAX_CACHED_GRAPHS
 
     /** Creates a validator from SHACL shapes written in Turtle. */
     @JvmStatic
     fun fromTurtle(shapesTurtle: String): Rdf4jValidation = Rdf4jValidation(Rdf.parse(shapesTurtle, "TURTLE"))
 
-    private fun toStatements(graph: RdfGraph): List<Statement> =
-      graph.getTriples().map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
+    private fun toStatements(triples: List<RdfTriple>): List<Statement> =
+      triples.map { t -> vf.createStatement(toResource(t.subject), vf.createIRI(t.predicate.value), toValue(t.obj)) }
 
     private fun toResource(term: RdfTerm): Resource = when (term) {
       is Iri -> vf.createIRI(term.value)
@@ -153,66 +205,6 @@ class Rdf4jValidation private constructor(
       }
       is Triple -> TripleTerm(RdfTriple(toTerm(value.subject) as RdfResource, Iri(value.predicate.stringValue()), toTerm(value.`object`)))
       else -> throw IllegalStateException("Unsupported RDF4J value in SHACL report: $value")
-    }
-
-    /**
-     * Order-independent, collision-resistant digest of [graph]'s content: the SHA-256 of an unambiguous encoding of
-     * each triple (term kind tags, length-prefixed UTF-8 values), added up modulo 2^256, plus the triple count.
-     * Unlike a sum of `hashCode()`s, distinct contents (e.g. literals `"Aa"` and `"BB"`, which share a String hash
-     * code) never produce the same digest in practice.
-     */
-    private fun digest(graph: RdfGraph): GraphDigest {
-      val sha = MessageDigest.getInstance("SHA-256")
-      val sum = LongArray(4)
-      var count = 0L
-      for (triple in graph.getTriples()) {
-        encodeTerm(sha, triple.subject)
-        encodeTerm(sha, triple.predicate)
-        encodeTerm(sha, triple.obj)
-        addModulo(sum, sha.digest())
-        count++
-      }
-      return GraphDigest(sum.toList(), count)
-    }
-
-    private fun encodeTerm(sha: MessageDigest, term: RdfTerm) {
-      fun field(value: String?) {
-        if (value == null) {
-          sha.update(0)
-          return
-        }
-        val bytes = value.toByteArray(Charsets.UTF_8)
-        sha.update(1)
-        sha.update(ByteBuffer.allocate(4).putInt(bytes.size).array())
-        sha.update(bytes)
-      }
-      when (term) {
-        is Iri -> { sha.update('I'.code.toByte()); field(term.value) }
-        is BlankNode -> { sha.update('B'.code.toByte()); field(term.id) }
-        is LangString -> {
-          sha.update('L'.code.toByte()); field(term.lexical); field(term.lang); field(term.direction?.toString())
-        }
-        is Literal -> { sha.update('T'.code.toByte()); field(term.lexical); field(term.datatype.value) }
-        is TripleTerm -> {
-          sha.update('R'.code.toByte())
-          encodeTerm(sha, term.triple.subject); encodeTerm(sha, term.triple.predicate); encodeTerm(sha, term.triple.obj)
-        }
-        else -> { sha.update('?'.code.toByte()); field(term.toString()) }
-      }
-    }
-
-    /** [sum] += [digest] (32 bytes, big-endian) modulo 2^256; [sum] holds four big-endian 64-bit words. */
-    private fun addModulo(sum: LongArray, digest: ByteArray) {
-      val words = ByteBuffer.wrap(digest)
-      val add = LongArray(4) { words.long }
-      var carry = 0L
-      for (i in 3 downTo 0) {
-        val a = sum[i]
-        val b = add[i]
-        val s = a + b + carry
-        carry = if (java.lang.Long.compareUnsigned(s, a) < 0 || (carry == 1L && s == a)) 1L else 0L
-        sum[i] = s
-      }
     }
 
     private fun newRepository(): SailRepository {
@@ -253,52 +245,8 @@ class Rdf4jValidation private constructor(
     }
   }
 
-  /** Content digest of a graph: four 64-bit words of a sum of SHA-256 triple digests, plus the triple count. */
-  private data class GraphDigest(val words: List<Long>, val count: Long)
-
-  /**
-   * The cached store of one data graph. [lastUsed] is guarded by [slotsLock]; the other mutable fields by the slot's
-   * own monitor.
-   */
-  private class Slot(val graph: WeakReference<RdfGraph>, var lastUsed: Long) {
-    var repository: SailRepository? = null
-    var loaded = false
-    var loadedStamp: Long? = null
-    var loadedDigest: GraphDigest? = null
-    var embeddedShapes: ShapeIndex? = null
-    var closed = false
-
-    fun release() {
-      closed = true
-      repository?.shutDown()
-      repository = null
-      embeddedShapes = null
-      loadedDigest = null
-    }
-  }
-
-  /** The slot of [data], creating one (and evicting dead or least recently used slots) when needed. */
-  private fun acquire(data: RdfGraph): Slot {
-    val evicted = ArrayList<Slot>()
-    val slot = synchronized(slotsLock) {
-      check(!closed) { "Rdf4jValidation has been closed" }
-      val use = ++useCounter
-      slots.firstOrNull { it.graph.get() === data }?.let { it.lastUsed = use; return@synchronized it }
-      slots.removeAll { candidate -> (candidate.graph.get() == null).also { dead -> if (dead) evicted += candidate } }
-      while (slots.size >= MAX_CACHED_GRAPHS) {
-        val lru = slots.minBy { it.lastUsed }
-        slots.remove(lru)
-        evicted += lru
-      }
-      Slot(WeakReference(data), use).also { slots += it }
-    }
-    // Release outside the slots lock: this waits for an in-flight validation of an evicted graph to finish.
-    evicted.forEach { synchronized(it) { it.release() } }
-    return slot
-  }
-
   /** Number of data graphs currently cached (for tests). */
-  internal fun cachedGraphCount(): Int = synchronized(slotsLock) { slots.size }
+  internal fun cachedGraphCount(): Int = cache.size
 
   /** Shapes with their target declarations, indexed once. */
   private class ShapeIndex(val statements: List<Statement>) {
@@ -324,29 +272,20 @@ class Rdf4jValidation private constructor(
       throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
     }
     val focusValue = toResource(focus)
-    while (true) {
-      val slot = acquire(data)
-      synchronized(slot) {
-        // Evicted (or the validator closed) between acquire and lock: look the graph up again.
-        if (slot.closed) continue
-        return loadAndValidate(slot, data, focusValue)
-      }
-    }
+    // The cache reads the data graph before it takes the graph's entry lock; the block only uses the store.
+    return cache.use(data) { store -> validateLoaded(store, focusValue) }
   }
 
-  /** Loads [data] into [slot]'s store when it is new or changed, then validates [focusValue]; holds [slot]'s lock. */
-  private fun loadAndValidate(slot: Slot, data: RdfGraph, focusValue: Resource): ValidationResult {
-    // Read the stamp before converting: a concurrent change makes the next call reload (never a stale hit).
-    val stamp = (data as? VersionedRdfGraph)?.modificationStamp
-    val digest = if (stamp == null) digest(data).also { digestCount.incrementAndGet() } else null
-    val stale = !slot.loaded || (if (stamp != null) slot.loadedStamp != stamp else slot.loadedDigest != digest)
-    val repo = slot.repository ?: newRepository().also { slot.repository = it }
-    if (stale) {
-      // Convert and index first, then replace the store content in one transaction; the change marker and the
-      // embedded shapes change together only after the commit, so a failure at any step leaves the previously
-      // loaded data and shapes in place.
-      val statements = toStatements(data)
-      val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
+  /**
+   * Loads a snapshot of a data graph into [previous]'s store (or a new one). The statements are converted and
+   * indexed first and the store content is replaced in one transaction, so a failure at any step leaves the
+   * previously loaded data and shapes in place.
+   */
+  private fun load(triples: List<RdfTriple>, previous: Store?): Store {
+    val statements = toStatements(triples)
+    val newShapes = if (fixedShapes == null) ShapeIndex(extractEmbeddedShapes(statements)) else null
+    val repo = previous?.repository ?: repositoryFactory()
+    try {
       repo.connection.use { connection ->
         connection.begin()
         try {
@@ -359,13 +298,24 @@ class Rdf4jValidation private constructor(
           throw e
         }
       }
-      loadCount.incrementAndGet()
-      slot.embeddedShapes = newShapes
-      slot.loadedStamp = stamp
-      slot.loadedDigest = digest
-      slot.loaded = true
+    } catch (e: Throwable) {
+      if (previous == null) {
+        try {
+          repo.shutDown()
+        } catch (shutdownFailure: Throwable) {
+          e.addSuppressed(shutdownFailure)
+        }
+      }
+      throw e
     }
-    val shapes = fixedShapeIndex ?: slot.embeddedShapes ?: return ValidationResult.Ok
+    // Only after the commit: the embedded shapes change together with the data.
+    return previous?.also { it.embeddedShapes = newShapes } ?: Store(repo, newShapes)
+  }
+
+  /** Validates [focusValue] against the data loaded in [store]; runs under the store's cache entry lock. */
+  private fun validateLoaded(store: Store, focusValue: Resource): ValidationResult {
+    val repo = store.repository
+    val shapes = fixedShapeIndex ?: store.embeddedShapes ?: return ValidationResult.Ok
     if (shapes.statements.isEmpty()) return ValidationResult.Ok
 
     return repo.connection.use { connection ->
@@ -392,13 +342,13 @@ class Rdf4jValidation private constructor(
     }
   }
 
-  /** Releases the repositories and the data loaded into them. */
+  /**
+   * Releases the repositories and the data loaded into them. A repository that a [validate] call is still using is
+   * released when that call returns (this method does not wait for it). Every repository is released even when one
+   * fails to shut down; the first failure is then thrown with the others suppressed.
+   */
   override fun close() {
-    val released = synchronized(slotsLock) {
-      closed = true
-      slots.toList().also { slots.clear() }
-    }
-    released.forEach { synchronized(it) { it.release() } }
+    cache.close()
   }
 
   /** The shapes whose target declarations select [focus] in the loaded data. */

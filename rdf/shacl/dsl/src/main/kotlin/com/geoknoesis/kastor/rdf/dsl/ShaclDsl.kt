@@ -172,6 +172,20 @@ private class SingleValueSlots(
         entries[predicate] = Entry(value, listTriples + t)
     }
 
+    /**
+     * Like [set] for a value serialized as a structure: [build] returns the object term and appends the triples
+     * describing it (blank nodes, RDF lists), which are replaced together with the parameter triple.
+     */
+    fun setStructure(predicate: Iri, value: Any?, build: (MutableList<RdfTriple>) -> RdfTerm) {
+        clear(predicate)
+        if (value == null) return
+        val structure = mutableListOf<RdfTriple>()
+        val t = RdfTriple(subject, predicate, build(structure))
+        graphDsl.addTriples(structure)
+        graphDsl.triple(t.subject, t.predicate, t.obj)
+        entries[predicate] = Entry(value, structure + t)
+    }
+
     private fun clear(predicate: Iri) {
         entries.remove(predicate)?.triples?.forEach { graphDsl.removeTriple(it) }
     }
@@ -270,7 +284,7 @@ class NodeShapeDsl(
     private val shape: RdfResource,
     private val graphDsl: GraphDsl,
     private val nextBnode: (String) -> BlankNode
-) {
+) : ShaclPathScope {
     private val slots = SingleValueSlots(shape, graphDsl, nextBnode)
 
     /**
@@ -470,6 +484,25 @@ class NodeShapeDsl(
     }
 
     /**
+     * Add a property constraint whose `sh:path` is a SHACL property path (inverse, sequence, alternative,
+     * zero-or-more, one-or-more or zero-or-one path; see [ShaclPathScope] for the builders):
+     *
+     * ```kotlin
+     * property(sequence(EX.parent, EX.name)) { minCount = 1 }
+     * property(inverse(EX.child)) { maxCount = 2 }
+     * ```
+     */
+    fun property(path: ShaclPropertyPath, configure: PropertyShapeDsl.() -> Unit) {
+        val propertyShape = nextBnode("property")
+        graphDsl.triple(shape, SHACL.property, propertyShape)
+        graphDsl.triple(propertyShape, RDF.type, SHACL.PropertyShape)
+
+        val dsl = PropertyShapeDsl(propertyShape, graphDsl, nextBnode)
+        dsl.propertyPath = path
+        dsl.configure()
+    }
+
+    /**
      * Add a node constraint (reference to another shape).
      */
     fun node(shapeRef: Iri) {
@@ -666,19 +699,39 @@ class PropertyShapeDsl(
     private val propertyShape: RdfResource,
     private val graphDsl: GraphDsl,
     private val nextBnode: (String) -> BlankNode
-) {
+) : ShaclPathScope {
     private val slots = SingleValueSlots(propertyShape, graphDsl, nextBnode)
 
-    /** The `sh:path` of this property shape (set automatically by `property(path) { }`). */
+    /**
+     * The `sh:path` of this property shape when it is a predicate path (set automatically by `property(path) { }`);
+     * `null` when no path is set or the path is a complex path (see [propertyPath]).
+     */
     var path: Iri?
-        set(value) = slots.set(SHACL.path, value, value)
-        get() = slots.get(SHACL.path) as Iri?
+        set(value) { propertyPath = value?.let { ShaclPropertyPath.Predicate(it) } }
+        get() = (propertyPath as? ShaclPropertyPath.Predicate)?.iri
+
+    /**
+     * The `sh:path` of this property shape as a SHACL property path: a predicate, or an inverse, sequence,
+     * alternative, zero-or-more, one-or-more or zero-or-one path, serialized as the standard SHACL path RDF.
+     * Single-valued: assigning replaces the previous path, including its blank nodes and list cells.
+     */
+    var propertyPath: ShaclPropertyPath?
+        set(value) = slots.setStructure(SHACL.path, value) { triples -> shaclPathToRdf(value!!, nextBnode, triples) }
+        get() = slots.get(SHACL.path) as ShaclPropertyPath?
 
     /**
      * Set path using a string IRI or QName (replaces any previous path).
      */
     fun path(path: String) {
         this.path = graphDsl.qname(path)
+    }
+
+    /**
+     * Set a SHACL property path built with the [ShaclPathScope] functions (replaces any previous path):
+     * `path(sequence(EX.parent, EX.name))`.
+     */
+    fun path(path: ShaclPropertyPath) {
+        propertyPath = path
     }
 
     // Cardinality constraints

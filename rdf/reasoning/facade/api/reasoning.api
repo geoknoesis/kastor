@@ -141,6 +141,13 @@ public final class com/geoknoesis/kastor/rdf/reasoning/RdfReasoning {
 	public final fun supportedReasonerTypes ()Ljava/util/List;
 }
 
+public final class com/geoknoesis/kastor/rdf/reasoning/RdfsAxioms {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/reasoning/RdfsAxioms;
+	public final fun isEntailedByEmptyGraph (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun isEntailedByEmptyGraph (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Z
+	public static synthetic fun isEntailedByEmptyGraph$default (Lcom/geoknoesis/kastor/rdf/reasoning/RdfsAxioms;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Z
+}
+
 public final class com/geoknoesis/kastor/rdf/reasoning/ReasonerCapabilities {
 	public fun <init> (Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;)V
 	public synthetic fun <init> (Ljava/util/Set;ZZZZZJLcom/geoknoesis/kastor/rdf/reasoning/PerformanceProfile;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

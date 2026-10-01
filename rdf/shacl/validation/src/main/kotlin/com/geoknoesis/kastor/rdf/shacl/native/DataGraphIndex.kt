@@ -66,6 +66,9 @@ internal class DataGraphIndex(
     /** Every node of the data graph: subjects and objects (including literals), in first-occurrence order. */
     fun allNodes(): Set<RdfTerm> = allNodesView
 
+    /** Whether [term] occurs in the data graph as a subject or an object. */
+    fun containsNode(term: RdfTerm): Boolean = (term is RdfResource && bySubject.containsKey(term)) || term in allNodesView
+
     // Session-local and bounded: large class hierarchies cannot retain every transitive closure.
     private val superclassCache = object : LinkedHashMap<Iri, Set<Iri>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Iri, Set<Iri>>): Boolean = size > 128

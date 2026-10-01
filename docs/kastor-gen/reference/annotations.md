@@ -253,6 +253,21 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
      term kind follows `MaterializationPolicy.unexpectedTerm` (throws by default).
    - Objects: other `@Rdf` domain interfaces.
    - Single values may be declared nullable (`String?`, `Int?`, `Organization?`).
+   - Type aliases are resolved to the type they stand for (`typealias Name = String`, `typealias Names = List<String>`).
+
+   **Diagnostics.** What the generator cannot handle is reported by KSP, naming the type or member, and no
+   wrapper is generated for the affected interface:
+   - *error* - a member type without a reader: anything not listed above, e.g. `Short`, `java.time.Instant`,
+     or a class that is not `@Rdf`-annotated (and has no `<Type>Wrapper` / `<Type>Factory`), which would
+     otherwise fail at the first read with `No wrapper factory registered`;
+   - *error* - an abstract property or function without `@Rdf`, which the wrapper could not implement
+     (members with a default implementation are fine; an override inherits the `@Rdf` of the property it
+     overrides);
+   - *error* - two `@Rdf` types that map to one wrapper class, e.g. a nested `Outer.Inner` and a top-level
+     `Outer_Inner` (both `Outer_InnerWrapper`);
+   - *warning* - a class named `<Type>Wrapper` already exists but is not an `RdfBacked` implementation of the
+     interface, so no wrapper is generated. An existing `RdfBacked` implementation (generated from SHACL, or
+     hand-written on purpose) is used without a warning.
 
 4. **Missing values**
    - Missing values are never replaced by invented defaults (`""`, `0`, `false`).

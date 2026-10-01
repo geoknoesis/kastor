@@ -14,10 +14,12 @@ import java.security.MessageDigest
  * constraint type, violation codes), **not** from row position in [com.geoknoesis.kastor.ontoquality.QualityReport.findings],
  * so importance-based reordering does not change refs.
  *
- * Blank nodes are keyed by [QualityFinding.blankNodeKeys] (a structural hash of the node's description, set by
- * [com.geoknoesis.kastor.ontoquality.QualityChecker]), so refs of findings on e.g. `owl:Restriction` nodes do not
- * change when the same file is parsed again. Without a key the parser label is used, which is stable only within one
- * parse. Anonymous shapes are keyed without their blank-node label for the same reason.
+ * Blank nodes are keyed by [QualityFinding.blankNodeKeys] (a hash of the content and context of the node, unique
+ * within the asserted graph, set by [com.geoknoesis.kastor.ontoquality.QualityChecker]), so refs of findings on e.g.
+ * `owl:Restriction` nodes do not change when the same file is parsed again or a reasoner is switched on, and two
+ * blank nodes never share a ref. Blank-node labels that a message interpolates are replaced by the same keys
+ * ([QualityFinding.stableMessage]). Without a key the parser label is used, which is stable only within one parse.
+ * Anonymous shapes are keyed without their blank-node label for the same reason.
  */
 @JvmInline
 value class FindingRef(val hexSha256: String) {
@@ -49,7 +51,7 @@ value class FindingRef(val hexSha256: String) {
             return buildString {
                 append(v.severity.name).append('\u001f')
                 append(v.constraint.constraintType.name).append('\u001f')
-                append(v.message).append('\u001f')
+                append(finding.stableMessage).append('\u001f')
                 append(shapeKey(v.shapeUri)).append('\u001f')
                 append(v.violationCode ?: "").append('\u001f')
                 append(v.resultSeverityIri ?: "").append('\u001f')

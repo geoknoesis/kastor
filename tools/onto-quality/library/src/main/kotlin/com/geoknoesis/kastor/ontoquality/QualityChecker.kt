@@ -51,13 +51,13 @@ class QualityChecker private constructor(
         val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
         val metricsContext = computeMetricsContext(ontology)
         val raw = validator.validate(materialized.graph, mergedShapes)
-        val base = QualityReport.from(raw, catalogs, metricsContext, materialized.graph)
-        val rr = materialized.reasoningResult ?: return base
-        val extra = OntoQualityReasoning.inconsistencyViolationsForReport(rr)
-        val consistencyWarnings = rr.consistencyCheck.warnings
-        if (extra.isEmpty() && consistencyWarnings.isEmpty()) return base
-        val merged = mergeValidationReport(base.underlying, extra, consistencyWarnings)
-        return QualityReport.from(merged, catalogs, metricsContext, materialized.graph)
+        val merged =
+            materialized.reasoningResult?.let { rr ->
+                mergeValidationReport(raw, OntoQualityReasoning.inconsistencyViolationsForReport(rr), rr.consistencyCheck.warnings)
+            } ?: raw
+        // Blank-node keys come from the asserted graph (once), so finding refs do not change with the reasoner.
+        val keys = QualityReport.blankNodeKeys(merged, ontology, materialized.graph)
+        return QualityReport.fromKeyed(merged, catalogs, metricsContext, keys)
     }
 
     fun checkResource(ontology: RdfGraph, resource: RdfResource): QualityReport {

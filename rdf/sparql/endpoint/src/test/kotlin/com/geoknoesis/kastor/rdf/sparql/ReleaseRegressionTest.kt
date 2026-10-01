@@ -40,7 +40,7 @@ class ReleaseRegressionTest {
         try { return SparqlRepository("http://127.0.0.1:${server.address.port}/").use(run) }
         finally { server.stop(0); pool.shutdownNow(); dataset.close() }
     }
-    @Test fun `default and named mutations and every bound pattern work against parser`() = endpoint { repo ->
+    @Test fun `default and named mutations and every bound pattern work against parser`(): Unit = endpoint { repo ->
         val t = RdfTriple(Iri("urn:s"), Iri("urn:p"), Literal("value"))
         val graph = repo.editDefaultGraph()
         graph.addTriple(t)
@@ -53,7 +53,7 @@ class ReleaseRegressionTest {
         assertEquals(1, repo.getGraph(Iri("urn:g")).size())
         repo.clear(); assertTrue(repo.listGraphs().isEmpty())
     }
-    @Test fun `blank nodes are inserted as one request and unsafe identity operations fail`() = endpoint { repo ->
+    @Test fun `blank nodes are inserted as one request and unsafe identity operations fail`(): Unit = endpoint { repo ->
         val t = RdfTriple(BlankNode("a"), Iri("urn:p"), BlankNode("b"))
         val graph = repo.editDefaultGraph()
         graph.addTriples(listOf(t, RdfTriple(BlankNode("b"), Iri("urn:p"), Literal("v"))))
@@ -72,7 +72,7 @@ class ReleaseRegressionTest {
             }
         }
     }
-    @Test fun `scoped rows permit early termination`() = endpoint({ _, _ ->
+    @Test fun `scoped rows permit early termination`(): Unit = endpoint({ _, _ ->
         "{\"head\":{\"vars\":[\"x\"]},\"results\":{\"bindings\":[{\"x\":{\"type\":\"uri\",\"value\":\"urn:x\"}}]}}"
     }) { repo ->
         repo.withSelectRows(SparqlSelectQuery("SELECT * WHERE {}")) { assertEquals(Iri("urn:x"), it.first().get("x")) }

@@ -27,21 +27,39 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
  * **RDF-star subjects:** RDF4J can hold statements whose subject is a quoted triple, which RDF 1.2 cannot
  * represent. They are read as the RDF 1.2 reified form (see [Rdf4jTerms.triplesOf]): the quoted triple
  * becomes a deterministic reifier blank node `_:r` with `_:r rdf:reifies <<( s p o )>>`. Lookups and removals
- * understand that view. The reifier id encodes its quoted triple (see [Rdf4jTerms.reifierFor]), so lookups by a
- * reifier are index lookups on the quoted triple rather than scans.
+ * understand that view. The reifier id resolves to its quoted triple (see [Rdf4jTerms.reifierFor]), so lookups by a
+ * reifier are index lookups on the quoted triple rather than scans (see **Lookup cost** below).
  *
  * **Writing the reified view back** into an RDF-star capable (memory) store stores the RDF-star form again: a
  * triple whose subject is a reifier is written with the quoted triple as subject, so a round trip never duplicates
- * statements. A `_:r rdf:reifies <<( s p o )>>` triple is implied by any statement about the quoted triple and is
- * only stored (as a plain blank-node statement) when no such statement exists. Native stores cannot hold quoted
- * triples and store the plain form.
+ * annotation statements. Native stores cannot hold quoted triples and store the plain form.
  *
- * **Explicit `rdf:reifies` triples** keep set semantics regardless of write order: one added while it is implied is
- * remembered (per repository, committed with the enclosing transaction) and stored as a plain statement once the last
- * statement implying it is removed. Removing `_:r rdf:reifies <<t>>` while statements about `_:r` remain moves them to
- * the plain reifier node, and later statements about `_:r` are stored there too, so the removed triple is not implied
- * again until it is re-added (or every statement about `_:r` is gone). `clear()` forgets remembered triples; a SPARQL
- * `UPDATE` first stores them as plain statements, since it may remove the statements that imply them.
+ * **Explicit `rdf:reifies` triples** keep set semantics regardless of write order. A statement about a quoted triple
+ * implies `_:r rdf:reifies <<( s p o )>>`; a triple of that form that is *added* is always stored as well, as the
+ * plain statement `_:r rdf:reifies <<( s p o )>>` (once per graph, also while it is implied). The store itself is
+ * therefore the only record of which `rdf:reifies` triples are explicit: the triple survives the removal of the last
+ * statement implying it, a restart of a persistent store, other [Rdf4jRepository] instances (or other code) working
+ * on the same RDF4J repository, and concurrent writers, because it is written and removed in the same RDF4J
+ * transaction as every other statement. No bookkeeping exists outside the store, so nothing has to be copied before a
+ * SPARQL `UPDATE`, and `clear()` removes it like any statement. The cost is one extra stored statement per explicit
+ * `rdf:reifies` triple, which SPARQL sees (as it sees every stored statement); reads de-duplicate it against the
+ * implied triple. Removing `_:r rdf:reifies <<t>>` while statements about `_:r` remain moves them to the plain
+ * reifier node, and later statements about `_:r` are stored there too, so the removed triple is not implied again
+ * until it is re-added (or every statement about `_:r` is gone).
+ *
+ * **Lookup cost** on RDF-star capable stores. Patterns that do not involve the reified form (no reifier blank node,
+ * no `rdf:reifies` predicate) are plain index lookups. For the others:
+ * - a pattern with a reifier subject, or `(?, rdf:reifies, <<t>>)`, is answered with index lookups on the plain
+ *   reifier node and on the quoted triple. Only when the store may nest quoted subjects (or is not tracked, see
+ *   [Rdf4jRepository]) *and* those lookups do not already yield the `rdf:reifies` triple, one scan of the graph looks
+ *   for the quoted triple nested inside other statements;
+ * - `(?, rdf:reifies, ?)` scans the graph when the store may hold quoted subjects (RDF4J has no index on them);
+ * - a pattern whose object is a triple term with a reifier in a subject position scans the statements of its
+ *   predicate (or the graph) when the store may nest quoted subjects. (A reifier blank node used as an object is an
+ *   ordinary blank node: it is stored and looked up as such, and read back as the same blank node);
+ * - removing an `rdf:reifies` triple scans the graph when the store may nest quoted subjects.
+ * A reifier with a hashed id (a quoted triple too large for an encoded id) that this process has not seen costs one
+ * scan of the store to resolve.
  *
  * **Language tags on native stores:** Kastor compares language tags ignoring case, but RDF4J's `NativeStore`
  * resolves a literal to its stored id with exact tag bytes whenever its small value-id cache misses (after a
@@ -61,6 +79,37 @@ internal class Rdf4jGraph(
 
     override fun addTriple(triple: RdfTriple) = repo.withWriteConnection { conn -> add(conn, triple) }
 
+    /**
+     * Makes the hashed reifier ids of a pattern resolvable (see [Rdf4jTerms.reifierFor]): one whose quoted triple this
+     * process does not know (after a restart, or once it was evicted) is looked up by scanning the store for the
+     * triple with that hash. Nothing is scanned when the pattern has no such id, or when the store cannot hold triple
+     * values; an id that matches no triple of the store stays an ordinary blank node.
+     */
+    private fun resolveHashedReifiers(conn: RepositoryConnection, subject: RdfResource?, obj: RdfTerm?) {
+        // A blank node that is itself the object is an ordinary blank node: nothing to resolve.
+        if (subject !is BlankNode && obj !is TripleTerm) return
+        val unresolved = HashSet<String>()
+        Rdf4jTerms.unresolvedHashedReifiers(subject, unresolved)
+        if (obj is TripleTerm) Rdf4jTerms.unresolvedHashedReifiers(obj, unresolved)
+        if (unresolved.isEmpty()) return
+        // `_:r rdf:reifies <<( t )>>` names the triple of `_:r` itself.
+        if (obj is TripleTerm) {
+            Rdf4jTerms.rememberHashedReifiers(Rdf4jTerms.toRdf4jValue(obj))
+            Rdf4jTerms.rememberHashedReifiers(Rdf4jTerms.toRdf4jStarValue(obj))
+            unresolved.removeIf { Rdf4jTerms.quotedTripleOf(it) != null }
+        }
+        if (unresolved.isEmpty() || !repo.tripleValuesPossible()) return
+        conn.getStatements(null, null, null, false).use { result ->
+            for (statement in result) {
+                if (statement.subject !is org.eclipse.rdf4j.model.Triple && statement.`object` !is org.eclipse.rdf4j.model.Triple) continue
+                Rdf4jTerms.rememberHashedReifiers(statement.subject)
+                Rdf4jTerms.rememberHashedReifiers(statement.`object`)
+                unresolved.removeIf { Rdf4jTerms.quotedTripleOf(it) != null }
+                if (unresolved.isEmpty()) break
+            }
+        }
+    }
+
     override fun addTriples(triples: Collection<RdfTriple>) = addAll(triples.iterator())
 
     /** Streams [triples] through one connection and one transaction. */
@@ -75,7 +124,8 @@ internal class Rdf4jGraph(
     }
 
     private fun add(conn: RepositoryConnection, triple: RdfTriple) {
-        if (triple.obj is TripleTerm || Rdf4jTerms.mentionsStarReifier(triple.obj)) repo.noteTripleValue()
+        resolveHashedReifiers(conn, triple.subject, triple.obj)
+        if (triple.obj is TripleTerm) repo.noteTripleValue()
         if (!repo.starCapable || !involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             conn.add(
                 Rdf4jTerms.toRdf4jResource(triple.subject),
@@ -91,12 +141,8 @@ internal class Rdf4jGraph(
             val plainReifier = Rdf4jTerms.toRdf4jResource(triple.subject)
             val reifiesIri = Rdf4jTerms.toRdf4jIri(RDF.reifies)
             if (triple.predicate == RDF.reifies && obj == quoted) {
-                if (conn.hasStatement(quoted, null, null, false, context)) {
-                    // Implied by the statements about the quoted triple: not stored, but remembered as explicit so
-                    // that it survives the removal of the last of them.
-                    repo.setExplicitReifies(Rdf4jRepository.ReifiesKey(context, quoted), true)
-                    return
-                }
+                // Always stored, also while statements about the quoted triple imply it: the stored statement is what
+                // makes the triple explicit, so it survives the removal of the last of them (see the class KDoc).
                 conn.add(plainReifier, reifiesIri, obj, context)
                 repo.noteQuotedWrite(Rdf4jTerms.quotedLevel(plainReifier, obj))
                 return
@@ -133,6 +179,7 @@ internal class Rdf4jGraph(
     }
 
     private fun remove(conn: RepositoryConnection, triple: RdfTriple): Boolean {
+        resolveHashedReifiers(conn, triple.subject, triple.obj)
         if (!involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
             val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
@@ -151,22 +198,14 @@ internal class Rdf4jGraph(
             return existed
         }
         var changed = false
-        if (repo.starCapable && triple.predicate == RDF.reifies) {
-            val quoted = (triple.subject as? BlankNode)?.let { Rdf4jTerms.quotedTripleOf(it.id) }
-            if (quoted != null && Rdf4jTerms.toRdf4jStarValue(triple.obj) == quoted) {
-                repo.setExplicitReifies(Rdf4jRepository.ReifiesKey(context, quoted), false)
-            }
-        }
         val candidates = LinkedHashSet<Statement>()
-        candidateStatements(conn, triple.subject, triple.predicate, triple.obj, false) { candidates.add(it) }
-        val annotated = LinkedHashSet<org.eclipse.rdf4j.model.Triple>()
+        candidateStatements(conn, triple.subject, triple.predicate, triple.obj, false, exhaustive = true) { candidates.add(it) }
         for (statement in candidates) {
             val mapped = Rdf4jTerms.triplesOf(statement)
             val converted = mapped.first()
             when {
                 converted == triple -> {
                     conn.remove(statement.subject, statement.predicate, statement.`object`, context)
-                    (statement.subject as? org.eclipse.rdf4j.model.Triple)?.let(annotated::add)
                     changed = true
                 }
                 mapped.size > 1 && triple in mapped.subList(1, mapped.size) -> {
@@ -182,18 +221,11 @@ internal class Rdf4jGraph(
                 }
             }
         }
-        for (quoted in annotated) {
-            // The last statement implying an explicitly added `rdf:reifies` triple is gone: store that triple itself.
-            val key = Rdf4jRepository.ReifiesKey(context, quoted)
-            if (repo.isExplicitReifies(key) && !conn.hasStatement(quoted, null, null, false, context)) {
-                conn.add(Rdf4jTerms.toRdf4jResource(Rdf4jTerms.reifierFor(quoted)), Rdf4jTerms.toRdf4jIri(RDF.reifies), quoted, context)
-                repo.setExplicitReifies(key, false)
-            }
-        }
         return changed
     }
 
     override fun hasTriple(triple: RdfTriple): Boolean = repo.withConnection { conn ->
+        resolveHashedReifiers(conn, triple.subject, triple.obj)
         if (!involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
             val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
@@ -214,6 +246,7 @@ internal class Rdf4jGraph(
 
     /** Triples of the RDF 1.2 view matching the pattern, de-duplicated, in store order. */
     private fun matching(conn: RepositoryConnection, subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
+        resolveHashedReifiers(conn, subject, obj)
         val out = LinkedHashSet<RdfTriple>()
         val skipped = Skipped()
         candidateStatements(conn, subject, predicate, obj, repo.inference) { statement ->
@@ -234,9 +267,13 @@ internal class Rdf4jGraph(
     /**
      * Feeds [consumer] the store statements that can produce a pattern match (callers filter the converted triples).
      *
-     * When the repository knows that quoted-triple subjects are absent or occur only un-nested, reifier positions are
-     * resolved to their quoted triples and looked up through the store indexes. Otherwise (nested quoted subjects, or
-     * a store whose content is not tracked) positions that only the synthesized reified form can satisfy are widened.
+     * Reifier positions are resolved to their quoted triples and looked up through the store indexes. When the
+     * repository knows that quoted-triple subjects are absent or occur only un-nested, that is all there is. Otherwise
+     * (nested quoted subjects, or a store whose content is not tracked) a scan is added only for what the indexes
+     * cannot answer, see [nestedCandidates]. The class KDoc lists what scans.
+     *
+     * @param exhaustive feed every statement the matching triples come from (removals), not just enough statements
+     *   to produce each matching triple once (reads).
      */
     private fun candidateStatements(
         conn: RepositoryConnection,
@@ -244,6 +281,7 @@ internal class Rdf4jGraph(
         predicate: Iri?,
         obj: RdfTerm?,
         includeInferred: Boolean,
+        exhaustive: Boolean = false,
         consumer: (Statement) -> Unit,
     ) {
         fun query(s: Resource?, p: org.eclipse.rdf4j.model.IRI?, o: Value?) =
@@ -276,12 +314,68 @@ internal class Rdf4jGraph(
                         ?: (starObject as? org.eclipse.rdf4j.model.Triple)?.takeIf { obj is TripleTerm }
                     when {
                         quoted != null -> query(quoted, null, null)
-                        reifiesPattern || obj is TripleTerm -> widened(conn, subject, predicate, obj, includeInferred, consumer)
+                        // Synthesized triples have a reifier subject and a triple-term object: nothing else can match.
+                        subject == null && obj == null -> widened(conn, subject, predicate, obj, includeInferred, consumer)
                     }
                 }
             }
-            QuotedLevel.NESTED, QuotedLevel.UNKNOWN -> widened(conn, subject, predicate, obj, includeInferred, consumer)
+            QuotedLevel.NESTED, QuotedLevel.UNKNOWN -> nestedCandidates(conn, subject, predicate, obj, includeInferred, exhaustive, consumer)
         }
+    }
+
+    /**
+     * [candidateStatements] for a store whose quoted subjects may nest (or are unknown).
+     *
+     * A converted statement has the subject `_:r` exactly when its own subject is the plain blank node `_:r` or the
+     * quoted triple of `_:r`, so those are index lookups at any nesting. What the indexes cannot answer:
+     * - an object that mentions a reifier has one store form per reifier in it (plain blank node or quoted triple);
+     * - a synthesized `_:r rdf:reifies <<t>>` comes from any statement in which `t` is a subject, also nested inside
+     *   another quoted triple. Reads look `t` up as a top-level subject (and as a stored plain `rdf:reifies`
+     *   statement) first: when that already yields the triple, the nested occurrences add nothing. Removals must
+     *   rewrite every statement the triple comes from.
+     * Those cases fall back to [widened].
+     */
+    private fun nestedCandidates(
+        conn: RepositoryConnection,
+        subject: RdfResource?,
+        predicate: Iri?,
+        obj: RdfTerm?,
+        includeInferred: Boolean,
+        exhaustive: Boolean,
+        consumer: (Statement) -> Unit,
+    ) {
+        val reifiesPattern = predicate == RDF.reifies
+        val quotedSubject = subject?.let(Rdf4jTerms::toRdf4jStarResource) as? org.eclipse.rdf4j.model.Triple
+        // Whether a synthesized `rdf:reifies` triple (reifier subject, triple-term object) can match the pattern.
+        val synthesized = (predicate == null || reifiesPattern) && (obj == null || obj is TripleTerm) &&
+            (subject == null || quotedSubject != null)
+        if (Rdf4jTerms.objectMentionsStarReifier(obj) || (synthesized && (exhaustive || (subject == null && obj == null)))) {
+            widened(conn, subject, predicate, obj, includeInferred, consumer)
+            return
+        }
+        val plainSubject = subject?.let(Rdf4jTerms::toRdf4jResource)
+        val plainPredicate = predicate?.let(Rdf4jTerms::toRdf4jIri)
+        val plainObject = obj?.let(Rdf4jTerms::toRdf4jValue)
+        // The quoted triple whose `rdf:reifies` triple the pattern asks for, if any.
+        val target = if (synthesized) quotedSubject ?: plainObject as? org.eclipse.rdf4j.model.Triple else null
+        val targetReifier = target?.let { Rdf4jTerms.reifierFor(it).id }
+        val reifiesIri = Rdf4jTerms.toRdf4jIri(RDF.reifies)
+        var implied = false
+        val tracking: (Statement) -> Unit = { statement ->
+            if (target != null && !implied) {
+                implied = statement.subject == target || (statement.predicate == reifiesIri && statement.`object` == target &&
+                    (statement.subject as? org.eclipse.rdf4j.model.BNode)?.id == targetReifier)
+            }
+            consumer(statement)
+        }
+        conn.getStatements(plainSubject, plainPredicate, plainObject, includeInferred, context).use { it.forEach(tracking) }
+        if (quotedSubject != null) {
+            conn.getStatements(quotedSubject, plainPredicate, plainObject, includeInferred, context).use { it.forEach(tracking) }
+        }
+        if (target == null || implied) return
+        // One statement about the quoted triple is enough to yield its `rdf:reifies` triple.
+        conn.getStatements(target, null, null, includeInferred, context).use { if (it.hasNext()) tracking(it.next()) }
+        if (!implied) widened(conn, subject, predicate, obj, includeInferred, consumer)
     }
 
     /** Pattern with every position that only the synthesized reified form can satisfy replaced by a wildcard. */
@@ -295,7 +389,7 @@ internal class Rdf4jGraph(
     ) {
         val reifiesPattern = predicate == RDF.reifies
         val wideSubject = Rdf4jTerms.mentionsStarReifier(subject)
-        val wideObject = reifiesPattern || Rdf4jTerms.mentionsStarReifier(obj) || (obj is TripleTerm && predicate == null)
+        val wideObject = reifiesPattern || Rdf4jTerms.objectMentionsStarReifier(obj) || (obj is TripleTerm && predicate == null)
         conn.getStatements(
             if (wideSubject) null else subject?.let(Rdf4jTerms::toRdf4jResource),
             if (reifiesPattern) null else predicate?.let(Rdf4jTerms::toRdf4jIri),
@@ -306,7 +400,7 @@ internal class Rdf4jGraph(
     }
 
     private fun involvesReifiedForm(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): Boolean =
-        predicate == RDF.reifies || Rdf4jTerms.mentionsStarReifier(subject) || Rdf4jTerms.mentionsStarReifier(obj)
+        predicate == RDF.reifies || Rdf4jTerms.mentionsStarReifier(subject) || Rdf4jTerms.objectMentionsStarReifier(obj)
 
     private fun matches(triple: RdfTriple, subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): Boolean =
         (subject == null || triple.subject == subject) &&
@@ -345,7 +439,6 @@ internal class Rdf4jGraph(
 
     override fun clear(): Boolean = repo.withWriteConnection { conn ->
         val changed = conn.hasStatement(null, null, null, false, context)
-        repo.forgetExplicitReifies { it.context == context }
         conn.clear(context)
         changed
     }
@@ -357,12 +450,15 @@ internal class Rdf4jGraph(
      * (native stores) or the repository tracks that none exist, and reads are strict or every stored statement is known
      * to be convertible (lenient repositories created by a factory method and never changed by SPARQL `UPDATE`).
      *
-     * The statements are counted in one pass (converting only those that involve quoted subjects or reifier blank
-     * nodes, or every statement for a lenient read) in the remaining cases:
-     * - inference repositories: RDF4J's count excludes inferred statements, which reads include;
-     * - stores that may hold quoted-triple subjects, or whose content is not tracked (wrapped, externally created
-     *   stores, or a tracked store right after a SPARQL update that may have created them, until one scan re-derives
-     *   the state): `rdf:reifies` triples are synthesized and may coincide with stored ones;
+     * The statements are counted in one pass over the graph (converting only those that involve quoted subjects or
+     * reifier blank nodes, or every statement for a lenient read) in the remaining cases. Each of them needs
+     * information RDF4J has no count or index for, so the pass cannot be avoided:
+     * - inference repositories: RDF4J's count covers explicit statements only, and reads include the inferred ones;
+     * - stores that hold (or may hold) quoted-triple subjects, at any nesting, or whose content is not tracked
+     *   (wrapped, externally created RDF-star capable stores, or a tracked store right after a SPARQL update that may
+     *   have created quoted subjects, until one scan re-derives the state): every distinct quoted subject adds a
+     *   synthesized `rdf:reifies` triple, which may coincide with a stored one, and RDF4J cannot enumerate quoted
+     *   subjects;
      * - lenient reads over wrapped stores or after a SPARQL update: unconvertible statements are not counted.
      */
     override fun size(): Int = repo.withConnection { conn ->
@@ -377,7 +473,10 @@ internal class Rdf4jGraph(
             result.forEach { statement ->
                 val mayCollide = level != QuotedLevel.NONE && (
                     statement.subject is org.eclipse.rdf4j.model.Triple || statement.`object` is org.eclipse.rdf4j.model.Triple ||
-                        (statement.subject as? org.eclipse.rdf4j.model.BNode)?.let { Rdf4jTerms.quotedTripleOf(it.id) } != null
+                        (statement.subject as? org.eclipse.rdf4j.model.BNode)?.let {
+                            // A hashed reifier counts even while unresolved: its triple may be read later in this pass.
+                            Rdf4jTerms.isHashedReifierId(it.id) || Rdf4jTerms.quotedTripleOf(it.id) != null
+                        } == true
                     )
                 when {
                     mayCollide -> convert(statement, skipped)?.let { involved.addAll(it) }

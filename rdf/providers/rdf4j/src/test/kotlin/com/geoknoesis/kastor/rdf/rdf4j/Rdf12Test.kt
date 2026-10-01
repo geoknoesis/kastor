@@ -63,7 +63,7 @@ class Rdf12Test {
             assertTrue(obj is LangString)
             val ls = obj as LangString
             assertEquals("ar", ls.lang)
-            // RDF4J 5.3.1 has no base-direction field; the adapter uses Rio's own `lang--dir`
+            // RDF4J 5.3.2 has no base-direction field; the adapter uses Rio's own `lang--dir`
             // tag form and must decode it back. The direction must never be dropped.
             assertEquals(Direction.RTL, ls.direction)
             assertEquals(RDF.dirLangString, ls.datatype)

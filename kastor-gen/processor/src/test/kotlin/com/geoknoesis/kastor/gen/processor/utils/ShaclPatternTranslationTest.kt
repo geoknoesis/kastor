@@ -84,4 +84,46 @@ class ShaclPatternTranslationTest {
         assertEquals(listOf("IGNORE_CASE", "LITERAL"), ShaclPatterns.options("iq"))
         assertTrue(matches("A B", "qi", "a b"))
     }
+
+    @Test
+    fun `caret with the m flag matches at the start and after a newline only`() {
+        val lineSeparator = Char(0x2028).toString()
+        val nextLine = Char(0x0085).toString()
+        assertTrue(matches("^b", "m", "a\nb"))
+        assertTrue(matches("^a", "m", "a\nb"))
+        assertFalse(matches("^b", "m", "a\rb"), "a carriage return does not start a line in XPath")
+        assertFalse(matches("^b", "m", "a" + lineSeparator + "b"))
+        assertFalse(matches("^b", "m", "a" + nextLine + "b"))
+        assertFalse(matches("^b", null, "a\nb"), "without m the caret only matches at the start of the input")
+        assertTrue(matches("^[^b]$", "m", "a"), "a caret inside a class is a negation")
+    }
+
+    @Test
+    fun `dot matches everything but newline and carriage return unless the s flag is set`() {
+        val lineSeparator = Char(0x2028).toString()
+        val nextLine = Char(0x0085).toString()
+        assertTrue(matches("^a.c$", null, "abc"))
+        assertFalse(matches("^a.c$", null, "a\nc"))
+        assertFalse(matches("^a.c$", null, "a\rc"))
+        assertTrue(matches("^a.c$", null, "a" + nextLine + "c"), "U+0085 is an ordinary character in XPath")
+        assertTrue(matches("^a.c$", null, "a" + lineSeparator + "c"), "U+2028 is an ordinary character in XPath")
+        assertTrue(matches("^a.c$", "s", "a\nc"), "with s the dot matches every character")
+        assertTrue(matches("^a.c$", "s", "a\rc"))
+        assertTrue(matches("^a[.]c$", null, "a.c"), "a dot inside a class is literal")
+        assertFalse(matches("^a[.]c$", null, "abc"))
+        assertTrue(matches("^a\\.c$", null, "a.c"), "an escaped dot is literal")
+        assertFalse(matches("^a\\.c$", null, "abc"))
+        assertTrue(matches("^.+$", null, "x" + nextLine), "a dot before the end anchor")
+    }
+
+    @Test
+    fun `quoted sections are copied verbatim`() {
+        assertTrue(matches("^\\Qa\$b^c.\\E$", null, "a\$b^c."))
+        assertFalse(matches("^\\Qa\$b^c.\\E$", null, "a\$b^cx"), "the dot inside the quotation is literal")
+        assertTrue(matches("\\Q^$\\E", "m", "x^\$y"), "anchors inside a quotation are literal with the m flag too")
+        assertFalse(matches("\\Q^$\\E", "m", "x\ny"))
+        assertTrue(matches("^\\Q a b \\E$", "x", " a b "), "the x flag keeps whitespace inside a quotation")
+        assertTrue(matches("^\\Q[$\\E]$", null, "[\$]"), "a quotation does not open a character class")
+        assertTrue(matches("^a\\Q$", null, "a\$"), "an unterminated quotation runs to the end of the pattern")
+    }
 }
