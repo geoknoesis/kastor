@@ -31,6 +31,22 @@ class HermitLoadCapTest {
     private fun liveLoaders() = Thread.getAllStackTraces().keys.count { it.name == "kastor-hermit-loader" && it.isAlive }
 
     @Test
+    fun `a loader thread that cannot be started returns its permit and leaves the reasoner usable`() {
+        val permits = Semaphore(2)
+        val engines = { o: org.semanticweb.owlapi.model.OWLOntology, c: org.semanticweb.HermiT.Configuration -> ReasonerFactory().createReasoner(o, c) }
+        val failing = java.util.concurrent.ThreadFactory { throw OutOfMemoryError("unable to create native thread") }
+        val reasoner = HermitRdfReasoner(ReasonerConfig.hermit(), engines, permits, failing)
+        repeat(5) {
+            assertThrows(OutOfMemoryError::class.java) { reasoner.isConsistent(graph) }
+            assertEquals(2, permits.availablePermits(), "the permit of a loader that never ran must be returned")
+        }
+        val unstartable = java.util.concurrent.ThreadFactory { task -> object : Thread(task) { override fun start() { throw IllegalThreadStateException("no start") } } }
+        assertThrows(IllegalThreadStateException::class.java) { HermitRdfReasoner(ReasonerConfig.hermit(), engines, permits, unstartable).isConsistent(graph) }
+        assertEquals(2, permits.availablePermits())
+        assertTrue(HermitRdfReasoner(ReasonerConfig.hermit(), engines, permits).isConsistent(graph))
+    }
+
+    @Test
     fun `repeated timeouts during engine creation do not grow the background work beyond the cap`() {
         val release = CountDownLatch(1)
         val created = AtomicInteger()

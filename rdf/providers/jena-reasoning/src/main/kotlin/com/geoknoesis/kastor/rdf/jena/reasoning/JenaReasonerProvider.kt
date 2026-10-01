@@ -83,20 +83,28 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   caller waits for only until the deadline; a preparation that misses it is abandoned, finishes in the background,
  *   releases its models itself and only then returns its concurrency permit. At most [MAX_ABANDONED_PREPARATIONS] preparations may run at once: a call that
  *   cannot start one before its deadline fails with a clear "too many rule preparations in progress" error instead
- *   of piling up background work. After preparation the budget is checked for every inferred statement read. A
+ *   of piling up background work. If the worker thread cannot be started, the permit is returned at once and the
+ *   failure propagates. After preparation the budget is checked for every inferred statement read. A
  *   timed-out call fails with [IllegalStateException].
  * - [ReasonerConfig.materializationThreshold] bounds the number of inferred triples ([IllegalArgumentException]).
  *   It is checked right after preparation against the forward deductions (so an oversized forward closure fails
  *   before being read) and then incrementally for every inferred triple. The forward closure built by preparation
  *   itself cannot be bounded by count; only the timeout limits it.
  *
- * **Axiomatic triples:** the full RDFS and OWL rule sets also entail axioms about the RDF/RDFS/OWL/XSD vocabulary
- * itself (e.g. `rdf:type rdfs:range rdfs:Class`, or `xsd:integer a rdfs:Datatype` once the data uses an
- * `xsd:integer` literal). For parity with the memory and RDF4J reasoners these are not reported as inferences unless
- * `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped are the triples the same reasoner entails
- * from an **empty** graph (computed once per rule set) and every other inferred triple whose subject, predicate and
- * object are all `rdf:`, `rdfs:`, `owl:` or `xsd:` terms (pure vocabulary axioms triggered by the data). Inferences
- * that involve any other term, such as `rdfs:seeAlso rdfs:subPropertyOf ex:link` derived from the data, are kept.
+ * **Axiomatic triples:** the full RDFS and OWL rule sets also entail triples that hold without any data (e.g.
+ * `rdf:type rdfs:range rdfs:Class`). For parity with the memory and RDF4J reasoners these are not reported as
+ * inferences unless `ReasonerConfig.parameters["includeAxiomaticTriples"] == true`. Dropped is exactly the closure of
+ * the **empty** graph:
+ * - the triples this reasoner entails from an empty graph (computed once per rule set), and
+ * - the members of that closure which Jena materialises only once the data mentions the term they are about, as
+ *   defined by [RdfsAxioms.isEntailedByEmptyGraph]: datatype axioms of the recognised datatypes (after
+ *   `ex:age rdfs:range xsd:integer`: `xsd:integer a rdfs:Class`, `xsd:integer rdfs:subClassOf rdfs:Resource`, ...)
+ *   and reflexive / typing statements about RDF and RDFS vocabulary terms (`rdfs:label rdfs:subPropertyOf
+ *   rdfs:label`), plus their OWL counterparts for the OWL rule sets.
+ *
+ * Every other inferred triple is reported, **also when all three of its terms are vocabulary terms**: for example
+ * `owl:FunctionalProperty rdfs:subClassOf rdf:Property` derived from asserted `rdfs:subClassOf` statements, or
+ * `owl:ObjectProperty a rdfs:Class`, follow from the data and are inferences.
  */
 class JenaReasoner internal constructor(
     private val config: ReasonerConfig,
@@ -106,6 +114,8 @@ class JenaReasoner internal constructor(
     private val prepare: (InfModel) -> Unit,
     /** Limits concurrently running (including abandoned) preparations; replaceable in tests. */
     private val preparations: java.util.concurrent.Semaphore,
+    /** Creates the preparation worker threads; replaceable in tests. */
+    private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, PREPARE_THREAD) },
 ) : RdfReasoner {
 
     constructor(config: ReasonerConfig) : this(config, System::nanoTime, { it.prepare() }, PREPARATIONS)
@@ -204,7 +214,7 @@ class JenaReasoner internal constructor(
         }
         val state = java.util.concurrent.atomic.AtomicInteger(RUNNING)
         val outcome = java.util.concurrent.CompletableFuture<Unit>()
-        val worker = Thread({
+        val body = Runnable {
             try {
                 prepare(inf)
                 outcome.complete(Unit)
@@ -221,9 +231,16 @@ class JenaReasoner internal constructor(
                     preparations.release()
                 }
             }
-        }, PREPARE_THREAD)
-        worker.isDaemon = true
-        worker.start()
+        }
+        try {
+            val worker = threads.newThread(body)
+            worker.isDaemon = true
+            worker.start()
+        } catch (t: Throwable) {
+            // The worker never ran, so it will never return the permit; the caller still owns (and closes) the models.
+            preparations.release()
+            throw t
+        }
         try {
             outcome.get(budget.remainingNanos().coerceAtLeast(1), java.util.concurrent.TimeUnit.NANOSECONDS)
         } catch (e: java.util.concurrent.TimeoutException) {
@@ -253,12 +270,12 @@ class JenaReasoner internal constructor(
         val deductions = (inf.graph as? org.apache.jena.reasoner.InfGraph)?.deductionsGraph?.size()?.toLong() ?: return
         var lowerBound = deductions - base.size() - (if (includeAxiomatic) 0 else axiomatic.size)
         if (lowerBound > config.materializationThreshold && !includeAxiomatic) {
-            // Pure vocabulary deductions are not reported either; count them only when the bound is about to fail.
+            // Lazily materialised axioms are not reported either; count them only when the bound is about to fail.
             val iterator = (inf.graph as org.apache.jena.reasoner.InfGraph).deductionsGraph.find()
             try {
                 while (iterator.hasNext()) {
                     val triple = iterator.next()
-                    if (isPureVocabulary(triple) && triple !in axiomatic) lowerBound--
+                    if (isLazyAxiom(triple) && triple !in axiomatic) lowerBound--
                 }
             } finally {
                 iterator.close()
@@ -399,7 +416,7 @@ class JenaReasoner internal constructor(
                 budget.check()
                 val triple = iterator.next()
                 if (!(triple.subject.isURI || triple.subject.isBlank) || !triple.predicate.isURI || asserted.contains(triple)) continue
-                if (!includeAxiomatic && (triple in axiomatic || isPureVocabulary(triple))) continue
+                if (!includeAxiomatic && (triple in axiomatic || isLazyAxiom(triple))) continue
                 result.add(
                     RdfTriple(
                         rdfTermFromJena(infModel.asRDFNode(triple.subject)) as RdfResource,
@@ -439,11 +456,16 @@ class JenaReasoner internal constructor(
         )
     }
 
-    /** True when every position of [triple] is an `rdf:`, `rdfs:`, `owl:` or `xsd:` IRI. */
-    private fun isPureVocabulary(triple: org.apache.jena.graph.Triple): Boolean =
-        isVocabulary(triple.subject) && isVocabulary(triple.predicate) && isVocabulary(triple.`object`)
+    /** OWL rule sets also derive the OWL counterparts of the lazily materialised RDFS axioms. */
+    private val owlRules = config.reasonerType == ReasonerType.OWL_MICRO || config.reasonerType == ReasonerType.OWL_RL
 
-    private fun isVocabulary(node: Node): Boolean = node.isURI && VOCABULARY_NAMESPACES.any { node.uri.startsWith(it) }
+    /**
+     * True when [triple] belongs to the closure of the empty graph although Jena derives it only once the data
+     * mentions its subject (see [RdfsAxioms.isEntailedByEmptyGraph]). Custom rule sets have no such axioms.
+     */
+    private fun isLazyAxiom(triple: org.apache.jena.graph.Triple): Boolean =
+        config.reasonerType != ReasonerType.CUSTOM && triple.subject.isURI && triple.predicate.isURI && triple.`object`.isURI &&
+            RdfsAxioms.isEntailedByEmptyGraph(triple.subject.uri, triple.predicate.uri, triple.`object`.uri, owlRules)
 
     private fun countTyped(model: Model, type: String): Int =
         model.listResourcesWithProperty(model.createProperty(RDF_TYPE), model.createResource(type)).toList().size
@@ -475,14 +497,6 @@ class JenaReasoner internal constructor(
         const val RUNNING = 0
         const val FINISHED = 1
         const val ABANDONED = 2
-
-        /** Namespaces of the built-in vocabularies whose pure axioms are not reported as inferences. */
-        val VOCABULARY_NAMESPACES = listOf(
-            "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "http://www.w3.org/2000/01/rdf-schema#",
-            "http://www.w3.org/2002/07/owl#",
-            "http://www.w3.org/2001/XMLSchema#",
-        )
 
         /** Axioms (closure of the empty graph) per rule set, computed once. */
         val AXIOMS = java.util.concurrent.ConcurrentHashMap<String, Set<org.apache.jena.graph.Triple>>()

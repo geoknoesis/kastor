@@ -37,7 +37,7 @@ With the pinned corpus (approved rows only):
 | Jena | 1050 | 34 (2 allowlisted: Jena's `en-us` → `en-US` tag rewrite, + 32 unapproved rows) | 0 |
 | RDF4J | 1050 | 175 (143 allowlisted upstream Rio gaps + 32 unapproved rows) | 0 |
 
-Jena's `parseDataset` skolemizes blank-node graph names (TriG `_:g { }`) to `urn:kastor:skolem:` IRIs, since repositories name graphs by IRI only; the harness compares those graphs as the blank-node graph names they stand for. RDF4J does not list such graphs, so its three blank-graph eval tests stay allowlisted.
+Jena's `parseDataset` skolemizes blank-node graph names (TriG `_:g { }`) to `urn:kastor:skolem:<load>:<blank node id>` IRIs, since repositories name graphs by IRI only; the harness compares each such graph as the blank node whose id it carries (so a blank node that is both a graph name and a term must stay linked) and rejects names that are malformed or come from different loads. RDF4J does not list such graphs, so its three blank-graph eval tests stay allowlisted.
 
 Known provider gaps are listed with a justification per row in `rdf/conformance/src/test/resources/conformance-allowlist.tsv`. Only listed tests may be skipped: an unlisted failure fails the build, and so does a listed test that starts passing.
 

@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.rdf.RdfTriple
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -30,6 +31,43 @@ class ReferenceRdfTest {
         // Each graph is isomorphic on its own, but one dataset shares the node across graphs and the other does not.
         assertFalse(ReferenceRdf.isomorphic(quads("a", "a"), quads("x", "y")))
         assertFalse(ReferenceRdf.isomorphic(quads("a", "b"), quads("x", "x")))
+    }
+
+    private val load = "0123456789abcdef0123456789abcdef"
+    private fun skolem(label: String, loadId: String = load) = "${ReferenceRdf.SKOLEM_GRAPH_PREFIX}$loadId:$label"
+
+    private fun expected(nquads: String): org.apache.jena.sparql.core.DatasetGraph {
+        val file = kotlin.io.path.createTempFile(suffix = ".nq")
+        try {
+            java.nio.file.Files.writeString(file, nquads)
+            return ReferenceRdf.parse(file, TestFormat.N_QUADS, null)
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
+    }
+
+    @Test
+    fun `a skolem graph name stands for exactly the blank node whose id it carries`() {
+        val shared = expected("_:g <${p.value}> <${o.value}> _:g .\n")
+        val distinct = expected("_:x <${p.value}> <${o.value}> _:g .\n")
+        val linked = ReferenceRdf.dataset(listOf(KastorQuad(skolem("b1"), RdfTriple(BlankNode("b1"), p, o))))
+        val unlinked = ReferenceRdf.dataset(listOf(KastorQuad(skolem("b1"), RdfTriple(BlankNode("b2"), p, o))))
+        assertTrue(ReferenceRdf.isomorphic(shared, linked), "graph name and term are the same blank node")
+        assertFalse(ReferenceRdf.isomorphic(shared, unlinked), "a provider that loses the link must not pass")
+        assertTrue(ReferenceRdf.isomorphic(distinct, unlinked))
+        assertFalse(ReferenceRdf.isomorphic(distinct, linked))
+    }
+
+    @Test
+    fun `skolem graph names must be well formed and come from one load`() {
+        fun quad(graph: String) = KastorQuad(graph, RdfTriple(Iri("http://example.org/s"), p, o))
+        // An IRI in the skolem namespace that is not of the documented form is not silently treated as a blank node.
+        assertFailsWith<IllegalArgumentException> { ReferenceRdf.dataset(listOf(quad(ReferenceRdf.SKOLEM_GRAPH_PREFIX + "6f1c2a34-0000-4000-8000-000000000000"))) }
+        assertFailsWith<IllegalArgumentException> { ReferenceRdf.dataset(listOf(quad(ReferenceRdf.SKOLEM_GRAPH_PREFIX + "$load:"))) }
+        // Within one document a blank node label has exactly one skolem name.
+        val other = "fedcba9876543210fedcba9876543210"
+        assertFailsWith<IllegalArgumentException> { ReferenceRdf.dataset(listOf(quad(skolem("b1")), quad(skolem("b1", other)))) }
+        ReferenceRdf.dataset(listOf(quad(skolem("b1")), quad(skolem("b2")), quad(skolem("b%201"))))
     }
 
     @Test

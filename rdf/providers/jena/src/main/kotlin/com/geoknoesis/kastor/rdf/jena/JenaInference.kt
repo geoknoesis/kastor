@@ -44,21 +44,29 @@ internal object InferenceCancellation {
  * The store graph as seen by a reasoner: reads check [InferenceCancellation] and are counted in [reads]
  * (a diagnostic used to verify that inference views stream instead of draining the store).
  */
-internal class CancellableGraph(base: Graph, private val reads: AtomicLong) : org.apache.jena.sparql.graph.GraphWrapper(base) {
+internal class CancellableGraph(
+    base: Graph,
+    private val reads: AtomicLong,
+    /** Called before every store read (a test seam, see [JenaInferenceHooks.onStoreRead]). */
+    private val beforeRead: () -> Unit = {},
+) : org.apache.jena.sparql.graph.GraphWrapper(base) {
     override fun find(triple: Triple): ExtendedIterator<Triple> = guarded { super.find(triple) }
     override fun find(s: Node?, p: Node?, o: Node?): ExtendedIterator<Triple> = guarded { super.find(s, p, o) }
 
     override fun contains(triple: Triple): Boolean {
+        beforeRead()
         InferenceCancellation.checkNotCancelled()
         return super.contains(triple)
     }
 
     override fun contains(s: Node?, p: Node?, o: Node?): Boolean {
+        beforeRead()
         InferenceCancellation.checkNotCancelled()
         return super.contains(s, p, o)
     }
 
     private inline fun guarded(open: () -> ExtendedIterator<Triple>): ExtendedIterator<Triple> {
+        beforeRead()
         InferenceCancellation.checkNotCancelled()
         val source = open()
         return object : NiceIterator<Triple>() {
@@ -83,19 +91,98 @@ internal interface InferenceExecutor {
     fun submitQuietly(block: () -> Unit)
 }
 
-/** Timer releasing idle inference views. */
-internal val IDLE_TIMER: java.util.concurrent.ScheduledExecutorService =
-    java.util.concurrent.Executors.newSingleThreadScheduledExecutor { task ->
+/**
+ * Seams of a [JenaRepository]'s inference views. Production code uses the defaults; tests replace single hooks to
+ * make concurrency scenarios deterministic (block a step inside a store read, count scheduled idle checks, ...).
+ */
+internal class JenaInferenceHooks {
+    /** Runs on the thread doing a store read for an inference view, before the read and its cancellation check. */
+    @Volatile var onStoreRead: () -> Unit = {}
+
+    /** Runs on the reader's thread while it opens a shared view (never under the repository's view lock). */
+    @Volatile var onOpenView: () -> Unit = {}
+
+    /** Schedules an idle check after the given delay in nanoseconds. */
+    @Volatile var schedule: (Long, Runnable) -> java.util.concurrent.ScheduledFuture<*> =
+        { nanos, task -> IDLE_TIMER.schedule(task, nanos, java.util.concurrent.TimeUnit.NANOSECONDS) }
+
+    /** Monotonic clock in nanoseconds used for idle bookkeeping. */
+    @Volatile var clock: () -> Long = System::nanoTime
+
+    /** Longest time `close()` waits for readers to release their inference views. */
+    @Volatile var closeWaitNanos: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(10)
+
+    /** Longest time `close()` then waits for workers it stopped forcibly to end their read transactions. */
+    @Volatile var closeGraceNanos: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+
+    /** Runs in `close()` after the views were retired, before it waits for them. */
+    @Volatile var onCloseWaiting: () -> Unit = {}
+
+    /** Receives the warnings of `close()`. */
+    @Volatile var warn: (String) -> Unit = { org.slf4j.LoggerFactory.getLogger(JenaRepository::class.java).warn(it) }
+}
+
+/**
+ * Timer releasing idle inference views. Each view keeps at most one pending check, and cancelled checks leave the
+ * queue at once, so the queue is bounded by the number of live views and never pins a closed repository.
+ */
+internal val IDLE_TIMER: java.util.concurrent.ScheduledThreadPoolExecutor =
+    java.util.concurrent.ScheduledThreadPoolExecutor(1) { task ->
         Thread(task, "kastor-jena-inference-idle").apply { isDaemon = true }
+    }.apply { removeOnCancelPolicy = true }
+
+/**
+ * One step handed to an [InferenceWorker], with the cancellation token its store reads check.
+ *
+ * The step tracks its own progress (`FutureTask.cancel(false)` cannot tell a queued task from a running one):
+ * [cancel] reports whether the step may have left shared state half-updated, which is the case exactly when it
+ * started and is not known to have completed cleanly.
+ */
+internal class InferenceStep<T>(private val block: () -> T) : java.util.concurrent.Callable<T> {
+    private val state = java.util.concurrent.atomic.AtomicInteger(QUEUED)
+    private val token = java.util.concurrent.atomic.AtomicBoolean()
+
+    override fun call(): T {
+        // Cancelled while queued: never touch the shared state.
+        if (!state.compareAndSet(QUEUED, RUNNING)) throw java.util.concurrent.CancellationException()
+        try {
+            val result = InferenceCancellation.withCheck({ token.get() }) { block() }
+            state.set(COMPLETED)
+            return result
+        } catch (t: Throwable) {
+            state.set(FAILED)
+            throw t
+        }
     }
+
+    /**
+     * Cancels the step for its reader. Returns true when the step had started and did not complete cleanly (it is
+     * still running, or it failed), false when it never started (and now never will) or completed cleanly.
+     */
+    fun cancel(): Boolean {
+        token.set(true)
+        if (state.compareAndSet(QUEUED, CANCELLED)) return false
+        return state.get() != COMPLETED
+    }
+
+    private companion object {
+        const val QUEUED = 0
+        const val RUNNING = 1
+        const val COMPLETED = 2
+        const val FAILED = 3
+        const val CANCELLED = 4
+    }
+}
 
 /**
  * A single worker thread that owns inference state (and, for shared views, the read transaction it was built in).
  *
  * [call] hands a step to the worker and waits for it while watching the *caller's* cancellation
  * ([InferenceCancellation]): when the caller's query times out or its thread is interrupted, the step's token is
- * set (store reads made by the step then throw), the caller gets a `QueryCancelledException` without waiting, and
- * `onBroken` is invoked if the step had already started, because its shared state may now be inconsistent.
+ * set (store reads made by the step then throw) and the caller gets a `QueryCancelledException` without waiting.
+ * `onBroken` is invoked when the step had started and is not known to have completed cleanly (see
+ * [InferenceStep.cancel]), or when it failed, because the shared state it works on may then be half-updated. A step
+ * cancelled while still queued never runs and leaves no trace.
  */
 internal class InferenceWorker(name: String) {
     /** Threads started by [executor] (at most one at a time), so [awaitTermination] can wait for them to exit. */
@@ -107,9 +194,9 @@ internal class InferenceWorker(name: String) {
 
     fun <T> call(onBroken: () -> Unit, block: () -> T): T {
         InferenceCancellation.checkNotCancelled()
-        val token = java.util.concurrent.atomic.AtomicBoolean()
+        val step = InferenceStep(block)
         val future = try {
-            executor.submit(java.util.concurrent.Callable { InferenceCancellation.withCheck({ token.get() }) { block() } })
+            executor.submit(step)
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             throw IllegalStateException("Inference view is closed", e)
         }
@@ -117,10 +204,10 @@ internal class InferenceWorker(name: String) {
             try {
                 return future.get(POLL_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)
             } catch (e: java.util.concurrent.TimeoutException) {
-                if (InferenceCancellation.cancelled()) cancel(token, future, onBroken)
+                if (InferenceCancellation.cancelled()) cancel(step, onBroken)
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
-                cancel(token, future, onBroken)
+                cancel(step, onBroken)
             } catch (e: java.util.concurrent.ExecutionException) {
                 onBroken()
                 throw e.cause ?: e
@@ -128,12 +215,14 @@ internal class InferenceWorker(name: String) {
         }
     }
 
-    private fun cancel(token: java.util.concurrent.atomic.AtomicBoolean, future: java.util.concurrent.Future<*>, onBroken: () -> Unit): Nothing {
-        token.set(true)
-        // A step that never started left no trace; one that did may have been stopped half-way.
-        if (!future.cancel(false)) onBroken()
+    private fun cancel(step: InferenceStep<*>, onBroken: () -> Unit): Nothing {
+        // A step that never started left no trace; one that did (and did not finish cleanly) may stop half-way.
+        if (step.cancel()) onBroken()
         throw QueryCancelledException()
     }
+
+    /** Steps handed to the worker that it has not started yet. */
+    fun queuedSteps(): Int = executor.queue.size
 
     fun submitQuietly(block: () -> Unit) {
         try {
@@ -200,6 +289,8 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
         /** The reasoner's iterator; only ever touched on the owner's thread. */
         private var source: ExtendedIterator<Triple>? = null
         private val buffer = ArrayDeque<Triple>()
+
+        /** No further step will be made: the results ended, the iterator was closed, or a step failed. */
         private var exhausted = false
         private var chunkSize = FIRST_CHUNK
 
@@ -219,7 +310,10 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
                     out
                 }
             } catch (e: Throwable) {
+                // The step failed, or its reader stopped waiting for it (cancellation): the step may still have
+                // opened the reasoner's iterator, which only the owner can close.
                 exhausted = true
+                releaseSource()
                 throw e
             }
             if (chunk.size < size) exhausted = true
@@ -237,8 +331,11 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
             buffer.clear()
             if (exhausted) return
             exhausted = true
-            owner.submitQuietly { source?.close(); source = null }
+            releaseSource()
         }
+
+        /** Closes the reasoner's iterator on the owner, after any step still running for this find. */
+        private fun releaseSource() = owner.submitQuietly { source?.close(); source = null }
     }
 
     private companion object {

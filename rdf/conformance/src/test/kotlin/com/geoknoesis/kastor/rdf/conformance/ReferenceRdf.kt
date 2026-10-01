@@ -97,13 +97,32 @@ object ReferenceRdf {
 
     /**
      * Prefix of the IRIs a provider mints for blank-node graph names when loading into a repository (which names
-     * graphs by IRI only); such graphs are compared as the blank-node graph names they stand for.
+     * graphs by IRI only): `urn:kastor:skolem:<load>:<blank node id>`, `<load>` being 32 hex digits chosen per load.
+     *
+     * Such a graph is compared as **the blank node whose id it carries**, not as some anonymous blank node: the
+     * isomorphism then requires distinct labels to stay distinct graphs, and a blank node that is both a graph name
+     * and a term of a triple to be the same node in both places. An IRI in this namespace that is not of that form,
+     * or one document whose skolem names come from different loads (one label with two names), is a harness error
+     * rather than a match.
      */
     const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
 
-    /** Builds a dataset of Jena nodes from provider output. */
+    private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "([0-9a-f]{32}):([A-Za-z0-9._%-]+)")
+
+    /** Builds a dataset of Jena nodes from provider output (the quads of one parsed document). */
     fun dataset(quads: Collection<KastorQuad>): DatasetGraph {
         val dataset = DatasetGraphFactory.create()
+        var load: String? = null
+        fun graphNode(name: String): Node {
+            if (!name.startsWith(SKOLEM_GRAPH_PREFIX)) return NodeFactory.createURI(name)
+            val match = requireNotNull(SKOLEM_GRAPH_NAME.matchEntire(name)) {
+                "Malformed skolem graph name (expected $SKOLEM_GRAPH_PREFIX<32 hex digits>:<blank node id>): $name"
+            }
+            val (loadId, label) = match.destructured
+            require(load == null || load == loadId) { "Skolem graph names of one document come from different loads: $load and $loadId" }
+            load = loadId
+            return NodeFactory.createBlankNode(java.net.URLDecoder.decode(label, Charsets.UTF_8))
+        }
         for ((graph, triple) in quads) {
             dataset.add(
                 Quad(
@@ -116,9 +135,6 @@ object ReferenceRdf {
         }
         return dataset
     }
-
-    private fun graphNode(name: String): Node =
-        if (name.startsWith(SKOLEM_GRAPH_PREFIX)) NodeFactory.createBlankNode(name) else NodeFactory.createURI(name)
 
     /** True when both datasets are isomorphic, with one blank-node bijection across all graphs. */
     fun isomorphic(expected: DatasetGraph, actual: DatasetGraph): Boolean = IsoMatcher.isomorphic(expected, actual)
