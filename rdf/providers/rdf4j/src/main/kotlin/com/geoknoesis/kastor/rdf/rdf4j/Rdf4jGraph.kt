@@ -54,8 +54,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
  *   [Rdf4jRepository]) *and* those lookups do not already yield the `rdf:reifies` triple, one scan of the graph looks
  *   for the quoted triple nested inside other statements;
  * - `(?, rdf:reifies, ?)` scans the graph when the store may hold quoted subjects (RDF4J has no index on them);
- * - a pattern whose object mentions a reifier (a reifier blank node, or a triple term containing one) scans the
- *   statements of its predicate (or the graph) when the store may nest quoted subjects;
+ * - a pattern whose object is a triple term with a reifier in a subject position scans the statements of its
+ *   predicate (or the graph) when the store may nest quoted subjects. (A reifier blank node used as an object is an
+ *   ordinary blank node: it is stored and looked up as such, and read back as the same blank node);
  * - removing an `rdf:reifies` triple scans the graph when the store may nest quoted subjects.
  * A reifier with a hashed id (a quoted triple too large for an encoded id) that this process has not seen costs one
  * scan of the store to resolve.
@@ -85,10 +86,11 @@ internal class Rdf4jGraph(
      * values; an id that matches no triple of the store stays an ordinary blank node.
      */
     private fun resolveHashedReifiers(conn: RepositoryConnection, subject: RdfResource?, obj: RdfTerm?) {
-        if (subject !is BlankNode && obj !is BlankNode && obj !is TripleTerm) return
+        // A blank node that is itself the object is an ordinary blank node: nothing to resolve.
+        if (subject !is BlankNode && obj !is TripleTerm) return
         val unresolved = HashSet<String>()
         Rdf4jTerms.unresolvedHashedReifiers(subject, unresolved)
-        Rdf4jTerms.unresolvedHashedReifiers(obj, unresolved)
+        if (obj is TripleTerm) Rdf4jTerms.unresolvedHashedReifiers(obj, unresolved)
         if (unresolved.isEmpty()) return
         // `_:r rdf:reifies <<( t )>>` names the triple of `_:r` itself.
         if (obj is TripleTerm) {
@@ -123,7 +125,7 @@ internal class Rdf4jGraph(
 
     private fun add(conn: RepositoryConnection, triple: RdfTriple) {
         resolveHashedReifiers(conn, triple.subject, triple.obj)
-        if (triple.obj is TripleTerm || Rdf4jTerms.mentionsStarReifier(triple.obj)) repo.noteTripleValue()
+        if (triple.obj is TripleTerm) repo.noteTripleValue()
         if (!repo.starCapable || !involvesReifiedForm(triple.subject, triple.predicate, triple.obj)) {
             conn.add(
                 Rdf4jTerms.toRdf4jResource(triple.subject),
@@ -347,7 +349,7 @@ internal class Rdf4jGraph(
         // Whether a synthesized `rdf:reifies` triple (reifier subject, triple-term object) can match the pattern.
         val synthesized = (predicate == null || reifiesPattern) && (obj == null || obj is TripleTerm) &&
             (subject == null || quotedSubject != null)
-        if (Rdf4jTerms.mentionsStarReifier(obj) || (synthesized && (exhaustive || (subject == null && obj == null)))) {
+        if (Rdf4jTerms.objectMentionsStarReifier(obj) || (synthesized && (exhaustive || (subject == null && obj == null)))) {
             widened(conn, subject, predicate, obj, includeInferred, consumer)
             return
         }
@@ -387,7 +389,7 @@ internal class Rdf4jGraph(
     ) {
         val reifiesPattern = predicate == RDF.reifies
         val wideSubject = Rdf4jTerms.mentionsStarReifier(subject)
-        val wideObject = reifiesPattern || Rdf4jTerms.mentionsStarReifier(obj) || (obj is TripleTerm && predicate == null)
+        val wideObject = reifiesPattern || Rdf4jTerms.objectMentionsStarReifier(obj) || (obj is TripleTerm && predicate == null)
         conn.getStatements(
             if (wideSubject) null else subject?.let(Rdf4jTerms::toRdf4jResource),
             if (reifiesPattern) null else predicate?.let(Rdf4jTerms::toRdf4jIri),
@@ -398,7 +400,7 @@ internal class Rdf4jGraph(
     }
 
     private fun involvesReifiedForm(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): Boolean =
-        predicate == RDF.reifies || Rdf4jTerms.mentionsStarReifier(subject) || Rdf4jTerms.mentionsStarReifier(obj)
+        predicate == RDF.reifies || Rdf4jTerms.mentionsStarReifier(subject) || Rdf4jTerms.objectMentionsStarReifier(obj)
 
     private fun matches(triple: RdfTriple, subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): Boolean =
         (subject == null || triple.subject == subject) &&
