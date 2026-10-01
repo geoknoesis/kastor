@@ -19,10 +19,21 @@ import org.apache.jena.riot.RiotException
  *   single graph would silently drop or merge named graphs. Use [parseDataset] instead.
  * - Syntax errors surface as [RdfFormatException].
  * - [parseDataset] **skolemizes blank-node graph names** (TriG `_:g { }`, an N-Quads graph label `_:g`) on
- *   every load path: Kastor repositories name graphs by IRI only, so each distinct blank graph name of one load
- *   becomes a fresh IRI `urn:kastor:skolem:<uuid>` ([JenaParsing.SKOLEM_GRAPH_PREFIX]). The same label within
- *   a document maps to the same graph; separate loads never share a skolem graph (blank nodes are
- *   document-scoped). The graph is then listed by `listGraphs()` and readable with `getGraph(...)`.
+ *   every load path: Kastor repositories name graphs by IRI only, so a blank graph name becomes the IRI
+ *   `urn:kastor:skolem:<load>:<blank node id>` ([JenaParsing.SKOLEM_GRAPH_PREFIX]), where `<load>` is a random
+ *   128-bit id (32 hex digits) drawn once per `parseDataset` call and `<blank node id>` is the id the parser gave
+ *   the blank node (percent-encoded where needed). The graph is then listed by `listGraphs()` and readable with
+ *   `getGraph(...)`. Consequences:
+ *   - The name is a function of the load and the blank node alone: the same label within a document names the
+ *     same graph, and nothing is remembered per graph name, so memory stays constant even for N-Quads input with
+ *     one blank graph per statement.
+ *   - **Loading the same document again creates new graphs** (blank nodes are scoped to one document, so two loads
+ *     never share a skolem graph); the earlier graphs stay until they are removed.
+ *   - **A blank node used both as a graph name and inside triples** stays a blank node in the triples and is
+ *     skolemized only as the graph name. Rewriting the triple occurrences too would need a second pass (while
+ *     streaming, a blank node seen in a triple may only later turn out to name a graph) or would turn every blank
+ *     node of the document into an IRI. The link is not lost: the term's [BlankNode.id] is the `<blank node id>`
+ *     part of the graph name ([JenaParsing.blankNodeIdOfSkolemGraph] recovers it).
  */
 class JenaProvider : RdfProvider {
 
@@ -395,22 +406,45 @@ internal object JenaParsing {
         /** Prefix of the IRIs that replace blank-node graph names when a dataset is loaded into a repository. */
         const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
 
+        private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:([A-Za-z0-9._%-]+)")
+
+        /**
+         * The id of the blank node that the skolem graph name [graphIri] stands for (the [BlankNode.id] of its
+         * occurrences as a term in the same load), or null when [graphIri] is not a skolem graph name.
+         */
+        fun blankNodeIdOfSkolemGraph(graphIri: String): String? =
+            SKOLEM_GRAPH_NAME.matchEntire(graphIri)?.let { java.net.URLDecoder.decode(it.groupValues[1], Charsets.UTF_8) }
+
         /**
          * [validating] for loads into a Kastor repository: additionally skolemizes blank-node graph names, which
-         * repositories (graphs named by [Iri]) cannot represent. Each distinct blank graph name of this parse gets
-         * a fresh `urn:kastor:skolem:<uuid>` IRI.
+         * repositories (graphs named by [Iri]) cannot represent. A blank graph name becomes
+         * `urn:kastor:skolem:<load>:<blank node id>`, with one random `<load>` id per call of this function (that is,
+         * per load). The mapping is stateless: no table of the graph names seen so far is kept.
          */
         fun validatingDataset(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =
             validating(object : org.apache.jena.riot.system.StreamRDFWrapper(target) {
-                private val skolemized = HashMap<org.apache.jena.graph.Node, org.apache.jena.graph.Node>()
+                private val load = java.util.UUID.randomUUID().toString().replace("-", "")
                 override fun quad(quad: org.apache.jena.sparql.core.Quad) {
                     if (!quad.graph.isBlank) return super.quad(quad)
-                    val name = skolemized.getOrPut(quad.graph) {
-                        org.apache.jena.graph.NodeFactory.createURI(SKOLEM_GRAPH_PREFIX + java.util.UUID.randomUUID())
-                    }
+                    val name = org.apache.jena.graph.NodeFactory.createURI(skolemGraphName(load, quad.graph.blankNodeLabel))
                     super.quad(org.apache.jena.sparql.core.Quad.create(name, quad.asTriple()))
                 }
             })
+
+        /** `urn:kastor:skolem:<load>:<label>`, with every byte of [label] outside `[A-Za-z0-9._-]` percent-encoded. */
+        fun skolemGraphName(load: String, label: String): String {
+            val name = StringBuilder(SKOLEM_GRAPH_PREFIX.length + load.length + 1 + label.length)
+                .append(SKOLEM_GRAPH_PREFIX).append(load).append(':')
+            for (byte in label.toByteArray(Charsets.UTF_8)) {
+                val c = byte.toInt().toChar()
+                if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '_' || c == '-') {
+                    name.append(c)
+                } else {
+                    name.append('%').append("%02X".format(byte.toInt() and 0xFF))
+                }
+            }
+            return name.toString()
+        }
 
         /** Wraps a parser sink so every triple/quad is validated before it is stored. */
         fun validating(target: org.apache.jena.riot.system.StreamRDF): org.apache.jena.riot.system.StreamRDF =
