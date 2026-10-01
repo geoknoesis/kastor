@@ -134,7 +134,7 @@ private fun expectAtMost(rest: List<String>, max: Int) {
 private fun printUsage(out: PrintStream) {
     out.println(
         """
-        kastor-rdf — small RDF utilities (requires Jena on the classpath via rdf-cli).
+        kastor-rdf - small RDF utilities (requires Jena on the classpath via rdf-cli).
 
         Usage:
           kastor-rdf help
@@ -150,8 +150,8 @@ private fun printUsage(out: PrintStream) {
 
         Output on stdout and stderr is UTF-8, whatever the platform charset.
 
-        FORMAT defaults from the file extension when omitted (.ttl → TURTLE, .nt → NTRIPLES, .nq → NQUADS,
-        .trig → TRIG, .jsonld/.json → JSON-LD, .rdf/.owl/.xml → RDFXML); other extensions require FORMAT.
+        FORMAT defaults from the file extension when omitted (.ttl -> TURTLE, .nt -> NTRIPLES, .nq -> NQUADS,
+        .trig -> TRIG, .jsonld/.json -> JSON-LD, .rdf/.owl/.xml -> RDFXML); other extensions require FORMAT.
         Quad formats (TriG, N-Quads) are read as datasets: diff compares the default graph and all named
         graphs as one dataset (blank nodes shared across graphs must correspond).
 
@@ -167,7 +167,7 @@ private fun cmdParse(rest: List<String>, out: PrintStream): Int {
     val (path, format) = parseFileArgs(rest)
     val input = read(path, formatOrInfer(path, format))
     val graphs = if (input.namedGraphs.isEmpty()) "" else ", named graphs: ${input.namedGraphs.size}"
-    out.println("OK — triples: ${input.tripleCount}$graphs")
+    out.println("OK - triples: ${input.tripleCount}$graphs")
     return 0
 }
 
@@ -212,7 +212,7 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream): Int
     }
     if (differences.isEmpty()) {
         out.println(
-            "ISOMORPHIC — datasets match up to blank node relabelling " +
+            "ISOMORPHIC - datasets match up to blank node relabelling " +
                 "(${first.tripleCount} triples in first file, ${second.tripleCount} in second).",
         )
         return 0

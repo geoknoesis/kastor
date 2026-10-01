@@ -79,4 +79,15 @@ class CliLaunchTest {
         assertEquals(EXIT_NOT_ISOMORPHIC, result.code, result.errText)
         assertTrue(result.errText.contains(text), "stderr is not UTF-8: ${result.errText}")
     }
+    /** cmd.exe rejects a line of more than 8191 characters ("The input line is too long"). */
+    @Test
+    fun `the Windows start script has no line that cmd cannot run`() {
+        val properties = Properties()
+        javaClass.getResourceAsStream("/kastor-cli-launch.properties")!!.use { properties.load(it) }
+        val name = properties.getProperty("applicationName")
+        val script = checkNotNull(javaClass.getResourceAsStream("/$name.bat")) { "$name.bat is not generated" }.use { it.readBytes().toString(Charsets.UTF_8) }
+        val longest = script.lines().maxOf { it.length }
+        assertTrue(longest < 8000, "the longest line of $name.bat has $longest characters")
+        assertTrue(script.contains(configuredMainClass()), "the start script does not start ${configuredMainClass()}")
+    }
 }

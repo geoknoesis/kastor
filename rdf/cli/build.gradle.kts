@@ -7,20 +7,26 @@ application {
   mainClass.set("com.geoknoesis.kastor.rdf.cli.KastorRdfCli")
 }
 
-// The application's main class, exposed to the tests as a resource so CliLaunchTest starts the same class as the
-// start script (a wrong mainClass must fail the build, not the user's first run).
+// The application's main class and start scripts, exposed to the tests as resources so CliLaunchTest starts the same
+// class as the start script and checks the scripts themselves (a wrong mainClass or a script cmd.exe cannot run must
+// fail the build, not the user's first run).
 val generateCliLaunchInfo = tasks.register("generateCliLaunchInfo") {
   val mainClassName = application.mainClass
+  val scriptName = application.applicationName
   val outputDir = layout.buildDirectory.dir("generated/cli-launch")
   inputs.property("mainClass", mainClassName)
+  inputs.property("applicationName", scriptName)
   outputs.dir(outputDir)
   doLast {
     val file = outputDir.get().file("kastor-cli-launch.properties").asFile
     file.parentFile.mkdirs()
-    file.writeText("mainClass=${mainClassName.get()}\n")
+    file.writeText("mainClass=${mainClassName.get()}\napplicationName=$scriptName\n")
   }
 }
-sourceSets.named("test") { resources.srcDir(generateCliLaunchInfo) }
+sourceSets.named("test") {
+  resources.srcDir(generateCliLaunchInfo)
+  resources.srcDir(tasks.named("startScripts"))
+}
 
 // Dependencies of the application only (start scripts, distribution, `run`, tests). They are on runtimeClasspath but
 // not in the published POM / Gradle module metadata, so a library consumer of rdf-cli does not inherit an SLF4J binding.

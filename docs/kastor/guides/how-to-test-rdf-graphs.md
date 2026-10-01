@@ -88,7 +88,18 @@ Run via Gradle:
 | **`to-turtle`** | Parse with inferred or explicit format, print **Turtle** to stdout |
 | **`diff`** | **Isomorphism** check between two files; exit code **2** if they differ structurally |
 
-Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error (bad or extra arguments, unknown format, missing file, parse error), **2** diff mismatch, **3** runtime error (I/O, RDF provider or internal failure; one-line message on stderr). Library warnings (e.g. Jena RIOT) are printed on stderr at WARN level via slf4j-simple.
+Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error (bad or extra arguments, unknown format, missing file, parse error), **2** diff mismatch, **3** runtime error (I/O, RDF provider or internal failure, including out of memory and stack overflow; one-line message on stderr). `onto-qa` uses a different convention; side by side (both are printed by `kastor-rdf help`):
+
+| Status | `onto-qa` | `kastor-rdf` |
+|--------|-----------|--------------|
+| **0** | Success; no findings at or above `--severity`. | Success; for `diff`, the inputs are isomorphic. |
+| **1** | Findings at or above `--severity`. | Usage or input error: bad or extra arguments, unknown format, missing file, parse error. |
+| **2** | The ontology could not be parsed. | `diff` found the inputs not isomorphic. |
+| **3** | LLM explanations failed (with `--fail-on-explain-error`). | Runtime error: I/O, RDF provider, internal error, out of memory or stack overflow. |
+| **4** | Usage or configuration error; nothing was run. | not used |
+| **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity or LLM budget, internal error. | not used |
+
+Output on stdout and stderr is UTF-8 whatever the platform charset, so `kastor-rdf to-turtle data.nt > data.ttl` is valid UTF-8 on Windows too. `diff` uses the graph isomorphism of `rdf-core` (the dataset is compared as one graph of quads, with the default limits of `isIsomorphicTo`: a check abandoned at a limit exits with status 3); the application does not ship `rdf-testkit`. Library warnings (e.g. Jena RIOT) are printed on stderr at WARN level via the `slf4j-simple` binding bundled with the application; the binding is not a dependency of the published `rdf-cli` artifact.
 
 > The CLI does not execute arbitrary Kotlin DSL scripts; build graphs in tests or apps, then **`to-turtle`** or **`diff`** serialized files.
 
