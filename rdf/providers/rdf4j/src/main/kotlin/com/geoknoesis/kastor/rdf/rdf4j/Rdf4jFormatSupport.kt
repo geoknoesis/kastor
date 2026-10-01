@@ -36,6 +36,21 @@ internal object Rdf4jFormatSupport {
      */
     const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
 
+    /** `urn:kastor:skolem:<load>:<label>`, with every byte of [label] outside `[A-Za-z0-9._-]` percent-encoded. */
+    fun skolemGraphName(load: String, label: String): String {
+        val name = StringBuilder(SKOLEM_GRAPH_PREFIX.length + load.length + 1 + label.length)
+            .append(SKOLEM_GRAPH_PREFIX).append(load).append(':')
+        for (byte in label.toByteArray(Charsets.UTF_8)) {
+            val c = byte.toInt().toChar()
+            if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '_' || c == '-') {
+                name.append(c)
+            } else {
+                name.append('%').append("%02X".format(byte.toInt() and 0xFF))
+            }
+        }
+        return name.toString()
+    }
+
     /** Formats RDF4J 5.3 really implements (RDF 1.1 syntaxes; no RDF 1.2 `-1.2` aliases). */
     val ADVERTISED_FORMATS = listOf(
         "TURTLE", "TTL",
@@ -343,10 +358,12 @@ internal object Rdf4jFormatSupport {
      *
      * **Blank-node graph names are skolemized** (TriG `_:g { }` or `[] { }`, an N-Quads graph label `_:g`), like the
      * Jena provider does: Kastor repositories name graphs by [Iri], so a blank-node context would be stored but
-     * unreachable through `listGraphs` / `getGraph`. Each distinct blank graph name of one load becomes a fresh IRI
-     * `urn:kastor:skolem:<uuid>` ([SKOLEM_GRAPH_PREFIX]): the same label within a document names the same graph, and
+     * unreachable through `listGraphs` / `getGraph`. A blank graph name becomes
+     * `urn:kastor:skolem:<load>:<blank node id>` ([skolemGraphName]), the same form the Jena provider uses, with one
+     * random `<load>` id (32 hex digits) per call: the same label within a document names the same graph, and
      * separate loads never share a skolem graph (blank nodes are scoped to the document). Only the graph name is
-     * replaced; the same blank node used as a subject or object inside the data stays a blank node.
+     * replaced; the same blank node used as a subject or object inside the data stays a blank node, and the id in
+     * the graph name is its [org.eclipse.rdf4j.model.BNode.getID]. The mapping is stateless.
      */
     fun parseDataset(
         repository: RdfRepository,
@@ -363,16 +380,14 @@ internal object Rdf4jFormatSupport {
             // thread), so a parse failure mid-stream rolls back instead of leaving partial data.
             formatErrors("$format dataset") {
                 val parser = Rio.createParser(rdf4jFormat)
-                val skolemGraphs = HashMap<org.eclipse.rdf4j.model.BNode, org.eclipse.rdf4j.model.IRI>()
+                val load = java.util.UUID.randomUUID().toString().replace("-", "")
                 parser.setRDFHandler(object : AbstractRDFHandler() {
                     override fun handleStatement(statement: Statement) {
                         checkedTriples(statement, null)
                         rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
                         if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
                         val context = when (val name = statement.context) {
-                            is org.eclipse.rdf4j.model.BNode -> skolemGraphs.getOrPut(name) {
-                                connection.valueFactory.createIRI(SKOLEM_GRAPH_PREFIX + java.util.UUID.randomUUID())
-                            }
+                            is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
                             else -> name
                         }
                         if (context != null) {

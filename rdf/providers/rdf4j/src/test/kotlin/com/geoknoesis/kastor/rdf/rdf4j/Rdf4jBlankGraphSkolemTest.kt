@@ -84,7 +84,9 @@ class Rdf4jBlankGraphSkolemTest {
         }
         assertTrue(jena.startsWith(Rdf4jFormatSupport.SKOLEM_GRAPH_PREFIX), jena)
         assertTrue(rdf4j.startsWith(Rdf4jFormatSupport.SKOLEM_GRAPH_PREFIX), rdf4j)
-        // Both are `urn:kastor:skolem:` followed by an opaque, IRI-safe token.
-        assertTrue(Regex("[A-Za-z0-9._~-]+").matches(rdf4j.removePrefix(Rdf4jFormatSupport.SKOLEM_GRAPH_PREFIX)), rdf4j)
+        // Both are `urn:kastor:skolem:<load, 32 hex digits>:<percent-encoded blank node id>`.
+        val scheme = Regex(Regex.escape(Rdf4jFormatSupport.SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:[A-Za-z0-9._%-]+")
+        assertTrue(scheme.matches(jena), jena)
+        assertTrue(scheme.matches(rdf4j), rdf4j)
     }
 }
