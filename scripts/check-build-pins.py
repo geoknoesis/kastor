@@ -1,9 +1,12 @@
 """Fail when literal build-script pins drift from the version catalog.
 
-`build.gradle.kts` pins `org.jetbrains.kotlin:kotlin-metadata-jvm` in its buildscript classpath because
-dependency-analysis bundles a kotlin-metadata-jvm that cannot read Kotlin 2.4 metadata. Version catalogs
-are not available inside `buildscript {}`, so the literal must be kept equal to `kotlin` in
-gradle/libs.versions.toml by hand. This check makes that automatic (run in CI).
+Version catalogs are not available inside `buildscript {}`, so a version pinned there is a literal that has
+to be kept equal to its entry in gradle/libs.versions.toml by hand. This check makes that automatic (run in CI).
+
+No pin is active at present. `build.gradle.kts` used to pin `org.jetbrains.kotlin:kotlin-metadata-jvm` in its
+buildscript classpath because dependency-analysis 3.12.0 bundled a kotlin-metadata-jvm that could not read
+Kotlin 2.4 metadata. dependency-analysis 3.19.2 resolves its own kotlin-metadata-jvm, so the pin was removed.
+The entry stays in PINS so that a reintroduced pin (a missing pin passes) is checked against `kotlin` again.
 
 Usage: python scripts/check-build-pins.py [repository-root]
 """

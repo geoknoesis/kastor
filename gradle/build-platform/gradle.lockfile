@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :build-platform:dependencies --write-locks
 com.fasterxml.jackson:jackson-bom:2.22.3=classpath
 io.netty:netty-bom:4.2.18.Final=classpath
 io.opentelemetry:opentelemetry-bom:1.66.0=classpath

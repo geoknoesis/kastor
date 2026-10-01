@@ -8,9 +8,12 @@ follow-up pull requests, **one family per PR**, in the order below.
 ## Procedure for each upgrade
 
 1. Change the version in `gradle/libs.versions.toml` only; no literal versions in build files.
-2. Refresh locks: `./gradlew resolveAndLockAll --write-locks`, then review the lockfile diff.
-3. Refresh checksums: `./gradlew --write-verification-metadata sha256 resolveAndLockAll`, then remove
-   components that are no longer referenced (for example `ai.djl:*:0.28.0`).
+2. Refresh locks and checksums with `scripts/refresh-dependency-locks.sh` (verification is strict, so the
+   order of its three Gradle passes matters), then review the lockfile diff.
+3. Record the tool classpaths that are only resolved at execution time by running the build once with
+   `--write-verification-metadata sha256` (`check buildHealth jacocoTestReport publishAllPublicationsToStagingRepository`
+   and the benchmark compile tasks), then remove components that are no longer referenced (for example
+   `ai.djl:*:0.28.0`) and confirm with an empty Gradle user home (`-g <empty dir>`) that the build still verifies.
 4. Run `./gradlew check conformanceSmokeTest` and `python scripts/audit-dependencies.py`.
 5. Update `CHANGELOG.md` under *Changed (build)*.
 
@@ -20,11 +23,11 @@ follow-up pull requests, **one family per PR**, in the order below.
 |---|---|---|---|---|
 | 1 | GitHub Actions (SHA-pinned) | **done 2026-09-14**: checkout v7.0.1, setup-java v6.0.1, upload-artifact v7.0.1, download-artifact v8.0.1, configure-pages v6.0.0, upload-pages-artifact v5.0.0 | current majors (Node 24) | No build impact. Supersedes Dependabot PR #21. Dependabot keeps SHAs and `# vX.Y.Z` comments in sync. |
 | 2 | `me.champeau.jmh` plugin | **done 2026-09-14**: 0.7.3 | 0.7.3 | Benchmarks only. The plugin is not in any lockfile; only its verification-metadata entries changed. Taken from Dependabot PR #22 (the rest of that group stays pending, steps 3-5 and 7). |
-| 3 | `kotlinx-coroutines` | 1.10.2 | 1.11.x | Check Kotlin 2.4 compatibility; public API exposure in `rdf-core` flows. |
-| 4 | `kotlinpoet` / `kotlinpoet-ksp` | 2.2.0 | 2.3.x | Code generator output may change formatting. Regenerate the gen golden snapshots and review. |
-| 5 | `kotlinx-serialization-json` | 1.8.1 | 1.11.x | Used by onto-quality LLM tooling and benchmarks. Align the serialization compiler plugin (Kotlin 2.4). Also replace the literal `1.8.1` in `benchmarks/shacl/jmh/build.gradle.kts` with the catalog entry. |
+| 3 | `kotlinx-coroutines` | **done 2026-10-01**: 1.11.0 | 1.11.x | Kotlin 2.4.20 compiles and tests against it; no source changes were needed. From Dependabot PR #28. |
+| 4 | `kotlinpoet` / `kotlinpoet-ksp` | **done 2026-10-01**: 2.4.0 | 2.4.x | Code generator output may change formatting; the processor and gradle-plugin generation tests gate it. From Dependabot PR #28. |
+| 5 | `kotlinx-serialization-json` | **done 2026-10-01**: 1.11.0 | 1.11.x | Used by onto-quality LLM tooling and benchmarks (`benchmarks/shacl/jmh` already uses the catalog entry). From Dependabot PR #28. |
 | 6 | JUnit Jupiter / Platform | **done 2026-10-01**: 6.1.3 (one `junit` catalog version for both) | 6.1.x | Major version (JDK 17+ baseline, removed deprecated APIs). No test code used a removed API. The same tests run and skip as on 5.13.4, so `scripts/test-skip-allowlist.json` and the executed-test floors are unchanged. Only visible change: JUnit 6 quotes string arguments in `@ParameterizedTest` display names (`[1] "jena"` instead of `[1] jena`); no allowlist entry or required suite depends on those names. Supersedes Dependabot PRs #24 and #25. |
-| 7 | ONNX Runtime | 1.18.0 | 1.26.x | Native binaries: verify the ownership/close lifecycle with `native-lifecycle.yml` on Linux and Windows before merging. Large verification-metadata churn. |
+| 7 | ONNX Runtime (with DJL tokenizers) | **done 2026-10-01**: 1.30.0 (DJL tokenizers 0.38.0) | 1.30.x | Native binaries: verified locally on Windows with the opt-in embedding tests; `native-lifecycle.yml` must still pass on Linux and Windows before merging. Large verification-metadata churn. From Dependabot PR #28. |
 | 8 | `ai.koog:koog-agents` | 0.8.0 (pre-1.0) | 1.0.x | Breaking API changes expected. Isolated to `onto-quality-llm-koog`. Coordinate with its explanation tests (OpenAI tests stay opt-in). |
 | 9 | OWL API + HermiT | 4.5.29 + 1.4.5.519 | OWL API 5.x with a maintained HermiT build | Largest change: OWL API 5 changes the Guava/RDF4J transitive graph and package APIs. Needs a spike: run the reasoning-hermit tests, the release-contract resource/timeout checks and a dependency audit. Consider an alternative reasoner if HermiT has no OWL API 5 build. |
 
@@ -40,7 +43,7 @@ Majors are never applied by the grouped minor/patch PR. Each gets its own branch
 |---|---|---|---|
 | #25 + #24 | JUnit Jupiter 5.13.4 -> 6.1.3, Platform launcher 1.13.4 -> 6.1.3 | **Done 2026-10-01 (step 6)** | Applied together on one branch; close both PRs as superseded. JUnit 6 raises the baseline to Java 17 (we build on 21) and removes deprecated APIs, none of which the tests used. The conditional-execution annotations behind `scripts/test-skip-allowlist.json` skip the same tests, and the executed-test floors in `ci.yml`/`release-readiness.yml` count the same tests (4,419 locally, as before). `.github/dependabot.yml` now groups `org.junit*` for all update types so the two artifacts are never proposed separately again. |
 | #23 | RDF4J 5.3.1 -> 6.1.0 (latest 6.x; 6.0.1 has the same constraints) | **Blocked: needs a Java 25 baseline decision** (spiked 2026-10-01, see below) | Every RDF4J 6.x jar is compiled for Java 25 (class file version 69); Kastor builds, tests and documents JDK 21. On top of that the upgrade is a redesign of the RDF-star compatibility layer in `rdf-rdf4j`, not a rename. PR #23 is closed and `.github/dependabot.yml` ignores RDF4J major versions until the baseline question is decided; RDF4J 5.3.2 is available as a patch update. |
-| #22 (group) | onnxruntime 1.29.0, djl tokenizers 0.38.0, kotlinpoet 2.4.0, serialization 1.11.0, coroutines 1.11.0, clikt 5.1.0, slf4j 2.0.19, dependency-analysis 3.19.1, wrapper 9.7.1 | **Pending** (only the jmh plugin was taken) | Minor versions but with the risks listed in steps 3-5 and 7. dependency-analysis 3.19.1 may bundle a kotlin-metadata-jvm that reads Kotlin 2.4 metadata. If so, drop the buildscript pin (see below). |
+| #22 (group), superseded by #28 | onnxruntime 1.30.0, djl tokenizers 0.38.0, kotlinpoet 2.4.0, serialization 1.11.0, coroutines 1.11.0, clikt 5.1.0, slf4j 2.0.20, httpcore5 5.4.4, lz4-java 1.12.0, dependency-analysis 3.19.2, wrapper 9.8.0 | **Done 2026-10-01** (steps 3-5 and 7) | Applied from PR #28 with refreshed locks and verification metadata. dependency-analysis 3.19.2 resolves its own kotlin-metadata-jvm, so the buildscript pin was dropped (see below). |
 | #12 | httpclient5 5.6.1 | **Close** | Older than the 5.6.4 security floor already in `gradle/build-platform`. |
 
 ## RDF4J 6 spike (2026-10-01, branch `deps/rdf4j6`)
@@ -97,11 +100,14 @@ conformance allowlist and SHACL sail checks (1 day); docs, migration note and re
 
 ## Temporary pins
 
-- `build.gradle.kts` `buildscript { classpath("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20") }` works around
-  dependency-analysis 3.12.0 bundling kotlin-metadata-jvm 2.2.x, which cannot read Kotlin 2.4 metadata. The literal
-  must equal `kotlin` in `gradle/libs.versions.toml`; `scripts/check-build-pins.py` (CI) fails when it drifts.
-  **Drop the pin** as soon as a dependency-analysis release ships kotlin-metadata-jvm with Kotlin 2.4 metadata
-  support: remove the `buildscript` block, run `./gradlew buildHealth` on Kotlin 2.4 and refresh the verification metadata.
+None at present.
+
+- **Removed 2026-10-01:** `build.gradle.kts` pinned `org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.20` in its
+  `buildscript` classpath because dependency-analysis 3.12.0 bundled kotlin-metadata-jvm 2.2.x, which cannot read
+  Kotlin 2.4 metadata. dependency-analysis 3.19.2 resolves kotlin-metadata-jvm 2.4.10 through its own
+  `dependencyAnalysisKotlinMetadataClasspath` configuration (visible in the module lockfiles) and `./gradlew buildHealth`
+  runs on Kotlin 2.4.20 without the pin. `scripts/check-build-pins.py` (CI) still compares such a literal with `kotlin`
+  in `gradle/libs.versions.toml` if the pin is ever reintroduced; a missing pin passes.
 
 ## Open Dependabot branches (origin, historical list from 2026-09-13)
 

@@ -5,7 +5,7 @@ An engineering score is a review judgment, not a guarantee or an automated relea
 
 ## Version and compatibility
 
-Build and test with JDK 21, Gradle 9.5.1, Kotlin 2.4.20 and KSP 2.3.12. Other
+Build and test with JDK 21, Gradle 9.8.0, Kotlin 2.4.20 and KSP 2.3.12. Other
 combinations require their own consumer verification. Jena 6.2.0 is paired with
 Thrift 0.24.0: the older Jena 6.1.0 TDB2 adapter fails persistence writes with
 Thrift 0.24.0. The Kotlin upgrade also

@@ -53,7 +53,8 @@ jobs:
         run: python scripts/check-doc-versions.py
 
       - name: Build pins match the version catalog
-        # e.g. the kotlin-metadata-jvm buildscript pin in build.gradle.kts must equal `kotlin` in libs.versions.toml.
+        # Literal versions in build scripts must equal their catalog entry. No pin is active at present; the check
+        # guards a reintroduced one (see docs/reference/dependency-upgrade-plan.md, "Temporary pins").
         run: python scripts/check-build-pins.py
 
       - name: README samples import what they use
