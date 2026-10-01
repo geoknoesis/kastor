@@ -174,13 +174,16 @@ internal object Rdf4jTerms {
         return true
     }
 
-    /** Hashed reifier ids in [term] (also inside triple terms) whose quoted triple this process does not know. */
+    /**
+     * Hashed reifier ids in subject position in [term] (a subject, or a triple term, at any depth) whose quoted triple
+     * this process does not know. Blank nodes in object position are ordinary blank nodes and are not looked at.
+     */
     fun unresolvedHashedReifiers(term: RdfTerm?, out: MutableSet<String>) {
         when (term) {
             is BlankNode -> if (isHashedReifierId(term.id) && quotedTripleOf(term.id) == null) out.add(term.id)
             is TripleTerm -> {
                 unresolvedHashedReifiers(term.triple.subject, out)
-                unresolvedHashedReifiers(term.triple.obj, out)
+                if (term.triple.obj is TripleTerm) unresolvedHashedReifiers(term.triple.obj, out)
             }
             else -> Unit
         }
@@ -257,12 +260,16 @@ internal object Rdf4jTerms {
         }
     }
 
-    /** True when [term] is (or contains, inside a triple term) a reifier produced by [reifierFor]. */
-    fun mentionsStarReifier(term: RdfTerm?): Boolean = when (term) {
-        is BlankNode -> quotedTripleOf(term.id) != null
-        is TripleTerm -> mentionsStarReifier(term.triple.subject) || mentionsStarReifier(term.triple.obj)
-        else -> false
-    }
+    /** True when the subject [term] is a reifier produced by [reifierFor]: its store form is a quoted triple. */
+    fun mentionsStarReifier(term: RdfResource?): Boolean = term is BlankNode && quotedTripleOf(term.id) != null
+
+    /**
+     * True when the store form of the object [term] differs from its plain form: it is a triple term with a reifier
+     * in a subject position (at any depth). A reifier blank node that is itself an object - of the statement or of a
+     * triple term - is an ordinary blank node there, see [toRdf4jStarValue].
+     */
+    fun objectMentionsStarReifier(term: RdfTerm?): Boolean =
+        term is TripleTerm && (mentionsStarReifier(term.triple.subject) || objectMentionsStarReifier(term.triple.obj))
 
     /**
      * Store form of a subject for RDF-star capable stores: a reifier blank node becomes the quoted triple it stands
@@ -272,9 +279,16 @@ internal object Rdf4jTerms {
     fun toRdf4jStarResource(term: RdfResource): Resource =
         (term as? BlankNode)?.let { quotedTripleOf(it.id) } ?: toRdf4jResource(term)
 
-    /** Store form of an object for RDF-star capable stores (reifiers inside triple terms become quoted triples). */
+    /**
+     * Store form of an object for RDF-star capable stores: reifiers in a **subject** position inside triple terms
+     * become quoted triples (they are read back as reifiers, see [fromRdf4jResource]).
+     *
+     * A reifier blank node in **object** position - the object of the statement, or of a triple term - stays that
+     * blank node. Stored as the quoted triple it would be read back as a triple term (see [fromRdf4jValue]), a
+     * different triple from the one written: an RDF4J triple value in object position *is* a triple term, and only in
+     * subject position (which RDF 1.2 cannot represent) does a reifier stand for it.
+     */
     fun toRdf4jStarValue(term: RdfTerm): Value = when (term) {
-        is BlankNode -> quotedTripleOf(term.id) ?: toRdf4jValue(term)
         is TripleTerm -> valueFactory.createTriple(
             toRdf4jStarResource(term.triple.subject),
             toRdf4jIri(term.triple.predicate),
