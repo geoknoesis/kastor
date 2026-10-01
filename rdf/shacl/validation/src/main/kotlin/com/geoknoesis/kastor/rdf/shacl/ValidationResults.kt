@@ -140,6 +140,14 @@ data class ValidationViolation(
     companion object {
         /** [violationCode] of results about undefined recursive shape dependencies (see [isUndefinedRecursion]). */
         const val UNDEFINED_RECURSION_CODE: String = "kastor:UndefinedRecursion"
+
+        /**
+         * Key of the [context] entry that holds the failing reifier (an [RdfResource]) on results of
+         * `sh:reifierShape`: [value] of such a result is the object of the reified triple, so several failing
+         * reifiers of one triple are told apart by this entry (exported as `ksh:reifier`, see
+         * [KastorShaclVocabulary.reifier]).
+         */
+        const val REIFIER_CONTEXT_KEY: String = "reifier"
     }
 }
 

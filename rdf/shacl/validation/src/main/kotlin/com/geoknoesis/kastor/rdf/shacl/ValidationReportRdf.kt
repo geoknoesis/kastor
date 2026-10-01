@@ -24,6 +24,14 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * `sh:resultMessage` uses [ValidationViolation.resultMessages] (the shape's `sh:message` values, language
  * tags preserved) when present, else the engine message.
  *
+ * Two Kastor extension properties ([KastorShaclVocabulary], namespace `https://kastor.geoknoesis.com/ns/shacl#`)
+ * carry what the SHACL report vocabulary cannot express; consumers of the standard vocabulary can ignore them:
+ * - `ksh:resultStatus ksh:UndefinedRecursion` marks a result that reports an **undefined** answer
+ *   ([ValidationViolation.isUndefinedRecursion]) rather than a failure. Without it an RDF consumer could not tell
+ *   the two apart: such a result has the severity and constraint component a failure would have.
+ * - `ksh:reifier` names the failing reifier of a `sh:reifierShape` result (its `sh:value` is the object of the
+ *   reified triple, so several failing reifiers of one triple would otherwise be indistinguishable).
+ *
  * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
  * in this serialization.
  */
@@ -74,6 +82,10 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
     }
     v.value?.let { row - SHACL.value - it }
     v.sourceConstraint?.let { row - SHACL.sourceConstraint - it }
+    // Kastor extensions (never in the sh: namespace): an undefined answer is told apart from a failure, and a
+    // sh:reifierShape result names its reifier.
+    if (v.isUndefinedRecursion) row - KastorShaclVocabulary.resultStatus - KastorShaclVocabulary.UndefinedRecursion
+    (v.context[ValidationViolation.REIFIER_CONTEXT_KEY] as? RdfTerm)?.let { row - KastorShaclVocabulary.reifier - it }
 }
 
 /**

@@ -158,7 +158,7 @@ Choosing among multiple providers must use a **deterministic policy**. **`AUTO` 
 | `providerId` set to `"jena"` (example) but no registered provider with that `getType()` | Throw **`ProviderNotFoundException`** (extends **`ShaclValidationException`**, [Appendix A](#appendix-a-contract-surfaces-and-source-of-truth)) with message naming the id; **do not** silently fall back. |
 | `providerId` set but provider **does not** support the requested `ValidationProfile` | Throw **`UnsupportedProfileException`** (extends **`ShaclValidationException`**) listing provider id and profile. |
 | `EnginePreference.NATIVE_FIRST` and native does **not** support the requested profile | **Fall through** to the next matching provider in preference order (bridges). If **no** provider satisfies the profile, fail with **`UnsupportedProfileException`** listing attempted providers. |
-| `EnginePreference.BRIDGE_FIRST` and no bridge matches, native matches | Use native. |
+| `EnginePreference.BRIDGE_FIRST` and no bridge matches, native matches | Use native. The legacy `memory` provider id is an alias of the native engine, not a bridge, and never outranks `kastor`. |
 | `EnginePreference` other than `AUTO` implies deterministic ordering | No random or classpath-order-only selection. |
 | Two providers tie on `priority` and both match | **Tiebreaker:** lexicographically smaller `getType()` wins (stable, documented). **Implementation note:** renaming a provider’s `getType()` (e.g. `kastor` → `native`) changes tie order; record in registry release notes when it happens. |
 
@@ -407,7 +407,7 @@ Authoritative **Kotlin types** today live in the **`rdf/shacl/validation`** modu
 
 **Planned `ShaclValidationException` hierarchy (all extend common base)**
 
-- **`ShaclValidationException`** — abstract or concrete base for **caller/registry/shapes-setup** failures (not a normal `ValidationReport` outcome). Existing **`ValidationException`** in `MemoryShaclValidator.kt` should be **retired or subclass** this hierarchy during P0a so callers have one stable catch at API boundaries.
+- **`ShaclValidationException`** — abstract or concrete base for **caller/registry/shapes-setup** failures (not a normal `ValidationReport` outcome). The legacy **`ValidationException`** in `MemoryShaclValidator.kt` subclasses it and is deprecated: nothing throws it since the `memory` provider became an alias of the native engine.
 - **`ProviderNotFoundException`**, **`UnsupportedProfileException`** — registry ([§7.1](#71-failure-semantics-normative)).
 - **`ShapesGraphNotFoundException`** — declared shapes reference **missing** from the dataset (no triples to load). **`ShapesGraphAccessException`** — resolution **attempted** but failed (network, I/O, policy denial when `allowImportFetch` is true, etc.). See [§9.2](#92-dataset-named-graphs-and-shape-graph-imports).
 - **`StaleShapesGraphTagException`** — compile cache tag mismatch ([§9.3](#93-performance-engineering-jvm)).

@@ -29,7 +29,10 @@ object ValidatorRegistry {
     /**
      * Create a validator with the given configuration.
      */
-    fun createValidator(config: ValidationConfig): ShaclValidator {
+    fun createValidator(config: ValidationConfig): ShaclValidator = resolveProvider(config).createValidator(config)
+
+    /** The provider [createValidator] uses for [config] (explicit [ValidationConfig.providerId], else preference order). */
+    internal fun resolveProvider(config: ValidationConfig): ShaclValidatorProvider {
         val matching = providers.values.filter { providerMatchesProfile(it, config.profile) }
         if (matching.isEmpty()) {
             throw UnsupportedProfileException(
@@ -45,13 +48,12 @@ object ValidatorRegistry {
                 )
             }
             logResolved(p, config)
-            return p.createValidator(config)
+            return p
         }
 
-        val sorted = sortProviders(matching, config.enginePreference)
-        val p = sorted.first()
+        val p = sortProviders(matching, config.enginePreference).first()
         logResolved(p, config)
-        return p.createValidator(config)
+        return p
     }
 
     /**
@@ -169,7 +171,14 @@ object ValidatorRegistry {
         }
     }
 
-    private fun isKastorNative(p: ShaclValidatorProvider): Boolean = p.getType() == "kastor"
+    /**
+     * Providers backed by the Kastor native engine: `kastor` itself and its legacy `memory` alias. Every other
+     * provider is a bridge to another engine. The alias must never count as a bridge: it would then be preferred over
+     * `kastor` under [EnginePreference.BRIDGE_FIRST] when no real bridge is installed.
+     */
+    @Suppress("DEPRECATION")
+    private fun isKastorNative(p: ShaclValidatorProvider): Boolean =
+        p.getType() == "kastor" || p is com.geoknoesis.kastor.rdf.shacl.providers.MemoryShaclValidatorProvider
 
     private fun sortProviders(
         matching: Collection<ShaclValidatorProvider>,

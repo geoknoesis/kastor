@@ -22,7 +22,8 @@ data class ValidationConfig(
     val validateInactiveShapes: Boolean = false,
     val customParameters: Map<String, Any> = emptyMap(),
     /**
-     * Forces a specific provider; must match [ShaclValidatorProvider.getType] (e.g. `kastor`, `memory`).
+     * Forces a specific provider; must match [ShaclValidatorProvider.getType] (e.g. `kastor`, `rdf4j`). The legacy
+     * id `memory` is an alias of `kastor`.
      */
     val providerId: String? = null,
     /**
@@ -43,7 +44,7 @@ data class ValidationConfig(
     /**
      * Hard cap on **data graph + shapes graph** triple count (estimated via `RdfGraph.size`) before
      * validation runs. Default [Long.MAX_VALUE] (no limit). Lower this for untrusted input (e.g. `500_000`)
-     * to bound memory; enforced by the RDF4J bridge, native engine, and memory provider.
+     * to bound memory; enforced by the RDF4J bridge and the native engine.
      */
     val maxCombinedGraphTriples: Long = Long.MAX_VALUE,
     /**
@@ -59,7 +60,7 @@ data class ValidationConfig(
      */
     val maxPathValueNodes: Int = 1_000_000,
     /**
-     * SHACL 1.2 `sh:conformanceDisallows` (native, RDF4J and memory validators): the result severities — `sh:Violation`, `sh:Warning`,
+     * SHACL 1.2 `sh:conformanceDisallows` (native and RDF4J validators): the result severities — `sh:Violation`, `sh:Warning`,
      * `sh:Info`, `sh:Debug`, `sh:Trace` or a custom severity IRI — whose results make [ValidationReport.isValid]
      * false. `null` (default) applies the SHACL default: every severity except `sh:Debug` and `sh:Trace`. Results of
      * other severities are still reported. Results about undefined recursive dependencies
@@ -67,12 +68,20 @@ data class ValidationConfig(
      * a failure of that shape would.
      */
     val conformanceDisallows: Set<Iri>? = null,
+    /**
+     * Time budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native
+     * engine). Regular expressions with nested quantifiers can backtrack exponentially on short inputs; without this
+     * budget such an evaluation is only stopped by the run-wide [timeout]. Exceeding it fails validation with a
+     * [ShaclValidationException] naming the pattern (the answer is unknown, so no result is fabricated). Must be
+     * positive; it never extends [timeout].
+     */
+    val patternTimeout: Duration = Duration.ofSeconds(1),
 ) {
 
     /**
      * Whether [violation] makes a report non-conforming under [conformanceDisallows]. Its severity is the
      * violation's `sh:resultSeverity` IRI ([ValidationViolation.resultSeverityIri]) when set, otherwise the IRI of
-     * its [ValidationViolation.severity]. Every validator (native, RDF4J, memory) decides
+     * its [ValidationViolation.severity]. Every validator (native, RDF4J) decides
      * [ValidationReport.isValid] with this rule.
      */
     fun disallowsConformance(violation: ValidationViolation): Boolean =
@@ -135,7 +144,7 @@ data class ValidationConfig(
 
         /**
          * Tighter caps for validating **untrusted** RDF: limits combined triples and violation collection.
-         * Applies to RDF4J, native (`kastor`), and memory providers.
+         * Applies to the RDF4J and native (`kastor`) providers.
          */
         fun rdf4jUntrustedInputLimits(
             maxCombinedGraphTriples: Long = 500_000L,

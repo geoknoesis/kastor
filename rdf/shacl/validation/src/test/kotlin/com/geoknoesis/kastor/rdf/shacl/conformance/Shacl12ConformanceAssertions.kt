@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.WeisfeilerLehmanIsomorphism
+import com.geoknoesis.kastor.rdf.shacl.KastorShaclVocabulary
 import com.geoknoesis.kastor.rdf.shacl.ValidationReport
 import com.geoknoesis.kastor.rdf.shacl.ViolationSeverity
 import com.geoknoesis.kastor.rdf.shacl.toShaclValidationReportRdf
@@ -31,6 +32,8 @@ internal fun ValidationReport.toW3cResultGraph(expected: ExpectedConformanceRepo
     return Rdf.graph {
         for (t in full.getTriples()) {
             if (t.predicate == SHACL.conforms || t.predicate == SHACL.detail) continue
+            // Kastor extension properties (ksh:reifier, ksh:resultStatus) are additions to the standard result.
+            if (t.predicate.value.startsWith(KastorShaclVocabulary.NAMESPACE)) continue
             if (t.predicate == SHACL.resultMessage && (t.obj !is Literal || t.obj !in expected.expectedMessages)) continue
             triple(t.subject, t.predicate, t.obj)
         }
