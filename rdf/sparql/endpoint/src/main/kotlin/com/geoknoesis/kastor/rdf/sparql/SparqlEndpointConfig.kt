@@ -70,11 +70,16 @@ enum class SparqlUpdateMethod {
  * @property maxBlankNodeComponentTriples largest group of triples connected through blank nodes that
  *   [SparqlGraph.addTriples] accepts. Such a group must be sent in one request because blank-node
  *   labels are scoped to a request; larger groups are rejected before anything is sent.
- * @property maxResultRowChars largest single JSON value, in characters, that is read into memory
- *   while parsing SELECT results: one binding row, or one skipped value such as `head`. It applies
- *   to [SparqlRepository.select] and [SparqlRepository.withSelectRows] alike, so a streamed response
- *   with [maxStreamedResponseBytes] `null` still never buffers an unbounded row. Exceeding it fails
- *   with [com.geoknoesis.kastor.rdf.RdfQueryException]. Default 16 Mi characters.
+ * @property maxResultRowChars largest single JSON value that is read while parsing SELECT results:
+ *   one binding row, or one skipped value such as `head`. It is measured in characters of the JSON
+ *   text (UTF-16 code units, so a character outside the Basic Multilingual Plane counts as two;
+ *   quotes, escapes and white space inside the value count too). It applies to
+ *   [SparqlRepository.select] and [SparqlRepository.withSelectRows] alike, so a streamed response
+ *   with [maxStreamedResponseBytes] `null` still never holds an unbounded row. A value of exactly
+ *   this size is accepted; a longer one fails with [com.geoknoesis.kastor.rdf.RdfQueryException].
+ *   Default 4 Mi characters. A row is decoded once, straight from the stream, so the heap it needs
+ *   is that of its decoded strings (up to two bytes per character, 8 MB at the default) plus a
+ *   buffer of similar size while its largest string is being read.
  */
 data class SparqlEndpointConfig(
     val endpoint: String,
@@ -139,7 +144,7 @@ data class SparqlEndpointConfig(
         const val DEFAULT_MAX_REDIRECTS: Int = 5
         const val DEFAULT_MAX_GET_URL_LENGTH: Int = 2_000
         const val DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES: Int = 100_000
-        const val DEFAULT_MAX_RESULT_ROW_CHARS: Int = 16 * 1024 * 1024
+        const val DEFAULT_MAX_RESULT_ROW_CHARS: Int = 4 * 1024 * 1024
 
         private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
         private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade")
