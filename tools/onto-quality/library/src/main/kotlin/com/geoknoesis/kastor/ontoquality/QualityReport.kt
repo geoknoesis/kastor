@@ -6,6 +6,7 @@ import com.geoknoesis.kastor.ontoquality.explanation.BlankNodeKeys
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
 import com.geoknoesis.kastor.ontoquality.explanation.escapeMarkdownInline
 import com.geoknoesis.kastor.ontoquality.explanation.sanitizeTerminalText
+import com.geoknoesis.kastor.ontoquality.explanation.stabiliseBlankNodeLabels
 import com.geoknoesis.kastor.ontoquality.integration.FindingPrioritizer
 import com.geoknoesis.kastor.ontoquality.integration.MetricsContext
 import com.geoknoesis.kastor.rdf.BlankNode
@@ -53,7 +54,7 @@ data class QualityReport(
             if (items.isEmpty()) continue
             appendLine("## ${cat.name.replace('_', ' ')} (${items.size})")
             for (f in items) {
-                appendLine(" - [${f.tier}] ${f.violation.severity}: ${sanitizeTerminalText(f.violation.message)}")
+                appendLine(" - [${f.tier}] ${f.violation.severity}: ${sanitizeTerminalText(f.stableMessage)}")
                 f.pitfall?.let { appendLine("   Pitfall: ${it.shortLabel()}") }
             }
             appendLine()
@@ -101,7 +102,7 @@ data class QualityReport(
                 val focusIri = (f.violation.focusNode as? Iri)?.value
                 val focusLabel = focusIri?.let { escapeMarkdownInline(markdownShortIri(it)) } ?: "(non-IRI focus)"
                 val marker = markdownSeverityMarker(f.violation.severity, options.useAsciiSeverityMarkers)
-                appendLine("### $marker $focusLabel — ${escapeMarkdownInline(markdownHeadline(f.violation.message))}")
+                appendLine("### $marker $focusLabel — ${escapeMarkdownInline(markdownHeadline(f.stableMessage))}")
                 val imp = focusIri?.let { ctx.entityImportance[it] ?: MetricsContext.DEFAULT_IMPORTANCE }
                     ?: MetricsContext.DEFAULT_IMPORTANCE
                 val hintParts = mutableListOf<String>()
@@ -110,7 +111,7 @@ data class QualityReport(
                 appendLine("*${hintParts.joinToString("; ")}*")
                 appendLine()
                 val pit = f.pitfall?.shortLabel()?.let { " [$it]" } ?: ""
-                appendLine("${escapeMarkdownInline(f.violation.message.trimEnd())}$pit")
+                appendLine("${escapeMarkdownInline(f.stableMessage.trimEnd())}$pit")
                 val shape =
                     f.violation.shapeUri?.let { "Source shape: **${escapeMarkdownInline(markdownShortIri(it))}**" }
                 if (shape != null) {
@@ -142,7 +143,7 @@ data class QualityReport(
             appendLine()
             for (f in items) {
                 val pit = f.pitfall?.shortLabel()?.let { " — **$it**" } ?: ""
-                appendLine("- ${escapeMarkdownInline(f.violation.message)}$pit")
+                appendLine("- ${escapeMarkdownInline(f.stableMessage)}$pit")
             }
             appendLine()
         }
@@ -151,7 +152,8 @@ data class QualityReport(
     companion object {
         /**
          * @param dataGraph the validated graph; when given, findings on blank nodes get parse-independent
-         *   [QualityFinding.blankNodeKeys].
+         *   [QualityFinding.blankNodeKeys]. Pass the **asserted** graph, not a reasoner's materialisation, so keys
+         *   (and finding refs) do not depend on the reasoner.
          */
         @JvmOverloads
         fun from(
@@ -159,11 +161,29 @@ data class QualityReport(
             catalogs: List<ShapeCatalog>,
             metricsContext: MetricsContext? = null,
             dataGraph: RdfGraph? = null,
+        ): QualityReport =
+            fromKeyed(raw, catalogs, metricsContext, dataGraph?.let { blankNodeKeys(raw, it, null) }.orEmpty())
+
+        /**
+         * Keys for the blank nodes of [raw]: computed on the [asserted] graph, and on the [materialised] graph (with
+         * another prefix) only for blank nodes a reasoner introduced.
+         */
+        internal fun blankNodeKeys(raw: ValidationReport, asserted: RdfGraph, materialised: RdfGraph?): Map<BlankNode, String> {
+            val nodes = raw.violations.flatMapTo(HashSet()) { QualityFinding.blankNodesOf(it) }
+            if (nodes.isEmpty()) return emptyMap()
+            val keys = BlankNodeKeys.compute(asserted, nodes)
+            if (materialised == null || materialised === asserted || keys.size == nodes.size) return keys
+            return keys + BlankNodeKeys.compute(materialised, nodes - keys.keys, prefix = "_:i")
+        }
+
+        /** [from] with blank-node keys computed by the caller ([blankNodeKeys]). */
+        internal fun fromKeyed(
+            raw: ValidationReport,
+            catalogs: List<ShapeCatalog>,
+            metricsContext: MetricsContext?,
+            keys: Map<BlankNode, String>,
         ): QualityReport {
             val meta = catalogs.fold(emptyMap<String, ShapeMetadata>()) { acc, c -> acc + c.shapeMetadata }
-            val keys =
-                dataGraph?.let { g -> BlankNodeKeys.compute(g, raw.violations.flatMapTo(HashSet()) { QualityFinding.blankNodesOf(it) }) }
-                    .orEmpty()
             val rawFindings =
                 raw.violations.map { v ->
                     val finding = QualityFinding.from(v, meta)
@@ -224,6 +244,7 @@ private fun markdownHeadline(message: String): String {
 /**
  * @property blankNodeKeys parse-independent keys for the blank nodes in [violation] (focus node, path, value), used
  *   by [com.geoknoesis.kastor.ontoquality.explanation.FindingRef]; empty when the data graph was not available.
+ *   A key describes the content and the context of a node (see the module README) and is unique within a graph.
  */
 data class QualityFinding @JvmOverloads constructor(
     val violation: ValidationViolation,
@@ -232,6 +253,13 @@ data class QualityFinding @JvmOverloads constructor(
     val tier: QualityTier,
     val blankNodeKeys: Map<BlankNode, String> = emptyMap(),
 ) {
+    /**
+     * The message of [violation] with the parser labels of the blank nodes of this finding replaced by their
+     * [blankNodeKeys], so a message that interpolates a blank node (a SHACL-SPARQL `{$this}`) is the same on every
+     * parse. Reports, refs and LLM prompts use this text.
+     */
+    val stableMessage: String by lazy(LazyThreadSafetyMode.PUBLICATION) { stabiliseBlankNodeLabels(violation.message, blankNodeKeys) }
+
     companion object {
         /** Blank nodes referenced by [violation]. */
         internal fun blankNodesOf(violation: ValidationViolation): Set<BlankNode> =

@@ -144,6 +144,7 @@ public final class com/geoknoesis/kastor/ontoquality/QualityFinding {
 	public final fun getBlankNodeKeys ()Ljava/util/Map;
 	public final fun getCategory ()Lcom/geoknoesis/kastor/ontoquality/QualityCategory;
 	public final fun getPitfall ()Lcom/geoknoesis/kastor/ontoquality/PitfallReference;
+	public final fun getStableMessage ()Ljava/lang/String;
 	public final fun getTier ()Lcom/geoknoesis/kastor/ontoquality/QualityTier;
 	public final fun getViolation ()Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation;
 	public fun hashCode ()I
@@ -275,11 +276,13 @@ public final class com/geoknoesis/kastor/ontoquality/explanation/ExplainedQualit
 
 public final class com/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure {
 	public fun <init> (Ljava/util/List;Ljava/lang/String;)V
+	public fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/lang/Throwable;)V
 	public final fun component1 ()Ljava/util/List;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun copy (Ljava/util/List;Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;
 	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/explanation/ExplanationFailure;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
 	public final fun getFindingRefs ()Ljava/util/List;
 	public final fun getReason ()Ljava/lang/String;
 	public fun hashCode ()I
