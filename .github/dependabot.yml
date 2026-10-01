@@ -24,6 +24,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # RDF4J 6 is compiled for Java 25 and removes the RDF-star Triple model; Kastor's baseline is JDK 21.
+      # Remove this once the baseline moves (docs/reference/dependency-upgrade-plan.md, PR #23).
+      - dependency-name: "org.eclipse.rdf4j:*"
+        update-types: ["version-update:semver-major"]
     groups:
       junit:
         patterns:
