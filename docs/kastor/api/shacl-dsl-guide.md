@@ -310,7 +310,7 @@ property("http://example.org/email") {
 **What it does:**
 - Validates that the string matches the specified regular expression
 - `flags`: Optional regex flags (e.g., "i" for case-insensitive, "m" for multiline)
-- Uses XPath 2.0 regex syntax (similar to JavaScript regex)
+- Uses XPath regular expression syntax (XML Schema regular expressions). The Kastor native validator applies its semantics exactly: `\d`, `\w` and `\s` are the XML Schema classes, so `\w` matches Unicode letters (`José`) but not `_`; write `[\w_]` when underscores are allowed
 
 **Example validation:**
 ```kotlin
@@ -912,6 +912,47 @@ val shapesGraph = shacl {
 ```
 
 Built-in prefixes (rdf, rdfs, owl, sh, xsd, obo, skos, prov, dcat, dcterms, void, geo, time) are available automatically.
+
+## Property Paths
+
+`property(...)` and `path(...)` accept any SHACL property path, not only a predicate IRI. The path builders are available inside `nodeShape { }` and `propertyShape { }` blocks and take IRIs or other paths; `predicate(iri)` wraps an IRI so that it can be mixed with paths.
+
+| Builder | SPARQL notation | Emitted `sh:path` |
+|---------|-----------------|-------------------|
+| `inverse(p)` | `^p` | `[ sh:inversePath p ]` |
+| `sequence(p, q, …)` | `p / q` | `( p q )` |
+| `alternative(p, q, …)` | `p \| q` | `[ sh:alternativePath ( p q ) ]` |
+| `zeroOrMore(p)` | `p*` | `[ sh:zeroOrMorePath p ]` |
+| `oneOrMore(p)` | `p+` | `[ sh:oneOrMorePath p ]` |
+| `zeroOrOne(p)` | `p?` | `[ sh:zeroOrOnePath p ]` |
+
+```kotlin
+val shapesGraph = shacl {
+    nodeShape("http://example.org/PersonShape") {
+        targetClass(EX.Person)
+
+        // Every person is the child of at most two people: ^ex:child
+        property(inverse(EX.child)) { maxCount = 2 }
+
+        // The name of a parent: ex:parent / ex:name
+        property(sequence(EX.parent, EX.name)) { minCount = 1 }
+
+        // A phone number or an e-mail address: ex:phone | ex:email
+        property(alternative(EX.phone, EX.email)) { minCount = 1 }
+
+        // Names of all ancestors: ( ex:parent | ^ex:child )+ / ex:name
+        property(sequence(oneOrMore(alternative(predicate(EX.parent), inverse(EX.child))), predicate(EX.name))) {
+            datatype = XSD.string
+        }
+    }
+
+    propertyShape("http://example.org/SubClassShape") {
+        path(zeroOrMore(RDFS.subClassOf))
+    }
+}
+```
+
+`sequence` and `alternative` need at least two members. The IRI overloads take two or three IRIs; for longer lists wrap each IRI with `predicate(...)`. Inside a property shape, `path` (an `Iri?`) still reads and writes predicate paths; `propertyPath` exposes any path as a `ShaclPropertyPath`, and `path` returns `null` for a complex path. Assigning a new path replaces the previous one, including its blank nodes and list cells.
 
 ## Standalone Property Shapes
 
