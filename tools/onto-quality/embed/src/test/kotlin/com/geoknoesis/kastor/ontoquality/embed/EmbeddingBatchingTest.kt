@@ -16,6 +16,25 @@ class EmbeddingBatchingTest {
     }
 
     @Test
+    fun `texts are tokenised one batch at a time and results keep the input order`() {
+        val events = mutableListOf<String>()
+        val texts = listOf("ccc", "a", "bbbbb", "dd", "e")
+        val vectors =
+            EmbeddingBatching.embedInBatches(
+                texts,
+                batchSize = 2,
+                encode = { text -> events += "encode:$text"; text },
+                embedBatch = { batch -> events += "embed:${batch.joinToString(",")}"; batch.map { floatArrayOf(it.length.toFloat()) } },
+            )
+        assertEquals(listOf(3f, 1f, 5f, 2f, 1f), vectors.map { it[0] })
+        assertEquals(
+            listOf("encode:a", "encode:e", "embed:a,e", "encode:dd", "encode:ccc", "embed:dd,ccc", "encode:bbbbb", "embed:bbbbb"),
+            events,
+        )
+        assertEquals(emptyList(), EmbeddingBatching.embedInBatches(emptyList<String>(), 2, { it }, { error("no batch") }))
+    }
+
+    @Test
     fun `manual truncation keeps the closing special token`() {
         val ids = longArrayOf(101, 7, 8, 9, 102)
         assertContentEquals(longArrayOf(101, 7, 102), EmbeddingBatching.fit(ids, 3, keepLastToken = true))
