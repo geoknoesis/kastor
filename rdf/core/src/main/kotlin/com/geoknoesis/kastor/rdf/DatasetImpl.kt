@@ -34,10 +34,10 @@ import java.io.Closeable
  * escapes only inside strings and IRIs). Write those characters with the string escapes `\"`, `\\`, `\n` instead.
  * A dataset on path 1 materializes an unanalysable query; on path 2 it is rejected.
  *
- * **DESCRIBE:** what an engine describes is implementation-defined, and may come from graphs outside the query's
- * dataset (Jena describes a resource in the store's default graph and in every named graph of the store). Results of
- * a `DESCRIBE` run in place are therefore restricted to triples that are in a graph of this dataset (one `hasTriple`
- * lookup per described triple).
+ * **DESCRIBE:** the Jena and RDF4J providers describe resources from the default graph of the query's dataset. What
+ * an engine describes is implementation-defined, though, and another repository may describe from graphs outside
+ * the query's dataset. Results of a `DESCRIBE` run in place are therefore restricted to triples that are in a graph
+ * of this dataset (one `hasTriple` lookup per described triple).
  *
  * **Cost of the materialized path:** every query copies all referenced graphs into a fresh in-memory
  * repository (one batched write per target graph inside a single transaction) and discards it
@@ -119,8 +119,9 @@ internal class DatasetImpl(
             ?: return executeOnMaterializedUnion { repo -> repo.describe(query).toList() }.asSequence()
         val described = inPlace.repository.describe(if (inPlace.sparql == query.sparql) query else SparqlDescribeQuery(inPlace.sparql))
         // What DESCRIBE returns is implementation-defined, and an engine may describe a resource from graphs of the
-        // store that are not in the query's dataset (Jena reads the store's default graph and every named graph of
-        // it, whatever the dataset clauses say): keep only triples that are in a graph of this dataset.
+        // store that are not in the query's dataset (Jena's own describe handler reads the store's default graph and
+        // every named graph of it, whatever the dataset clauses say; the Jena and RDF4J providers describe from the
+        // default graph of the query's dataset): keep only triples that are in a graph of this dataset.
         val graphs = listOf(defaultGraph) + namedGraphRefs.values
         return described.filter { triple -> graphs.any { it.hasTriple(triple) } }
     }
