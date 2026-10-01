@@ -40,6 +40,15 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * to the positions the reified form can satisfy (up to a scan). Repositories wrapping an externally created store
  * (whose content other code may change) are never tracked and always use the scanning paths.
  *
+ * **Query dataset:** outside `GRAPH`, SPARQL queries (SELECT, ASK, CONSTRUCT, DESCRIBE) read the default graph only -
+ * the statements without a context, as [defaultGraph] and the Jena provider do - and inside `GRAPH` the named graphs.
+ * (RDF4J itself evaluates a query without a dataset against the union of all contexts.) A query with `FROM` /
+ * `FROM NAMED` keeps its own dataset. A query that reads both inside and outside `GRAPH` sees the IRI-named contexts
+ * ([listGraphs]) as named graphs, enumerated once per query; blank-node contexts are visible only to queries that
+ * read nothing outside `GRAPH`. Wrapped repositories that are not evaluated by an RDF4J Sail (HTTP repositories,
+ * SPARQL endpoints) keep the dataset of their server. SPARQL `UPDATE` is not covered: RDF4J matches the `WHERE`
+ * clause of an update against all contexts.
+ *
  * @param repository RDF4J Repository instance (internal implementation detail)
  * @param inference Whether the wrapped store provides inferred statements
  * @param lenientRead skip statements that are not valid Kastor terms on graph reads instead of failing
@@ -408,12 +417,12 @@ class Rdf4jRepository(
      * propagate unchanged.
      */
     override fun <T> withSelectRows(query: SparqlSelect, consume: (Sequence<BindingSet>) -> T): T = withConnection { conn ->
-        val result = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).evaluate() }
+        val result = queryOperation(query.sparql) { conn.prepareTupleQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
         result.use { consume(it.rows(query.sparql)) }
     }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
-        val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).evaluate() }
+        val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
         result.use {
             val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
             consume(it.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.guardedBy(query.sparql))
@@ -461,7 +470,7 @@ class Rdf4jRepository(
         val sparql = com.geoknoesis.kastor.rdf.sparql.internal.SparqlInitialBindings.apply(query.sparql, constants, expressions)
         return withConnection { conn ->
             val result = queryOperation(sparql) {
-                val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql)
+                val prepared = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
                 placeholders.forEach { (name, value) -> prepared.setBinding(name, value) }
                 prepared.maxExecutionTime = ((timeout.toMillis() + 999) / 1000).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
                 prepared.evaluate()
@@ -508,6 +517,52 @@ class Rdf4jRepository(
             MapBindingSet(names.associateWith { Rdf4jTerms.fromRdf4jValue(row.getValue(it)) }) as BindingSet
         }.guardedBy(sparql)
 
+    /**
+     * Gives a prepared query Kastor's dataset: outside `GRAPH`, patterns read the repository's default graph only (the
+     * statements without a context), as [defaultGraph] and the Jena provider do; inside `GRAPH` they read the named
+     * graphs. Without this, RDF4J evaluates a query that has no dataset against the union of all contexts, so the
+     * triples of every named graph would also match default-graph patterns.
+     *
+     * - A query with its own `FROM` / `FROM NAMED` clauses keeps the dataset it declares.
+     * - A query without `GRAPH` (and any `DESCRIBE`) gets the default graph `RDF4J.NIL` and no named graphs.
+     * - A query that only reads inside `GRAPH` runs without a dataset, exactly as before (every context, including
+     *   blank-node contexts, is a named graph).
+     * - A query that reads both gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts (the
+     *   graphs of [listGraphs]) as its named graphs; they are enumerated once per query, and blank-node contexts are
+     *   not visible to such a query.
+     * - Only queries evaluated by an RDF4J Sail are changed; a wrapped remote repository (HTTP or SPARQL endpoint)
+     *   keeps the dataset its server defines.
+     *
+     * SPARQL `UPDATE` is not affected: RDF4J still matches the `WHERE` clause of an update against all contexts.
+     */
+    private fun <Q : org.eclipse.rdf4j.query.Query> Q.onKastorDataset(conn: RepositoryConnection): Q {
+        val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return this
+        if (parsed.dataset != null) return this
+        var readsDefault = false
+        var readsNamed = false
+        fun note(scope: org.eclipse.rdf4j.query.algebra.StatementPattern.Scope) {
+            if (scope == org.eclipse.rdf4j.query.algebra.StatementPattern.Scope.NAMED_CONTEXTS) readsNamed = true else readsDefault = true
+        }
+        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.StatementPattern) { note(node.scope); super.meet(node) }
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) { note(node.scope); super.meet(node) }
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.ZeroLengthPath) { note(node.scope); super.meet(node) }
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.DescribeOperator) { readsDefault = true; super.meet(node) }
+            // The patterns of a SERVICE clause are evaluated by the remote endpoint against its own dataset.
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.Service) = Unit
+        })
+        if (readsNamed && !readsDefault) return this
+        val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
+        dataset.addDefaultGraph(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL)
+        if (readsNamed) {
+            conn.contextIDs.use { contexts ->
+                while (contexts.hasNext()) (contexts.next() as? IRI)?.let(dataset::addNamedGraph)
+            }
+        }
+        setDataset(dataset)
+        return this
+    }
+
     /** Wraps failures of the query engine itself; never used around caller-supplied consumers. */
     private inline fun <T> queryOperation(query: String, operation: () -> T): T = try {
         operation()
@@ -532,7 +587,7 @@ class Rdf4jRepository(
     override fun ask(query: SparqlAsk): Boolean = withConnection { conn ->
         val startTime = System.currentTimeMillis()
         val prepared = try {
-            conn.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql)
+            conn.prepareBooleanQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn)
         } catch (e: Exception) {
             RdfDebug.logQueryError("ASK", query.sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
@@ -572,7 +627,7 @@ class Rdf4jRepository(
     private fun graphQuery(kind: String, sparql: String): Sequence<RdfTriple> = withConnection { conn ->
         val startTime = System.currentTimeMillis()
         val prepared = try {
-            conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
+            conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
         } catch (e: Exception) {
             RdfDebug.logQueryError(kind, sparql, "Failed to prepare: ${e.message}")
             throw RdfQueryException(
