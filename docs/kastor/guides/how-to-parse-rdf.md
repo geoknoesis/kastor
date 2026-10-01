@@ -73,6 +73,19 @@ val local = Rdf.parseFromUrl(
 )
 ```
 
+HTTP redirects are followed (up to 10 hops, never from `https` down to `http`), including redirects to another host. When the URL comes from untrusted input and your process can reach hosts the caller must not (loopback, cloud metadata, other internal addresses), pass a redirect policy:
+
+```kotlin
+val graph = Rdf.parseFromUrl(
+    userSuppliedUrl,
+    format = "TURTLE",
+    // or UrlRedirectPolicy.SAME_HOST, or your own { from, to -> to.host in allowedHosts }
+    options = UrlLoadOptions(redirectPolicy = UrlRedirectPolicy.PUBLIC_ADDRESSES)
+)
+```
+
+`PUBLIC_ADDRESSES` refuses targets that are, or resolve to, loopback, link-local, private, unique-local, wildcard or multicast addresses. A refused redirect fails with `RdfHttpStatusException` (the redirect status). The policy is asked about redirects only: validate the first URL yourself (for example with `UrlRedirectPolicy.PUBLIC_ADDRESSES.allows(uri, uri)`). It looks host names up when it is asked, and the connection looks them up again, so it does not stop DNS rebinding; use network-level controls where that matters.
+
 ### Step 4: Add parsed graph to a repository
 
 ```kotlin

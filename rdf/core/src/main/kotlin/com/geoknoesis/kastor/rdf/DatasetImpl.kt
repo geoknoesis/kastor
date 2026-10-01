@@ -438,7 +438,10 @@ internal object SparqlDatasetClauses {
         return false
     }
 
-    private fun isNameChar(c: Char) = c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c == '·'
+    /** U+00B7, allowed inside names and variable names. */
+    private val MIDDLE_DOT = 0xB7.toChar()
+
+    private fun isNameChar(c: Char) = c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c == MIDDLE_DOT
 
     /** End of the exponent (`e`, optional sign, digits) starting at [from], or -1 if there is none. */
     private fun exponentEnd(q: String, from: Int): Int {
@@ -500,7 +503,7 @@ internal object SparqlDatasetClauses {
                 (c == '?' || c == '$') && i + 1 < n && (q[i + 1].isLetterOrDigit() || q[i + 1] == '_') -> {
                     val start = i
                     i++
-                    while (i < n && (q[i].isLetterOrDigit() || q[i] == '_' || q[i] == '·')) i++
+                    while (i < n && (q[i].isLetterOrDigit() || q[i] == '_' || q[i] == MIDDLE_DOT)) i++
                     tokens.add(Token(Kind.VAR, start, i))
                 }
                 c == '@' && i + 1 < n && q[i + 1].isLetter() -> {

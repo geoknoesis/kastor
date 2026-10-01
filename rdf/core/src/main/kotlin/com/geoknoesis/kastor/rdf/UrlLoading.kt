@@ -31,9 +31,18 @@ import java.util.concurrent.TimeUnit
  *
  * HTTP(S) requests send an `Accept` header for the requested format and `Connection: close`, and the connection is
  * closed when the load ends. Redirects (301, 302, 303, 307, 308) are followed by Kastor, up to 10 hops, only to a URL
- * with an allowed scheme that keeps the scheme or upgrades `http` to `https`, and only while
- * [java.net.HttpURLConnection.getFollowRedirects] is true. Non-2xx responses, including redirects that are not
- * followed, fail with [RdfHttpStatusException] before anything is parsed.
+ * with an allowed scheme that keeps the scheme or upgrades `http` to `https`, only while
+ * [java.net.HttpURLConnection.getFollowRedirects] is true, and only if [redirectPolicy] allows the target. A redirect
+ * may lead to another host; pass a [redirectPolicy] (for example [UrlRedirectPolicy.PUBLIC_ADDRESSES] or
+ * [UrlRedirectPolicy.SAME_HOST]) when the first URL comes from untrusted input and the process can reach hosts the
+ * caller must not (loopback, cloud metadata or other internal addresses). A relative `Location` is resolved against
+ * the redirecting URL; characters a URL may not contain unencoded (spaces, `|`, non-ASCII) are percent-encoded in
+ * its path, query and fragment, as lenient HTTP clients do. Non-2xx responses, including redirects that are not
+ * followed (the `Location` is missing or not a usable URL, the scheme or the policy refuses it, or the hop limit is
+ * reached), fail with [RdfHttpStatusException] before anything is parsed.
+ *
+ * @property redirectPolicy Decides, for each redirect that passed the scheme rules, whether it is followed.
+ *   Default: [UrlRedirectPolicy.ALLOW_ALL]. It is not consulted for the URL the load starts with.
  */
 data class UrlLoadOptions(
     val allowedSchemes: Set<String> = setOf("http", "https"),
@@ -41,10 +50,20 @@ data class UrlLoadOptions(
     val connectTimeoutMillis: Int = 30_000,
     val readTimeoutMillis: Int = 30_000,
     val totalTimeoutMillis: Long = DEFAULT_TOTAL_TIMEOUT_MILLIS,
+    val redirectPolicy: UrlRedirectPolicy = UrlRedirectPolicy.ALLOW_ALL,
 ) {
     /** Pre-[totalTimeoutMillis] constructor, kept for binary compatibility; uses the default overall deadline. */
     constructor(allowedSchemes: Set<String>, maxBytes: Long, connectTimeoutMillis: Int, readTimeoutMillis: Int) :
         this(allowedSchemes, maxBytes, connectTimeoutMillis, readTimeoutMillis, DEFAULT_TOTAL_TIMEOUT_MILLIS)
+
+    /** Pre-[redirectPolicy] constructor, kept for binary compatibility; follows redirects to any host. */
+    constructor(
+        allowedSchemes: Set<String>,
+        maxBytes: Long,
+        connectTimeoutMillis: Int,
+        readTimeoutMillis: Int,
+        totalTimeoutMillis: Long,
+    ) : this(allowedSchemes, maxBytes, connectTimeoutMillis, readTimeoutMillis, totalTimeoutMillis, UrlRedirectPolicy.ALLOW_ALL)
 
     init {
         require(allowedSchemes.isNotEmpty()) { "allowedSchemes must not be empty" }
@@ -63,6 +82,65 @@ data class UrlLoadOptions(
 
         @JvmField
         val DEFAULT = UrlLoadOptions()
+    }
+}
+
+/**
+ * Decides whether URL loading ([UrlLoadOptions.redirectPolicy]) follows an HTTP redirect. It is asked once per
+ * redirect, after the scheme rules of [UrlLoadOptions] accepted the target, with absolute `http`/`https` URLs; a
+ * refused redirect fails the load with [RdfHttpStatusException] carrying the redirect status. The call counts
+ * against [UrlLoadOptions.totalTimeoutMillis]; an exception it throws fails the load with that exception.
+ */
+fun interface UrlRedirectPolicy {
+    /** True if the redirect from the URL [from] to the resolved target URL [to] may be followed. */
+    fun allows(from: java.net.URI, to: java.net.URI): Boolean
+
+    companion object {
+        /** Follows every redirect (the default). */
+        @JvmField
+        val ALLOW_ALL: UrlRedirectPolicy = Named("ALLOW_ALL") { _, _ -> true }
+
+        /** Follows a redirect only to the same host (ignoring case) and the same effective port. */
+        @JvmField
+        val SAME_HOST: UrlRedirectPolicy = Named("SAME_HOST") { from, to ->
+            from.host.equals(to.host, ignoreCase = true) && effectivePort(from) == effectivePort(to)
+        }
+
+        /**
+         * Refuses a redirect to a host that is, or whose name resolves to, a loopback, link-local, site-local
+         * (private), unique-local, wildcard or multicast address, or that cannot be resolved. This looks the host
+         * name up; the connection that follows looks it up again, so a name whose answers change between the two
+         * lookups (DNS rebinding) is not caught - use network-level controls where that matters.
+         */
+        @JvmField
+        val PUBLIC_ADDRESSES: UrlRedirectPolicy = Named("PUBLIC_ADDRESSES") { _, to -> resolvesToPublicAddresses(to) }
+
+        private fun effectivePort(uri: java.net.URI): Int = when {
+            uri.port >= 0 -> uri.port
+            uri.scheme.equals("https", ignoreCase = true) -> 443
+            else -> 80
+        }
+
+        private fun resolvesToPublicAddresses(uri: java.net.URI): Boolean {
+            val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.takeIf { it.isNotEmpty() } ?: return false
+            val addresses = try {
+                java.net.InetAddress.getAllByName(host)
+            } catch (_: java.net.UnknownHostException) {
+                return false
+            }
+            return addresses.isNotEmpty() && addresses.none { address ->
+                val bytes = address.address
+                address.isLoopbackAddress || address.isAnyLocalAddress || address.isLinkLocalAddress ||
+                    address.isSiteLocalAddress || address.isMulticastAddress ||
+                    // 0.0.0.0/8 ("this network") and IPv6 unique-local addresses fc00::/7
+                    (bytes.size == 4 && bytes[0].toInt() == 0) ||
+                    (bytes.size == 16 && (bytes[0].toInt() and 0xFE) == 0xFC)
+            }
+        }
+    }
+
+    private class Named(private val name: String, private val policy: UrlRedirectPolicy) : UrlRedirectPolicy by policy {
+        override fun toString(): String = "UrlRedirectPolicy.$name"
     }
 }
 
@@ -182,12 +260,18 @@ internal fun openRdfUrlStream(
                 if (total > 0 && elapsedMillis(started) >= total) throw RdfLoadTimeoutException(total)
                 if (status in REDIRECT_STATUSES) {
                     val location: String? = http.getHeaderField("Location")
-                    val target: Any = when {
+                    val resolved: Any = when {
                         !followRedirects -> "redirects are disabled"
                         location.isNullOrBlank() -> "no Location header"
                         redirects >= MAX_URL_REDIRECTS -> "more than $MAX_URL_REDIRECTS redirects"
                         else -> redirectTarget(uri, location, options)
                     }
+                    val from = uri
+                    val policy = options.redirectPolicy
+                    // The policy may look host names up, so it runs within the deadline like the request itself.
+                    val target: Any = if (resolved is java.net.URI && policy !== UrlRedirectPolicy.ALLOW_ALL &&
+                        !withinDeadline(started, total, onAbandon = {}) { policy.allows(from, resolved) }.getOrThrow()
+                    ) "refused by the redirect policy" else resolved
                     if (target is java.net.URI) {
                         release(http)
                         redirects++
@@ -251,12 +335,18 @@ private fun checkedUri(url: String, options: UrlLoadOptions): java.net.URI {
 
 /**
  * The URI a redirect from [from] to [location] leads to, or a String saying why it is not followed: the target must
- * be a valid absolute URL with an allowed scheme that is the same as the scheme of [from] or upgrades `http` to
- * `https`.
+ * be a valid absolute URL with a host, a port in range and an allowed scheme that is the same as the scheme of [from]
+ * or upgrades `http` to `https`.
  */
-private fun redirectTarget(from: java.net.URI, location: String, options: UrlLoadOptions): Any {
+internal fun redirectTarget(from: java.net.URI, location: String, options: UrlLoadOptions): Any {
     val target = try {
-        from.resolve(java.net.URI(location.trim()))
+        val reference = java.net.URI(encodeLocation(location.trim()) ?: return "invalid Location")
+        // RFC 3986 section 5.2.3: a base with an authority and an empty path merges as "/". (java.net.URI did not
+        // do this on every JDK: "http://example.com" + "data.ttl" became "http://example.comdata.ttl".)
+        val base = if (from.rawPath.isNullOrEmpty() && from.rawAuthority != null) {
+            java.net.URI(from.scheme + "://" + from.rawAuthority + "/" + (from.rawQuery?.let { "?$it" } ?: ""))
+        } else from
+        base.resolve(reference).also { it.toURL() }
     } catch (_: Exception) {
         return "invalid Location"
     }
@@ -265,10 +355,48 @@ private fun redirectTarget(from: java.net.URI, location: String, options: UrlLoa
     return when {
         options.allowedSchemes.none { it.equals(toScheme, ignoreCase = true) } -> "scheme '$toScheme' is not allowed"
         toScheme != fromScheme && !(fromScheme == "http" && toScheme == "https") -> "scheme change $fromScheme to $toScheme"
-        target.host.isNullOrEmpty() -> "invalid Location"
+        target.host.isNullOrEmpty() || target.port > 65535 -> "invalid Location"
         else -> target
     }
 }
+
+/**
+ * [location] with the characters a URI may not contain unencoded - spaces and other control characters, `"`, `<`,
+ * `>`, `\`, `^`, `` ` ``, `{`, `|`, `}`, non-ASCII characters and a `%` that does not start an escape -
+ * percent-encoded (UTF-8), as browsers and the JDK's own redirect handling accept them. Returns null if such a
+ * character occurs in the scheme or authority: encoding it there would name a different host.
+ */
+private fun encodeLocation(location: String): String? {
+    val authority = LOCATION_AUTHORITY_PREFIX.find(location)
+    val pathStart = if (authority == null) 0 else {
+        location.indexOfAny(charArrayOf('/', '?', '#'), authority.range.last + 1).let { if (it < 0) location.length else it }
+    }
+    fun isHex(index: Int) = index < location.length && Character.digit(location[index], 16) >= 0
+    var out: StringBuilder? = null
+    var i = 0
+    while (i < location.length) {
+        val c = location[i]
+        val legal = c.code in 0x21..0x7E && c !in ILLEGAL_URI_CHARACTERS && (c != '%' || (isHex(i + 1) && isHex(i + 2)))
+        if (legal) {
+            out?.append(c)
+            i++
+            continue
+        }
+        if (i < pathStart) return null
+        val builder = out ?: StringBuilder(location.length + 16).append(location, 0, i).also { out = it }
+        val codePoint = location.codePointAt(i)
+        for (byte in String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)) {
+            builder.append('%').append(HEX_DIGITS[(byte.toInt() shr 4) and 0xF]).append(HEX_DIGITS[byte.toInt() and 0xF])
+        }
+        i += Character.charCount(codePoint)
+    }
+    return out?.toString() ?: location
+}
+
+/** `scheme://` or `//` at the start of a Location: what follows, up to the next `/`, `?` or `#`, is the authority. */
+private val LOCATION_AUTHORITY_PREFIX = Regex("^(?:[A-Za-z][A-Za-z0-9+.-]*:)?//")
+private const val ILLEGAL_URI_CHARACTERS = "\"<>\\^`{|}"
+private const val HEX_DIGITS = "0123456789ABCDEF"
 
 /** Releases [connection]: disconnects an HTTP connection, or closes the input stream of any other connection. */
 private fun release(connection: java.net.URLConnection) {
