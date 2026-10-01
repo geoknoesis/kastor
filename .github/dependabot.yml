@@ -15,12 +15,19 @@ updates:
   # scripts/refresh-dependency-locks.sh --commit on the PR branch (see CONTRIBUTING.md).
   # Minor/patch bumps are grouped into one weekly PR to keep that manual step to once a week;
   # major upgrades stay separate and follow docs/reference/dependency-upgrade-plan.md.
+  # Exception: the JUnit family (Jupiter, Platform, BOM) shares one catalog version and only
+  # resolves when every artifact moves together, so it gets its own group for all update types,
+  # majors included. Dependabot assigns a dependency to the first matching group, so `junit`
+  # must stay above the catch-all group.
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
+      junit:
+        patterns:
+          - "org.junit*"
       gradle-minor-and-patch:
         patterns:
           - "*"
