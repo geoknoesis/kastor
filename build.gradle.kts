@@ -81,6 +81,7 @@ subprojects {
           else rootProject.libs.versions.jackson.get()
         )
         requested.group == "org.jsoup" && requested.name == "jsoup" -> useVersion(rootProject.libs.versions.jsoup.get())
+        requested.group == "org.freemarker" && requested.name == "freemarker" -> useVersion(rootProject.libs.versions.freemarker.get())
         requested.group == "org.apache.commons" && requested.name == "commons-lang3" -> useVersion(rootProject.libs.versions.commonsLang3.get())
       }
     }

@@ -2,18 +2,18 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 com.fasterxml.jackson.core:jackson-annotations:2.22=dokkaHtmlGeneratorRuntimeResolver~internal
-com.fasterxml.jackson.core:jackson-core:2.22.2=dokkaHtmlGeneratorRuntimeResolver~internal
-com.fasterxml.jackson.core:jackson-databind:2.22.2=dokkaHtmlGeneratorRuntimeResolver~internal
-com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.22.2=dokkaHtmlGeneratorRuntimeResolver~internal
-com.fasterxml.jackson.module:jackson-module-kotlin:2.22.2=dokkaHtmlGeneratorRuntimeResolver~internal
-com.fasterxml.jackson:jackson-bom:2.22.2=compileClasspath,cyclonedxBom,dokkaHtmlGeneratorRuntimeResolver~internal,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-core:2.22.3=dokkaHtmlGeneratorRuntimeResolver~internal
+com.fasterxml.jackson.core:jackson-databind:2.22.3=dokkaHtmlGeneratorRuntimeResolver~internal
+com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.22.3=dokkaHtmlGeneratorRuntimeResolver~internal
+com.fasterxml.jackson.module:jackson-module-kotlin:2.22.3=dokkaHtmlGeneratorRuntimeResolver~internal
+com.fasterxml.jackson:jackson-bom:2.22.3=compileClasspath,cyclonedxBom,dokkaHtmlGeneratorRuntimeResolver~internal,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.fasterxml.woodstox:woodstox-core:7.2.0=dokkaHtmlGeneratorRuntimeResolver~internal
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation
 io.netty:netty-bom:4.2.18.Final=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.opentelemetry:opentelemetry-bom:1.66.0=compileClasspath,cyclonedxBom,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath
 org.codehaus.woodstox:stax2-api:4.3.0=dokkaHtmlGeneratorRuntimeResolver~internal
-org.freemarker:freemarker:2.3.32=dokkaHtmlGeneratorRuntimeResolver~internal
+org.freemarker:freemarker:2.3.35=dokkaHtmlGeneratorRuntimeResolver~internal
 org.jacoco:org.jacoco.agent:0.8.14=jacocoAgent,jacocoAnt
 org.jacoco:org.jacoco.ant:0.8.14=jacocoAnt
 org.jacoco:org.jacoco.core:0.8.14=jacocoAnt

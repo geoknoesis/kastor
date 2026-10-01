@@ -51,6 +51,7 @@ and is kept as is; it was never published to Maven Central.
 - `onto-quality`: `--debug` prints the stack trace of a failed explanation; LLM prerequisites are checked before any model is loaded; `--explain-dry-run` needs neither the opt-in nor an API key.
 - `rdf-cli`: runtime errors print one line, and Jena warnings reach stderr.
 - README samples at the start of a section import everything they use, and CI checks them.
+- Security: Jackson is 2.22.3 (GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54), and the Dokka tool classpath uses FreeMarker 2.3.35 (GHSA-27j2-h3m2-8237; build-time only, not published).
 - Published metadata: `rdf-rdf4j` declared `at.yawk.lz4:lz4-java` and `kastor-gen-gradle-plugin` declared `kotlin-stdlib` without a version (the version came from the unpublished build platform), so neither resolved outside this build. Both now carry versions, and the staged-publication gate rejects any versionless dependency in a POM or Gradle module file.
 
 ### Fixed (round four)
