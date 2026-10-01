@@ -116,4 +116,61 @@ class SparqlInitialBindingsTest {
             assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.validate(query, setOf("s")) }, query)
         }
     }
+
+    @Test
+    fun `a number directly followed by a keyword is two tokens`() {
+        for (query in listOf(
+            "SELECT (1AS ?s) WHERE { ?x ?p ?o }",
+            "SELECT (?o+1AS ?s) WHERE { ?x ?p ?o }",
+            "SELECT (1.5e3AS ?s) WHERE { ?x ?p ?o }",
+            "SELECT ?o WHERE { ?x ?p ?o BIND(.5AS ?s) }",
+        )) {
+            assertThrows(IllegalArgumentException::class.java, { apply(query) }, query)
+        }
+        assertEquals(
+            "SELECT (<urn:a> AS ?s) (1AS ?one) (.5AS ?half) WHERE { <urn:a> ?p ?o FILTER(?o=1||<urn:a>=<urn:a>) }",
+            apply("SELECT ?s (1AS ?one) (.5AS ?half) WHERE { ?s ?p ?o FILTER(?o=1||?s=?s) }"),
+        )
+        // Digits inside a name are part of the name.
+        assertEquals(
+            "PREFIX ex: <urn:> SELECT ?o WHERE { <urn:a> ex:p1AS ?o }",
+            apply("PREFIX ex: <urn:> SELECT ?o WHERE { ?s ex:p1AS ?o }"),
+        )
+    }
+
+    @Test
+    fun `only an IRI can be bound to a variable used as a predicate or as a graph name`() {
+        val literal = mapOf("v" to "\"x\"")
+        for (query in listOf(
+            "SELECT ?o WHERE { ?s ?v ?o }",
+            "SELECT ?o WHERE { ?s <urn:p> ?o ; ?v ?z }",
+            "SELECT ?o WHERE { ?s <urn:p> ?o . ?o \$v ?z }",
+            "SELECT ?o WHERE { ?s <urn:p> ?o OPTIONAL { ?o ?v ?z } }",
+            "SELECT ?o WHERE { FILTER(?o > 1) ?s ?v ?o }",
+            "SELECT ?o WHERE { [ ?v ?o ] <urn:p> ?z }",
+            "SELECT ?o WHERE { GRAPH ?v { ?s <urn:p> ?o } }",
+            "SELECT ?o WHERE { SERVICE SILENT ?v { ?s <urn:p> ?o } }",
+            "SELECT ?o WHERE { { SELECT ?o ?v WHERE { ?s ?v ?o } } }",
+        )) {
+            val e = assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.apply(query, literal) }, query)
+            assertEquals(true, e.message!!.contains("only an IRI"), e.message)
+            // An IRI is fine in the same position.
+            SparqlInitialBindings.apply(query, mapOf("v" to "<urn:a>"))
+            assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.validate(query, setOf("v"), setOf("v")) }, query)
+            SparqlInitialBindings.validate(query, setOf("v"), emptySet())
+            SparqlInitialBindings.validate(query, setOf("v"))
+        }
+        // Typed and language-tagged literals, numbers, booleans and triple terms are no IRIs either.
+        for (constant in listOf("\"1\"^^<urn:dt>", "'x'@en", "1", "-1.5", "true", "<< <urn:a> <urn:p> 1 >>")) {
+            assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.apply("SELECT ?o WHERE { ?s ?v ?o }", mapOf("v" to constant)) }, constant)
+        }
+        // Subject, object and expression positions accept a literal.
+        assertEquals(
+            "SELECT ?o WHERE { \"x\" <urn:p> \"x\" , \"x\" ; <urn:p>/<urn:q>* \"x\" . ?o a (\"x\" 1) FILTER(\"x\" = ?o) }",
+            SparqlInitialBindings.apply(
+                "SELECT ?o WHERE { ?v <urn:p> ?v , ?v ; <urn:p>/<urn:q>* ?v . ?o a (?v 1) FILTER(?v = ?o) }",
+                literal,
+            ),
+        )
+    }
 }

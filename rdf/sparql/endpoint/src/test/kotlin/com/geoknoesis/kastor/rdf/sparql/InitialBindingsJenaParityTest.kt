@@ -165,4 +165,187 @@ class InitialBindingsJenaParityTest {
             mapOf("s" to b),
         )
     }
+
+    @Test
+    fun `a number directly followed by a keyword is read like a SPARQL parser reads it`() {
+        assertSameAsJena("integer before AS", "SELECT ?s (1AS ?one) WHERE { ?s <urn:p> ?o }", mapOf("s" to a))
+        assertSameAsJena(
+            "decimal, exponent and signed forms",
+            "SELECT ?s (1.5e0AS ?x) (.5AS ?y) (?o+1AS ?z) (-2AS ?w) WHERE { ?s <urn:p> ?o }",
+            mapOf("s" to a),
+        )
+        assertSameAsJena("numbers glued to operators", "SELECT ?o WHERE { ?s <urn:p> ?o FILTER(?o=1||?o=3&&?s=<urn:b>) }", mapOf("s" to b))
+        assertSameAsJena("number before a dot", "SELECT ?s WHERE { ?s <urn:p> 1. ?s <urn:p> ?o }", mapOf("s" to a))
+        for (query in listOf("SELECT (1AS ?s) WHERE { ?x <urn:p> ?o }", "SELECT ?o WHERE { ?x <urn:p> ?o BIND(1AS ?s) }")) {
+            assertThrows(IllegalArgumentException::class.java, { rewrite(query, mapOf("s" to a)) }, query)
+        }
+    }
+
+    /**
+     * Queries using `?v`, and whether `?v` stands where only an IRI is legal (a predicate, or the name of a GRAPH
+     * or SERVICE).
+     */
+    private val positions: List<Pair<String, Boolean>> = listOf(
+        "SELECT * WHERE { ?s ?v ?o }" to true,
+        "SELECT ?o WHERE { ?v <urn:p> ?o }" to false,
+        "SELECT ?s WHERE { ?s <urn:p> ?v }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o ; ?v ?z }" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o , ?v }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o ; <urn:l> ?v . }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o . ?o ?v ?z }" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o. ?v <urn:l> ?z }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o.?z ?v ?o }" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o ; . ?v <urn:l> ?z }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o ; ; ?v ?z }" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o ; ?v ?z ; <urn:l> ?y }" to true,
+        "SELECT ?o WHERE { \$s <urn:p> ?o . ?o \$v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ex:p ex:o. ?v ex:l ?z }" to false,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ex:p ex:o. ?z ?v ex:o }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ex:s ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ex:s ex:p ?z ; ex:q ?v }" to false,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ex:a.b ?v . ex:a.b ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> 1. ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> 1.5 ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> 1.5e3 , ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> -1 ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> +1 . ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> +1 . ?z ?v 2 }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> true ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> false . ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> \"x\"@en ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> \"x\"@en-GB . ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> \"1\"^^<urn:dt> ; ?v ?z }" to true,
+        "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> SELECT ?z WHERE { ?s <urn:p> \"1\"^^xsd:int . ?v <urn:l> ?z }" to false,
+        "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> SELECT ?z WHERE { ?s <urn:p> \"1\"^^xsd:int. ?z ?v 1 }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> 'x' , ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> '''x ?s ?v ?o''' ; <urn:q> ?v }" to false,
+        "SELECT ?z WHERE { \"a\" ?v ?z }" to true,
+        "SELECT ?z WHERE { \"a\"@en ?v ?z }" to true,
+        "SELECT ?z WHERE { \"a\"^^<urn:dt> ?v ?z }" to true,
+        "SELECT ?z WHERE { \"a\"^^<urn:dt> <urn:p> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>/<urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> / <urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>|<urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> | ^ <urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>* ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>+ ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>? ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>?/<urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>+/<urn:q>* ?v ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s ^<urn:p> ?v }" to false,
+        "SELECT ?z WHERE { ?s (<urn:p>|<urn:q>)+ ?v }" to false,
+        "SELECT ?z WHERE { ?s (<urn:p>/(<urn:q>|^<urn:r>))* ?v . ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { ?s !(<urn:p>|^<urn:q>) ?v }" to false,
+        "SELECT ?z WHERE { ?s !<urn:p> ?v }" to false,
+        "SELECT ?z WHERE { ?s !a ?v }" to false,
+        "SELECT ?z WHERE { ?s a ?v }" to false,
+        "SELECT ?z WHERE { ?s a <urn:C> ; ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ex:p/ex:q|^ex:r ?v }" to false,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ex:p*/ex:q+ ?v }" to false,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s ^ex:p ?v . ?z ?v ?s }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { ?s !(ex:p|^ex:q)/ex:r ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p>+ 1 . ?z ?v ?o }" to true,
+        "SELECT ?z WHERE { [ ?v ?o ] <urn:p> ?z }" to true,
+        "SELECT ?z WHERE { [ <urn:p> ?v ] <urn:q> ?z }" to false,
+        "SELECT ?z WHERE { [ <urn:p> ?o ; ?v ?z ] }" to true,
+        "SELECT ?z WHERE { [ <urn:p> ?o ] ?v ?z }" to true,
+        "SELECT ?z WHERE { [] ?v ?z }" to true,
+        "SELECT ?z WHERE { [ ] <urn:p> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> [ <urn:q> ?z ] ; ?v ?o }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> [ <urn:q> ?z ] , ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> [ <urn:q> [ ?v ?z ] ] }" to true,
+        "SELECT ?z WHERE { _:b ?v ?z }" to true,
+        "SELECT ?z WHERE { _:b <urn:p> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> (?v 1) }" to false,
+        "SELECT ?z WHERE { (?v) <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { (1 2) ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> (1 [ ?v 2 ] (?z)) }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> (1 [ <urn:q> ?v ] (?v)) ; <urn:r> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> () ; ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?o OPTIONAL { ?o ?v ?z } }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?o OPTIONAL { ?v <urn:l> ?z } }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> ?o OPTIONAL { ?s <urn:q> ?y } ?z ?v ?y }" to true,
+        "SELECT ?z WHERE { { ?s ?v ?z } UNION { ?s <urn:p> ?z } }" to true,
+        "SELECT ?z WHERE { { ?v <urn:p> ?z } UNION { ?s <urn:p> ?v } }" to false,
+        "SELECT ?z WHERE { { ?s <urn:p> ?o } ?z ?v ?y }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z MINUS { ?s ?v ?z } }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z FILTER NOT EXISTS { ?s ?v ?y } }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z FILTER EXISTS { ?v <urn:q> ?y } }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> ?z FILTER NOT EXISTS { ?s <urn:q> ?y } ?z ?v ?y }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z FILTER(NOT EXISTS { ?s ?v ?y } && ?z > 0) }" to true,
+        "SELECT ?z WHERE { FILTER(?z > 1) ?s ?v ?z }" to true,
+        "SELECT ?z WHERE { FILTER(?z > 1) ?v <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { FILTER(?z > 1 && ?v = 2) . ?s <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { FILTER regex(str(?z), \"1\") ?s ?v ?z }" to true,
+        "SELECT ?z WHERE { FILTER regex(str(?z), ?v) ?v <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { FILTER <urn:fn>(?z) ?s ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT ?z WHERE { FILTER ex:fn(?z, ?v) ?s ex:p ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> ?z FILTER(?z IN (?v, 1)) }" to false,
+        "SELECT ?z WHERE { BIND(?v AS ?w) ?s <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { BIND(1 AS ?w) ?s ?v ?z }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z BIND(str(?z) AS ?w) ?w ?v ?y }" to true,
+        "SELECT ?z WHERE { VALUES ?z { 1 2 } ?s ?v ?z }" to true,
+        "SELECT ?z WHERE { VALUES (?z ?y) { (1 2) (UNDEF 3) } ?v <urn:p> ?z }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> ?z VALUES ?z { 1 <urn:x> \"s\" } }" to false,
+        "SELECT ?z WHERE { GRAPH ?v { ?s <urn:p> ?z } }" to true,
+        "SELECT ?z WHERE { GRAPH <urn:g> { ?s ?v ?z } }" to true,
+        "SELECT ?z WHERE { GRAPH <urn:g> { ?v <urn:p> ?z } }" to false,
+        "SELECT ?z WHERE { GRAPH ?g { ?v <urn:p> ?z } ?g <urn:q> ?v }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> ?z . GRAPH ?v { ?s <urn:p> ?z } }" to true,
+        "SELECT ?z WHERE { SERVICE ?v { ?s <urn:p> ?z } }" to true,
+        "SELECT ?z WHERE { SERVICE SILENT ?v { ?s <urn:p> ?z } }" to true,
+        "SELECT ?z WHERE { SERVICE <urn:x> { ?v <urn:p> ?z } }" to false,
+        "SELECT ?z WHERE { SERVICE SILENT <urn:x> { ?s ?v ?z } }" to true,
+        "SELECT ?z WHERE { { SELECT ?z ?v WHERE { ?s ?v ?z } } }" to true,
+        "SELECT ?z WHERE { { SELECT ?v WHERE { ?v <urn:p> ?o } ORDER BY ?v LIMIT 3 } ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE { { SELECT ?v (COUNT(*) AS ?z) WHERE { ?v <urn:p> ?o } GROUP BY ?v HAVING(COUNT(*) > 0) } }" to false,
+        "SELECT ?z WHERE { { SELECT ?v ?z WHERE { ?v <urn:p> ?z } } ?z ?v ?y }" to true,
+        "SELECT ?v (COUNT(*) AS ?n) WHERE { ?v <urn:p> ?o } GROUP BY ?v ORDER BY ?v" to false,
+        "SELECT ?z (COUNT(?v) AS ?n) WHERE { ?s ?v ?z } GROUP BY ?z" to true,
+        "SELECT ?z FROM <urn:d> WHERE { ?s ?v ?z }" to true,
+        "SELECT ?z { ?v <urn:p> ?z } VALUES ?z { 1 }" to false,
+        "SELECT ?z WHERE { ?s ?v ?z } VALUES ?z { 1 }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z # ?s ?v ?z\n ; ?v ?y }" to true,
+        "SELECT ?z WHERE { ?s <urn:p> ?z # ; ?v ?y\n . ?v <urn:l> ?y }" to false,
+        "SELECT ?z WHERE { ?s <urn:p> \"; ?v ?o\" . ?v <urn:l> ?z }" to false,
+        "SELECT ?z WHERE{?s<urn:p>?z;?v?y}" to true,
+        "SELECT ?z WHERE{?v<urn:p>?z;<urn:q>?v.}" to false,
+    )
+
+    @Test
+    fun `only variables in IRI-only positions reject a literal and a literal is legal everywhere else`() {
+        val probe = "<urn:kastor:position-probe>"
+        val literal = "\"lit\""
+        fun parses(text: String) = try {
+            QueryFactory.create(text, Syntax.syntaxSPARQL_11)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        for ((query, iriOnly) in positions) {
+            assertEquals(true, parses(query), "test query is not legal SPARQL: $query")
+            // The same rewrite with an IRI is always legal; swapping the IRI for the literal in its output is
+            // what a rewrite without the position check would send.
+            val withIri = SparqlInitialBindings.apply(query, mapOf("v" to probe))
+            assertEquals(true, parses(withIri), "IRI binding: $withIri")
+            val unchecked = withIri.replace(probe, literal)
+            assertEquals(!iriOnly, parses(unchecked), "expectation for: $query\n$unchecked")
+
+            val outcome = try {
+                SparqlInitialBindings.apply(query, mapOf("v" to literal))
+            } catch (e: IllegalArgumentException) {
+                assertEquals(true, e.message!!.contains("only an IRI"), e.message)
+                null
+            }
+            if (iriOnly) {
+                assertEquals(null, outcome, "a literal was accepted where only an IRI is legal: $query")
+                assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.validate(query, setOf("v"), setOf("v")) }, query)
+            } else {
+                assertEquals(unchecked, outcome, "a literal was rejected in a legal position: $query")
+                SparqlInitialBindings.validate(query, setOf("v"), setOf("v"))
+            }
+            SparqlInitialBindings.validate(query, setOf("v"), emptySet())
+        }
+        assertEquals(true, positions.count { it.second } > 40 && positions.count { !it.second } > 40)
+    }
 }
