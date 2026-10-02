@@ -20,6 +20,7 @@ import java.security.MessageDigest
  */
 internal object ShapesStructuralDigest {
 
+    @Suppress("DEPRECATION")
     fun digest(shapesTriples: List<RdfTriple>, config: ValidationConfig, budget: ValidationBudget = ValidationBudget.NONE): String =
         when (config.cache.shapesDigestMode) {
             ShapesDigestMode.SHAPES_STRUCTURAL_DIGEST_V1 -> structuralDigestV1(shapesTriples, config, budget)

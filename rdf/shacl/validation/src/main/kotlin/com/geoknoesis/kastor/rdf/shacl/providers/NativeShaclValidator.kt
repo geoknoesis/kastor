@@ -403,16 +403,17 @@ internal class NativeShaclValidator(
     ): ValidationReport {
         val budget = ValidationBudget(config.timeout)
         budget.check("admission")
-        val start = System.currentTimeMillis()
+        val start = System.nanoTime()
         val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
         if (combinedEstimate > config.maxCombinedGraphTriples) {
             throw ShaclValidationException(
                 "Combined data + shapes triple count ($combinedEstimate) exceeds ValidationConfig.maxCombinedGraphTriples (${config.maxCombinedGraphTriples})",
             )
         }
+        val importWarnings = ArrayList<String>()
         val mergedShapesTriples =
             try {
-                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery, budget)
+                prepareMergedShapesTriples(graph, shapes, datasetForDiscovery, budget, importWarnings)
             } catch (e: ShapesGraphNotFoundException) {
                 throw ShaclValidationException(e.message ?: "Referenced shapes graph not found", e)
             }
@@ -442,6 +443,8 @@ internal class NativeShaclValidator(
             var blockingResults = 0L
             fun blocking(severity: ViolationSeverity, customIri: Iri?) = disallowsConformance(severity, customIri)
             var validatedConstraintSlots = 0L
+            // Distinct focus nodes validated against at least one shape (ValidationStatistics.validatedResources).
+            val validatedFocusNodes = HashSet<TermKey>()
             fun record(results: List<ValidationViolation>) {
                 totalResults += results.size
                 blockingResults += results.count { blocking(it.severity, it.resultSeverityIri?.let { iri -> Iri(iri) }) }
@@ -464,6 +467,7 @@ internal class NativeShaclValidator(
                 }
                 val focusNodes = if (focusOnly == null) allFocusNodes else allFocusNodes.filter { it == focusOnly }
                 validatedConstraintSlots += countConstraintEvaluationSlots(shape, focusNodes.size)
+                if (!shape.deactivated) for (focus in focusNodes) validatedFocusNodes.add(TermKey(focus))
                 // The solver answers every question of a recursive shape's component at once; a focus node it found
                 // conforming has no results, so its report evaluation is skipped. A focus node it found failing or
                 // undefined is evaluated once more, in report mode: the solver's own evaluations cannot produce the
@@ -484,10 +488,15 @@ internal class NativeShaclValidator(
             val slots = validatedConstraintSlots.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             // ValidationConfig.includeWarnings = false leaves the report-level warnings out; results are unaffected.
             val warnings =
-                if (config.includeWarnings) (compiled.unsupportedFeatureWarnings + targetWarnings).map { ValidationWarning(it) } else emptyList()
+                if (config.includeWarnings) {
+                    (importWarnings + compiled.unsupportedFeatureWarnings + targetWarnings).map { ValidationWarning(it) }
+                } else {
+                    emptyList()
+                }
 
-            val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
-            val statistics = buildStatistics(ctx.data.distinctResourceSubjects().size, violations, warnings, compiled, slots)
+            val elapsed = Duration.ofNanos(System.nanoTime() - start)
+            val statistics =
+                buildStatistics(ctx.data.distinctResourceSubjects().size, validatedFocusNodes.size, elapsed, violations, warnings, compiled, slots)
 
             return ValidationReport(
                 // SHACL: sh:conforms is false as soon as a result has a conformance-disallowed severity
@@ -511,6 +520,7 @@ internal class NativeShaclValidator(
         shapesArg: RdfGraph,
         datasetForDiscovery: Dataset?,
         budget: ValidationBudget,
+        importWarnings: MutableCollection<String>,
     ): List<RdfTriple> {
         val aux = config.dataset.auxiliaryGraphs
         val auxiliarySize = aux.values.fold(0L) { n, g -> budget.check("auxiliary admission"); Math.addExact(n, g.size().toLong()) }
@@ -533,7 +543,9 @@ internal class NativeShaclValidator(
         val expanded =
             if (resolveImports) {
                 budget.snapshot(
-                    OwlImportsExpander.expand(graphFromTriples(primary, budget), config.imports, aux, config.maxCombinedGraphTriples, budget),
+                    OwlImportsExpander.expand(
+                        graphFromTriples(primary, budget), config.imports, aux, config.maxCombinedGraphTriples, budget, importWarnings,
+                    ),
                     "expanded shapes",
                 )
             } else {
@@ -1248,44 +1260,41 @@ internal class NativeShaclValidator(
         return violations
     }
 
-    /** SHACL 1.2 `sh:closed sh:ByTypes` property collection (shapes graph walk). */
+    /**
+     * SHACL 1.2 `sh:closed sh:ByTypes` property collection: the predicates declared by the shapes that apply to the
+     * types of [focus] — the types themselves when they are shapes (implicit class targets), the shapes that target
+     * them with `sh:targetClass`, their `sh:node` references, and the same for every superclass. The walk over the
+     * shapes graph uses an explicit worklist and a visited set, so an `rdfs:subClassOf` or `sh:node` chain of any
+     * length, or a cycle, cannot exhaust the stack.
+     */
     private fun collectClosedByTypesProperties(focus: RdfResource, ctx: ValidationContext): Set<Iri> {
         val out = mutableSetOf<Iri>()
         val compiled = ctx.compiled
         val shapesIdx = compiled.index
-        val visited = mutableSetOf<RdfResource>()
-
-        fun collectFromShapeNode(shapeNode: RdfResource) {
-            if (!visited.add(shapeNode)) return
-            val cn = compiled.shapesByNode[shapeNode] ?: return
-            out.addAll(cn.closedAllowedPredicates)
+        val visited = HashSet<RdfResource>()
+        val pending = ArrayDeque<RdfResource>()
+        fun visit(node: RdfResource) {
+            if (visited.add(node)) pending.addLast(node)
         }
-
-        val visitedShapeWalk = mutableSetOf<RdfResource>()
-
-        fun collectProperties(s: RdfResource) {
-            if (!visitedShapeWalk.add(s)) return
-            collectFromShapeNode(s)
+        ctx.data.typesOf(focus).forEach(::visit)
+        // Shapes by the classes they target, built once per walk (a scan of every shape per class would be quadratic).
+        val shapesByTargetClass: Map<Iri, List<RdfResource>> by lazy {
+            val byClass = HashMap<Iri, MutableList<RdfResource>>()
+            for (cn in compiled.orderedNodeShapes) for (c in cn.targets.targetClasses) byClass.getOrPut(c) { ArrayList() }.add(cn.shapeNode)
+            byClass
+        }
+        while (pending.isNotEmpty()) {
+            ctx.budget.tick("closed by types")
+            val s = pending.removeFirst()
+            compiled.shapesByNode[s]?.let { out.addAll(it.closedAllowedPredicates) }
             val types = shapesIdx.objects(s, RDF.type)
-            if (types.contains(RDFS.Class) && s is Iri) {
-                for (sup in shapesIdx.objects(s, RDFS.subClassOf).filterIsInstance<Iri>()) {
-                    collectProperties(sup)
-                }
-                for (cn in compiled.orderedNodeShapes) {
-                    if (s in cn.targets.targetClasses) {
-                        collectProperties(cn.shapeNode)
-                    }
-                }
+            if (s is Iri && types.contains(RDFS.Class)) {
+                for (sup in shapesIdx.objects(s, RDFS.subClassOf)) if (sup is Iri) visit(sup)
+                shapesByTargetClass[s]?.forEach(::visit)
             }
             if (types.contains(SHACL.NodeShape)) {
-                for (nr in shapesIdx.objects(s, SHACL.node).filterIsInstance<RdfResource>()) {
-                    collectProperties(nr)
-                }
+                for (nr in shapesIdx.objects(s, SHACL.node)) if (nr is RdfResource) visit(nr)
             }
-        }
-
-        for (t in ctx.data.typesOf(focus)) {
-            collectProperties(t)
         }
         return out
     }
@@ -1902,8 +1911,14 @@ internal class NativeShaclValidator(
             sourceConstraint = sourceConstraint,
         )
 
+    /**
+     * [validatedFocusNodes] is the number of distinct focus nodes that were validated against at least one active
+     * shape, whether they have results or not; the average time is the elapsed time of the run divided by it.
+     */
     private fun buildStatistics(
         totalResources: Int,
+        validatedFocusNodes: Int,
+        elapsed: Duration,
         violations: List<ValidationViolation>,
         warnings: List<ValidationWarning>,
         compiled: CompiledShapeGraph,
@@ -1920,14 +1935,14 @@ internal class NativeShaclValidator(
             }
         return ValidationStatistics(
             totalResources = totalResources,
-            validatedResources = violations.map { it.focusNode }.distinct().size,
+            validatedResources = validatedFocusNodes,
             totalConstraints = propConstraints,
             validatedConstraints = validatedConstraintSlots.coerceAtLeast(violations.size),
             shapesProcessed = compiled.orderedNodeShapes.size,
             constraintsByType = constraintsByType,
             violationsByType = violationsByType,
             warningsByType = warningsByType,
-            averageValidationTimePerResource = Duration.ofMillis(1),
+            averageValidationTimePerResource = if (validatedFocusNodes == 0) Duration.ZERO else elapsed.dividedBy(validatedFocusNodes.toLong()),
         )
     }
 

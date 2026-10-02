@@ -11,7 +11,7 @@ private const val NO_EFFECT = "This option has no effect: no engine reads it. It
  *
  * Options that no bundled engine implements are either rejected ([parallelValidation], [streamingMode]) or
  * deprecated because they have no effect (`batchSize`, `enableExplanations`, `enableSuggestions`,
- * `validateInactiveShapes`).
+ * `validateInactiveShapes`, `customParameters`, `streaming`).
  */
 data class ValidationConfig(
     val profile: ValidationProfile = ValidationProfile.SHACL_CORE,
@@ -53,6 +53,8 @@ data class ValidationConfig(
     /** No effect: shapes with `sh:deactivated true` are never validated (every node conforms to them, as SHACL requires). */
     @Deprecated(NO_EFFECT)
     val validateInactiveShapes: Boolean = false,
+    /** No effect: no engine reads these parameters. */
+    @Deprecated(NO_EFFECT)
     val customParameters: Map<String, Any> = emptyMap(),
     /**
      * Forces a specific provider; must match [ShaclValidatorProvider.getType] (e.g. `kastor`, `rdf4j`). The legacy
@@ -70,6 +72,8 @@ data class ValidationConfig(
     val maxRecursionDepth: Int = 64,
     val cache: CacheConfig = CacheConfig(),
     val imports: ImportConfig = ImportConfig(),
+    /** No effect: no engine validates in streaming mode ([streamingMode] is rejected), so these controls are never read. */
+    @Deprecated(NO_EFFECT)
     val streaming: StreamingConfigExtension = StreamingConfigExtension(),
     val dataset: DatasetValidationConfig = DatasetValidationConfig(),
     /** When false (default P1a), triple terms inside `sh:in` / `sh:hasValue` cause compile failure. */

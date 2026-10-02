@@ -20,6 +20,13 @@ object KastorShaclVocabulary {
     /** Conventional prefix for [NAMESPACE]. */
     const val PREFIX: String = "ksh"
 
+    /**
+     * Version of the vocabulary document (its `owl:versionInfo`). The namespace IRI never changes with the version:
+     * terms are only ever added, and the meaning of a published term does not change, so a consumer written against
+     * an older version keeps working. The version tells which terms a document can contain.
+     */
+    const val VERSION: String = "1.0.0"
+
     /** Classpath resource (Turtle) that declares every term of this vocabulary. */
     const val VOCABULARY_RESOURCE: String = "/com/geoknoesis/kastor/rdf/shacl/kastor-shacl.ttl"
 
