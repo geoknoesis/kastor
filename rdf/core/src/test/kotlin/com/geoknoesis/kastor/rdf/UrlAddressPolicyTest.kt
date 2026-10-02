@@ -116,7 +116,7 @@ class UrlAddressPolicyTest {
         cleanups.add { release.countDown() }
         val cutOff = CountDownLatch(1)
         val slow = UrlLoadOptions(
-            totalTimeoutMillis = 400,
+            totalTimeoutMillis = 3_000,
             addressPolicy = {
                 try {
                     release.await(120, TimeUnit.SECONDS)

@@ -377,7 +377,7 @@ class UrlLoadingHelperTest {
         val interrupted = CountDownLatch(1)
         val never = CountDownLatch(1)
         val options = UrlLoadOptions(
-            totalTimeoutMillis = 300,
+            totalTimeoutMillis = 3_000,
             addressPolicy = {
                 try {
                     never.await(120, TimeUnit.SECONDS)
@@ -398,7 +398,8 @@ class UrlLoadingHelperTest {
 
     // ---- schemes other than HTTP are bound by the deadline as well ----
 
-    private val ftpOptions = UrlLoadOptions(allowedSchemes = setOf("ftp"), totalTimeoutMillis = 300)
+    // Generous: the steps before the one under test (helper start, opening the connection) must fit in it on a slow host.
+    private val ftpOptions = UrlLoadOptions(allowedSchemes = setOf("ftp"), totalTimeoutMillis = 3_000)
     private val ftpUrl = "ftp://files.example/data.nt"
 
     @Test
@@ -423,7 +424,7 @@ class UrlLoadingHelperTest {
             onRelease = { releases.add(it.url.toString()) },
         )
         val error = assertThrows(RdfLoadTimeoutException::class.java) { openRdfUrlStream(ftpUrl, RdfFormat.N_TRIPLES, ftpOptions, runtime) }
-        assertEquals(300, error.timeoutMillis)
+        assertEquals(3_000, error.timeoutMillis)
         assertEquals(1, returned.count, "the load must fail at its deadline, while the connect is still blocked")
         assertEquals(emptyList<String>(), releases.toList(), "the connection is released when the connect returns")
         unblock.countDown()

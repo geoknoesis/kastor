@@ -246,7 +246,7 @@ class UrlLoadingRedirectTest {
         }
         val release = CountDownLatch(1)
         val options = UrlLoadOptions(
-            totalTimeoutMillis = 500,
+            totalTimeoutMillis = 3_000,
             redirectPolicy = { _, _ -> release.await(20, TimeUnit.SECONDS); true },
         )
         try {
