@@ -5,11 +5,11 @@ plugins {
 }
 
 dependencies {
-    testImplementation(project(":rdf:jena"))
   api(project(":rdf:core"))
-  // No longer used by the adapter itself (results are decoded by JsonBindingRows); tests use it as the
-  // reference parser. Kept as declared so that the dependency lock state of dependent modules is unchanged.
-  implementation(libs.kotlinx.serialization.json)
+  testImplementation(project(":rdf:jena"))
+  // Tests only: the reference parser the streaming result decoder (JsonBindingRows) is compared with.
+  // The adapter itself has no JSON library, so consumers of rdf-sparql do not get one from it.
+  testImplementation(libs.kotlinx.serialization.json)
 }
 
 publishing {
