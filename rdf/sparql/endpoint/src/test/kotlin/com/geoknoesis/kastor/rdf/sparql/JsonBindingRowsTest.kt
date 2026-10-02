@@ -1,30 +1,30 @@
 package com.geoknoesis.kastor.rdf.sparql
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import com.geoknoesis.kastor.rdf.BlankNode
+import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.LangString
+import com.geoknoesis.kastor.rdf.Literal
+import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.vocab.XSD
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** The streaming decoder for SPARQL JSON result rows: one pass per row, bounded row size. */
+/** The streaming decoder for SPARQL JSON results: one pass per row, bounded row size, nothing stored that a binding does not need. */
 class JsonBindingRowsTest {
 
-    private fun rows(json: String, maxChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS): List<JsonObject> =
-        JsonBindingRows(json.byteInputStream(Charsets.UTF_8), maxChars).rows().toList()
+    private fun rows(json: String, maxChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS): List<Map<String, RdfTerm>> =
+        JsonBindingRows(json.byteInputStream(Charsets.UTF_8), maxChars).rows().map { it.asMap() }.toList()
+
+    private fun ask(text: String): Boolean = JsonBindingRows(text.byteInputStream(Charsets.UTF_8)).ask()
 
     private fun document(vararg rows: String) = "{\"head\":{\"vars\":[\"x\"]},\"results\":{\"bindings\":[${rows.joinToString(",")}]}}"
 
     private fun literalRow(value: String) = "{\"x\":{\"type\":\"literal\",\"value\":\"$value\"}}"
 
-    /** What a general-purpose JSON parser makes of the same document. */
-    private fun reference(json: String): List<JsonObject> =
-        Json.parseToJsonElement(json).jsonObject.getValue("results").jsonObject.getValue("bindings").jsonArray.map { it.jsonObject }
-
-    private fun value(row: JsonObject): String = row.getValue("x").jsonObject.getValue("value").jsonPrimitive.content
+    private fun value(row: Map<String, RdfTerm>): String = (row.getValue("x") as Literal).lexical
 
     @Test
     fun `a row of exactly the limit is accepted and one character more is not`() {
@@ -45,10 +45,15 @@ class JsonBindingRowsTest {
         assertEquals("A".repeat(10), value(rows(document(escaped), escaped.length).single()))
         assertThrows(IllegalStateException::class.java) { rows(document(escaped), escaped.length - 1) }
 
+        // Members that are skipped count like those that are kept.
+        val padded = "{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"note\":[${"1,".repeat(40)}1]}}"
+        assertEquals("v", value(rows(document(padded), padded.length).single()))
+        assertThrows(IllegalStateException::class.java) { rows(document(padded), padded.length - 1) }
+
         // Rows before an oversized one are delivered; the limit also covers skipped values such as `head`.
         val small = literalRow("ok")
         val iterator = JsonBindingRows(document(small, row, small).byteInputStream(), row.length - 1).rows().iterator()
-        assertEquals("ok", value(iterator.next()))
+        assertEquals("ok", value(iterator.next().asMap()))
         assertThrows(IllegalStateException::class.java) { iterator.hasNext() }
         val head = "{\"head\":{\"vars\":[\"${"v".repeat(200)}\"]},\"results\":{\"bindings\":[$small]}}"
         assertThrows(IllegalStateException::class.java) { rows(head, 100) }
@@ -87,25 +92,38 @@ class JsonBindingRowsTest {
     }
 
     @Test
-    fun `nested values and every JSON form are decoded like a general JSON parser does`() {
-        val triple = "{\"t\":{\"type\":\"triple\",\"value\":{\"subject\":{\"type\":\"uri\",\"value\":\"urn:s\"}," +
-            "\"predicate\":{\"type\":\"uri\",\"value\":\"urn:p\"}," +
-            "\"object\":{\"type\":\"triple\",\"value\":{\"subject\":{\"type\":\"bnode\",\"value\":\"b0\"}," +
-            "\"predicate\":{\"type\":\"uri\",\"value\":\"urn:q\"},\"object\":{\"type\":\"literal\",\"value\":\"o\",\"xml:lang\":\"en\"}}}}}," +
-            "\"n\":{\"type\":\"literal\",\"value\":\"1\",\"datatype\":\"http://www.w3.org/2001/XMLSchema#integer\"}}"
+    fun `every term kind and every JSON form is decoded like a general JSON parser does`() {
+        val terms = "{\"s\":{\"type\":\"uri\",\"value\":\"urn:s\"},\"b\":{\"type\":\"bnode\",\"value\":\"b0\"}," +
+            "\"l\":{\"type\":\"literal\",\"value\":\"o\",\"xml:lang\":\"en-GB\"}," +
+            "\"n\":{\"type\":\"literal\",\"value\":\"1\",\"datatype\":\"http://www.w3.org/2001/XMLSchema#integer\"}," +
+            "\"t\":{\"type\":\"typed-literal\",\"datatype\":\"http://www.w3.org/2001/XMLSchema#date\",\"value\":\"2026-10-01\"}," +
+            "\"p\":{\"value\":\"plain\",\"type\":\"literal\"},\"e\":{\"type\":\"literal\",\"value\":\"\",\"xml:lang\":\"\"}}"
         val forms = "{\"x\":{\"type\":\"literal\",\"value\":\"q\\\" b\\\\ s\\/ \\b\\f\\n\\r\\t \\u00e9\\u20AC \u00e9\u20ac\"," +
             "\"extra\":[0,-0,1,-2.5,3e2,4E+2,5.25e-1,true,false,null,[],{},[[1],[{\"a\":[]}]],\"\",\"s\"],\"\":{\"k\\u0041\":null}}}"
         val spaced = " {\t\"x\" :\n{ \"type\"\r\n: \"uri\" , \"value\" : \"urn:x\" }\n} "
+        // Scalars where a string is expected are read as their text, and null as absent; the last of repeated members counts.
+        val lenient = "{\"x\":{\"type\":\"literal\",\"value\":12.50,\"datatype\":null,\"xml:lang\":null}," +
+            "\"y\":{\"type\":\"literal\",\"value\":true},\"z\":{\"type\":\"uri\",\"type\":\"literal\",\"value\":[1],\"value\":\"last\"}," +
+            "\"x\":{\"type\":\"uri\",\"value\":\"urn:last\",\"its:dir\":\"rtl\"}}"
         val documents = listOf(
-            document(triple, forms, spaced),
+            document(terms, forms, spaced, lenient, "{}"),
             document(),
             " { \"head\" : { \"vars\" : [ ] , \"link\" : [ \"urn:l\" ] } , \"results\" : { \"bindings\" : [ ] } } \n",
-            "{\"a\":1,\"b\":[{\"results\":0}],\"c\":\"results\",\"results\":{\"distinct\":false,\"bindings\":[$triple,$forms],\"ordered\":true},\"z\":null}",
+            "{\"a\":1,\"b\":[{\"results\":0}],\"c\":\"results\",\"results\":{\"distinct\":false,\"bindings\":[$terms,$forms],\"ordered\":true},\"z\":null}",
             "{\"results\":{\"bindings\":[$spaced]},\"head\":{\"vars\":[\"x\"]}}",
         )
         for (document in documents) {
-            assertEquals(reference(document), rows(document), document)
+            assertEquals(ReferenceJsonResults.rows(document), rows(document), document)
         }
+        val row = rows(document(terms)).single()
+        assertEquals(Iri("urn:s"), row["s"])
+        assertEquals(BlankNode("b0"), row["b"])
+        assertEquals(LangString("o", "en-GB"), row["l"])
+        assertEquals(Literal("1", XSD.integer), row["n"])
+        assertEquals(Literal("2026-10-01", XSD.date), row["t"])
+        assertEquals(Literal("plain", XSD.string), row["p"])
+        assertEquals(Literal("", XSD.string), row["e"])
+        assertEquals(listOf("s", "b", "l", "n", "t", "p", "e"), row.keys.toList(), "variables keep the order of the row")
     }
 
     @Test
@@ -138,7 +156,40 @@ class JsonBindingRowsTest {
             document("{\"x\":{\"type\":\"uri\",\"value\":[,1]}}"),
             document("{\"x\":{\"type\":\"uri\",\"value\":[1 2]}}"),
             document("{\"x\":{\"type\":\"uri\",\"value\":[1}}}"),
-        ) + listOf("01", "1.", "-", "+1", ".5", "1e", "1e+", "0x1", "NaN", "Infinity", "tru", "nul", "True", "truefalse", "1a").map {
+            // A binding that is not an object, or lacks what a term needs.
+            document("{\"x\":\"urn:x\"}"),
+            document("{\"x\":[{\"type\":\"uri\",\"value\":\"urn:x\"}]}"),
+            document("{\"x\":null}"),
+            document("{\"x\":{}}"),
+            document("{\"x\":{\"type\":\"uri\"}}"),
+            document("{\"x\":{\"value\":\"urn:x\"}}"),
+            document("{\"x\":{\"type\":null,\"value\":\"urn:x\"}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":null}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":{}}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":[\"urn:x\"]}}"),
+            document("{\"x\":{\"type\":[\"uri\"],\"value\":\"urn:x\"}}"),
+            document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"xml:lang\":{}}}"),
+            document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"datatype\":[]}}"),
+            document("{\"x\":{\"type\":\"resource\",\"value\":\"urn:x\"}}"),
+            // Terms the RDF model refuses.
+            document("{\"x\":{\"type\":\"uri\",\"value\":\"not an iri\"}}"),
+            document("{\"x\":{\"type\":\"bnode\",\"value\":\"\"}}"),
+            document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"xml:lang\":\"not a tag\"}}"),
+            document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"datatype\":\"not an iri\"}}"),
+            // Skipped content is still checked.
+            document("{\"x\":{\"type\":\"uri\",\"value\":\"urn:x\",\"extra\":[1,]}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":\"urn:x\",\"extra\":{\"a\":01}}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":\"urn:x\",\"extra\":\"bad \\q\"}}"),
+            document("{\"x\":{\"type\":\"uri\",\"value\":\"urn:x\",\"extra\":{\"a\" 1}}}"),
+            "{\"head\":{\"vars\":[\"x\",]},\"results\":{\"bindings\":[$row]}}",
+            "{\"head\":{\"vars\":[\"x\"],\"n\":1e},\"results\":{\"bindings\":[$row]}}",
+            "{\"head\":{\"vars\":[\"x\"],\"n\":nul},\"results\":{\"bindings\":[$row]}}",
+            "{\"results\":{\"bindings\":[$row]},\"tail\":{\"a\":tru}}",
+            "{\"results\":{\"bindings\":[$row],\"more\":[1,,2]}}",
+            // A repeated member that was already read cannot be honoured by a streaming reader.
+            "{\"results\":{\"bindings\":[$row]},\"results\":{\"bindings\":[]}}",
+            "{\"results\":{\"bindings\":[$row],\"bindings\":[]}}",
+        ) + listOf("01", "1.", "-", "+1", ".5", "1e", "1e+", "0x1", "NaN", "Infinity", "tru", "nul", "True", "truefalse", "1a", "--1", "1.e1", "1e1.5").map {
             document("{\"x\":{\"type\":\"literal\",\"value\":$it}}")
         } + listOf(
             document(row) + "x",
@@ -158,18 +209,86 @@ class JsonBindingRowsTest {
         }
         // Rows are delivered as they are read: an error only surfaces when its position is reached.
         val iterator = JsonBindingRows(document(row, "{\"x\":}").byteInputStream()).rows().iterator()
-        assertEquals("v", value(iterator.next()))
+        assertEquals("v", value(iterator.next().asMap()))
         assertThrows(IllegalStateException::class.java) { iterator.hasNext() }
     }
 
     @Test
     fun `deeply nested values fail with an error instead of exhausting the stack`() {
         val deep = "[".repeat(200_000) + "]".repeat(200_000)
-        val e = assertThrows(IllegalStateException::class.java) { rows(document("{\"x\":{\"type\":\"literal\",\"value\":$deep}}")) }
-        assertTrue(e.message!!.contains("nested"), e.message)
-        assertThrows(IllegalStateException::class.java) { rows("{\"head\":$deep,\"results\":{\"bindings\":[]}}") }
-        // Ordinary nesting (RDF 1.2 triple terms inside triple terms) is far below the limit.
-        val nested = "[".repeat(50) + "]".repeat(50)
-        assertEquals(1, rows(document("{\"x\":{\"type\":\"literal\",\"value\":$nested}}")).size)
+        for (document in listOf(
+            document("{\"x\":{\"type\":\"literal\",\"value\":$deep}}"),
+            document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"extra\":$deep}}"),
+            "{\"head\":$deep,\"results\":{\"bindings\":[]}}",
+            "{\"results\":{\"bindings\":[]},\"tail\":${deep.replace("[", "{\"a\":").replace("]", "}")}}",
+        )) {
+            val e = assertThrows(IllegalStateException::class.java) { rows(document) }
+            assertTrue(e.message!!.contains("nested more than 128 levels"), e.message)
+        }
+        // The limit is exact: a skipped value may open 128 containers, counted from the value itself.
+        fun nested(levels: Int) = "[".repeat(levels) + "]".repeat(levels)
+        assertEquals(0, rows("{\"head\":${nested(128)},\"results\":{\"bindings\":[]}}").size)
+        assertThrows(IllegalStateException::class.java) { rows("{\"head\":${nested(129)},\"results\":{\"bindings\":[]}}") }
+        // Inside a binding two levels are taken by the row and the binding.
+        assertEquals(1, rows(document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"extra\":${nested(126)}}}")).size)
+        assertThrows(IllegalStateException::class.java) { rows(document("{\"x\":{\"type\":\"literal\",\"value\":\"v\",\"extra\":${nested(127)}}}")) }
+    }
+
+    @Test
+    fun `content a binding does not need is skipped without being stored`() {
+        // About 4 Mi characters of junk in one row: a 2 M element array, objects with many members, long strings.
+        val limit = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS
+        val array = "[" + "1,".repeat(1_000_000) + "1]"
+        val objects = "{" + (0 until 50_000).joinToString(",") { "\"k$it\":{\"a\":[\"s\",null]}" } + "}"
+        val row = "{\"x\":{\"junk\":$array,\"type\":\"literal\",\"more\":$objects,\"value\":\"kept\",\"text\":\"${"t".repeat(100_000)}\"}}"
+        assertTrue(row.length > limit * 3 / 4 && row.length <= limit, "row of ${row.length} characters")
+        val head = "{\"vars\":[" + (0 until 200_000).joinToString(",") { "\"v$it\"" } + "],\"link\":$array}"
+        val document = "{\"head\":$head,\"results\":{\"bindings\":[$row,${literalRow("second")}],\"tail\":$objects},\"after\":$array}"
+
+        val decoder = JsonBindingRows(document.byteInputStream())
+        val iterator = decoder.rows().iterator()
+        assertTrue(iterator.hasNext())
+        assertEquals(0, decoder.materialised - ROW_OBJECTS, "objects created for `head` and the junk of the first row")
+        assertEquals("kept", value(iterator.next().asMap()))
+        assertEquals("second", value(iterator.next().asMap()))
+        assertFalse(iterator.hasNext())
+        // Two rows of one binding each; millions of skipped values added nothing.
+        assertEquals(2 * ROW_OBJECTS, decoder.materialised)
+
+        // ASK: only the answer is read.
+        val ask = JsonBindingRows("{\"head\":$head,\"boolean\":true,\"junk\":$array}".byteInputStream())
+        assertTrue(ask.ask())
+        assertEquals(0, ask.materialised)
+    }
+
+    @Test
+    fun `an ASK result is read from JSON or plain text`() {
+        assertTrue(ask("{\"head\":{},\"boolean\":true}"))
+        assertFalse(ask(" { \"boolean\" : false } "))
+        assertTrue(ask("{\"boolean\":\"true\"}"), "some endpoints send the answer as a string")
+        assertFalse(ask("{\"a\":[{\"boolean\":true}],\"boolean\":false,\"z\":{\"boolean\":true}}"))
+        assertTrue(ask("true"))
+        assertTrue(ask(" TRUE\r\n"))
+        assertFalse(ask("False"))
+        for (document in listOf("{\"head\":{},\"boolean\":true}", "{\"boolean\":false}", "{\"boolean\":\"false\",\"x\":[1,2,{\"y\":null}]}")) {
+            assertEquals(ReferenceJsonResults.ask(document), ask(document), document)
+        }
+        val malformed = listOf(
+            "", " ", "{}", "{\"head\":{}}", "{\"boolean\":null}", "{\"boolean\":1}", "{\"boolean\":\"yes\"}", "{\"boolean\":\"TRUE\"}",
+            "{\"boolean\":[true]}", "{\"boolean\":{}}", "{\"boolean\":True}", "{\"boolean\":true", "{\"boolean\":true}x", "{\"boolean\":true,}",
+            "{\"boolean\":true,\"boolean\":false}", "{\"boolean\":true,\"x\":[1,]}", "{\"x\":01,\"boolean\":true}", "[true]", "\"true\"",
+            "truee", "tru", "true false", "yes", "1", "null", "<html>true</html>",
+        )
+        for (document in malformed) {
+            assertThrows(IllegalStateException::class.java, { ask(document) }, document)
+        }
+        // The size and nesting limits apply to ASK as well.
+        assertThrows(IllegalStateException::class.java) { JsonBindingRows("{\"head\":\"${"h".repeat(200)}\",\"boolean\":true}".byteInputStream(), 100).ask() }
+        assertThrows(IllegalStateException::class.java) { ask("{\"head\":${"[".repeat(500)}${"]".repeat(500)},\"boolean\":true}") }
+    }
+
+    private companion object {
+        /** A row with one binding: the row, the variable name, `type`, `value` and the term. */
+        const val ROW_OBJECTS = 5L
     }
 }
