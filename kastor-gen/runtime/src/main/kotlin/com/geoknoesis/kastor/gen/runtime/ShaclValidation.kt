@@ -48,8 +48,45 @@ sealed interface ValidationResult {
 interface ValidationContext : AutoCloseable {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
 
+    /**
+     * Validates every node of [focuses] against one state of [data] and returns the result of each, in the order of
+     * [focuses] (a node listed twice is validated once).
+     *
+     * Prefer this to calling [validate] in a loop: a validator that keeps its own copy of the data graph (the RDF4J
+     * and Jena adapters) checks whether the graph changed once per call, and for a graph without a modification
+     * stamp that check is a full read of the graph. `validateAll` reads such a graph once for all the nodes, where a
+     * loop over N nodes reads it N times. All results describe the same content of the graph.
+     *
+     * The default implementation calls [validate] for each node.
+     */
+    fun validateAll(data: RdfGraph, focuses: Collection<RdfTerm>): Map<RdfTerm, ValidationResult> {
+        val results = LinkedHashMap<RdfTerm, ValidationResult>()
+        for (focus in focuses) {
+            if (focus !in results) results[focus] = validate(data, focus)
+        }
+        return results
+    }
+
     /** Releases resources held by this validator. The default does nothing. */
     override fun close() {}
+}
+
+/**
+ * Validates the nodes of [instances] (generated wrappers, or anything [RdfBacked]) with this validator, one
+ * [ValidationContext.validateAll] call per data graph instead of one [ValidationContext.validate] call per instance,
+ * so each graph is checked for changes (and, without a modification stamp, read) once. Returns the result of every
+ * instance in the order of [instances].
+ *
+ * Instances are grouped by the graph object their handle refers to: materialize the instances of one graph from one
+ * graph handle (`val graph = repository.getGraph(name)`) to get one group.
+ */
+fun <T : RdfBacked> ValidationContext.validateAll(instances: Iterable<T>): List<Pair<T, ValidationResult>> {
+    val all = instances.toList()
+    val byGraph = java.util.IdentityHashMap<RdfGraph, MutableList<RdfTerm>>()
+    all.forEach { byGraph.getOrPut(it.rdf.graph) { ArrayList() } += it.rdf.node }
+    val results = java.util.IdentityHashMap<RdfGraph, Map<RdfTerm, ValidationResult>>()
+    byGraph.forEach { (graph, nodes) -> results[graph] = validateAll(graph, nodes) }
+    return all.map { it to results.getValue(it.rdf.graph).getValue(it.rdf.node) }
 }
 
 /**
@@ -124,16 +161,3 @@ fun ValidationResult.orThrow(minimumSeverity: ShaclSeverity) {
     val message = failing.joinToString("; ") { it.message }
     throw ValidationException(message.ifBlank { "SHACL validation failed" }, failing)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

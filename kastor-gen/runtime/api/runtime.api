@@ -112,15 +112,53 @@ public final class com/geoknoesis/kastor/gen/runtime/GraphAccess$DefaultImpls {
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/GraphStateCache : java/lang/AutoCloseable {
+	public static final field Companion Lcom/geoknoesis/kastor/gen/runtime/GraphStateCache$Companion;
 	public fun <init> (IZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Ljava/lang/String;)V
 	public synthetic fun <init> (IZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (IZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function1;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/runtime/GraphStateCache$Settings;)V
 	public fun close ()V
+	public static final fun configuredMaxEntries (Ljava/lang/String;I)I
 	public final fun getDigestCount ()I
 	public final fun getLoadCount ()I
 	public final fun getMaxEntries ()I
 	public final fun getSize ()I
 	public final fun getTemporaryCount ()I
 	public final fun use (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/GraphStateCache$Companion {
+	public final fun configuredMaxEntries (Ljava/lang/String;I)I
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/GraphStateCache$Settings {
+	public static final field Companion Lcom/geoknoesis/kastor/gen/runtime/GraphStateCache$Settings$Companion;
+	public static final field DEFAULT_ORPHAN_IDLE_MILLIS J
+	public static final field DEFAULT_TEMPORARY_WAIT_MILLIS J
+	public fun <init> ()V
+	public fun <init> (Z)V
+	public fun <init> (ZLjava/lang/Integer;)V
+	public fun <init> (ZLjava/lang/Integer;J)V
+	public fun <init> (ZLjava/lang/Integer;JJ)V
+	public synthetic fun <init> (ZLjava/lang/Integer;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getAssumeImmutable ()Z
+	public final fun getMaxTemporaryStates ()Ljava/lang/Integer;
+	public final fun getOrphanIdleMillis ()J
+	public final fun getTemporaryWaitMillis ()J
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/GraphStateCache$Settings$Companion {
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/GraphStateCacheSaturatedException : java/lang/IllegalStateException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public abstract interface class com/geoknoesis/kastor/gen/runtime/HandleEqualGraph : com/geoknoesis/kastor/rdf/RdfGraph {
+}
+
+public final class com/geoknoesis/kastor/gen/runtime/HandleEqualGraph$DefaultImpls {
+	public static fun find-BohvoVE (Lcom/geoknoesis/kastor/gen/runtime/HandleEqualGraph;Lcom/geoknoesis/kastor/rdf/RdfResource;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Ljava/util/List;
+	public static fun getTriplesSequence (Lcom/geoknoesis/kastor/gen/runtime/HandleEqualGraph;)Lkotlin/sequences/Sequence;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/IllTypedValueHandling : java/lang/Enum {
@@ -364,6 +402,7 @@ public final class com/geoknoesis/kastor/gen/runtime/ShaclSeverity : java/lang/E
 public final class com/geoknoesis/kastor/gen/runtime/ShaclValidationKt {
 	public static final fun orThrow (Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;)V
 	public static final fun orThrow (Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;Lcom/geoknoesis/kastor/gen/runtime/ShaclSeverity;)V
+	public static final fun validateAll (Lcom/geoknoesis/kastor/gen/runtime/ValidationContext;Ljava/lang/Iterable;)Ljava/util/List;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/ShaclViolation {
@@ -402,10 +441,12 @@ public final class com/geoknoesis/kastor/gen/runtime/SharedValidators {
 public abstract interface class com/geoknoesis/kastor/gen/runtime/ValidationContext : java/lang/AutoCloseable {
 	public fun close ()V
 	public abstract fun validate (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfTerm;)Lcom/geoknoesis/kastor/gen/runtime/ValidationResult;
+	public fun validateAll (Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/Collection;)Ljava/util/Map;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/ValidationContext$DefaultImpls {
 	public static fun close (Lcom/geoknoesis/kastor/gen/runtime/ValidationContext;)V
+	public static fun validateAll (Lcom/geoknoesis/kastor/gen/runtime/ValidationContext;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/util/Collection;)Ljava/util/Map;
 }
 
 public final class com/geoknoesis/kastor/gen/runtime/ValidationException : java/lang/RuntimeException {
