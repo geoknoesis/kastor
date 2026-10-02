@@ -27,6 +27,9 @@ import java.util.concurrent.TimeUnit
  * - [parseGraph] rejects quad formats (TriG, N-Quads) instead of merging their named graphs.
  * - Only genuine syntax/format failures (Rio parse errors, unsupported formats, I/O errors) become
  *   [RdfFormatException]; programming errors (NPE, ClassCastException, ...) propagate unchanged.
+ * - **Blank node labels are scoped to the document, everywhere in it**: a label names one node of the parsed data
+ *   whether it is written as a subject, an object or a graph name, or inside a triple term, and never a node of
+ *   another parse (see [DocumentBlankNodes]).
  */
 internal object Rdf4jFormatSupport {
 
@@ -91,6 +94,124 @@ internal object Rdf4jFormatSupport {
         return rdf4jFormat
     }
 
+    /**
+     * The blank nodes of one parsed document: every label of the document gets an id of the form
+     * `genid-<document, 32 hex digits>-<label>` (Rio's own scheme; a label longer than 32 characters is replaced by
+     * its MD5 digest), the same id wherever the label occurs.
+     *
+     * Rio alone does not do that: it renames the labels it reads as terms of a statement, but a triple term that is
+     * written as an `urn:rdf4j:triple:` IRI (the form Rio's writers use in every RDF 1.1 syntax, so the form
+     * [serializeGraph] and [serializeDataset] produce) is decoded with its labels as written. A blank node, or a
+     * reifier, that occurs both inside and outside a triple term (an annotation on an annotation) would come back as
+     * two nodes, and the label inside the triple term would be shared by every document parsed. The parsers of this
+     * object therefore keep the labels of the document ([parser]) and rename them all here.
+     */
+    private class DocumentBlankNodes {
+        private val prefix = "genid-" + java.util.UUID.randomUUID().toString().replace("-", "") + "-"
+        private val values = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+        private val renamed = HashMap<String, org.eclipse.rdf4j.model.BNode>()
+
+        private fun node(label: org.eclipse.rdf4j.model.BNode): org.eclipse.rdf4j.model.BNode = renamed.getOrPut(label.id) {
+            val id = label.id
+            val suffix = if (id.length <= MAX_LABEL_LENGTH) id else {
+                java.security.MessageDigest.getInstance("MD5").digest(id.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            }
+            values.createBNode(prefix + suffix)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun <V : org.eclipse.rdf4j.model.Value?> value(value: V): V = when (value) {
+            is org.eclipse.rdf4j.model.BNode -> node(value) as V
+            is org.eclipse.rdf4j.model.Triple -> {
+                val subject = value(value.subject)
+                val obj = value(value.`object`)
+                if (subject === value.subject && obj === value.`object`) value else values.createTriple(subject, value.predicate, obj) as V
+            }
+            else -> value
+        }
+
+        /** [statement] with the blank nodes of this document; [statement] itself when it has none. */
+        fun statement(statement: Statement): Statement {
+            val subject = value(statement.subject)
+            val obj = value(statement.`object`)
+            val context = value(statement.context)
+            if (subject === statement.subject && obj === statement.`object` && context === statement.context) return statement
+            return if (context == null) values.createStatement(subject, statement.predicate, obj)
+            else values.createStatement(subject, statement.predicate, obj, context)
+        }
+
+        private companion object {
+            const val MAX_LABEL_LENGTH = 32
+        }
+    }
+
+    /**
+     * Blank node labels that every Rio writer writes as they are, inside and outside a triple term.
+     *
+     * Rio's writers rewrite a blank node id that is not a plain label on their own (the N-Triples / N-Quads writer
+     * replaces every character that is not an ASCII letter or digit by its hex code, so `a-b` is written `_:a2db`),
+     * but not inside a triple term, which they write as an `urn:rdf4j:triple:` IRI holding the ids unchanged. The
+     * blank node `a-b` would be written under two labels. The serializers of this object therefore give every blank
+     * node a label that no writer changes:
+     * - an id of ASCII letters and digits that starts with a letter and has no `Z` is its own label;
+     * - any other id is written as `Z` followed by its characters, with every byte (of its UTF-8 form) that is not an
+     *   ASCII letter other than `Z`, or a digit, written as `Z` and two hex digits.
+     *
+     * The mapping is injective (the two cases cannot produce the same label, and the escape is reversible), so two
+     * blank nodes are never merged.
+     */
+    private object WriterLabels {
+        private val values = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+
+        private fun plain(c: Char): Boolean = (c in 'A'..'Y') || (c in 'a'..'z') || (c in '0'..'9')
+
+        fun label(id: String): String {
+            if (id.isNotEmpty() && id[0] !in '0'..'9' && id.all(::plain)) return id
+            val out = StringBuilder(id.length + 16).append('Z')
+            for (byte in id.toByteArray(Charsets.UTF_8)) {
+                val c = byte.toInt().toChar()
+                if (byte >= 0 && plain(c)) out.append(c) else out.append('Z').append("%02x".format(byte.toInt() and 0xFF))
+            }
+            return out.toString()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        fun <V : org.eclipse.rdf4j.model.Value?> value(value: V): V = when (value) {
+            is org.eclipse.rdf4j.model.BNode -> label(value.id).let { if (it == value.id) value else values.createBNode(it) as V }
+            is org.eclipse.rdf4j.model.Triple -> {
+                val subject = value(value.subject)
+                val obj = value(value.`object`)
+                if (subject === value.subject && obj === value.`object`) value else values.createTriple(subject, value.predicate, obj) as V
+            }
+            else -> value
+        }
+
+        /** [statement] with writer-safe blank node labels; [statement] itself when nothing changes. */
+        fun statement(statement: Statement): Statement {
+            val subject = value(statement.subject)
+            val obj = value(statement.`object`)
+            val context = value(statement.context)
+            if (subject === statement.subject && obj === statement.`object` && context === statement.context) return statement
+            return if (context == null) values.createStatement(subject, statement.predicate, obj)
+            else values.createStatement(subject, statement.predicate, obj, context)
+        }
+    }
+
+    /**
+     * A Rio parser for one document that feeds [handle] its statements with document-scoped blank nodes (see
+     * [DocumentBlankNodes]). Rio keeps the labels as written (`PRESERVE_BNODE_IDS`), and they are renamed here, so
+     * that labels inside triple terms get the same treatment as the others.
+     */
+    private fun parser(format: RDFFormat, handle: (Statement) -> Unit): org.eclipse.rdf4j.rio.RDFParser {
+        val parser = Rio.createParser(format)
+        parser.parserConfig.set(org.eclipse.rdf4j.rio.helpers.BasicParserSettings.PRESERVE_BNODE_IDS, true)
+        val nodes = DocumentBlankNodes()
+        parser.setRDFHandler(object : AbstractRDFHandler() {
+            override fun handleStatement(statement: Statement) = handle(nodes.statement(statement))
+        })
+        return parser
+    }
+
     /** Maps only format-level failures to [RdfFormatException]; everything else propagates unchanged. */
     private inline fun <T> formatErrors(what: String, block: () -> T): T = try {
         block()
@@ -111,11 +232,18 @@ internal object Rdf4jFormatSupport {
                 super.startRDF()
                 options.prefixMappings.forEach { (prefix, uri) -> super.handleNamespace(prefix, uri) }
             }
+
+            // One label per blank node, inside and outside a triple term, whatever the writer (see WriterLabels).
+            override fun handleStatement(statement: Statement) = super.handleStatement(WriterLabels.statement(statement))
         }
     }
 
     /**
      * Serialize a Kastor RdfGraph to a string using RDF4J, honouring prefixes and base from [options].
+     *
+     * Blank nodes are written under labels that are the same inside and outside a triple term (an id of ASCII letters
+     * and digits as it is, any other id escaped, see [WriterLabels]), so that [parseGraph] reads a blank node that
+     * occurs in both places back as one node.
      */
     fun serializeGraph(graph: RdfGraph, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         val rdf4jFormat = toRdf4jFormat(format)
@@ -148,13 +276,7 @@ internal object Rdf4jFormatSupport {
         val triples = mutableListOf<RdfTriple>()
         val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
         formatErrors("$format data") {
-            val parser = Rio.createParser(rdf4jFormat)
-            parser.setRDFHandler(object : AbstractRDFHandler() {
-                override fun handleStatement(statement: Statement) {
-                    triples.addAll(checkedTriples(statement, seen))
-                }
-            })
-            parser.parse(inputStream, baseIri)
+            parser(rdf4jFormat) { statement -> triples.addAll(checkedTriples(statement, seen)) }.parse(inputStream, baseIri)
         }
         return com.geoknoesis.kastor.rdf.provider.MemoryGraph(triples)
     }
@@ -177,20 +299,35 @@ internal object Rdf4jFormatSupport {
      * parser and closes [inputStream].
      */
     fun openTripleStream(inputStream: InputStream, format: String, baseIri: String? = null): TripleStream =
-        openTripleStream(inputStream, format, baseIri) { stream, action -> Rdf4jTripleStream.CLEANER.register(stream, action) }
+        openTripleStream(inputStream, format, baseIri, hooks = StreamHooks.NONE)
+
+    /**
+     * What a test observes of the producer of a triple stream, instead of looking for its thread among the threads of
+     * the JVM or polling for its progress.
+     *
+     * @property producerCreated told the producer thread of the stream, before it is started.
+     * @property queueFull called on the producer thread each time it has a triple the full queue does not take: the
+     *   producer reads no further input until the consumer takes a triple (or the stream is closed).
+     */
+    internal class StreamHooks(val producerCreated: (Thread) -> Unit = {}, val queueFull: () -> Unit = {}) {
+        companion object {
+            val NONE = StreamHooks()
+        }
+    }
 
     /**
      * [openTripleStream] with an injectable cleanup registrar, so tests can run the cleanup of an abandoned stream
-     * deterministically instead of waiting for garbage collection.
+     * deterministically instead of waiting for garbage collection, and with [hooks] to observe its producer.
      */
     internal fun openTripleStream(
         inputStream: InputStream,
         format: String,
         baseIri: String?,
-        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable = { stream, action -> Rdf4jTripleStream.CLEANER.register(stream, action) },
+        hooks: StreamHooks = StreamHooks.NONE,
     ): TripleStream {
         val rdf4jFormat = graphFormat(format)
-        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "", registerCleanup)
+        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "", registerCleanup, hooks)
     }
 
     /**
@@ -210,6 +347,7 @@ internal object Rdf4jFormatSupport {
         private val formatName: String,
         baseIri: String,
         registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+        hooks: StreamHooks,
     ) : TripleStream {
         private class Failure(val error: Throwable)
         private class Cancelled : RuntimeException(null, null, false, false)
@@ -241,7 +379,7 @@ internal object Rdf4jFormatSupport {
 
         init {
             val shared = state
-            Thread({ produce(shared, rdf4jFormat, baseIri) }, PRODUCER_THREAD).apply { isDaemon = true }.start()
+            Thread({ produce(shared, rdf4jFormat, baseIri, hooks) }, PRODUCER_THREAD).apply { isDaemon = true }.also(hooks.producerCreated).start()
         }
 
         private fun advance(): Boolean {
@@ -293,16 +431,11 @@ internal object Rdf4jFormatSupport {
             /** Delivered when the producer died and not even a [Failure] could be allocated (e.g. out of memory). */
             val PRODUCER_DIED = Failure(IllegalStateException("RDF4J stream parser thread terminated abnormally"))
 
-            fun produce(state: State, format: RDFFormat, baseIri: String) {
+            fun produce(state: State, format: RDFFormat, baseIri: String, hooks: StreamHooks) {
                 var terminal: Any = PRODUCER_DIED
                 try {
-                    val parser = Rio.createParser(format)
                     val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                    parser.setRDFHandler(object : AbstractRDFHandler() {
-                        override fun handleStatement(statement: Statement) =
-                            checkedTriples(statement, seen).forEach { offer(state, it) }
-                    })
-                    parser.parse(state.input, baseIri)
+                    parser(format) { statement -> checkedTriples(statement, seen).forEach { offer(state, it, hooks) } }.parse(state.input, baseIri)
                     terminal = END
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
@@ -315,9 +448,14 @@ internal object Rdf4jFormatSupport {
                 }
             }
 
-            fun offer(state: State, item: Any) {
+            fun offer(state: State, item: Any, hooks: StreamHooks) {
+                var full = false
                 while (!state.queue.offer(item, POLL_MILLIS, TimeUnit.MILLISECONDS)) {
                     if (state.closed) throw Cancelled()
+                    if (!full) {
+                        full = true
+                        hooks.queueFull()
+                    }
                 }
                 if (state.closed) throw Cancelled()
             }
@@ -340,10 +478,12 @@ internal object Rdf4jFormatSupport {
      * Explicit statements only are written, also for an inference repository. Blank-node contexts of a wrapped store
      * are written with their blank graph label ([parseDataset] skolemizes it).
      *
-     * **Limitation (Rio):** a blank node that occurs inside a triple term **and** outside of it (for example the
-     * reifier of an annotation on an annotated triple) does not survive a round trip as one node: Rio writes a triple
-     * term as an `urn:rdf4j:triple:` IRI and reads the blank node labels inside it as they are, while it renames the
-     * labels outside of it. This holds for [serializeGraph] too.
+     * A blank node that occurs inside a triple term **and** outside of it (for example the reifier of an annotation on
+     * an annotated triple) stays one node when the document is parsed by [parseDataset] / [parseGraph]: Rio writes a
+     * triple term as an `urn:rdf4j:triple:` IRI with the labels of the blank nodes inside it, every blank node is
+     * written under a label no Rio writer changes ([WriterLabels]), and the parsers of this object give a label the
+     * same node inside and outside a triple term ([DocumentBlankNodes]). This holds for [serializeGraph] too. (Rio's
+     * own parsers, used directly, keep the labels inside a triple term as written.)
      *
      * @throws IllegalArgumentException when a statement with a quoted-triple subject holds a term Kastor cannot
      *   represent and the repository's reads are strict (lenient repositories skip it with a warning, as graph reads do).
@@ -431,6 +571,8 @@ internal object Rdf4jFormatSupport {
      * separate loads never share a skolem graph (blank nodes are scoped to the document). Only the graph name is
      * replaced; the same blank node used as a subject or object inside the data stays a blank node, and the id in
      * the graph name is its [org.eclipse.rdf4j.model.BNode.getID]. The mapping is stateless.
+     *
+     * Blank node labels are scoped to the document, also inside triple terms (see [DocumentBlankNodes]).
      */
     fun parseDataset(
         repository: RdfRepository,
@@ -446,27 +588,23 @@ internal object Rdf4jFormatSupport {
             // withWriteConnection runs inside a transaction (joining an outer transaction { } on this
             // thread), so a parse failure mid-stream rolls back instead of leaving partial data.
             formatErrors("$format dataset") {
-                val parser = Rio.createParser(rdf4jFormat)
                 val load = java.util.UUID.randomUUID().toString().replace("-", "")
-                parser.setRDFHandler(object : AbstractRDFHandler() {
-                    override fun handleStatement(statement: Statement) {
-                        checkedTriples(statement, null)
-                        rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
-                        if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
-                        rdf4jRepo.noteWrittenValue(statement.subject)
-                        rdf4jRepo.noteWrittenValue(statement.`object`)
-                        val context = when (val name = statement.context) {
-                            is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
-                            else -> name
-                        }
-                        if (context != null) {
-                            connection.add(statement.subject, statement.predicate, statement.`object`, context)
-                        } else {
-                            connection.add(statement.subject, statement.predicate, statement.`object`)
-                        }
+                parser(rdf4jFormat) { statement ->
+                    checkedTriples(statement, null)
+                    rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
+                    if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
+                    rdf4jRepo.noteWrittenValue(statement.subject)
+                    rdf4jRepo.noteWrittenValue(statement.`object`)
+                    val context = when (val name = statement.context) {
+                        is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
+                        else -> name
                     }
-                })
-                parser.parse(inputStream, baseIri)
+                    if (context != null) {
+                        connection.add(statement.subject, statement.predicate, statement.`object`, context)
+                    } else {
+                        connection.add(statement.subject, statement.predicate, statement.`object`)
+                    }
+                }.parse(inputStream, baseIri)
             }
         }
     }

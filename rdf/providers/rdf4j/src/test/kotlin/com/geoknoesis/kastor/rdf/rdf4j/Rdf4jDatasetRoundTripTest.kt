@@ -139,10 +139,109 @@ class Rdf4jDatasetRoundTripTest {
         )
     }
 
-    // Not covered: a blank node (or reifier) that also occurs inside a triple term. Rio writes a triple term as an
-    // `urn:rdf4j:triple:` IRI and reads the blank node labels inside it as they are, so the node inside the triple
-    // term and the node outside of it are different blank nodes after any Rio round trip (graphs included).
-    private val allCases: List<Case> = cases(small, "small") + cases(big, "hashed reifier id")
+    /**
+     * A blank node (or reifier) that occurs inside a triple term and outside of it. Rio writes a triple term as an
+     * `urn:rdf4j:triple:` IRI and reads the blank node labels inside it as they are, while it renames the labels
+     * outside of it; the parse paths relabel both alike, so the node stays one node.
+     */
+    private fun sharedNodeCases(term: TripleTerm, label: String): List<Case> {
+        val n = BlankNode("n")
+        val m = BlankNode("m")
+        val says = Iri(ex + "says")
+        val lexical = (term.triple.obj as Literal).lexical
+        return listOf(
+            Case("$label: a blank node inside and outside a triple term") { repo ->
+                repo.editGraph(g1).addTriples(
+                    listOf(
+                        RdfTriple(n, says, TripleTerm(RdfTriple(n, q, m))),
+                        RdfTriple(m, q, Literal(lexical)),
+                        RdfTriple(Iri(ex + "s"), says, TripleTerm(RdfTriple(m, q, Literal("only inside and as a subject")))),
+                    ),
+                )
+                repo.editDefaultGraph().addTriple(RdfTriple(n, q, Literal("the same node in another graph")))
+            },
+            Case("$label: an annotation on an annotation") { repo ->
+                val star = "<< << <${ex}a> <${ex}b> \"$lexical\" >> <${ex}q> \"z\" >> <${ex}r> \"w\" ."
+                provider.parseDataset(repo, "$star\n<${ex}g1> { $star }".byteInputStream(), "TRIG")
+                // The inner reifier is the subject of its rdf:reifies triple and occurs inside the outer triple term.
+                val view = repo.defaultGraph.getTriples()
+                assertEquals(3, view.size, view.toString().take(500))
+                assertEquals(2, view.count { it.predicate == RDF.reifies })
+            },
+            Case("$label: an annotation on an annotation, written through the graph API") { repo ->
+                val inner = reifierOf(term)
+                val outerTerm = TripleTerm(RdfTriple(inner, q, Literal("z")))
+                val outer = BlankNode("outer")
+                repo.editDefaultGraph().addTriples(
+                    listOf(
+                        RdfTriple(inner, RDF.reifies, term),
+                        RdfTriple(outer, RDF.reifies, outerTerm),
+                        RdfTriple(outer, Iri(ex + "r"), Literal("w")),
+                        RdfTriple(Iri(ex + "s"), Iri(ex + "about"), outer),
+                    ),
+                )
+            },
+        )
+    }
+
+    private val allCases: List<Case> =
+        cases(small, "small") + cases(big, "hashed reifier id") + sharedNodeCases(small, "small") + sharedNodeCases(big, "hashed reifier id")
+
+    /** Serializes the default graph in a graph format and loads what a parser reads back into a fresh repository. */
+    private fun graphRoundTrip(format: String, original: Rdf4jRepository, stream: Boolean): Set<RdfTriple> {
+        val document = provider.serializeGraph(original.defaultGraph, format, SerializationOptions.DEFAULT)
+        val parsed: List<RdfTriple> =
+            if (stream) provider.openTripleStream(document.byteInputStream(), format).use { it.toList() }
+            else provider.parseGraph(document.byteInputStream(), format).getTriples()
+        return Rdf4jRepository.MemoryRepository().use { copy ->
+            copy.editDefaultGraph().addTriples(parsed)
+            copy.defaultGraph.getTriples().toSet()
+        }
+    }
+
+    @TestFactory
+    fun `a serialized graph parses back into an isomorphic graph`(): List<DynamicTest> = allCases.flatMap { case ->
+        listOf("TURTLE", "N-TRIPLES").flatMap { format ->
+            listOf(false, true).map { stream ->
+                DynamicTest.dynamicTest("$format${if (stream) " (stream)" else ""}: ${case.name}") {
+                    Rdf4jRepository.MemoryRepository().use { original ->
+                        case.populate(original)
+                        // The graph formats carry one graph: move everything into the default graph first.
+                        original.listGraphs().forEach { name ->
+                            original.editDefaultGraph().addTriples(original.getGraph(name).getTriples())
+                            original.removeGraph(name)
+                        }
+                        val expected = original.defaultGraph.getTriples().toSet()
+                        assertTrue(expected.isNotEmpty())
+                        val actual = graphRoundTrip(format, original, stream)
+                        assertTrue(isomorphic(mapOf("" to expected), mapOf("" to actual)), "expected $expected\nactual $actual".take(4000))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `blank node labels of separate documents never name one node`() {
+        // Rio spells a triple term as an encoded IRI; the labels inside it are the ones written.
+        val encoded = Rdf4jRepository.MemoryRepository().use { repo ->
+            val n = BlankNode("n")
+            repo.editDefaultGraph().addTriple(RdfTriple(n, Iri(ex + "says"), TripleTerm(RdfTriple(n, q, n))))
+            provider.serializeGraph(repo.defaultGraph, "N-TRIPLES", SerializationOptions.DEFAULT)
+        }
+        assertTrue(encoded.contains("urn:rdf4j:triple:"), encoded)
+        fun nodes(): Set<BlankNode> {
+            val out = LinkedHashSet<BlankNode>()
+            provider.parseGraph(encoded.byteInputStream(), "N-TRIPLES").getTriples().forEach { blankNodes(it.subject, out); blankNodes(it.obj, out) }
+            return out
+        }
+        val first = nodes()
+        val second = nodes()
+        assertEquals(1, first.size, "one node inside and outside the triple term: $first")
+        assertEquals(1, second.size)
+        assertTrue((first intersect second).isEmpty(), "two parses share a blank node: $first")
+        assertFalse(BlankNode("n") in first, "the label of the document is not the id of the node")
+    }
 
     @TestFactory
     fun `a serialized dataset parses back into isomorphic graphs`(): List<DynamicTest> = allCases.flatMap { case ->
@@ -161,6 +260,33 @@ class Rdf4jDatasetRoundTripTest {
                     )
                     assertTrue(isomorphic(expected, actual), "expected $expected\nactual $actual".take(4000))
                 }
+            }
+        }
+    }
+
+    @Test
+    fun `blank node ids that are not plain labels stay distinct nodes with one label each`() {
+        // Rio's N-Triples writer would write both `a-b` and `a2db` as `_:a2db`, and `a-b` inside a triple term as it is.
+        val dashed = BlankNode("a-b")
+        val hex = BlankNode("a2db")
+        val p = Iri(ex + "p")
+        val triples = setOf(
+            RdfTriple(dashed, p, TripleTerm(RdfTriple(dashed, p, hex))),
+            RdfTriple(hex, p, Literal("hex")),
+            RdfTriple(BlankNode("Zebra"), p, BlankNode("9")),
+        )
+        for (format in listOf("N-TRIPLES", "TURTLE")) {
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                repo.editDefaultGraph().addTriples(triples)
+                val document = provider.serializeGraph(repo.defaultGraph, format, SerializationOptions.DEFAULT)
+                val parsed = provider.parseGraph(document.byteInputStream(), format).getTriples().toSet()
+                assertTrue(isomorphic(mapOf("" to triples), mapOf("" to parsed)), "$format: $document")
+            }
+        }
+        for (format in formats) {
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                repo.editGraph(g1).addTriples(triples)
+                assertTrue(isomorphic(view(repo), roundTrip(format, repo)), format)
             }
         }
     }

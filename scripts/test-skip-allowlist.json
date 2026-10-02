@@ -693,12 +693,6 @@
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TRIG] trig-syntax-bad-bnode-01",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-bnode-01: RDF4J 5.3.2 Rio accepts a malformed blank node label (_::a)"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
    "test": "[RDF4J/TRIG] trig-syntax-bad-esc-01",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-trig/manifest.ttl#trig-syntax-bad-esc-01: RDF4J 5.3.2 Rio accepts an invalid string escape sequence"
@@ -1182,12 +1176,6 @@
    "test": "[RDF4J/TURTLE] number_sign_following_localName",
    "count": 1,
    "reason": "test not approved: rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#number_sign_following_localName"
-  },
-  {
-   "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",
-   "test": "[RDF4J/TURTLE] turtle-syntax-bad-bnode-01",
-   "count": 1,
-   "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-bnode-01: RDF4J 5.3.2 Rio accepts a malformed blank node label (_::a)"
   },
   {
    "class": "com.geoknoesis.kastor.rdf.conformance.rdf4j.Rdf4jConformanceTest",

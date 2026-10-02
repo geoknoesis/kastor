@@ -74,6 +74,10 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
  * **Lenient reads** ([Rdf4jRepository.lenientRead]): statements that cannot be converted to Kastor terms are skipped
  * with a logged warning instead of failing the read, and [size] counts only convertible statements.
  *
+ * **Blank node ids:** a blank node is stored under its id without the `_:` of a Turtle label, as on the Jena provider:
+ * `BlankNode("_:a")` and `BlankNode("a")` are one node of the graph in every operation (also inside triple terms), and
+ * reads return `BlankNode("a")`.
+ *
  * **Identity:** a graph object is a handle, not a copy. Two handles are equal when they denote the same graph (the
  * same context) of the same [Rdf4jRepository] object, so a handle obtained anew for every call
  * (`repository.getGraph(name)`) finds what was stored under an equal one. Handles of two [Rdf4jRepository] objects are
@@ -124,7 +128,8 @@ internal open class Rdf4jGraph(
         triples.forEach { add(conn, it) }
     }
 
-    private fun add(conn: RepositoryConnection, triple: RdfTriple) {
+    private fun add(conn: RepositoryConnection, written: RdfTriple) {
+        val triple = Rdf4jTerms.canonical(written)
         val hashed = resolveHashedReifiers(conn, triple.subject, triple.obj)
         if (triple.obj is TripleTerm) repo.noteTripleValue()
         if (!repo.starCapable || !involvesReifiedForm(triple.subject, triple.predicate, triple.obj, hashed)) {
@@ -178,7 +183,8 @@ internal open class Rdf4jGraph(
         changed
     }
 
-    private fun remove(conn: RepositoryConnection, triple: RdfTriple): Boolean {
+    private fun remove(conn: RepositoryConnection, removed: RdfTriple): Boolean {
+        val triple = Rdf4jTerms.canonical(removed)
         val hashed = resolveHashedReifiers(conn, triple.subject, triple.obj)
         if (!involvesReifiedForm(triple.subject, triple.predicate, triple.obj, hashed)) {
             val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
@@ -224,7 +230,9 @@ internal open class Rdf4jGraph(
         return changed
     }
 
-    override fun hasTriple(triple: RdfTriple): Boolean = repo.withConnection { conn ->
+    override fun hasTriple(triple: RdfTriple): Boolean = hasCanonical(Rdf4jTerms.canonical(triple))
+
+    private fun hasCanonical(triple: RdfTriple): Boolean = repo.withConnection { conn ->
         val hashed = resolveHashedReifiers(conn, triple.subject, triple.obj)
         if (!involvesReifiedForm(triple.subject, triple.predicate, triple.obj, hashed)) {
             val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
@@ -242,10 +250,15 @@ internal open class Rdf4jGraph(
     override fun getTriples(): List<RdfTriple> = find()
 
     override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
-        repo.withConnection { conn -> matching(conn, subject, predicate, obj) }
+        repo.withConnection { conn -> matching(conn, subject?.let(Rdf4jTerms::canonical), predicate, obj?.let(Rdf4jTerms::canonical)) }
 
     /** The triples of this graph with the subject [subject], read through [conn] (for `DESCRIBE`). */
-    internal fun outgoing(conn: RepositoryConnection, subject: RdfResource): List<RdfTriple> = matching(conn, subject, null, null)
+    internal fun outgoing(conn: RepositoryConnection, subject: RdfResource): List<RdfTriple> =
+        matching(conn, Rdf4jTerms.canonical(subject), null, null)
+
+    /** Whether this graph holds a statement whose subject is the RDF-star triple [quoted] (for `DESCRIBE`). */
+    internal fun hasQuotedSubject(conn: RepositoryConnection, quoted: Triple): Boolean =
+        conn.hasStatement(quoted, null, null, repo.inference, context)
 
     /** Triples of the RDF 1.2 view matching the pattern, de-duplicated, in store order. */
     private fun matching(
