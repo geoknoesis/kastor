@@ -48,10 +48,35 @@ internal object Rdf4jTerms {
      */
     fun requireWellFormed(term: RdfTerm) = LiteralValidation.requireWellFormed(term)
 
+    /**
+     * The id a blank node is stored under: [BlankNode.id] without the `_:` of a Turtle label, as the Jena provider
+     * stores it. `BlankNode("_:a")` and `BlankNode("a")` are therefore one node of a store, and reads return
+     * `BlankNode("a")`. (An id that is nothing but the prefix is kept as it is.)
+     */
+    fun blankNodeId(node: BlankNode): String = if (node.id.length > 2 && node.id.startsWith("_:")) node.id.substring(2) else node.id
+
+    /** [term] with every blank node (also inside triple terms) under its stored id, see [blankNodeId]; [term] itself when nothing changes. */
+    fun canonical(term: RdfTerm): RdfTerm = when (term) {
+        is BlankNode -> canonical(term as RdfResource)
+        is TripleTerm -> canonical(term.triple).let { if (it === term.triple) term else TripleTerm(it) }
+        else -> term
+    }
+
+    /** [canonical] for a subject. */
+    fun canonical(term: RdfResource): RdfResource =
+        if (term is BlankNode && term.id.length > 2 && term.id.startsWith("_:")) BlankNode(term.id.substring(2)) else term
+
+    /** [canonical] for a triple. */
+    fun canonical(triple: RdfTriple): RdfTriple {
+        val subject = canonical(triple.subject)
+        val obj = canonical(triple.obj)
+        return if (subject == triple.subject && obj == triple.obj) triple else RdfTriple(subject, triple.predicate, obj)
+    }
+
     fun toRdf4jResource(term: RdfTerm): Resource {
         return when (term) {
             is Iri -> valueFactory.createIRI(term.value)
-            is BlankNode -> valueFactory.createBNode(term.id)
+            is BlankNode -> valueFactory.createBNode(blankNodeId(term))
             else -> throw IllegalArgumentException(
                 "Cannot convert ${term.javaClass} to RDF4J Resource. " +
                     "Triple terms are object-only in RDF 1.2.",
@@ -66,7 +91,7 @@ internal object Rdf4jTerms {
     fun toRdf4jValue(term: RdfTerm): Value {
         return when (term) {
             is Iri -> valueFactory.createIRI(term.value)
-            is BlankNode -> valueFactory.createBNode(term.id)
+            is BlankNode -> valueFactory.createBNode(blankNodeId(term))
             is LangString -> {
                 val direction = term.direction
                 val tag = if (direction == null) term.lang else "${term.lang}--${direction.token}"
