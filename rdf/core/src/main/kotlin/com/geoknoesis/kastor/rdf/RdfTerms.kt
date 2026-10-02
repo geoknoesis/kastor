@@ -436,6 +436,8 @@ sealed interface Literal : RdfTerm {
          * @param lexical The string representation of the value
          * @param datatype The IRI identifying the data type (defaults to xsd:string)
          * @return A new [Literal] with the specified datatype
+         * @throws IllegalArgumentException for the datatypes `rdf:langString` and `rdf:dirLangString`: a literal of
+         *   those datatypes needs a language tag, use `Literal(lexical, lang)` or [LangString]
          * @see [TypedLiteral]
          * @see [TrueLiteral]
          * @see [FalseLiteral]
@@ -694,10 +696,20 @@ internal fun escapeLiteralLexical(value: String): String {
  * ```
  *
  * @property lexical The string representation of the value
- * @property datatype The IRI identifying the data type
+ * @property datatype The IRI identifying the data type; not `rdf:langString` or `rdf:dirLangString`, which need a
+ *   language tag (see [LangString])
+ * @throws IllegalArgumentException for the datatypes `rdf:langString` and `rdf:dirLangString`
  * @see [Literal]
  */
 data class TypedLiteral(override val lexical: String, override val datatype: Iri) : Literal {
+    init {
+        // rdf:langString and rdf:dirLangString are the datatypes of language-tagged strings: a literal of such a
+        // datatype without a language tag is not an RDF term. (Other ill-typed literals are legal RDF.)
+        LiteralValidation.problem(datatype.value, null, false)?.let { problem ->
+            throw IllegalArgumentException("$problem; use LangString(lexical, lang) or Literal(lexical, lang)")
+        }
+    }
+
     // Equal to TrueLiteral/FalseLiteral for "true"/"false"^^xsd:boolean, so equality does not depend on
     // which constructor produced the term.
     override fun equals(other: Any?): Boolean = datatypedLiteralEquals(this, other)
@@ -956,10 +968,15 @@ fun decimal(value: Double): Literal = decimal(BigDecimal.valueOf(value))
 /**
  * Creates a decimal literal (xsd:decimal) from a float value.
  *
+ * The decimal is the float's shortest decimal form, the one [Float.toString] prints: `decimal(0.1f)` is
+ * `"0.1"^^xsd:decimal`. (Widening the float to a double first would give the digits of the double nearest to the
+ * float, `0.10000000149011612`.)
+ *
  * @param value The float value
  * @return A new [Literal] with `xsd:decimal` datatype
+ * @throws NumberFormatException for NaN and the infinities, which xsd:decimal cannot represent
  */
-fun decimal(value: Float): Literal = decimal(BigDecimal.valueOf(value.toDouble()))
+fun decimal(value: Float): Literal = decimal(BigDecimal(value.toString()))
 
 fun boolean(value: Boolean): Literal = Literal(value.toString(), XSD.boolean)
 
