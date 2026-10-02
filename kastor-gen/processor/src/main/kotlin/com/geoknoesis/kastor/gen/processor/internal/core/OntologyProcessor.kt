@@ -89,6 +89,9 @@ public class OntologyProcessor internal constructor(
               request.contextPath?.takeIf { it.isNotBlank() },
               near = sourceFileOf(symbol),
             )
+            // The ontology named by `ontologyPath` is read with the shapes: a file that is missing or is not an
+            // ontology is reported here, and its named classes (anonymous class expressions are skipped) are logged.
+            request.ontologyPath?.let { reader.loadOntologyClasses(it, near = sourceFileOf(symbol)) }
             warnUntracked(reader)
             coordinator.generateInstanceDsl(
               model = model,

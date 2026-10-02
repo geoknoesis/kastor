@@ -99,26 +99,47 @@ public data class ShaclProperty(
  * @param vocabIri Vocabulary IRI for default vocabulary terms
  * @param typeMappings Map of type names to their IRIs
  * @param propertyMappings Map of property names to their definitions
+ * @param keywordAliases Terms that stand for a JSON-LD keyword (`"id": "@id"`, `"type": "@type"`), with the keyword
  */
 public data class JsonLdContext(
     val prefixes: Map<String, String>,
     val baseIri: RdfIri? = null,
     val vocabIri: RdfIri? = null,
     val typeMappings: Map<String, RdfIri>,
-    val propertyMappings: Map<String, JsonLdProperty>
+    val propertyMappings: Map<String, JsonLdProperty>,
+    val keywordAliases: Map<String, String> = emptyMap(),
 )
 
 /**
- * Model representing a JSON-LD property definition.
+ * Model representing a JSON-LD property definition (an expanded term definition).
+ *
+ * @param id the IRI of the property; for a [reverse] property the IRI named by `@reverse`
+ * @param type the type coercion (`@type`), if any
+ * @param container the container that shapes the values: the first of [containers] that is not `@set` (`@set` only
+ *   says "always an array"), else `@set`, else null
+ * @param containers every `@container` value, in the order written (`["@set", "@language"]`)
+ * @param reverse true for a reverse property (`@reverse`): the values are the subjects, the node is the object
+ * @param scopedContext the context that applies to the values of this term (`@context` in the term definition),
+ *   resolved against the context it is declared in
  */
 public data class JsonLdProperty(
     val id: RdfIri,
     val type: JsonLdType?,
-    val container: JsonLdContainer? = null
+    val container: JsonLdContainer? = null,
+    val containers: kotlin.collections.List<JsonLdContainer> = listOfNotNull(container),
+    val reverse: Boolean = false,
+    val scopedContext: JsonLdContext? = null,
 )
 
 public sealed interface JsonLdType {
+    /** `"@type": "@id"`: the values are IRIs, resolved against the document base. */
     public data object Id : JsonLdType
+    /** `"@type": "@vocab"`: the values are IRIs, resolved against the vocabulary mapping (terms first). */
+    public data object Vocab : JsonLdType
+    /** `"@type": "@json"`: the values are JSON literals (`rdf:JSON`). */
+    public data object Json : JsonLdType
+    /** `"@type": "@none"`: the values are not coerced. */
+    public data object None : JsonLdType
     public data class Iri(val iri: RdfIri) : JsonLdType
 }
 
@@ -127,6 +148,9 @@ public sealed interface JsonLdContainer {
     public data object Set : JsonLdContainer
     public data object Index : JsonLdContainer
     public data object Language : JsonLdContainer
+    public data object Id : JsonLdContainer
+    public data object Type : JsonLdContainer
+    public data object Graph : JsonLdContainer
     public data class Unknown(val value: String) : JsonLdContainer
 }
 

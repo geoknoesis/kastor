@@ -65,8 +65,9 @@ internal object KotlinSourceCompiler {
 internal class RecordingLogger : KSPLogger {
     val errors = mutableListOf<String>()
     val warnings = mutableListOf<String>()
+    val infos = mutableListOf<String>()
     override fun logging(message: String, symbol: KSNode?) {}
-    override fun info(message: String, symbol: KSNode?) {}
+    override fun info(message: String, symbol: KSNode?) { infos += message }
     override fun warn(message: String, symbol: KSNode?) { warnings += message }
     override fun error(message: String, symbol: KSNode?) { errors += message }
     override fun exception(e: Throwable) { errors += e.toString() }
