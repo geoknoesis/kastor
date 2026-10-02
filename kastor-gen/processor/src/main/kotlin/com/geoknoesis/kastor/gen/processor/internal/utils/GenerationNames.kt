@@ -1,5 +1,6 @@
 package com.geoknoesis.kastor.gen.processor.internal.utils
 
+import com.geoknoesis.kastor.gen.processor.internal.codegen.ShaclInCode
 import com.geoknoesis.kastor.gen.processor.api.exceptions.InvalidConfigurationException
 import com.geoknoesis.kastor.gen.processor.api.model.OntologyModel
 import com.geoknoesis.kastor.gen.processor.api.model.ShaclProperty
@@ -146,6 +147,13 @@ public object GenerationNames {
             // deactivated shape are deactivated there, so they do not tighten this type's constraints.
             val inheritedConstraints = supers[shape.targetClass].orEmpty().mapNotNull { inheritableConstraints(it, path, supers) }
             val merged = (listOfNotNull(ownDeclaration) + inheritedConstraints).reduce(::conjoin)
+            val effectiveIn: List<Any>? = merged.inValuesTyped ?: merged.inValues
+            if (!merged.deactivated && effectiveIn != null && effectiveIn.isEmpty()) {
+                warn(
+                    "shape <${shape.shapeIri}>: the sh:in lists that apply to <$path> (its own and the inherited ones) " +
+                        "have no member in common, so every value of <$path> is rejected by validation"
+                )
+            }
 
             if (inheritedByName.isEmpty()) {
                 members += EffectiveMember(merged, merged, declared = true, inherited = false, primaryForPath = false)
@@ -270,8 +278,14 @@ public object GenerationNames {
         fun lo(x: java.math.BigDecimal?, y: java.math.BigDecimal?): java.math.BigDecimal? =
             if (x == null) y else if (y == null) x else if (x <= y) x else y
         // Members are RDF terms: when both declarations carry typed members the intersection compares terms (so
-        // "chat"@en and "chat"@fr stay distinct); otherwise it falls back to the lexical values.
-        val inTyped = if (a.inValuesTyped != null && b.inValuesTyped != null) a.inValuesTyped.filter { it in b.inValuesTyped } else null
+        // "chat"@en and "chat"@fr stay distinct, while "chat"@en and "chat"@EN are one member: language tags are
+        // case-insensitive); otherwise it falls back to the lexical values. An empty intersection stays an empty
+        // list: no value satisfies both lists, and the generators emit a check that rejects every value.
+        val inTyped = if (a.inValuesTyped != null && b.inValuesTyped != null) {
+            a.inValuesTyped.filter { member -> b.inValuesTyped.any { ShaclInCode.sameMember(member, it) } }
+        } else {
+            null
+        }
         val inValues = when {
             inTyped != null -> inTyped.map { it.value }
             a.inValues == null -> b.inValues

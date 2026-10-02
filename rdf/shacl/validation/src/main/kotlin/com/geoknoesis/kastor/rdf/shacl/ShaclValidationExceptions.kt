@@ -17,6 +17,15 @@ class UnsupportedProfileException(
     cause: Throwable? = null,
 ) : ShaclValidationException(message, cause)
 
+/**
+ * The engine does not implement the requested operation or execution option: `validate(graph, List<ShaclShape>)` /
+ * `validateConstraints` with a non-empty list, [ValidationConfig.parallelValidation] or
+ * [ValidationConfig.streamingMode] on the Kastor native engine (provider ids `kastor` and `memory`). Nothing was
+ * validated; the message says what to use instead.
+ */
+class UnsupportedShaclOperationException(message: String, cause: Throwable? = null) :
+    ShaclValidationException(message, cause)
+
 open class ShapeCompileException(message: String, cause: Throwable? = null) :
     ShaclValidationException(message, cause)
 

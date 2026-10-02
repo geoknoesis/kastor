@@ -39,7 +39,9 @@ enum class SparqlUpdateMethod {
  *   ASK, UPDATE responses.
  * @property maxStreamedResponseBytes cap for [SparqlRepository.withSelectRows], whose rows are
  *   streamed to the consumer; `null` (default) means unbounded.
- * @property connectTimeout TCP connect timeout.
+ * @property connectTimeout TCP connect timeout. Like every timeout here it must be positive; a
+ *   duration too long to be counted in nanoseconds (about 292 years, so
+ *   `Duration.ofMillis(Long.MAX_VALUE)` or `ChronoUnit.FOREVER.duration`) means "no limit".
  * @property readTimeout maximum wait for any single read of the response body. When
  *   [requestTimeout] is `null` it also bounds the wait for the response headers: once for the whole
  *   request, however many redirects are followed (not once per redirect).
@@ -53,7 +55,9 @@ enum class SparqlUpdateMethod {
  *   HTTP request, so the behaviour does not depend on how the JDK's HTTP client interprets a request
  *   timeout (from JDK 26 it also covers reading the response body).
  * @property headers extra HTTP headers sent with every request (e.g. API keys). Never sent to a
- *   different origin after a redirect.
+ *   different origin after a redirect. Names must be RFC 9110 tokens; values may hold visible ASCII,
+ *   ISO-8859-1 characters, and spaces or tabs between them (no other control character, and no
+ *   leading or trailing white space). Both are checked when the configuration is created.
  * @property username HTTP Basic user; requires [password]. A warning is logged once per endpoint
  *   when Basic credentials would be sent over plain `http`.
  * @property insertBatchSize maximum triples per `INSERT DATA`/`DELETE DATA` request. Triples joined
@@ -81,9 +85,15 @@ enum class SparqlUpdateMethod {
  *   [SparqlRepository.select] and [SparqlRepository.withSelectRows] alike, so a streamed response
  *   with [maxStreamedResponseBytes] `null` still never holds an unbounded row. A value of exactly
  *   this size is accepted; a longer one fails with [com.geoknoesis.kastor.rdf.RdfQueryException].
- *   Default 4 Mi characters. A row is decoded once, straight from the stream, so the heap it needs
- *   is that of its decoded strings (up to two bytes per character, 8 MB at the default) plus a
- *   buffer of similar size while its largest string is being read.
+ *   Default 4 Mi characters. A row is decoded once, straight from the stream, and only what its
+ *   bindings need is kept: the variable names and each term's `type`, `value`, `xml:lang` and
+ *   `datatype`. `head`, unknown members and nested values are checked and skipped without being
+ *   stored, however large they are. The heap a row needs is therefore that of its decoded strings
+ *   (at most two bytes per character of the row, 8 MB at the default), plus roughly 200 bytes for
+ *   every variable it binds (a binding takes at least 27 characters, so a row made of nothing but
+ *   minimal bindings stays below 8 bytes per character, about 32 MB at the default), plus a scratch
+ *   buffer of up to twice the size of its largest string while that string is being read.
+ *   Values may be nested at most 128 levels deep.
  * @property strictContentType whether a successful SELECT/ASK response must declare a JSON media
  *   type (`application/sparql-results+json`, `application/json`, any `+json` type; `text/plain` is
  *   also accepted for ASK; a response without a Content-Type is always parsed). Default `true`: any
@@ -131,9 +141,16 @@ data class SparqlEndpointConfig(
         require(maxResultRowChars > 0) { "maxResultRowChars must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
         headers.forEach { (name, value) ->
-            require(HEADER_NAME.matches(name)) { "Invalid HTTP header name: '$name'" }
+            // Checked here in full, so that a request is never refused when it is built.
+            require(HEADER_NAME.matches(name)) { "Invalid HTTP header name: '${printable(name)}'" }
             require(name.lowercase() !in RESTRICTED_HEADERS) { "HTTP header '$name' is managed by the HTTP client and cannot be set" }
             require(value.none { it == '\r' || it == '\n' }) { "HTTP header '$name' must not contain line breaks" }
+            require(value.all(::isFieldValueChar)) {
+                "HTTP header '$name' has an invalid value: only visible ASCII, space, tab and ISO-8859-1 characters are allowed (RFC 9110)"
+            }
+            require(value.isEmpty() || (!isFieldSpace(value.first()) && !isFieldSpace(value.last()))) {
+                "HTTP header '$name' has an invalid value: it must not start or end with a space or tab (RFC 9110)"
+            }
         }
     }
 
@@ -159,7 +176,15 @@ data class SparqlEndpointConfig(
         const val DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES: Int = 100_000
         const val DEFAULT_MAX_RESULT_ROW_CHARS: Int = 4 * 1024 * 1024
 
+        /** An RFC 9110 `token`. */
         private val HEADER_NAME = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+
+        private fun isFieldSpace(c: Char) = c == ' ' || c == '\t'
+
+        /** RFC 9110 `field-content`: visible ASCII, `obs-text` (0x80-0xFF), space and tab; no other control character. */
+        private fun isFieldValueChar(c: Char) = isFieldSpace(c) || c.code in 0x21..0x7E || c.code in 0x80..0xFF
+
+        private fun printable(text: String) = text.map { if (it.code in 0x20..0x7E) it else '?' }.joinToString("")
         private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade")
 
         /**
@@ -219,8 +244,7 @@ data class SparqlEndpointConfig(
             )
         }
 
-        private fun requirePositive(duration: Duration, name: String) =
-            require(!duration.isNegative && !duration.isZero) { "$name must be positive" }
+        private fun requirePositive(duration: Duration, name: String) = Durations.requirePositive(duration, name)
     }
 }
 

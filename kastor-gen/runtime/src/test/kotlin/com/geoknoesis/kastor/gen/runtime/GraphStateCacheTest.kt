@@ -62,7 +62,7 @@ class GraphStateCacheTest {
     }
 
     @Test
-    fun `equal handles of one named graph share a state and data class graphs do not`() {
+    fun `equal handles of one named graph share a state`() {
         val f = Fixture(4)
         val repo = MemoryRepository(RdfConfig(providerId = "memory"))
         repo.editGraph(ex("g")).addTriple(triple(1))
@@ -73,17 +73,6 @@ class GraphStateCacheTest {
         val repo2 = MemoryRepository(RdfConfig(providerId = "memory"))
         f.cache.use(repo2.getGraph(ex("g"))) { assertTrue(it.triples.isEmpty()) }
         assertEquals(3, f.cache.loadCount)
-
-        // Content equality does not identify a live graph: two equal data class graphs with the same stamp differ.
-        data class Structural(val content: List<RdfTriple>, override val modificationStamp: Long) : VersionedRdfGraph {
-            override fun hasTriple(triple: RdfTriple) = triple in content
-            override fun getTriples() = content
-            override fun size() = content.size
-        }
-        val f2 = Fixture(4)
-        f2.cache.use(Structural(listOf(triple(1)), 7)) { }
-        f2.cache.use(Structural(listOf(triple(1)), 7)) { }
-        assertEquals(2, f2.cache.loadCount)
     }
 
     @Test

@@ -82,13 +82,19 @@ Run via Gradle:
 ./gradlew :rdf:cli:run --args="diff expected.ttl actual.ttl"
 ```
 
+Or install the application and use its start script (`./gradlew :rdf:cli:installDist` writes `bin/kastor-rdf`, `bin/kastor-rdf.bat` and `lib/` under the module's `install/kastor-rdf` build directory):
+
+```bash
+kastor-rdf diff --timeout 600 expected.trig actual.trig
+```
+
 | Command | Purpose |
 |--------|---------|
 | **`parse`** | Parse a file, print triple count (non-zero exit on parse errors) |
 | **`to-turtle`** | Parse with inferred or explicit format, print **Turtle** to stdout |
-| **`diff`** | **Isomorphism** check between two files; exit code **2** if they differ structurally |
+| **`diff`** | **Isomorphism** check between two files; exit code **2** if they differ structurally. `--timeout <seconds>` sets the wall-clock limit of the blank-node matching (default 60; `0` = no limit) |
 
-Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error (bad or extra arguments, unknown format, missing file, parse error), **2** diff mismatch, **3** runtime error (I/O, RDF provider or internal failure, including out of memory and stack overflow; one-line message on stderr). `onto-qa` uses a different convention; side by side (both are printed by `kastor-rdf help`):
+Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt` → N-Triples, `.nq` → N-Quads, `.trig` → TriG, `.jsonld`/`.json` → JSON-LD, `.rdf`/`.owl`/`.xml` → RDF/XML). Any other extension is an error unless you pass an explicit format. A third argument overrides the format for **`diff`** (both files use the same override). Quad formats (TriG, N-Quads) are read as **datasets**: `diff` compares the default graph and every named graph. Exit codes: **0** success, **1** usage or input error (bad or extra arguments, unknown format, missing file, parse error), **2** diff mismatch, **3** runtime error (I/O, RDF provider or internal failure, including out of memory and stack overflow; one-line message on stderr). An input that cannot be read to its end (a failing disk or network share) is an I/O error, status **3**, not a parse error. `onto-qa` uses a different convention; side by side (both are printed by `kastor-rdf help`):
 
 | Status | `onto-qa` | `kastor-rdf` |
 |--------|-----------|--------------|
@@ -99,7 +105,11 @@ Format is inferred from the file extension when omitted (`.ttl` → Turtle, `.nt
 | **4** | Usage or configuration error; nothing was run. | not used |
 | **5** | Runtime error: I/O (the input cannot be read, the output cannot be written), model download or loading, similarity or LLM budget, internal error. | not used |
 
-Output on stdout and stderr is UTF-8 whatever the platform charset, so `kastor-rdf to-turtle data.nt > data.ttl` is valid UTF-8 on Windows too. `diff` uses the graph isomorphism of `rdf-core` (the dataset is compared as one graph of quads, with the default limits of `isIsomorphicTo`: a check abandoned at a limit exits with status 3); the application does not ship `rdf-testkit`. Library warnings (e.g. Jena RIOT) are printed on stderr at WARN level via the `slf4j-simple` binding bundled with the application; the binding is not a dependency of the published `rdf-cli` artifact.
+Output redirected to a file or a pipe is UTF-8 whatever the platform charset, so `kastor-rdf to-turtle data.nt > data.ttl` is valid UTF-8 on Windows too. On an interactive console the console's own charset is used (characters it cannot show are printed as `?`; on Windows, `chcp 65001` switches the console to UTF-8).
+
+`diff` uses the graph isomorphism of `rdf-core`, run once: on the two graphs, or for datasets on one graph of quads, so blank nodes shared across graphs must correspond. A check stopped at its limit exits with status 3 (no answer is known); raise the time limit with `--timeout`. When the inputs differ, `diff` prints up to 64 of the triples found in only one input, per input and graph (sorted; triples with blank nodes are shown only when all other triples are the same).
+
+The application does not ship `rdf-testkit`. Library warnings (e.g. Jena RIOT) are printed on stderr at WARN level via the `slf4j-simple` binding bundled with the application; neither the binding nor its `simplelogger.properties` is part of the published `rdf-cli` artifact. Both start scripts put one launcher jar on the class path, whose manifest lists the jars of `lib/` in order, so Windows and Unix load the same class path.
 
 > The CLI does not execute arbitrary Kotlin DSL scripts; build graphs in tests or apps, then **`to-turtle`** or **`diff`** serialized files.
 

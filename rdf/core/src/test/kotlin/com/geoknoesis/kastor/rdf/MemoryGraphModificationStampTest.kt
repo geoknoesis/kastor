@@ -103,10 +103,15 @@ class MemoryGraphModificationStampTest {
     }
 
     @Test
-    fun `the stamp is read under the repository lock, never from the middle of a transaction of another thread`() {
+    fun `the stamp is read without waiting for a write transaction of another thread`() {
         val repo = MemoryRepository(RdfConfig(providerId = "memory"))
         val name = Iri("urn:g")
-        val graphs = listOf(repo.defaultGraph as VersionedRdfGraph, repo.getGraph(name) as VersionedRdfGraph)
+        val untouchedName = Iri("urn:untouched")
+        repo.editGraph(untouchedName).addTriple(t1)
+        val changed = listOf(repo.defaultGraph as VersionedRdfGraph, repo.getGraph(name) as VersionedRdfGraph)
+        val untouched = repo.getGraph(untouchedName) as VersionedRdfGraph
+        val before = changed.map { it.modificationStamp }
+        val untouchedBefore = untouched.modificationStamp
         val pool = Executors.newCachedThreadPool()
         try {
             val inTransaction = CountDownLatch(1)
@@ -120,22 +125,27 @@ class MemoryGraphModificationStampTest {
                     editDefaultGraph().addTriple(t2)
                     editGraph(name).addTriple(t2)
                     // The writing thread itself can read the stamp inside its transaction.
-                    graphs.forEach { it.modificationStamp }
+                    changed.forEach { it.modificationStamp }
                 }
             }
             assertTrue(inTransaction.await(10, TimeUnit.SECONDS))
-            val readers = graphs.map { graph -> pool.submit<Pair<Long, Int>> { graph.modificationStamp to graph.size() } }
-            Thread.sleep(300)
-            readers.forEach { assertFalse(it.isDone, "a stamp read must wait for the transaction, like a content read") }
+            // The transaction is still open: these reads return only because the stamp does not take the lock.
+            val during = changed.map { graph -> pool.submit<Long> { graph.modificationStamp }.get(10, TimeUnit.SECONDS) }
+            val untouchedDuring = pool.submit<Long> { untouched.modificationStamp }.get(10, TimeUnit.SECONDS)
+            assertEquals(untouchedBefore, untouchedDuring, "a graph the transaction did not change keeps its stamp: a cache hit")
+            during.zip(before).forEach { (now, earlier) -> assertNotEquals(earlier, now, "a changed graph shows a new stamp at once") }
+            // A content read still waits for the transaction.
+            val content = pool.submit<Int> { changed[0].size() }
+            assertThrows(java.util.concurrent.TimeoutException::class.java) { content.get(200, TimeUnit.MILLISECONDS) }
             finish.countDown()
             writer.get(10, TimeUnit.SECONDS)
-            readers.zip(graphs).forEach { (reader, graph) ->
-                val (stamp, size) = reader.get(10, TimeUnit.SECONDS)
-                assertEquals(2, size)
-                assertEquals(graph.modificationStamp, stamp, "the stamp read is the committed one")
+            assertEquals(2, content.get(10, TimeUnit.SECONDS))
+            changed.zip(during).forEach { (graph, mid) ->
+                assertNotEquals(mid, graph.modificationStamp, "the stamp read in the middle of the transaction is not the committed one")
             }
+            assertEquals(untouchedBefore, untouched.modificationStamp)
             // Inside a read transaction the stamp can be read as well.
-            repo.readTransaction { graphs.forEach { it.modificationStamp } }
+            repo.readTransaction { changed.forEach { it.modificationStamp } }
         } finally {
             pool.shutdownNow()
             repo.close()

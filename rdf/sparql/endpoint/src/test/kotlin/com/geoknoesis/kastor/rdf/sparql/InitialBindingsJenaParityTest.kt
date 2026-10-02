@@ -312,12 +312,136 @@ class InitialBindingsJenaParityTest {
         "SELECT ?z WHERE{?v<urn:p>?z;<urn:q>?v.}" to false,
     )
 
+    /**
+     * The same for RDF 1.2 syntax (SPARQL 1.2): reified triples, triple terms and annotation blocks have a verb
+     * of their own, and a reifier is an IRI, a blank node or a variable, never a literal.
+     */
+    private val positions12: List<Pair<String, Boolean>> = listOf(
+        "SELECT * WHERE { << ?s ?v ?o >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { <<?s ?v ?o>> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?v <urn:p> ?o >> <urn:q> ?z }" to false,
+        "SELECT * WHERE { << ?s <urn:p> ?v >> <urn:q> ?z }" to false,
+        "SELECT * WHERE { << ?s <urn:p> ?o >> ?v ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> ?o >> <urn:q> ?v }" to false,
+        "SELECT * WHERE { ?x <urn:q> << ?s ?v ?o >> }" to true,
+        "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >> ; ?v ?z }" to true,
+        "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >> , ?v }" to false,
+        "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >> . ?v <urn:l> ?z }" to false,
+        "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >>. ?z ?v ?y }" to true,
+        "SELECT * WHERE { << ?s <urn:p> ?o >> <urn:q> ?z . ?z ?v ?y }" to true,
+        "SELECT * WHERE { << << ?a ?v ?b >> <urn:p> ?o >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << << ?a <urn:p> ?b >> ?v ?o >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?a <urn:p> << ?b ?v ?c >> >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?a <urn:p> << ?b <urn:p> ?v >> >> <urn:q> ?z }" to false,
+        "SELECT * WHERE { << ?a <urn:p> <<( ?b <urn:p> ?v )>> >> <urn:q> ?z }" to false,
+        "SELECT * WHERE { << ?a <urn:p> <<( ?b ?v ?c )>> >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> \"x\"@en>> ?v ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> \"x\"@en >> <urn:q> ?v }" to false,
+        "SELECT * WHERE { << ?s <urn:p> \"1\"^^<urn:dt>>> ?v ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> 1>> ?v ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> true>> <urn:q> ?v }" to false,
+        "PREFIX ex: <urn:> SELECT * WHERE { <<ex:s ?v ex:o>> ex:q ?z }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { <<ex:s ex:p ex:o>> ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { <<ex:s ex:p ex:o>> ex:q ?v }" to false,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?x ex:q <<ex:s ex:p 1>>. ?v ex:l ?z }" to false,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?x ex:q <<ex:s ex:p 1>>; ?v ?z }" to true,
+        "SELECT * WHERE { [ <urn:p> << ?a ?v ?b >> ] <urn:q> ?z }" to true,
+        "SELECT * WHERE { [ <urn:p> << ?a <urn:p> ?b >> ; ?v ?z ] }" to true,
+        "SELECT * WHERE { ?s <urn:p> (1 << ?a ?v ?b >>) }" to true,
+        "SELECT * WHERE { ?s <urn:p> (1 << ?a <urn:p> ?v >> ?v) }" to false,
+        "SELECT * WHERE { << ?s ?v ?o ~ <urn:r> >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> ?o ~ ?v >> <urn:q> ?z }" to true,
+        "SELECT * WHERE { << ?s <urn:p> ?o ~ <urn:r> >> <urn:q> ?v }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ ?v }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o ~?v }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> ; ?v ?z }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> , ?v }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ ; ?v ?z }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ . ?v <urn:l> ?z }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ ?r ~ ?v }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ?o ~ex:r ; ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ?o ~ex:r , ?v }" to false,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ?o ~ _:r ; ex:q ?v }" to false,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s ?v ?o )>> }" to true,
+        "SELECT * WHERE { ?x <urn:q> <<(?s ?v ?o)>>. }" to true,
+        "SELECT * WHERE { ?x <urn:q> <<( ?v <urn:p> ?o )>> }" to false,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> ?v )>> }" to false,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> ?o )>> ; ?v ?z }" to true,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> ?o )>> , ?v }" to false,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> <<( ?a ?v ?b )>> )>> }" to true,
+        "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> <<( ?a <urn:p> ?v )>> )>> . ?v <urn:l> ?z }" to false,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s ?v ?o )>>) }" to true,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?v <urn:p> ?o )>>) }" to true,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s <urn:p> ?v )>>) }" to false,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s <urn:p> <<( ?v <urn:p> ?o )>> )>>) }" to true,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s <urn:p> <<( ?a <urn:p> ?v )>> )>>) }" to false,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(isTRIPLE(<<( ?s ?v ?o )>>) && ?t = 1) }" to true,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(isTRIPLE(<<( ?s <urn:p> ?v )>>)) ?v <urn:l> ?z }" to false,
+        "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s <urn:p> ?o )>>) ?z ?v ?y }" to true,
+        "SELECT * WHERE { BIND(<<( ?s ?v ?o )>> AS ?t) ?s <urn:p> ?o }" to true,
+        "SELECT * WHERE { BIND(<<( ?s <urn:p> ?v )>> AS ?t) ?v <urn:p> ?o }" to false,
+        "SELECT (<<( ?s ?v ?o )>> AS ?t) WHERE { ?s <urn:p> ?o }" to true,
+        "SELECT (<<( ?s <urn:p> ?v )>> AS ?t) WHERE { ?s <urn:p> ?o }" to false,
+        "SELECT ?o WHERE { ?s <urn:p> ?o } ORDER BY (<<( ?s ?v ?o )>>)" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o } ORDER BY (<<( ?v <urn:p> ?o )>>)" to true,
+        "SELECT ?o WHERE { ?s <urn:p> ?o } ORDER BY (<<( ?s <urn:p> ?v )>>)" to false,
+        "SELECT ?o (COUNT(*) AS ?n) WHERE { ?s <urn:p> ?o } GROUP BY ?o HAVING(?o != <<( ?v <urn:p> 1 )>>)" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| ?v ?z |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {|?v ?z|} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?v |} }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z ; ?v ?y |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z , ?v |} }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} ; ?v ?y }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} , ?v }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} . ?v <urn:l> ?y }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} . ?y ?v ?z }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z {| ?v ?y |} |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z {| <urn:r> ?v |} ; ?v ?y |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z {| <urn:r> ?v |} |} , ?v }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> {| ?v ?z |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o ~ ?r {| <urn:q> ?v |} }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} {| ?v ?y |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} ~ ?v }" to true,
+        "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> << ?a ?v ?b >> |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> << ?a <urn:p> ?b >> {| ?v ?z |} }" to true,
+        "SELECT * WHERE { ?s <urn:p> [ <urn:q> ?z {| ?v ?y |} ] }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o {| ex:q ex:r|} ; ?v ?z }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o{|ex:q ?v|} }" to false,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o{|ex:q 1|}. ?z ?v ?y }" to true,
+        "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o{|ex:q \"x\"@en|}. ?v ex:l ?y }" to false,
+        "SELECT * WHERE { ?s <urn:p> ?o FILTER(?o < <urn:x> || ?o < ?v || ?v > ?o) ?v <urn:l> ?z }" to false,
+    )
+
     @Test
     fun `only variables in IRI-only positions reject a literal and a literal is legal everywhere else`() {
+        assertPositions(positions, Syntax.syntaxSPARQL_11)
+        assertEquals(true, positions.count { it.second } > 40 && positions.count { !it.second } > 40)
+    }
+
+    @Test
+    fun `RDF 1_2 triple terms, reified triples and annotation blocks have IRI-only positions too`() {
+        assertPositions(positions12, Syntax.syntaxSPARQL_12)
+        assertEquals(true, positions12.count { it.second } > 40 && positions12.count { !it.second } > 25)
+    }
+
+    @Test
+    fun `an IRI substituted next to a comparison operator does not form an RDF 1_2 token`() {
+        // Glued as written, `?s<<urn:b>` and `<urn:b>>?s` would start and end a reified triple for a SPARQL 1.2 parser.
+        val query = "SELECT ?s ?o WHERE { ?s <urn:p> ?o FILTER(?s<?x || ?x>?s || ?s=?x) }"
+        val rewritten = rewrite(query, mapOf("x" to b))
+        assertEquals("SELECT ?s ?o WHERE { ?s <urn:p> ?o FILTER(?s< <urn:b> || <urn:b> >?s || ?s=<urn:b>) }", rewritten)
+        for (syntax in listOf(Syntax.syntaxSPARQL_11, Syntax.syntaxSPARQL_12, Syntax.syntaxARQ)) {
+            QueryFactory.create(rewritten, syntax)
+        }
+        assertSameAsJena("IRI next to comparison operators", query, mapOf("x" to b))
+    }
+
+    /** Every query of [positions] against Jena's parser for [syntax], which says where a literal is legal. */
+    private fun assertPositions(positions: List<Pair<String, Boolean>>, syntax: Syntax) {
         val probe = "<urn:kastor:position-probe>"
         val literal = "\"lit\""
         fun parses(text: String) = try {
-            QueryFactory.create(text, Syntax.syntaxSPARQL_11)
+            QueryFactory.create(text, syntax)
             true
         } catch (e: Exception) {
             false
@@ -346,6 +470,5 @@ class InitialBindingsJenaParityTest {
             }
             SparqlInitialBindings.validate(query, setOf("v"), emptySet())
         }
-        assertEquals(true, positions.count { it.second } > 40 && positions.count { !it.second } > 40)
     }
 }

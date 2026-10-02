@@ -33,7 +33,7 @@ import org.apache.jena.riot.RiotException
  *     skolemized only as the graph name. Rewriting the triple occurrences too would need a second pass (while
  *     streaming, a blank node seen in a triple may only later turn out to name a graph) or would turn every blank
  *     node of the document into an IRI. The link is not lost: the term's [BlankNode.id] is the `<blank node id>`
- *     part of the graph name ([JenaParsing.blankNodeIdOfSkolemGraph] recovers it).
+ *     part of the graph name (the public function [blankNodeIdOfSkolemGraph] recovers it).
  */
 class JenaProvider : RdfProvider {
 
@@ -53,14 +53,14 @@ class JenaProvider : RdfProvider {
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         return when (variantId) {
             "memory" -> JenaRepository.MemoryRepository()
-            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference(viewIdleTimeout(config))
+            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference(viewIdleTimeout(config), closeTimeout(config), closeGrace(config))
             "tdb2" -> {
                 val location = config.options["location"] ?: "data"
                 JenaRepository.Tdb2Repository(location)
             }
             "tdb2-inference" -> {
                 val location = config.options["location"] ?: "data"
-                JenaRepository.Tdb2RepositoryWithInference(location, viewIdleTimeout(config))
+                JenaRepository.Tdb2RepositoryWithInference(location, viewIdleTimeout(config), closeTimeout(config), closeGrace(config))
             }
             else -> throw IllegalArgumentException("Unsupported Jena repository variant: $variantId")
         }
@@ -74,6 +74,28 @@ class JenaProvider : RdfProvider {
         val raw = config.options["viewIdleTimeoutMillis"] ?: return JenaRepository.DEFAULT_VIEW_IDLE_TIMEOUT
         val millis = requireNotNull(raw.trim().toLongOrNull()?.takeIf { it > 0 }) {
             "viewIdleTimeoutMillis must be a positive number of milliseconds, got '$raw'"
+        }
+        return java.time.Duration.ofMillis(millis)
+    }
+
+    /**
+     * How long `close()` waits for readers that still hold an inference view: option `closeTimeoutMillis` (a number of
+     * milliseconds, 0 or more), default [JenaRepository.DEFAULT_CLOSE_TIMEOUT].
+     */
+    private fun closeTimeout(config: RdfConfig): java.time.Duration =
+        nonNegativeMillis(config, "closeTimeoutMillis") ?: JenaRepository.DEFAULT_CLOSE_TIMEOUT
+
+    /**
+     * How long `close()` then waits for the workers of the views it stopped: option `closeGraceMillis` (a number of
+     * milliseconds, 0 or more), default [JenaRepository.DEFAULT_CLOSE_GRACE].
+     */
+    private fun closeGrace(config: RdfConfig): java.time.Duration =
+        nonNegativeMillis(config, "closeGraceMillis") ?: JenaRepository.DEFAULT_CLOSE_GRACE
+
+    private fun nonNegativeMillis(config: RdfConfig, option: String): java.time.Duration? {
+        val raw = config.options[option] ?: return null
+        val millis = requireNotNull(raw.trim().toLongOrNull()?.takeIf { it >= 0 }) {
+            "$option must be a number of milliseconds (0 or more), got '$raw'"
         }
         return java.time.Duration.ofMillis(millis)
     }
@@ -253,7 +275,8 @@ class JenaProvider : RdfProvider {
         if (jena != null) {
             // Stream straight into one write transaction on the store (joining an enclosing transaction):
             // no intermediate copy of the dataset, and a parse failure rolls the whole load back.
-            jena.transaction {
+            // (withWrite, not transaction: the parser writes to the store directly, to whatever graphs the input names.)
+            jena.withWrite {
                 JenaParsing.parseWithFormatErrors(format) {
                     JenaParsing.parser(inputStream, lang, baseIri)
                         .parse(JenaParsing.validatingDataset(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))
@@ -333,6 +356,33 @@ class JenaProvider : RdfProvider {
     }
 }
 
+/**
+ * Recognises and decodes the name of a **skolem graph**: the IRI that replaces a blank-node graph name when a dataset
+ * is loaded into a repository (see [JenaProvider] and `parseDataset`).
+ *
+ * Returns the id of the blank node the graph name stands for, that is the [BlankNode.id] of that node's occurrences
+ * as a term in the triples of the same load, or `null` when [graphName] is not a skolem graph name.
+ *
+ * A skolem graph name has exactly this form (the RDF4J provider produces the same one, so this function decodes its
+ * graph names too):
+ *
+ * ```
+ * urn:kastor:skolem:<load>:<id>
+ * ```
+ * - `<load>`: 32 lowercase hexadecimal digits, a random 128-bit id drawn once per load;
+ * - `<id>`: the blank node id as UTF-8, where every byte other than `A-Z a-z 0-9 . _ -` is written as `%` and two
+ *   uppercase hexadecimal digits; never empty.
+ *
+ * ```kotlin
+ * for (graph in repository.listGraphs()) {
+ *     val blankNodeId = blankNodeIdOfSkolemGraph(graph) ?: continue   // an ordinary named graph
+ *     // BlankNode(blankNodeId) is the node that named this graph in the loaded document
+ * }
+ * ```
+ */
+@JvmName("blankNodeIdOfSkolemGraph")
+fun blankNodeIdOfSkolemGraph(graphName: Iri): String? = JenaParsing.blankNodeIdOfSkolemGraph(graphName.value)
+
 /** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */
 internal object JenaParsing {
         val FORMATS = listOf(
@@ -406,7 +456,8 @@ internal object JenaParsing {
         /** Prefix of the IRIs that replace blank-node graph names when a dataset is loaded into a repository. */
         const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
 
-        private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:([A-Za-z0-9._%-]+)")
+        /** Exactly what [skolemGraphName] produces: unreserved characters, or `%` and two uppercase hex digits. */
+        private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:((?:[A-Za-z0-9._-]|%[0-9A-F]{2})+)")
 
         /**
          * The id of the blank node that the skolem graph name [graphIri] stands for (the [BlankNode.id] of its

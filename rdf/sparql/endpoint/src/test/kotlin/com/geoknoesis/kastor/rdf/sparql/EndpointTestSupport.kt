@@ -142,3 +142,110 @@ internal class SilentServer : AutoCloseable {
         accepted.forEach { it.close() }
     }
 }
+
+/** A response for [HttpTransport] fakes; [onHeaders] runs when the adapter asks for the headers. */
+internal class FakeResponse(
+    private val request: java.net.http.HttpRequest,
+    private val status: Int,
+    private val body: java.io.InputStream,
+    headers: Map<String, String> = mapOf("Content-Type" to "application/sparql-results+json"),
+    private val onHeaders: () -> Unit = {},
+) : java.net.http.HttpResponse<java.io.InputStream> {
+    private val headers = java.net.http.HttpHeaders.of(headers.mapValues { listOf(it.value) }) { _, _ -> true }
+    override fun statusCode(): Int = status
+    override fun request(): java.net.http.HttpRequest = request
+    override fun previousResponse(): java.util.Optional<java.net.http.HttpResponse<java.io.InputStream>> = java.util.Optional.empty()
+    override fun headers(): java.net.http.HttpHeaders {
+        onHeaders()
+        return headers
+    }
+    override fun body(): java.io.InputStream = body
+    override fun sslSession(): java.util.Optional<javax.net.ssl.SSLSession> = java.util.Optional.empty()
+    override fun uri(): java.net.URI = request.uri()
+    override fun version(): java.net.http.HttpClient.Version = java.net.http.HttpClient.Version.HTTP_1_1
+}
+
+/** A response body that records whether it was closed. */
+internal class TrackedBody(bytes: ByteArray) : java.io.ByteArrayInputStream(bytes) {
+    @Volatile var closed = false
+        private set
+
+    override fun close() {
+        closed = true
+    }
+}
+
+/**
+ * A response body whose read blocks until the stream is closed (or [giveUpMillis] pass, after which
+ * it reports the end of the body); [onClose] runs after the reader was released.
+ */
+internal class BlockingBody(private val giveUpMillis: Long, private val onClose: () -> Unit = {}) : java.io.InputStream() {
+    private val released = java.util.concurrent.CountDownLatch(1)
+
+    override fun read(): Int {
+        if (released.await(giveUpMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) throw IOException("closed")
+        return -1
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int = read()
+
+    override fun close() {
+        released.countDown()
+        onClose()
+    }
+}
+
+/** The terms of a row by variable name. */
+internal fun com.geoknoesis.kastor.rdf.BindingSet.asMap(): Map<String, com.geoknoesis.kastor.rdf.RdfTerm> =
+    getVariableNames().associateWith { get(it)!! }
+
+/**
+ * What a general-purpose JSON parser (kotlinx.serialization) and a plain reading of the SPARQL 1.1
+ * JSON results format make of a document: the reference the streaming decoder is compared with.
+ * It throws (anything) for a document it does not accept.
+ */
+internal object ReferenceJsonResults {
+    fun rows(json: String): List<Map<String, com.geoknoesis.kastor.rdf.RdfTerm>> {
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(json) as kotlinx.serialization.json.JsonObject
+        val results = root.getValue("results") as kotlinx.serialization.json.JsonObject
+        val bindings = results.getValue("bindings") as kotlinx.serialization.json.JsonArray
+        return bindings.map { row ->
+            (row as kotlinx.serialization.json.JsonObject).mapValues { (_, binding) -> term(binding as kotlinx.serialization.json.JsonObject) }
+        }
+    }
+
+    fun ask(json: String): Boolean {
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(json) as kotlinx.serialization.json.JsonObject
+        val value = root.getValue("boolean") as kotlinx.serialization.json.JsonPrimitive
+        return when (value.content) {
+            "true" -> true
+            "false" -> false
+            else -> error("not a boolean")
+        }
+    }
+
+    private fun text(binding: kotlinx.serialization.json.JsonObject, member: String): String? = when (val value = binding[member]) {
+        null, kotlinx.serialization.json.JsonNull -> null
+        else -> (value as kotlinx.serialization.json.JsonPrimitive).content
+    }
+
+    private fun term(binding: kotlinx.serialization.json.JsonObject): com.geoknoesis.kastor.rdf.RdfTerm {
+        val type = text(binding, "type") ?: error("no type")
+        val value = text(binding, "value") ?: error("no value")
+        val lang = text(binding, "xml:lang")
+        val datatype = text(binding, "datatype")
+        return when (type) {
+            "uri" -> com.geoknoesis.kastor.rdf.Iri(value)
+            "bnode" -> com.geoknoesis.kastor.rdf.BlankNode(value)
+            "literal", "typed-literal" -> {
+                check("its:dir" !in binding && "direction" !in binding) { "directional" }
+                when {
+                    !lang.isNullOrEmpty() -> com.geoknoesis.kastor.rdf.LangString(value, lang)
+                    datatype != null -> com.geoknoesis.kastor.rdf.Literal(value, com.geoknoesis.kastor.rdf.Iri(datatype))
+                    else -> com.geoknoesis.kastor.rdf.Literal(value, com.geoknoesis.kastor.rdf.vocab.XSD.string)
+                }
+            }
+            else -> error("unsupported type")
+        }
+    }
+}

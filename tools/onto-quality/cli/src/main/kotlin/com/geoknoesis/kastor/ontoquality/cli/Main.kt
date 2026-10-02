@@ -78,6 +78,7 @@ import java.io.InputStream
 import java.io.PrintStream
 import java.net.URI
 import java.net.URISyntaxException
+import java.nio.charset.Charset
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -87,7 +88,7 @@ import java.time.Duration
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    installUtf8StandardStreams()
+    installStandardStreams()
     val status = runOntoQa(args.toList())
     System.out.flush()
     System.err.flush()
@@ -95,12 +96,38 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Reports, RDF and messages are written as UTF-8 whatever the platform charset: a Windows code page would turn
- * unmappable characters into `?` when the output is redirected (`onto-qa check --format json > report.json`).
+ * Output redirected to a file or a pipe is UTF-8 whatever the platform charset: a Windows code page would turn
+ * unmappable characters into `?` (`onto-qa check --format json > report.json`). An interactive console is written in
+ * its own charset, or it would show UTF-8 bytes as garbage unless the user had switched it to UTF-8 (`chcp 65001`).
  */
-internal fun installUtf8StandardStreams() {
-    System.setOut(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.out)), true, Charsets.UTF_8))
-    System.setErr(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.err)), true, Charsets.UTF_8))
+internal fun installStandardStreams() {
+    val charset = standardStreamCharset(interactiveConsoleCharset())
+    System.setOut(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.out)), true, charset))
+    System.setErr(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.err)), true, charset))
+}
+
+/** The charset for stdout and stderr: the console's when there is an interactive one, else UTF-8. */
+internal fun standardStreamCharset(consoleCharset: Charset?): Charset = consoleCharset ?: Charsets.UTF_8
+
+/**
+ * The charset of the interactive console this JVM is attached to, or null when output is redirected (or the charset
+ * cannot be determined). `System.console()` is null when the standard streams are redirected; on JDK 22 and later it
+ * can be non-null even then, and `Console.isTerminal()` tells.
+ */
+internal fun interactiveConsoleCharset(): Charset? {
+    val console = System.console() ?: return null
+    val terminal =
+        try {
+            java.io.Console::class.java.getMethod("isTerminal").invoke(console) as? Boolean ?: true
+        } catch (_: ReflectiveOperationException) {
+            true
+        }
+    if (!terminal) return null
+    return try {
+        console.charset()
+    } catch (_: RuntimeException) {
+        null
+    }
 }
 
 private val logger = LoggerFactory.getLogger("onto-qa")
@@ -130,8 +157,9 @@ private const val EXIT_STATUS_HELP =
         "Use --debug (before or after the command) for stack traces.\n\n" +
         "kastor-rdf uses a different convention: 0 success; 1 usage or input error; 2 diff found the inputs not isomorphic; " +
         "3 runtime error.\n\n" +
-        "Output on stdout and stderr is UTF-8, whatever the platform charset. --output files are written atomically " +
-        "(temporary file, then move); parent directories are created and an existing file is replaced."
+        "Output redirected to a file or a pipe is UTF-8, whatever the platform charset; an interactive console is written " +
+        "in its own charset. --output files are written atomically (temporary file, then move); parent directories are " +
+        "created and an existing file is replaced. An --output that cannot be written is refused before anything is run."
 
 private const val OUTPUT_HELP =
     "Write output to this file instead of stdout (parent directories are created; an existing file is replaced atomically)"
@@ -290,30 +318,70 @@ internal fun runOntoQa(
         app.parse(argv)
         EXIT_OK
     } catch (e: CliktError) {
-        app.getFormattedHelp(e)?.let { if (e.printError) err(it) else println(it) }
-        if (debug) e.cause?.let { printStackTrace(it, secretsOf(environment), err) }
+        val secrets = secretsOf(environment, baseUrl = ollamaBaseOf(argv))
+        app.getFormattedHelp(e)?.let { if (e.printError) err(redact(it, secrets)) else println(it) }
+        if (debug) e.cause?.let { printStackTrace(it, secrets, err) }
         exitStatusFor(e)
     } catch (e: Throwable) {
-        err("onto-qa: internal error: ${describeFailure(e)}")
-        if (debug) printStackTrace(e, secretsOf(environment), err)
+        val secrets = secretsOf(environment, baseUrl = ollamaBaseOf(argv))
+        err(safeLine("onto-qa: internal error: ${e.javaClass.simpleName}: ${e.message ?: "(no message)"}", secrets))
+        if (debug) printStackTrace(e, secrets, err)
         EXIT_RUNTIME_ERROR
     }
 }
 
-/** API keys shorter than this are not treated as secrets to redact (too likely to match ordinary text). */
-private const val MIN_SECRET_CHARS = 8
+/** `scheme://user:password@host` in running text; the credentials are group 2. */
+private val URL_CREDENTIALS = Regex("([A-Za-z][A-Za-z0-9+.\\-]*://)([^/\\s?#]*)@")
 
-/** Provider API keys visible to this run; they are replaced by `***` in everything the CLI prints or writes. */
-internal fun secretsOf(environment: CliEnvironment, extra: String? = null): List<String> =
-    listOfNotNull(extra, environment.env(LlmExplanationConfig.OPENAI_API_KEY), environment.env(LlmExplanationConfig.ANTHROPIC_API_KEY))
-        .filter { it.length >= MIN_SECRET_CHARS }
+/** The credentials of [url] (`user:password`, and the password alone), or nothing when it has none. */
+private fun urlCredentials(url: String?): List<String> {
+    val userInfo = url?.let { URL_CREDENTIALS.find(it) }?.groupValues?.get(2)?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    return listOf(userInfo, userInfo.substringAfter(':', "")).filter { it.isNotBlank() }
+}
+
+/** The value of `--ollama-base` in [argv], for redaction where the parsed options are not at hand. */
+private fun ollamaBaseOf(argv: List<String>): String? {
+    val index = argv.indexOf("--ollama-base")
+    return if (index >= 0) argv.getOrNull(index + 1) else argv.firstOrNull { it.startsWith("--ollama-base=") }?.substringAfter('=')
+}
+
+/**
+ * Secrets visible to this run: the provider API keys, whatever their length, and the credentials of the
+ * `--ollama-base` URL ([baseUrl]). They are replaced by `***` in everything the CLI prints or writes. Longest first, so
+ * a secret that contains another is replaced as a whole.
+ */
+internal fun secretsOf(environment: CliEnvironment, extra: String? = null, baseUrl: String? = null): List<String> =
+    (listOfNotNull(extra, environment.env(LlmExplanationConfig.OPENAI_API_KEY), environment.env(LlmExplanationConfig.ANTHROPIC_API_KEY)) + urlCredentials(baseUrl))
+        .filter { it.isNotBlank() }
         .distinct()
+        .sortedByDescending { it.length }
 
-private fun redact(text: String, secrets: List<String>): String = secrets.fold(text) { acc, secret -> acc.replace(secret, "***") }
+/** [text] without [secrets] and without the credentials of any URL (the part between `://` and `@`). */
+private fun redact(text: String, secrets: List<String>): String {
+    val withoutUrlCredentials = if (text.contains("://")) URL_CREDENTIALS.replace(text) { "${it.groupValues[1]}***@" } else text
+    return secrets.fold(withoutUrlCredentials) { acc, secret -> acc.replace(secret, "***") }
+}
+
+/** Most lines of one `--debug` stack trace; the rest is counted. */
+internal const val MAX_DEBUG_TRACE_LINES = 120
+
+/** Longest line the CLI prints for a failure (message or stack trace line), in characters. */
+internal const val MAX_DEBUG_LINE_CHARS = 2_000
+
+private const val CUT = " ...[truncated]"
+
+/** One line for stderr: [secrets] redacted, control and bidi characters made visible, at most [MAX_DEBUG_LINE_CHARS] characters. */
+private fun safeLine(text: String, secrets: List<String>): String {
+    // Bound the work on huge provider bodies; the margin keeps a secret at the cut whole, so it is still redacted.
+    val bounded = if (text.length > MAX_DEBUG_LINE_CHARS * 4) text.take(MAX_DEBUG_LINE_CHARS * 4) else text
+    val line = sanitize(redact(bounded, secrets))
+    return if (line.length <= MAX_DEBUG_LINE_CHARS) line else line.take(MAX_DEBUG_LINE_CHARS - CUT.length) + CUT
+}
 
 /**
  * `--debug` stack trace of [failure], line by line. Exception messages carry untrusted text (ontology content in parse
- * errors, provider error bodies), so every line is sanitised like any other message, and [secrets] are redacted.
+ * errors, provider error bodies), so every line is sanitised like any other message, [secrets] and URL credentials
+ * are redacted, a line is cut to [MAX_DEBUG_LINE_CHARS] characters and a trace to [MAX_DEBUG_TRACE_LINES] lines.
  */
 private fun printStackTrace(failure: Throwable, secrets: List<String>, err: (String) -> Unit) {
     val trace =
@@ -322,7 +390,18 @@ private fun printStackTrace(failure: Throwable, secrets: List<String>, err: (Str
         } catch (_: Throwable) {
             "${failure.javaClass.name} (stack trace unavailable)"
         }
-    trace.trimEnd().lines().forEach { err(sanitize(redact(it, secrets))) }
+    val lines = trace.trimEnd().lineSequence()
+    var printed = 0
+    var hidden = 0
+    for (line in lines) {
+        if (printed < MAX_DEBUG_TRACE_LINES) {
+            err(safeLine(line, secrets))
+            printed++
+        } else {
+            hidden++
+        }
+    }
+    if (hidden > 0) err("... ($hidden more stack trace line(s) not shown)")
 }
 
 /** Clikt raises usage problems as [UsageError] (or help-on-error) with status 1; they map to [EXIT_USAGE]. */
@@ -398,10 +477,16 @@ private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
 
     private val overwriteInputOpt by option("--overwrite-input", help = OVERWRITE_INPUT_HELP).flag(default = false)
 
-    /** Usage error when [output] is the [input] file and `--overwrite-input` was not given; call before any work. */
-    protected fun requireOutputIsNotInput(input: Path, output: Path?) {
-        if (output == null || overwriteInputOpt || !isSameFile(input, output)) return
-        throw usageError("--output is the input file (${sanitize(input.toString())}); choose another path or pass --overwrite-input")
+    /**
+     * Checks [output] before any work (parsing, model loading, paid LLM calls): a usage error when it is the [input]
+     * file and `--overwrite-input` was not given, a runtime (I/O) error when it cannot be written ([outputProblem]).
+     */
+    protected fun requireUsableOutput(input: Path, output: Path?) {
+        if (output == null) return
+        if (!overwriteInputOpt && isSameFile(input, output)) {
+            throw usageError("--output is the input file (${sanitize(input.toString())}); choose another path or pass --overwrite-input")
+        }
+        outputProblem(output)?.let { throw CliktError("Cannot write --output ${sanitize(output.toString())}: ${sanitize(it)}", null, EXIT_RUNTIME_ERROR) }
     }
 
     override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
@@ -507,6 +592,22 @@ private class IoTrackingInputStream(delegate: InputStream) : FilterInputStream(d
         }
 }
 
+/**
+ * Why [output] cannot be written, or null when it can: it is a directory, an existing file that is not writable, or
+ * its nearest existing parent is not a writable directory (missing parent directories are created when the file is
+ * written). Nothing is created or changed.
+ */
+internal fun outputProblem(output: Path): String? {
+    val target = output.toAbsolutePath().normalize()
+    if (Files.isDirectory(target)) return "it is a directory"
+    if (Files.exists(target)) return if (Files.isWritable(target)) null else "the file is not writable"
+    var ancestor = target.parent ?: return "it has no parent directory"
+    while (!Files.exists(ancestor)) ancestor = ancestor.parent ?: return "none of its parent directories exists"
+    if (!Files.isDirectory(ancestor)) return "$ancestor is not a directory"
+    if (!Files.isWritable(ancestor)) return "directory $ancestor is not writable"
+    return null
+}
+
 /** True when [a] and [b] name the same file (through links when both exist, else by normalised absolute path). */
 internal fun isSameFile(a: Path, b: Path): Boolean {
     val normalised = a.toAbsolutePath().normalize() == b.toAbsolutePath().normalize()
@@ -537,7 +638,7 @@ private class MetricsCommand : OntoQaCommand(name = "metrics") {
         if (format in setOf("json", "turtle") && include != "all") {
             throw usageError("--include $includeOpt is only supported with --format text or markdown ($format output always contains every section)")
         }
-        requireOutputIsNotInput(ontologyArg, outputOpt)
+        requireUsableOutput(ontologyArg, outputOpt)
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         val cfg =
             MetricsConfig(
@@ -618,7 +719,7 @@ private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCom
                 ontologyArg.parent?.resolve("$name.enriched.ttl")
                     ?: Path.of("$name.enriched.ttl")
             }
-        requireOutputIsNotInput(ontologyArg, out)
+        requireUsableOutput(ontologyArg, out)
         val graph = parseOntology(ontologyArg, resolveInputFormat(ontologyArg, inputFormatOpt), validateBaseIri(baseIriOpt))
         openEnricher(environment, options).use { enricher ->
             echo("Embedding and building similarity index (threshold=${embedding.threshold}, mode=${options.similarityMode.label})…", err = true)
@@ -742,6 +843,11 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
             "--llm-retries",
             help = "Retries per LLM request for timeouts, HTTP 408/429/5xx and connection errors (0–10, default 2); other errors are not retried",
         ).int().restrictTo(0..10).default(2)
+    val llmMaxOutputTokens by
+        option(
+            "--llm-max-output-tokens",
+            help = "Most tokens the model may generate per LLM request (default ${LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS}); raise it with a large --explain-batch",
+        ).int().restrictTo(1..LlmExplanationConfig.MAX_OUTPUT_TOKENS_LIMIT).default(LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS)
     val llmMaxDurationSeconds by
         option(
             "--llm-max-duration",
@@ -787,6 +893,7 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
                 retries = llmRetries,
                 maxTotalDuration = Duration.ofSeconds(llmMaxDurationSeconds.toLong()),
                 failOnError = failOnExplainError,
+                maxOutputTokens = llmMaxOutputTokens,
             )
         }
 }
@@ -806,7 +913,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
-        requireOutputIsNotInput(ontologyArg, reportOptions.output)
+        requireUsableOutput(ontologyArg, reportOptions.output)
         val embeddingOptions = embedding.toOptions()
         // LLM prerequisites (opt-in, API key) are checked before the ontology is parsed or a model is loaded.
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
@@ -877,7 +984,7 @@ private class CheckCommand(private val environment: CliEnvironment) : OntoQaComm
         val reasoningProfile = parseReasonerProfile(reportOptions.reasoner)
         requireReasonerAvailable(environment, reasoningProfile, reportOptions.reasoner)
         val baseIri = validateBaseIri(baseIriOpt)
-        requireOutputIsNotInput(ontologyArg, reportOptions.output)
+        requireUsableOutput(ontologyArg, reportOptions.output)
         val llm = preflightLlm(reportOptions.explainCli(), environment) { echo(it, err = true) }
         val useMetrics = withMetricsOpt && !noMetricsOpt
         val checker = buildChecker(reportOptions.catalog, ShaclValidation.validator(), useMetrics)
@@ -970,6 +1077,8 @@ internal data class LlmExplainCli(
     val apiKey: String? = null,
     /** Set by [preflightLlm] when a prerequisite is missing: no LLM is called and the run counts as an explanation failure. */
     val skipped: Boolean = false,
+    /** `--llm-max-output-tokens`. */
+    val maxOutputTokens: Int = LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS,
 ) {
     override fun toString(): String =
         "LlmExplainCli(provider=$provider, dryRun=$dryRun, skipped=$skipped, apiKey=${if (apiKey == null) "null" else "***"})"
@@ -1073,7 +1182,7 @@ private fun maybeExplainReport(
         err("LLM explain dry-run: would send up to $n findings (provider=${llm.provider}, model=$modelDesc)")
         return ExplainOutcome(null, failed = false)
     }
-    val secrets = secretsOf(environment, llm.apiKey)
+    val secrets = secretsOf(environment, llm.apiKey, llm.ollamaBase)
     return try {
         val cfg =
             LlmExplanationConfig(
@@ -1085,6 +1194,7 @@ private fun maybeExplainReport(
                 requestTimeout = llm.requestTimeout,
                 maxRetries = llm.retries,
                 maxTotalDuration = llm.maxTotalDuration,
+                maxOutputTokens = llm.maxOutputTokens,
             )
         val enricher = environment.explanationEnricherFactory(cfg)
         val opts =
@@ -1094,24 +1204,50 @@ private fun maybeExplainReport(
                 minSeverity = llm.minSeverity,
             )
         val raw = runBlocking { enricher.enrich(report, opts) }
-        // The API key never reaches a report, even when a provider echoes it in an error.
+        // No API key or URL credential reaches a report, even when a provider echoes it in an error.
         val explained =
-            if (raw.failures.none { failure -> secrets.any { it in failure.reason } }) {
+            if (raw.failures.all { redact(it.reason, secrets) == it.reason }) {
                 raw
             } else {
                 raw.copy(failures = raw.failures.map { ExplanationFailure(it.findingRefs, redact(it.reason, secrets), it.cause) })
             }
         if (explained.hasExplanationFailures) {
-            val missing = explained.failures.sumOf { it.findingRefs.size }
-            err("LLM explanations incomplete: $missing finding(s) not explained (${sanitize(explained.failures.first().reason)})")
+            reportUnexplained(explained.failures, llm.failOnError, secrets, err)
             if (debug) printFailureCauses(explained.failures, secrets, err)
         }
         ExplainOutcome(explained, failed = explained.hasExplanationFailures)
     } catch (e: Exception) {
-        err("LLM explanations failed: ${e::class.simpleName}: ${sanitize(redact(e.message ?: "", secrets))}")
+        err(safeLine("LLM explanations failed: ${e::class.simpleName}: ${e.message ?: ""}", secrets))
         if (debug) printStackTrace(e, secrets, err)
         ExplainOutcome(null, failed = true)
     }
+}
+
+/** Distinct failure reasons listed on stderr; findings with further reasons are counted together. */
+private const val MAX_FAILURE_REASONS = 5
+
+/**
+ * Says on stderr how many findings got no explanation, and why: one line when every failure has the same reason, else
+ * one line per reason with its number of findings (a batch that is too large to send is skipped without an LLM call,
+ * so its findings would otherwise go unnoticed). Without `--fail-on-explain-error` the exit status does not tell, so
+ * a hint says so.
+ */
+private fun reportUnexplained(failures: List<ExplanationFailure>, failOnError: Boolean, secrets: List<String>, err: (String) -> Unit) {
+    val missing = failures.sumOf { it.findingRefs.size }
+    val byReason = LinkedHashMap<String, Int>()
+    for (failure in failures) byReason.merge(failure.reason, failure.findingRefs.size, Int::plus)
+    if (byReason.size == 1) {
+        err(safeLine("LLM explanations incomplete: $missing finding(s) not explained (${failures.first().reason})", secrets))
+        return
+    }
+    err("LLM explanations incomplete: $missing finding(s) not explained, for ${byReason.size} reasons:")
+    val reasons = byReason.entries.sortedByDescending { it.value }
+    for ((reason, count) in reasons.take(MAX_FAILURE_REASONS)) err(safeLine("  - $count finding(s): $reason", secrets))
+    if (reasons.size > MAX_FAILURE_REASONS) {
+        val rest = reasons.drop(MAX_FAILURE_REASONS)
+        err("  - ${rest.sumOf { it.value }} finding(s): ${rest.size} other reason(s)")
+    }
+    if (!failOnError) err("  The exit status does not reflect this; pass --fail-on-explain-error to exit with status $EXIT_EXPLAIN_ERROR.")
 }
 
 /** Stack traces printed for LLM request failures under `--debug`; further distinct causes are only counted. */

@@ -326,6 +326,27 @@ internal object Rdf4jFormatSupport {
 
     /**
      * Serialize a Kastor RdfRepository (dataset) to a string using RDF4J, honouring prefixes and base.
+     *
+     * Every graph is written as the graph API returns it (the view [serializeGraph] writes for one graph), so that
+     * parsing the document gives graphs isomorphic to the original ones: a statement with an RDF-star subject is
+     * written in its RDF 1.2 reified form (the reifier blank node `_:r` as subject, plus `_:r rdf:reifies <<( s p o )>>`),
+     * and each `rdf:reifies` triple is written once per graph, whether it is stored (an explicit one), implied by a
+     * statement about the quoted triple, or both. (Writing the stored statements as they are would write the quoted
+     * triple as a subject **and** the stored `_:r rdf:reifies` statement; a parser gives that blank node a new label,
+     * and the graph read back would have two reifiers for one triple.)
+     *
+     * Statements are streamed from the store, graph by graph (the default graph first); only the `rdf:reifies` triples
+     * of the graph being written are remembered. Statements without a quoted-triple subject are written as stored.
+     * Explicit statements only are written, also for an inference repository. Blank-node contexts of a wrapped store
+     * are written with their blank graph label ([parseDataset] skolemizes it).
+     *
+     * **Limitation (Rio):** a blank node that occurs inside a triple term **and** outside of it (for example the
+     * reifier of an annotation on an annotated triple) does not survive a round trip as one node: Rio writes a triple
+     * term as an `urn:rdf4j:triple:` IRI and reads the blank node labels inside it as they are, while it renames the
+     * labels outside of it. This holds for [serializeGraph] too.
+     *
+     * @throws IllegalArgumentException when a statement with a quoted-triple subject holds a term Kastor cannot
+     *   represent and the repository's reads are strict (lenient repositories skip it with a warning, as graph reads do).
      */
     fun serializeDataset(repository: RdfRepository, format: String, options: SerializationOptions = SerializationOptions.DEFAULT): String {
         val rdf4jFormat = toRdf4jFormat(format)
@@ -335,15 +356,61 @@ internal object Rdf4jFormatSupport {
         return rdf4jRepo.withConnection { connection ->
             val writer = StringWriter()
             try {
-                // Stream statements straight from the store to the Rio writer. A context-less
-                // export() covers the default graph and all named contexts, each with its context.
-                connection.export(writerFor(rdf4jFormat, writer, options))
+                val handler = writerFor(rdf4jFormat, writer, options)
+                handler.startRDF()
+                connection.namespaces.use { namespaces -> namespaces.forEach { handler.handleNamespace(it.prefix, it.name) } }
+                val contexts = ArrayList<org.eclipse.rdf4j.model.Resource?>()
+                contexts.add(null)
+                connection.contextIDs.use { ids -> ids.forEach { contexts.add(it) } }
+                var skipped = 0
+                for (context in contexts) {
+                    val reifies = HashSet<RdfTriple>()
+                    connection.getStatements(null, null, null, false, context).use { statements ->
+                        for (statement in statements) {
+                            try {
+                                writeView(statement, context, reifies, handler)
+                            } catch (e: IllegalArgumentException) {
+                                if (!rdf4jRepo.lenientRead) throw e
+                                if (skipped++ == 0) LOG.warn("Skipping RDF4J statement(s) that are not valid RDF terms for Kastor; first: {} ({})", statement, e.message)
+                            }
+                        }
+                    }
+                }
+                handler.endRDF()
                 writer.toString()
             } catch (e: org.eclipse.rdf4j.rio.RDFHandlerException) {
                 throw RdfFormatException.Generic("Failed to serialize dataset: ${e.message}", RdfErrorCode.FORMAT_SERIALIZATION_ERROR, e)
             }
         }
     }
+
+    /** Writes [statement] of the graph [context] as the graph API reads it; [reifies] holds the `rdf:reifies` triples written. */
+    private fun writeView(
+        statement: Statement,
+        context: org.eclipse.rdf4j.model.Resource?,
+        reifies: MutableSet<RdfTriple>,
+        handler: RDFHandler,
+    ) {
+        val reifiesIri = com.geoknoesis.kastor.rdf.vocab.RDF.reifies
+        if (!Rdf4jTerms.hasQuotedSubject(statement)) {
+            // Written as stored. A stored `_:r rdf:reifies <<( s p o )>>` may also be implied by another statement.
+            val explicitReifies = statement.`object` is org.eclipse.rdf4j.model.Triple && statement.predicate.stringValue() == reifiesIri.value
+            if (!explicitReifies || reifies.add(Rdf4jTerms.triplesOf(statement).first())) handler.handleStatement(statement)
+            return
+        }
+        val valueFactory = org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+        for (triple in Rdf4jTerms.triplesOf(statement)) {
+            if (triple.predicate == reifiesIri && triple.obj is TripleTerm && !reifies.add(triple)) continue
+            val subject = Rdf4jTerms.toRdf4jResource(triple.subject)
+            val predicate = Rdf4jTerms.toRdf4jIri(triple.predicate)
+            val obj = Rdf4jTerms.toRdf4jValue(triple.obj)
+            handler.handleStatement(
+                if (context == null) valueFactory.createStatement(subject, predicate, obj) else valueFactory.createStatement(subject, predicate, obj, context),
+            )
+        }
+    }
+
+    private val LOG: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(Rdf4jFormatSupport::class.java)
 
     /**
      * Parse RDF dataset data from an input stream into a Kastor repository using RDF4J (no base IRI).
@@ -386,6 +453,8 @@ internal object Rdf4jFormatSupport {
                         checkedTriples(statement, null)
                         rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
                         if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
+                        rdf4jRepo.noteWrittenValue(statement.subject)
+                        rdf4jRepo.noteWrittenValue(statement.`object`)
                         val context = when (val name = statement.context) {
                             is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
                             else -> name

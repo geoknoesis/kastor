@@ -18,6 +18,14 @@ package com.geoknoesis.kastor.rdf.reasoning
  * | `T rdf:type rdfs:Resource` | RDF/RDFS properties and classes, recognised datatypes | rdfs4 |
  * | `T rdf:type rdfs:Datatype` | recognised datatypes | rdfs1 |
  * | `T rdfs:subClassOf rdfs:Literal` | recognised datatypes | rdfs13 |
+ * | `T rdf:type rdfs:ContainerMembershipProperty` | container membership properties `rdf:_n` | axiomatic |
+ * | `T rdfs:subPropertyOf rdfs:member` | container membership properties `rdf:_n` | rdfs12 |
+ * | `T rdfs:domain rdfs:Resource`, `T rdfs:range rdfs:Resource` | container membership properties `rdf:_n` | axiomatic |
+ * | `rdf:nil rdf:type rdf:List` | | axiomatic |
+ * | `rdf:nil rdf:type rdfs:Resource` | | rdfs4 |
+ *
+ * (There are infinitely many `rdf:_n`, so no engine can enumerate their axioms for the empty graph; `rdf:nil` is the
+ * only individual of the two vocabularies.)
  *
  * The *recognised datatypes* are the RDF-compatible XSD types (RDF 1.1 Concepts, section 5.1) and `rdf:langString`,
  * `rdf:dirLangString`, `rdf:HTML`, `rdf:XMLLiteral`, `rdf:JSON`. A typical trigger is a schema statement such as
@@ -44,6 +52,12 @@ object RdfsAxioms {
     private const val CLASS = RDFS + "Class"
     private const val LITERAL = RDFS + "Literal"
     private const val DATATYPE = RDFS + "Datatype"
+    private const val DOMAIN = RDFS + "domain"
+    private const val RANGE = RDFS + "range"
+    private const val MEMBER = RDFS + "member"
+    private const val MEMBERSHIP_PROPERTY_CLASS = RDFS + "ContainerMembershipProperty"
+    private const val NIL = RDF + "nil"
+    private const val LIST = RDF + "List"
 
     private val PROPERTIES: Set<String> = (
         listOf("type", "subject", "predicate", "object", "first", "rest", "value").map { RDF + it } +
@@ -71,6 +85,9 @@ object RdfsAxioms {
     /** True for the properties of the RDF and RDFS vocabularies, including the container membership properties `rdf:_n`. */
     private fun isProperty(iri: String): Boolean = iri in PROPERTIES || MEMBERSHIP_PROPERTY.matches(iri)
 
+    /** True for the container membership properties `rdf:_1`, `rdf:_2`, ... */
+    private fun isMembershipProperty(iri: String): Boolean = MEMBERSHIP_PROPERTY.matches(iri)
+
     /** True for the classes of the RDF and RDFS vocabularies. */
     private fun isClass(iri: String): Boolean = iri in CLASSES
 
@@ -85,14 +102,17 @@ object RdfsAxioms {
     fun isEntailedByEmptyGraph(subject: String, predicate: String, obj: String, owl: Boolean = false): Boolean {
         val classLike = isClass(subject) || isRecognisedDatatype(subject)
         return when (predicate) {
-            SUB_PROPERTY_OF -> subject == obj && isProperty(subject)
+            SUB_PROPERTY_OF -> (subject == obj && isProperty(subject)) || (obj == MEMBER && isMembershipProperty(subject))
+            DOMAIN, RANGE -> obj == RESOURCE && isMembershipProperty(subject)
             SUB_CLASS_OF -> when (obj) {
                 subject, RESOURCE -> classLike
                 LITERAL -> isRecognisedDatatype(subject)
                 else -> false
             }
             TYPE -> when (obj) {
-                RESOURCE -> classLike || isProperty(subject)
+                RESOURCE -> classLike || isProperty(subject) || subject == NIL
+                LIST -> subject == NIL
+                MEMBERSHIP_PROPERTY_CLASS -> isMembershipProperty(subject)
                 CLASS -> classLike
                 DATATYPE -> isRecognisedDatatype(subject)
                 PROPERTY -> isProperty(subject)

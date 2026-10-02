@@ -36,7 +36,7 @@ class QualityChecker private constructor(
     fun check(ontology: RdfGraph): QualityReport {
         val raw = validator.validate(ontology, mergedShapes)
         val metricsContext = computeMetricsContext(ontology)
-        return QualityReport.from(raw, catalogs, metricsContext, ontology)
+        return QualityReport.fromKeyed(raw, catalogs, metricsContext, QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes })
     }
 
     /**
@@ -56,13 +56,13 @@ class QualityChecker private constructor(
                 mergeValidationReport(raw, OntoQualityReasoning.inconsistencyViolationsForReport(rr), rr.consistencyCheck.warnings)
             } ?: raw
         // Blank-node keys come from the asserted graph (once), so finding refs do not change with the reasoner.
-        val keys = QualityReport.blankNodeKeys(merged, ontology, materialized.graph)
+        val keys = QualityReport.blankNodeKeys(merged, ontology, materialized.graph) { mergedShapes }
         return QualityReport.fromKeyed(merged, catalogs, metricsContext, keys)
     }
 
     fun checkResource(ontology: RdfGraph, resource: RdfResource): QualityReport {
         val raw = validator.validateResource(ontology, mergedShapes, resource)
-        return QualityReport.from(raw, catalogs, metricsContext = null, dataGraph = ontology)
+        return QualityReport.fromKeyed(raw, catalogs, metricsContext = null, keys = QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes })
     }
 
     /**
@@ -133,7 +133,7 @@ class QualityChecker private constructor(
 
         fun builder(validator: ShaclValidator): Builder = Builder(validator)
 
-        private fun mergeCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
+        internal fun mergeCatalogShapes(catalogs: List<ShapeCatalog>): RdfGraph {
             val merged = JenaBridge.createEmptyModel()
             for (c in catalogs) {
                 merged.addTriples(c.loadShapesGraph().getTriples())

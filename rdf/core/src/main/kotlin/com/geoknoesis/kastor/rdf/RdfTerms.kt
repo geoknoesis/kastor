@@ -1221,9 +1221,18 @@ interface RdfGraph {
  * [RdfRepository.readTransaction] of the owning repository where the provider holds a lock for it (the memory
  * provider does).
  *
+ * **The stamp may be read at any time.** A stamp read should not wait for a writer: a cache keyed by the stamp is
+ * there to avoid reading the graph, and must be able to serve a graph that a long transaction of another thread has
+ * not touched. A stamp read while another thread's transaction is open may therefore be the stamp of a change that
+ * is not committed yet (or will be rolled back). That is harmless under the protocol above: the content read that
+ * follows sees committed content only, and the stamp it is stored under is either the stamp of that content or one
+ * that never occurs again. (The memory provider reads the stamp without taking its lock; its content reads wait for
+ * the transaction.)
+ *
  * Implementations must change the stamp no later than the moment the changed content becomes visible to other
  * readers, must not reuse a value (also across removal and re-creation of a named graph, and after a rolled back
- * transaction), and should fail a stamp read where a content read would fail (for example on a closed repository).
+ * transaction), and should fail a stamp read where a content read would fail for good (for example with
+ * [IllegalStateException] on a closed repository) - for every graph of the repository alike, default or named.
  */
 interface VersionedRdfGraph : RdfGraph {
     /**

@@ -25,6 +25,7 @@ import com.geoknoesis.kastor.rdf.shacl.ShaclShape
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedFeatureHandling
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeature
 import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclFeatureException
+import com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclOperationException
 import com.geoknoesis.kastor.rdf.shacl.ShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ValidationReport
@@ -150,6 +151,16 @@ internal class NativeShaclValidator(
      */
     @Volatile internal var dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = null
 
+    /**
+     * Test seam: the clock of the per-pattern budget ([ValidationConfig.patternTimeout]), a `System.nanoTime`-like
+     * source. Tests inject a deterministic clock so that they do not depend on wall-clock time. Never set in
+     * production code.
+     */
+    @Volatile internal var patternClock: () -> Long = System::nanoTime
+
+    /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
+    @Volatile internal var patternEvaluations = 0L
+
     private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
         synchronized(digestMemo) {
             digestMemo[triples]?.let { digestMemoHits++; return it }
@@ -167,8 +178,18 @@ internal class NativeShaclValidator(
     }
 
     init {
-        require(!config.parallelValidation) { "Native parallel validation is unsupported" }
-        require(!config.streamingMode) { "Native streaming validation is unsupported" }
+        if (config.parallelValidation) {
+            throw UnsupportedShaclOperationException(
+                "ValidationConfig.parallelValidation = true is not supported by the Kastor native SHACL engine (provider ids " +
+                    "\"kastor\" and \"memory\"): it validates on the calling thread. Leave parallelValidation at false.",
+            )
+        }
+        if (config.streamingMode) {
+            throw UnsupportedShaclOperationException(
+                "ValidationConfig.streamingMode = true is not supported by the Kastor native SHACL engine (provider ids " +
+                    "\"kastor\" and \"memory\"): it validates an in-memory snapshot of the data graph. Leave streamingMode at false.",
+            )
+        }
         require(config.maxViolations > 0 && !config.timeout.isNegative && !config.timeout.isZero)
         require(config.maxPathValueNodes > 0) { "maxPathValueNodes must be positive" }
         require(!config.patternTimeout.isNegative && !config.patternTimeout.isZero) { "patternTimeout must be positive" }
@@ -201,11 +222,28 @@ internal class NativeShaclValidator(
     /** Three-valued conformance, declared in truth order (FAILS < UNDEFINED < CONFORMS). */
     private enum class Conformance { FAILS, UNDEFINED, CONFORMS }
 
+    /**
+     * Why a constraint could not be decided for a reason other than undefined recursion: a `sh:pattern` evaluation
+     * that used up its budget or exhausted the stack. [code] is the [ValidationViolation.violationCode] of the results
+     * it causes and [reason] names the pattern.
+     */
+    private class Undecided(val code: String, val reason: String)
+
+    /** Outcome of one `sh:pattern` evaluation: an answer, or the reason why there is none. */
+    private class PatternOutcome(val matches: Boolean, val undecided: Undecided?) {
+        companion object {
+            val MATCH = PatternOutcome(true, null)
+            val NO_MATCH = PatternOutcome(false, null)
+        }
+    }
+
     /** Outcome of one shape evaluation: results in [Mode.REPORT], otherwise only the three-valued answer. */
     private class Sink(val mode: Mode) {
         val results = ArrayList<ValidationViolation>()
         var failed = false
         var undefined = false
+        /** First cause of [undefined] that is not undefined recursion (an undecided pattern), if any. */
+        var cause: Undecided? = null
         /** Only [Mode.CONFORMS] stops early, and only on a definite failure (Kleene conjunction). */
         val stop: Boolean get() = failed && mode == Mode.CONFORMS
         val exhaustive: Boolean get() = mode == Mode.EXHAUSTIVE
@@ -279,12 +317,13 @@ internal class NativeShaclValidator(
 
     /**
      * A CharSequence for regex matching that consults, every 1024 character reads, the run deadline and the deadline
-     * of this one pattern evaluation ([evaluationDeadlineNanos], a `System.nanoTime` instant). A backtracking match
-     * reads characters all the time, so both are honoured promptly.
+     * of this one pattern evaluation ([evaluationDeadlineNanos], an instant of [clock]). A backtracking match reads
+     * characters all the time, so both are honoured promptly.
      */
     private class DeadlineCharSequence(
         private val value: String,
         private val budget: ValidationBudget,
+        private val clock: () -> Long,
         private val evaluationDeadlineNanos: Long,
     ) : CharSequence {
         private var reads = 0
@@ -292,12 +331,12 @@ internal class NativeShaclValidator(
         override fun get(index: Int): Char {
             if ((++reads and 1023) == 0) {
                 budget.check("pattern matching")
-                if (System.nanoTime() - evaluationDeadlineNanos >= 0) throw PatternBudgetExceeded()
+                if (clock() - evaluationDeadlineNanos >= 0) throw PatternBudgetExceeded()
             }
             return value[index]
         }
         override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
-            DeadlineCharSequence(value.substring(startIndex, endIndex), budget, evaluationDeadlineNanos)
+            DeadlineCharSequence(value.substring(startIndex, endIndex), budget, clock, evaluationDeadlineNanos)
         override fun toString(): String = value
     }
 
@@ -307,8 +346,21 @@ internal class NativeShaclValidator(
         val budget: ValidationBudget,
         private val repositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository,
         private val sparqlInPlace: SparqlQueryable?,
+        /** Clock of the per-pattern budget (`System.nanoTime` unless a test injects one). */
+        private val patternClock: () -> Long,
     ) : AutoCloseable {
         val memo = HashMap<AtomKey, Conformance>()
+        /**
+         * Conformance questions answered "undefined" because of an undecided pattern rather than undefined recursion,
+         * with that cause: the result of the constraint that reads the answer reports the cause and its status.
+         */
+        val undecided = HashMap<AtomKey, Undecided>()
+        /**
+         * Undecided pattern evaluations of this run, per (pattern constraint, lexical form): the answer for a value is
+         * the same every time it is asked (a budget measured in time would not guarantee that), and the budget is
+         * spent once per value rather than once per focus node or solver pass.
+         */
+        val patternIssues = HashMap<Pair<PropertyConstraint.Pattern, String>, Undecided>()
         /** Solver of the recursive component currently being evaluated (routes references into that component). */
         var solver: RecursionSolver? = null
         val reportPaths = HashMap<RdfResource, ReportPath>()
@@ -327,10 +379,10 @@ internal class NativeShaclValidator(
             session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
         /** [value] for one pattern evaluation that may take at most [evaluationNanos]. */
         fun text(value: String, evaluationNanos: Long): CharSequence {
-            val now = System.nanoTime()
+            val now = patternClock()
             // Saturating: a huge budget must not overflow into the past.
             val deadline = if (evaluationNanos >= Long.MAX_VALUE - now) Long.MAX_VALUE else now + evaluationNanos
-            return DeadlineCharSequence(value, budget, deadline)
+            return DeadlineCharSequence(value, budget, patternClock, deadline)
         }
         override fun close() { if (session.isInitialized()) session.value.close() }
     }
@@ -380,7 +432,7 @@ internal class NativeShaclValidator(
             compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
         } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
         val dataIndex = DataGraphIndex(graph, budget, config.maxPathValueNodes)
-        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace).use { ctx ->
+        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, patternClock).use { ctx ->
             ctx.checkDeadline()
             val targetWarnings = checkBlankNodeTargets(compiled, dataIndex)
 
@@ -430,7 +482,9 @@ internal class NativeShaclValidator(
             }
             val violationsTruncated = totalResults > violations.size
             val slots = validatedConstraintSlots.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            val warnings = (compiled.unsupportedFeatureWarnings + targetWarnings).map { ValidationWarning(it) }
+            // ValidationConfig.includeWarnings = false leaves the report-level warnings out; results are unaffected.
+            val warnings =
+                if (config.includeWarnings) (compiled.unsupportedFeatureWarnings + targetWarnings).map { ValidationWarning(it) } else emptyList()
 
             val elapsed = Duration.ofMillis(System.currentTimeMillis() - start)
             val statistics = buildStatistics(ctx.data.distinctResourceSubjects().size, violations, warnings, compiled, slots)
@@ -501,9 +555,9 @@ internal class NativeShaclValidator(
 
     override fun validate(graph: RdfGraph, shapes: List<ShaclShape>): ValidationReport {
         if (shapes.isNotEmpty()) {
-            throw UnsupportedOperationException(
-                "Native SHACL validator does not support validate(graph, shapes: List<ShaclShape>). " +
-                    "Pass shapes as an RdfGraph via validate(graph, shapesGraph).",
+            throw UnsupportedShaclOperationException(
+                "The Kastor native SHACL engine does not support validate(graph, shapes: List<ShaclShape>). " +
+                    "Pass the shapes as an RdfGraph via validate(graph, shapesGraph).",
             )
         }
         return validate(graph, Rdf.graph { })
@@ -514,8 +568,9 @@ internal class NativeShaclValidator(
 
     override fun validateConstraints(graph: RdfGraph, constraints: List<com.geoknoesis.kastor.rdf.shacl.ShaclConstraint>): ValidationReport {
         if (constraints.isNotEmpty()) {
-            throw UnsupportedOperationException(
-                "Native SHACL validator does not support validateConstraints; pass constraints as part of a shapes RdfGraph.",
+            throw UnsupportedShaclOperationException(
+                "The Kastor native SHACL engine does not support validateConstraints(graph, constraints); declare the " +
+                    "constraints in a shapes RdfGraph and call validate(graph, shapesGraph).",
             )
         }
         return validate(graph, Rdf.graph { })
@@ -531,31 +586,29 @@ internal class NativeShaclValidator(
         config.disallowsSeverity(severity, customIri)
 
     /**
-     * Blank node `sh:targetNode` values that are not nodes of the data graph are not focus nodes: a blank node of the
-     * shapes graph denotes a data node only when the graphs share it, and validating it anyway would check the shape
-     * against a node without triples (bogus `sh:minCount` results, everything else conforming). One with the syntax
-     * of a function call is a node expression the compiler could not recognise (undeclared function): it is an
-     * unsupported feature, failing or warning per [ValidationConfig.unsupportedFeatures]. Any other one is reported
-     * as a warning. Returns the warnings to add to the report.
+     * Blank node `sh:targetNode` values. One that is a node of the data graph (the graphs share it: a graph validated
+     * against itself, shapes discovered from the data) is an ordinary focus node, whatever its triples look like. One
+     * that is not can never be a focus node, and validating it anyway would check the shape against a node without
+     * triples (bogus `sh:minCount` results, everything else conforming): in SHACL 1.2 it is a node expression, which
+     * the engine does not evaluate. Every such target — plain, list-shaped, described with `sh:` vocabulary or
+     * call-shaped — is an unsupported feature, failing or warning per [ValidationConfig.unsupportedFeatures]. Returns
+     * the warnings to add to the report.
      */
     private fun checkBlankNodeTargets(compiled: CompiledShapeGraph, data: DataGraphIndex): List<String> {
         val unsupported = LinkedHashSet<String>()
-        val noOps = ArrayList<String>()
         for (shape in compiled.orderedNodeShapes) {
             for (target in shape.targets.targetNodes) {
                 if (target !is BlankNode || data.containsNode(target)) continue
                 val call = shape.targets.callShapedTargets[target]
-                if (call != null) {
-                    unsupported.add(
-                        "sh:targetNode with a node expression on ${shape.shapeNode} (a call of <${call.value}>, which is not " +
-                            "declared as a function in the shapes graph; the blank node is not a node of the data graph)",
-                    )
-                } else {
-                    noOps.add(
-                        "sh:targetNode $target of shape ${shape.shapeNode.displayId()} is a blank node that is neither a node of " +
-                            "the data graph nor a node expression: it can never be a focus node, so this target is ignored",
-                    )
-                }
+                val detail =
+                    if (call != null) {
+                        "a call of <${call.value}>, which is not declared as a function in the shapes graph; the blank node is " +
+                            "not a node of the data graph"
+                    } else {
+                        "the blank node $target is not a node of the data graph, so it can never be a focus node; a blank node " +
+                            "sh:targetNode is a target only when the shapes graph and the data graph share it"
+                    }
+                unsupported.add("sh:targetNode with a node expression on ${shape.shapeNode} ($detail)")
             }
         }
         if (unsupported.isNotEmpty() && config.unsupportedFeatures == UnsupportedFeatureHandling.FAIL) {
@@ -566,7 +619,7 @@ internal class NativeShaclValidator(
             )
             throw ShaclValidationException("SHACL validation failed: ${cause.message}", cause)
         }
-        return unsupported.map { "Unsupported SHACL feature ignored: $it" } + noOps
+        return unsupported.map { "Unsupported SHACL feature ignored: $it" }
     }
 
     private fun computeFocusNodes(shape: CompiledNodeShape, ctx: ValidationContext, undecidedTargets: MutableList<ValidationViolation>): List<RdfTerm> {
@@ -590,7 +643,7 @@ internal class NativeShaclValidator(
                 when (conformance(candidate, tw, ctx, DepthState(0, Mode.CONFORMS))) {
                     Conformance.CONFORMS -> out.add(candidate)
                     Conformance.FAILS -> Unit
-                    Conformance.UNDEFINED -> undecidedTargets.add(undecidableTargetResult(candidate, shape, tw))
+                    Conformance.UNDEFINED -> undecidedTargets.add(undecidableTargetResult(candidate, shape, tw, ctx))
                 }
             }
         }
@@ -671,7 +724,10 @@ internal class NativeShaclValidator(
         } else {
             ctx.compiled.referencedNodeShapes[ref]?.let { validateNodeShape(value, it, ctx, state, sink) }
         }
-        return sink.conformance()
+        val answer = sink.conformance()
+        // An answer that is undefined because of an undecided pattern keeps its cause for the constraint that reads it.
+        if (answer == Conformance.UNDEFINED) sink.cause?.let { ctx.undecided.putIfAbsent(AtomKey(TermKey(value), ref), it) }
+        return answer
     }
 
     private fun readInSolver(solver: RecursionSolver, key: AtomKey, value: RdfTerm, ref: RdfResource, negative: Boolean): Conformance {
@@ -920,13 +976,51 @@ internal class NativeShaclValidator(
         if (mode == Mode.REPORT) results.addAll(list)
     }
 
-    /** An outcome that depends on the undefined answer "does [node] conform to [shape]". */
-    private fun Sink.undefinedAnswer(focus: RdfTerm, tpl: ResultTemplate, type: ConstraintType, value: RdfTerm?, node: RdfTerm, shape: RdfResource) {
+    /**
+     * An outcome that depends on the undefined answer "does [node] conform to [shape]". The answer is undefined
+     * because of undefined recursion, or because of an undecided pattern ([ValidationContext.undecided]), in which
+     * case the result reports that cause. [context] is added to the result's [ValidationViolation.context].
+     */
+    private fun Sink.undefinedAnswer(
+        ctx: ValidationContext,
+        focus: RdfTerm,
+        tpl: ResultTemplate,
+        type: ConstraintType,
+        value: RdfTerm?,
+        node: RdfTerm,
+        shape: RdfResource,
+        context: Map<String, Any> = emptyMap(),
+    ) {
         undefined = true
-        if (mode == Mode.REPORT) results.add(undefinedRecursionResult(focus, tpl, type, value, node, shape))
+        val because = ctx.undecided[AtomKey(TermKey(node), shape)]
+        if (because != null && cause == null) cause = because
+        if (mode != Mode.REPORT) return
+        val result =
+            if (because == null) {
+                undefinedRecursionResult(focus, tpl, type, value, node, shape)
+            } else {
+                val message = "Whether ${displayTerm(node)} conforms to ${shape.displayId()} cannot be decided, so this " +
+                    "${type.name} constraint could not be evaluated: ${because.reason}"
+                violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
+                    .copy(violationCode = because.code)
+            }
+        results.add(if (context.isEmpty()) result else result.copy(context = context))
+    }
+
+    /** The outcome of a `sh:pattern` constraint on [value] that could not be decided: see [matchPattern]. */
+    private fun Sink.undecidedPattern(focus: RdfTerm, tpl: ResultTemplate, value: RdfTerm, because: Undecided) {
+        undefined = true
+        if (cause == null) cause = because
+        if (mode != Mode.REPORT) return
+        // The engine's explanation, never the shape's sh:message: the constraint was not found violated.
+        results.add(
+            violation(focus, tpl, constraintStub(ConstraintType.PATTERN, tpl.path?.predicate), because.reason, value, messages = emptyList())
+                .copy(violationCode = because.code),
+        )
     }
 
     private inline fun Sink.outcome(
+        ctx: ValidationContext,
         answer: Conformance,
         focus: RdfTerm,
         tpl: ResultTemplate,
@@ -939,7 +1033,7 @@ internal class NativeShaclValidator(
         when (answer) {
             Conformance.CONFORMS -> Unit
             Conformance.FAILS -> fail(failure)
-            Conformance.UNDEFINED -> undefinedAnswer(focus, tpl, type, value, node, shape)
+            Conformance.UNDEFINED -> undefinedAnswer(ctx, focus, tpl, type, value, node, shape)
         }
     }
 
@@ -963,16 +1057,24 @@ internal class NativeShaclValidator(
      * Result for a node whose `sh:targetWhere` membership is undefined (strict mode: failure). It has the target
      * shape's declared severity, so it blocks conformance exactly when a failure of that shape would.
      */
-    private fun undecidableTargetResult(candidate: RdfTerm, shape: CompiledNodeShape, targetWhere: RdfResource): ValidationViolation {
-        val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): sh:targetWhere membership of " +
-            "${displayTerm(candidate)} in ${targetWhere.displayId()} cannot be decided, so ${shape.shapeNode.displayId()} " +
-            "could not be validated for it"
-        if (config.strictMode) throw ShaclValidationException(message)
+    private fun undecidableTargetResult(
+        candidate: RdfTerm,
+        shape: CompiledNodeShape,
+        targetWhere: RdfResource,
+        ctx: ValidationContext,
+    ): ValidationViolation {
+        // Undefined because of an undecided pattern (strict mode already failed), or because of undefined recursion.
+        val because = ctx.undecided[AtomKey(TermKey(candidate), targetWhere)]
+        val membership = "sh:targetWhere membership of ${displayTerm(candidate)} in ${targetWhere.displayId()} cannot be decided, " +
+            "so ${shape.shapeNode.displayId()} could not be validated for it"
+        val message =
+            if (because == null) "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): $membership" else "$membership: ${because.reason}"
+        if (because == null && config.strictMode) throw ShaclValidationException(message)
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, emptyList(), null)
         return violation(
             candidate, tpl, constraintStub(ConstraintType.NODE), message, value = candidate,
             messages = emptyList(), sourceConstraint = targetWhere,
-        ).copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
+        ).copy(violationCode = because?.code ?: ValidationViolation.UNDEFINED_RECURSION_CODE)
     }
 
     private fun NodeLogicalPart.constraintType(): ConstraintType =
@@ -998,14 +1100,14 @@ internal class NativeShaclValidator(
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
 
         for (nr in shape.nodeRefs) {
-            sink.outcome(conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
+            sink.outcome(ctx, conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
                 violation(focus, tpl, constraintStub(ConstraintType.NODE), "sh:node constraint failed for ${nr.displayId()}", value = focus)
             }
             if (sink.stop) return
         }
 
         for (exprRef in shape.nodeByExpressionRefs) {
-            sink.outcome(conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
+            sink.outcome(ctx, conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
                 violation(
                     focus, tpl, constraintStub(ConstraintType.NODE_BY_EXPRESSION),
                     "sh:nodeByExpression constraint failed", value = focus, sourceConstraint = exprRef,
@@ -1062,7 +1164,7 @@ internal class NativeShaclValidator(
                 if (f != null) {
                     sink.fail { violation(reportFocus, tpl, stub, "sh:and failed: value does not conform to ${f.displayId()}", value = logicalTarget) }
                 } else if (u != null) {
-                    sink.undefinedAnswer(reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                    sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
                 }
             }
             is NodeLogicalPart.Or -> {
@@ -1078,7 +1180,7 @@ internal class NativeShaclValidator(
                 val u = undecided
                 if (!matched) {
                     if (u != null) {
-                        sink.undefinedAnswer(reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                        sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
                     } else {
                         sink.fail { violation(reportFocus, tpl, stub, "sh:or requires at least one matching shape", value = logicalTarget) }
                     }
@@ -1100,14 +1202,14 @@ internal class NativeShaclValidator(
                     matches > 1 -> sink.fail {
                         violation(reportFocus, tpl, stub, "sh:xone requires exactly one matching shape (found more than one)", value = logicalTarget)
                     }
-                    u != null -> sink.undefinedAnswer(reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                    u != null -> sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
                     matches == 0 -> sink.fail {
                         violation(reportFocus, tpl, stub, "sh:xone requires exactly one matching shape (found none)", value = logicalTarget)
                     }
                 }
             }
             is NodeLogicalPart.Not ->
-                sink.outcome(invert(conformance(logicalTarget, part.operand, ctx, state, negative = true)), reportFocus, tpl, type, logicalTarget, logicalTarget, part.operand) {
+                sink.outcome(ctx, invert(conformance(logicalTarget, part.operand, ctx, state, negative = true)), reportFocus, tpl, type, logicalTarget, logicalTarget, part.operand) {
                     violation(reportFocus, tpl, stub, "sh:not violated: value conforms to ${part.operand.displayId()}", value = logicalTarget)
                 }
         }
@@ -1303,7 +1405,11 @@ internal class NativeShaclValidator(
                 is PropertyConstraint.Pattern ->
                     values.forEach { v ->
                         val lex = literalLexicalString(v)
-                        if (lex == null || !matchesPattern(c, lex, focus, currentShape, ctx)) add(ConstraintType.PATTERN, "Pattern ${c.pattern} violated for value $v", v)
+                        val outcome = if (lex == null) PatternOutcome.NO_MATCH else matchPattern(c, lex, currentShape, ctx)
+                        when {
+                            outcome.undecided != null -> sink.undecidedPattern(focus, tpl, v, outcome.undecided)
+                            !outcome.matches -> add(ConstraintType.PATTERN, "Pattern ${c.pattern} violated for value $v", v)
+                        }
                     }
                 is PropertyConstraint.MinLength ->
                     values.forEach { v ->
@@ -1399,14 +1505,14 @@ internal class NativeShaclValidator(
                         if (possible < c.min) {
                             add(ConstraintType.QUALIFIED_MIN_COUNT, "qualifiedMinCount violated (required ${c.min}, found $definite)", params = mapOf("min" to c.min, "actual" to definite))
                         } else if (definite < c.min && u != null) {
-                            sink.undefinedAnswer(focus, tpl, ConstraintType.QUALIFIED_MIN_COUNT, null, u.first, u.second)
+                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MIN_COUNT, null, u.first, u.second)
                         }
                     }
                     if (c.max != null) {
                         if (definite > c.max) {
                             add(ConstraintType.QUALIFIED_MAX_COUNT, "qualifiedMaxCount violated (max ${c.max}, found $definite)", params = mapOf("max" to c.max, "actual" to definite))
                         } else if (possible > c.max && u != null) {
-                            sink.undefinedAnswer(focus, tpl, ConstraintType.QUALIFIED_MAX_COUNT, null, u.first, u.second)
+                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MAX_COUNT, null, u.first, u.second)
                         }
                     }
                 }
@@ -1439,7 +1545,7 @@ internal class NativeShaclValidator(
                             if (failing) {
                                 add(ConstraintType.MEMBER_SHAPE, "sh:memberShape violated for list value", v)
                             } else if (u != null) {
-                                sink.undefinedAnswer(focus, tpl, ConstraintType.MEMBER_SHAPE, v, u, c.nestedShape)
+                                sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.MEMBER_SHAPE, v, u, c.nestedShape)
                             }
                         }
                     }
@@ -1480,7 +1586,7 @@ internal class NativeShaclValidator(
                     val u = undecided
                     if (!matched) {
                         if (u != null) {
-                            sink.undefinedAnswer(focus, tpl, ConstraintType.SOME_VALUE, null, u, c.nestedShape)
+                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SOME_VALUE, null, u, c.nestedShape)
                         } else {
                             add(ConstraintType.SOME_VALUE, "sh:someValue requires at least one conforming value")
                         }
@@ -1499,7 +1605,7 @@ internal class NativeShaclValidator(
                     values.forEach { v ->
                         when (conformance(v, c.nestedShape, ctx, state)) {
                             Conformance.FAILS -> add(ConstraintType.SHAPE, "sh:shape constraint failed for ${c.nestedShape.displayId()}", v)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(focus, tpl, ConstraintType.SHAPE, v, v, c.nestedShape)
+                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SHAPE, v, v, c.nestedShape)
                             Conformance.CONFORMS -> Unit
                         }
                     }
@@ -1507,7 +1613,7 @@ internal class NativeShaclValidator(
                     values.forEach { v ->
                         when (conformance(v, c.nestedShape, ctx, state)) {
                             Conformance.FAILS -> add(ConstraintType.NODE, "sh:node constraint failed for ${c.nestedShape.displayId()}", v)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(focus, tpl, ConstraintType.NODE, v, v, c.nestedShape)
+                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE, v, v, c.nestedShape)
                             Conformance.CONFORMS -> Unit
                         }
                     }
@@ -1516,7 +1622,7 @@ internal class NativeShaclValidator(
                         when (conformance(v, c.nestedShape, ctx, state)) {
                             Conformance.FAILS ->
                                 add(ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${c.nestedShape.displayId()}", v, sourceConstraint = c.nestedShape)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, c.nestedShape)
+                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, c.nestedShape)
                             Conformance.CONFORMS -> Unit
                         }
                     }
@@ -1529,21 +1635,52 @@ internal class NativeShaclValidator(
     }
 
     /**
-     * One `sh:pattern` evaluation, bounded by [ValidationConfig.patternTimeout]. A pattern that uses up its budget
-     * fails validation with an error naming it: whether the value matches is unknown, so no result is made up, and
-     * the run does not sit in one backtracking match until the run-wide timeout.
+     * One `sh:pattern` evaluation, bounded by [ValidationConfig.patternTimeout].
+     *
+     * A value on which the pattern uses up its budget, or on which `java.util.regex` runs out of stack (it matches
+     * an alternation under a quantifier recursively: one group of frames per repetition), has no answer. That is not
+     * an error of the run: one slow or hostile literal must not prevent the validation of everything else. The
+     * constraint is **undecided** for that value ([PatternOutcome.undecided]): the caller reports a result naming the
+     * pattern, marked `ksh:PatternTimeout` / `ksh:PatternTooComplex`, which blocks conformance as a failure would
+     * (the value is not accepted), and a shape that reads the answer through `sh:not`, `sh:or`… gets "undefined",
+     * so an undecided pattern can neither satisfy nor silently fail an outer constraint. Validation then goes on.
+     * With [ValidationConfig.strictMode] it fails instead, as for undefined recursion. The run-wide
+     * [ValidationConfig.timeout] is still enforced during the match ([DeadlineCharSequence]) and aborts the run.
+     *
+     * An undecided answer is remembered for the run, so the same value is matched (and the budget spent) once.
      */
-    private fun matchesPattern(c: PropertyConstraint.Pattern, lexical: String, focus: RdfTerm, shape: RdfResource, ctx: ValidationContext): Boolean =
-        try {
-            c.regex.containsMatchIn(ctx.text(lexical, patternTimeoutNanos))
-        } catch (e: PatternBudgetExceeded) {
-            val flags = c.flags?.let { " (sh:flags \"$it\")" }.orEmpty()
-            throw ShaclValidationException(
-                "sh:pattern \"${c.pattern}\"$flags of shape ${shape.displayId()} exceeded ValidationConfig.patternTimeout " +
-                    "(${config.patternTimeout}) on a value of ${lexical.length} characters of focus node ${displayTerm(focus)}; " +
-                    "the pattern probably backtracks catastrophically (nested or overlapping quantifiers)",
-            )
-        }
+    private fun matchPattern(c: PropertyConstraint.Pattern, lexical: String, shape: RdfResource, ctx: ValidationContext): PatternOutcome {
+        if (ctx.patternIssues.isNotEmpty()) ctx.patternIssues[c to lexical]?.let { return PatternOutcome(false, it) }
+        patternEvaluations++
+        val undecided =
+            try {
+                return if (c.regex.containsMatchIn(ctx.text(lexical, patternTimeoutNanos))) PatternOutcome.MATCH else PatternOutcome.NO_MATCH
+            } catch (e: PatternBudgetExceeded) {
+                Undecided(
+                    ValidationViolation.PATTERN_TIMEOUT_CODE,
+                    "${describe(c, shape)} exceeded ValidationConfig.patternTimeout (${config.patternTimeout}) on a value of " +
+                        "${lexical.length} characters, so whether the value matches is unknown and it is not accepted; the " +
+                        "pattern probably backtracks catastrophically (nested or overlapping quantifiers)",
+                )
+            } catch (e: StackOverflowError) {
+                // The stack is unwound up to here, so it is safe to go on. Only the match is abandoned.
+                Undecided(
+                    ValidationViolation.PATTERN_TOO_COMPLEX_CODE,
+                    "${describe(c, shape)} could not be evaluated on a value of ${lexical.length} characters: the regular " +
+                        "expression engine ran out of stack, so whether the value matches is unknown and it is not accepted; " +
+                        "an alternation under a quantifier such as (a|b)* recurses once per repetition - rewrite it as a " +
+                        "character class ([ab]*) or bound the value with sh:maxLength",
+                )
+            }
+        if (config.strictMode) throw ShaclValidationException(undecided.reason)
+        ctx.patternIssues[c to lexical] = undecided
+        return PatternOutcome(false, undecided)
+    }
+
+    private fun describe(c: PropertyConstraint.Pattern, shape: RdfResource): String {
+        val flags = c.flags?.let { " (sh:flags \"$it\")" }.orEmpty()
+        return "sh:pattern \"${c.pattern}\"$flags of shape ${shape.displayId()}"
+    }
 
     /**
      * SHACL-SPARQL: one result per solution; `?value`, `?path`, `?message` and `?failure` are honoured. Pre-bound
@@ -1698,7 +1835,11 @@ internal class NativeShaclValidator(
                 for (r in reifiers) {
                     when (conformance(r, ref, ctx, state)) {
                         Conformance.CONFORMS -> Unit
-                        Conformance.UNDEFINED -> sink.undefinedAnswer(focus, tpl, ConstraintType.REIFIER_SHAPE, claim.obj, r, ref)
+                        // Like a failure, an undecided answer names its reifier (exported as ksh:reifier).
+                        Conformance.UNDEFINED -> sink.undefinedAnswer(
+                            ctx, focus, tpl, ConstraintType.REIFIER_SHAPE, claim.obj, r, ref,
+                            context = mapOf(ValidationViolation.REIFIER_CONTEXT_KEY to r),
+                        )
                         Conformance.FAILS -> {
                             sink.failed = true
                             if (sink.mode == Mode.REPORT) {

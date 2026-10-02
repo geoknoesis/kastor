@@ -79,10 +79,20 @@ class Rdf4jReifierLimitsTest {
         assertTrue(reifier.id.length < 128, "bounded id, got ${reifier.id.length} characters")
         assertEquals(reifier, Rdf4jTerms.reifierFor(huge('x')), "deterministic")
         assertNotEquals(reifier, Rdf4jTerms.reifierFor(huge('y')))
-        assertEquals(huge('x'), Rdf4jTerms.quotedTripleOf(reifier.id))
-        assertTrue(Rdf4jTerms.mentionsStarReifier(reifier))
-        // A hashed id nobody produced is an ordinary blank node.
-        assertNull(Rdf4jTerms.quotedTripleOf(Rdf4jTerms.STAR_REIFIER_PREFIX + "sha256-" + "0".repeat(64)))
+        // The id does not carry the triple and nothing is remembered process-wide: an operation resolves it from the
+        // repository it works on and passes what it resolved.
+        assertNull(Rdf4jTerms.quotedTripleOf(reifier.id))
+        assertTrue(!Rdf4jTerms.mentionsStarReifier(reifier))
+        val resolved = mapOf(reifier.id to huge('x'))
+        assertEquals(huge('x'), Rdf4jTerms.quotedTripleOf(reifier.id, resolved))
+        assertTrue(Rdf4jTerms.mentionsStarReifier(reifier, resolved))
+        // A hashed id that resolves to nothing is an ordinary blank node.
+        assertNull(Rdf4jTerms.quotedTripleOf(Rdf4jTerms.STAR_REIFIER_PREFIX + "sha256-" + "0".repeat(64), resolved))
+        // Only oversized triples are reported as having a hashed reifier.
+        val reported = HashMap<String, org.eclipse.rdf4j.model.Triple>()
+        Rdf4jTerms.forEachHashedReifier(vf.createTriple(huge('x'), p, vf.createTriple(vf.createIRI("http://example.org/s"), p, o))) { id, triple -> reported[id] = triple }
+        assertEquals(resolved, reported.filterKeys { it == reifier.id })
+        assertEquals(2, reported.size, "the outer triple and the oversized triple inside it")
     }
 
     private val megabyte = "x".repeat(1 shl 20)
@@ -102,21 +112,21 @@ class Rdf4jReifierLimitsTest {
         assertEquals(2, graph.size())
         // Lookups by the hashed reifier resolve it, also when this process has not seen its triple (e.g. a restart).
         for (forget in listOf(false, true)) {
-            if (forget) Rdf4jTerms.forgetHashedReifiers()
+            if (forget) repo.forgetHashedReifiers()
             assertEquals(setOf(annotation, reifies), graph.find(reifier, null, null).toSet(), "forget=$forget")
-            if (forget) Rdf4jTerms.forgetHashedReifiers()
+            if (forget) repo.forgetHashedReifiers()
             assertTrue(graph.hasTriple(annotation), "forget=$forget")
-            if (forget) Rdf4jTerms.forgetHashedReifiers()
+            if (forget) repo.forgetHashedReifiers()
             assertTrue(graph.hasTriple(reifies), "forget=$forget")
             assertEquals(listOf(reifies), graph.find(null, RDF.reifies, bigTerm), "forget=$forget")
         }
         // Writing through the hashed reifier stores the RDF-star form again.
-        Rdf4jTerms.forgetHashedReifiers()
+        repo.forgetHashedReifiers()
         val second = RdfTriple(reifier, Iri("http://example.org/q2"), Literal("w"))
         graph.addTriple(second)
         assertTrue(repo.ask(SparqlAskQuery("ASK { << <http://example.org/s> <http://example.org/p> ?big >> <http://example.org/q2> \"w\" }")))
         assertEquals(setOf(annotation, second, reifies), graph.getTriples().toSet())
-        Rdf4jTerms.forgetHashedReifiers()
+        repo.forgetHashedReifiers()
         assertTrue(graph.removeTriple(annotation))
         assertTrue(graph.removeTriple(second))
         assertEquals(0, graph.size())

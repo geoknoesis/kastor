@@ -2,27 +2,40 @@ package com.geoknoesis.kastor.ontoquality.explanation
 
 import com.geoknoesis.kastor.rdf.BlankNode
 
-private const val LABEL_CHARS = "A-Za-z0-9_"
+/**
+ * A blank-node reference in message text: `_:label`, as SHACL engines write a blank node they interpolate into a
+ * message (`{$this}`, `{?var}`).
+ *
+ * The reference must not continue an IRI or a word (`http://example.org/x/_:b1`, `a_:b1` are left alone), and the
+ * label follows the `BLANK_NODE_LABEL` grammar of Turtle (letters, digits, `_`, and `.`, `-` or a middle dot inside),
+ * so the whole label is read: `_:b1` is never taken out of `_:b12`.
+ */
+private val BLANK_NODE_REFERENCE =
+    Regex("(?<![\\p{L}\\p{N}\\p{M}_:/#.%?=&@~+\\-])_:([\\p{L}\\p{N}_](?:[\\p{L}\\p{N}\\p{M}_.\\-\\u00B7]*[\\p{L}\\p{N}\\p{M}_\\-\\u00B7])?)")
 
 /**
- * Replaces the parser labels of the blank nodes in [keys] by their keys, in one pass over [text].
+ * The blank nodes that [text] refers to as `_:label`. Whether such a node exists is for the caller to check: any
+ * text may contain `_:x`.
+ */
+internal fun blankNodeReferences(text: String): Set<BlankNode> {
+    if (!text.contains("_:")) return emptySet()
+    return BLANK_NODE_REFERENCE.findAll(text).mapTo(LinkedHashSet()) { BlankNode(it.groupValues[1]) }
+}
+
+/**
+ * Replaces the references (`_:label`) to the blank nodes in [keys] by their keys, in one pass over [text].
  *
- * SHACL engines interpolate blank nodes into messages (`{$this}`) as `_:label` or as the bare label; both forms are
- * replaced. A bare label is replaced only as a whole word, so a short label such as `b1` is not replaced inside
- * `b12` or `web1`.
+ * Only whole `_:label` references are replaced, the form in which a SHACL engine interpolates a blank node. A label
+ * alone is never touched, so a short label such as `b1` or `a` is not replaced inside an IRI
+ * (`http://example.org/onto#b1`) or where it is an ordinary word.
  */
 internal fun stabiliseBlankNodeLabels(text: String, keys: Map<BlankNode, String>): String {
-    if (keys.isEmpty() || text.isEmpty()) return text
-    val forms = HashMap<String, String>()
+    if (keys.isEmpty() || !text.contains("_:")) return text
+    // The label as the engine writes it (BlankNode.toString encodes ids that are no valid label) and the id itself.
+    val byLabel = HashMap<String, String>(keys.size * 2)
     for ((node, key) in keys) {
-        if (!text.contains(node.id) && !text.contains(node.toString())) continue
-        forms[node.toString()] = key
-        forms["_:${node.id}"] = key
-        forms[node.id] = key
+        byLabel[node.id] = key
+        byLabel[node.toString().removePrefix("_:")] = key
     }
-    if (forms.isEmpty()) return text
-    // Longest form first, so `_:b1` wins over `b1` and `b12` over `b1`.
-    val alternatives = forms.keys.sortedWith(compareByDescending<String> { it.length }.thenBy { it }).joinToString("|") { Regex.escape(it) }
-    val pattern = Regex("(?<![$LABEL_CHARS:.-])(?:$alternatives)(?![$LABEL_CHARS-])")
-    return pattern.replace(text) { match -> Regex.escapeReplacement(forms.getValue(match.value)) }
+    return BLANK_NODE_REFERENCE.replace(text) { match -> byLabel[match.groupValues[1]] ?: match.value }
 }

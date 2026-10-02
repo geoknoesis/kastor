@@ -43,7 +43,7 @@ class DatasetImplTest {
 
         val unknown = Iri("http://example.org/unknown")
         assertFalse(dataset.hasNamedGraph(unknown))
-        assertEquals(dataset.defaultGraph, dataset.graph(unknown))
+        assertEquals(0, dataset.graph(unknown).size())
 
         dataset.close()
         repo.close()

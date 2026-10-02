@@ -273,6 +273,11 @@ initialisation.
   accept `"chat"@fr` or the plain string `"chat"`, and the integer `5` does not accept the string `"5"`. The
   parser keeps each member's datatype and language tag (`ShaclInValue`), and both the wrapper's `validate()`
   and the DSL's `validate()` use them.
+- **Inherited `sh:in` lists are intersected.** When a subtype restates `sh:in` for an inherited path, a value
+  must be a member of both lists. Members are compared as RDF terms, language tags ignoring case (`"x"@en` and
+  `"x"@EN` are one member). When the lists have **no member in common**, every value of the path is rejected
+  (the same holds for an explicit `sh:in ()`), and generation logs a warning naming the shape and the path; no
+  check is silently dropped.
 - **Numeric bounds are exact.** Bounds are held as `BigDecimal` values in the model, so a bound such as
   `9223372036854775807` is not rounded. Wrapper `validate()`, instance-DSL setters and the DSL's `validate()`
   all compare values exactly against the bound's decimal form; `NaN` is never within bounds.
@@ -390,10 +395,11 @@ always compiles:
   `sh:minCount`, lowest `sh:maxCount`, …); a warning names the shape and path.
 - `sh:pattern` values are XPath regular expressions and are translated for `java.util.regex`, following
   XPath semantics:
-  - `\d`/`\D` are Unicode decimal digits (`\p{Nd}`); `\w`/`\W` use XPath's definition (every character
-    except punctuation, separators and "other" characters, so `_` is not a word character but symbols
-    such as `$` are); `\s`/`\S` are exactly space, tab, newline and carriage return. Java's defaults are
-    ASCII-only or wider.
+  - `\d`/`\D` are Unicode decimal digits (`\p{Nd}`); `\w` is XPath's definition (every character except
+    punctuation, separators and "other" characters, so symbols such as `$` are word characters) **plus the
+    underscore `_`**, as in the Kastor SHACL validator and every mainstream regex dialect, and `\W` is its
+    complement (it does not match `_`); `\s`/`\S` are exactly space, tab, newline and carriage return.
+    Java's defaults are ASCII-only or wider.
   - `\i`/`\I` and `\c`/`\C` (XML name characters) are approximated with Unicode letter/digit classes plus
     `_ : . -` and U+00B7.
   - Character-class subtraction `[base-[excluded]]` is translated with XPath precedence, including inside

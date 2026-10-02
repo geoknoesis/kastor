@@ -1,0 +1,66 @@
+# Kastor SHACL extension vocabulary (prefix ksh:).
+#
+# Terms the Kastor native SHACL engine adds to validation reports for information the SHACL validation report
+# vocabulary has no property for. They are additional triples on sh:ValidationReport / sh:ValidationResult nodes;
+# nothing is minted in the sh: namespace, and consumers of the standard vocabulary can ignore them.
+#
+# Kotlin constants: com.geoknoesis.kastor.rdf.shacl.KastorShaclVocabulary.
+
+@prefix ksh:  <https://kastor.geoknoesis.com/ns/shacl#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+<https://kastor.geoknoesis.com/ns/shacl>
+    a owl:Ontology ;
+    rdfs:label "Kastor SHACL extension vocabulary"@en ;
+    rdfs:comment "Extension terms used by the Kastor native SHACL engine in validation reports: the status of results that report an undecided constraint rather than a failure, the failing reifier of a sh:reifierShape result, and report-level warnings."@en .
+
+ksh:resultStatus
+    a rdf:Property , owl:ObjectProperty ;
+    rdfs:label "result status"@en ;
+    rdfs:comment "Qualifies a sh:ValidationResult that does not report a definite constraint failure but a constraint that could not be decided. The result keeps the severity and the constraint component a failure would have, so it affects sh:conforms exactly as a failure would; a result without this property is an ordinary failure."@en ;
+    rdfs:domain sh:ValidationResult ;
+    rdfs:range ksh:ResultStatus ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:ResultStatus
+    a rdfs:Class , owl:Class ;
+    rdfs:label "Result status"@en ;
+    rdfs:comment "The class of the values of ksh:resultStatus: the reasons why a constraint could not be decided."@en ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:UndefinedRecursion
+    a ksh:ResultStatus ;
+    rdfs:label "Undefined recursion"@en ;
+    rdfs:comment "The constraint depends on a recursive shape dependency through a non-monotone operator (sh:not, sh:xone, sh:qualifiedMaxCount, disjoint qualified value shapes), which SHACL leaves undefined."@en ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:PatternTimeout
+    a ksh:ResultStatus ;
+    rdfs:label "Pattern timeout"@en ;
+    rdfs:comment "One sh:pattern evaluation used up its time budget (ValidationConfig.patternTimeout) on a value, typically because the regular expression backtracks catastrophically. Whether the value matches is unknown; it is not accepted as conforming."@en ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:PatternTooComplex
+    a ksh:ResultStatus ;
+    rdfs:label "Pattern too complex"@en ;
+    rdfs:comment "The regular expression engine ran out of stack while matching a sh:pattern against a value, typically an alternation under a quantifier applied to a very long value. Whether the value matches is unknown; it is not accepted as conforming."@en ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:reifier
+    a rdf:Property ;
+    rdfs:label "reifier"@en ;
+    rdfs:comment "On a result of sh:ReifierShapeConstraintComponent: the reifier (the subject of the rdf:reifies triple) that does not conform to the sh:reifierShape, or whose conformance could not be decided. sh:value of such a result is the object of the reified triple, so several reifiers of one triple are told apart by this property."@en ;
+    rdfs:domain sh:ValidationResult ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
+
+ksh:warning
+    a rdf:Property , owl:DatatypeProperty ;
+    rdfs:label "warning"@en ;
+    rdfs:comment "On a sh:ValidationReport: the message of a report-level warning of the engine, i.e. one that is not about a particular resource, such as a construct that was skipped because the engine cannot evaluate it. Warnings do not affect sh:conforms."@en ;
+    rdfs:domain sh:ValidationReport ;
+    rdfs:range xsd:string ;
+    rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .

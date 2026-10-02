@@ -47,10 +47,19 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * **Query dataset:** outside `GRAPH`, SPARQL queries (SELECT, ASK, CONSTRUCT, DESCRIBE) read the default graph only -
  * the statements without a context, as [defaultGraph] and the Jena provider do - and inside `GRAPH` the named graphs.
  * (RDF4J itself evaluates a query without a dataset against the union of all contexts.) A query with `FROM` /
- * `FROM NAMED` keeps its own dataset. A query that reads both inside and outside `GRAPH` sees the IRI-named contexts
- * ([listGraphs]) as named graphs, enumerated once per query; blank-node contexts are visible only to queries that
- * read nothing outside `GRAPH`. Wrapped repositories that are not evaluated by an RDF4J Sail (HTTP repositories,
- * SPARQL endpoints) keep the dataset of their server.
+ * `FROM NAMED` keeps its own dataset. The named graphs are the IRI-named contexts ([listGraphs]); a repository created
+ * by a factory method enumerates them once and again only after a write, a wrapped store for every query that reads
+ * inside `GRAPH`. Wrapped repositories that are not evaluated by an RDF4J Sail (HTTP repositories, SPARQL endpoints)
+ * keep the dataset of their server.
+ *
+ * **Blank-node graphs:** Kastor names graphs by IRI, so a context named by a blank node is not a graph of the
+ * repository. Every write path of this class that could create one gives the graph an IRI instead, of the form
+ * `urn:kastor:skolem:<load>:<blank node id>` (see [Rdf4jFormatSupport.parseDataset]): loading a TriG / N-Quads
+ * dataset, and a SPARQL `UPDATE` with `LOAD` of a quad document or `INSERT` into a graph named by a variable (when the
+ * request ends; an operation of the same request after the one that created the graph still sees it under its blank
+ * name). A repository created by a factory method therefore never holds a blank-node context. A wrapped store may:
+ * what other RDF4J code wrote there is left as it is, and is uniformly invisible - to [listGraphs], to `GRAPH` in every
+ * query and update, and to patterns outside `GRAPH`. (Only `serializeDataset` still writes those statements.)
  *
  * **Update dataset:** SPARQL `UPDATE` follows the same contract, as on the Jena provider. Outside `GRAPH`, the `WHERE`
  * clause of `DELETE` / `INSERT` (and `DELETE WHERE`) matches the default graph only, and a template or a
@@ -67,7 +76,7 @@ class Rdf4jRepository(
     private val repository: Repository,
     internal val inference: Boolean,
     lenientRead: Boolean,
-) : RdfRepository {
+) : RdfRepository, com.geoknoesis.kastor.rdf.DescribesQueryDataset {
 
     /** Wraps [repository]; graph reads are strict (see [lenientRead]). */
     constructor(repository: Repository, inference: Boolean = false) : this(repository, inference, false)
@@ -128,6 +137,60 @@ class Rdf4jRepository(
         tripleValuesMayExist = true
     }
 
+    /** The quoted triples of this repository that have a hashed reifier id, see [HashedReifierIndex]. */
+    private val hashedReifiers = HashedReifierIndex()
+
+    /** Registers a value this repository is about to write (its oversized triples get a hashed reifier id). */
+    internal fun noteWrittenValue(value: org.eclipse.rdf4j.model.Value) = hashedReifiers.written(value)
+
+    /** Told the hashed reifiers that reads of this repository produce, so that they resolve without a scan. */
+    internal val hashedReifiersRead: (String, org.eclipse.rdf4j.model.Triple) -> Unit = hashedReifiers::read
+
+    /** Forgets what this object knows about hashed reifiers, as a new process wrapping the same store would (for tests). */
+    internal fun forgetHashedReifiers() = hashedReifiers.forget()
+
+    /**
+     * The quoted triples of the hashed reifier [ids] of a pattern (see [Rdf4jTerms.reifierFor]); an id that stands for
+     * no triple of this repository is left out. The caller keeps the result for the whole operation.
+     *
+     * Answered from the index of this repository ([HashedReifierIndex]) and from [obj] (the object of the pattern:
+     * `_:r rdf:reifies <<( t )>>` names the triple of `_:r` itself). The store is scanned, once, only for an id that
+     * neither knows while the index may be incomplete, and never when the store cannot hold triple values.
+     */
+    internal fun resolveHashedReifiers(
+        conn: RepositoryConnection,
+        ids: Set<String>,
+        obj: TripleTerm?,
+    ): Map<String, org.eclipse.rdf4j.model.Triple> {
+        val resolved = HashMap<String, org.eclipse.rdf4j.model.Triple>()
+        val reclaimed = hashedReifiers.lookup(ids, resolved)
+        if (resolved.size == ids.size) return resolved
+        if (obj != null) {
+            val named: (String, org.eclipse.rdf4j.model.Triple) -> Unit = { id, triple ->
+                if (id in ids && id !in resolved) {
+                    resolved[id] = triple
+                    hashedReifiers.read(id, triple)
+                }
+            }
+            Rdf4jTerms.forEachHashedReifier(Rdf4jTerms.toRdf4jValue(obj), sink = named)
+            // The store form of the object, when it mentions reifiers that are resolved by now.
+            if (resolved.isNotEmpty()) Rdf4jTerms.forEachHashedReifier(Rdf4jTerms.toRdf4jStarValue(obj, resolved), sink = named)
+            if (resolved.size == ids.size) return resolved
+        }
+        if (!tripleValuesPossible()) return resolved
+        val inTransaction = txConnection.get() != null
+        if (reclaimed.all { it in resolved } && hashedReifiers.covers(inTransaction)) return resolved
+        val found = hashedReifiers.rebuild(inTransaction, controlled = trackQuotedSubjects) { index ->
+            conn.getStatements(null, null, null, false).use { result ->
+                for (statement in result) {
+                    if (statement.subject is org.eclipse.rdf4j.model.Triple || statement.`object` is org.eclipse.rdf4j.model.Triple) index(statement)
+                }
+            }
+        }
+        for (id in ids) if (id !in resolved) found[id]?.let { resolved[id] = it }
+        return resolved
+    }
+
     /** Highest quoted-subject level written by the current thread's outermost transaction, if any. */
     private val quotedWrittenInTransaction = ThreadLocal<QuotedLevel?>()
 
@@ -138,6 +201,8 @@ class Rdf4jRepository(
     internal fun noteQuotedWrite(level: QuotedLevel) {
         if (nativeBase || level == QuotedLevel.NONE) return
         tripleValuesMayExist = true
+        // Triple values of unknown content (a SPARQL update): the index of hashed reifiers no longer covers the store.
+        if (level == QuotedLevel.UNKNOWN) hashedReifiers.invalidate()
         quotedScanInTransaction.get()?.let { cached ->
             if (level == QuotedLevel.UNKNOWN) quotedScanInTransaction.remove()
             else if (level.ordinal > cached.ordinal) quotedScanInTransaction.set(level)
@@ -191,10 +256,62 @@ class Rdf4jRepository(
      */
     internal fun tripleValuesPossible(): Boolean = starCapable && (!trackQuotedSubjects || tripleValuesMayExist)
 
+    /**
+     * Counts the changes made through this repository: it moves after every write operation, and before and after
+     * the commit (or after the rollback) of every transaction that wrote. See [modificationStamp].
+     */
+    private val modifications = java.util.concurrent.atomic.AtomicLong()
+
+    /** Commits (of transactions that wrote) in progress: between the two counter changes around `commit()`. */
+    private val commitsInFlight = java.util.concurrent.atomic.AtomicInteger()
+
+    /** True once the current thread's transaction has written through this repository. */
+    private val wroteInTransaction = ThreadLocal<Boolean>()
+
+    /**
+     * True for a repository whose content only this object can change: it was created by a factory method (see
+     * [withVariant]) and its statements are all written ones (no inference). Its graphs then carry a modification
+     * stamp ([com.geoknoesis.kastor.rdf.VersionedRdfGraph]). A repository wrapping an externally created store, which
+     * other code may write to, and an inferencing repository do not claim one.
+     */
+    internal val versioned: Boolean get() = trackQuotedSubjects && !inference
+
+    /**
+     * A value that differs from every value returned before once the content visible to the caller may have changed
+     * through this repository: the contract of [com.geoknoesis.kastor.rdf.VersionedRdfGraph.modificationStamp], with
+     * the granularity of the whole repository (a write to any graph changes the stamp of every graph). Only meaningful
+     * while every write goes through this repository.
+     *
+     * Every write operation (graph API, SPARQL `UPDATE`, dataset load, `clear`, `removeGraph`) changes the counter when
+     * it returns, also when it fails, so a thread sees a new stamp after its own uncommitted writes. A transaction
+     * that wrote changes it again immediately before and after its commit, and after a rollback. A commit is not atomic
+     * with those changes, so a read made while one is in progress returns a value of its own that is never returned
+     * again: two reads only return the same value when no commit happened between them, and nothing blocks.
+     */
+    internal fun modificationStamp(): Long {
+        check(!closed.get()) { "Repository is closed" }
+        val before = modifications.get()
+        // Unchanged counter around a moment without a commit in progress: no commit overlaps this read.
+        if (commitsInFlight.get() == 0 && modifications.get() == before) return before
+        return modifications.incrementAndGet()
+    }
+
+    /** Records a write made by the current thread, see [modificationStamp]. */
+    private fun noteWrite() {
+        wroteInTransaction.set(true)
+        modifications.incrementAndGet()
+    }
+
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
         var result: Any? = null
-        runInTransaction(false) { result = withConnection(block) }
+        runInTransaction(false) {
+            try {
+                result = withConnection(block)
+            } finally {
+                noteWrite()
+            }
+        }
         @Suppress("UNCHECKED_CAST")
         return result as T
     }
@@ -296,8 +413,18 @@ class Rdf4jRepository(
         /** Update text that may introduce RDF-star triple values without them already being stored. */
         private val MAY_CREATE_TRIPLE_VALUES = Regex("<<|(?i)\\btriple\\s*\\(|\\bload\\b|\\bservice\\b")
 
-        /** Update text that may hold a `USING` clause (a `WITH` graph is then not the whole dataset of `WHERE`). */
-        private val USING_CLAUSE = Regex("(?i)\\busing\\b")
+        /**
+         * For every operation of the update request [sparql], in order, whether it has a `USING` / `USING NAMED` clause
+         * of its own. Read from the syntax tree of RDF4J's SPARQL parser (the one the update was prepared with), so
+         * the word in a literal, an IRI or a comment, or a clause of another operation, is never taken for one.
+         */
+        private fun usingClauses(sparql: String): List<Boolean> =
+            org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder.parseUpdateSequence(sparql).updateContainers
+                .mapNotNull { it.update }
+                .map { operation ->
+                    val with = (operation as? org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify)?.withClause
+                    operation.datasetClauseList.any { it !== with }
+                }
 
         private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
@@ -315,6 +442,7 @@ class Rdf4jRepository(
             trackQuotedSubjects = true
             if (quotedState == QuotedLevel.UNKNOWN) quotedState = QuotedLevel.NONE
         }
+        hashedReifiers.trust()
     }
 
     /**
@@ -337,35 +465,29 @@ class Rdf4jRepository(
     // after an explicit close) shutting the repository down twice.
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     
-    override val defaultGraph: RdfGraph = Rdf4jGraph(this, null)
+    /**
+     * Graph handles are equal when they denote the same graph of the same repository object (see [Rdf4jGraph]). The
+     * graphs of a [versioned] repository implement [com.geoknoesis.kastor.rdf.VersionedRdfGraph].
+     */
+    override val defaultGraph: RdfGraph get() = graphHandle(null)
 
-    override fun getGraph(name: Iri): RdfGraph =
-        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+    /** A handle of the graph stored in [context] (the default graph for null). */
+    private fun graphHandle(context: org.eclipse.rdf4j.model.Resource?): Rdf4jGraph =
+        if (versioned) Rdf4jVersionedGraph(this, context) else Rdf4jGraph(this, context)
+
+    override fun getGraph(name: Iri): RdfGraph = graphHandle(valueFactory.createIRI(name.value))
 
     override fun hasGraph(name: Iri): Boolean = withConnection { conn ->
         conn.hasStatement(null, null, null, false, valueFactory.createIRI(name.value))
     }
 
-    override fun listGraphs(): List<Iri> = withConnection { conn ->
-        // Datasets loaded through this provider never have blank-node contexts: `parseDataset` skolemizes
-        // blank-node graph names to `urn:kastor:skolem:` IRIs (see Rdf4jFormatSupport.parseDataset). A store
-        // written by other RDF4J code (or by SPARQL `LOAD`) may still report `BNode` contexts in `contextIDs`;
-        // their string form (`genid-...`) is not a valid absolute IRI and they cannot be named in
-        // `GRAPH <iri> { ... }`, so they are left out here.
-        conn.contextIDs.use { iter ->
-            val out = mutableListOf<Iri>()
-            while (iter.hasNext()) {
-                val ctx = iter.next()
-                if (ctx is org.eclipse.rdf4j.model.IRI) {
-                    out.add(Iri(ctx.stringValue()))
-                }
-            }
-            out
-        }
-    }
+    /**
+     * The graphs with an IRI name that hold statements. Blank-node contexts (which only other RDF4J code can create,
+     * see [Rdf4jRepository]) are not graphs of a Kastor repository and are not listed.
+     */
+    override fun listGraphs(): List<Iri> = withConnection { conn -> iriContexts(conn).map { Iri(it.stringValue()) } }
 
-    override fun createGraph(name: Iri): RdfGraph =
-        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+    override fun createGraph(name: Iri): RdfGraph = getGraph(name)
 
     override fun removeGraph(name: Iri): Boolean = withWriteConnection { conn ->
         val context = valueFactory.createIRI(name.value)
@@ -396,10 +518,19 @@ class Rdf4jRepository(
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
-        result.use {
-            val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-            consume(it.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.guardedBy(query.sparql))
-        }
+        result.use { consume(it.viewTriples().guardedBy(query.sparql)) }
+    }
+
+    /**
+     * The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). Every
+     * `_:r rdf:reifies <<( s p o )>>` triple is returned once, whether it comes from a stored statement (an explicit
+     * one), is implied by a statement about the quoted triple, or both; only those triples are remembered for that.
+     */
+    private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(): Sequence<RdfTriple> {
+        val reifies = HashSet<RdfTriple>()
+        return iterator().asSequence()
+            .flatMap { statement -> Rdf4jTerms.triplesOf(statement, null, hashedReifiersRead) }
+            .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || reifies.add(it) }
     }
 
     /**
@@ -507,11 +638,12 @@ class Rdf4jRepository(
      *
      * - A query with its own `FROM` / `FROM NAMED` clauses keeps the dataset it declares.
      * - A query without `GRAPH` (and any `DESCRIBE`) gets the default graph `RDF4J.NIL` and no named graphs.
-     * - A query that only reads inside `GRAPH` runs without a dataset, exactly as before (every context, including
-     *   blank-node contexts, is a named graph).
-     * - A query that reads both gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts (the
-     *   graphs of [listGraphs]) as its named graphs; they are enumerated once per query, and blank-node contexts are
-     *   not visible to such a query.
+     * - A query that reads inside `GRAPH` gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts
+     *   (the graphs of [listGraphs], see [iriContexts] for what enumerating them costs) as its named graphs. Blank-node
+     *   contexts are never named graphs.
+     * - Except that a query that only reads inside `GRAPH`, on a repository created by a factory method, runs without
+     *   a dataset: such a repository holds no blank-node context (see the class documentation), so every context is
+     *   one of those named graphs and nothing has to be enumerated.
      * - Only queries evaluated by an RDF4J Sail are changed; a wrapped remote repository (HTTP or SPARQL endpoint)
      *   keeps the dataset its server defines.
      *
@@ -521,7 +653,7 @@ class Rdf4jRepository(
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return this
         if (parsed.dataset != null) return this
         val reads = GraphReads.of(parsed.tupleExpr)
-        if (reads.named && !reads.default) return this
+        if (reads.named && !reads.default && trackQuotedSubjects) return this
         val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
         dataset.addDefaultGraph(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL)
         if (reads.named) iriContexts(conn).forEach(dataset::addNamedGraph)
@@ -529,8 +661,43 @@ class Rdf4jRepository(
         return this
     }
 
-    /** The IRI-named contexts of the store as [conn] sees them (the graphs of [listGraphs]). */
-    private fun iriContexts(conn: RepositoryConnection): Set<IRI> {
+    /** The IRI-named contexts found by one enumeration, and the [modificationStamp] read before it. */
+    private class ContextList(val stamp: Long, val contexts: Set<IRI>)
+
+    /** The list for readers of the committed state. */
+    @Volatile private var committedContexts: ContextList? = null
+
+    /** The list for the current thread's transaction, once it has written (it then sees its own uncommitted graphs). */
+    private val transactionContexts = ThreadLocal<ContextList?>()
+
+    /** The [modificationStamp] at the start of the current thread's transaction. */
+    private val transactionStartStamp = ThreadLocal<Long?>()
+
+    /**
+     * The IRI-named contexts of the store as [conn] sees them (the graphs of [listGraphs]).
+     *
+     * Enumerating contexts is expensive (a `MemoryStore` walks every IRI and blank node it holds), so a repository
+     * created by a factory method, which only this object changes, enumerates once and reuses the list until the next
+     * write: the list is kept with the [modificationStamp] read before the enumeration and is current while the
+     * stamp is unchanged. Readers of the committed state share one list. A transaction uses it too until it writes
+     * (while the stamp is the one it started with, it sees that same state); after its first write it keeps a list of
+     * its own, which includes its uncommitted graphs, until its next write. A repository wrapping an externally
+     * created store, which other code may change, enumerates every time.
+     *
+     * @param reuse false to enumerate regardless (for a caller that knows of writes the stamp does not show yet).
+     */
+    private fun iriContexts(conn: RepositoryConnection, reuse: Boolean = true): Set<IRI> {
+        if (!trackQuotedSubjects || !reuse) return enumerateIriContexts(conn)
+        val stamp = modificationStamp()
+        val shared = txConnection.get() == null || transactionStartStamp.get() == stamp
+        val known = if (shared) committedContexts else transactionContexts.get()
+        if (known != null && known.stamp == stamp) return known.contexts
+        val current = ContextList(stamp, java.util.Collections.unmodifiableSet(enumerateIriContexts(conn)))
+        if (shared) committedContexts = current else transactionContexts.set(current)
+        return current.contexts
+    }
+
+    private fun enumerateIriContexts(conn: RepositoryConnection): Set<IRI> {
         val out = LinkedHashSet<IRI>()
         conn.contextIDs.use { contexts -> while (contexts.hasNext()) (contexts.next() as? IRI)?.let(out::add) }
         return out
@@ -571,9 +738,10 @@ class Rdf4jRepository(
      *
      * - `DELETE` / `INSERT ... WHERE` and `DELETE WHERE` **without `WITH` / `USING`**: default graph `RDF4J.NIL` for
      *   `WHERE` and for default removals; insertions without `GRAPH` go to the default graph as before. As for queries,
-     *   a `WHERE` that only reads inside `GRAPH` keeps reading every context (blank-node contexts included), and one
-     *   that reads both inside and outside `GRAPH` gets the IRI-named contexts as named graphs. They are enumerated when
-     *   the operation starts, so it sees graphs created by earlier operations of the same request or transaction.
+     *   a `WHERE` that reads inside `GRAPH` gets the IRI-named contexts as named graphs (never a blank-node context),
+     *   and one that only reads inside `GRAPH` on a repository created by a factory method needs no named graphs at
+     *   all. They are asked for when the operation starts, so it sees graphs created by earlier operations of the same
+     *   request or transaction.
      * - `WITH <g>` (without `USING`): `g` is the default graph of `WHERE` and of the templates, as RDF4J parses it;
      *   `GRAPH` inside `WHERE` still reads the IRI-named graphs of the store (RDF4J alone would give it none).
      * - `USING` / `USING NAMED`: the declared dataset is kept for `WHERE` (with only `USING NAMED`, the default graph
@@ -585,14 +753,18 @@ class Rdf4jRepository(
      *   are not changed.
      * - Only updates executed by an RDF4J Sail are changed; a wrapped remote repository keeps its server's behaviour.
      *
-     * @param sparql the update text, only used to tell `WITH` alone from `WITH` combined with `USING`.
+     * @param sparql the update text. RDF4J's dataset of `WITH <g>` alone equals the one of `WITH <g> ... USING <g>`, so
+     *   whether an operation has a `USING` clause of its own is read from the parser's syntax tree of this text
+     *   ([usingClauses]); the text is parsed that second time only for a request with such a `WITH` operation.
      */
     private fun Update.onKastorUpdateDataset(conn: RepositoryConnection, sparql: String): Update {
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return this
         val nil = org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL
         // Asked when the operation is evaluated, not now: earlier operations of the request may create named graphs.
-        val storeGraphs = { iriContexts(conn) }
-        for (expr in parsed.updateExprs) {
+        // Their writes are not counted before the whole request returns, so only its first operation reuses the list.
+        fun storeGraphs(index: Int): () -> Set<IRI> = { iriContexts(conn, reuse = index == 0) }
+        val using: List<Boolean> by lazy { usingClauses(sparql).takeIf { it.size == parsed.updateExprs.size }.orEmpty() }
+        for ((index, expr) in parsed.updateExprs.withIndex()) {
             val declared = parsed.datasetMapping[expr]
             val dataset: org.eclipse.rdf4j.query.Dataset? = when (expr) {
                 // RDF4J's DELETE DATA passes its default remove graphs to the Sail as they are (it does not translate
@@ -602,17 +774,20 @@ class Rdf4jRepository(
                 is org.eclipse.rdf4j.query.algebra.Modify -> {
                     val reads = GraphReads.of(expr.whereExpr)
                     when {
-                        declared == null && reads.named && !reads.default -> UpdateDataset(removeGraphs = setOf(nil))
+                        declared == null && reads.named && !reads.default && trackQuotedSubjects ->
+                            UpdateDataset(removeGraphs = setOf(nil))
                         declared == null -> UpdateDataset(
                             defaultGraphs = setOf(nil),
                             removeGraphs = setOf(nil),
-                            storeGraphs = if (reads.named) storeGraphs else null,
+                            storeGraphs = if (reads.named) storeGraphs(index) else null,
                         )
                         else -> {
                             // WITH <g> alone is parsed as the default graph g, also for insertions and removals.
-                            val withOnly = declared.defaultInsertGraph != null && declared.namedGraphs.isEmpty() &&
-                                declared.defaultGraphs == setOf(declared.defaultInsertGraph) && !USING_CLAUSE.containsMatchIn(sparql)
-                            val needsNamed = withOnly && reads.named
+                            val withGraphOnly = declared.defaultInsertGraph != null && declared.namedGraphs.isEmpty() &&
+                                declared.defaultGraphs == setOf(declared.defaultInsertGraph)
+                            // Without a USING clause of its own, GRAPH in WHERE reads the store's named graphs. (An
+                            // operation the syntax tree does not account for is left as RDF4J parsed it.)
+                            val needsNamed = withGraphOnly && reads.named && !using.getOrElse(index) { true }
                             val needsRemove = declared.defaultRemoveGraphs.isEmpty()
                             if (!needsNamed && !needsRemove) {
                                 null
@@ -621,7 +796,7 @@ class Rdf4jRepository(
                                     defaultGraphs = declared.defaultGraphs,
                                     removeGraphs = if (needsRemove) setOf(nil) else declared.defaultRemoveGraphs,
                                     insertGraph = declared.defaultInsertGraph,
-                                    storeGraphs = if (needsNamed) storeGraphs else null,
+                                    storeGraphs = if (needsNamed) storeGraphs(index) else null,
                                     declaredNamedGraphs = declared.namedGraphs,
                                 )
                             }
@@ -709,38 +884,124 @@ class Rdf4jRepository(
         result
     }
 
-    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> =
-        graphQuery("CONSTRUCT", query.sparql)
-
-    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> =
-        graphQuery("DESCRIBE", query.sparql)
-
     /**
-     * Shared CONSTRUCT/DESCRIBE execution. The result is materialized to a list inside
-     * the connection scope because the borrowed connection (and its GraphQueryResult
-     * cursor) is closed as soon as [withConnection] returns - a lazy sequence over a
-     * closed connection would fail. Callers that need lazy streaming over large graphs
-     * should use a scoped query API. Failures while preparing, evaluating or iterating
-     * the result surface as [RdfQueryException] (see [queryOperation]).
+     * The result is materialized to a list inside the connection scope because the borrowed connection (and its
+     * GraphQueryResult cursor) is closed as soon as [withConnection] returns - a lazy sequence over a closed
+     * connection would fail. Callers that need lazy streaming over large graphs should use [withConstructTriples].
+     * Failures while preparing, evaluating or iterating the result surface as [RdfQueryException] (see
+     * [queryOperation]).
      */
-    private fun graphQuery(kind: String, sparql: String): Sequence<RdfTriple> = withConnection { conn ->
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> = withConnection { conn ->
+        val sparql = query.sparql
         val startTime = System.currentTimeMillis()
-        val prepared = queryOperation(sparql, "Failed to prepare SPARQL $kind query", kind) {
+        val prepared = queryOperation(sparql, "Failed to prepare SPARQL CONSTRUCT query", "CONSTRUCT") {
             conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
         }
-        val triples = queryOperation(sparql, "Failed to execute SPARQL $kind query", kind) {
-            prepared.evaluate().use { graphResult ->
-                val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                graphResult.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.toList()
+        val triples = queryOperation(sparql, "Failed to execute SPARQL CONSTRUCT query", "CONSTRUCT") {
+            prepared.evaluate().use { it.viewTriples().toList() }
+        }
+        RdfDebug.logQueryTrace("CONSTRUCT", sparql, null, System.currentTimeMillis() - startTime, triples.size)
+        triples.asSequence()
+    }
+
+    /**
+     * Describes the resources a `DESCRIBE` query selects with their **concise bounded description**, exactly as the
+     * Jena provider does: the statements whose subject is the resource and, recursively, the statements whose subject
+     * is a blank node that is the object of a described statement. Statements that merely point at the resource are
+     * not part of it. (RDF4J's own `DESCRIBE` is symmetric: it also returns the incoming statements, so it is not
+     * used.)
+     *
+     * - **Resources:** the IRIs listed in the `DESCRIBE` clause (whatever the `WHERE` clause matches) and the IRIs and
+     *   blank nodes that the `WHERE` clause, with its solution modifiers, binds to the described variables (every
+     *   variable for `DESCRIBE *`). It is evaluated by RDF4J against the dataset every query gets (see
+     *   [onKastorDataset]). Literals and triple terms are not resources and are skipped.
+     * - **Source:** the description is read from the default graph of the query's dataset: the repository's default
+     *   graph, or the merge of the `FROM` graphs (nothing with only `FROM NAMED`). Named graphs are read by the
+     *   `WHERE` clause inside `GRAPH`, never by the description.
+     * - **Triples:** the ones the graph API returns for that graph ([Rdf4jGraph]): an RDF-star subject is read as its
+     *   reifier blank node with its `rdf:reifies` triple (once), triple terms are objects and are not followed, and
+     *   an inference repository includes entailed statements. Blank node cycles end.
+     *
+     * A wrapped repository that is not evaluated by an RDF4J Sail (HTTP repository, SPARQL endpoint) returns the
+     * description its server computes.
+     */
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> = withConnection { conn ->
+        val sparql = query.sparql
+        val startTime = System.currentTimeMillis()
+        val prepared = queryOperation(sparql, "Failed to prepare SPARQL DESCRIBE query", "DESCRIBE") {
+            conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
+        }
+        val triples = queryOperation(sparql, "Failed to execute SPARQL DESCRIBE query", "DESCRIBE") {
+            boundedDescription(conn, sparql, prepared) ?: prepared.onKastorDataset(conn).evaluate().use { it.viewTriples().toList() }
+        }
+        RdfDebug.logQueryTrace("DESCRIBE", sparql, null, System.currentTimeMillis() - startTime, triples.size)
+        triples.asSequence()
+    }
+
+    /** The description [describe] documents, or null when [prepared] is not a `DESCRIBE` query evaluated by a Sail. */
+    private fun boundedDescription(conn: RepositoryConnection, sparql: String, prepared: GraphQuery): List<RdfTriple>? {
+        val parsed = (prepared as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return null
+        var operator: org.eclipse.rdf4j.query.algebra.DescribeOperator? = null
+        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.DescribeOperator) { operator = node }
+        })
+        // The rows of this expression hold the resources to describe: RDF4J parses `DESCRIBE <iri> ?v WHERE { P }` as
+        // DescribeOperator(Projection(Extension(P, <iri> AS _describe_N), [_describe_N, v])).
+        val selection = operator?.arg ?: return null
+        val select = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * {}")
+        val selectParsed = (select as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return null
+
+        val resources = LinkedHashSet<RdfResource>()
+        // The IRIs of the DESCRIBE clause are described also when the WHERE clause has no solution. Their generated
+        // names cannot be variables of the query: those occur in its text.
+        ((selection as? org.eclipse.rdf4j.query.algebra.Projection)?.arg as? org.eclipse.rdf4j.query.algebra.Extension)?.elements?.forEach { element ->
+            val constant = (element.expr as? org.eclipse.rdf4j.query.algebra.ValueConstant)?.value
+            if (constant is IRI && element.name.startsWith("_describe_") && !sparql.contains(element.name)) {
+                resources.add(Iri(constant.stringValue()))
             }
         }
-        RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
-        triples.asSequence()
+        selectParsed.tupleExpr = selection.clone()
+        val declared = parsed.dataset
+        if (declared != null) select.dataset = declared else select.onKastorDataset(conn)
+        select.evaluate().use { rows ->
+            for (row in rows) {
+                for (binding in row) {
+                    when (val value = binding.value) {
+                        is IRI -> resources.add(Iri(value.stringValue()))
+                        is org.eclipse.rdf4j.model.BNode -> resources.add(BlankNode(value.id))
+                        else -> Unit
+                    }
+                }
+            }
+        }
+
+        val nil = setOf<IRI>(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL, org.eclipse.rdf4j.model.vocabulary.SESAME.NIL)
+        val sources: List<Rdf4jGraph> =
+            if (declared == null) listOf(graphHandle(null)) else declared.defaultGraphs.map { graphHandle(if (it in nil) null else it) }
+        val description = LinkedHashSet<RdfTriple>()
+        val visited = HashSet<RdfResource>()
+        val pending = ArrayDeque<RdfResource>(resources)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            if (!visited.add(node)) continue
+            for (source in sources) {
+                for (triple in source.outgoing(conn, node)) {
+                    description.add(triple)
+                    val obj = triple.obj
+                    if (obj is BlankNode && obj !in visited) pending.addLast(obj)
+                }
+            }
+        }
+        return description.toList()
     }
 
     /**
      * Runs a SPARQL `UPDATE` with Kastor's dataset (see [onKastorUpdateDataset]). Failures while preparing or
      * executing it surface as [RdfQueryException] (see [queryOperation]).
+     *
+     * A graph the request creates under a blank-node name (`LOAD` of a quad document with blank graph labels, `INSERT`
+     * into `GRAPH ?g` with `?g` bound to a blank node) is given a skolem IRI when the request ends, in the same
+     * transaction (see the class documentation).
      */
     override fun update(query: UpdateQuery) {
         withWriteConnection { conn ->
@@ -751,11 +1012,68 @@ class Rdf4jRepository(
             val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
             queryOperation(query.sparql, "Failed to execute SPARQL UPDATE", "UPDATE") {
-                conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql).execute()
+                val prepared = conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql)
+                val foreign = blankContextsToKeep(conn, prepared)
+                prepared.execute()
+                if (foreign != null) skolemizeBlankContexts(conn, foreign)
             }
             // Checked after executing, so a triple value written concurrently (and visible to the update) counts.
             if (!quotedSyntax && tripleValuesMayExist) noteQuotedWrite(QuotedLevel.UNKNOWN)
             RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
+        }
+    }
+
+    /**
+     * The blank-node contexts that exist before [update] runs and are not its own (none on a repository created by a
+     * factory method, which never holds one), or null when the update cannot create a blank-node context: it has no
+     * `LOAD` without `INTO GRAPH` and no `INSERT` template with a variable graph name.
+     */
+    private fun blankContextsToKeep(conn: RepositoryConnection, update: Update): Set<org.eclipse.rdf4j.model.BNode>? {
+        val parsed = (update as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return null
+        val mayCreate = parsed.updateExprs.any { expr ->
+            when (expr) {
+                is org.eclipse.rdf4j.query.algebra.Load -> expr.graph == null
+                is org.eclipse.rdf4j.query.algebra.Modify -> expr.insertExpr?.let(::hasVariableContext) ?: false
+                else -> false
+            }
+        }
+        if (!mayCreate) return null
+        return if (trackQuotedSubjects) emptySet() else blankContexts(conn)
+    }
+
+    private fun hasVariableContext(template: org.eclipse.rdf4j.query.algebra.TupleExpr): Boolean {
+        var found = false
+        template.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.StatementPattern) {
+                val context = node.contextVar
+                if (context != null && !context.hasValue()) found = true
+            }
+        })
+        return found
+    }
+
+    private fun blankContexts(conn: RepositoryConnection): Set<org.eclipse.rdf4j.model.BNode> {
+        val out = LinkedHashSet<org.eclipse.rdf4j.model.BNode>()
+        conn.contextIDs.use { contexts -> while (contexts.hasNext()) (contexts.next() as? org.eclipse.rdf4j.model.BNode)?.let(out::add) }
+        return out
+    }
+
+    /**
+     * Moves the statements of every blank-node context that is not in [keep] to the graph
+     * `urn:kastor:skolem:<load>:<blank node id>` (one `<load>` id per call), as [Rdf4jFormatSupport.parseDataset] names
+     * the blank graphs of a document. Only the graph name changes: the blank node itself, used as a subject or object,
+     * stays a blank node.
+     */
+    private fun skolemizeBlankContexts(conn: RepositoryConnection, keep: Set<org.eclipse.rdf4j.model.BNode>) {
+        val created = blankContexts(conn).filterNot { it in keep }
+        if (created.isEmpty()) return
+        val load = java.util.UUID.randomUUID().toString().replace("-", "")
+        for (blank in created) {
+            val name = conn.valueFactory.createIRI(Rdf4jFormatSupport.skolemGraphName(load, blank.id))
+            val statements = ArrayList<org.eclipse.rdf4j.model.Statement>()
+            conn.getStatements(null, null, null, false, blank).use { result -> result.forEach { statements.add(it) } }
+            statements.forEach { conn.add(it.subject, it.predicate, it.`object`, name) }
+            conn.clear(blank)
         }
     }
 
@@ -784,21 +1102,44 @@ class Rdf4jRepository(
             readOnly.set(read)
             try {
                 conn.begin()
+                if (trackQuotedSubjects) transactionStartStamp.set(modificationStamp())
                 operations(this)
-                conn.commit()
+                if (wroteInTransaction.get() == true) {
+                    // The committed content becomes visible somewhere between these two changes of the counter.
+                    commitsInFlight.incrementAndGet()
+                    modifications.incrementAndGet()
+                    try {
+                        conn.commit()
+                    } finally {
+                        modifications.incrementAndGet()
+                        commitsInFlight.decrementAndGet()
+                    }
+                } else {
+                    conn.commit()
+                }
             } catch (e: Throwable) {
-                if (conn.isActive) conn.rollback()
+                try {
+                    if (conn.isActive) conn.rollback()
+                } finally {
+                    // The writes this thread saw inside the transaction are gone.
+                    if (wroteInTransaction.get() == true) modifications.incrementAndGet()
+                }
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
+                wroteInTransaction.remove()
+                transactionStartStamp.remove()
+                transactionContexts.remove()
                 quotedScanInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
                     quotedWrittenInTransaction.remove()
                     raiseQuoted(level)
+                    if (level == QuotedLevel.UNKNOWN) hashedReifiers.invalidate()
                     quotedWritersInFlight.decrementAndGet()
                 }
+                hashedReifiers.transactionEnded()
             }
         }
     }

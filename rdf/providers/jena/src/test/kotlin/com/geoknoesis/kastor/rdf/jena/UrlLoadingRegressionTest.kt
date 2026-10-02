@@ -33,11 +33,16 @@ class UrlLoadingRegressionTest {
             maxActive.accumulateAndGet(active.incrementAndGet(), ::maxOf)
             try {
                 release.await(30, TimeUnit.SECONDS)
+            } finally {
+                // Before the response is written: a client that has read it may send its next request before this
+                // thread runs again, and that request must not be counted on top of this one.
+                active.decrementAndGet()
+            }
+            try {
                 val data = "<urn:s> <urn:p> <urn:o> .".toByteArray()
                 exchange.sendResponseHeaders(200, data.size.toLong())
                 exchange.responseBody.use { it.write(data) }
             } finally {
-                active.decrementAndGet()
                 exchange.close()
             }
         }

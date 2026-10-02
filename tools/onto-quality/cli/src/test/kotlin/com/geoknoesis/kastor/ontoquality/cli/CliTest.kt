@@ -493,12 +493,13 @@ class CliTest {
         }
         assertEquals(EXIT_OK, run(listOf("check", ontology("empty.ttl", emptyTtl).toString(), "--catalog", "owl-quality", "--debug")).status)
 
-        // Output that cannot be written is a runtime (IO) failure, after the model has been closed.
+        // Output that cannot be written is a runtime (IO) failure, raised before a model is loaded.
         val writeFailure = FakeEnricherFactory()
         val unwritable = Files.createDirectory(dir.resolve("is-a-directory"))
         val io = run(listOf("pipeline", onto, "--catalog", "owl-quality", "--output", unwritable.toString()), CliEnvironment(enricherFactory = writeFailure))
         assertEquals(EXIT_RUNTIME_ERROR, io.status, io.err)
-        assertEquals(1, writeFailure.closed)
+        assertTrue(io.err.contains("Cannot write --output"), io.err)
+        assertEquals(0, writeFailure.opened)
     }
 
     @Test

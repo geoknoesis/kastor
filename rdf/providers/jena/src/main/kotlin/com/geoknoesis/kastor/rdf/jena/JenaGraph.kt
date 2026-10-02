@@ -23,7 +23,7 @@ import org.apache.jena.rdf.model.Model
  * **Lenient reads** ([lenientRead], used for wrapped foreign models): statements that cannot be converted to
  * Kastor terms (e.g. `xml:lang="en_US"`) are skipped with a logged warning instead of failing the whole read.
  */
-internal class JenaGraph(
+internal open class JenaGraph(
     val model: Model,
     private val repository: JenaRepository? = null,
     /** Cache key of this graph inside [repository]: "" for the default graph, else the graph name. */
@@ -38,7 +38,7 @@ internal class JenaGraph(
 
     internal val isRepositoryBacked: Boolean get() = repository != null
 
-    private fun <T> write(block: () -> T): T = repository?.withWrite(block) ?: block()
+    private fun <T> write(block: () -> T): T = if (repository != null) repository.withWrite(graphKey, block) else block()
 
     override fun addTriple(triple: RdfTriple): Unit = write {
         model.graph.add(JenaTerms.toJenaTriple(triple))
@@ -150,4 +150,32 @@ internal class JenaGraph(
             Math.toIntExact(view.size())
         }
     }
+}
+
+/**
+ * Handle of a graph of a [JenaRepository] (the default graph, or a named graph).
+ *
+ * **Identity:** two handles are equal when they belong to the same repository *instance* and name the same graph,
+ * however they were obtained (`defaultGraph`, `editDefaultGraph()`, `getGraph(name)`, `editGraph(name)`,
+ * `createGraph(name)`), so a handle can be used as a cache key. Handles of two repositories are never equal, also when
+ * both are connected to the same TDB2 location.
+ *
+ * **Modification stamp** ([VersionedRdfGraph]): see [JenaRepository.modificationStamp]. It is the stamp of the
+ * store, not of the single graph: a write to any graph of the repository changes the stamp of all its handles. For
+ * `*-inference` variants it is the stamp of the underlying store too (entailments are a function of the store).
+ */
+internal class JenaRepositoryGraph(
+    model: Model,
+    private val owner: JenaRepository,
+    private val key: String,
+) : JenaGraph(model, owner, key), VersionedRdfGraph {
+
+    override val modificationStamp: Long get() = owner.modificationStamp()
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is JenaRepositoryGraph && other.owner === owner && other.key == key)
+
+    override fun hashCode(): Int = 31 * System.identityHashCode(owner) + key.hashCode()
+
+    override fun toString(): String = "JenaRepositoryGraph(${if (key.isEmpty()) "default graph" else key})"
 }

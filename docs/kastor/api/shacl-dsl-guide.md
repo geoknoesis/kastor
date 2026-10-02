@@ -310,7 +310,28 @@ property("http://example.org/email") {
 **What it does:**
 - Validates that the string matches the specified regular expression
 - `flags`: Optional regex flags (e.g., "i" for case-insensitive, "m" for multiline)
-- Uses XPath regular expression syntax (XML Schema regular expressions). The Kastor native validator applies its semantics exactly: `\d`, `\w` and `\s` are the XML Schema classes, so `\w` matches Unicode letters (`José`) but not `_`; write `[\w_]` when underscores are allowed
+- Uses XPath regular expression syntax (XML Schema regular expressions), which is what SHACL prescribes
+- The pattern above accepts `john_doe@example.org` and `John.Doe-x@mail.example.com`, and rejects `john doe@example.org`
+
+**`\w` and the differences from Java regular expressions.** The Kastor native validator evaluates `sh:pattern` as an XPath regular expression, with one deliberate exception: `\w` also accepts the underscore. XML Schema excludes `_` from `\w`, but shapes are usually written against engines that hand the pattern to `java.util.regex` (Jena, RDF4J, TopBraid), where `\w` matches `_`. The rule is:
+
+- `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`: the underscore plus every Unicode letter, mark, number and symbol.
+- `\W` is the exact complement, so it does not match `_`.
+
+Everything else follows XPath. A pattern therefore still behaves differently on the native validator than on an engine that uses Java regular expressions (the `rdf4j` provider, Jena SHACL) in these cases:
+
+| Construct | Native validator (XPath / XML Schema) | `java.util.regex` |
+|-----------|----------------------------------------|-------------------|
+| `\w` | Unicode letters, marks and digits (`José`, `東京`), `_`, and **symbols** such as `+`, `$`, `<` | ASCII `[A-Za-z0-9_]` |
+| `\d` | every Unicode decimal digit (`٣`, `３`) | ASCII `[0-9]` |
+| `\s` | space, tab, line feed, carriage return | also vertical tab and form feed |
+| `$` | the end of the value only; with flag `m`, also before a line feed | also before a final line terminator: `^\d+$` accepts `"123\n"` |
+| `^` with flag `m` | the start of the value and after a line feed | also after carriage return, U+0085, U+2028 and U+2029 |
+| `.` | every character except line feed and carriage return (every character with flag `s`) | also excludes U+0085, U+2028 and U+2029 |
+
+Write `[A-Za-z0-9_]`, `[0-9]` or an explicit class when a pattern must mean the same on every engine.
+
+Java-only syntax that would change meaning is rejected when the shapes are compiled (`ShapeCompileException`), never reinterpreted: class intersection (`[a-z&&[^aeiou]]`; write the XML Schema subtraction `[a-z-[aeiou]]`), nested classes (`[a-c[x-z]]`; write `[a-cx-z]`, or `\[` for a literal bracket) and inline flags (`(?i)`, `(?m)`; set `flags` instead). See [Conformance semantics](../features/shacl-validation.md#conformance-semantics) for the full rule.
 
 **Example validation:**
 ```kotlin

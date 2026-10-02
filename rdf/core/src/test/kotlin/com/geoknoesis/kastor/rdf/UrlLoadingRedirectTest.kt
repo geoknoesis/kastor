@@ -287,10 +287,17 @@ class UrlLoadingRedirectTest {
     }
 
     @Test
-    fun `options keep their earlier constructors and equality`() {
+    fun `options have defaults for their policies, and equality`() {
         val five = UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L)
         assertEquals(UrlRedirectPolicy.ALLOW_ALL, five.redirectPolicy)
-        assertEquals(five, UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L, UrlRedirectPolicy.ALLOW_ALL))
+        assertEquals(UrlAddressPolicy.ALLOW_ALL, five.addressPolicy)
+        assertEquals(five, UrlLoadOptions(setOf("http"), 10L, 1, 2, 3L, UrlRedirectPolicy.ALLOW_ALL, UrlAddressPolicy.ALLOW_ALL))
+        // One constructor: no overloads kept for earlier, unreleased shapes of the class.
+        // (Kotlin adds a no-argument constructor to a class whose parameters all have defaults.)
+        assertEquals(
+            listOf(0, 7),
+            UrlLoadOptions::class.java.constructors.filterNot { it.isSynthetic }.map { it.parameterCount }.sorted(),
+        )
         assertEquals(UrlLoadOptions(), UrlLoadOptions.DEFAULT)
         assertEquals(UrlRedirectPolicy.SAME_HOST, five.copy(redirectPolicy = UrlRedirectPolicy.SAME_HOST).redirectPolicy)
     }

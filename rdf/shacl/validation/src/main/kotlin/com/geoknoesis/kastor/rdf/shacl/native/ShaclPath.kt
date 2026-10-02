@@ -10,22 +10,36 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
 
+/**
+ * Index of the shapes graph. An RDF graph is a **set** of triples: a provider that hands out the same triple twice
+ * (a bag-like store, a merge of overlapping sources) must not make a parameter look repeated or a list cell look
+ * forked, so duplicate triples are dropped here and every value list is duplicate-free.
+ */
 internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: ValidationBudget = ValidationBudget.NONE) {
-    /** All shapes-graph triples (retained for SHACL-SPARQL `$shapesGraph` access). */
-    val triples: List<RdfTriple> = triples
+    /** All (distinct) shapes-graph triples (retained for SHACL-SPARQL `$shapesGraph` access). */
+    val triples: List<RdfTriple>
     private val bySubject = HashMap<RdfResource, LinkedHashMap<Iri, MutableList<RdfTerm>>>()
     private val byPredicateObject = HashMap<Iri, HashMap<RdfTerm, MutableList<RdfResource>>>()
     private val reifiers = HashMap<RdfTriple, MutableList<RdfResource>>()
 
     init {
-        for (t in triples) {
+        val seen = HashSet<RdfTriple>(triples.size * 2)
+        var distinct: ArrayList<RdfTriple>? = null
+        for ((position, t) in triples.withIndex()) {
             budget.tick("shape indexing")
+            if (!seen.add(t)) {
+                // First duplicate: from here on the distinct triples are collected in a copy.
+                if (distinct == null) distinct = ArrayList(triples.subList(0, position))
+                continue
+            }
+            distinct?.add(t)
             bySubject.getOrPut(t.subject) { LinkedHashMap() }.getOrPut(t.predicate) { ArrayList(1) }.add(t.obj)
             byPredicateObject.getOrPut(t.predicate) { HashMap() }.getOrPut(t.obj) { ArrayList(1) }.add(t.subject)
             if (t.predicate == RDF.reifies) {
                 (t.obj as? TripleTerm)?.let { reifiers.getOrPut(it.triple) { ArrayList(1) }.add(t.subject) }
             }
         }
+        this.triples = distinct ?: triples
         budget.check("shape indexing")
     }
 
@@ -55,28 +69,44 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
         return false
     }
 
-    /** Triples describing the blank-node structure reachable from [root] (e.g. a complex `sh:path`). */
+    /**
+     * Triples describing the blank-node structure reachable from [root] (e.g. a complex `sh:path`). The rest of an
+     * RDF list is followed through cells named with IRIs as well (their `rdf:first` / `rdf:rest` triples only).
+     */
     fun blankNodeClosure(root: RdfTerm): List<RdfTriple> {
         val out = mutableListOf<RdfTriple>()
-        val seen = HashSet<BlankNode>()
-        fun visit(term: RdfTerm) {
-            if (term !is BlankNode || !seen.add(term)) return
-            bySubject[term]?.forEach { (p, objs) ->
-                objs.forEach { o ->
-                    out.add(RdfTriple(term, p, o))
-                    visit(o)
+        val seen = HashSet<RdfResource>()
+        fun visit(term: RdfTerm, listRest: Boolean) {
+            when {
+                term is BlankNode -> {
+                    if (!seen.add(term)) return
+                    bySubject[term]?.forEach { (p, objs) ->
+                        objs.forEach { o ->
+                            out.add(RdfTriple(term, p, o))
+                            visit(o, p == RDF.rest)
+                        }
+                    }
+                }
+                term is Iri && listRest && term != RDF.nil -> {
+                    if (!seen.add(term)) return
+                    for (p in listOf(RDF.first, RDF.rest)) {
+                        objects(term, p).forEach { o ->
+                            out.add(RdfTriple(term, p, o))
+                            visit(o, p == RDF.rest)
+                        }
+                    }
                 }
             }
         }
-        visit(root)
+        visit(root, false)
         return out
     }
 
     /**
-     * Members of the RDF list starting at [head]. The list must be well-formed: every cell is a blank node with
-     * exactly one `rdf:first` and exactly one `rdf:rest`, ending in `rdf:nil`. A missing or repeated `rdf:rest` /
-     * `rdf:first` raises [ShapeCompileException]: it would otherwise silently truncate (or fork) `sh:in`, `sh:or`,
-     * path lists and the like.
+     * Members of the RDF list starting at [head]. The list must be well-formed (a SHACL list): every cell is a blank
+     * node **or an IRI** with exactly one `rdf:first` and exactly one `rdf:rest`, ending in `rdf:nil`. A missing or
+     * repeated `rdf:rest` / `rdf:first` raises [ShapeCompileException]: it would otherwise silently truncate (or fork)
+     * `sh:in`, `sh:or`, path lists and the like.
      */
     fun parseRdfList(head: RdfTerm): List<RdfTerm> {
         val out = mutableListOf<RdfTerm>()
@@ -86,11 +116,8 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
             budget.check("shape collection")
             if (!visited.add(cur)) throw ShapeCompileException("Cyclic RDF collection in shapes")
             when (cur) {
-                is Iri -> {
-                    if (cur == RDF.nil) return out
-                    throw ShapeCompileException("Invalid RDF collection head (expected blank node list cell): $cur")
-                }
-                is BlankNode -> {
+                RDF.nil -> return out
+                is RdfResource -> {
                     val firsts = objects(cur, RDF.first)
                     if (firsts.size != 1) {
                         throw ShapeCompileException("Ill-formed RDF list: cell $cur has ${firsts.size} rdf:first values (exactly one required)")
@@ -101,7 +128,7 @@ internal class ShapeGraphIndex(triples: List<RdfTriple>, private val budget: Val
                     }
                     val rest = rests[0]
                     out.add(firsts[0])
-                    if (rest is Iri && rest == RDF.nil) break
+                    if (rest == RDF.nil) break
                     cur = rest
                 }
                 else -> throw ShapeCompileException("Invalid RDF list cell term: $cur")
@@ -129,21 +156,36 @@ internal object ShaclPathParser {
         if (term in ancestors || ancestors.size >= 128) throw ShapeCompileException("Cyclic or excessively nested SHACL path")
         val next = ancestors + term
         return when (term) {
+            // `sh:path ( )` is rdf:nil: an empty sequence, not the predicate rdf:nil.
+            RDF.nil -> throw ShapeCompileException(
+                "Ill-formed SHACL path: an empty list is not a sequence path (a sequence path is a list of at least two paths)",
+            )
             is Iri -> ShaclPath.Predicate(term)
             is BlankNode ->
-                if (shapes.objectSingle(term, RDF.first) != null) {
-                    ShaclPath.Sequence(shapes.parseRdfList(term).map { parse(it, shapes, next) })
+                if (shapes.objects(term, RDF.first).isNotEmpty() || shapes.objects(term, RDF.rest).isNotEmpty()) {
+                    ShaclPath.Sequence(members("sequence path", term, shapes, next))
                 } else {
                     parseBlankPath(term, shapes, next)
                 }
             else -> throw ShapeCompileException("Unsupported SHACL path term: $term")
         }
+    }
 
+    /** The member paths of the list [head] of a sequence or alternative path: SHACL requires at least two. */
+    private fun members(kind: String, head: RdfTerm, shapes: ShapeGraphIndex, next: Set<RdfTerm>): List<ShaclPath> {
+        val terms = shapes.parseRdfList(head)
+        if (terms.size < 2) {
+            throw ShapeCompileException(
+                "Ill-formed SHACL path: $kind with ${terms.size} member(s); SHACL requires a list of at least two paths - " +
+                    "write a single member as the path itself",
+            )
+        }
+        return terms.map { parse(it, shapes, next) }
     }
 
     private fun parseBlankPath(node: BlankNode, shapes: ShapeGraphIndex, next: Set<RdfTerm>): ShaclPath {
-        val triples = shapes.objects(node, SHACL.alternativePath).map { ShaclPath.Alternative(parseList(it, shapes, next)) }
-            .plus(shapes.objects(node, SHACL.sequencePath).map { ShaclPath.Sequence(parseList(it, shapes, next)) })
+        val triples = shapes.objects(node, SHACL.alternativePath).map { ShaclPath.Alternative(members("alternative path", it, shapes, next)) }
+            .plus(shapes.objects(node, SHACL.sequencePath).map { ShaclPath.Sequence(members("sequence path", it, shapes, next)) })
             .plus(shapes.objects(node, SHACL.inversePath).map { ShaclPath.Inverse(parse(it, shapes, next)) })
             .plus(shapes.objects(node, SHACL.zeroOrMorePath).map { ShaclPath.ZeroOrMore(parse(it, shapes, next)) })
             .plus(shapes.objects(node, SHACL.oneOrMorePath).map { ShaclPath.OneOrMore(parse(it, shapes, next)) })
@@ -156,7 +198,4 @@ internal object ShaclPathParser {
         }
         return triples.first()
     }
-
-    private fun parseList(head: RdfTerm, shapes: ShapeGraphIndex, next: Set<RdfTerm>): List<ShaclPath> =
-        shapes.parseRdfList(head).map { parse(it, shapes, next) }
 }

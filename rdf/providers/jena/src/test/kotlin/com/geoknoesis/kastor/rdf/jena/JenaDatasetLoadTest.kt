@@ -147,6 +147,36 @@ class JenaDatasetLoadTest {
     }
 
     @Test
+    fun `the public helper recognises and decodes skolem graph names`() {
+        JenaRepository.MemoryRepository().use { repo ->
+            JenaProvider().parseDataset(repo, "_:g { <http://example.org/s> <http://example.org/p> _:g . }".byteInputStream(), "TRIG")
+            val graph = repo.listGraphs().single()
+            val term = repo.getGraph(graph).getTriples().single().obj as com.geoknoesis.kastor.rdf.BlankNode
+            assertEquals(term.id, blankNodeIdOfSkolemGraph(graph), "the graph name decodes to the id of the blank node's term occurrences")
+        }
+        val load = "0123456789abcdef0123456789abcdef"
+        // The form both providers produce: urn:kastor:skolem:<32 lowercase hex digits>:<percent-encoded blank node id>.
+        assertEquals("b0", blankNodeIdOfSkolemGraph(Iri("urn:kastor:skolem:$load:b0")))
+        assertEquals("genid-7f:1 b/%", blankNodeIdOfSkolemGraph(Iri("urn:kastor:skolem:$load:genid-7f%3A1%20b%2F%25")))
+        assertEquals(0xE9.toChar().toString(), blankNodeIdOfSkolemGraph(Iri("urn:kastor:skolem:$load:%C3%A9")))
+        // Everything else is not a skolem graph name.
+        for (other in listOf(
+            "http://example.org/g",
+            "urn:kastor:skolem:",
+            "urn:kastor:skolem:$load",
+            "urn:kastor:skolem:$load:",
+            "urn:kastor:skolem:${load.uppercase()}:b0",
+            "urn:kastor:skolem:${load.dropLast(1)}:b0",
+            "urn:kastor:skolem:$load:b0:x",
+            "urn:kastor:skolem:$load:b0%3a", // the encoder writes uppercase hex digits only
+            "urn:kastor:skolem:$load:b0~",
+            "urn:kastor:other:$load:b0",
+        )) {
+            assertEquals(null, blankNodeIdOfSkolemGraph(Iri(other)), other)
+        }
+    }
+
+    @Test
     fun `the default graph block and IRI-named graphs still load on every path`() {
         val data = "PREFIX ex: <http://example.org/>\n{ ex:s ex:p ex:o . }\nex:g { ex:s ex:p ex:o2 . }\n"
         for ((path, create) in loadPaths()) {

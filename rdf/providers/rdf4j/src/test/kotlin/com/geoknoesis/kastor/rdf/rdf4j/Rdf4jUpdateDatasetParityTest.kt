@@ -138,6 +138,45 @@ class Rdf4jUpdateDatasetParityTest {
             "WITH <urn:g1> INSERT { ?s <urn:q> ?o } USING <urn:g2> WHERE { ?s ?p ?o }",
             changed("g1" to listOf("p=named1", "q=named2")),
         ),
+        // The word "using" outside a USING clause of the operation must not be taken for one.
+        Case(
+            "WITH: the word using inside a literal is not a USING clause",
+            "WITH <urn:g1> INSERT { ?s <urn:q> \"copied using v2\" } WHERE { GRAPH <urn:g2> { ?s ?p ?o } }",
+            changed("g1" to listOf("p=named1", "q=copied using v2")),
+        ),
+        Case(
+            "WITH: the word using inside an IRI is not a USING clause",
+            "WITH <urn:g1> INSERT { ?s <urn:using> ?o } WHERE { GRAPH <urn:g2> { ?s ?p ?o } }",
+            changed("g1" to listOf("p=named1", "using=named2")),
+        ),
+        Case(
+            "WITH: the word using inside a comment is not a USING clause",
+            "# copies g2 using GRAPH\nWITH <urn:g1> INSERT { ?s <urn:q> ?o } # not using USING\n WHERE { GRAPH <urn:g2> { ?s ?p ?o } }",
+            changed("g1" to listOf("p=named1", "q=named2")),
+        ),
+        Case(
+            "WITH: a USING clause of a later operation does not change an earlier one",
+            "WITH <urn:g1> INSERT { ?s <urn:q> ?o } WHERE { GRAPH <urn:g2> { ?s ?p ?o } } ; " +
+                "INSERT { ?s <urn:r> ?o } USING <urn:g2> WHERE { ?s ?p ?o }",
+            changed("default" to listOf("p=default", "r=named2"), "g1" to listOf("p=named1", "q=named2")),
+        ),
+        Case(
+            "WITH: a USING clause of an earlier operation does not change a later one",
+            "INSERT { ?s <urn:r> ?o } USING <urn:g2> WHERE { ?s ?p ?o } ; " +
+                "WITH <urn:g1> INSERT { ?s <urn:q> ?o } WHERE { GRAPH <urn:g2> { ?s ?p ?o } }",
+            changed("default" to listOf("p=default", "r=named2"), "g1" to listOf("p=named1", "q=named2")),
+        ),
+        Case(
+            "WITH and USING of the same graph: USING still hides the named graphs from GRAPH",
+            "WITH <urn:g1> INSERT { ?s <urn:q> ?o } USING <urn:g1> WHERE { GRAPH ?g { ?s ?p ?o } }",
+            changed(),
+        ),
+        Case(
+            "WITH and USING of the same graph in the second of two WITH operations",
+            "WITH <urn:g1> INSERT { ?s <urn:q> ?o } WHERE { GRAPH <urn:g2> { ?s ?p ?o } } ; " +
+                "WITH <urn:g2> INSERT { ?s <urn:r> ?o } USING <urn:g2> WHERE { GRAPH ?g { ?s ?p ?o } }",
+            changed("g1" to listOf("p=named1", "q=named2")),
+        ),
         Case(
             "GRAPH in WHERE reads every named graph, the template writes the default graph",
             "INSERT { ?s <urn:q> ?o } WHERE { GRAPH ?g { ?s ?p ?o } }",
@@ -245,6 +284,17 @@ class Rdf4jUpdateDatasetParityTest {
     }
 
     @Test
+    fun `a USING clause spelled with a codepoint escape is still a USING clause`() {
+        // RDF4J decodes codepoint escapes over the whole request before parsing it.
+        populated { Rdf4jRepository.MemoryRepository() }.use { repo ->
+            repo.update(UpdateQuery("WITH <urn:g1> INSERT { ?s <urn:q> ?o } \\u0055SING <urn:g1> WHERE { GRAPH ?g { ?s ?p ?o } }"))
+            assertEquals(initial.toSortedMap(), repo.state())
+            repo.update(UpdateQuery("WITH <urn:g1> INSERT { ?s <urn:q> \"\\u0055SING\" } WHERE { GRAPH <urn:g2> { ?s ?p ?o } }"))
+            assertEquals(changed("g1" to listOf("p=named1", "q=USING")), repo.state())
+        }
+    }
+
+    @Test
     fun `an inferencing store matches update WHERE clauses in the default graph only`() {
         populated { Rdf4jRepository.MemoryRdfsRepository() }.use { repo ->
             repo.update(UpdateQuery("INSERT { GRAPH <urn:copy> { ?s ?p ?o } } WHERE { ?s ?p ?o FILTER(isLiteral(?o)) }"))
@@ -256,22 +306,25 @@ class Rdf4jUpdateDatasetParityTest {
     }
 
     @Test
-    fun `an update that only reads inside GRAPH still sees blank-node contexts`() {
+    fun `an update never reads a blank-node context`() {
         val vf = SimpleValueFactory.getInstance()
         val store = SailRepository(MemoryStore()).apply {
             init()
             connection.use { conn ->
                 conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("default"))
+                conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("named"), vf.createIRI("urn:g"))
                 conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("blank"), vf.createBNode("ctx"))
             }
         }
         Rdf4jRepository(store).use { repo ->
             repo.update(UpdateQuery("INSERT { GRAPH <urn:copy> { ?s ?p ?o } } WHERE { GRAPH ?g { ?s ?p ?o } }"))
-            assertEquals(listOf("p=blank"), repo.getGraph(Iri("urn:copy")).rendered())
+            assertEquals(listOf("p=named"), repo.getGraph(Iri("urn:copy")).rendered())
             // Outside GRAPH, the statements of a blank-node context are not in the default graph.
             repo.update(UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }"))
             assertEquals(emptyList(), repo.defaultGraph.rendered())
-            assertEquals(listOf("p=blank"), repo.getGraph(Iri("urn:copy")).rendered())
+            assertEquals(listOf("p=named"), repo.getGraph(Iri("urn:copy")).rendered())
+            repo.update(UpdateQuery("DELETE { GRAPH ?g { ?s ?p ?o } } WHERE { GRAPH ?g { ?s ?p ?o } }"))
+            assertEquals(emptyList(), repo.listGraphs())
             store.connection.use { conn -> assertEquals(1, conn.size(vf.createBNode("ctx"))) }
         }
     }

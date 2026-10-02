@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.ontoquality.catalog.ShapeCatalog
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeMetadata
 import com.geoknoesis.kastor.ontoquality.explanation.BlankNodeKeys
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
+import com.geoknoesis.kastor.ontoquality.explanation.blankNodeReferences
 import com.geoknoesis.kastor.ontoquality.explanation.escapeMarkdownInline
 import com.geoknoesis.kastor.ontoquality.explanation.sanitizeTerminalText
 import com.geoknoesis.kastor.ontoquality.explanation.stabiliseBlankNodeLabels
@@ -153,7 +154,8 @@ data class QualityReport(
         /**
          * @param dataGraph the validated graph; when given, findings on blank nodes get parse-independent
          *   [QualityFinding.blankNodeKeys]. Pass the **asserted** graph, not a reasoner's materialisation, so keys
-         *   (and finding refs) do not depend on the reasoner.
+         *   (and finding refs) do not depend on the reasoner. Blank nodes of the shapes graph (in a result path) are
+         *   keyed on the shapes of [catalogs].
          */
         @JvmOverloads
         fun from(
@@ -162,18 +164,40 @@ data class QualityReport(
             metricsContext: MetricsContext? = null,
             dataGraph: RdfGraph? = null,
         ): QualityReport =
-            fromKeyed(raw, catalogs, metricsContext, dataGraph?.let { blankNodeKeys(raw, it, null) }.orEmpty())
+            fromKeyed(
+                raw,
+                catalogs,
+                metricsContext,
+                dataGraph?.let { blankNodeKeys(raw, it, null) { QualityChecker.mergeCatalogShapes(catalogs) } }.orEmpty(),
+            )
 
         /**
-         * Keys for the blank nodes of [raw]: computed on the [asserted] graph, and on the [materialised] graph (with
-         * another prefix) only for blank nodes a reasoner introduced.
+         * Keys for the blank nodes of [raw] (see [QualityFinding.blankNodesOf]), computed only when a finding has one:
+         * - on the [asserted] graph (`_:k...`);
+         * - on the [materialised] graph (`_:i...`) only for blank nodes a reasoner introduced;
+         * - on the [shapes] graph (`_:s...`) for the blank nodes of result paths, and for blank nodes found in neither
+         *   data graph. The shapes graph is asked for only when it is needed.
+         *
+         * A blank node found in none of them (a `_:x` in message text that is no blank node) gets no key.
          */
-        internal fun blankNodeKeys(raw: ValidationReport, asserted: RdfGraph, materialised: RdfGraph?): Map<BlankNode, String> {
+        internal fun blankNodeKeys(
+            raw: ValidationReport,
+            asserted: RdfGraph,
+            materialised: RdfGraph?,
+            shapes: (() -> RdfGraph)? = null,
+        ): Map<BlankNode, String> {
             val nodes = raw.violations.flatMapTo(HashSet()) { QualityFinding.blankNodesOf(it) }
             if (nodes.isEmpty()) return emptyMap()
-            val keys = BlankNodeKeys.compute(asserted, nodes)
-            if (materialised == null || materialised === asserted || keys.size == nodes.size) return keys
-            return keys + BlankNodeKeys.compute(materialised, nodes - keys.keys, prefix = "_:i")
+            val shapesGraph: RdfGraph? by lazy(LazyThreadSafetyMode.NONE) { shapes?.invoke() }
+            var keys = emptyMap<BlankNode, String>()
+            val pathNodes = raw.violations.flatMapTo(HashSet()) { v -> v.path.orEmpty().filterIsInstance<BlankNode>() }
+            if (pathNodes.isNotEmpty()) shapesGraph?.let { keys = BlankNodeKeys.compute(it, pathNodes, prefix = "_:s") }
+            if (keys.size < nodes.size) keys = keys + BlankNodeKeys.compute(asserted, nodes - keys.keys)
+            if (keys.size < nodes.size && materialised != null && materialised !== asserted) {
+                keys = keys + BlankNodeKeys.compute(materialised, nodes - keys.keys, prefix = "_:i")
+            }
+            if (keys.size < nodes.size) shapesGraph?.let { keys = keys + BlankNodeKeys.compute(it, nodes - keys.keys, prefix = "_:s") }
+            return keys
         }
 
         /** [from] with blank-node keys computed by the caller ([blankNodeKeys]). */
@@ -242,7 +266,8 @@ private fun markdownHeadline(message: String): String {
 }
 
 /**
- * @property blankNodeKeys parse-independent keys for the blank nodes in [violation] (focus node, path, value), used
+ * @property blankNodeKeys parse-independent keys for the blank nodes in [violation] (focus node, path, value and
+ *   `_:label` references in the message), used
  *   by [com.geoknoesis.kastor.ontoquality.explanation.FindingRef]; empty when the data graph was not available.
  *   A key describes the content and the context of a node (see the module README) and is unique within a graph.
  */
@@ -254,19 +279,24 @@ data class QualityFinding @JvmOverloads constructor(
     val blankNodeKeys: Map<BlankNode, String> = emptyMap(),
 ) {
     /**
-     * The message of [violation] with the parser labels of the blank nodes of this finding replaced by their
-     * [blankNodeKeys], so a message that interpolates a blank node (a SHACL-SPARQL `{$this}`) is the same on every
-     * parse. Reports, refs and LLM prompts use this text.
+     * The message of [violation] with the references (`_:label`) to the blank nodes of this finding replaced by their
+     * [blankNodeKeys], so a message that interpolates a blank node (a SHACL-SPARQL `{$this}` or `{?other}`) is the
+     * same on every parse. Only whole `_:label` references are replaced, never a label inside an IRI or a word.
+     * Reports, refs and LLM prompts use this text.
      */
     val stableMessage: String by lazy(LazyThreadSafetyMode.PUBLICATION) { stabiliseBlankNodeLabels(violation.message, blankNodeKeys) }
 
     companion object {
-        /** Blank nodes referenced by [violation]. */
+        /**
+         * Blank nodes referenced by [violation]: its focus node, value and path, and the `_:label` references in its
+         * message (a SHACL-SPARQL message can interpolate any variable).
+         */
         internal fun blankNodesOf(violation: ValidationViolation): Set<BlankNode> =
             buildSet {
                 (violation.focusNode as? BlankNode)?.let(::add)
                 (violation.value as? BlankNode)?.let(::add)
                 violation.path?.forEach { (it as? BlankNode)?.let(::add) }
+                addAll(blankNodeReferences(violation.message))
             }
 
         fun from(violation: ValidationViolation, shapeMetadata: Map<String, ShapeMetadata>): QualityFinding {

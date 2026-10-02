@@ -20,6 +20,56 @@ and is kept as is; it was never published to Maven Central.
 - Build only: Gradle 9.8.0, JUnit 6.1.3, dependency-analysis 3.19.2 (the `kotlin-metadata-jvm` buildscript pin is gone), JaCoCo 0.8.15.
 - RDF4J 6 is not adopted: it requires Java 25 and removes the RDF-star `Triple` model (see `docs/reference/dependency-upgrade-plan.md`).
 
+### Fixed (round seven)
+
+#### Breaking changes
+
+- **`rdf-shacl` / `kastor-gen`:** in `sh:pattern`, `\w` matches `_` again (`\W` does not), as in the Java-regex engines shapes are usually written for. Java-only constructs that cannot be translated faithfully (`&&`, a nested `[` in a class, inline flag groups, unknown `\p{Is…}` blocks) are rejected when the shape is compiled.
+- **`rdf-shacl`:**
+  - A pattern that exceeds `patternTimeout`, or overflows the regex engine's stack, no longer aborts the run: the value gets an undecided result marked `ksh:PatternTimeout` or `ksh:PatternTooComplex`. `strictMode` keeps the exception.
+  - A blank-node `sh:targetNode` that is not a node of the data graph fails under the default `unsupportedFeatures = FAIL` (it only warned). Sequence and alternative paths with fewer than two members raise `ShapeCompileException`.
+  - Unsupported options of the `memory` alias throw `UnsupportedShaclOperationException`.
+- **`rdf-rdf4j`:**
+  - `DESCRIBE` returns the same bounded description as the Jena provider (outgoing statements and blank-node closure); incoming statements are no longer included.
+  - Blank graph names created by `LOAD` or `INSERT` into `GRAPH ?g` are skolemized; blank-node contexts of a wrapped store are invisible to queries, updates and `listGraphs`.
+  - Dataset export writes the reified form (one reifier per quoted triple) instead of raw store statements.
+- **`rdf-jena`:** an inference view used outside its read transaction fails with `IllegalStateException`. A cancelled reader may wait up to 100 ms for its running step.
+- **`rdf-core`:**
+  - `Dataset.graph(name)` returns an empty graph for an unknown name (it returned the default graph).
+  - URL loading no longer falls back to the calling thread when its helper threads are busy: it waits within the deadline, then fails with `RdfLoadTimeoutException`.
+  - `modificationStamp` of memory graphs is read without a lock and throws after the repository is closed. The pre-`redirectPolicy` bridge constructors of `UrlLoadOptions` are removed.
+- **`rdf-sparql` (endpoint):** header values with control characters, characters above U+00FF or surrounding whitespace are rejected when the config is built. The JSON decoder rejects Unicode-only whitespace, invalid UTF-8, repeated `results`/`bindings`/`boolean` members and non-object bindings.
+- **`kastor-gen`:** a saturated validation cache waits up to 10 s, then throws `GraphStateCacheSaturatedException`. An empty `sh:in` (after intersecting parent and child shapes) rejects every value.
+- **`onto-quality` / `rdf-cli`:** refs of blank-node findings changed once more (keys now depend on a node's own structure and owner chain). `kastor-rdf` exits 3 for I/O errors in the middle of a read (was 1). The distributions' start scripts are `bin/kastor-rdf` and `bin/onto-qa`.
+
+#### Added
+
+- `rdf-core`: `UrlLoadOptions.addressPolicy` (`UrlAddressPolicy`, with `PUBLIC_ADDRESSES`), asked about the first URL and every redirect; `RdfAddressRefusedException`; `DescribesQueryDataset`.
+- `rdf-jena` / `rdf-rdf4j`: graph handles are equal per repository and graph name, and implement `VersionedRdfGraph` for stores Kastor creates and controls. Jena: `closeTimeout` / `closeGrace` options and `blankNodeIdOfSkolemGraph`.
+- `rdf-shacl`: the `ksh:` vocabulary document (`kastor-shacl.ttl`), `ksh:warning` in RDF reports, `ValidationViolation.resultStatus`.
+- `kastor-gen`: `ValidationContext.validateAll(data, focuses)`, `assumeImmutable`, `\RdfMaterializable` and the `kastor.gen.materializableTypes` option, `HandleEqualGraph`.
+- `rdf-cli`: `kastor-rdf diff --timeout <seconds>`. `onto-qa`: `--llm-max-output-tokens`.
+- Public API added in round six and not listed then: `GraphStateCache` (kastor-gen runtime), `RdfsAxioms` (reasoning), `KastorShaclVocabulary` and `UnsupportedShaclFeature.REIFIER_CONSTRAINT_ON_COMPLEX_PATH` (SHACL), `SparqlInitialBindings.validate`, `QualityFinding.stableMessage`, `ExplanationFailure.cause`, and the Gradle task properties `shaclCandidates` / `contextCandidates`.
+
+#### Fixed
+
+- `rdf-core`:
+  - `UrlRedirectPolicy.PUBLIC_ADDRESSES` missed carrier-grade NAT, reserved and documentation ranges and IPv4 addresses embedded in IPv6; the classification is complete now and shared with the address policy.
+  - Dataset queries with codepoint escapes inside strings run in place instead of being rejected or copied into memory.
+  - `Dataset.describe` filters in one read transaction with one lookup per subject and graph, and not at all for the Jena and RDF4J providers.
+  - URL loading uses one helper per stream instead of one hand-off per read.
+- `rdf-rdf4j`:
+  - A `WITH` update whose text merely contained the word "using" lost its named graphs; the clause is detected per operation from the parsed update.
+  - A dataset export followed by an import no longer yields two reifiers per annotated triple.
+  - The list of graph names is cached between writes instead of enumerated per query; oversized reifier ids are resolved from a per-repository index.
+- `rdf-jena`: a cancelled step that had not touched the reasoner no longer discards the shared inference view, and reads that have not returned a result restart on a fresh view; concurrent `close()` calls all wait for the store; in-memory inference views survive commits that did not write their graphs.
+- Reasoners: the axiom filter applies only to rule sets that produce those axioms.
+- `rdf-sparql`: very large timeouts no longer overflow after the request was sent; literals bound into RDF 1.2 triple terms, reified triples and annotation blocks are rejected up front; ignored JSON members are skipped without allocation; a leading BOM is accepted; the read watchdog survives a failing `close()`; arithmetic over a comparison is bracketed.
+- `rdf-shacl`: IRI-named list cells are accepted; report warnings are serialized; the W3C harness fails a case if Kastor reports an undecided result for it.
+- `kastor-gen`: Jena repository graphs go through the validation cache; a changed graph replaces its cache entry instead of adding one; `\Rdf interface X : RdfBacked` compiles again; language tags in `sh:in` compare case-insensitively.
+- `onto-quality`: blank-node keys are computed only for the components that findings touch (a graph with 300,000 blank nodes and one finding describes 6); IRIs in messages are no longer rewritten; the output path is checked before any LLM call; credentials in URLs and short API keys are redacted.
+- `rdf-cli`: `diff` runs the isomorphism check once.
+
 ### Fixed (round six)
 
 #### Breaking changes
@@ -41,7 +91,7 @@ and is kept as is; it was never published to Maven Central.
   - `UrlLoadOptions` has a new `redirectPolicy` (`copy` is binary-incompatible).
 - **`rdf-sparql` (endpoint):** `maxResultRowChars` defaults to 4 Mi chars (was 16 Mi), JSON nesting is capped at 128 levels, malformed JSON numbers and literals are rejected, and `SparqlEndpointConfig` has a new `strictContentType` field (constructor and `copy` changed).
 - **`rdf-shacl`:**
-  - `sh:pattern` follows XML Schema regular expressions more closely: `^` under flag `m` matches only after a line feed, `.` matches anything but line feed and carriage return, and `\d`, `\w`, `\s` are Unicode-aware. `\w` no longer matches `_`.
+  - `sh:pattern` follows XML Schema regular expressions more closely: `^` under flag `m` matches only after a line feed, `.` matches anything but line feed and carriage return, and `\d`, `\w`, `\s` are Unicode-aware. (Round seven restored `_` as a word character.)
   - A blank-node `sh:targetNode` that is not a node of the data graph is reported (unsupported node expression, or a warning) instead of being validated as an empty node.
   - Ill-formed RDF lists in shapes raise `ShapeCompileException`.
   - `sh:reificationRequired` failures are reported under `sh:ReifierShapeConstraintComponent`; Kastor no longer emits `sh:ReificationRequiredConstraintComponent`.

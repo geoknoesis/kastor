@@ -60,6 +60,12 @@ abstract class OntologyGenerationTask : DefaultTask() {
     /**
      * The SHACL file, when configured directly. Unset by default: the file is then looked up from [shaclPath] when
      * the task runs (see [shaclCandidates]).
+     *
+     * **No convention.** Earlier 0.3.0 snapshots resolved [shaclPath] into this property while the build was
+     * configured; that convention was removed without a deprecation period (as an input it would be frozen in the
+     * configuration cache). `shaclFile.get()` therefore fails unless the build script set the property: read
+     * [shaclInput] (at execution time) for the file the task uses, or [shaclCandidates] to wire it as an input of
+     * another task. See the migration table in the Gradle plugin reference.
      */
     @get:InputFile
     @get:Optional
@@ -69,6 +75,8 @@ abstract class OntologyGenerationTask : DefaultTask() {
     /**
      * The JSON-LD context, when configured directly; optional (without a context, type and property names come from
      * IRIs and `sh:name`). Unset by default: the file is then looked up from [contextPath] when the task runs.
+     *
+     * **No convention** (see [shaclFile]): read [contextInput] / [contextCandidates] instead of `contextFile.get()`.
      */
     @get:InputFile
     @get:Optional

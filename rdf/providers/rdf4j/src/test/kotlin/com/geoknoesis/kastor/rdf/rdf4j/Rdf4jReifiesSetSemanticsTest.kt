@@ -40,6 +40,23 @@ class Rdf4jReifiesSetSemanticsTest {
     }
 
     @Test
+    fun `CONSTRUCT returns an rdf-reifies triple once when it is both stored and implied`() {
+        for (order in listOf(listOf(annotation, other, reifies), listOf(reifies, annotation, other))) {
+            Rdf4jRepository.MemoryRepository().use { repo ->
+                repo.editDefaultGraph().addTriples(order)
+                val expected = listOf(reifies, annotation, other).sortedBy { it.toString() }
+                val query = com.geoknoesis.kastor.rdf.SparqlConstructQuery("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }")
+                assertEquals(expected, repo.construct(query).toList().sortedBy { it.toString() }, "construct, added as $order")
+                assertEquals(
+                    expected,
+                    repo.withConstructTriples(query) { triples -> triples.toList() }.sortedBy { it.toString() },
+                    "withConstructTriples, added as $order",
+                )
+            }
+        }
+    }
+
+    @Test
     fun `an explicit rdf-reifies added after an annotation survives removing the annotation`() {
         Rdf4jRepository.MemoryRepository().use { repo ->
             val graph = repo.editDefaultGraph()

@@ -97,14 +97,40 @@ interface Dataset : SparqlQueryable {
     fun listNamedGraphs(): List<Iri>
     
     /**
-     * Minimal graph access for compatibility with SparqlQueryable.
-     * Returns the named graph if it exists, otherwise the default graph.
-     * 
-     * @param name The IRI of the graph
-     * @return The graph (named or default)
+     * The named graph [name] of this dataset, or an empty graph if the dataset has no graph of that name - as
+     * `GRAPH <name> { ... }` matches nothing for such a name, and as [RdfRepository.getGraph] returns an empty
+     * graph for a name the repository does not have. It never falls back to the default graph: a caller that asks
+     * for one graph must not be handed the content of another. Use [getNamedGraph] or [hasNamedGraph] to tell a
+     * missing graph from an empty one, and [defaultGraph] for the default graph.
+     *
+     * @param name The IRI of the named graph
+     * @return The named graph, or an immutable empty graph
      */
-    override fun graph(name: Iri): RdfGraph = getNamedGraph(name) ?: defaultGraph
+    override fun graph(name: Iri): RdfGraph = getNamedGraph(name) ?: AbsentNamedGraph
 }
+
+/** What [Dataset.graph] returns for a name the dataset does not have: a graph without triples. */
+private object AbsentNamedGraph : RdfGraph {
+    override fun hasTriple(triple: RdfTriple): Boolean = false
+    override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> = emptyList()
+    override fun getTriples(): List<RdfTriple> = emptyList()
+    override fun getTriplesSequence(): Sequence<RdfTriple> = emptySequence()
+    override fun size(): Int = 0
+    override fun toString(): String = "EmptyGraph"
+}
+
+/**
+ * Marker for a repository whose `DESCRIBE` reads only the graphs of the query's dataset: with `FROM` /
+ * `FROM NAMED` clauses, nothing outside the graphs they name; without them, nothing outside the store's default
+ * graph when the store has no union default graph.
+ *
+ * What `DESCRIBE` returns is implementation-defined, so a [Dataset] that runs a `DESCRIBE` in place restricts the
+ * result to triples found in its own graphs, with lookups into those graphs. A repository that implements this
+ * interface promises the restriction itself, and its results are returned as they are: no lookups, and nothing lost
+ * on a store that labels blank nodes anew for every request (where a lookup of a described blank node cannot
+ * succeed). Do not implement it for a store that describes resources from every graph it holds.
+ */
+interface DescribesQueryDataset
 
 /**
  * Builder for constructing datasets.
