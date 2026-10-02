@@ -17,7 +17,8 @@ internal data class IntermediateQuantities(
     val cycleParticipants: Set<String>,
     /**
      * P_C: declared object/datatype properties *used by* class C — `p rdfs:domain C`, or an
-     * `owl:Restriction` with `owl:onProperty p` attached to C via `rdfs:subClassOf` / `owl:equivalentClass`.
+     * `owl:Restriction` with `owl:onProperty p` attached to C via `rdfs:subClassOf` / `owl:equivalentClass`,
+     * directly or as an operand of an `owl:intersectionOf` / `owl:unionOf` class expression (nested to any depth).
      */
     val propertiesOfClass: Map<String, Set<String>>,
     /** Datatype properties whose `rdfs:domain` is a named class (AROnto attributes). */
@@ -44,4 +45,9 @@ internal data class IntermediateQuantities(
      * restriction on C). Classes with no related class are absent.
      */
     val couplingsOf: Map<String, Set<String>> = emptyMap(),
+    /**
+     * Work done by the depth / path pass over the hierarchy: one step per class taken from the queue plus one per
+     * subclass edge followed. At most `|classes| + |edges|` whatever the number of paths; tests bound it.
+     */
+    val hierarchyTraversalSteps: Long = 0,
 )

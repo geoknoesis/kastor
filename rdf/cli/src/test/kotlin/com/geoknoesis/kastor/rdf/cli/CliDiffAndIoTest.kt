@@ -6,7 +6,6 @@ import com.geoknoesis.kastor.rdf.RdfFormatException
 import com.geoknoesis.kastor.rdf.isIsomorphicTo
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -87,7 +86,8 @@ class CliDiffAndIoTest {
         val a = file("a.ttl", "_:x <http://e/p> \"v\" .\n")
         val b = file("b.ttl", "_:y <http://e/p> \"v\" .\n")
         val seen = ArrayList<Duration?>()
-        val runtime = CliRuntime(isomorphic = { first, second, timeout -> seen += timeout; first.isIsomorphicTo(second, null, timeout) })
+        // A clock that does not move: every check sees the whole --timeout.
+        val runtime = CliRuntime(isomorphic = { first, second, limits -> seen += limits.timeout; first.isIsomorphicTo(second, null, limits.timeout) }, nanoTime = { 0L })
         assertEquals(EXIT_OK, run(runtime, "diff", a, b).code)
         assertEquals(EXIT_OK, run(runtime, "diff", "--timeout", "5", a, b).code)
         assertEquals(EXIT_OK, run(runtime, "diff", a, b, "TURTLE", "--timeout=900").code)
@@ -122,7 +122,7 @@ class CliDiffAndIoTest {
     @Test
     fun `diff compares the inputs once`() {
         var calls = 0
-        val runtime = CliRuntime(isomorphic = { first, second, timeout -> calls++; first.isIsomorphicTo(second, null, timeout) })
+        val runtime = CliRuntime(isomorphic = { first, second, limits -> calls++; first.isIsomorphicTo(second, null, limits.timeout) })
         val a = file("a.ttl", "_:x <http://e/p> \"v\" ; <http://e/q> _:z .\n")
         val b = file("b.ttl", "_:y <http://e/p> \"v\" ; <http://e/q> _:w .\n")
         assertEquals(EXIT_OK, run(runtime, "diff", a, b).code)
@@ -166,8 +166,9 @@ class CliDiffAndIoTest {
         assertEquals(Charsets.UTF_8, standardStreamCharset(null))
         assertEquals(Charset.forName("IBM850"), standardStreamCharset(Charset.forName("IBM850")))
         assertEquals(Charset.forName("windows-1252"), standardStreamCharset(Charset.forName("windows-1252")))
-        // The test JVM has no interactive console: its output is captured.
-        assertNull(interactiveConsoleCharset())
+        // Whether this JVM has an interactive console depends on how the tests are run: both answers are valid.
+        val console = interactiveConsoleCharset()
+        assertEquals(console ?: Charsets.UTF_8, standardStreamCharset(console))
         val bytes = ByteArrayOutputStream()
         printStream(bytes, Charset.forName("IBM850")).use { it.print("café — …") }
         assertEquals("café ? ?", bytes.toString(Charset.forName("IBM850")), "characters the console cannot show become '?'")

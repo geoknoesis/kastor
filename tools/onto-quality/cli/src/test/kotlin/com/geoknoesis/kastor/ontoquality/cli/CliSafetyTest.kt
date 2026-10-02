@@ -194,7 +194,8 @@ class CliSafetyTest {
     fun `an interactive console gets its own charset, redirected output is UTF-8`() {
         assertEquals(Charsets.UTF_8, standardStreamCharset(null))
         assertEquals(Charset.forName("IBM850"), standardStreamCharset(Charset.forName("IBM850")))
-        // The test JVM has no interactive console: its output is captured.
-        assertNull(interactiveConsoleCharset())
+        // Whether this JVM has an interactive console depends on how the tests are run: both answers are valid.
+        val console = interactiveConsoleCharset()
+        assertEquals(console ?: Charsets.UTF_8, standardStreamCharset(console))
     }
 }

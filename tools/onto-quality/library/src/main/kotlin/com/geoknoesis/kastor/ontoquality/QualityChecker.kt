@@ -2,6 +2,7 @@ package com.geoknoesis.kastor.ontoquality
 
 import com.geoknoesis.kastor.rdf.jena.JenaBridge
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
+import com.geoknoesis.kastor.ontoquality.catalog.EvaluationScopes
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeCatalog
 import com.geoknoesis.kastor.ontoquality.catalog.ShapeMetadata
 import com.geoknoesis.kastor.ontoquality.integration.MetricsContext
@@ -39,18 +40,39 @@ class QualityChecker private constructor(
         return QualityReport.fromKeyed(raw, catalogs, metricsContext, QualityReport.blankNodeKeys(raw, ontology, null) { mergedShapes })
     }
 
+    private val scopes: EvaluationScopes by lazy { EvaluationScopes.of(mergedShapes) }
+    private val assertedScopeShapes: RdfGraph? by lazy { scopes.shapesFor(mergedShapes, EvaluationScopes.Scope.ASSERTED) }
+    private val entailedScopeShapes: RdfGraph? by lazy { scopes.shapesFor(mergedShapes, EvaluationScopes.Scope.ENTAILED) }
+
     /**
      * Validates after optional OWL/RDFS materialisation per [reasoning], and merges **reasoning preflight**
      * inconsistency rows (Kastor **K07**; pitfall metadata from **`OOPS_PITFALL_REGISTRY`**, included in [QualityChecker.default]).
      *
-     * SHACL validation runs on the materialised graph, but the [MetricsProvider] always receives the **asserted**
-     * [ontology]: reasoner closures (reflexive/transitive `rdfs:subClassOf`, `rdfs:Resource` typing) would put
-     * every class in a cycle and make structural metrics and importance scores meaningless.
+     * Each detector runs on the graph its shape declares with `oqsh:evaluatedOn`:
+     * - `oqsh:AssertedGraph` (structural detectors: cycles, missing declarations, hierarchy shape, annotations,
+     *   naming…) on the **asserted** [ontology]. A reasoner's closure (reflexive `C rdfs:subClassOf C`, axiomatic
+     *   triples on the built-in vocabulary, entailed typing) would make them fire on every class or go silent;
+     * - `oqsh:EntailedGraph`, and shapes without the annotation (custom catalogues), on the **materialised** graph:
+     *   class-membership, disjointness and value-type conditions that are meant to see inferred triples.
+     *
+     * So a reasoner can only add findings of the second kind. The [MetricsProvider] always receives the asserted
+     * [ontology] as well: structural metrics and importance scores are meaningless on a closure.
      */
     fun check(ontology: RdfGraph, reasoning: OntoQualityReasoningProfile): QualityReport {
         val materialized = OntoQualityReasoning.materializeWithReasoning(ontology, reasoning.toReasonerConfigOrNull())
         val metricsContext = computeMetricsContext(ontology)
-        val raw = validator.validate(materialized.graph, mergedShapes)
+        val raw =
+            if (materialized.graph === ontology) {
+                validator.validate(ontology, mergedShapes)
+            } else {
+                val onAsserted = assertedScopeShapes?.let { validator.validate(ontology, it) }
+                val onEntailed = entailedScopeShapes?.let { validator.validate(materialized.graph, it) }
+                when {
+                    onAsserted == null -> onEntailed ?: validator.validate(materialized.graph, mergedShapes)
+                    onEntailed == null -> onAsserted
+                    else -> combineValidationReports(onAsserted, onEntailed)
+                }
+            }
         val merged =
             materialized.reasoningResult?.let { rr ->
                 mergeValidationReport(raw, OntoQualityReasoning.inconsistencyViolationsForReport(rr), rr.consistencyCheck.warnings)
@@ -171,5 +193,38 @@ internal fun mergeValidationReport(
         shapeViolations = merged.groupBy { it.shapeUri ?: "unknown" },
         constraintViolations = merged.groupBy { it.constraint.constraintType.name },
         statistics = base.statistics.copy(violationsByType = violationsByType),
+    )
+}
+
+/**
+ * One report for two validation runs over disjoint sets of shapes (asserted-graph detectors, then entailed-graph
+ * detectors): result rows and warnings are concatenated, counters added, and the report conforms when both do.
+ */
+internal fun combineValidationReports(first: ValidationReport, second: ValidationReport): ValidationReport {
+    val violations = first.violations + second.violations
+    fun <K> sum(a: Map<K, Int>, b: Map<K, Int>): Map<K, Int> = (a.keys + b.keys).associateWith { (a[it] ?: 0) + (b[it] ?: 0) }
+    val a = first.statistics
+    val b = second.statistics
+    return first.copy(
+        isValid = first.isValid && second.isValid,
+        violations = violations,
+        warnings = first.warnings + second.warnings,
+        statistics =
+            a.copy(
+                totalResources = maxOf(a.totalResources, b.totalResources),
+                validatedResources = maxOf(a.validatedResources, b.validatedResources),
+                totalConstraints = a.totalConstraints + b.totalConstraints,
+                validatedConstraints = a.validatedConstraints + b.validatedConstraints,
+                shapesProcessed = a.shapesProcessed + b.shapesProcessed,
+                constraintsByType = sum(a.constraintsByType, b.constraintsByType),
+                violationsByType = sum(a.violationsByType, b.violationsByType),
+                warningsByType = sum(a.warningsByType, b.warningsByType),
+            ),
+        validationTime = first.validationTime + second.validationTime,
+        validatedResources = maxOf(first.validatedResources, second.validatedResources),
+        validatedConstraints = first.validatedConstraints + second.validatedConstraints,
+        shapeViolations = violations.groupBy { it.shapeUri ?: "unknown" },
+        constraintViolations = violations.groupBy { it.constraint.constraintType.name },
+        violationsTruncated = first.violationsTruncated || second.violationsTruncated,
     )
 }

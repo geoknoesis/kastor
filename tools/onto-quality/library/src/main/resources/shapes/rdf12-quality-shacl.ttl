@@ -30,6 +30,8 @@ oqsh:Rdf12Conformance  a rdfs:Class ; rdfs:label "RDF 1.2 conformance" .
 
 oqsh:NoLegacyReificationShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the syntax of the triples the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Rdf12Conformance ;
     oqsh:pitfall    "N28" ;
     rdfs:label      "Avoid legacy rdf:Statement reification in RDF 1.2 ontologies" ;
@@ -50,6 +52,8 @@ oqsh:NoLegacyReificationShape
 
 oqsh:DirectionalLanguageStringShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the syntax of the triples the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Rdf12Conformance ;
     oqsh:pitfall    "N29" ;
     rdfs:label      "RTL-language labels should use rdf:dirLangString with explicit direction" ;
@@ -77,6 +81,8 @@ oqsh:DirectionalLanguageStringShape
 
 oqsh:NoTripleTermInSubjectShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the syntax of the triples the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Rdf12Conformance ;
     oqsh:pitfall    "N30" ;
     rdfs:label      "Triple terms must not appear in subject position (RDF 1.2)" ;

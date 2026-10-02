@@ -26,6 +26,8 @@ oqsh:tier_Semantic  a rdfs:Resource ; rdfs:label "semantic tier" .
 
 oqsh:SynonymousClassCandidatesShape
     a                sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category    oqsh:Semantics ;
     oqsh:pitfall     "P02" ;
     oqsh:tier        oqsh:tier_Semantic ;
@@ -43,6 +45,8 @@ oqsh:SynonymousClassCandidatesShape
 
 oqsh:SynonymousPropertyCandidatesShape
     a                sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category    oqsh:Semantics ;
     oqsh:pitfall     "P12" ;
     oqsh:tier        oqsh:tier_Semantic ;
@@ -59,6 +63,8 @@ oqsh:SynonymousPropertyCandidatesShape
 
 oqsh:JunkDrawerClassShape
     a                sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category    oqsh:Semantics ;
     oqsh:pitfall     "P21" ;
     oqsh:tier        oqsh:tier_Semantic ;
@@ -76,6 +82,8 @@ oqsh:JunkDrawerClassShape
 
 oqsh:SameLabelDifferentClassShape
     a                sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category    oqsh:Semantics ;
     oqsh:pitfall     "P32" ;
     oqsh:tier        oqsh:tier_Semantic ;
@@ -94,6 +102,8 @@ oqsh:SameLabelDifferentClassShape
 
 oqsh:LabelDefinitionDriftShape
     a                sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category    oqsh:Semantics ;
     oqsh:pitfall     "convention" ;
     oqsh:tier        oqsh:tier_Semantic ;

@@ -45,7 +45,10 @@ class CliLaunchTest {
         process.outputStream.close()
         if (!process.waitFor(120, TimeUnit.SECONDS)) {
             process.destroyForcibly()
-            error("CLI did not exit: $command")
+            process.waitFor(30, TimeUnit.SECONDS)
+            // A slow machine is told apart from a hung child by what the child wrote before it was stopped.
+            val written = listOf(outFile, errFile).joinToString("\n") { "--- ${it.name} ---\n" + it.readBytes().toString(Charsets.UTF_8).takeLast(4_000) }
+            error("CLI did not exit within 120 s: $command\n$written")
         }
         return Launch(process.exitValue(), outFile.readBytes(), errFile.readBytes())
     }
