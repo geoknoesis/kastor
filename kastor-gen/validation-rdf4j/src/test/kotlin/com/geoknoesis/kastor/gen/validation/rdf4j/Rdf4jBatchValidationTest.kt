@@ -1,6 +1,7 @@
+@file:OptIn(com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
-import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.HandleEqualGraph
 import com.geoknoesis.kastor.gen.runtime.RdfBacked
 import com.geoknoesis.kastor.gen.runtime.RdfHandle
@@ -18,10 +19,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.logging.Handler
-import java.util.logging.Level
-import java.util.logging.LogRecord
-import java.util.logging.Logger
 
 /**
  * Read counts of graphs without a modification stamp: one read per `validateAll` batch, none for a graph found by
@@ -141,32 +138,18 @@ class Rdf4jBatchValidationTest {
     }
 
     @Test
-    fun `an invalid cache size property is reported and the default is used`() {
-        val records = ArrayList<LogRecord>()
-        val handler = object : Handler() {
-            override fun publish(record: LogRecord) {
-                synchronized(records) { records += record }
-            }
-            override fun flush() {}
-            override fun close() {}
-        }
-        val logger = Logger.getLogger(GraphStateCache::class.java.name)
-        logger.addHandler(handler)
+    fun `an invalid cache size property falls back to the default`() {
+        // That the invalid value is reported once is a rule of the shared cache, tested with it (runtime module):
+        // here only what this validator does with the property.
         val previous = System.getProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY)
         try {
             for (invalid in listOf("0", "abc", "-3")) {
                 System.setProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY, invalid)
-                repeat(2) { Rdf4jValidation().use { v -> assertEquals(Rdf4jValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs) } }
-                val warnings = synchronized(records) {
-                    records.filter { it.level == Level.WARNING && it.message.contains("=\"$invalid\"") }
-                }
-                assertEquals(1, warnings.size, "one warning for $invalid, however many validators are created")
-                assertTrue(warnings.single().message.contains(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY), warnings.single().message)
+                Rdf4jValidation().use { v -> assertEquals(Rdf4jValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs, invalid) }
             }
             System.setProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY, " 5 ")
             Rdf4jValidation().use { v -> assertEquals(5, v.maxCachedGraphs) }
         } finally {
-            logger.removeHandler(handler)
             if (previous == null) {
                 System.clearProperty(Rdf4jValidation.MAX_CACHED_GRAPHS_PROPERTY)
             } else {
@@ -174,4 +157,5 @@ class Rdf4jBatchValidationTest {
             }
         }
     }
+
 }

@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
+import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
 import com.geoknoesis.kastor.gen.runtime.ValidationContext
@@ -22,6 +23,7 @@ import org.apache.jena.graph.Graph
 import org.apache.jena.graph.GraphUtil
 import org.apache.jena.graph.Node
 import org.apache.jena.graph.NodeFactory
+import org.apache.jena.graph.Triple
 import org.apache.jena.riot.Lang
 import org.apache.jena.riot.RDFParser
 import org.apache.jena.shacl.ShaclValidator
@@ -31,6 +33,7 @@ import org.apache.jena.shacl.validation.Severity
 import org.apache.jena.sparql.core.GraphView
 import org.apache.jena.sparql.graph.GraphFactory
 import org.apache.jena.sparql.path.P_Link
+import java.util.concurrent.atomic.AtomicIntegerArray
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 
 /**
@@ -52,30 +55,39 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
  *   nodes).
  * - **Every other graph** - a graph of a Jena repository (whose store is only readable inside a transaction, so the
  *   engine needs a detached copy), a graph of another provider - is copied into a Jena graph, and the copy (with the
- *   shapes parsed from it, for embedded shapes) is cached per data graph, for up to [maxCachedGraphs] graphs, with
- *   the rules of [GraphStateCache]: a graph is copied again only when it is new or its content changed.
+ *   shapes parsed from it, for embedded shapes) is cached per data graph, for up to [maxCachedGraphs] graphs: a
+ *   graph is copied again only when it is new or its content changed. A Jena-backed graph is copied **natively**
+ *   (Jena graph to Jena graph, inside one read transaction of its repository), so statements that Kastor's own term
+ *   model rejects (a language tag such as `"x"@abcdefghi`, legal in Turtle) are validated like any other.
  *   - Graphs with a modification stamp ([VersionedRdfGraph]: `MemoryGraph`, the named graphs of the memory
  *     repository, repositories whose provider stamps its graphs) are checked in O(1), and a new handle of the same
- *     graph finds the copy of an equal handle.
+ *     graph finds the copy of an equal handle. When the stamp moved (it is usually repository-wide) the graph is
+ *     read once, by one caller - concurrent callers wait for it - and the copy is kept when the content of this
+ *     graph turns out to be unchanged.
  *   - Graphs without a stamp are **read in full on every call** (`getTriples()`, a digest of every triple) to find
  *     out whether the copy is still current; only the copy and the shapes parse are saved. Validate many nodes of
  *     such a graph with one [validateAll] call (one read), or create the validator with `assumeImmutable = true`
  *     when the graphs do not change while the validator lives (a graph found again by its handle is then not read
  *     again; changes are not detected).
  *
- * The data graph is read while the validator holds no lock, so [validate] may be called inside a repository
- * transaction. Validations of one graph run concurrently on its copy.
+ * The data graph is read while the validator holds no lock, and on the calling thread, so [validate] may be called
+ * inside a repository transaction: it validates what that thread reads (its uncommitted writes included), and a copy
+ * is only ever served to a caller whose own modification stamp it was made for. Validations of one graph run
+ * concurrently on its copy.
  *
  * The cache size defaults to [DEFAULT_MAX_CACHED_GRAPHS]; set it with the constructor argument or process-wide with
  * the system property [MAX_CACHED_GRAPHS_PROPERTY] (read when a validator is created). When every cached copy is in
  * use, a call converts into a private temporary copy instead of waiting; at most [maxCachedGraphs] temporary copies
- * exist at a time, further calls wait for a free copy and fail with
- * [com.geoknoesis.kastor.gen.runtime.GraphStateCacheSaturatedException] after 10 seconds. [close] drops the cached
- * copies.
+ * are made that way at a time. Beyond that a call waits for a free copy for a quarter of a second and then makes a
+ * private copy all the same: a validation is slowed down under such a load, it neither stalls nor fails. A thread
+ * that is interrupted while it waits gets a
+ * [com.geoknoesis.kastor.gen.runtime.GraphStateCacheInterruptedException] (its interrupt status stays set). [close]
+ * drops the cached copies.
  *
  * Engine failures (malformed shapes, unsupported focus terms, ...) are thrown rather than being
  * reported as violations or silently accepted.
  */
+@OptIn(KastorGenInternalApi::class)
 class JenaValidation private constructor(
   private val fixedShapes: Shapes?,
   /** Maximum number of data graphs whose converted copy is kept. */
@@ -125,6 +137,66 @@ class JenaValidation private constructor(
     override fun size(): Int = triples.size
   }
 
+  private val events = AtomicIntegerArray(GraphStateCache.Event.entries.size)
+
+  /** Test hook: called for every event of the cache, on the validating thread. */
+  @Volatile internal var onCacheEvent: ((GraphStateCache.Event) -> Unit)? = null
+
+  /**
+   * Jena-backed graphs are copied natively: the statements never go through Kastor's term model (which rejects some
+   * that Jena and Turtle accept), and a repository graph is copied inside one read transaction.
+   */
+  private object NativeCopy : GraphStateCache.NativeLoader<Converted> {
+    override fun snapshot(graph: RdfGraph): Any? =
+      if (JenaBridge.isJenaBacked(graph)) JenaBridge.copyToJenaModel(graph).graph else null
+
+    override fun encode(snapshot: Any): Iterable<String> {
+      val triples = ArrayList<String>()
+      val it = (snapshot as Graph).find()
+      try {
+        while (it.hasNext()) triples += encode(it.next())
+      } finally {
+        it.close()
+      }
+      return triples
+    }
+
+    override fun load(snapshot: Any, previous: Converted?): Converted = Converted(snapshot as Graph)
+
+    private fun encode(triple: Triple): String =
+      StringBuilder().also { out ->
+        encode(triple.subject, out)
+        encode(triple.predicate, out)
+        encode(triple.`object`, out)
+      }.toString()
+
+    /** Kind tag and length-prefixed fields: two different nodes never have the same encoding. */
+    private fun encode(node: Node, out: StringBuilder) {
+      fun field(value: String?) {
+        val text = value ?: ""
+        out.append(text.length).append(':').append(text)
+      }
+      when {
+        node.isURI -> { out.append('U'); field(node.uri) }
+        node.isBlank -> { out.append('B'); field(node.blankNodeLabel) }
+        node.isLiteral -> {
+          out.append('L')
+          field(node.literalLexicalForm)
+          field(node.literalDatatypeURI)
+          field(node.literalLanguage)
+          field(node.literalBaseDirection?.toString())
+        }
+        node.isTripleTerm -> {
+          out.append('T')
+          encode(node.triple.subject, out)
+          encode(node.triple.predicate, out)
+          encode(node.triple.`object`, out)
+        }
+        else -> { out.append('?'); field(node.toString()) }
+      }
+    }
+  }
+
   private val cache = GraphStateCache<Converted>(
     maxEntries = maxCachedGraphs,
     // A converted copy is only read, so validations of one graph share it concurrently.
@@ -133,11 +205,20 @@ class JenaValidation private constructor(
     // Nothing to release: an in-memory Jena graph is reclaimed by the garbage collector (and may still be read).
     release = { },
     owner = "JenaValidation",
-    settings = GraphStateCache.Settings(assumeImmutable = assumeImmutable),
+    settings = GraphStateCache.Settings(
+      assumeImmutable = assumeImmutable,
+      probe = { event ->
+        events.incrementAndGet(event.ordinal)
+        onCacheEvent?.invoke(event)
+      },
+    ),
+    native = NativeCopy,
   )
 
   /** Test hook: number of graphs converted. */
-  internal val loadCount: Int get() = cache.loadCount
+  internal val loadCount: Int get() = events.get(GraphStateCache.Event.LOAD.ordinal)
+  /** Test hook: number of times the content of a data graph was read. */
+  internal val readCount: Int get() = events.get(GraphStateCache.Event.GRAPH_READ.ordinal)
   /** Test hook: number of converted graphs currently cached. */
   internal fun cachedGraphCount(): Int = cache.size
 

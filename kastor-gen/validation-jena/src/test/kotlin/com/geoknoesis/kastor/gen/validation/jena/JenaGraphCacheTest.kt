@@ -1,5 +1,8 @@
+@file:OptIn(com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.validation.jena
 
+import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
@@ -16,7 +19,6 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
 /** Non-Jena data graphs are converted once per content version, not on every call. */
 class JenaGraphCacheTest {
@@ -110,39 +112,40 @@ class JenaGraphCacheTest {
             val name = ex("people")
             repo.editGraph(name).addTriples(people("a", "b"))
             val graph = repo.getGraph(name)
-            assertEquals(ValidationResult.Ok, v.validate(graph, ex("a")))
 
             val inTransaction = CountDownLatch(1)
-            val other = AtomicReference<Thread>()
-            val otherStarted = CountDownLatch(1)
+            val otherReads = CountDownLatch(1)
             val pool = Executors.newCachedThreadPool { r -> Thread(r).apply { isDaemon = true } }
             try {
+                // The other thread tells when it is about to read the graph, which it cannot do before the
+                // transaction ends: no thread state is polled.
+                v.onCacheEvent = { event ->
+                    if (event == GraphStateCache.Event.GRAPH_READ && Thread.currentThread().name == "other-validator") {
+                        otherReads.countDown()
+                    }
+                }
                 val first = pool.submit<ValidationResult> {
                     var result: ValidationResult? = null
                     repo.transaction {
                         editGraph(name).removeTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
                         inTransaction.countDown()
-                        check(otherStarted.await(10, TimeUnit.SECONDS)) { "second thread did not start" }
-                        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-                        while (other.get().state != Thread.State.WAITING && other.get().state != Thread.State.TIMED_WAITING) {
-                            check(System.nanoTime() < deadline) { "the other thread never blocked on the repository lock" }
-                            Thread.sleep(5)
-                        }
+                        check(otherReads.await(10, TimeUnit.SECONDS)) { "the other thread never came to read the graph" }
                         result = v.validate(graph, ex("b"))
                     }
                     result!!
                 }
                 assertTrue(inTransaction.await(10, TimeUnit.SECONDS))
                 val second = pool.submit<ValidationResult> {
-                    other.set(Thread.currentThread())
-                    otherStarted.countDown()
+                    Thread.currentThread().name = "other-validator"
                     v.validate(graph, ex("a"))
                 }
                 assertTrue(first.get(30, TimeUnit.SECONDS) is ValidationResult.Violations, "sees the uncommitted removal")
                 assertEquals(ValidationResult.Ok, second.get(30, TimeUnit.SECONDS))
             } finally {
+                v.onCacheEvent = null
                 pool.shutdownNow()
             }
         }
     }
+
 }

@@ -3,8 +3,10 @@ package com.geoknoesis.kastor.gen.runtime
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import org.junit.jupiter.api.Test
-import java.lang.ref.WeakReference
-import java.util.concurrent.TimeUnit
+import java.lang.ref.Reference
+import java.lang.reflect.Modifier
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -123,23 +125,75 @@ class FactoryRegistryRulesTest {
     }
   }
 
+  /**
+   * Whether an object that satisfies [pinned] is strongly reachable from [root]: through instance fields and array
+   * elements, never through the referent of a `java.lang.ref.Reference`, and never through a `Class` (the classes of
+   * the walked objects are not what the root "holds"). This is the question "would the collector keep it alive
+   * because of [root]?", answered by looking instead of by waiting for a collection that may or may not run.
+   */
+  private fun stronglyReaches(root: Any, pinned: (Any) -> Boolean): Boolean = strongPath(root, pinned) != null
+
+  /** The chain of fields that leads from [root] to an object that satisfies [pinned], or null when there is none. */
+  private fun strongPath(root: Any, pinned: (Any) -> Boolean): String? {
+    val seen = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
+    val pending = ArrayDeque<Pair<Any, String>>()
+    pending += root to root.javaClass.simpleName
+    while (pending.isNotEmpty()) {
+      val (current, path) = pending.removeLast()
+      if (!seen.add(current)) continue
+      if (pinned(current)) return path
+      if (current is Class<*> || current is ClassLoader || current is Thread) continue
+      if (current.javaClass.isArray) {
+        if (!current.javaClass.componentType.isPrimitive) (current as Array<*>).forEach { element -> element?.let { pending += it to "$path[]" } }
+        continue
+      }
+      var type: Class<*>? = current.javaClass
+      while (type != null) {
+        for (field in type.declaredFields) {
+          if (Modifier.isStatic(field.modifiers) || field.type.isPrimitive) continue
+          // The referent of a reference is not held strongly; `discovered` and `next` belong to the collector.
+          if (type == Reference::class.java && field.name != "queue") continue
+          try {
+            field.isAccessible = true
+          } catch (e: RuntimeException) {
+            throw AssertionError(
+              "cannot read ${type.name}.${field.name}: add --add-opens for ${type.packageName} to the test JVM " +
+                "(kastor-gen/runtime/build.gradle.kts)",
+              e,
+            )
+          }
+          field.get(current)?.let { pending += it to "$path.${field.name}" }
+        }
+        type = type.superclass
+      }
+    }
+    return null
+  }
+
   @Test
   fun `the registry does not keep the class loader of a registered type alive`() {
-    fun registerInFreshLoader(): WeakReference<ClassLoader> {
-      val loader = IsolatingLoader(javaClass.classLoader, scopedNames)
-      val type = loader.loadClass(LoaderScopedType::class.java.name)
+    val loader = IsolatingLoader(javaClass.classLoader, scopedNames)
+    val type = loader.loadClass(LoaderScopedType::class.java.name)
+    // Anything of the discarded module pins its class loader: the loader, its classes, instances of its classes.
+    val ofLoader = { held: Any ->
+      held === loader || (held is Class<*> && held.classLoader === loader) || held.javaClass.classLoader === loader
+    }
+    try {
       registerReflectively(type, loader.loadClass(LoaderScopedFactory::class.java.name).getDeclaredConstructor().newInstance())
       assertEquals(loader, materialize(type).javaClass.classLoader)
-      return WeakReference(loader)
+      assertTrue(OntoMapper.isRegistered(type))
+      // No unregister: a discarded (hot-reloaded) module does not clean up after itself.
+      assertNull(
+        strongPath(OntoMapper, ofLoader),
+        "the registry must not pin the class loader of a registered interface: it may hold its classes weakly only",
+      )
+      // The same walk does find a registry that holds the class (or its factory) strongly.
+      assertTrue(stronglyReaches(hashMapOf<Any, Any>("type" to type), ofLoader))
+      assertTrue(stronglyReaches(arrayOf<Any?>(null, listOf(loader.loadClass(LoaderScopedImpl::class.java.name))), ofLoader))
+      // A weakly held class is not "held".
+      assertFalse(stronglyReaches(java.util.WeakHashMap<Any, Any>().apply { put(type, true) }, ofLoader))
+    } finally {
+      OntoMapper.unregister(type)
     }
-    // No unregister: a discarded (hot-reloaded) module does not clean up after itself.
-    val loader = registerInFreshLoader()
-    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
-    while (loader.get() != null && System.nanoTime() < deadline) {
-      System.gc()
-      Thread.sleep(20)
-    }
-    assertNull(loader.get(), "the registry must not pin the class loader of a registered interface")
-    assertTrue(OntoMapper.registeredTypes().none { it.name == LoaderScopedType::class.java.name })
   }
 }
