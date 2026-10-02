@@ -36,7 +36,7 @@ public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jProvider : com/geoknoesi
 	public fun variants ()Ljava/util/List;
 }
 
-public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoesis/kastor/rdf/DescribesQueryDataset, com/geoknoesis/kastor/rdf/RdfRepository {
+public final class com/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository : com/geoknoesis/kastor/rdf/RdfRepository {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/rdf4j/Rdf4jRepository$Companion;
 	public fun <init> (Lorg/eclipse/rdf4j/repository/Repository;Z)V
 	public synthetic fun <init> (Lorg/eclipse/rdf4j/repository/Repository;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V

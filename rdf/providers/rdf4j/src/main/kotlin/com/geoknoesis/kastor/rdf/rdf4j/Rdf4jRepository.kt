@@ -76,7 +76,7 @@ class Rdf4jRepository(
     private val repository: Repository,
     internal val inference: Boolean,
     lenientRead: Boolean,
-) : RdfRepository, com.geoknoesis.kastor.rdf.DescribesQueryDataset {
+) : RdfRepository {
 
     /** Wraps [repository]; graph reads are strict (see [lenientRead]). */
     constructor(repository: Repository, inference: Boolean = false) : this(repository, inference, false)
@@ -935,7 +935,9 @@ class Rdf4jRepository(
      * - **Resources:** the IRIs listed in the `DESCRIBE` clause (whatever the `WHERE` clause matches) and the IRIs and
      *   blank nodes that the `WHERE` clause, with its solution modifiers, binds to the described variables (every
      *   variable for `DESCRIBE *`). It is evaluated by RDF4J against the dataset every query gets (see
-     *   [onKastorDataset]). Literals and triple terms are not resources and are skipped.
+     *   [onKastorDataset]). A variable that RDF4J binds to an RDF-star subject (`?r` in `?r :q "z"` over a stored
+     *   `<< a b c >> :q "z"`) selects the reifier blank node the graph API reads that subject as. Literals, and triple
+     *   terms that are not the subject of a statement of the described graphs, are not resources and are skipped.
      * - **Source:** the description is read from the default graph of the query's dataset: the repository's default
      *   graph, or the merge of the `FROM` graphs (nothing with only `FROM NAMED`). Named graphs are read by the
      *   `WHERE` clause inside `GRAPH`, never by the description.
@@ -944,7 +946,10 @@ class Rdf4jRepository(
      *   an inference repository includes entailed statements. Blank node cycles end.
      *
      * A wrapped repository that is not evaluated by an RDF4J Sail (HTTP repository, SPARQL endpoint) returns the
-     * description its server computes.
+     * description its server computes, from whatever graphs that server reads. This class therefore does not implement
+     * [com.geoknoesis.kastor.rdf.DescribesQueryDataset] (a marker interface cannot depend on the wrapped repository):
+     * a [com.geoknoesis.kastor.rdf.Dataset] restricts the result of a `DESCRIBE` it runs here to triples of its own
+     * graphs, with one `find` per described subject and graph (or one `hasTriple` per triple for small subjects).
      */
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> = withConnection { conn ->
         val sparql = query.sparql
@@ -973,6 +978,7 @@ class Rdf4jRepository(
         val selectParsed = (select as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return null
 
         val resources = LinkedHashSet<RdfResource>()
+        val quotedSubjects = LinkedHashSet<org.eclipse.rdf4j.model.Triple>()
         // The IRIs of the DESCRIBE clause are described also when the WHERE clause has no solution. Their generated
         // names cannot be variables of the query: those occur in its text.
         ((selection as? org.eclipse.rdf4j.query.algebra.Projection)?.arg as? org.eclipse.rdf4j.query.algebra.Extension)?.elements?.forEach { element ->
@@ -989,7 +995,8 @@ class Rdf4jRepository(
                 for (binding in row) {
                     when (val value = binding.value) {
                         is IRI -> resources.add(Iri(value.stringValue()))
-                        is org.eclipse.rdf4j.model.BNode -> resources.add(BlankNode(value.id))
+                        is org.eclipse.rdf4j.model.BNode -> resources.add(Rdf4jTerms.fromRdf4jResource(value))
+                        is org.eclipse.rdf4j.model.Triple -> quotedSubjects.add(value)
                         else -> Unit
                     }
                 }
@@ -999,6 +1006,11 @@ class Rdf4jRepository(
         val nil = setOf<IRI>(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL, org.eclipse.rdf4j.model.vocabulary.SESAME.NIL)
         val sources: List<Rdf4jGraph> =
             if (declared == null) listOf(graphHandle(null)) else declared.defaultGraphs.map { graphHandle(if (it in nil) null else it) }
+        // A triple value is a resource where it is the subject of a statement: the graph API reads that subject as its
+        // reifier blank node. (As an object it is a triple term, which is not described.)
+        for (quoted in quotedSubjects) {
+            if (sources.any { it.hasQuotedSubject(conn, quoted) }) resources.add(Rdf4jTerms.reifierFor(quoted))
+        }
         val description = LinkedHashSet<RdfTriple>()
         val visited = HashSet<RdfResource>()
         val pending = ArrayDeque<RdfResource>(resources)

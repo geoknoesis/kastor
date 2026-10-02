@@ -247,6 +247,10 @@ internal open class Rdf4jGraph(
     /** The triples of this graph with the subject [subject], read through [conn] (for `DESCRIBE`). */
     internal fun outgoing(conn: RepositoryConnection, subject: RdfResource): List<RdfTriple> = matching(conn, subject, null, null)
 
+    /** Whether this graph holds a statement whose subject is the RDF-star triple [quoted] (for `DESCRIBE`). */
+    internal fun hasQuotedSubject(conn: RepositoryConnection, quoted: Triple): Boolean =
+        conn.hasStatement(quoted, null, null, repo.inference, context)
+
     /** Triples of the RDF 1.2 view matching the pattern, de-duplicated, in store order. */
     private fun matching(
         conn: RepositoryConnection,
