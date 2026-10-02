@@ -398,7 +398,7 @@ val repo = Rdf.memoryWithInference()  // Automatic RDFS reasoning
 ```kotlin
 val repo = Rdf.repository {
     providerId = "jena"
-    variantId = "tdb2"
+    variantId = "tdb2-inference"
     location = "custom-data"
     inference = true
     optimization = true

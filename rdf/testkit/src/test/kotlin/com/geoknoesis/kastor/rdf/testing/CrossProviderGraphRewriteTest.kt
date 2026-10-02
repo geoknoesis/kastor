@@ -42,6 +42,15 @@ class CrossProviderGraphRewriteTest {
         "SELECT * { ?s <urn:p> ?o FILTER NOT EXISTS { GRAPH $name { $crossProduct } } }" to 150,
         "SELECT * { ?s <urn:p> ?o FILTER EXISTS { GRAPH $name { $crossProduct } } }" to 0,
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { { $crossProduct } UNION { $crossProduct OPTIONAL { ?x ?y ?z } } } } }" to 150,
+        // Patterns with FILTER, BIND, MINUS, VALUES and sub-selects are not evaluated either.
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { $crossProduct FILTER(?c1 != ?c2 && ?c3 != ?unbound) } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { $crossProduct BIND(concat(str(?c1), str(?c2)) AS ?joined) } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { $crossProduct MINUS { ?a1 <urn:none> ?nothing } } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { $crossProduct VALUES ?v { 1 2 } } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { SELECT ?c1 (COUNT(*) AS ?n) { $crossProduct } GROUP BY ?c1 } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { { SELECT * { $crossProduct FILTER(?c1 != ?c5) } } FILTER NOT EXISTS { ?a1 ?b1 ?c5 } } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o FILTER NOT EXISTS { GRAPH $name { $crossProduct FILTER(?c1 != ?c2) BIND(1 AS ?one) } } }" to 150,
+        "SELECT * { ?s <urn:p> ?o MINUS { GRAPH $name { ?s ?b1 ?c1 . $crossProduct FILTER(?c1 != ?c2) } } }" to 150,
     )
 
     private fun rows(result: SparqlQueryResult): List<Map<String, RdfTerm>> =

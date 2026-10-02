@@ -117,14 +117,24 @@ object Rdf {
      * full, a new load is rejected: its future completes exceptionally with
      * [java.util.concurrent.RejectedExecutionException]. A load never runs on the calling thread.
      */
-    private val urlIoExecutor: Executor = java.util.concurrent.ThreadPoolExecutor(
-        URL_IO_THREADS, URL_IO_THREADS, 30L, java.util.concurrent.TimeUnit.SECONDS,
-        java.util.concurrent.ArrayBlockingQueue(URL_IO_QUEUE_CAPACITY),
+    private val urlIoExecutor: Executor = newUrlIoExecutor()
+
+    /**
+     * An executor of the kind [parseFromUrlAsync] uses by default: [threads] daemon threads that end when idle, a
+     * queue of [queueCapacity] pending loads, and rejection (never the calling thread) beyond that. Tests create
+     * small ones, so that saturating one takes a handful of loads.
+     */
+    internal fun newUrlIoExecutor(
+        threads: Int = URL_IO_THREADS,
+        queueCapacity: Int = URL_IO_QUEUE_CAPACITY,
+    ): java.util.concurrent.ThreadPoolExecutor = java.util.concurrent.ThreadPoolExecutor(
+        threads, threads, 30L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue(queueCapacity),
         java.util.concurrent.ThreadFactory { runnable -> Thread(runnable, "kastor-url-io").apply { isDaemon = true } },
         java.util.concurrent.RejectedExecutionHandler { _, _ ->
             throw java.util.concurrent.RejectedExecutionException(
-                "The default Rdf.parseFromUrlAsync executor is saturated ($URL_IO_THREADS loads running, " +
-                    "$URL_IO_QUEUE_CAPACITY queued); retry later or pass an executor sized for this workload"
+                "The default Rdf.parseFromUrlAsync executor is saturated ($threads loads running, " +
+                    "$queueCapacity queued); retry later or pass an executor sized for this workload"
             )
         },
     ).apply { allowCoreThreadTimeOut(true) }
@@ -241,7 +251,7 @@ object Rdf {
      * ```kotlin
      * val repo = Rdf.repository {
      *     providerId = "jena"
-     *     variantId = "tdb2"
+     *     variantId = "tdb2-inference"
      *     location = "/path/to/storage"
      *     inference = true
      *     requirements = ProviderRequirements(
@@ -517,9 +527,13 @@ object Rdf {
     /**
      * Parse RDF data from an input stream into a graph.
      * 
-     * **Note:** The input stream is automatically closed after parsing.
+     * **The caller owns [inputStream]:** it is read (to its end, or up to the error) but never closed, whichever
+     * provider parses it and whether parsing succeeds or fails. Close it yourself, for example with `use`:
+     * `stream.use { Rdf.parseFromInputStream(it, "TURTLE") }`. The same holds for every `parseFromInputStream`,
+     * `parseStreaming` and `parseDataset` overload that takes a stream. Only the scoped [openTripleStream] (and
+     * `parseStreamingFlow`, which is built on it) takes ownership of the stream it is given.
      * 
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; not closed
      * @param format The RDF format
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
@@ -530,9 +544,9 @@ object Rdf {
     /**
      * Parse RDF data from an input stream into a graph, resolving relative IRIs against [baseIri].
      *
-     * **Note:** The input stream is automatically closed after parsing.
+     * **The caller owns [inputStream]:** it is read but never closed, whether parsing succeeds or fails.
      *
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; not closed
      * @param format The RDF format
      * @param baseIri Absolute IRI for relative references, passed to [RdfProvider.parseGraph]; null keeps the
      *   provider's default (relative IRIs are then errors with the bundled providers)
@@ -596,7 +610,7 @@ object Rdf {
      * }
      * ```
      * 
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; the caller owns it, it is not closed
      * @param format The RDF format
      * @return A sequence over the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
@@ -807,7 +821,7 @@ object Rdf {
      * named graph structure.
      * 
      * @param repository The repository to populate with parsed data
-     * @param inputStream The input stream containing RDF dataset data
+     * @param inputStream The input stream containing RDF dataset data; the caller owns it, it is not closed
      * @param format The RDF quad format
      * @throws RdfFormatException if parsing fails or format is not supported
      */
@@ -817,7 +831,7 @@ object Rdf {
 
     /**
      * Parse an RDF dataset from an input stream into [repository], resolving relative IRIs against [baseIri]
-     * (passed to [RdfProvider.parseDataset]).
+     * (passed to [RdfProvider.parseDataset]). The caller owns [inputStream]: it is read but not closed.
      *
      * @param baseIri Absolute IRI for relative references; null keeps the provider's default
      * @throws RdfFormatException if parsing fails or format is not supported

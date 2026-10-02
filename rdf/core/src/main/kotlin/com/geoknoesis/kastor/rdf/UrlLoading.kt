@@ -25,12 +25,21 @@ import java.util.concurrent.TimeUnit
  *   TLS handshake and response headers) and each policy call runs on a helper thread that the caller waits for only
  *   until the deadline, and a body read that could block past the deadline is abandoned when it passes. An abandoned
  *   request or read keeps its helper thread until its capped socket timeout (or the system's host name lookup)
- *   returns, and then releases its connection. Helper threads are daemon threads named `kastor-url-helper-N` in a
- *   pool bounded to 32. When all are busy, a load waits for one, for as long as its deadline allows, and then fails
- *   with [RdfLoadTimeoutException]; nothing that could outlast the deadline runs on the calling thread. A body read
- *   that cannot block past the deadline, or whose data has already arrived, runs on the calling thread; the others
- *   of one response share one helper, which goes back to the pool when the body is closed or has not been read for
- *   a while. A read that reaches the end of the body is never reported as a timeout. Default: 5 minutes.
+ *   returns, and then releases its connection. The same holds for every scheme that was opted into
+ *   ([allowedSchemes]): connecting, opening and reading the body of an `ftp:` or `file:` URL are bounded by the
+ *   deadline like an HTTP request. Helper threads are daemon threads named `kastor-url-helper-N` in a pool shared by
+ *   all loads of the JVM. The pool is bounded: by default to 32 threads or four per available processor, whichever
+ *   is more; the system property `kastor.url.helperThreads` sets another bound. When all are busy, a load waits for
+ *   one, for as long as its deadline allows, and then fails with [RdfLoadTimeoutException]; nothing that could
+ *   outlast the deadline runs on the calling thread. Work that was abandoned at the deadline is interrupted (a policy
+ *   that waits interruptibly returns at once; socket operations of the JDK do not react and end with their capped
+ *   timeout). A helper whose abandoned work has still not returned after a grace period (60 seconds; system property
+ *   `kastor.url.helperAbandonGraceMillis`) stops counting against the bound, so a policy that hangs for good costs
+ *   its own thread but can never stop URL loading for the whole JVM. A body read that cannot block past the
+ *   deadline, or whose data has already arrived, runs on the calling thread; the others of one response share one
+ *   helper, which goes back to the pool when the body is closed or has not been read for a while. A read that
+ *   reaches the end of the body is never reported as a timeout, and a load whose thread is interrupted fails with
+ *   [java.io.InterruptedIOException], not with a timeout. Default: 5 minutes.
  *
  * HTTP(S) requests send an `Accept` header for the requested format and `Connection: close`, and the connection is
  * closed when the load ends. Redirects (301, 302, 303, 307, 308) are followed by Kastor, up to 10 hops, only to a URL
@@ -94,7 +103,8 @@ data class UrlLoadOptions(
  * policy runs on a `kastor-url-helper-N` daemon thread, not on the thread that called `Rdf.parseFromUrl`, so that
  * a slow host name lookup cannot outlast the deadline: thread-locals of the caller (a security context, an MDC, a
  * transaction) are not visible to it, and it must be safe to call from several threads. The call counts against
- * the deadline; when it is cut off there, the policy keeps running on its helper thread until it returns.
+ * the deadline; when it is cut off there, its helper thread is interrupted, and the policy keeps running on that
+ * thread until it returns. A policy should therefore wait interruptibly; one that never returns keeps its thread.
  */
 fun interface UrlAddressPolicy {
     /** True if a request may be sent to [url]. */
@@ -130,7 +140,14 @@ fun interface UrlAddressPolicy {
          * firewall rules for the process), and use this policy as a second line.
          */
         @JvmField
-        val PUBLIC_ADDRESSES: UrlAddressPolicy = Named("PUBLIC_ADDRESSES") { url -> resolvesToPublicAddresses(url) }
+        val PUBLIC_ADDRESSES: UrlAddressPolicy = Named("PUBLIC_ADDRESSES", publicAddresses(java.net.InetAddress::getAllByName))
+
+        /**
+         * The policy behind [PUBLIC_ADDRESSES] with the host name lookup [resolve] (which throws
+         * [java.net.UnknownHostException] for a name it cannot resolve), so that tests need no resolver.
+         */
+        internal fun publicAddresses(resolve: (String) -> Array<java.net.InetAddress>): UrlAddressPolicy =
+            UrlAddressPolicy { url -> resolvesToPublicAddresses(url, resolve) }
 
         /**
          * True if [address] is a public unicast address: one that is globally routable and is not reserved for a
@@ -151,13 +168,13 @@ fun interface UrlAddressPolicy {
          */
         fun isPublicUnicast(address: java.net.InetAddress): Boolean = isPublicUnicastAddress(address.address)
 
-        private fun resolvesToPublicAddresses(url: java.net.URI): Boolean {
+        private fun resolvesToPublicAddresses(url: java.net.URI, resolve: (String) -> Array<java.net.InetAddress>): Boolean {
             val host = url.host?.removePrefix("[")?.removeSuffix("]")?.takeIf { it.isNotEmpty() } ?: return false
             // The connection is opened through java.net.URL: it must name the host that is checked here.
             val connectedHost = runCatching { url.toURL().host }.getOrNull()
             if (connectedHost != null && !connectedHost.equals(url.host, ignoreCase = true)) return false
             val addresses = try {
-                java.net.InetAddress.getAllByName(host)
+                resolve(host)
             } catch (_: java.net.UnknownHostException) {
                 return false
             }
@@ -328,6 +345,26 @@ private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
 internal const val MAX_URL_REDIRECTS = 10
 
 /**
+ * What URL loading takes from its environment. Production code uses [DEFAULT]; tests replace single parts to make a
+ * load deterministic and to observe the one load they started: a helper pool of their own, connections that never
+ * touch the network, a clock.
+ */
+internal class UrlLoadRuntime(
+    /** The helper threads of the loads that use this runtime. */
+    val helpers: UrlLoadHelperPool = UrlLoadHelpers.shared,
+    /** Creates the connection for a URL; the load configures and connects it. */
+    val open: (java.net.URI) -> java.net.URLConnection = { it.toURL().openConnection() },
+    /** Told once about every connection of a load when it is released (disconnected, or its stream closed). */
+    val onRelease: (java.net.URLConnection) -> Unit = {},
+    /** The clock the overall deadline is measured with. */
+    val nanoTime: () -> Long = System::nanoTime,
+) {
+    companion object {
+        val DEFAULT: UrlLoadRuntime by lazy { UrlLoadRuntime() }
+    }
+}
+
+/**
  * Validates [url] against [options], connects, and returns the response body.
  *
  * - The scheme must be allowed by [UrlLoadOptions.allowedSchemes].
@@ -336,7 +373,9 @@ internal const val MAX_URL_REDIRECTS = 10
  * - A declared `Content-Length` above [UrlLoadOptions.maxBytes] fails fast; the body is bounded to it.
  * - [UrlLoadOptions.addressPolicy] is asked about [url] and about every redirect target before a connection to it
  *   is opened; a refusal fails with [RdfAddressRefusedException].
- * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the load starts, across policies and hops.
+ * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the load starts, across policies and hops, for
+ *   every scheme: connecting (and, for a scheme other than HTTP, opening the body, which is where FTP sends its
+ *   commands) runs on a helper thread, and so does every body read that could block past the deadline.
  *
  * [onConnection] receives each connection (one per redirect hop) before it connects, so a caller can disconnect it
  * to cancel. On failure the connection is released before the exception propagates (or, if a request was abandoned
@@ -346,18 +385,22 @@ internal fun openRdfUrlStream(
     url: String,
     format: RdfFormat?,
     options: UrlLoadOptions,
+    runtime: UrlLoadRuntime = UrlLoadRuntime.DEFAULT,
     onConnection: (java.net.URLConnection) -> Unit = {},
 ): RdfUrlBody {
     var uri = checkedUri(url, options)
-    val started = System.nanoTime()
+    val started = runtime.nanoTime()
     val total = options.totalTimeoutMillis
+    fun elapsedMillis(): Long = TimeUnit.NANOSECONDS.toMillis(runtime.nanoTime() - started)
+    // Milliseconds left of the deadline (at least 1), or 0 when there is no overall deadline.
+    fun remainingMillis(): Long = if (total <= 0) 0 else (total - elapsedMillis()).coerceAtLeast(1)
     var redirects = 0
     while (true) {
         val addressPolicy = options.addressPolicy
         if (addressPolicy !== UrlAddressPolicy.ALLOW_ALL) {
             val target = uri
             // The policy may look host names up, so it runs within the deadline like the request itself.
-            if (!withinDeadline(started, total, onAbandon = {}) { addressPolicy.allows(target) }.getOrThrow()) {
+            if (!withinDeadline(runtime, started, total, onAbandon = {}) { addressPolicy.allows(target) }.getOrThrow()) {
                 throw RdfAddressRefusedException(
                     target.toString(),
                     (if (redirects == 0) "Loading RDF from $target" else "The redirect to $target (from $url)") +
@@ -366,12 +409,12 @@ internal fun openRdfUrlStream(
             }
         }
         // When both socket timeouts of this hop are the time left, a socket timeout is the deadline expiring.
-        val hopRemaining = remainingMillis(started, total)
+        val hopRemaining = remainingMillis()
         val timeoutsAreDeadline = total > 0 &&
             listOf(options.connectTimeoutMillis, options.readTimeoutMillis).all { it == 0 || it >= hopRemaining }
-        val connection = uri.toURL().openConnection().apply {
-            connectTimeout = cappedTimeout(options.connectTimeoutMillis, remainingMillis(started, total))
-            readTimeout = cappedTimeout(options.readTimeoutMillis, remainingMillis(started, total))
+        val connection = runtime.open(uri).apply {
+            connectTimeout = cappedTimeout(options.connectTimeoutMillis, remainingMillis())
+            readTimeout = cappedTimeout(options.readTimeoutMillis, remainingMillis())
             setRequestProperty("Accept", format?.let { "${it.mediaType()}, */*;q=0.1" } ?: "*/*")
         }
         val http = connection as? java.net.HttpURLConnection
@@ -382,18 +425,32 @@ internal fun openRdfUrlStream(
             setRequestProperty("Connection", "close")
         }
         onConnection(connection)
+        // The body of a connection that is not HTTP, once it is open: what releasing such a connection closes.
+        val openedBody = java.util.concurrent.atomic.AtomicReference<InputStream?>()
+        val released = java.util.concurrent.atomic.AtomicBoolean()
+        val releaseConnection: () -> Unit = {
+            if (released.compareAndSet(false, true)) {
+                release(connection, openedBody.get())
+                runCatching { runtime.onRelease(connection) }
+            }
+        }
         // Set when the connection is released elsewhere: by an abandoned request once it returns, or by the body.
         var releasedElsewhere = false
         try {
-            if (http != null) {
-                val status = withinDeadline(started, total, onAbandon = { release(http) }) {
-                    http.connect()
-                    http.responseCode
-                }.getOrElse { e ->
-                    releasedElsewhere = e is RdfLoadTimeoutException || e is java.io.InterruptedIOException
-                    throw e
+            // Whatever the scheme, connecting may block for longer than the deadline allows (a host name lookup, the
+            // response headers of HTTP, the commands of FTP): it runs on a helper the caller waits for until then.
+            val status = withinDeadline(runtime, started, total, onAbandon = releaseConnection) {
+                connection.connect()
+                if (http != null) http.responseCode else {
+                    openedBody.set(connection.getInputStream())
+                    -1
                 }
-                if (total > 0 && elapsedMillis(started) >= total) throw RdfLoadTimeoutException(total)
+            }.getOrElse { e ->
+                releasedElsewhere = e is RdfLoadTimeoutException || e is java.io.InterruptedIOException
+                throw e
+            }
+            if (total > 0 && elapsedMillis() >= total) throw RdfLoadTimeoutException(total)
+            if (http != null) {
                 if (status in REDIRECT_STATUSES) {
                     val location: String? = http.getHeaderField("Location")
                     val resolved: Any = when {
@@ -406,10 +463,10 @@ internal fun openRdfUrlStream(
                     val policy = options.redirectPolicy
                     // The policy may look host names up, so it runs within the deadline like the request itself.
                     val target: Any = if (resolved is java.net.URI && policy !== UrlRedirectPolicy.ALLOW_ALL &&
-                        !withinDeadline(started, total, onAbandon = {}) { policy.allows(from, resolved) }.getOrThrow()
+                        !withinDeadline(runtime, started, total, onAbandon = {}) { policy.allows(from, resolved) }.getOrThrow()
                     ) "refused by the redirect policy" else resolved
                     if (target is java.net.URI) {
-                        release(http)
+                        releaseConnection()
                         redirects++
                         uri = target
                         continue
@@ -426,13 +483,14 @@ internal fun openRdfUrlStream(
                 }
             }
             if (connection.contentLengthLong > options.maxBytes) throw RdfInputTooLargeException(options.maxBytes)
-            val bounded = BoundedInputStream(connection.getInputStream(), options.maxBytes)
-            val releaseConnection = { release(connection) }
+            val bounded = BoundedInputStream(openedBody.get() ?: connection.getInputStream(), options.maxBytes)
             if (total > 0) {
-                // The socket keeps the read timeout it had when the request was sent, so a body read may block that
-                // long; the stream waits for such reads only as long as the deadline allows.
-                val socketReadMillis = http?.readTimeout?.toLong()
-                val deadline = DeadlineInputStream(bounded, started, total, socketReadMillis, onClose = releaseConnection)
+                // The connection keeps the read timeout it had when it connected, so a body read may block that long
+                // (0: without limit); the stream waits for such reads only as long as the deadline allows.
+                val deadline = DeadlineInputStream(
+                    bounded, started, total, connection.readTimeout.toLong(),
+                    helpers = runtime.helpers, nanoTime = runtime.nanoTime, onClose = releaseConnection,
+                )
                 releasedElsewhere = true
                 try {
                     deadline.checkDeadline()
@@ -444,10 +502,12 @@ internal fun openRdfUrlStream(
             }
             return RdfUrlBody(connection, ReleasingInputStream(bounded, releaseConnection), listOf(bounded))
         } catch (e: Throwable) {
-            if (!releasedElsewhere) release(connection)
-            val timedOut = total > 0 && e is java.io.IOException && e !is RdfLoadTimeoutException &&
+            if (!releasedElsewhere) releaseConnection()
+            // An interrupt is reported as what it is, also when it arrives after the deadline.
+            val interrupted = e is java.io.InterruptedIOException && e !is java.net.SocketTimeoutException
+            val timedOut = total > 0 && e is java.io.IOException && !interrupted &&
                 e !is RdfHttpStatusException && e !is RdfInputTooLargeException &&
-                (elapsedMillis(started) >= total || (e is java.net.SocketTimeoutException && timeoutsAreDeadline))
+                (elapsedMillis() >= total || (e is java.net.SocketTimeoutException && timeoutsAreDeadline))
             if (timedOut) throw RdfLoadTimeoutException(total).also { it.addSuppressed(e) }
             throw e
         }
@@ -534,34 +594,38 @@ private val LOCATION_AUTHORITY_PREFIX = Regex("^(?:[A-Za-z][A-Za-z0-9+.-]*:)?//"
 private const val ILLEGAL_URI_CHARACTERS = "\"<>\\^`{|}"
 private const val HEX_DIGITS = "0123456789ABCDEF"
 
-/** Releases [connection]: disconnects an HTTP connection, or closes the input stream of any other connection. */
-private fun release(connection: java.net.URLConnection) {
+/**
+ * Releases [connection]: disconnects an HTTP connection, or closes the body [opened] of any other connection (null
+ * if it was never opened).
+ */
+private fun release(connection: java.net.URLConnection, opened: InputStream?) {
     val http = connection as? java.net.HttpURLConnection
     if (http != null) {
         runCatching { http.errorStream?.close() }
         runCatching { http.disconnect() }
     } else {
-        runCatching { connection.getInputStream().close() }
+        runCatching { opened?.close() }
     }
 }
 
 /**
  * Runs [action] on a helper thread and waits for it only until the deadline ([totalMillis] after [startedNanos]).
- * If the deadline passes (or the caller is interrupted) first, [onAbandon] is scheduled to run once [action] returns
- * and the result is a failed [RdfLoadTimeoutException] (or [java.io.InterruptedIOException]). When every helper
- * thread is busy the caller waits for one, also only until the deadline; if none becomes free, [action] never runs
- * and [onAbandon] runs at once. Without a deadline [action] runs on the calling thread. Failures of [action] itself
- * are rethrown.
+ * If the deadline passes (or the caller is interrupted) first, the helper thread is interrupted, [onAbandon] is
+ * scheduled to run once [action] returns and the result is a failed [RdfLoadTimeoutException] (or
+ * [java.io.InterruptedIOException]). When every helper thread is busy the caller waits for one, also only until the
+ * deadline; if none becomes free, [action] never runs and [onAbandon] runs at once. Without a deadline [action] runs
+ * on the calling thread. Failures of [action] itself are rethrown.
  */
 private fun <T> withinDeadline(
+    runtime: UrlLoadRuntime,
     startedNanos: Long,
     totalMillis: Long,
     onAbandon: () -> Unit,
     action: () -> T,
 ): Result<T> {
     if (totalMillis <= 0) return Result.success(action())
-    fun remaining() = TimeUnit.MILLISECONDS.toNanos(totalMillis) - (System.nanoTime() - startedNanos)
-    val call = HelperCall(action)
+    fun remaining() = TimeUnit.MILLISECONDS.toNanos(totalMillis) - (runtime.nanoTime() - startedNanos)
+    val call = HelperCall(runtime.helpers, action)
     return try {
         if (call.start(remaining())) Result.success(call.await(remaining())) else {
             runCatching(onAbandon)
@@ -577,77 +641,300 @@ private fun <T> withinDeadline(
     }
 }
 
-/**
- * Bounded pool of daemon threads for URL-loading work that may block past the overall deadline. A load uses at most
- * one helper at a time; a helper whose work was abandoned stays busy until that work returns, which the capped socket
- * timeouts bound (a host name lookup is bounded only by the system resolver).
- */
+/** The helper pool shared by all URL loads of the JVM, and how it is configured. */
 internal object UrlLoadHelpers {
-    const val MAX_THREADS = 32
     const val THREAD_NAME_PREFIX = "kastor-url-helper-"
-    private val count = java.util.concurrent.atomic.AtomicInteger()
 
-    /** Number of tasks handed to a helper thread so far. */
-    val tasksStarted = java.util.concurrent.atomic.AtomicLong()
+    /** System property: the largest number of helper threads (a positive integer). */
+    const val MAX_THREADS_PROPERTY = "kastor.url.helperThreads"
 
-    /** Longest single wait for a thread to take a task before the pool is asked again (it may have shrunk). */
-    private val HAND_OFF_SLICE_NANOS = TimeUnit.MILLISECONDS.toNanos(500)
+    /** System property: milliseconds after which a helper whose abandoned work has not returned is replaced. */
+    const val ABANDON_GRACE_PROPERTY = "kastor.url.helperAbandonGraceMillis"
 
-    private val pool: java.util.concurrent.ThreadPoolExecutor by lazy {
-        java.util.concurrent.ThreadPoolExecutor(
-            0, MAX_THREADS, 10, TimeUnit.SECONDS, java.util.concurrent.SynchronousQueue(),
-            { runnable -> Thread(runnable, THREAD_NAME_PREFIX + count.incrementAndGet()).apply { isDaemon = true } },
-            java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+    /** The default bound is never lower than this. */
+    const val MIN_DEFAULT_THREADS = 32
+
+    /** Helper threads per available processor of the default bound: the threads wait for the network. */
+    const val DEFAULT_THREADS_PER_PROCESSOR = 4
+
+    const val DEFAULT_ABANDON_GRACE_MILLIS = 60_000L
+
+    /** The bound for the value [configured] of [MAX_THREADS_PROPERTY] (null or unusable: the default). */
+    fun maxThreads(configured: String?, processors: Int): Int =
+        configured?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+            ?: maxOf(MIN_DEFAULT_THREADS, DEFAULT_THREADS_PER_PROCESSOR * processors)
+
+    /** The grace for the value [configured] of [ABANDON_GRACE_PROPERTY] (null or unusable: the default). */
+    fun abandonGraceMillis(configured: String?): Long =
+        configured?.trim()?.toLongOrNull()?.takeIf { it >= 0 } ?: DEFAULT_ABANDON_GRACE_MILLIS
+
+    /** The pool of every load that does not bring its own [UrlLoadRuntime]. */
+    val shared: UrlLoadHelperPool by lazy {
+        UrlLoadHelperPool(
+            maxThreads(System.getProperty(MAX_THREADS_PROPERTY), Runtime.getRuntime().availableProcessors()),
+            abandonGraceMillis(System.getProperty(ABANDON_GRACE_PROPERTY)),
         )
-    }
-
-    /** Starts [task] on a helper thread; false (without running it) if all [MAX_THREADS] helpers are busy. */
-    fun tryExecute(task: Runnable): Boolean = try {
-        pool.execute(task)
-        tasksStarted.incrementAndGet()
-        true
-    } catch (_: java.util.concurrent.RejectedExecutionException) {
-        false
-    }
-
-    /**
-     * Starts [task] on a helper thread, waiting up to [waitNanos] for one to become free; false (without running it)
-     * if none did.
-     *
-     * @throws InterruptedException if the calling thread is interrupted while it waits (the task then never runs)
-     */
-    fun execute(task: Runnable, waitNanos: Long): Boolean {
-        val deadline = System.nanoTime() + waitNanos
-        while (true) {
-            if (tryExecute(task)) return true
-            val left = deadline - System.nanoTime()
-            if (left <= 0) return false
-            // Every thread is busy: hand the task to the first one that asks for work. The wait is sliced because a
-            // pool whose threads all retired meanwhile has nobody asking, but room for a new thread.
-            if (pool.queue.offer(task, minOf(left, HAND_OFF_SLICE_NANOS), TimeUnit.NANOSECONDS)) {
-                tasksStarted.incrementAndGet()
-                return true
-            }
-        }
     }
 }
 
 /**
- * One blocking call run on a [UrlLoadHelpers] thread. If the caller stops waiting, [abandon] hands clean-up to the
- * helper, which runs it once the call returns: the JDK's HTTP connections and streams cannot be closed from another
- * thread while such a call blocks (closing waits for it), so this releases them without occupying a second thread.
+ * Bounded pool of daemon threads for URL-loading work that may block past the overall deadline. A load uses at most
+ * one helper at a time, and the pool never has more than [maxThreads] threads - except for the ones it gave up on:
+ *
+ * A helper whose work was abandoned ([Handle.abandon]) is interrupted and stays busy until that work returns, which
+ * the capped socket timeouts bound for requests and reads. Work that does not return - a host name lookup of the
+ * system resolver, a custom policy that hangs - would hold its helper forever: once [abandonGraceMillis] have passed
+ * since it was abandoned, its helper stops counting as busy and the pool may start one thread more in its place. The
+ * hung thread itself cannot be stopped; when its work does return, the pool goes back to its bound.
+ *
+ * [nanoTime] is the clock of the grace period (the waits of [execute] use the system clock).
  */
-internal class HelperCall<T>(action: () -> T) {
+internal class UrlLoadHelperPool(
+    val maxThreads: Int,
+    abandonGraceMillis: Long = UrlLoadHelpers.DEFAULT_ABANDON_GRACE_MILLIS,
+    private val nanoTime: () -> Long = System::nanoTime,
+) : AutoCloseable {
+    init {
+        require(maxThreads > 0) { "maxThreads must be positive, got $maxThreads" }
+        require(abandonGraceMillis >= 0) { "abandonGraceMillis must not be negative, got $abandonGraceMillis" }
+    }
+
+    private val graceNanos = TimeUnit.MILLISECONDS.toNanos(abandonGraceMillis)
+    private val threadCount = java.util.concurrent.atomic.AtomicInteger()
+
+    /** No queue: a task is handed to a thread that is free, or to a new one while there is room, or not at all. */
+    private val threads = java.util.concurrent.ThreadPoolExecutor(
+        0, maxThreads, 10, TimeUnit.SECONDS, java.util.concurrent.SynchronousQueue(),
+        { runnable ->
+            Thread(runnable, UrlLoadHelpers.THREAD_NAME_PREFIX + threadCount.incrementAndGet()).apply { isDaemon = true }
+        },
+        java.util.concurrent.ThreadPoolExecutor.AbortPolicy(),
+    )
+
+    /** Abandoned work that has not returned yet. */
+    private val abandoned = java.util.concurrent.ConcurrentLinkedQueue<Handle>()
+
+    /** Tasks that were handed to a thread and count as busy: not finished, and not given up on. */
+    private val busyCount = java.util.concurrent.atomic.AtomicInteger()
+    private val idleLock = Object()
+
+    /** Helpers given up on whose work is still running; guarded by [resizeLock]. */
+    private var hung = 0
+    private val resizeLock = Any()
+
+    /** Number of tasks handed to a helper thread so far. */
+    val tasksStarted = java.util.concurrent.atomic.AtomicLong()
+
+    /** Number of helpers that stopped counting as busy because their abandoned work outlived the grace period. */
+    val helpersReplaced = java.util.concurrent.atomic.AtomicLong()
+
+    /** Helpers that count as busy right now. */
+    val busy: Int get() = busyCount.get()
+
+    /** The largest number of threads this pool has had at one time. */
+    val largestThreadCount: Int get() = threads.largestPoolSize
+
+    /** The number of threads the pool may have right now: [maxThreads], and one for every helper it gave up on. */
+    val threadLimit: Int get() = threads.maximumPoolSize
+
+    /** A task running (or about to run) on a helper thread. */
+    inner class Handle internal constructor(private val task: Runnable) : Runnable {
+        // Guarded by this.
+        private var thread: Thread? = null
+        private var done = false
+        private var interrupt = false
+        private var replaced = false
+        private val finished = java.util.concurrent.CountDownLatch(1)
+
+        /** When the task was abandoned, by the clock of the pool. */
+        @Volatile internal var abandonedAt = 0L
+
+        internal val isDone: Boolean get() = synchronized(this) { done }
+
+        override fun run() {
+            synchronized(this) {
+                thread = Thread.currentThread()
+                if (interrupt) Thread.currentThread().interrupt()
+            }
+            try {
+                task.run()
+            } finally {
+                val wasAbandoned: Boolean
+                val wasReplaced: Boolean
+                synchronized(this) {
+                    done = true
+                    thread = null
+                    // An interrupt meant for this task must not reach the next task of the thread.
+                    Thread.interrupted()
+                    wasAbandoned = interrupt
+                    wasReplaced = replaced
+                }
+                if (wasAbandoned) abandoned.remove(this)
+                if (wasReplaced) resize(-1) else uncount()
+                finished.countDown()
+            }
+        }
+
+        /** Gives up on the task if it is still running: it stops counting as busy; true if this call did that. */
+        internal fun replace(): Boolean {
+            synchronized(this) {
+                if (done || replaced) return false
+                replaced = true
+            }
+            resize(+1)
+            uncount()
+            return true
+        }
+
+        /**
+         * The caller no longer waits for the task: interrupts it if it has not returned (once), and lets the pool
+         * replace its helper if it has still not returned when the grace period is over.
+         */
+        fun abandon() {
+            synchronized(this) {
+                if (done || interrupt) return
+                interrupt = true
+                abandonedAt = nanoTime()
+                abandoned.add(this)
+                thread?.interrupt()
+            }
+        }
+
+        /** Waits up to [millis] until the task has returned and the pool has taken note; true if it has. */
+        fun awaitDone(millis: Long): Boolean = finished.await(millis, TimeUnit.MILLISECONDS)
+    }
+
+    /** One thread more ([delta] = 1) while a helper that was given up on still runs, one less when it has returned. */
+    private fun resize(delta: Int) {
+        synchronized(resizeLock) {
+            hung += delta
+            threads.maximumPoolSize = maxThreads + hung
+        }
+    }
+
+    private fun uncount() {
+        if (busyCount.decrementAndGet() <= 0) synchronized(idleLock) { idleLock.notifyAll() }
+    }
+
+    /** Gives up on the helpers whose abandoned work has outlived the grace period; true if there was one. */
+    private fun reclaim(): Boolean {
+        if (abandoned.isEmpty()) return false
+        val now = nanoTime()
+        var freed = false
+        val each = abandoned.iterator()
+        while (each.hasNext()) {
+            val handle = each.next()
+            if (handle.isDone) {
+                each.remove()
+            } else if (now - handle.abandonedAt >= graceNanos) {
+                each.remove()
+                if (handle.replace()) {
+                    helpersReplaced.incrementAndGet()
+                    freed = true
+                }
+            }
+        }
+        return freed
+    }
+
+    /** Hands [handle] to a thread that is free, or to a new one if there is room; false if there is neither. */
+    private fun start(handle: Handle): Boolean {
+        busyCount.incrementAndGet()
+        try {
+            threads.execute(handle)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            uncount()
+            return false
+        }
+        tasksStarted.incrementAndGet()
+        return true
+    }
+
+    /** Starts [task] on a helper thread; null (without running it) if all [maxThreads] helpers are busy. */
+    fun tryExecute(task: Runnable): Handle? {
+        val handle = Handle(task)
+        return if (start(handle) || (reclaim() && start(handle))) handle else null
+    }
+
+    /**
+     * Starts [task] on a helper thread, waiting up to [waitNanos] for one to become free; null (without running it)
+     * if none did.
+     *
+     * @throws InterruptedException if the calling thread is interrupted while it waits (the task then never runs)
+     */
+    fun execute(task: Runnable, waitNanos: Long): Handle? {
+        val handle = Handle(task)
+        val deadline = System.nanoTime() + waitNanos
+        while (!threads.isShutdown) {
+            if (start(handle) || (reclaim() && start(handle))) return handle
+            val left = deadline - System.nanoTime()
+            if (left <= 0) return null
+            // Every thread is busy: hand the task to the first one that asks for work. The wait is sliced because
+            // a pool whose threads all retired meanwhile has nobody asking, but room for a new thread - and so has
+            // one whose hung helper outlives its grace period.
+            busyCount.incrementAndGet()
+            val taken = try {
+                threads.queue.offer(handle, minOf(left, HAND_OFF_SLICE_NANOS), TimeUnit.NANOSECONDS)
+            } catch (e: InterruptedException) {
+                uncount()
+                throw e
+            }
+            if (taken) {
+                tasksStarted.incrementAndGet()
+                return handle
+            }
+            uncount()
+        }
+        return null
+    }
+
+    /** Waits up to [millis] until no helper counts as busy; true if that happened. */
+    fun awaitIdle(millis: Long): Boolean {
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(millis)
+        synchronized(idleLock) {
+            while (busyCount.get() > 0) {
+                val left = end - System.nanoTime()
+                if (left <= 0) return false
+                TimeUnit.NANOSECONDS.timedWait(idleLock, left)
+            }
+            return true
+        }
+    }
+
+    /** Interrupts every helper and waits a moment for the threads to end; no task is accepted afterwards. */
+    override fun close() {
+        threads.shutdownNow()
+        runCatching { threads.awaitTermination(10, TimeUnit.SECONDS) }
+    }
+
+    private companion object {
+        /** Longest single wait for a thread to take a task before the pool is asked again. */
+        val HAND_OFF_SLICE_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(250)
+    }
+}
+
+/**
+ * One blocking call run on a thread of [pool]. If the caller stops waiting, [abandon] interrupts the call and hands
+ * clean-up to the helper, which runs it once the call returns: the JDK's HTTP connections and streams cannot be
+ * closed from another thread while such a call blocks (closing waits for it), so this releases them without
+ * occupying a second thread.
+ */
+internal class HelperCall<T>(private val pool: UrlLoadHelperPool, action: () -> T) {
     private val lock = Any()
     private var started = false
     private var returned = false
     private var cleanup: (() -> Unit)? = null
+    private var handle: UrlLoadHelperPool.Handle? = null
     private val task = java.util.concurrent.FutureTask {
         try {
             action()
         } finally {
             val pending = synchronized(lock) { returned = true; cleanup }
-            pending?.let { runCatching(it) }
+            if (pending != null) {
+                // The interrupt that came with the abandonment was for the call, not for the clean-up after it.
+                Thread.interrupted()
+                runCatching(pending)
+            }
         }
     }
 
@@ -656,9 +943,9 @@ internal class HelperCall<T>(action: () -> T) {
      * never runs).
      */
     fun start(waitNanos: Long = 0): Boolean {
-        val accepted = if (waitNanos <= 0) UrlLoadHelpers.tryExecute(task) else UrlLoadHelpers.execute(task, waitNanos)
-        if (accepted) synchronized(lock) { started = true }
-        return accepted
+        val accepted = (if (waitNanos <= 0) pool.tryExecute(task) else pool.execute(task, waitNanos)) ?: return false
+        synchronized(lock) { started = true; handle = accepted }
+        return true
     }
 
     /** Waits up to [nanos] for the result, rethrowing the call's own failure. */
@@ -669,21 +956,25 @@ internal class HelperCall<T>(action: () -> T) {
     }
 
     /**
-     * Runs [release] once the call has returned: now if it already has (or never started), otherwise on the helper
-     * thread afterwards.
+     * Runs [release] once the call has returned: now if it already has (or never started); otherwise the call is
+     * interrupted and [release] runs on the helper thread when it returns.
      */
     fun abandon(release: () -> Unit) {
+        var running: UrlLoadHelperPool.Handle? = null
         val now = synchronized(lock) {
             val pending = started && !returned
-            if (pending) cleanup = release
+            if (pending) {
+                cleanup = release
+                running = handle
+            }
             !pending
         }
-        if (now) runCatching(release)
+        if (now) runCatching(release) else running?.abandon()
     }
 }
 
 /**
- * The long-lived helper of one [DeadlineInputStream]: a loop on a [UrlLoadHelpers] thread that performs the reads
+ * The long-lived helper of one [DeadlineInputStream]: a loop on a [UrlLoadHelperPool] thread that performs the reads
  * of [input] the stream asks for, one at a time, so that the stream can stop waiting for a read at its deadline. One
  * helper serves all such reads of a stream; there is no task, future or thread hand-over per read.
  *
@@ -708,6 +999,9 @@ internal class StreamHelper(private val input: InputStream, private val idleNano
     private var finished = false
     private var gone = false
     private var cleanup: (() -> Unit)? = null
+
+    /** The pool's handle of the thread this helper runs on, set once it was started. */
+    @Volatile var handle: UrlLoadHelperPool.Handle? = null
 
     override fun run() {
         while (true) {
@@ -756,6 +1050,8 @@ internal class StreamHelper(private val input: InputStream, private val idleNano
                 lock.unlock()
             }
             if (pending != null) {
+                // The interrupt that came with the abandonment was for the read, not for the clean-up after it.
+                Thread.interrupted()
                 runCatching(pending)
                 return
             }
@@ -809,9 +1105,9 @@ internal class StreamHelper(private val input: InputStream, private val idleNano
     }
 
     /**
-     * Ends the helper. If a read is in flight, [release] runs on the helper thread once that read returns and the
-     * result is false; otherwise the helper leaves its thread, nothing else happens and the result is true (the
-     * caller releases the stream itself).
+     * Ends the helper. If a read is in flight, it is interrupted, [release] runs on the helper thread once that read
+     * returns and the result is false; otherwise the helper leaves its thread, nothing else happens and the result
+     * is true (the caller releases the stream itself).
      */
     fun finish(release: () -> Unit): Boolean {
         lock.lock()
@@ -819,6 +1115,7 @@ internal class StreamHelper(private val input: InputStream, private val idleNano
             finished = true
             if (reading) {
                 cleanup = release
+                handle?.abandon()
                 return false
             }
             // A request the helper has not picked up yet is withdrawn with it.
@@ -855,13 +1152,6 @@ private class ReleasingInputStream(input: InputStream, private val release: () -
     override fun markSupported(): Boolean = false
 }
 
-private fun elapsedMillis(startedNanos: Long): Long =
-    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
-
-/** Milliseconds left of [totalMillis] (at least 1), or 0 when there is no overall deadline. */
-private fun remainingMillis(startedNanos: Long, totalMillis: Long): Long =
-    if (totalMillis <= 0) 0 else (totalMillis - elapsedMillis(startedNanos)).coerceAtLeast(1)
-
 /** A single blocking call may not wait longer than the time remaining. `0` means "no limit" for both. */
 private fun cappedTimeout(timeoutMillis: Int, remainingMillis: Long): Int = when {
     remainingMillis <= 0 -> timeoutMillis
@@ -880,7 +1170,10 @@ private fun cappedTimeout(timeoutMillis: Int, remainingMillis: Long): Int = when
  *   this way ends the stream: later reads fail with the same timeout, and the underlying stream is closed by the
  *   helper thread once the read returns, because the JDK's HTTP streams only close once a blocked read has
  *   returned. When every helper thread is busy the read waits for one until the deadline.
- * - An I/O failure that happens after the deadline is reported as a timeout.
+ * - A read given up because the reading thread was interrupted ends the stream as well, and is reported as what it
+ *   is: that read and every later one fail with [java.io.InterruptedIOException], never with a timeout.
+ * - An I/O failure that happens after the deadline is reported as a timeout (an interrupt is not).
+ * - [helpers] is the pool the stream's helper runs in, and [nanoTime] the clock of the deadline.
  * - [onClose] runs when the stream is closed, before the underlying stream is closed (so an HTTP connection can still
  *   be disconnected: closing its stream first forgets the connection), and after a read in flight returns.
  * - [helperIdleMillis] is how long the helper waits for the next read before it gives its thread back.
@@ -891,6 +1184,8 @@ internal class DeadlineInputStream(
     private val timeoutMillis: Long,
     blockingReadMillis: Long? = null,
     private val helperIdleMillis: Long = HELPER_IDLE_MILLIS,
+    private val helpers: UrlLoadHelperPool = UrlLoadHelpers.shared,
+    private val nanoTime: () -> Long = System::nanoTime,
     private val onClose: () -> Unit = {},
 ) : FilterInputStream(input), LimitedStream {
     private val limitNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
@@ -899,8 +1194,11 @@ internal class DeadlineInputStream(
     }
     private var ended = false
 
-    /** Set when a read was given up: it may still be running, so no other read may start. */
-    @Volatile private var abandoned = false
+    /**
+     * Set when a read was given up - at the deadline, or because the reading thread was interrupted: that read may
+     * still be running, so no other read may start. Says which of the two it was.
+     */
+    @Volatile private var abandonment: Abandonment? = null
     @Volatile private var helper: StreamHelper? = null
     private val closed = java.util.concurrent.atomic.AtomicBoolean()
     private var single: ByteArray? = null
@@ -908,7 +1206,13 @@ internal class DeadlineInputStream(
     override var failure: java.io.IOException? = null
         private set
 
-    private fun remainingNanos() = limitNanos - (System.nanoTime() - startedNanos)
+    private fun remainingNanos() = limitNanos - (nanoTime() - startedNanos)
+
+    private fun interrupted(cause: Throwable?): java.io.InterruptedIOException =
+        java.io.InterruptedIOException(
+            if (cause == null) "Loading RDF from a URL was abandoned when the reading thread was interrupted"
+            else "Interrupted while loading RDF from a URL",
+        ).apply { if (cause != null) initCause(cause) }
 
     private fun timeout(): java.io.IOException = failure ?: RdfLoadTimeoutException(timeoutMillis).also { failure = it }
 
@@ -931,7 +1235,11 @@ internal class DeadlineInputStream(
      * if it cannot, otherwise [viaHelper], which is given the time left.
      */
     private inline fun timed(direct: () -> Long, viaHelper: (remaining: Long) -> Long): Long {
-        if (abandoned) throw timeout()
+        when (abandonment) {
+            Abandonment.DEADLINE -> throw timeout()
+            Abandonment.INTERRUPT -> throw interrupted(null)
+            null -> Unit
+        }
         val remaining = remainingNanos()
         val mayOverrun = !readsDirectly(remaining)
         try {
@@ -959,12 +1267,12 @@ internal class DeadlineInputStream(
                 if (result != StreamHelper.GONE.toLong()) return result
                 helper = null
             } catch (_: java.util.concurrent.TimeoutException) {
-                abandoned = true
+                abandonment = Abandonment.DEADLINE
                 throw timeout()
             } catch (e: InterruptedException) {
-                abandoned = true
+                abandonment = Abandonment.INTERRUPT
                 Thread.currentThread().interrupt()
-                throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
+                throw interrupted(e)
             }
         }
     }
@@ -974,12 +1282,12 @@ internal class DeadlineInputStream(
         val created = StreamHelper(`in`, TimeUnit.MILLISECONDS.toNanos(helperIdleMillis))
         // Interrupted while waiting for a thread: no read is in flight, the stream stays usable.
         val accepted = try {
-            UrlLoadHelpers.execute(created, remaining)
+            helpers.execute(created, remaining)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
+            throw interrupted(e)
         }
-        if (!accepted) throw timeout()
+        created.handle = accepted ?: throw timeout()
         helper = created
         // Closed meanwhile by another thread (a cancelled load): the helper must not outlive the stream.
         if (closed.get()) created.finish {}
@@ -1041,6 +1349,9 @@ internal class DeadlineInputStream(
 
     override fun markSupported(): Boolean = false
 
+    /** Why a read was given up. */
+    private enum class Abandonment { DEADLINE, INTERRUPT }
+
     companion object {
         /** How long a stream's helper waits for the next read before it gives its thread back to the pool. */
         const val HELPER_IDLE_MILLIS = 2_000L
@@ -1080,10 +1391,18 @@ internal class BoundedInputStream(input: InputStream, private val limit: Long) :
     }
 }
 
-/** Counts bytes read, so a parse can tell whether a provider consumed input before declining it. */
+/**
+ * Counts bytes read, so a parse can tell whether a provider consumed input before declining it.
+ *
+ * [close] does **not** close the underlying stream: this is the stream the `parseFromInputStream`, `parseStreaming`
+ * and `parseDataset` entry points of [Rdf] hand to a provider, and the stream they were given stays the caller's to
+ * close, whatever the provider's parser does when it is done (Jena's parsers close their input).
+ */
 internal class CountingInputStream(input: InputStream) : FilterInputStream(input) {
     var count = 0L
         private set
+
+    override fun close() = Unit
 
     override fun read(): Int {
         val b = super.read()
