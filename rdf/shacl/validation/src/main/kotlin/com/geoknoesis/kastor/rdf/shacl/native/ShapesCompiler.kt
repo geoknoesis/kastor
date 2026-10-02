@@ -30,9 +30,10 @@ internal data class Targets(
     val targetObjectsOf: List<Iri> = emptyList(),
     /**
      * Blank node [targetNodes] that have the syntax of a function call `[ fn ( … ) ]` (a single triple whose object
-     * is an RDF list), mapped to `fn`, although `fn` is not declared as a function in the shapes graph. Such a node
-     * is a target only when it is a node of the data graph; otherwise it is reported as an unsupported node
-     * expression at validation time (see [ShapesCompiler] `isTargetNodeExpression`).
+     * is an RDF list), mapped to `fn`, although `fn` is not declared as a function in the shapes graph. Like every
+     * blank node target, such a node is a target only when it is a node of the data graph; otherwise it is reported
+     * as an unsupported node expression at validation time, and the report names `fn` (see [ShapesCompiler]
+     * `isTargetNodeExpression`).
      */
     val callShapedTargets: Map<BlankNode, Iri> = emptyMap(),
 )
@@ -335,24 +336,27 @@ internal object ShapesCompiler {
      * and a blank node of the shapes graph can only denote a node of the data graph when both graphs share it (the
      * same graph validated against itself, or shapes discovered from the data). The rule is therefore:
      *
-     * 1. **Compile time (this function).** The blank node is a node expression when its own triples are expression
-     *    syntax: SHACL, SHACL node-expression or SPARQL function vocabulary (`sh:path`, `sh:select`, `shnex:…`,
-     *    `sparql:concat`, a SHACL type…), an RDF list, or a single call `[ ex:fn ( … ) ]` of a function **declared**
-     *    in the shapes graph (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or described with SHACL function
-     *    vocabulary such as `sh:parameter`). It is reported per [ValidationConfig.unsupportedFeatures].
-     * 2. **Validation time.** Any other blank node is a plain target if it is a node of the data graph. If it is
-     *    not, it can never be a focus node: a call-shaped one (`[ ex:fn ( … ) ]` with `ex:fn` undeclared, e.g. a
-     *    function from an import that was not resolved; see [Targets.callShapedTargets]) is reported as an
-     *    unsupported node expression per [ValidationConfig.unsupportedFeatures], and any other one yields a report
-     *    warning saying that the target matches nothing. A shape is thus never silently left unvalidated.
+     * 1. **Compile time (this function).** The blank node is a node expression, whatever the data graph is, when its
+     *    own triples use vocabulary that has **no reading as data**: a SPARQL expression (`sh:select`,
+     *    `sh:sparqlExpr`, the SHACL SPARQL expression types), the SHACL node-expression (`shnex:`) or SPARQL
+     *    function (`sparql:`) namespaces as predicate or type, or a single call `[ ex:fn ( … ) ]` of a function
+     *    **declared** in the shapes graph (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or described with SHACL
+     *    function vocabulary such as `sh:parameter`). It is reported per [ValidationConfig.unsupportedFeatures]
+     *    (W3C `sparql/targets/targetNode-select-001` validates such a shapes graph against itself).
+     * 2. **Validation time.** Any other blank node — a plain one, an RDF list cell, one that carries `sh:`
+     *    predicates or a SHACL type (a shape used as data), a call-shaped one `[ ex:fn ( … ) ]` with `ex:fn`
+     *    undeclared — is an **ordinary target when it is a node of the data graph**, regardless of its predicates.
+     *    When it is not, it can never be a focus node and the shape would silently go unvalidated: it is then an
+     *    unsupported node expression, handled per [ValidationConfig.unsupportedFeatures] like the ones of rule 1
+     *    (failure, or a report warning under [UnsupportedFeatureHandling.IGNORE_WITH_WARNING]).
      */
     private fun isTargetNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean {
         if (term !is BlankNode) return false
         val predicates = index.predicates(term)
         if (predicates.isEmpty()) return false
-        fun expressionVocabulary(t: RdfTerm) =
-            t is Iri && (t.value.startsWith(SHACL.namespace) || t.value.startsWith(SHNEX_NAMESPACE) || t.value.startsWith(SPARQL_NAMESPACE))
-        if (predicates.any { expressionVocabulary(it) || it == RDF.first || it == RDF.rest }) return true
+        if (isNodeExpression(term, index)) return true
+        fun expressionVocabulary(t: RdfTerm) = t is Iri && (t.value.startsWith(SHNEX_NAMESPACE) || t.value.startsWith(SPARQL_NAMESPACE))
+        if (predicates.any { expressionVocabulary(it) }) return true
         if (index.objects(term, RDF.type).any { expressionVocabulary(it) }) return true
         val call = callPredicate(term, index) ?: return false
         return isDeclaredFunction(call, index)

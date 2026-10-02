@@ -32,7 +32,9 @@ internal fun ValidationReport.toW3cResultGraph(expected: ExpectedConformanceRepo
     return Rdf.graph {
         for (t in full.getTriples()) {
             if (t.predicate == SHACL.conforms || t.predicate == SHACL.detail) continue
-            // Kastor extension properties (ksh:reifier, ksh:resultStatus) are additions to the standard result.
+            // Kastor extension properties (ksh:reifier, ksh:resultStatus, ksh:warning) are additions to the standard
+            // report. Stripping ksh:resultStatus makes an undecided result look like a failure: assertNoUndecidedResults
+            // rejects such results before the graphs are compared.
             if (t.predicate.value.startsWith(KastorShaclVocabulary.NAMESPACE)) continue
             if (t.predicate == SHACL.resultMessage && (t.obj !is Literal || t.obj !in expected.expectedMessages)) continue
             triple(t.subject, t.predicate, t.obj)
@@ -40,7 +42,17 @@ internal fun ValidationReport.toW3cResultGraph(expected: ExpectedConformanceRepo
     }
 }
 
-internal fun assertMatchesW3cExpected(report: ValidationReport, expected: ExpectedConformanceReport, label: String) {
+/**
+ * [undecidedAllowed] is the documented reason why this case may contain undecided results
+ * ([W3cKnownDeviations.undecidedResultsAllowed]); `null` for every other case.
+ */
+internal fun assertMatchesW3cExpected(
+    report: ValidationReport,
+    expected: ExpectedConformanceReport,
+    label: String,
+    undecidedAllowed: String? = null,
+) {
+    assertNoUndecidedResults(report, label, undecidedAllowed)
     // The engine decides conformance; sh:conformanceDisallows is passed to it through ValidationConfig by the runner.
     val disallows = expected.conformanceDisallowsSeverityIrises?.let { " under sh:conformanceDisallows $it" }.orEmpty()
     assertEquals(expected.conforms, report.isValid, "$label: sh:conforms (ValidationReport.isValid)$disallows")
@@ -48,6 +60,23 @@ internal fun assertMatchesW3cExpected(report: ValidationReport, expected: Expect
         .single { it.predicate == SHACL.conforms }.obj
     assertEquals(expected.conforms, (exported as Literal).lexical == "true", "$label: exported sh:conforms$disallows")
     assertResultGraphsIsomorphic(expected.results, report.toW3cResultGraph(expected), label)
+}
+
+/**
+ * The results of a W3C expected report are definite: the constraint failed. A Kastor result marked with
+ * `ksh:resultStatus` (undefined recursion, pattern timeout, pattern too complex) says the engine could **not decide**
+ * the constraint; once the `ksh:` triples are stripped it is indistinguishable from a failure, so it would satisfy an
+ * expected definite result. Such a result fails the case unless the case is a documented deviation.
+ */
+internal fun assertNoUndecidedResults(report: ValidationReport, label: String, undecidedAllowed: String? = null) {
+    if (undecidedAllowed != null) return
+    val exported = report.toShaclValidationReportRdf(W3C_REPORT_NODE).getTriples().filter { it.predicate == KastorShaclVocabulary.resultStatus }
+    val undecided = report.violations.filter { it.isUndecided }
+    assertTrue(exported.isEmpty() && undecided.isEmpty()) {
+        "$label: the engine emitted ${maxOf(exported.size, undecided.size)} undecided result(s) (ksh:resultStatus " +
+            "${exported.map { it.obj }.distinct()}) for a case whose expected report only has definite results: " +
+            undecided.map { "${it.focusNode} / ${it.constraint.constraintType}: ${it.message}" }
+    }
 }
 
 internal fun assertResultGraphsIsomorphic(expected: RdfGraph, actual: RdfGraph, label: String) {

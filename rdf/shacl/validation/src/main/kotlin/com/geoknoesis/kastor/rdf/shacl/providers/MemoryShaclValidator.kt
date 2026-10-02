@@ -20,9 +20,10 @@ private const val MEMORY_DEPRECATION =
  * Before, this provider was a separate stub that ignored targets (every subject was validated against every shape),
  * understood only `sh:minCount`, `sh:maxCount`, `sh:datatype` and `sh:class`, and reported any shape list as valid
  * while claiming SHACL Core support. Validation through it now has native semantics; in particular
- * `validate(graph, List<ShaclShape>)` and `validateConstraints` throw [UnsupportedOperationException] for non-empty
- * lists instead of returning a conforming report, and `parallelValidation` / `streamingMode` are rejected as the
- * native engine rejects them.
+ * `validate(graph, List<ShaclShape>)` and `validateConstraints` throw
+ * [com.geoknoesis.kastor.rdf.shacl.UnsupportedShaclOperationException] (a [ShaclValidationException]) for non-empty
+ * lists instead of returning a conforming report, and `parallelValidation = true` / `streamingMode = true` are
+ * rejected with the same exception when the validator is created, exactly as the native engine rejects them.
  *
  * The registry never prefers it over the native provider, and it is not a "bridge" for
  * [com.geoknoesis.kastor.rdf.shacl.EnginePreference.BRIDGE_FIRST].

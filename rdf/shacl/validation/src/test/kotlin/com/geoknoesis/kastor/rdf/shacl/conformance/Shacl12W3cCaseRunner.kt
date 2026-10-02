@@ -81,7 +81,7 @@ object Shacl12W3cCaseRunner {
                 conformanceDisallows = expected.conformanceDisallowsSeverityIrises?.mapTo(LinkedHashSet()) { Iri(it) },
             )
             val report = NativeShaclValidatorProvider().createValidator(config).validate(data, shapes)
-            assertMatchesW3cExpected(report, expected, case.displayName)
+            assertMatchesW3cExpected(report, expected, case.displayName, W3cKnownDeviations.undecidedResultsAllowed(manifestPath))
             assertNoUnexpectedWarnings(report, case.displayName)
         } else {
             if (expectsFailure) return

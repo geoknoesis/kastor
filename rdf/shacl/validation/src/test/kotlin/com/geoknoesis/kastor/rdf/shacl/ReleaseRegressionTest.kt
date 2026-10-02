@@ -35,7 +35,7 @@ class ReleaseRegressionTest {
         assertThrows(ShaclValidationException::class.java) {
             NativeShaclValidatorProvider().createValidator(ValidationConfig(timeout = Duration.ofNanos(1))).validate(data, data)
         }
-        assertThrows(IllegalArgumentException::class.java) { NativeShaclValidatorProvider().createValidator(ValidationConfig(parallelValidation = true)) }
+        assertThrows(UnsupportedShaclOperationException::class.java) { NativeShaclValidatorProvider().createValidator(ValidationConfig(parallelValidation = true)) }
     }
     @Test fun `version tags are local to a validator`() {
         val config = ValidationConfig(cache = CacheConfig(shapesGraphVersion = "v1"))

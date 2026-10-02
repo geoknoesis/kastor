@@ -113,6 +113,33 @@ class ReifierShapeSemanticsTest {
         assertEquals(2, rdf.count { it.predicate == SHACL.value && it.obj == one })
     }
 
+    @Test fun `an undecided reifier answer names its reifier too`() {
+        // ex:Undef is undefined for a node with an ex:self loop (recursion through sh:not): r1 is undefined, r2
+        // (no loop) conforms.
+        val data = Rdf.graph {
+            val claim = TripleTerm(RdfTriple(ex("a"), ex("p"), one))
+            ex("a") - ex("p") - one
+            ex("r1") - RDF.reifies - claim
+            ex("r1") - ex("self") - ex("r1")
+            ex("r2") - RDF.reifies - claim
+        }
+        val shapes = g(
+            """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ex:p ; sh:reifierShape ex:Undef ] .
+            ex:Undef sh:property [ sh:path ex:self ; sh:not ex:Undef ] .
+            """,
+        )
+        val report = NativeShaclValidator(ValidationConfig.default()).validate(data, shapes)
+        val result = report.violations.single()
+        assertTrue(result.isUndefinedRecursion, result.toString())
+        assertEquals(ConstraintType.REIFIER_SHAPE, result.constraint.constraintType)
+        assertEquals(one, result.value)
+        assertEquals(ex("r1"), result.context[ValidationViolation.REIFIER_CONTEXT_KEY])
+        val rdf = report.toShaclValidationReportRdf().getTriples()
+        val row = rdf.single { it.predicate == KastorShaclVocabulary.resultStatus }.subject
+        assertEquals(listOf<Any>(ex("r1")), rdf.filter { it.subject == row && it.predicate == KastorShaclVocabulary.reifier }.map { it.obj })
+    }
+
     @Test fun `results stay distinguishable when the shape overrides the message`() {
         val report = validateThreeReifiers(shapes("sh:reifierShape ex:ReifyShape ; sh:message 'bad provenance'"))
         assertEquals(2, report.violations.size, report.violations.toString())

@@ -4,21 +4,54 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.vocab.SHACL
 import java.time.Duration
 
+private const val NO_EFFECT = "This option has no effect: no engine reads it. It is kept for binary compatibility and will be removed."
+
 /**
  * Configuration for SHACL validation operations.
+ *
+ * Options that no bundled engine implements are either rejected ([parallelValidation], [streamingMode]) or
+ * deprecated because they have no effect (`batchSize`, `enableExplanations`, `enableSuggestions`,
+ * `validateInactiveShapes`).
  */
 data class ValidationConfig(
     val profile: ValidationProfile = ValidationProfile.SHACL_CORE,
+    /**
+     * Native engine: fail with a [ShaclValidationException] instead of reporting a result when a constraint cannot
+     * be decided ([ValidationViolation.isUndecided]: undefined recursion, a `sh:pattern` evaluation that exceeds
+     * [patternTimeout] or exhausts the stack).
+     */
     val strictMode: Boolean = false,
+    /**
+     * Whether [ValidationReport.warnings] is populated with the report-level warnings of the native engine
+     * (constructs skipped under [UnsupportedFeatureHandling.IGNORE_WITH_WARNING]). With `false` the list is empty,
+     * and so is their RDF export (`ksh:warning`). Validation results are not affected, whatever their severity:
+     * results of severity `sh:Warning` are always reported.
+     */
     val includeWarnings: Boolean = true,
     val maxViolations: Int = 1000,
     val timeout: Duration = Duration.ofMinutes(5),
+    /**
+     * Not supported by the Kastor native engine (provider ids `kastor` and `memory`): `true` is rejected with an
+     * [UnsupportedShaclOperationException] when the validator is created.
+     */
     val parallelValidation: Boolean = false,
+    /**
+     * Not supported by the Kastor native engine (provider ids `kastor` and `memory`): `true` is rejected with an
+     * [UnsupportedShaclOperationException] when the validator is created.
+     */
     val streamingMode: Boolean = false,
+    /** No effect: no engine validates in batches. */
+    @Deprecated(NO_EFFECT)
     val batchSize: Int = 1000,
+    /** No effect: no engine fills [ValidationViolation.explanation]. */
+    @Deprecated(NO_EFFECT)
     val enableExplanations: Boolean = true,
+    /** No effect: no engine fills [ValidationViolation.suggestedFix]. */
+    @Deprecated(NO_EFFECT)
     val enableSuggestions: Boolean = true,
     val validateClosedShapes: Boolean = true,
+    /** No effect: shapes with `sh:deactivated true` are never validated (every node conforms to them, as SHACL requires). */
+    @Deprecated(NO_EFFECT)
     val validateInactiveShapes: Boolean = false,
     val customParameters: Map<String, Any> = emptyMap(),
     /**
@@ -71,8 +104,13 @@ data class ValidationConfig(
     /**
      * Time budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native
      * engine). Regular expressions with nested quantifiers can backtrack exponentially on short inputs; without this
-     * budget such an evaluation is only stopped by the run-wide [timeout]. Exceeding it fails validation with a
-     * [ShaclValidationException] naming the pattern (the answer is unknown, so no result is fabricated). Must be
+     * budget such an evaluation is only stopped by the run-wide [timeout]. A value on which a pattern exceeds it is
+     * **reported**: the constraint is undecided for that value, which yields a result naming the pattern, marked
+     * [ValidationViolation.isPatternTimeout] (`ksh:resultStatus ksh:PatternTimeout` in RDF), with the shape's
+     * severity, so the value is not accepted and the report cannot conform because of it. Validation continues with
+     * the other values and focus nodes; only [timeout] aborts a run. A pattern on which the regular expression
+     * engine runs out of stack is reported the same way ([ValidationViolation.isPatternTooComplex]). With
+     * [strictMode] both fail validation with a [ShaclValidationException] naming the pattern instead. Must be
      * positive; it never extends [timeout].
      */
     val patternTimeout: Duration = Duration.ofSeconds(1),
@@ -119,7 +157,6 @@ data class ValidationConfig(
         fun strict(): ValidationConfig = ValidationConfig(
             strictMode = true,
             validateClosedShapes = true,
-            validateInactiveShapes = true
         )
         
         /**
@@ -128,7 +165,6 @@ data class ValidationConfig(
         fun forLargeGraphs(): ValidationConfig = ValidationConfig(
             streamingMode = false,
             parallelValidation = false,
-            batchSize = 5000,
             maxViolations = 10000
         )
         
@@ -137,8 +173,6 @@ data class ValidationConfig(
          */
         fun forFastValidation(): ValidationConfig = ValidationConfig(
             includeWarnings = false,
-            enableExplanations = false,
-            enableSuggestions = false,
             timeout = Duration.ofMinutes(1)
         )
 
@@ -161,7 +195,6 @@ data class ValidationConfig(
         fun forMemoryConstrained(): ValidationConfig = ValidationConfig(
             streamingMode = false,
             maxCombinedGraphTriples = 100_000,
-            batchSize = 100,
             maxViolations = 100
         )
     }

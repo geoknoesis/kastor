@@ -65,6 +65,54 @@ class ValidationReportRdfTest {
         assertTrue(triples.none { it.predicate == KastorShaclVocabulary.resultStatus }, "an ordinary failure has no result status")
     }
 
+    private val reportNode = Iri("urn:x-test:report")
+
+    private fun roundTrip(report: ValidationReport) =
+        Rdf.parse(com.geoknoesis.kastor.rdf.jena.JenaProvider().serializeGraph(report.toShaclValidationReportRdf(reportNode), "TURTLE"), RdfFormat.TURTLE)
+            .getTriples()
+
+    @Test
+    fun `report-level warnings are exported as ksh warning and survive an RDF round trip`() {
+        val prefixes = "@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix ex: <http://example.org/> .\n"
+        // Two constructs the engine cannot evaluate are skipped under IGNORE_WITH_WARNING: the report conforms, and the
+        // RDF report used to say sh:conforms true with no trace of what was not validated.
+        val shapes = Rdf.parse(
+            prefixes + """
+            ex:S a sh:NodeShape ; sh:targetNode ex:a ;
+              sh:property [ sh:path ex:p ; sh:values [ sh:path ex:q ] ] ;
+              sh:property [ sh:path ex:r ; sh:minCount 0 ] ;
+              sh:target [ a sh:SPARQLTarget ] .
+            """.trimIndent(),
+            RdfFormat.TURTLE,
+        )
+        val data = Rdf.parse(prefixes + "ex:a ex:p 1 .", RdfFormat.TURTLE)
+        val report = NativeShaclValidator(ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)).validate(data, shapes)
+        assertTrue(report.isValid, report.violations.toString())
+        assertEquals(2, report.warnings.size, report.warnings.toString())
+
+        val parsed = roundTrip(report)
+        assertTrue(parsed.any { it.subject == reportNode && it.predicate == SHACL.conforms && (it.obj as com.geoknoesis.kastor.rdf.Literal).lexical == "true" })
+        val exported = parsed.filter { it.predicate == KastorShaclVocabulary.warning }
+        assertTrue(exported.all { it.subject == reportNode }, exported.toString())
+        assertEquals(report.warnings.map { it.message }.toSet(), exported.map { (it.obj as com.geoknoesis.kastor.rdf.Literal).lexical }.toSet())
+        assertTrue(exported.all { (it.obj as com.geoknoesis.kastor.rdf.Literal).datatype == XSD.string })
+        assertTrue(parsed.none { it.predicate == SHACL.result }, "a report-level warning is not a validation result")
+        assertEquals("https://kastor.geoknoesis.com/ns/shacl#warning", KastorShaclVocabulary.warning.value)
+    }
+
+    @Test
+    fun `a warning about a resource stays a result and is not repeated as ksh warning`() {
+        val about = ValidationWarning("check this resource", resource = Iri("http://example.org/a"), shapeUri = "http://example.org/S")
+        val general = ValidationWarning("something was skipped")
+        val statistics = ValidationStatistics(1, 1, 1, 1, 1, emptyMap(), emptyMap(), emptyMap(), Duration.ZERO)
+        val report = ValidationReport(true, emptyList(), listOf(about, general), statistics, Duration.ZERO, 1, 1)
+        val parsed = roundTrip(report)
+        assertEquals(listOf("something was skipped"), parsed.filter { it.predicate == KastorShaclVocabulary.warning }.map { (it.obj as com.geoknoesis.kastor.rdf.Literal).lexical })
+        val row = parsed.single { it.predicate == SHACL.result }.obj
+        assertTrue(parsed.any { it.subject == row && it.predicate == SHACL.focusNode && it.obj == Iri("http://example.org/a") })
+        assertTrue(parsed.any { it.subject == row && it.predicate == SHACL.resultSeverity && it.obj == SHACL.Warning })
+    }
+
     @Test
     fun `undefined recursion results keep their marker through an RDF round trip`() {
         val ex = "http://example.org/"

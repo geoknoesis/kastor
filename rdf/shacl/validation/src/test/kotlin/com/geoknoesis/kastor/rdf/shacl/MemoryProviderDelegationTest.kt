@@ -100,8 +100,29 @@ class MemoryProviderDelegationTest {
     fun `shape lists and constraint lists are rejected instead of being reported valid`() {
         val constraint = ShaclConstraint(ConstraintType.MIN_COUNT, path = "http://example.org/missing", parameters = mapOf("value" to 5))
         val shape = ShaclShape(shapeUri = "http://example.org/S", targetClass = "http://example.org/Person", constraints = listOf(constraint))
-        val validator = MemoryShaclValidatorProvider().createValidator(ValidationConfig())
-        assertThrows(UnsupportedOperationException::class.java) { validator.validate(data, listOf(shape)) }
-        assertThrows(UnsupportedOperationException::class.java) { validator.validateConstraints(data, listOf(constraint)) }
+        for (validator in listOf(MemoryShaclValidatorProvider().createValidator(ValidationConfig()), NativeShaclValidatorProvider().createValidator(ValidationConfig()))) {
+            // The module's domain exception, with a message that says what to do instead.
+            val shapes = assertThrows(UnsupportedShaclOperationException::class.java) { validator.validate(data, listOf(shape)) }
+            assertTrue(shapes.message.orEmpty().contains("validate(graph, shapesGraph)"), shapes.message)
+            val constraints = assertThrows(UnsupportedShaclOperationException::class.java) { validator.validateConstraints(data, listOf(constraint)) }
+            assertTrue(constraints.message.orEmpty().contains("shapes"), constraints.message)
+            // Empty lists validate against an empty shapes graph.
+            assertTrue(validator.validate(data, emptyList<ShaclShape>()).isValid)
+            assertTrue(validator.validateConstraints(data, emptyList()).isValid)
+        }
+    }
+
+    @Test
+    fun `unsupported execution modes are rejected with the domain exception`() {
+        val providers = listOf(MemoryShaclValidatorProvider(), NativeShaclValidatorProvider())
+        for (provider in providers) {
+            val parallel = assertThrows(UnsupportedShaclOperationException::class.java) { provider.createValidator(ValidationConfig(parallelValidation = true)) }
+            assertTrue(parallel.message.orEmpty().contains("parallelValidation"), parallel.message)
+            val streaming = assertThrows(UnsupportedShaclOperationException::class.java) { provider.createValidator(ValidationConfig(streamingMode = true)) }
+            assertTrue(streaming.message.orEmpty().contains("streamingMode"), streaming.message)
+        }
+        assertThrows(UnsupportedShaclOperationException::class.java) { MemoryShaclValidator(ValidationConfig(parallelValidation = true)) }
+        // A ShaclValidationException like every other failure of the module.
+        assertTrue(ShaclValidationException::class.java.isAssignableFrom(UnsupportedShaclOperationException::class.java))
     }
 }

@@ -24,13 +24,19 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL
  * `sh:resultMessage` uses [ValidationViolation.resultMessages] (the shape's `sh:message` values, language
  * tags preserved) when present, else the engine message.
  *
- * Two Kastor extension properties ([KastorShaclVocabulary], namespace `https://kastor.geoknoesis.com/ns/shacl#`)
- * carry what the SHACL report vocabulary cannot express; consumers of the standard vocabulary can ignore them:
- * - `ksh:resultStatus ksh:UndefinedRecursion` marks a result that reports an **undefined** answer
- *   ([ValidationViolation.isUndefinedRecursion]) rather than a failure. Without it an RDF consumer could not tell
- *   the two apart: such a result has the severity and constraint component a failure would have.
- * - `ksh:reifier` names the failing reifier of a `sh:reifierShape` result (its `sh:value` is the object of the
- *   reified triple, so several failing reifiers of one triple would otherwise be indistinguishable).
+ * Kastor extension properties ([KastorShaclVocabulary], namespace `https://kastor.geoknoesis.com/ns/shacl#`, declared
+ * in the vocabulary document [KastorShaclVocabulary.VOCABULARY_RESOURCE]) carry what the SHACL report vocabulary
+ * cannot express; consumers of the standard vocabulary can ignore them:
+ * - `ksh:resultStatus` marks a result that reports an **undecided** constraint ([ValidationViolation.isUndecided])
+ *   rather than a failure: `ksh:UndefinedRecursion`, `ksh:PatternTimeout` or `ksh:PatternTooComplex`
+ *   ([ValidationViolation.resultStatus]). Without it an RDF consumer could not tell the two apart: such a result has
+ *   the severity and constraint component a failure would have.
+ * - `ksh:reifier` names the reifier of a `sh:reifierShape` result (its `sh:value` is the object of the reified
+ *   triple, so several reifiers of one triple would otherwise be indistinguishable).
+ * - `ksh:warning`, on the report node, carries the message of each report-level [ValidationWarning] (one without a
+ *   [ValidationWarning.resource]), e.g. a construct skipped under [UnsupportedFeatureHandling.IGNORE_WITH_WARNING].
+ *   A conforming report thus keeps a trace of what was not validated. A warning about a resource is exported as a
+ *   `sh:ValidationResult` of severity `sh:Warning`, as before.
  *
  * When [ValidationReport.violationsTruncated] is true, not every violation from the engine is represented
  * in this serialization.
@@ -48,7 +54,11 @@ fun ValidationReport.toShaclValidationReportRdf(
             addValidationResult(row, v, "resultV${idx}_")
         }
         report.warnings.forEachIndexed { idx, w ->
-            val res = w.resource ?: return@forEachIndexed
+            val res = w.resource
+            if (res == null) {
+                reportNode - KastorShaclVocabulary.warning - w.message
+                return@forEachIndexed
+            }
             val row = bnode("resultW$idx")
             reportNode - SHACL.result - row
             row - RDF.type - SHACL.ValidationResult
@@ -82,27 +92,31 @@ private fun GraphDsl.addValidationResult(row: BlankNode, v: ValidationViolation,
     }
     v.value?.let { row - SHACL.value - it }
     v.sourceConstraint?.let { row - SHACL.sourceConstraint - it }
-    // Kastor extensions (never in the sh: namespace): an undefined answer is told apart from a failure, and a
+    // Kastor extensions (never in the sh: namespace): an undecided constraint is told apart from a failure, and a
     // sh:reifierShape result names its reifier.
-    if (v.isUndefinedRecursion) row - KastorShaclVocabulary.resultStatus - KastorShaclVocabulary.UndefinedRecursion
+    v.resultStatus?.let { row - KastorShaclVocabulary.resultStatus - it }
     (v.context[ValidationViolation.REIFIER_CONTEXT_KEY] as? RdfTerm)?.let { row - KastorShaclVocabulary.reifier - it }
 }
 
 /**
  * Copies a blank-node path structure as a tree with fresh blank nodes: results never share path nodes, and a
  * blank node referenced several times in the shapes graph (e.g. `( _:inv _:inv )`) is unfolded per occurrence.
+ * List cells named with IRIs keep their IRI; their `rdf:first` / `rdf:rest` triples are copied too.
  */
 private fun GraphDsl.copyPathStructure(root: RdfTerm, triples: List<com.geoknoesis.kastor.rdf.RdfTriple>, prefix: String): RdfTerm {
     if (root !is BlankNode) return root
     val bySubject = triples.groupBy { it.subject }
     var counter = 0
-    fun copy(term: RdfTerm, ancestors: Set<BlankNode>): RdfTerm {
-        if (term !is BlankNode || term in ancestors) return term
-        val fresh = bnode("${prefix}p${counter++}")
-        for (t in bySubject[term].orEmpty()) {
-            triple(fresh, t.predicate, copy(t.obj, ancestors + term))
+    fun copy(term: RdfTerm, ancestors: Set<RdfResource>): RdfTerm {
+        if (term !is RdfResource || term in ancestors) return term
+        val described = bySubject[term]
+        // An IRI is kept; it is only expanded when the path structure describes it (an IRI-named list cell).
+        if (term !is BlankNode && described == null) return term
+        val copied: RdfResource = if (term is BlankNode) bnode("${prefix}p${counter++}") else term
+        for (t in described.orEmpty()) {
+            triple(copied, t.predicate, copy(t.obj, ancestors + term))
         }
-        return fresh
+        return copied
     }
     return copy(root, emptySet())
 }
