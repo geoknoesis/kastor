@@ -256,17 +256,26 @@ class Rdf4jRepository(
      */
     internal fun tripleValuesPossible(): Boolean = starCapable && (!trackQuotedSubjects || tripleValuesMayExist)
 
-    /**
-     * Counts the changes made through this repository: it moves after every write operation, and before and after
-     * the commit (or after the rollback) of every transaction that wrote. See [modificationStamp].
-     */
-    private val modifications = java.util.concurrent.atomic.AtomicLong()
+    /** Source of modification stamps: every value is handed out for one state of one view only. See [modificationStamp]. */
+    private val stamps = java.util.concurrent.atomic.AtomicLong()
 
-    /** Commits (of transactions that wrote) in progress: between the two counter changes around `commit()`. */
+    /**
+     * The stamp of the committed content. Replaced immediately before and after the commit of every transaction that
+     * wrote, and after its rollback; never by an uncommitted write.
+     */
+    @Volatile private var committedStamp = 0L
+
+    /** Commits (of transactions that wrote) in progress: between the two changes of [committedStamp] around `commit()`. */
     private val commitsInFlight = java.util.concurrent.atomic.AtomicInteger()
 
-    /** True once the current thread's transaction has written through this repository. */
-    private val wroteInTransaction = ThreadLocal<Boolean>()
+    /**
+     * The stamp of what a transaction with uncommitted writes reads: [value], which no other thread ever receives,
+     * issued while the committed stamp was [committed] (its reads also show what other threads commit meanwhile).
+     */
+    private class PrivateStamp(val value: Long, val committed: Long)
+
+    /** Set once the current thread's transaction has written through this repository; renewed by each of its writes. */
+    private val privateStamp = ThreadLocal<PrivateStamp?>()
 
     /**
      * True for a repository whose content only this object can change: it was created by a factory method (see
@@ -277,29 +286,41 @@ class Rdf4jRepository(
     internal val versioned: Boolean get() = trackQuotedSubjects && !inference
 
     /**
-     * A value that differs from every value returned before once the content visible to the caller may have changed
-     * through this repository: the contract of [com.geoknoesis.kastor.rdf.VersionedRdfGraph.modificationStamp], with
-     * the granularity of the whole repository (a write to any graph changes the stamp of every graph). Only meaningful
-     * while every write goes through this repository.
+     * The modification stamp of [com.geoknoesis.kastor.rdf.VersionedRdfGraph], with the granularity of the whole
+     * repository (a write to any graph changes the stamp of every graph). Only meaningful while every write goes
+     * through this repository.
      *
-     * Every write operation (graph API, SPARQL `UPDATE`, dataset load, `clear`, `removeGraph`) changes the counter when
-     * it returns, also when it fails, so a thread sees a new stamp after its own uncommitted writes. A transaction
-     * that wrote changes it again immediately before and after its commit, and after a rollback. A commit is not atomic
-     * with those changes, so a read made while one is in progress returns a value of its own that is never returned
-     * again: two reads only return the same value when no commit happened between them, and nothing blocks.
+     * **The stamp identifies the content that the calling thread would read right now** (the contract the memory
+     * provider of rdf-core and the Jena provider follow), so that a cache keyed by graph handle and stamp never
+     * serves one thread the content another thread read:
+     *
+     * - A thread whose transaction has **uncommitted writes** gets a transaction-private stamp: a value no other
+     *   thread ever receives. Every write operation of that thread (graph API, SPARQL `UPDATE`, dataset load, `clear`,
+     *   `removeGraph`) renews it when it returns, also when it fails. It is renewed as well once another thread has
+     *   committed, because the reads of the transaction show that commit too.
+     * - Every **other thread** (also one inside a transaction that has not written) gets the stamp of the committed
+     *   content. An uncommitted write of another thread does not change it.
+     * - A transaction that wrote replaces the committed stamp immediately before and after its **commit**. A commit is
+     *   not atomic with those two changes, so a stamp read made while one is in progress returns a value of its own
+     *   that is never returned again: two reads only return the same value when no commit happened between them.
+     * - After a **rollback** the private stamps are never returned again, and the committed stamp is replaced by a new
+     *   value (never one of the private ones).
+     *
+     * Nothing blocks: a stamp read takes no lock and waits for no writer.
      */
     internal fun modificationStamp(): Long {
         check(!closed.get()) { "Repository is closed" }
-        val before = modifications.get()
-        // Unchanged counter around a moment without a commit in progress: no commit overlaps this read.
-        if (commitsInFlight.get() == 0 && modifications.get() == before) return before
-        return modifications.incrementAndGet()
+        val committed = committedStamp
+        // Unchanged around a moment without a commit in progress: no commit overlaps this read.
+        if (commitsInFlight.get() != 0 || committedStamp != committed) return stamps.incrementAndGet()
+        val own = privateStamp.get() ?: return committed
+        if (own.committed == committed) return own.value
+        return PrivateStamp(stamps.incrementAndGet(), committed).also(privateStamp::set).value
     }
 
-    /** Records a write made by the current thread, see [modificationStamp]. */
+    /** Records a write made by the current thread (inside its transaction), see [modificationStamp]. */
     private fun noteWrite() {
-        wroteInTransaction.set(true)
-        modifications.incrementAndGet()
+        privateStamp.set(PrivateStamp(stamps.incrementAndGet(), committedStamp))
     }
 
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
@@ -1077,6 +1098,9 @@ class Rdf4jRepository(
         }
     }
 
+    /** Test seam: runs on the committing thread between the first change of the committed stamp and `commit()`. */
+    @Volatile internal var beforeCommit: (() -> Unit)? = null
+
     override fun transaction(operations: RdfRepository.() -> Unit) = runInTransaction(false, operations)
 
     override fun readTransaction(operations: RdfRepository.() -> Unit) = runInTransaction(true, operations)
@@ -1104,14 +1128,15 @@ class Rdf4jRepository(
                 conn.begin()
                 if (trackQuotedSubjects) transactionStartStamp.set(modificationStamp())
                 operations(this)
-                if (wroteInTransaction.get() == true) {
-                    // The committed content becomes visible somewhere between these two changes of the counter.
+                if (privateStamp.get() != null) {
+                    // The committed content becomes visible somewhere between these two changes of the stamp.
                     commitsInFlight.incrementAndGet()
-                    modifications.incrementAndGet()
+                    committedStamp = stamps.incrementAndGet()
                     try {
+                        beforeCommit?.invoke()
                         conn.commit()
                     } finally {
-                        modifications.incrementAndGet()
+                        committedStamp = stamps.incrementAndGet()
                         commitsInFlight.decrementAndGet()
                     }
                 } else {
@@ -1121,14 +1146,14 @@ class Rdf4jRepository(
                 try {
                     if (conn.isActive) conn.rollback()
                 } finally {
-                    // The writes this thread saw inside the transaction are gone.
-                    if (wroteInTransaction.get() == true) modifications.incrementAndGet()
+                    // The writes this thread saw inside the transaction are gone, and so are its private stamps.
+                    if (privateStamp.get() != null) committedStamp = stamps.incrementAndGet()
                 }
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
-                wroteInTransaction.remove()
+                privateStamp.remove()
                 transactionStartStamp.remove()
                 transactionContexts.remove()
                 quotedScanInTransaction.remove()
