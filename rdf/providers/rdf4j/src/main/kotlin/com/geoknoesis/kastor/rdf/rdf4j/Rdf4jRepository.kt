@@ -47,10 +47,19 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * **Query dataset:** outside `GRAPH`, SPARQL queries (SELECT, ASK, CONSTRUCT, DESCRIBE) read the default graph only -
  * the statements without a context, as [defaultGraph] and the Jena provider do - and inside `GRAPH` the named graphs.
  * (RDF4J itself evaluates a query without a dataset against the union of all contexts.) A query with `FROM` /
- * `FROM NAMED` keeps its own dataset. A query that reads both inside and outside `GRAPH` sees the IRI-named contexts
- * ([listGraphs]) as named graphs, enumerated once per query; blank-node contexts are visible only to queries that
- * read nothing outside `GRAPH`. Wrapped repositories that are not evaluated by an RDF4J Sail (HTTP repositories,
- * SPARQL endpoints) keep the dataset of their server.
+ * `FROM NAMED` keeps its own dataset. The named graphs are the IRI-named contexts ([listGraphs]); a repository created
+ * by a factory method enumerates them once and again only after a write, a wrapped store for every query that reads
+ * inside `GRAPH`. Wrapped repositories that are not evaluated by an RDF4J Sail (HTTP repositories, SPARQL endpoints)
+ * keep the dataset of their server.
+ *
+ * **Blank-node graphs:** Kastor names graphs by IRI, so a context named by a blank node is not a graph of the
+ * repository. Every write path of this class that could create one gives the graph an IRI instead, of the form
+ * `urn:kastor:skolem:<load>:<blank node id>` (see [Rdf4jFormatSupport.parseDataset]): loading a TriG / N-Quads
+ * dataset, and a SPARQL `UPDATE` with `LOAD` of a quad document or `INSERT` into a graph named by a variable (when the
+ * request ends; an operation of the same request after the one that created the graph still sees it under its blank
+ * name). A repository created by a factory method therefore never holds a blank-node context. A wrapped store may:
+ * what other RDF4J code wrote there is left as it is, and is uniformly invisible - to [listGraphs], to `GRAPH` in every
+ * query and update, and to patterns outside `GRAPH`. (Only `serializeDataset` still writes those statements.)
  *
  * **Update dataset:** SPARQL `UPDATE` follows the same contract, as on the Jena provider. Outside `GRAPH`, the `WHERE`
  * clause of `DELETE` / `INSERT` (and `DELETE WHERE`) matches the default graph only, and a template or a
@@ -572,11 +581,12 @@ class Rdf4jRepository(
      *
      * - A query with its own `FROM` / `FROM NAMED` clauses keeps the dataset it declares.
      * - A query without `GRAPH` (and any `DESCRIBE`) gets the default graph `RDF4J.NIL` and no named graphs.
-     * - A query that only reads inside `GRAPH` runs without a dataset, exactly as before (every context, including
-     *   blank-node contexts, is a named graph).
-     * - A query that reads both gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts (the
-     *   graphs of [listGraphs]) as its named graphs; they are enumerated once per query, and blank-node contexts are
-     *   not visible to such a query.
+     * - A query that reads inside `GRAPH` gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts
+     *   (the graphs of [listGraphs], see [iriContexts] for what enumerating them costs) as its named graphs. Blank-node
+     *   contexts are never named graphs.
+     * - Except that a query that only reads inside `GRAPH`, on a repository created by a factory method, runs without
+     *   a dataset: such a repository holds no blank-node context (see the class documentation), so every context is
+     *   one of those named graphs and nothing has to be enumerated.
      * - Only queries evaluated by an RDF4J Sail are changed; a wrapped remote repository (HTTP or SPARQL endpoint)
      *   keeps the dataset its server defines.
      *
@@ -586,7 +596,7 @@ class Rdf4jRepository(
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return this
         if (parsed.dataset != null) return this
         val reads = GraphReads.of(parsed.tupleExpr)
-        if (reads.named && !reads.default) return this
+        if (reads.named && !reads.default && trackQuotedSubjects) return this
         val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
         dataset.addDefaultGraph(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL)
         if (reads.named) iriContexts(conn).forEach(dataset::addNamedGraph)
@@ -671,9 +681,10 @@ class Rdf4jRepository(
      *
      * - `DELETE` / `INSERT ... WHERE` and `DELETE WHERE` **without `WITH` / `USING`**: default graph `RDF4J.NIL` for
      *   `WHERE` and for default removals; insertions without `GRAPH` go to the default graph as before. As for queries,
-     *   a `WHERE` that only reads inside `GRAPH` keeps reading every context (blank-node contexts included), and one
-     *   that reads both inside and outside `GRAPH` gets the IRI-named contexts as named graphs. They are enumerated when
-     *   the operation starts, so it sees graphs created by earlier operations of the same request or transaction.
+     *   a `WHERE` that reads inside `GRAPH` gets the IRI-named contexts as named graphs (never a blank-node context),
+     *   and one that only reads inside `GRAPH` on a repository created by a factory method needs no named graphs at
+     *   all. They are asked for when the operation starts, so it sees graphs created by earlier operations of the same
+     *   request or transaction.
      * - `WITH <g>` (without `USING`): `g` is the default graph of `WHERE` and of the templates, as RDF4J parses it;
      *   `GRAPH` inside `WHERE` still reads the IRI-named graphs of the store (RDF4J alone would give it none).
      * - `USING` / `USING NAMED`: the declared dataset is kept for `WHERE` (with only `USING NAMED`, the default graph
@@ -706,7 +717,8 @@ class Rdf4jRepository(
                 is org.eclipse.rdf4j.query.algebra.Modify -> {
                     val reads = GraphReads.of(expr.whereExpr)
                     when {
-                        declared == null && reads.named && !reads.default -> UpdateDataset(removeGraphs = setOf(nil))
+                        declared == null && reads.named && !reads.default && trackQuotedSubjects ->
+                            UpdateDataset(removeGraphs = setOf(nil))
                         declared == null -> UpdateDataset(
                             defaultGraphs = setOf(nil),
                             removeGraphs = setOf(nil),
@@ -929,6 +941,10 @@ class Rdf4jRepository(
     /**
      * Runs a SPARQL `UPDATE` with Kastor's dataset (see [onKastorUpdateDataset]). Failures while preparing or
      * executing it surface as [RdfQueryException] (see [queryOperation]).
+     *
+     * A graph the request creates under a blank-node name (`LOAD` of a quad document with blank graph labels, `INSERT`
+     * into `GRAPH ?g` with `?g` bound to a blank node) is given a skolem IRI when the request ends, in the same
+     * transaction (see the class documentation).
      */
     override fun update(query: UpdateQuery) {
         withWriteConnection { conn ->
@@ -939,11 +955,68 @@ class Rdf4jRepository(
             val quotedSyntax = MAY_CREATE_TRIPLE_VALUES.containsMatchIn(query.sparql)
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
             queryOperation(query.sparql, "Failed to execute SPARQL UPDATE", "UPDATE") {
-                conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql).execute()
+                val prepared = conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql)
+                val foreign = blankContextsToKeep(conn, prepared)
+                prepared.execute()
+                if (foreign != null) skolemizeBlankContexts(conn, foreign)
             }
             // Checked after executing, so a triple value written concurrently (and visible to the update) counts.
             if (!quotedSyntax && tripleValuesMayExist) noteQuotedWrite(QuotedLevel.UNKNOWN)
             RdfDebug.logQueryTrace("UPDATE", query.sparql, null, System.currentTimeMillis() - startTime, null)
+        }
+    }
+
+    /**
+     * The blank-node contexts that exist before [update] runs and are not its own (none on a repository created by a
+     * factory method, which never holds one), or null when the update cannot create a blank-node context: it has no
+     * `LOAD` without `INTO GRAPH` and no `INSERT` template with a variable graph name.
+     */
+    private fun blankContextsToKeep(conn: RepositoryConnection, update: Update): Set<org.eclipse.rdf4j.model.BNode>? {
+        val parsed = (update as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return null
+        val mayCreate = parsed.updateExprs.any { expr ->
+            when (expr) {
+                is org.eclipse.rdf4j.query.algebra.Load -> expr.graph == null
+                is org.eclipse.rdf4j.query.algebra.Modify -> expr.insertExpr?.let(::hasVariableContext) ?: false
+                else -> false
+            }
+        }
+        if (!mayCreate) return null
+        return if (trackQuotedSubjects) emptySet() else blankContexts(conn)
+    }
+
+    private fun hasVariableContext(template: org.eclipse.rdf4j.query.algebra.TupleExpr): Boolean {
+        var found = false
+        template.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.StatementPattern) {
+                val context = node.contextVar
+                if (context != null && !context.hasValue()) found = true
+            }
+        })
+        return found
+    }
+
+    private fun blankContexts(conn: RepositoryConnection): Set<org.eclipse.rdf4j.model.BNode> {
+        val out = LinkedHashSet<org.eclipse.rdf4j.model.BNode>()
+        conn.contextIDs.use { contexts -> while (contexts.hasNext()) (contexts.next() as? org.eclipse.rdf4j.model.BNode)?.let(out::add) }
+        return out
+    }
+
+    /**
+     * Moves the statements of every blank-node context that is not in [keep] to the graph
+     * `urn:kastor:skolem:<load>:<blank node id>` (one `<load>` id per call), as [Rdf4jFormatSupport.parseDataset] names
+     * the blank graphs of a document. Only the graph name changes: the blank node itself, used as a subject or object,
+     * stays a blank node.
+     */
+    private fun skolemizeBlankContexts(conn: RepositoryConnection, keep: Set<org.eclipse.rdf4j.model.BNode>) {
+        val created = blankContexts(conn).filterNot { it in keep }
+        if (created.isEmpty()) return
+        val load = java.util.UUID.randomUUID().toString().replace("-", "")
+        for (blank in created) {
+            val name = conn.valueFactory.createIRI(Rdf4jFormatSupport.skolemGraphName(load, blank.id))
+            val statements = ArrayList<org.eclipse.rdf4j.model.Statement>()
+            conn.getStatements(null, null, null, false, blank).use { result -> result.forEach { statements.add(it) } }
+            statements.forEach { conn.add(it.subject, it.predicate, it.`object`, name) }
+            conn.clear(blank)
         }
     }
 

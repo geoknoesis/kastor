@@ -306,22 +306,25 @@ class Rdf4jUpdateDatasetParityTest {
     }
 
     @Test
-    fun `an update that only reads inside GRAPH still sees blank-node contexts`() {
+    fun `an update never reads a blank-node context`() {
         val vf = SimpleValueFactory.getInstance()
         val store = SailRepository(MemoryStore()).apply {
             init()
             connection.use { conn ->
                 conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("default"))
+                conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("named"), vf.createIRI("urn:g"))
                 conn.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createLiteral("blank"), vf.createBNode("ctx"))
             }
         }
         Rdf4jRepository(store).use { repo ->
             repo.update(UpdateQuery("INSERT { GRAPH <urn:copy> { ?s ?p ?o } } WHERE { GRAPH ?g { ?s ?p ?o } }"))
-            assertEquals(listOf("p=blank"), repo.getGraph(Iri("urn:copy")).rendered())
+            assertEquals(listOf("p=named"), repo.getGraph(Iri("urn:copy")).rendered())
             // Outside GRAPH, the statements of a blank-node context are not in the default graph.
             repo.update(UpdateQuery("DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }"))
             assertEquals(emptyList(), repo.defaultGraph.rendered())
-            assertEquals(listOf("p=blank"), repo.getGraph(Iri("urn:copy")).rendered())
+            assertEquals(listOf("p=named"), repo.getGraph(Iri("urn:copy")).rendered())
+            repo.update(UpdateQuery("DELETE { GRAPH ?g { ?s ?p ?o } } WHERE { GRAPH ?g { ?s ?p ?o } }"))
+            assertEquals(emptyList(), repo.listGraphs())
             store.connection.use { conn -> assertEquals(1, conn.size(vf.createBNode("ctx"))) }
         }
     }
