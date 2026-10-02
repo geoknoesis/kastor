@@ -70,8 +70,19 @@ import java.util.concurrent.atomic.AtomicLong
  * When no shared view of the snapshot can be opened any more (a commit happened since), the transaction continues
  * on a private view instead.
  *
- * Named graphs are prepared lazily, when a read first touches them. A view is released when a newer snapshot
- * replaces it (after commits) and no read transaction uses it any more, after the view idle timeout (default
+ * **Views and commits.** Named graphs are prepared lazily, when a read first touches them. What a commit costs:
+ * - in-memory stores record which graphs each commit wrote (graph edits and `removeGraph` name their graph; SPARQL
+ *   updates, dataset loads and `clear` count as writing every graph). A commit that wrote **none of the graphs the
+ *   current view has prepared** keeps the view: its preparation and backward-chaining tables go on serving readers
+ *   of later snapshots, for every graph that was not written since the view's snapshot. A graph that was written
+ *   since is read from a fresh view of the reader's snapshot, which then replaces the older one (a transaction that
+ *   reads both kinds of graph holds both views until it ends). A commit that wrote a prepared graph retires the
+ *   view at once;
+ * - TDB2 stores retire the view on every commit, and a view serves its own data version only: other repositories
+ *   and clients of the location can write any graph.
+ *
+ * A view is released when a newer one replaces it and no read transaction uses it any more, after the view idle
+ * timeout (default
  * [DEFAULT_VIEW_IDLE_TIMEOUT]) without readers (one cancellable idle check per view), or when the repository is
  * closed. A reader whose snapshot cannot be identified (a commit raced with its `begin`) gets a private lazy view;
  * inside a write transaction the view is private too, so uncommitted changes are visible. Private views are kept for
@@ -86,6 +97,15 @@ import java.util.concurrent.atomic.AtomicLong
  * of the `*WithInference` factory functions and of the provider (`closeTimeoutMillis`, `closeGraceMillis`); zero
  * means "do not wait". Operations started after [close] fail with [IllegalStateException] ("Repository is
  * closed"). Concurrent `close()` calls all return only after the store is closed.
+ *
+ * **Throughput.** All inference reads of one snapshot run on that snapshot's single worker thread, one step at a
+ * time: they do not scale with the number of reader threads, and a reader waits for at most one step of another
+ * reader (a find fetches 16 results in its first step and four times more in each further one, up to 1024; a
+ * lookup or the preparation of a graph is one step). Preparing a graph costs the RDFS forward rules over its schema
+ * once per view; a view is prepared again after a commit that retired it (see "Views and commits") and after an
+ * idle gap longer than the view idle timeout. Workloads that need parallel inference reads, or that alternate
+ * writes and inference reads on the same graph, are better served by materialising the entailments (a reasoner of
+ * `rdf-jena-reasoning`) into a plain repository.
  *
  * Memory use of a view is Jena's own for lazy RDFS inference: the forward deductions (schema-level for the RDFS
  * rules) plus the backward-chaining tables of the goals queried so far in that snapshot, plus at most one chunk of
@@ -185,6 +205,12 @@ class JenaRepository private constructor(
         )
 
         private const val DEFAULT_GRAPH_KEY = ""
+
+        /** In [writtenGraphs]: a write that may have changed any graph ("*" is not a graph key: keys are "" or IRIs). */
+        private const val ALL_GRAPHS = "*"
+
+        /** Most graph keys [lastWrite] holds; beyond it every graph counts as written and tracking starts over. */
+        private const val MAX_TRACKED_GRAPHS = 10_000
     }
 
     private val viewIdleNanos: Long = viewIdleTimeout.toNanos()
@@ -230,8 +256,31 @@ class JenaRepository private constructor(
     /** Snapshot seen by this thread's read transaction, or null when it is not provable. */
     private val readSnapshot = ThreadLocal<Snapshot?>()
 
-    /** Inference view held by this thread's read transaction (released when the transaction ends). */
-    private val transactionView = ThreadLocal<SnapshotView?>()
+    /**
+     * Inference views held by this thread's read transaction (released when the transaction ends). Usually one; a
+     * second one when the transaction reads a graph that the first cannot serve (see [SnapshotView.serves]) or when
+     * the first was poisoned.
+     */
+    private val transactionViews = ThreadLocal<ArrayList<SnapshotView>?>()
+
+    /** Whether commits record which graphs they wrote, so that views can outlive commits to other graphs. */
+    private val tracksWrittenGraphs: Boolean = inference && !tdb2
+
+    /**
+     * Keys of the graphs written by the calling thread's write transaction so far ([ALL_GRAPHS] when a write could
+     * not be attributed to single graphs); only set while [tracksWrittenGraphs].
+     */
+    private val writtenGraphs = ThreadLocal<HashSet<String>?>()
+
+    /**
+     * In-memory inference stores: for each graph key, the commit generation (the snapshot version) that first
+     * contains its latest tracked write. Together with [lastUntrackedWrite] it tells whether a graph is the same in
+     * two snapshots.
+     */
+    private val lastWrite = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Generation of the latest commit whose writes were not attributed to single graphs (it may have changed any). */
+    private val lastUntrackedWrite = AtomicLong()
 
     /** Store triples read by inference views so far (diagnostic: views must stream, not drain the store). */
     private val baseReads = AtomicLong()
@@ -251,15 +300,25 @@ class JenaRepository private constructor(
      */
     private val privateViews = ThreadLocal<HashMap<String, Model>?>()
 
-    internal fun <T> withRead(block: () -> T): T = inTransaction(ReadWrite.READ, block)
+    internal fun <T> withRead(block: () -> T): T = inTransaction(ReadWrite.READ, null, block)
 
-    internal fun <T> withWrite(block: () -> T): T = inTransaction(ReadWrite.WRITE, block)
+    /** Runs [block] in a write transaction; it may write to **any** graph (updates, loads, clearing the store). */
+    internal fun <T> withWrite(block: () -> T): T = inTransaction(ReadWrite.WRITE, ALL_GRAPHS, block)
 
-    private fun <T> inTransaction(mode: ReadWrite, block: () -> T): T {
+    /** Runs [block] in a write transaction; it writes to the graph [graphKey] **only**. */
+    internal fun <T> withWrite(graphKey: String, block: () -> T): T = inTransaction(ReadWrite.WRITE, graphKey, block)
+
+    /**
+     * Runs [block] in a transaction of [mode], joining the calling thread's transaction if it has one. [writes] names
+     * what [block] itself writes: a graph key, [ALL_GRAPHS], or null when it writes nothing directly (a read, or a
+     * `transaction { }` whose writes are nested calls of their own).
+     */
+    private fun <T> inTransaction(mode: ReadWrite, writes: String?, block: () -> T): T {
         check(!closed.get()) { "Repository is closed" }
         if (dataset.isInTransaction) {
             check(mode != ReadWrite.WRITE || dataset.transactionMode() == ReadWrite.WRITE) { "Cannot write inside a read transaction" }
             if (mode != ReadWrite.WRITE) return block()
+            if (writes != null) writtenGraphs.get()?.add(writes)
             // Every write of a transaction goes through a nested withWrite: the private inference models built
             // before it are stale afterwards, and the transaction's modification stamp changes.
             privateViews.remove()
@@ -273,7 +332,12 @@ class JenaRepository private constructor(
         val before = generation.get()
         dataset.begin(mode)
         try {
-            if (mode == ReadWrite.READ) readSnapshot.set(snapshotAfterBegin(before)) else writeStamp.set(stamps.incrementAndGet())
+            if (mode == ReadWrite.READ) {
+                readSnapshot.set(snapshotAfterBegin(before))
+            } else {
+                writeStamp.set(stamps.incrementAndGet())
+                if (tracksWrittenGraphs) writtenGraphs.set(HashSet<String>().also { if (writes != null) it.add(writes) })
+            }
             val result = block()
             if (mode == ReadWrite.WRITE) commit()
             return result
@@ -288,7 +352,8 @@ class JenaRepository private constructor(
             }
             readSnapshot.remove()
             privateViews.remove()
-            transactionView.get()?.let { transactionView.remove(); it.release() }
+            writtenGraphs.remove()
+            transactionViews.get()?.let { held -> transactionViews.remove(); held.forEach { it.release() } }
             try {
                 dataset.end()
             } catch (e: RuntimeException) {
@@ -317,12 +382,45 @@ class JenaRepository private constructor(
             return
         }
         generation.incrementAndGet()
+        var committed = false
         try {
             dataset.commit()
+            committed = true
         } finally {
+            // A failed commit is treated like a write to every graph.
+            val written = writtenGraphs.get()?.takeIf { committed && ALL_GRAPHS !in it }
+            // Recorded before the generation that contains the writes becomes current (see SnapshotView.serves).
+            if (inference) recordWrites(written, generation.get() + 1)
             generation.incrementAndGet()
-            if (inference) retireCurrentView()
+            if (inference) retireCurrentViewAfterWrites(written)
         }
+    }
+
+    /** Records that the commit producing snapshot [version] wrote the graphs [written] (null: possibly any graph). */
+    private fun recordWrites(written: Set<String>?, version: Long) {
+        if (written == null || lastWrite.size + written.size > MAX_TRACKED_GRAPHS) {
+            // Nothing is forgotten by this: every graph now counts as written by this commit.
+            lastUntrackedWrite.set(version)
+            lastWrite.clear()
+        } else {
+            written.forEach { lastWrite[it] = version }
+        }
+    }
+
+    /**
+     * After a commit that wrote [written] (null: possibly any graph): the current view is retired when one of the
+     * graphs it has prepared was written, and kept otherwise, so that its preparation and backward-chaining tables
+     * survive commits to other graphs. Keeping it is only an economy: whether a view may serve a graph to a reader is
+     * decided per read by [SnapshotView.serves].
+     */
+    private fun retireCurrentViewAfterWrites(written: Set<String>?) {
+        val view = synchronized(viewLock) {
+            val current = currentView ?: return
+            if (written != null && current.preparedGraphs().none { it in written }) return
+            currentView = null
+            current
+        }
+        view.retire()
     }
 
     /**
@@ -386,23 +484,23 @@ class JenaRepository private constructor(
     }
 
     /**
-     * The graph a read transaction (the one that saw [snapshot]) reads [graphKey] from: the prepared graph of the
-     * shared view it holds, of a fresh shared view when that one was poisoned, or a private inference graph when no
-     * shared view of the snapshot can be opened any more.
+     * The graph a read transaction (the one that saw [snapshot]) reads [graphKey] from: the prepared graph of a
+     * shared view it holds that can serve the graph, else of the current shared view or a fresh one (which it then
+     * holds too; a poisoned view is let go), or a private inference graph when no shared view of the snapshot can be
+     * opened any more.
      */
     private fun sharedGraph(snapshot: Snapshot, graphKey: String, model: Model): Graph {
         // Only the transaction that created the graph may resolve it (its views are released when it ends).
         check(readSnapshot.get() === snapshot) { "An inference view was used outside the read transaction it belongs to" }
-        var view = transactionView.get()
-        if (view != null && view.poisoned) {
-            transactionView.remove()
-            view.release()
-            view = null
+        val held = transactionViews.get() ?: ArrayList<SnapshotView>(2).also { transactionViews.set(it) }
+        val poisoned = held.filter { it.poisoned }
+        if (poisoned.isNotEmpty()) {
+            held.removeAll(poisoned)
+            poisoned.forEach { it.release() }
         }
-        if (view == null) {
-            view = acquireView(snapshot) ?: return privateView(graphKey, model).graph
-            transactionView.set(view)
-        }
+        val view = held.firstOrNull { it.serves(graphKey, snapshot) }
+            ?: acquireView(snapshot, graphKey)?.also { held.add(it) }
+            ?: return privateView(graphKey, model).graph
         return view.graph(graphKey)
     }
 
@@ -422,9 +520,12 @@ class JenaRepository private constructor(
         }
     }
 
-    /** The shared view of [snapshot], acquired for the calling transaction; null when none can be opened. */
-    private fun acquireView(snapshot: Snapshot): SnapshotView? {
-        currentView?.takeIf { it.snapshot.sameAs(snapshot) && it.tryAcquire() }?.let { return it }
+    /**
+     * A shared view that serves [graphKey] to a reader of [snapshot] (the current one, or a new view of [snapshot]),
+     * acquired for the calling transaction; null when none can be opened.
+     */
+    private fun acquireView(snapshot: Snapshot, graphKey: String): SnapshotView? {
+        currentView?.takeIf { it.serves(graphKey, snapshot) && it.tryAcquire() }?.let { return it }
         // Opened outside viewLock: starting the worker and beginning its read transaction may block, and commits
         // (which retire the current view) must not wait for it. Readers racing for the same snapshot may each open
         // a view; all but the first to publish its view discard theirs.
@@ -432,7 +533,7 @@ class JenaRepository private constructor(
         var replaced: SnapshotView? = null
         val view = synchronized(viewLock) {
             val existing = currentView
-            if (existing != null && existing.snapshot.sameAs(snapshot) && existing.tryAcquire()) {
+            if (existing != null && existing.serves(graphKey, snapshot) && existing.tryAcquire()) {
                 existing
             } else if (!opened.tryAcquire()) {
                 null // close() retired it in the meantime
@@ -506,6 +607,22 @@ class JenaRepository private constructor(
         @Volatile private var abandoned = false
 
         fun usable(): Boolean = !poisoned && synchronized(this) { !retired && !stopped }
+
+        /**
+         * Whether this view may answer reads of [graphKey] for a read transaction that sees [reader]: always for its
+         * own snapshot; for a **later** snapshot of an in-memory store when no commit after this view's snapshot wrote
+         * to that graph, so that the graph is identical in both (the inferences of a graph depend on that graph
+         * alone). Commits record what they wrote before their snapshot becomes current, so a reader of a snapshot
+         * always knows every write its snapshot contains; a write recorded by a commit the reader does not see yet
+         * only makes this answer "no" more often.
+         *
+         * TDB2 views serve their own snapshot only: other clients of the location may write any graph.
+         */
+        fun serves(graphKey: String, reader: Snapshot): Boolean {
+            if (snapshot.sameAs(reader)) return true
+            if (!tracksWrittenGraphs || snapshot.store !== reader.store || snapshot.version > reader.version) return false
+            return maxOf(lastWrite[graphKey] ?: 0L, lastUntrackedWrite.get()) <= snapshot.version
+        }
 
         fun tryAcquire(): Boolean = synchronized(this) {
             if (retired || stopped || poisoned) false else { holders++; true }
@@ -737,7 +854,7 @@ class JenaRepository private constructor(
     override fun hasGraph(name: Iri): Boolean = withRead { !dataset.getNamedModel(name.value).isEmpty }
     override fun listGraphs(): List<Iri> = withRead { dataset.listNames().asSequence().map(::Iri).toList() }
     override fun createGraph(name: Iri): RdfGraph = getGraph(name)
-    override fun removeGraph(name: Iri): Boolean = withWrite {
+    override fun removeGraph(name: Iri): Boolean = withWrite(name.value) {
         val existed = dataset.containsNamedModel(name.value)
         dataset.removeNamedModel(name.value)
         existed
@@ -868,7 +985,8 @@ class JenaRepository private constructor(
         queryOperation(query.sparql) { org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset) }
     }
 
-    override fun transaction(operations: RdfRepository.() -> Unit): Unit = withWrite { operations(this) }
+    // The transaction writes nothing by itself: each write inside it is a nested call that names its graph.
+    override fun transaction(operations: RdfRepository.() -> Unit): Unit = inTransaction(ReadWrite.WRITE, null) { operations(this) }
     override fun readTransaction(operations: RdfRepository.() -> Unit): Unit = withRead { operations(this) }
 
     override fun clear(): Boolean = withWrite {

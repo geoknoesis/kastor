@@ -275,7 +275,8 @@ class JenaProvider : RdfProvider {
         if (jena != null) {
             // Stream straight into one write transaction on the store (joining an enclosing transaction):
             // no intermediate copy of the dataset, and a parse failure rolls the whole load back.
-            jena.transaction {
+            // (withWrite, not transaction: the parser writes to the store directly, to whatever graphs the input names.)
+            jena.withWrite {
                 JenaParsing.parseWithFormatErrors(format) {
                     JenaParsing.parser(inputStream, lang, baseIri)
                         .parse(JenaParsing.validatingDataset(org.apache.jena.riot.system.StreamRDFLib.dataset(jena.getJenaDataset().asDatasetGraph())))

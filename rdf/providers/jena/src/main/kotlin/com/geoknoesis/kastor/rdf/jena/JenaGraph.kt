@@ -38,7 +38,7 @@ internal open class JenaGraph(
 
     internal val isRepositoryBacked: Boolean get() = repository != null
 
-    private fun <T> write(block: () -> T): T = repository?.withWrite(block) ?: block()
+    private fun <T> write(block: () -> T): T = if (repository != null) repository.withWrite(graphKey, block) else block()
 
     override fun addTriple(triple: RdfTriple): Unit = write {
         model.graph.add(JenaTerms.toJenaTriple(triple))
