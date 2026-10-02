@@ -371,7 +371,9 @@ class SparqlEndpointRobustnessTest {
         assertExpires(fatal, "fatal")
         healthy.arm(watchdog, 60)
         assertExpires(healthy, "after two failures")
-        assertEquals(listOf("close failed", "simulated"), reported.map { it.message })
+        // On a slow host both streams can come due in one scan, which visits them in no particular order.
+        assertEquals(setOf("close failed", "simulated"), reported.map { it.message }.toSet())
+        assertEquals(2, reported.size)
         assertEquals(1, watchdog.threadsStarted, "the thread must survive a failing stream")
 
         // A thread that ends all the same (here: reporting the failure fails too) is replaced.
