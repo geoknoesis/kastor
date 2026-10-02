@@ -20,6 +20,68 @@ and is kept as is; it was never published to Maven Central.
 - Build only: Gradle 9.8.0, JUnit 6.1.3, dependency-analysis 3.19.2 (the `kotlin-metadata-jvm` buildscript pin is gone), JaCoCo 0.8.15.
 - RDF4J 6 is not adopted: it requires Java 25 and removes the RDF-star `Triple` model (see `docs/reference/dependency-upgrade-plan.md`).
 
+### Fixed (round eight)
+
+#### Breaking changes
+
+- **Modification stamps (`VersionedRdfGraph`):** the stamp now identifies the content the calling thread would read. A thread inside its own write transaction reads transaction-private stamps; other threads keep the committed stamp until the commit completes; a rollback does not change the committed stamp. The memory, RDF4J and Jena providers follow this contract (its eight rules are in the KDoc).
+- **`rdf-core`:**
+  - A declared prefix always wins in `QNameResolver` (a prefix named `data`, `urn` or `file` used to be ignored); built-in prefixes no longer capture well-known URI schemes such as `geo:` or `mailto:`.
+  - `Rdf.repository { inference = true }` (or a variant the provider lacks) throws `RdfProviderException` instead of silently returning a store without it.
+  - `parseFromInputStream`, `parseStreaming` and `parseDataset(repo, stream)` never close the caller's stream.
+  - `TypedLiteral` and `Literal(x, rdf:langString)` without a language tag throw; `decimal(Float)` uses the float's shortest decimal form.
+  - URL loading: the helper cap is `max(32, 4 x processors)` (`kastor.url.helperThreads`); abandoned work is interrupted; opted-in non-HTTP schemes run under the deadline; an interrupt surfaces as `InterruptedIOException`.
+  - `rdf-testkit` isomorphism uses the bounded check and throws `GraphIsomorphismLimitException` at a limit.
+- **`rdf-rdf4j`:**
+  - `Rdf4jRepository` no longer implements `DescribesQueryDataset` (it was untrue for wrapped remote repositories), so `Dataset.describe` filters its results again.
+  - `BlankNode("_:a")` and `BlankNode("a")` are one node, as in the Jena provider. Serialized blank-node labels with characters other than ASCII letters and digits are spelled differently.
+  - The SHACL bridge fails (or warns, per `unsupportedFeatures`) on shapes that use features RDF4J's ShaclSail silently skips (`sh:xone`, `zeroOrMore`/`oneOrMore`/`zeroOrOne` paths, `sh:qualifiedValueShapesDisjoint`, SPARQL constraint components, other `sh:` properties it does not read). It throws `UnsupportedShaclOperationException`, honours `timeout`, and no longer truncates at ShaclSail's 1,000 results per constraint.
+- **`rdf-jena`:**
+  - `JenaBridge.getJenaModel` / `getJenaGraph` on a repository graph return a view whose writes go through the repository (stamps and inference views follow them); `begin`/`commit`/`abort` on it throw.
+  - `urn:x-arq:DefaultGraph` is the default graph; the union graph is read-only; blank graphs created by `UPDATE` are skolemized as on RDF4J.
+  - A failed inference iterator keeps failing instead of ending quietly.
+  - `:rdf:conformance:test` fails without the corpus unless `-PconformanceAllowMissingData=true`.
+- **`rdf-sparql`:**
+  - The JSON decoder rejects raw control characters in strings, unpaired surrogates, non-string binding members, repeated members, variables not declared in `head`, and a language tag with a datatype other than `rdf:langString`.
+  - Custom `Accept`, `Content-Type` and `Transfer-Encoding` headers are refused, as is an `Authorization` header together with `username` or URL credentials.
+  - `SparqlEndpointConfig` has a new `malformedTerms` field (constructor and `copy` changed); `ExpressionAst` has three new subtypes; `getAs` throws for an unsupported type and checks datatype and range.
+  - `kotlinx-serialization-json` is no longer a runtime dependency of `rdf-sparql`.
+- **`rdf-shacl`:**
+  - `[].]`, `[a--b]` and other classes XML Schema does not allow fail compilation instead of changing meaning; literal `sh:class` / `sh:nodeKind` values fail compilation.
+  - Category escapes such as `\p{Lu}` stay case-sensitive under flag `i`. A float compared with a decimal bound is compared as float; `-0.0` equals `0`.
+  - The pattern budget counts regex steps (`patternTimeout` at 50,000 steps per millisecond), with the wall clock as a backstop. `statistics.validatedResources` counts validated focus nodes.
+- **`kastor-gen`:**
+  - DSL setters no longer enforce `sh:hasValue` per call; `validate()` checks it over all values. Inherited and own `sh:pattern`, `sh:hasValue` and `sh:nodeKind` are all enforced. An empty `sh:in` rejects every value.
+  - Classes named like default-imported Kotlin types get the suffix `Type`. A missing `ontologyPath` file is a KSP error. Regex translation follows the same rules as the SHACL validator.
+  - The validation cache machinery (`GraphStateCache`, `HandleEqualGraph`) requires `\KastorGenInternalApi` opt-in and is out of the ABI dump; validators no longer throw `GraphStateCacheSaturatedException`.
+- **`onto-quality` / `rdf-cli`:**
+  - Structural detectors run on the asserted graph even with `--reasoner` (each bundled shape declares `oqsh:evaluatedOn`); P06 needs a cycle through a distinct class, so a bare `A rdfs:subClassOf A` is no longer reported.
+  - P27, P34, P20, P40, P01 and deprecated-reference report the offending resource as focus node (it was `owl:Thing`), so their messages and refs change. Refs of findings with non-string literal values change.
+  - Ratio metrics are always `xsd:decimal`; metrics count restrictions inside `owl:intersectionOf` / `owl:unionOf` lists.
+
+Also binary-incompatible since round seven and not listed there: `UrlLoadOptions.copy` (7 parameters) and its 6-argument constructor, and `LlmExplanationConfig.copy` (11 parameters).
+
+#### Added
+
+- `rdf-sparql`: `MalformedTermPolicy.SKIP_ROW` (a result row with a term the RDF model refuses is dropped and counted in one warning); DSL support for `EXISTS` / `NOT EXISTS`, `IN` / `NOT IN`, unary minus, `!`, `GROUP BY` expressions, `SERVICE SILENT`, the empty prefix and path ranges; `asFlow` runs on an I/O dispatcher and is cancellable.
+- `rdf-shacl`: a leading `(?i)`-style flag group, POSIX classes such as `[[:alpha:]]` and script names such as `\p{IsLatin}` compile with their usual meaning; `KastorShaclVocabulary.VERSION`.
+- `rdf-core`: `kastor.url.helperThreads`, `kastor.url.helperAbandonGraceMillis`; `rdf-testkit` isomorphism overloads with `maxWork` / `timeout`.
+- `kastor-gen`: JSON-LD keyword aliases, `\type: \vocab`, array containers.
+- `rdf-cli`: `kastor-rdf diff --max-search-states`. `onto-quality`: `SecretRedaction`, `LlmProvider.honoursMaxOutputTokens`.
+
+#### Fixed
+
+- **Validation cache and transactions:** with the stamp contract above, a transaction that validates sees its own uncommitted writes, and no other thread is served a state cached from them. Tests run the cache against the memory, RDF4J and Jena providers from two threads.
+- `rdf-rdf4j`: skolemization of blank graphs also runs when an update fails and never renames contexts that existed before; a blank node inside and outside a triple term stays one node across a serialization round trip; `DESCRIBE` of a resource bound to an RDF-star subject.
+- `rdf-jena`: HermiT reports the real failure instead of relabelling it a timeout and includes serialization in the deadline; in-memory stores read stamps and graph handles without opening a transaction.
+- `rdf-sparql`: the read watchdog cannot lose a wake-up when its thread is replaced and stops when the last repository closes; HTTP error bodies in messages are one printable line of at most 512 characters; service descriptions no longer invent endpoint URLs.
+- `rdf-shacl`: failing focus nodes of recursive shapes are reported from the solver's own evaluation instead of a second pass; unresolved `owl:imports` produce a report warning; a deep `rdfs:subClassOf` chain under `sh:closed` no longer overflows the stack.
+- `rdf-core`: the `GRAPH` rewrite no longer evaluates patterns with `FILTER`, `BIND`, `MINUS`, `VALUES` or sub-selects; variable names with combining characters are kept whole; a dataset over a repository without SPARQL support is materialized.
+- `kastor-gen`: concurrent callers on a stale cache entry share one load; ontologies with anonymous class expressions generate; Jena-backed graphs are copied natively, so literals Kastor's term model rejects no longer fail validation.
+- `onto-quality`: importance ranking no longer needs memory quadratic in the hierarchy (an estimate is used above 64 MiB of shared sets); a reply cut off at the token limit is reported as such without a repair call; short secrets are redacted only in credential positions; Ollama's missing output-token limit is announced.
+- `rdf-cli`: the `diff` sample is deterministic and datasets share one deadline.
+- Tests: URL-loading tests use socket-free connections and an injected resolver (about 100 loopback connections instead of about 640); timing-, GC- and thread-name-dependent tests across the modules use latches, injected clocks and per-instance seams.
+
 ### Fixed (round seven)
 
 #### Breaking changes

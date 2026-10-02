@@ -1266,6 +1266,12 @@
    "test": "[RDF4J/TURTLE] turtle-syntax-bad-numeric-escape-10",
    "count": 1,
    "reason": "ALLOWLISTED RDF4J rdf/conformance/test-data/rdf/rdf11/rdf-turtle/manifest.ttl#turtle-syntax-bad-numeric-escape-10: RDF4J 5.3.2 Rio accepts an invalid numeric escape (surrogate or out-of-range code point)"
+  },
+  {
+   "class": "com.geoknoesis.kastor.ontoquality.cli.CliPreflightTest",
+   "test": "an output that is a dangling symbolic link is refused before any LLM call()",
+   "count": 1,
+   "reason": "Creating a symbolic link needs a privilege that Windows accounts (and the Windows CI runner) do not have by default; the test runs on Linux and macOS, and a file-system seam covers the same path everywhere"
   }
  ]
 }

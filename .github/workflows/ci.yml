@@ -102,9 +102,9 @@ jobs:
 
       - name: Verify executed test counts and skips
         # Floor is ~90% of the executed count without the RDF corpus and with the bundled SHACL fixture
-        # (2,410 on 2026-10-01 after round six, about 2,800 after round seven); raise it as tests are added.
+        # (2,797 on 2026-10-02 after round seven, about 3,370 after round eight); raise it as tests are added.
         # New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 2500 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -189,7 +189,7 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 2300 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload verification reports
         if: always()
