@@ -68,4 +68,33 @@ class RdfsAxiomsTest {
         assertTrue(axiom(rdfs + "label", owl + "equivalentProperty", rdfs + "label", owlRules = true))
         assertFalse(axiom(rdf + "first", rdf + "type", owl + "ObjectProperty", owlRules = true))
     }
+
+    @Test
+    fun `container membership properties and rdf nil have their axioms`() {
+        for (n in listOf("_1", "_2", "_117")) {
+            assertTrue(axiom(rdf + n, rdf + "type", rdfs + "ContainerMembershipProperty"), n)
+            assertTrue(axiom(rdf + n, rdfs + "subPropertyOf", rdfs + "member"), n)
+            assertTrue(axiom(rdf + n, rdfs + "domain", rdfs + "Resource"), n)
+            assertTrue(axiom(rdf + n, rdfs + "range", rdfs + "Resource"), n)
+            assertTrue(axiom(rdf + n, rdf + "type", rdf + "Property"), n)
+            assertTrue(axiom(rdf + n, rdf + "type", rdfs + "Resource"), n)
+        }
+        assertTrue(axiom(rdf + "nil", rdf + "type", rdf + "List"))
+        assertTrue(axiom(rdf + "nil", rdf + "type", rdfs + "Resource"))
+
+        // Not membership properties: `rdf:_0`, `rdf:_01`, a user property, another vocabulary property.
+        for (other in listOf(rdf + "_0", rdf + "_01", rdf + "_x", ex + "_1", rdfs + "label")) {
+            assertFalse(axiom(other, rdf + "type", rdfs + "ContainerMembershipProperty"), other)
+            assertFalse(axiom(other, rdfs + "subPropertyOf", rdfs + "member"), other)
+            assertFalse(axiom(other, rdfs + "domain", rdfs + "Resource"), other)
+        }
+        // Anything else said about them follows from the data.
+        assertFalse(axiom(rdf + "_1", rdfs + "subPropertyOf", ex + "item"))
+        assertFalse(axiom(rdf + "_1", rdfs + "domain", rdf + "Bag"))
+        assertFalse(axiom(rdf + "_1", rdfs + "range", rdfs + "Literal"))
+        assertFalse(axiom(rdf + "nil", rdf + "type", rdf + "Bag"))
+        assertFalse(axiom(rdf + "nil", rdf + "type", rdfs + "Class"))
+        assertFalse(axiom(ex + "emptyList", rdf + "type", rdf + "List"))
+        assertFalse(axiom(rdfs + "member", rdfs + "subPropertyOf", rdf + "_1"))
+    }
 }

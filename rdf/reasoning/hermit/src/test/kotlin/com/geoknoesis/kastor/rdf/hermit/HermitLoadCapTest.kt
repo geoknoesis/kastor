@@ -5,15 +5,19 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.reasoning.ReasonerConfig
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.semanticweb.HermiT.ReasonerFactory
 import java.time.Duration
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /** Abandoned background loads (OWL API loading plus engine creation) are capped and clean up after themselves. */
 class HermitLoadCapTest {
@@ -27,8 +31,6 @@ class HermitLoadCapTest {
         """.trimIndent(),
         RdfFormat.TURTLE,
     )
-
-    private fun liveLoaders() = Thread.getAllStackTraces().keys.count { it.name == "kastor-hermit-loader" && it.isAlive }
 
     @Test
     fun `a loader thread that cannot be started returns its permit and leaves the reasoner usable`() {
@@ -46,19 +48,38 @@ class HermitLoadCapTest {
         assertTrue(HermitRdfReasoner(ReasonerConfig.hermit(), engines, permits).isConsistent(graph))
     }
 
+    /**
+     * Deterministic: time is an injected clock that only moves when the scenario says so (engine creation "takes" the
+     * whole budget; waiting for a permit that is not free "takes" the rest of it), and the loader threads are joined
+     * instead of being polled, so neither a slow host nor a busy one changes the outcome.
+     */
     @Test
+    @Timeout(600)
     fun `repeated timeouts during engine creation do not grow the background work beyond the cap`() {
         val release = CountDownLatch(1)
         val created = AtomicInteger()
         val disposed = AtomicInteger()
         val cap = 2
-        val permits = Semaphore(cap)
-        val loadersBefore = liveLoaders()
-        // Engine creation (HermiT preprocessing) that ignores interrupts until released.
-        val reasoner = HermitRdfReasoner(ReasonerConfig.hermit().copy(timeout = Duration.ofMillis(150)), { ontology, options ->
+        val now = AtomicLong()
+        val timeout = Duration.ofHours(1)
+        // A timed acquire never waits: when no permit is free, the caller's whole remaining budget elapses at once.
+        val permits = object : Semaphore(cap) {
+            override fun tryAcquire(timeout: Long, unit: TimeUnit): Boolean {
+                if (tryAcquire()) return true
+                now.addAndGet(unit.toNanos(timeout))
+                return false
+            }
+        }
+        val loaders = CopyOnWriteArrayList<Thread>()
+        val threads = ThreadFactory { task -> Thread(task, "kastor-hermit-loader").also { loaders.add(it) } }
+        val reasoner = HermitRdfReasoner(ReasonerConfig.hermit().copy(timeout = timeout), { ontology, options ->
+            // Engine creation (HermiT preprocessing) outlasts the caller's budget ...
+            now.addAndGet(timeout.toNanos())
+            // ... and ignores interrupts until released.
             while (true) {
                 try {
-                    if (release.await(10, TimeUnit.SECONDS)) break
+                    release.await()
+                    break
                 } catch (_: InterruptedException) {
                     // uninterruptible, like HermiT's preprocessing
                 }
@@ -69,25 +90,25 @@ class HermitLoadCapTest {
                 if (method.name == "dispose") disposed.incrementAndGet()
                 method.invoke(engine, *(args ?: emptyArray()))
             } as org.semanticweb.owlapi.reasoner.OWLReasoner
-        }, permits)
+        }, permits, threads, now::get)
         try {
-            assertTimeoutPreemptively(Duration.ofSeconds(30)) {
-                repeat(cap) {
-                    val error = assertThrows(IllegalStateException::class.java) { reasoner.isConsistent(graph) }
-                    assertTrue(error.message!!.contains("timed out"), error.message)
-                }
-                repeat(6) {
-                    val error = assertThrows(IllegalStateException::class.java) { reasoner.isConsistent(graph) }
-                    assertTrue(error.message!!.contains("too many HermiT loads"), error.message)
-                    assertTrue(liveLoaders() - loadersBefore <= cap, "abandoned loads must not pile up: ${liveLoaders() - loadersBefore}")
-                }
+            repeat(cap) {
+                val error = assertThrows(IllegalStateException::class.java) { reasoner.isConsistent(graph) }
+                assertTrue(error.message!!.contains("timed out"), error.message)
+                assertFalse(error.message!!.contains("too many HermiT loads"), error.message)
+            }
+            assertEquals(cap, loaders.size, "each timed-out call abandoned one load")
+            assertEquals(0, permits.availablePermits(), "abandoned loads keep their permits while they run")
+            repeat(6) {
+                val error = assertThrows(IllegalStateException::class.java) { reasoner.isConsistent(graph) }
+                assertTrue(error.message!!.contains("too many HermiT loads"), error.message)
+                assertEquals(cap, loaders.size, "abandoned loads must not pile up")
             }
         } finally {
             release.countDown()
         }
-        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
-            while (permits.availablePermits() < cap || disposed.get() < cap) Thread.onSpinWait()
-        }
+        loaders.forEach { it.join() }
+        assertEquals(cap, permits.availablePermits(), "every abandoned load returns its permit when it finishes")
         assertEquals(cap, created.get(), "rejected calls must not start loads")
         assertEquals(cap, disposed.get(), "engines created by abandoned loads are disposed by the loader")
         assertTrue(HermitRdfReasoner(ReasonerConfig.hermit(), { o, c -> ReasonerFactory().createReasoner(o, c) }, permits).isConsistent(graph))

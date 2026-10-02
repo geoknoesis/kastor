@@ -48,6 +48,8 @@ class HermitRdfReasoner internal constructor(
     private val loadPermits: java.util.concurrent.Semaphore,
     /** Creates the loader threads; replaceable in tests. */
     private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-hermit-loader") },
+    /** Monotonic clock in nanoseconds that the budget is measured with; replaceable in tests. */
+    private val clock: () -> Long = System::nanoTime,
 ) : RdfReasoner {
 
     internal constructor(
@@ -80,14 +82,14 @@ class HermitRdfReasoner internal constructor(
         ?: throw IllegalStateException("Cannot classify an inconsistent ontology")
 
     private fun compute(graph: RdfGraph, materialize: Boolean, classify: Boolean): ReasoningResult {
-        val start = System.nanoTime()
+        val start = clock()
         val deadline = start + config.timeout.toNanos()
         val timedOut = AtomicBoolean(false)
         fun checkBudget() {
-            if (timedOut.get() || System.nanoTime() - deadline >= 0) timedOut.set(true)
+            if (timedOut.get() || clock() - deadline >= 0) timedOut.set(true)
             check(!timedOut.get() && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
         }
-        fun remainingMillis() = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).coerceAtLeast(1)
+        fun remainingMillis() = TimeUnit.NANOSECONDS.toMillis(deadline - clock()).coerceAtLeast(1)
         // Conservative admission estimate; an in-process engine cannot offer a hard per-request JVM heap quota.
         require(graph.size().toLong() <= config.maxMemoryUsage / 512) { "Input exceeds HermiT memory admission budget" }
         val manager = OWLManager.createOWLOntologyManager()
@@ -118,7 +120,7 @@ class HermitRdfReasoner internal constructor(
                 val classification = if (consistent && classify) classification(budgeted, ontology, ::checkBudget) else null
                 val inferred = if (consistent && materialize) materialize(budgeted, ontology, manager.owlDataFactory, graph, ::checkBudget) else emptyList()
                 checkBudget()
-                val elapsed = Duration.ofNanos(System.nanoTime() - start)
+                val elapsed = Duration.ofNanos(clock() - start)
                 ReasoningResult(graph, inferred, classification,
                     ConsistencyResult(consistent, if (consistent) emptyList() else listOf(Inconsistency(
                         InconsistencyType.CLASS_CONFLICT, "HermiT reports an inconsistent ontology", emptyList(), Severity.ERROR)), emptyList()),
@@ -188,7 +190,7 @@ class HermitRdfReasoner internal constructor(
     ): Pair<OWLOntology, OWLReasoner> {
         val turtle = graph.serialize(RdfFormat.TURTLE)
         require(turtle.length.toLong() * 2 <= config.maxMemoryUsage / 2) { "Serialized ontology exceeds memory budget" }
-        fun remainingNanos() = deadline - System.nanoTime()
+        fun remainingNanos() = deadline - clock()
         if (remainingNanos() <= 0) {
             timedOut.set(true)
             throw IllegalStateException(TIMEOUT_MESSAGE)
@@ -241,7 +243,18 @@ class HermitRdfReasoner internal constructor(
             throw t
         }
         return try {
-            load.get(remainingNanos().coerceAtLeast(1), TimeUnit.NANOSECONDS)
+            // Waits in slices so that the deadline follows the (injectable) clock.
+            var loaded: Pair<OWLOntology, OWLReasoner>? = null
+            while (loaded == null) {
+                val remaining = remainingNanos()
+                if (remaining <= 0) throw java.util.concurrent.TimeoutException()
+                try {
+                    loaded = load.get(minOf(remaining, WAIT_SLICE_NANOS), TimeUnit.NANOSECONDS)
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    // re-check the budget
+                }
+            }
+            loaded
         } catch (e: java.util.concurrent.TimeoutException) {
             timedOut.set(true)
             abandonOrFail(state, load, e)
@@ -431,6 +444,8 @@ class HermitRdfReasoner internal constructor(
         val MAX_IN_FLIGHT_LOADS: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
         /** Interval at which the watchdog re-issues `interrupt()` after the deadline. */
         const val INTERRUPT_REPEAT_MILLIS = 25L
+        /** Longest single wait for the loader before the budget is re-checked. */
+        val WAIT_SLICE_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(20)
         const val OWL = "http://www.w3.org/2002/07/owl#"
         val RDF_TYPE = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
         val SUB_CLASS_OF = Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf")

@@ -122,6 +122,111 @@ class ReasonerAxiomParityTest {
         }
     }
 
+    /**
+     * Data that mentions RDF and RDFS vocabulary individuals, classes, properties and container membership
+     * properties, without asserting anything that relates vocabulary terms to each other.
+     */
+    private val vocabularyUse: RdfGraph = JenaProvider().parseGraph(
+        """
+        @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+        @prefix ex: <$ex> .
+        ex:list rdf:first ex:a ; rdf:rest rdf:nil .
+        ex:empty ex:items rdf:nil .
+        ex:bag a rdf:Bag ; rdf:_1 ex:a ; rdf:_2 ex:b .
+        ex:seq a rdf:Seq ; rdfs:member ex:a .
+        ex:stmt a rdf:Statement ; rdf:subject ex:a ; rdf:predicate ex:p ; rdf:object ex:b .
+        ex:a rdfs:seeAlso ex:b ; rdfs:isDefinedBy ex:onto ; rdf:value "v" ; rdfs:comment "c" ; rdfs:label "l" .
+        ex:p a rdf:Property ; rdfs:domain ex:C ; rdfs:range rdfs:Literal .
+        ex:C a rdfs:Class .
+        ex:dt a rdfs:Datatype .
+        ex:cmp a rdfs:ContainerMembershipProperty .
+        ex:x ex:p "x"@en , "1"^^xsd:int , "<a/>"^^rdf:XMLLiteral .
+        """.trimIndent().byteInputStream(),
+        "TURTLE",
+    )
+
+    @Test
+    fun `mentioning vocabulary individuals and membership properties does not turn their axioms into inferences`() {
+        val type = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+        val rdfType = type
+        val nil = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
+        for ((name, infer) in reasoners) {
+            val inferred = infer(vocabularyUse)
+            // Nothing in the data relates two vocabulary terms, so every pure vocabulary triple holds without it:
+            // e.g. `rdf:nil a rdf:List` (axiomatic), `rdf:nil a rdfs:Resource` (rdfs4),
+            // `rdf:_1 a rdfs:ContainerMembershipProperty` (axiomatic), `rdf:_1 rdfs:subPropertyOf rdfs:member` (rdfs12).
+            val axioms = inferred.filter(::pureVocabulary)
+            assertTrue(axioms.isEmpty(), "$name reports vocabulary axioms as inferences: $axioms")
+            // What follows from the data about its own terms is still reported.
+            assertTrue(RdfTriple(Iri(ex + "x"), type, Iri(ex + "C")) in inferred, "$name: domain inference")
+            assertTrue(inferred.none { it.subject == nil }, "$name: ${inferred.filter { it.subject == nil }}")
+        }
+        // Jena's OWL rule sets type every node they meet (`rdf:nil a rdfs:Resource`): the RDFS axioms about
+        // `rdf:nil` and the membership properties are not inferences there either.
+        for (owl in listOf(com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_MICRO, com.geoknoesis.kastor.rdf.reasoning.ReasonerType.OWL_RL)) {
+            val inferred = JenaReasoner(ReasonerConfig(reasonerType = owl)).getInferredTriples(vocabularyUse)
+            val rdfsAxioms = inferred.filter { t ->
+                val s = t.subject
+                val o = t.obj
+                s is Iri && o is Iri && com.geoknoesis.kastor.rdf.reasoning.RdfsAxioms.isEntailedByEmptyGraph(s.value, t.predicate.value, o.value)
+            }
+            assertTrue(rdfsAxioms.isEmpty(), "jena $owl reports RDFS axioms: $rdfsAxioms")
+            val rdfsResource = Iri("http://www.w3.org/2000/01/rdf-schema#Resource")
+            val list = Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#List")
+            assertTrue(RdfTriple(nil, rdfType, rdfsResource) !in inferred && RdfTriple(nil, rdfType, list) !in inferred, "jena $owl")
+        }
+    }
+
+    /** Asserted schema that happens to derive a triple with the shape of an RDFS axiom. */
+    private val axiomShaped: RdfGraph = JenaProvider().parseGraph(
+        """
+        @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+        @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+        @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+        @prefix ex: <$ex> .
+        rdf:Bag rdfs:subClassOf ex:Collection .
+        ex:Collection rdfs:subClassOf rdfs:Resource .
+        xsd:integer rdfs:subClassOf ex:Number .
+        ex:Number rdfs:subClassOf rdfs:Literal .
+        rdfs:label rdfs:subPropertyOf ex:name .
+        ex:name rdfs:subPropertyOf rdfs:label .
+        """.trimIndent().byteInputStream(),
+        "TURTLE",
+    )
+
+    @Test
+    fun `a rule subset has no axioms so a derived triple shaped like one is an inference`() {
+        val subClassOf = Iri("http://www.w3.org/2000/01/rdf-schema#subClassOf")
+        val subPropertyOf = Iri("http://www.w3.org/2000/01/rdf-schema#subPropertyOf")
+        val rdfs = "http://www.w3.org/2000/01/rdf-schema#"
+        val label = Iri(rdfs + "label")
+        val shaped = setOf(
+            // rdfs11 over the two asserted statements; under the full rule set the same triples are axioms (rdfs8, rdfs13, rdfs6).
+            RdfTriple(Iri("http://www.w3.org/1999/02/22-rdf-syntax-ns#Bag"), subClassOf, Iri(rdfs + "Resource")),
+            RdfTriple(Iri("http://www.w3.org/2001/XMLSchema#integer"), subClassOf, Iri(rdfs + "Literal")),
+            RdfTriple(label, subPropertyOf, label),
+        )
+        val subset = ReasonerConfig.rdfs().copy(
+            enabledRules = setOf(
+                com.geoknoesis.kastor.rdf.reasoning.ReasoningRule.RDFS_SUBCLASS,
+                com.geoknoesis.kastor.rdf.reasoning.ReasoningRule.RDFS_SUBPROPERTY,
+            ),
+        )
+        val jena = JenaReasoner(subset).getInferredTriples(axiomShaped).toSet()
+        val memory = MemoryReasoner(subset).getInferredTriples(axiomShaped).toSet()
+        assertTrue(jena.containsAll(shaped), "jena (rule subset) drops data-derived triples: ${shaped - jena}")
+        assertEquals(memory, jena, "the Jena rule subset and the memory reasoner run the same rules")
+
+        // The complete RDFS rule sets entail those triples from the empty graph: there they stay axioms.
+        for (name in listOf("jena", "rdf4j")) {
+            val full = reasoners.getValue(name)(axiomShaped).toSet()
+            assertTrue(full.none { it in shaped }, "$name (full RDFS) reports axioms: ${full.filter { it in shaped }}")
+            assertTrue(RdfTriple(Iri(ex + "name"), subPropertyOf, Iri(ex + "name")) in full, name)
+        }
+    }
+
     @Test
     fun `includeAxiomaticTriples brings the vocabulary axioms back`() {
         val include = ReasonerConfig.rdfs().copy(parameters = mapOf("includeAxiomaticTriples" to true))

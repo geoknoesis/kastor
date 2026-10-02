@@ -145,10 +145,12 @@ class JenaInferenceViewRobustnessTest {
     }
 
     @Test
-    fun `a step that completed before its reader was cancelled is not reported as broken`() {
+    fun `a cancelled step reports whether it ever started and when it has ended`() {
         val step = InferenceStep { 42 }
+        assertFalse(step.awaitEnd(0), "a step that has not run has not ended")
         assertEquals(42, step.call())
-        assertFalse(step.cancel(), "the step finished cleanly: its view is healthy")
+        assertTrue(step.cancel(), "the step had started")
+        assertTrue(step.awaitEnd(0), "and it has ended: what it left behind was decided where it ran")
 
         val never = InferenceStep { 1 }
         assertFalse(never.cancel(), "a step that never started left no trace")
@@ -156,7 +158,28 @@ class JenaInferenceViewRobustnessTest {
 
         val failed = InferenceStep<Int> { error("boom") }
         assertFailsWith<IllegalStateException> { failed.call() }
-        assertTrue(failed.cancel(), "a step that failed may have left the tables half-updated")
+        assertTrue(failed.cancel())
+        assertTrue(failed.awaitEnd(0), "a failed step has ended too")
+
+        // The token of a started step is visible to the step itself, at its checkpoints.
+        val cancelledInside = InferenceStep {
+            InferenceCancellation.checkpoint()
+            "not cancelled yet"
+        }
+        assertEquals("not cancelled yet", cancelledInside.call())
+        lateinit var self: InferenceStep<String>
+        self = InferenceStep {
+            self.cancel()
+            InferenceCancellation.checkpoint()
+            "unreachable"
+        }
+        assertFailsWith<CleanStepCancellation> { self.call() }
+
+        // Waiting for a step to end is not cut short by the reader's own interrupt, which is kept.
+        val running = InferenceStep { 1 }
+        Thread.currentThread().interrupt()
+        assertFalse(running.awaitEnd(TimeUnit.MILLISECONDS.toNanos(20)))
+        assertTrue(Thread.interrupted(), "the interrupt is kept for the caller")
     }
 
     @Test
