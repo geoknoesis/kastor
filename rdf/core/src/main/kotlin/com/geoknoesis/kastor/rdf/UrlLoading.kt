@@ -18,31 +18,42 @@ import java.util.concurrent.TimeUnit
  * @property connectTimeoutMillis Connect timeout passed to the URL connection
  * @property readTimeoutMillis Read timeout passed to the URL connection (the longest a single read may block)
  * @property totalTimeoutMillis Overall deadline for connecting and reading the whole body, measured from
- *   when the connection is opened; a server that trickles bytes just faster than [readTimeoutMillis] is
+ *   when the load starts; a server that trickles bytes just faster than [readTimeoutMillis] is
  *   stopped with [RdfLoadTimeoutException]. `0` disables the overall deadline. The deadline is hard and covers the
- *   whole load, including every redirect hop: connect and read timeouts are lowered to the time remaining when each
- *   hop starts, each HTTP request (host name lookup, connect, TLS handshake and response headers) runs on a helper
- *   thread that the caller waits for only until the deadline, and a body read that could block past the deadline is
- *   abandoned when it passes. An abandoned request or read keeps its helper thread until its capped socket timeout
- *   (or the system's host name lookup) returns, and then releases its connection. Helper threads are daemon threads
- *   in a pool bounded to 32; when all are busy the work runs on the calling thread instead, bounded only by the capped
- *   socket timeouts (a slow host name lookup is then not cut short). A read that reaches the end of the body is never
- *   reported as a timeout. Default: 5 minutes.
+ *   whole load, including every redirect hop and every call of [addressPolicy] and [redirectPolicy]: connect and read
+ *   timeouts are lowered to the time remaining when each hop starts, each HTTP request (host name lookup, connect,
+ *   TLS handshake and response headers) and each policy call runs on a helper thread that the caller waits for only
+ *   until the deadline, and a body read that could block past the deadline is abandoned when it passes. An abandoned
+ *   request or read keeps its helper thread until its capped socket timeout (or the system's host name lookup)
+ *   returns, and then releases its connection. Helper threads are daemon threads named `kastor-url-helper-N` in a
+ *   pool bounded to 32. When all are busy, a load waits for one, for as long as its deadline allows, and then fails
+ *   with [RdfLoadTimeoutException]; nothing that could outlast the deadline runs on the calling thread. A body read
+ *   that cannot block past the deadline, or whose data has already arrived, runs on the calling thread; the others
+ *   of one response share one helper, which goes back to the pool when the body is closed or has not been read for
+ *   a while. A read that reaches the end of the body is never reported as a timeout. Default: 5 minutes.
  *
  * HTTP(S) requests send an `Accept` header for the requested format and `Connection: close`, and the connection is
  * closed when the load ends. Redirects (301, 302, 303, 307, 308) are followed by Kastor, up to 10 hops, only to a URL
  * with an allowed scheme that keeps the scheme or upgrades `http` to `https`, only while
- * [java.net.HttpURLConnection.getFollowRedirects] is true, and only if [redirectPolicy] allows the target. A redirect
- * may lead to another host; pass a [redirectPolicy] (for example [UrlRedirectPolicy.PUBLIC_ADDRESSES] or
- * [UrlRedirectPolicy.SAME_HOST]) when the first URL comes from untrusted input and the process can reach hosts the
- * caller must not (loopback, cloud metadata or other internal addresses). A relative `Location` is resolved against
- * the redirecting URL; characters a URL may not contain unencoded (spaces, `|`, non-ASCII) are percent-encoded in
- * its path, query and fragment, as lenient HTTP clients do. Non-2xx responses, including redirects that are not
- * followed (the `Location` is missing or not a usable URL, the scheme or the policy refuses it, or the hop limit is
- * reached), fail with [RdfHttpStatusException] before anything is parsed.
+ * [java.net.HttpURLConnection.getFollowRedirects] is true, and only if [redirectPolicy] allows the target. A relative
+ * `Location` is resolved against the redirecting URL; characters a URL may not contain unencoded (spaces, `|`,
+ * non-ASCII) are percent-encoded in its path, query and fragment, as lenient HTTP clients do. Non-2xx responses,
+ * including redirects that are not followed (the `Location` is missing or not a usable URL, the scheme or the
+ * redirect policy refuses it, or the hop limit is reached), fail with [RdfHttpStatusException] before anything is
+ * parsed.
+ *
+ * **URLs from untrusted input.** A URL, or a redirect from it, may name a host the caller must not reach from this
+ * process: loopback, a cloud metadata service, an address of the internal network. Pass an [addressPolicy] - for
+ * example [UrlAddressPolicy.PUBLIC_ADDRESSES] - to have every URL of the load checked before a request is sent to
+ * it: the URL the load starts with and the target of every redirect. Read the limits of that policy on
+ * [UrlAddressPolicy.PUBLIC_ADDRESSES] before relying on it: it narrows what a URL can reach, it is not a guarantee.
  *
  * @property redirectPolicy Decides, for each redirect that passed the scheme rules, whether it is followed.
- *   Default: [UrlRedirectPolicy.ALLOW_ALL]. It is not consulted for the URL the load starts with.
+ *   Default: [UrlRedirectPolicy.ALLOW_ALL]. It is not consulted for the URL the load starts with; a rule about where
+ *   requests may go belongs in [addressPolicy].
+ * @property addressPolicy Decides, for the URL the load starts with and for the target of every redirect that
+ *   [redirectPolicy] allowed, whether a request may be sent to it. A refused URL fails the load with
+ *   [RdfAddressRefusedException] before anything is sent to it. Default: [UrlAddressPolicy.ALLOW_ALL].
  */
 data class UrlLoadOptions(
     val allowedSchemes: Set<String> = setOf("http", "https"),
@@ -51,20 +62,8 @@ data class UrlLoadOptions(
     val readTimeoutMillis: Int = 30_000,
     val totalTimeoutMillis: Long = DEFAULT_TOTAL_TIMEOUT_MILLIS,
     val redirectPolicy: UrlRedirectPolicy = UrlRedirectPolicy.ALLOW_ALL,
+    val addressPolicy: UrlAddressPolicy = UrlAddressPolicy.ALLOW_ALL,
 ) {
-    /** Pre-[totalTimeoutMillis] constructor, kept for binary compatibility; uses the default overall deadline. */
-    constructor(allowedSchemes: Set<String>, maxBytes: Long, connectTimeoutMillis: Int, readTimeoutMillis: Int) :
-        this(allowedSchemes, maxBytes, connectTimeoutMillis, readTimeoutMillis, DEFAULT_TOTAL_TIMEOUT_MILLIS)
-
-    /** Pre-[redirectPolicy] constructor, kept for binary compatibility; follows redirects to any host. */
-    constructor(
-        allowedSchemes: Set<String>,
-        maxBytes: Long,
-        connectTimeoutMillis: Int,
-        readTimeoutMillis: Int,
-        totalTimeoutMillis: Long,
-    ) : this(allowedSchemes, maxBytes, connectTimeoutMillis, readTimeoutMillis, totalTimeoutMillis, UrlRedirectPolicy.ALLOW_ALL)
-
     init {
         require(allowedSchemes.isNotEmpty()) { "allowedSchemes must not be empty" }
         require(maxBytes > 0) { "maxBytes must be positive" }
@@ -86,10 +85,141 @@ data class UrlLoadOptions(
 }
 
 /**
+ * Decides whether URL loading may send a request to a URL ([UrlLoadOptions.addressPolicy]). It is asked once for
+ * the URL a load starts with and once for the target of every redirect, each time before anything is sent there,
+ * with an absolute URL whose scheme [UrlLoadOptions.allowedSchemes] allows. A refused URL fails the load with
+ * [RdfAddressRefusedException]; an exception the policy throws fails the load with that exception.
+ *
+ * **Threading.** When the load has an overall deadline ([UrlLoadOptions.totalTimeoutMillis], on by default) the
+ * policy runs on a `kastor-url-helper-N` daemon thread, not on the thread that called `Rdf.parseFromUrl`, so that
+ * a slow host name lookup cannot outlast the deadline: thread-locals of the caller (a security context, an MDC, a
+ * transaction) are not visible to it, and it must be safe to call from several threads. The call counts against
+ * the deadline; when it is cut off there, the policy keeps running on its helper thread until it returns.
+ */
+fun interface UrlAddressPolicy {
+    /** True if a request may be sent to [url]. */
+    fun allows(url: java.net.URI): Boolean
+
+    companion object {
+        /** Allows every URL (the default). */
+        @JvmField
+        val ALLOW_ALL: UrlAddressPolicy = Named("ALLOW_ALL") { true }
+
+        /**
+         * Allows a URL only if its host is, or its host name resolves only to, public unicast addresses
+         * ([isPublicUnicast]). A URL without a host (`file:`, `jar:`) and a host name that cannot be resolved are
+         * refused.
+         *
+         * This closes the common ways a URL from untrusted input reaches loopback, link-local (cloud metadata)
+         * and private addresses, including literal forms such as `http://2130706433/` and names that resolve to
+         * such addresses. It does **not** make URL loading safe against server-side request forgery on its own:
+         *
+         * - **The name is resolved twice.** The policy looks the host name up, and the JDK's HTTP client looks it
+         *   up again when it connects; `java.net.HttpURLConnection` offers no way to connect to the address that
+         *   was checked while keeping the host name for the `Host` header and the TLS handshake. The JVM caches a
+         *   successful lookup (`networkaddress.cache.ttl`, 30 seconds unless configured otherwise), so the second
+         *   lookup normally returns the checked addresses; with caching disabled, or across the cache expiring,
+         *   a DNS server under an attacker's control can answer the two lookups differently (DNS rebinding).
+         * - **A proxy resolves the name itself.** When the request goes through an HTTP proxy (`http.proxyHost`,
+         *   a [java.net.ProxySelector]), this process never connects to the addresses it checked: the proxy looks
+         *   the name up from where it stands, and the policy says nothing about what the proxy can reach.
+         * - **Public is not the same as allowed.** Addresses that are public to the Internet may still be internal
+         *   to an organisation, and a service bound to a public address of the same machine is reachable.
+         *
+         * Where requests to internal services must be impossible, enforce that in the network (an egress proxy or
+         * firewall rules for the process), and use this policy as a second line.
+         */
+        @JvmField
+        val PUBLIC_ADDRESSES: UrlAddressPolicy = Named("PUBLIC_ADDRESSES") { url -> resolvesToPublicAddresses(url) }
+
+        /**
+         * True if [address] is a public unicast address: one that is globally routable and is not reserved for a
+         * special purpose. False for
+         *
+         * - IPv4: `0.0.0.0/8` (this network), `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (private),
+         *   `100.64.0.0/10` (shared address space, carrier-grade NAT), `127.0.0.0/8` (loopback), `169.254.0.0/16`
+         *   (link-local), `192.0.0.0/24` (protocol assignments), `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`
+         *   (documentation), `192.88.99.0/24` (6to4 relays), `198.18.0.0/15` (benchmarking), `224.0.0.0/4`
+         *   (multicast) and `240.0.0.0/4` (reserved, with the broadcast address);
+         * - IPv6: everything outside global unicast `2000::/3` (so the unspecified and loopback addresses,
+         *   IPv4-compatible `::a.b.c.d`, the discard prefix `100::/64`, local-use NAT64 `64:ff9b:1::/48`,
+         *   unique-local `fc00::/7`, link-local `fe80::/10`, site-local `fec0::/10`, multicast `ff00::/8`), and
+         *   inside it `2001::/23` (protocol assignments, with Teredo `2001::/32`) and the documentation prefixes
+         *   `2001:db8::/32` and `3fff::/20`;
+         * - an IPv6 address that carries an IPv4 address - IPv4-mapped `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96` and
+         *   6to4 `2002::/16` - when that IPv4 address is not public.
+         */
+        fun isPublicUnicast(address: java.net.InetAddress): Boolean = isPublicUnicastAddress(address.address)
+
+        private fun resolvesToPublicAddresses(url: java.net.URI): Boolean {
+            val host = url.host?.removePrefix("[")?.removeSuffix("]")?.takeIf { it.isNotEmpty() } ?: return false
+            // The connection is opened through java.net.URL: it must name the host that is checked here.
+            val connectedHost = runCatching { url.toURL().host }.getOrNull()
+            if (connectedHost != null && !connectedHost.equals(url.host, ignoreCase = true)) return false
+            val addresses = try {
+                java.net.InetAddress.getAllByName(host)
+            } catch (_: java.net.UnknownHostException) {
+                return false
+            }
+            return addresses.isNotEmpty() && addresses.all(::isPublicUnicast)
+        }
+    }
+
+    private class Named(private val name: String, private val policy: UrlAddressPolicy) : UrlAddressPolicy by policy {
+        override fun toString(): String = "UrlAddressPolicy.$name"
+    }
+}
+
+/** True if the 4 bytes of an IPv4 address or the 16 bytes of an IPv6 address are a public unicast address. */
+internal fun isPublicUnicastAddress(bytes: ByteArray): Boolean {
+    fun at(index: Int) = bytes[index].toInt() and 0xFF
+    fun ipv4(offset: Int): Boolean {
+        val a = at(offset)
+        val b = at(offset + 1)
+        val c = at(offset + 2)
+        return when {
+            a == 0 || a == 10 || a == 127 -> false // this network, private, loopback
+            a == 100 && b in 64..127 -> false // 100.64.0.0/10: shared address space (carrier-grade NAT)
+            a == 169 && b == 254 -> false // link-local, with the cloud metadata address
+            a == 172 && b in 16..31 -> false // private
+            a == 192 && b == 0 && (c == 0 || c == 2) -> false // protocol assignments, documentation
+            a == 192 && b == 88 && c == 99 -> false // 6to4 relay anycast
+            a == 192 && b == 168 -> false // private
+            a == 198 && (b == 18 || b == 19) -> false // benchmarking
+            a == 198 && b == 51 && c == 100 -> false // documentation
+            a == 203 && b == 0 && c == 113 -> false // documentation
+            a >= 224 -> false // multicast, reserved, broadcast
+            else -> true
+        }
+    }
+    if (bytes.size == 4) return ipv4(0)
+    if (bytes.size != 16) return false
+    fun zero(from: Int, until: Int) = (from until until).all { bytes[it].toInt() == 0 }
+    // IPv4-mapped ::ffff:a.b.c.d and NAT64 64:ff9b::a.b.c.d reach the IPv4 address they carry.
+    if (zero(0, 10) && at(10) == 0xFF && at(11) == 0xFF) return ipv4(12)
+    if (at(0) == 0x00 && at(1) == 0x64 && at(2) == 0xFF && at(3) == 0x9B && zero(4, 12)) return ipv4(12)
+    // Global unicast is 2000::/3; everything else is unspecified, loopback, local, multicast or reserved.
+    if ((at(0) and 0xE0) != 0x20) return false
+    if (at(0) == 0x20 && at(1) == 0x01) {
+        if (at(2) <= 0x01) return false // 2001::/23: protocol assignments, with Teredo 2001::/32
+        if (at(2) == 0x0D && at(3) == 0xB8) return false // 2001:db8::/32: documentation
+    }
+    if (at(0) == 0x20 && at(1) == 0x02) return ipv4(2) // 6to4: a tunnel to the IPv4 address it carries
+    if (at(0) == 0x3F && at(1) == 0xFF && (at(2) and 0xF0) == 0) return false // 3fff::/20: documentation
+    return true
+}
+
+/**
  * Decides whether URL loading ([UrlLoadOptions.redirectPolicy]) follows an HTTP redirect. It is asked once per
  * redirect, after the scheme rules of [UrlLoadOptions] accepted the target, with absolute `http`/`https` URLs; a
  * refused redirect fails the load with [RdfHttpStatusException] carrying the redirect status. The call counts
- * against [UrlLoadOptions.totalTimeoutMillis]; an exception it throws fails the load with that exception.
+ * against [UrlLoadOptions.totalTimeoutMillis] and, like [UrlAddressPolicy], runs on a `kastor-url-helper-N` thread
+ * when the load has an overall deadline (no thread-locals of the caller); an exception it throws fails the load with
+ * that exception.
+ *
+ * A redirect policy is about the relation between the two URLs of a redirect (same host, same site). It is not
+ * asked about the URL a load starts with; to restrict where requests may go at all, use
+ * [UrlLoadOptions.addressPolicy].
  */
 fun interface UrlRedirectPolicy {
     /** True if the redirect from the URL [from] to the resolved target URL [to] may be followed. */
@@ -107,35 +237,19 @@ fun interface UrlRedirectPolicy {
         }
 
         /**
-         * Refuses a redirect to a host that is, or whose name resolves to, a loopback, link-local, site-local
-         * (private), unique-local, wildcard or multicast address, or that cannot be resolved. This looks the host
-         * name up; the connection that follows looks it up again, so a name whose answers change between the two
-         * lookups (DNS rebinding) is not caught - use network-level controls where that matters.
+         * Follows a redirect only to a target that [UrlAddressPolicy.PUBLIC_ADDRESSES] allows, and has the limits
+         * described there (the name is resolved again for the connection; a proxy resolves it itself). As a
+         * redirect policy it never sees the URL the load starts with: prefer
+         * `UrlLoadOptions(addressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES)`, which checks that URL as well.
          */
         @JvmField
-        val PUBLIC_ADDRESSES: UrlRedirectPolicy = Named("PUBLIC_ADDRESSES") { _, to -> resolvesToPublicAddresses(to) }
+        val PUBLIC_ADDRESSES: UrlRedirectPolicy =
+            Named("PUBLIC_ADDRESSES") { _, to -> UrlAddressPolicy.PUBLIC_ADDRESSES.allows(to) }
 
         private fun effectivePort(uri: java.net.URI): Int = when {
             uri.port >= 0 -> uri.port
             uri.scheme.equals("https", ignoreCase = true) -> 443
             else -> 80
-        }
-
-        private fun resolvesToPublicAddresses(uri: java.net.URI): Boolean {
-            val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.takeIf { it.isNotEmpty() } ?: return false
-            val addresses = try {
-                java.net.InetAddress.getAllByName(host)
-            } catch (_: java.net.UnknownHostException) {
-                return false
-            }
-            return addresses.isNotEmpty() && addresses.none { address ->
-                val bytes = address.address
-                address.isLoopbackAddress || address.isAnyLocalAddress || address.isLinkLocalAddress ||
-                    address.isSiteLocalAddress || address.isMulticastAddress ||
-                    // 0.0.0.0/8 ("this network") and IPv6 unique-local addresses fc00::/7
-                    (bytes.size == 4 && bytes[0].toInt() == 0) ||
-                    (bytes.size == 16 && (bytes[0].toInt() and 0xFE) == 0xFC)
-            }
         }
     }
 
@@ -143,6 +257,14 @@ fun interface UrlRedirectPolicy {
         override fun toString(): String = "UrlRedirectPolicy.$name"
     }
 }
+
+/**
+ * Thrown when [UrlLoadOptions.addressPolicy] refuses a URL of a load: the URL it starts with, or the target of a
+ * redirect. Nothing was sent to that URL.
+ *
+ * @property url The refused URL
+ */
+class RdfAddressRefusedException(val url: String, message: String) : java.io.IOException(message)
 
 /**
  * Thrown when loading RDF over HTTP(S) returns a status outside 200-299; the body is not parsed.
@@ -212,7 +334,9 @@ internal const val MAX_URL_REDIRECTS = 10
  * - HTTP(S): sends `Accept` for [format] (any type when null), follows redirects as described on
  *   [UrlLoadOptions], and fails with [RdfHttpStatusException] on a non-2xx status.
  * - A declared `Content-Length` above [UrlLoadOptions.maxBytes] fails fast; the body is bounded to it.
- * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the first connection is opened, across hops.
+ * - [UrlLoadOptions.addressPolicy] is asked about [url] and about every redirect target before a connection to it
+ *   is opened; a refusal fails with [RdfAddressRefusedException].
+ * - [UrlLoadOptions.totalTimeoutMillis] is enforced from the moment the load starts, across policies and hops.
  *
  * [onConnection] receives each connection (one per redirect hop) before it connects, so a caller can disconnect it
  * to cancel. On failure the connection is released before the exception propagates (or, if a request was abandoned
@@ -229,6 +353,18 @@ internal fun openRdfUrlStream(
     val total = options.totalTimeoutMillis
     var redirects = 0
     while (true) {
+        val addressPolicy = options.addressPolicy
+        if (addressPolicy !== UrlAddressPolicy.ALLOW_ALL) {
+            val target = uri
+            // The policy may look host names up, so it runs within the deadline like the request itself.
+            if (!withinDeadline(started, total, onAbandon = {}) { addressPolicy.allows(target) }.getOrThrow()) {
+                throw RdfAddressRefusedException(
+                    target.toString(),
+                    (if (redirects == 0) "Loading RDF from $target" else "The redirect to $target (from $url)") +
+                        " was refused by the address policy $addressPolicy",
+                )
+            }
+        }
         // When both socket timeouts of this hop are the time left, a socket timeout is the deadline expiring.
         val hopRemaining = remainingMillis(started, total)
         val timeoutsAreDeadline = total > 0 &&
@@ -296,7 +432,7 @@ internal fun openRdfUrlStream(
                 // The socket keeps the read timeout it had when the request was sent, so a body read may block that
                 // long; the stream waits for such reads only as long as the deadline allows.
                 val socketReadMillis = http?.readTimeout?.toLong()
-                val deadline = DeadlineInputStream(bounded, started, total, socketReadMillis, releaseConnection)
+                val deadline = DeadlineInputStream(bounded, started, total, socketReadMillis, onClose = releaseConnection)
                 releasedElsewhere = true
                 try {
                     deadline.checkDeadline()
@@ -412,8 +548,10 @@ private fun release(connection: java.net.URLConnection) {
 /**
  * Runs [action] on a helper thread and waits for it only until the deadline ([totalMillis] after [startedNanos]).
  * If the deadline passes (or the caller is interrupted) first, [onAbandon] is scheduled to run once [action] returns
- * and the result is a failed [RdfLoadTimeoutException] (or [java.io.InterruptedIOException]). Without a deadline, or
- * when every helper thread is busy, [action] runs on the calling thread. Failures of [action] itself are rethrown.
+ * and the result is a failed [RdfLoadTimeoutException] (or [java.io.InterruptedIOException]). When every helper
+ * thread is busy the caller waits for one, also only until the deadline; if none becomes free, [action] never runs
+ * and [onAbandon] runs at once. Without a deadline [action] runs on the calling thread. Failures of [action] itself
+ * are rethrown.
  */
 private fun <T> withinDeadline(
     startedNanos: Long,
@@ -422,10 +560,13 @@ private fun <T> withinDeadline(
     action: () -> T,
 ): Result<T> {
     if (totalMillis <= 0) return Result.success(action())
+    fun remaining() = TimeUnit.MILLISECONDS.toNanos(totalMillis) - (System.nanoTime() - startedNanos)
     val call = HelperCall(action)
-    if (!call.start()) return Result.success(action())
     return try {
-        Result.success(call.await(TimeUnit.MILLISECONDS.toNanos(totalMillis) - (System.nanoTime() - startedNanos)))
+        if (call.start(remaining())) Result.success(call.await(remaining())) else {
+            runCatching(onAbandon)
+            Result.failure(RdfLoadTimeoutException(totalMillis))
+        }
     } catch (_: java.util.concurrent.TimeoutException) {
         call.abandon(onAbandon)
         Result.failure(RdfLoadTimeoutException(totalMillis))
@@ -446,6 +587,12 @@ internal object UrlLoadHelpers {
     const val THREAD_NAME_PREFIX = "kastor-url-helper-"
     private val count = java.util.concurrent.atomic.AtomicInteger()
 
+    /** Number of tasks handed to a helper thread so far. */
+    val tasksStarted = java.util.concurrent.atomic.AtomicLong()
+
+    /** Longest single wait for a thread to take a task before the pool is asked again (it may have shrunk). */
+    private val HAND_OFF_SLICE_NANOS = TimeUnit.MILLISECONDS.toNanos(500)
+
     private val pool: java.util.concurrent.ThreadPoolExecutor by lazy {
         java.util.concurrent.ThreadPoolExecutor(
             0, MAX_THREADS, 10, TimeUnit.SECONDS, java.util.concurrent.SynchronousQueue(),
@@ -457,9 +604,31 @@ internal object UrlLoadHelpers {
     /** Starts [task] on a helper thread; false (without running it) if all [MAX_THREADS] helpers are busy. */
     fun tryExecute(task: Runnable): Boolean = try {
         pool.execute(task)
+        tasksStarted.incrementAndGet()
         true
     } catch (_: java.util.concurrent.RejectedExecutionException) {
         false
+    }
+
+    /**
+     * Starts [task] on a helper thread, waiting up to [waitNanos] for one to become free; false (without running it)
+     * if none did.
+     *
+     * @throws InterruptedException if the calling thread is interrupted while it waits (the task then never runs)
+     */
+    fun execute(task: Runnable, waitNanos: Long): Boolean {
+        val deadline = System.nanoTime() + waitNanos
+        while (true) {
+            if (tryExecute(task)) return true
+            val left = deadline - System.nanoTime()
+            if (left <= 0) return false
+            // Every thread is busy: hand the task to the first one that asks for work. The wait is sliced because a
+            // pool whose threads all retired meanwhile has nobody asking, but room for a new thread.
+            if (pool.queue.offer(task, minOf(left, HAND_OFF_SLICE_NANOS), TimeUnit.NANOSECONDS)) {
+                tasksStarted.incrementAndGet()
+                return true
+            }
+        }
     }
 }
 
@@ -470,6 +639,7 @@ internal object UrlLoadHelpers {
  */
 internal class HelperCall<T>(action: () -> T) {
     private val lock = Any()
+    private var started = false
     private var returned = false
     private var cleanup: (() -> Unit)? = null
     private val task = java.util.concurrent.FutureTask {
@@ -481,8 +651,15 @@ internal class HelperCall<T>(action: () -> T) {
         }
     }
 
-    /** Starts the call; false if no helper thread is free (the call then never runs). */
-    fun start(): Boolean = UrlLoadHelpers.tryExecute(task)
+    /**
+     * Starts the call, waiting up to [waitNanos] for a free helper thread; false if none became free (the call then
+     * never runs).
+     */
+    fun start(waitNanos: Long = 0): Boolean {
+        val accepted = if (waitNanos <= 0) UrlLoadHelpers.tryExecute(task) else UrlLoadHelpers.execute(task, waitNanos)
+        if (accepted) synchronized(lock) { started = true }
+        return accepted
+    }
 
     /** Waits up to [nanos] for the result, rethrowing the call's own failure. */
     fun await(nanos: Long): T = try {
@@ -491,13 +668,174 @@ internal class HelperCall<T>(action: () -> T) {
         throw e.cause ?: e
     }
 
-    /** Runs [release] once the call has returned: now if it already has, otherwise on the helper thread afterwards. */
+    /**
+     * Runs [release] once the call has returned: now if it already has (or never started), otherwise on the helper
+     * thread afterwards.
+     */
     fun abandon(release: () -> Unit) {
         val now = synchronized(lock) {
-            if (!returned) cleanup = release
-            returned
+            val pending = started && !returned
+            if (pending) cleanup = release
+            !pending
         }
         if (now) runCatching(release)
+    }
+}
+
+/**
+ * The long-lived helper of one [DeadlineInputStream]: a loop on a [UrlLoadHelpers] thread that performs the reads
+ * of [input] the stream asks for, one at a time, so that the stream can stop waiting for a read at its deadline. One
+ * helper serves all such reads of a stream; there is no task, future or thread hand-over per read.
+ *
+ * The helper reads into its own buffer and the bytes are copied to the caller once the read has returned, so a read
+ * the caller gave up on never writes into the caller's array. It leaves its thread when the stream is closed, when a
+ * read was given up (after that read returns, running the clean-up handed to [finish]), or when it has not been
+ * asked for [idleNanos]; the stream then starts another helper for its next read.
+ */
+internal class StreamHelper(private val input: InputStream, private val idleNanos: Long) : Runnable {
+    private val lock = java.util.concurrent.locks.ReentrantLock()
+    private val asked = lock.newCondition()
+    private val answered = lock.newCondition()
+
+    // All guarded by lock.
+    private var buffer = ByteArray(0)
+    private var request = NONE
+    private var argument = 0L
+    private var reading = false
+    private var answer = 0L
+    private var failure: Throwable? = null
+    private var done = false
+    private var finished = false
+    private var gone = false
+    private var cleanup: (() -> Unit)? = null
+
+    override fun run() {
+        while (true) {
+            val operation: Int
+            val amount: Long
+            lock.lock()
+            try {
+                var idle = idleNanos
+                while (request == NONE && !finished && idle > 0) {
+                    idle = try {
+                        asked.awaitNanos(idle)
+                    } catch (_: InterruptedException) {
+                        0
+                    }
+                }
+                if (request == NONE || finished) {
+                    gone = true
+                    return
+                }
+                operation = request
+                amount = argument
+                reading = true
+                if (operation == READ && buffer.size < amount) buffer = ByteArray(amount.toInt())
+            } finally {
+                lock.unlock()
+            }
+            var result = 0L
+            var error: Throwable? = null
+            try {
+                result = if (operation == READ) input.read(buffer, 0, amount.toInt()).toLong() else input.skip(amount)
+            } catch (e: Throwable) {
+                error = e
+            }
+            val pending: (() -> Unit)?
+            lock.lock()
+            try {
+                reading = false
+                request = NONE
+                answer = result
+                failure = error
+                done = true
+                answered.signalAll()
+                pending = cleanup
+                if (pending != null) gone = true
+            } finally {
+                lock.unlock()
+            }
+            if (pending != null) {
+                runCatching(pending)
+                return
+            }
+        }
+    }
+
+    /**
+     * Asks the helper to read up to [length] bytes, waits up to [nanos] for it and copies the bytes read to
+     * [target] at [offset]. Returns the number of bytes read, -1 at the end of the stream, or [GONE] if the helper
+     * has left its thread (nothing was read; ask a new helper). Rethrows the failure of the read.
+     *
+     * @throws java.util.concurrent.TimeoutException if the read did not return in time: it is still running, no
+     *   other read may be asked for, and [finish] must be called
+     * @throws InterruptedException if the calling thread was interrupted while waiting, with the same consequences
+     */
+    fun read(target: ByteArray, offset: Int, length: Int, nanos: Long): Int {
+        lock.lock()
+        try {
+            val read = perform(READ, length.toLong(), nanos)
+            if (read > 0) System.arraycopy(buffer, 0, target, offset, read.toInt())
+            return read.toInt()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /** Like [read], for skipping up to [count] bytes; returns the number of bytes skipped or [GONE]. */
+    fun skip(count: Long, nanos: Long): Long {
+        lock.lock()
+        try {
+            return perform(SKIP, count, nanos)
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /** Called with the lock held. */
+    private fun perform(operation: Int, amount: Long, nanos: Long): Long {
+        if (gone || finished) return GONE.toLong()
+        request = operation
+        argument = amount
+        done = false
+        asked.signal()
+        var left = nanos
+        while (!done) {
+            if (left <= 0) throw java.util.concurrent.TimeoutException()
+            left = answered.awaitNanos(left)
+        }
+        failure?.let { throw it }
+        return answer
+    }
+
+    /**
+     * Ends the helper. If a read is in flight, [release] runs on the helper thread once that read returns and the
+     * result is false; otherwise the helper leaves its thread, nothing else happens and the result is true (the
+     * caller releases the stream itself).
+     */
+    fun finish(release: () -> Unit): Boolean {
+        lock.lock()
+        try {
+            finished = true
+            if (reading) {
+                cleanup = release
+                return false
+            }
+            // A request the helper has not picked up yet is withdrawn with it.
+            request = NONE
+            asked.signal()
+            return true
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    companion object {
+        /** Result of [read] and [skip] when the helper has left its thread. */
+        const val GONE = Int.MIN_VALUE
+        private const val NONE = 0
+        private const val READ = 1
+        private const val SKIP = 2
     }
 }
 
@@ -536,19 +874,23 @@ private fun cappedTimeout(timeoutMillis: Int, remainingMillis: Long): Int = when
  *
  * - Reaching the end of the stream is never a timeout, even if the final read returns after the deadline.
  * - [blockingReadMillis] is the longest one read of the underlying stream can block (`0` = unbounded), or null if
- *   reads do not block. When less time than that remains, the read runs on a helper thread and the caller waits only
- *   until the deadline, so no read can overrun it. A read abandoned this way is closed by its helper thread once it
- *   returns, because the JDK's HTTP streams only close once the blocked read returns. When every helper thread is
- *   busy, the read runs on the calling thread.
+ *   reads do not block. A read runs on the calling thread when more time than that remains, or when the underlying
+ *   stream reports data available (such a read does not block). Any other read is done by the stream's helper
+ *   ([StreamHelper]) while the caller waits only until the deadline, so no read can overrun it. A read given up
+ *   this way ends the stream: later reads fail with the same timeout, and the underlying stream is closed by the
+ *   helper thread once the read returns, because the JDK's HTTP streams only close once a blocked read has
+ *   returned. When every helper thread is busy the read waits for one until the deadline.
  * - An I/O failure that happens after the deadline is reported as a timeout.
  * - [onClose] runs when the stream is closed, before the underlying stream is closed (so an HTTP connection can still
- *   be disconnected: closing its stream first forgets the connection), and after an abandoned read returns.
+ *   be disconnected: closing its stream first forgets the connection), and after a read in flight returns.
+ * - [helperIdleMillis] is how long the helper waits for the next read before it gives its thread back.
  */
 internal class DeadlineInputStream(
     input: InputStream,
     private val startedNanos: Long,
     private val timeoutMillis: Long,
     blockingReadMillis: Long? = null,
+    private val helperIdleMillis: Long = HELPER_IDLE_MILLIS,
     private val onClose: () -> Unit = {},
 ) : FilterInputStream(input), LimitedStream {
     private val limitNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
@@ -556,8 +898,12 @@ internal class DeadlineInputStream(
         if (it <= 0) Long.MAX_VALUE else TimeUnit.MILLISECONDS.toNanos(it)
     }
     private var ended = false
-    private var abandoned: HelperCall<*>? = null
-    private var closed = false
+
+    /** Set when a read was given up: it may still be running, so no other read may start. */
+    @Volatile private var abandoned = false
+    @Volatile private var helper: StreamHelper? = null
+    private val closed = java.util.concurrent.atomic.AtomicBoolean()
+    private var single: ByteArray? = null
 
     override var failure: java.io.IOException? = null
         private set
@@ -570,96 +916,135 @@ internal class DeadlineInputStream(
         if (remainingNanos() < 0) throw timeout()
     }
 
-    /** Buffer for helper-thread reads, reused across reads (no read runs after one is abandoned). */
-    private var helperBuffer: ByteArray? = null
-
     /** True if a read may block without outlasting the deadline, so it can run on the calling thread. */
     private fun readsDirectly(remaining: Long): Boolean = blockingReadNanos == null || remaining > blockingReadNanos
 
-    /** Runs one read of the underlying stream without letting it outlast the deadline. */
-    private fun <T> timed(read: () -> T): T = timed(remainingNanos()) { read() }
+    /** True if the underlying stream has data at hand, so a read of it returns without blocking. */
+    private fun dataAvailable(): Boolean = try {
+        `in`.available() > 0
+    } catch (_: java.io.IOException) {
+        false
+    }
 
     /**
-     * Runs one read of the underlying stream without letting it outlast the deadline; [read] is told whether it runs
-     * on the calling thread (decided from [remaining], the time left when the read was scheduled).
+     * Runs one read of the underlying stream without letting it outlast the deadline: [direct] on the calling thread
+     * if it cannot, otherwise [viaHelper], which is given the time left.
      */
-    private fun <T> timed(remaining: Long, read: (direct: Boolean) -> T): T {
-        abandoned?.let { throw timeout() }
+    private inline fun timed(direct: () -> Long, viaHelper: (remaining: Long) -> Long): Long {
+        if (abandoned) throw timeout()
+        val remaining = remainingNanos()
+        val mayOverrun = !readsDirectly(remaining)
         try {
-            if (readsDirectly(remaining)) return read(true)
-            val call = HelperCall { read(false) }
-            if (!call.start()) return read(false)
-            try {
-                return call.await(remaining)
-            } catch (_: java.util.concurrent.TimeoutException) {
-                abandoned = call
-                throw timeout()
-            } catch (e: InterruptedException) {
-                abandoned = call
-                Thread.currentThread().interrupt()
-                throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
-            }
+            return if (!mayOverrun || dataAvailable()) direct() else viaHelper(remaining)
         } catch (e: java.io.IOException) {
             // A read that was allowed to block past the deadline has a socket timeout no shorter than the time that was
             // left, so its socket timeout is the deadline expiring (even if the clock says a moment is left).
             val socketTimeout = e is java.net.SocketTimeoutException
-            val deadlinePassed = remainingNanos() < 0 || (socketTimeout && !readsDirectly(remaining))
+            val deadlinePassed = remainingNanos() < 0 || (socketTimeout && mayOverrun)
             if (e is RdfInputTooLargeException || e is RdfLoadTimeoutException || !deadlinePassed ||
                 (e is java.io.InterruptedIOException && !socketTimeout)) throw e
             throw timeout().also { if (it !== e) it.addSuppressed(e) }
         }
     }
 
+    /**
+     * Has the helper do one read ([ask] returns [StreamHelper.GONE] when the helper it was given has left its
+     * thread; another one is started then). Gives the stream up if the read does not return in time.
+     */
+    private inline fun helped(remaining: Long, ask: (StreamHelper) -> Long): Long {
+        while (true) {
+            if (closed.get()) throw java.io.IOException("Stream closed")
+            try {
+                val result = ask(helper ?: startHelper(remaining))
+                if (result != StreamHelper.GONE.toLong()) return result
+                helper = null
+            } catch (_: java.util.concurrent.TimeoutException) {
+                abandoned = true
+                throw timeout()
+            } catch (e: InterruptedException) {
+                abandoned = true
+                Thread.currentThread().interrupt()
+                throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
+            }
+        }
+    }
+
+    /** Starts the helper of this stream, waiting for a free helper thread only as long as the deadline allows. */
+    private fun startHelper(remaining: Long): StreamHelper {
+        val created = StreamHelper(`in`, TimeUnit.MILLISECONDS.toNanos(helperIdleMillis))
+        // Interrupted while waiting for a thread: no read is in flight, the stream stays usable.
+        val accepted = try {
+            UrlLoadHelpers.execute(created, remaining)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw java.io.InterruptedIOException("Interrupted while loading RDF from a URL").apply { initCause(e) }
+        }
+        if (!accepted) throw timeout()
+        helper = created
+        // Closed meanwhile by another thread (a cancelled load): the helper must not outlive the stream.
+        if (closed.get()) created.finish {}
+        return created
+    }
+
     override fun read(): Int {
         if (ended) return -1
         checkDeadline()
-        val b = timed { `in`.read() }
-        if (b < 0) { ended = true; return -1 }
+        val one = single ?: ByteArray(1).also { single = it }
+        val n = timed(
+            direct = { val b = `in`.read(); if (b < 0) -1L else { one[0] = b.toByte(); 1L } },
+            viaHelper = { remaining -> helped(remaining) { it.read(one, 0, 1, remainingNanos()).toLong() } },
+        )
+        if (n < 0) { ended = true; return -1 }
         checkDeadline()
-        return b
+        return one[0].toInt() and 0xFF
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
         if (ended) return -1
         if (len == 0) return 0
         checkDeadline()
-        // A read on the calling thread fills the caller's array directly. A helper read fills a private buffer (reused
-        // across reads), so an abandoned read never writes into the caller's array.
-        val remaining = remainingNanos()
-        val buffer = if (readsDirectly(remaining)) b else {
-            helperBuffer?.takeIf { it.size >= len } ?: ByteArray(len).also { helperBuffer = it }
-        }
-        val n = timed(remaining) { direct -> if (direct) `in`.read(b, off, len) else `in`.read(buffer, 0, len) }
+        // A read on the calling thread fills the caller's array directly. A helper read fills the helper's buffer,
+        // which is copied once the read has returned, so a read that was given up never writes into the caller's array.
+        val n = timed(
+            direct = { `in`.read(b, off, len).toLong() },
+            viaHelper = { remaining -> helped(remaining) { it.read(b, off, len, remainingNanos()).toLong() } },
+        )
         if (n < 0) { ended = true; return -1 }
-        if (buffer !== b) System.arraycopy(buffer, 0, b, off, n)
         checkDeadline()
-        return n
+        return n.toInt()
     }
 
     override fun skip(n: Long): Long {
         checkDeadline()
-        return timed { `in`.skip(n) }
+        return timed(
+            direct = { `in`.skip(n) },
+            viaHelper = { remaining -> helped(remaining) { it.skip(n, remainingNanos()) } },
+        )
     }
 
     override fun close() {
-        if (closed) return
-        closed = true
-        val pending = abandoned
-        if (pending != null) {
-            pending.abandon {
-                runCatching { onClose() }
-                runCatching { `in`.close() }
-            }
-        } else {
-            try {
-                onClose()
-            } finally {
-                super.close()
-            }
+        if (!closed.compareAndSet(false, true)) return
+        val release = {
+            runCatching { onClose() }
+            runCatching { `in`.close() }
+            Unit
+        }
+        // With a read in flight (given up at the deadline, or still running when another thread closes the stream)
+        // the helper releases the stream when that read returns.
+        if (helper?.finish(release) == false) return
+        try {
+            onClose()
+        } finally {
+            super.close()
         }
     }
 
     override fun markSupported(): Boolean = false
+
+    companion object {
+        /** How long a stream's helper waits for the next read before it gives its thread back to the pool. */
+        const val HELPER_IDLE_MILLIS = 2_000L
+    }
 }
 
 /** Input stream that throws [RdfInputTooLargeException] once more than [limit] bytes have been read. */
