@@ -58,22 +58,40 @@ class HermitLifecycleTest {
         assertTrue(inferred.none { it.subject == it.obj }, "no reflexive subclass axioms")
     }
 
+    /** Records the watchdogs a reasoner schedules (see [HermitRdfReasoner.Watchdog] for the shared default). */
+    private class RecordingWatchdog {
+        val futures = java.util.concurrent.CopyOnWriteArrayList<java.util.concurrent.CompletableFuture<Unit>>()
+        val schedule: (Long, Long, Runnable) -> java.util.concurrent.Future<*> =
+            { _, _, _ -> java.util.concurrent.CompletableFuture<Unit>().also { futures.add(it) } }
+    }
+
+    private fun reasoner(timeout: Duration, clock: () -> Long, watchdog: RecordingWatchdog) = HermitRdfReasoner(
+        ReasonerConfig.hermit().copy(timeout = timeout),
+        { o, c -> org.semanticweb.HermiT.ReasonerFactory().createReasoner(o, c) },
+        java.util.concurrent.Semaphore(2),
+        java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-hermit-loader") },
+        clock,
+        watchdog.schedule,
+    )
+
     @Test
-    fun `an exhausted timeout fails and leaves no watchdog thread behind`() {
+    fun `an exhausted timeout fails and cancels its watchdog`() {
         val graph = Rdf.parse(ontology, RdfFormat.TURTLE)
-        val reasoner = HermitRdfReasoner(ReasonerConfig.hermit().copy(timeout = Duration.ofMillis(1)))
+        // Each look at the clock is one millisecond later: a budget of one millisecond is used up at the first check.
+        val now = java.util.concurrent.atomic.AtomicLong()
+        val watchdog = RecordingWatchdog()
+        val reasoner = reasoner(Duration.ofMillis(1), { now.getAndAdd(1_000_000) }, watchdog)
         val error = assertThrows(IllegalStateException::class.java) { reasoner.reason(graph) }
         assertTrue(error.message!!.contains("timed out"), error.message)
-        // The watchdog is shut down in all cases.
-        Thread.sleep(50)
-        assertTrue(Thread.getAllStackTraces().keys.none { it.name == "kastor-hermit-watchdog" && it.isAlive })
+        assertTrue(watchdog.futures.single().isCancelled, "the watchdog is cancelled in all cases")
     }
 
     @Test
-    fun `successful runs shut the watchdog down`() {
+    fun `successful runs cancel their watchdogs`() {
         val graph = Rdf.parse(ontology, RdfFormat.TURTLE)
-        repeat(3) { HermitRdfReasoner(ReasonerConfig.hermit()).isConsistent(graph) }
-        Thread.sleep(50)
-        assertTrue(Thread.getAllStackTraces().keys.none { it.name == "kastor-hermit-watchdog" && it.isAlive })
+        val watchdog = RecordingWatchdog()
+        repeat(3) { assertTrue(reasoner(Duration.ofHours(1), { 0L }, watchdog).isConsistent(graph)) }
+        assertEquals(3, watchdog.futures.size, "one watchdog per call")
+        assertTrue(watchdog.futures.all { it.isCancelled }, "every call cancels its watchdog when it ends")
     }
 }
