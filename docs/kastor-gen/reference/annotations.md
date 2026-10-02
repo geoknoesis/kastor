@@ -385,6 +385,26 @@ interface Employee : Person {
 
 Generation is configured through the `@Rdf` fields above; the processor needs no KSP arguments.
 
+### Notes on the instance DSL (`generateDsl = true`)
+
+- `ontologyPath` names an OWL/RDFS file that is read together with the shapes: a file that is missing or
+  cannot be parsed is a KSP error. Its named classes are logged; **anonymous class expressions**
+  (`[ a owl:Class ; owl:unionOf (...) ]`, `rdfs:subClassOf [ a owl:Restriction ; ... ]`) are not generation
+  targets - they are skipped, as classes and as superclasses, and what was skipped is reported at info level.
+- An instance block (`person("urn:p") { ... }`) builds the instance in a scratch graph and writes it to the
+  DSL's graph only after the block ran and `validate()` passed: a rejected value or a failed validation leaves
+  no triple of that instance behind. A second block for the same resource is validated together with what
+  the first one wrote.
+- Setters check the constraints that concern a single value (`sh:pattern`, lengths, bounds, `sh:in`);
+  `sh:hasValue` and `sh:minCount` are checked by `validate()` over all the values.
+
+### Which annotation is `@Rdf`
+
+The processors identify `@Rdf` by the qualified name of the annotation class
+(`com.geoknoesis.kastor.gen.annotations.Rdf`). An annotation of another library that is also named `Rdf` is
+not taken for it: a type that only carries such an annotation is not an `@Rdf` type, and a member that only
+carries it is not mapped.
+
 ### Resolving `shacl`, `context` and `ontologyPath`
 
 A relative path such as `@Rdf(shacl = "person-shape.ttl")` is resolved, in order, against:

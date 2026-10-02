@@ -1,5 +1,8 @@
+@file:OptIn(com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
+import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
@@ -16,7 +19,6 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The validator never reads the data graph while it holds a cache lock (so validating inside a repository
@@ -41,15 +43,6 @@ class Rdf4jCacheConcurrencyTest {
 
     private fun daemonPool() = Executors.newCachedThreadPool { r -> Thread(r).apply { isDaemon = true } }
 
-    /** Waits until [thread] is parked (waiting for a lock), i.e. it reached the repository lock. */
-    private fun awaitParked(thread: Thread) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-        while (thread.state != Thread.State.WAITING && thread.state != Thread.State.TIMED_WAITING) {
-            check(System.nanoTime() < deadline) { "the other thread never blocked on the repository lock" }
-            Thread.sleep(5)
-        }
-    }
-
     @Test
     fun `validation inside a repository transaction does not deadlock with a concurrent validation`() {
         Rdf4jValidation.fromTurtle(shapes).use { v ->
@@ -57,37 +50,40 @@ class Rdf4jCacheConcurrencyTest {
             val name = ex("people")
             repo.editGraph(name).addTriples(people("a", "b"))
             val graph = repo.getGraph(name)
-            assertEquals(ValidationResult.Ok, v.validate(graph, ex("a")))
 
             val inTransaction = CountDownLatch(1)
-            val other = AtomicReference<Thread>()
-            val otherStarted = CountDownLatch(1)
+            val otherReads = CountDownLatch(1)
             val pool = daemonPool()
             try {
+                // T2 tells when it is about to read the graph (which needs the repository lock that T1 holds for
+                // its whole transaction): no thread state is polled.
+                v.onCacheEvent = { event ->
+                    if (event == GraphStateCache.Event.GRAPH_READ && Thread.currentThread().name == "other-validator") {
+                        otherReads.countDown()
+                    }
+                }
                 // T1 holds the repository write lock for the whole transaction and validates inside it.
                 val first = pool.submit<ValidationResult> {
                     var result: ValidationResult? = null
                     repo.transaction {
                         editGraph(name).removeTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
                         inTransaction.countDown()
-                        check(otherStarted.await(10, TimeUnit.SECONDS)) { "second thread did not start" }
-                        // T2 is now inside validate(), blocked reading the graph (repository read lock).
-                        awaitParked(other.get())
+                        check(otherReads.await(10, TimeUnit.SECONDS)) { "the other thread never came to read the graph" }
                         result = v.validate(graph, ex("b"))
                     }
                     result!!
                 }
                 assertTrue(inTransaction.await(10, TimeUnit.SECONDS))
                 val second = pool.submit<ValidationResult> {
-                    other.set(Thread.currentThread())
-                    otherStarted.countDown()
+                    Thread.currentThread().name = "other-validator"
                     v.validate(graph, ex("a"))
                 }
-                // Before the fix T2 held the graph's cache lock while waiting for the repository lock and T1 held the
-                // repository lock while waiting for the cache lock: neither call returned.
+                // T2 must not hold a lock of the cache while it waits for the repository lock, nor may T1 wait
+                // without bound for what T2 is loading: either would leave both calls stuck.
                 assertTrue(first.get(30, TimeUnit.SECONDS) is ValidationResult.Violations, "sees the uncommitted removal")
                 assertEquals(ValidationResult.Ok, second.get(30, TimeUnit.SECONDS))
             } finally {
+                v.onCacheEvent = null
                 pool.shutdownNow()
             }
         }

@@ -51,13 +51,13 @@ class OntologyGenerationTaskTest {
     private fun output(t: OntologyGenerationTask): File = t.outputDirectory.get().asFile
 
     @Test
-    fun `shaclFile and contextFile have no convention - the resolved files are shaclInput and contextInput`() {
+    fun `shaclFile and contextFile default to the files the task reads`() {
         val t = task { interfacePackage = "demo.domain" }
-        // Documented in the plugin reference: the properties are unset unless the build script sets them.
-        assertFalse(t.shaclFile.isPresent)
-        assertFalse(t.contextFile.isPresent)
-        assertEquals(File(dir, "shapes.ttl").canonicalFile, t.shaclInput.canonicalFile)
-        assertEquals(File(dir, "dcat-us_3.0_context.jsonld").canonicalFile, t.contextInput.canonicalFile)
+        // Build scripts read task.shaclFile.get(): the properties have a convention again.
+        assertEquals(File(dir, "shapes.ttl").canonicalFile, t.shaclFile.get().asFile.canonicalFile)
+        assertEquals(File(dir, "dcat-us_3.0_context.jsonld").canonicalFile, t.contextFile.asFile.get().canonicalFile)
+        assertEquals(t.shaclFile.get().asFile.canonicalFile, t.shaclInput.canonicalFile)
+        assertEquals(t.contextFile.get().asFile.canonicalFile, t.contextInput.canonicalFile)
         assertEquals(
             listOf(File(dir, "shapes.ttl"), File(dir, "src/main/resources/shapes.ttl")).map { it.canonicalFile },
             t.shaclCandidates.files.map { it.canonicalFile },
@@ -66,6 +66,38 @@ class OntologyGenerationTaskTest {
         val explicit = write("other/explicit.ttl", shapes)
         t.shaclFile.set(explicit)
         assertEquals(explicit.canonicalFile, t.shaclInput.canonicalFile)
+        assertEquals(explicit.canonicalFile, t.shaclFile.get().asFile.canonicalFile)
+    }
+
+    @Test
+    fun `the convention is looked up when it is asked for, not when the task is configured`() {
+        // The task is configured while the SHACL file is in the project directory ...
+        val t = task { interfacePackage = "demo.domain" }
+        // ... which is gone, with a file at the fallback location instead, before anything asks for the value.
+        assertTrue(File(dir, "shapes.ttl").delete())
+        val fallback = write("src/main/resources/shapes.ttl", shapes)
+        assertEquals(fallback.canonicalFile, t.shaclFile.get().asFile.canonicalFile, "nothing was frozen at configuration time")
+        assertEquals(fallback.canonicalFile, t.shaclInput.canonicalFile)
+    }
+
+    @Test
+    fun `without a file at any candidate location the convention has no value and the task says where it looked`() {
+        val t = task { interfacePackage = "demo.domain" }
+        assertTrue(File(dir, "shapes.ttl").delete())
+        assertFalse(t.shaclFile.isPresent)
+        assertEquals(null, t.shaclFile.orNull)
+        val failure = assertFailsWith<org.gradle.api.GradleException> { t.shaclInput }
+        assertTrue("shapes.ttl" in failure.message!! && "src/main/resources" in failure.message!!, failure.message)
+        // No context configured: no value, and contextInput says so.
+        val project = ProjectBuilder.builder().withProjectDir(File(dir, "bare").apply { mkdirs() }).build()
+        project.pluginManager.apply(OntoMapperPlugin::class.java)
+        project.extensions.getByType(OntoMapperExtension::class.java).ontologies!!.create("bare").apply {
+            shaclPath = "shapes.ttl"
+            interfacePackage = "demo.domain"
+        }
+        val bare = project.tasks.getByName("generateOntologyBare") as OntologyGenerationTask
+        assertFalse(bare.contextFile.isPresent)
+        assertFailsWith<org.gradle.api.GradleException> { bare.contextInput }
     }
 
     @Test

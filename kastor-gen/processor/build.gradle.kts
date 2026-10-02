@@ -14,6 +14,18 @@ tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin").co
     }
 }
 
+// The `internal` packages are implementation: public only across the module's own packages, not part of the ABI.
+kotlin {
+  @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+  abiValidation {
+    filters {
+      exclude {
+        byNames.add("com.geoknoesis.kastor.gen.processor.internal.**")
+      }
+    }
+  }
+}
+
 dependencies {
   api(project(":kastor-gen:runtime"))
   

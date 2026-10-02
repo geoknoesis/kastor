@@ -43,35 +43,37 @@ class Rdf4jGraphCacheTest {
     private class PlainGraph(private val inner: RdfGraph) : RdfGraph by inner
 
     @Test
-    fun `repeated validation of an unchanged stamped graph neither digests nor reloads`() {
+    fun `repeated validation of an unchanged stamped graph neither reads, digests nor reloads`() {
         Rdf4jValidation.fromTurtle(shapes).use { v ->
             val g = personGraph(*Array(50) { "p$it" })
             repeat(20) { i -> assertEquals(ValidationResult.Ok, v.validate(g, ex("p${i % 50}"))) }
-            assertEquals(0, v.digestCount, "a graph with a modification stamp is never digested")
+            assertEquals(1, v.digestCount, "a graph with a modification stamp is digested when it is loaded, never on a hit")
+            assertEquals(1, v.readCount)
             assertEquals(1, v.loadCount)
 
             g.removeTriple(RdfTriple(ex("p3"), ex("name"), Literal("p3")))
             assertTrue(v.validate(g, ex("p3")) is ValidationResult.Violations, "mutation is detected")
             assertEquals(2, v.loadCount)
-            assertEquals(0, v.digestCount)
+            assertEquals(2, v.digestCount)
         }
     }
 
     @Test
-    fun `named graphs of the memory repository are stamped and never digested`() {
+    fun `named graphs of the memory repository are stamped and not digested on a hit`() {
         Rdf4jValidation.fromTurtle(shapes).use { v ->
             val repo = com.geoknoesis.kastor.rdf.provider.MemoryRepository(com.geoknoesis.kastor.rdf.RdfConfig(providerId = "memory"))
             val name = ex("people")
             repo.editGraph(name).addTriples(personGraph("a", "b").getTriples())
             val g = repo.getGraph(name)
             repeat(5) { assertEquals(ValidationResult.Ok, v.validate(g, ex("a"))) }
-            assertEquals(0, v.digestCount, "a named graph view has a modification stamp")
+            assertEquals(1, v.digestCount, "a named graph view has a modification stamp: digested with the load only")
+            assertEquals(1, v.readCount)
             assertEquals(1, v.loadCount)
 
             repo.editGraph(name).removeTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
             assertTrue(v.validate(g, ex("b")) is ValidationResult.Violations, "mutation is detected")
             assertEquals(2, v.loadCount)
-            assertEquals(0, v.digestCount)
+            assertEquals(2, v.digestCount)
         }
     }
 

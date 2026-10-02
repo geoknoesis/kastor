@@ -65,6 +65,7 @@ public class GenerationCoordinator(
         generateWriteSupport: Boolean = false,
         sources: List<KSFile> = emptyList(),
     ) {
+        GenerationNames.renamedTypeWarnings(model).forEach { logger.warn(it) }
         if (generateDataClass && dataClassSuffix.isBlank() && (generateInterfaces || generateWrappers || dataClassImplementsInterface)) {
             throw InvalidConfigurationException(
                 config = "dataClassSuffix",
@@ -131,6 +132,7 @@ public class GenerationCoordinator(
         sources: List<KSFile> = emptyList(),
     ) {
         logger.info("Processing instance DSL generation: $dslName")
+        GenerationNames.renamedTypeWarnings(model).forEach { logger.warn(it) }
 
         val request = InstanceDslRequest(
             dslName = dslName,

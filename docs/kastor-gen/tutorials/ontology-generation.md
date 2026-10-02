@@ -89,6 +89,30 @@ JSON-LD context provides type mappings and property definitions:
 }
 ```
 
+### What a context may contain
+
+The context file is read as a JSON-LD 1.1 context definition:
+
+- a context object, or an array of context objects (applied in order; `null` resets);
+- `@base` and `@vocab`; `@version`, `@language`, `@direction`, `@protected` and `@propagate` are accepted and
+  have no effect on generation;
+- **keyword aliases** - `"id": "@id"`, `"type": "@type"`, `"type": {"@id": "@type", "@container": "@set"}` -
+  are recorded as aliases (`JsonLdContext.keywordAliases`); they are neither types nor properties;
+- simple terms (`"Person": "foaf:Person"`), prefixes (a simple term whose IRI ends with `#` or `/`, or an
+  expanded definition with `"@prefix": true`), and expanded term definitions with `@id` (optional: a term
+  without one is resolved against `@vocab`, a compact IRI against its prefix), `@reverse`, `@type` (`@id`,
+  `@vocab`, `@json`, `@none` or a datatype IRI) and `@container` (a keyword, or an array such as
+  `["@set", "@language"]`);
+- a scoped `@context` in a term definition, resolved against the context that declares it
+  (`JsonLdProperty.scopedContext`);
+- terms may refer to terms and prefixes defined further down in the same context; `"term": null` removes a
+  term.
+
+Rejected, with a message that names the term: **remote contexts** (a context given as a URL) and `@import` -
+the processor does not download anything, put the term definitions in the context file -, unknown keywords in
+a term definition, `@reverse` together with `@id`, values of the wrong JSON type, compact IRIs with an
+undeclared prefix, cyclic definitions.
+
 ## Code Generation
 
 ### 1. Create a generator class
@@ -265,6 +289,28 @@ transitive `rdfs:subClassOf` of it); `sh:pattern`; string lengths; `sh:in`; and 
 `sh:pattern` regex is compiled lazily on first use, so an unusual pattern can never break class
 initialisation.
 
+- **Constraints are a conjunction.** When a shape restates a path that it also inherits (or declares two
+  property shapes for one path), every constraint of every declaration applies: bounds keep the tighter one,
+  **every `sh:pattern` must match** (each with its own `sh:flags`), **every `sh:hasValue` must be among the
+  values**, and the `sh:nodeKind`s are intersected (`sh:BlankNodeOrIRI` and `sh:IRI` leave `sh:IRI`). Node
+  kinds with nothing in common (`sh:IRI` and `sh:Literal`) reject every value, and generation logs a warning
+  naming the shape and the path. Nothing is silently dropped.
+- **`sh:pattern` means the same as in the Kastor SHACL validator.** Patterns are XPath / XML Schema regular
+  expressions, translated to `java.util.regex` with the validator's rules (see the
+  [SHACL validation guide](../../kastor/guides/how-to-validate-shacl.md)): `$` matches at the very end only, `\d`
+  is any Unicode digit, `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`, `[a-z-[aeiou]]` is a class subtraction, the `i`
+  flag leaves `\p{Lu}` case-sensitive. A leading `(?i)`, `(?s)`, `(?m)` or `(?x)` is read as `sh:flags`; POSIX
+  classes inside a class (`[[:alpha:]_]`) and script names (`\p{IsLatin}`) are translated. `java.util.regex`
+  syntax that would not mean the same is **rejected when the code is generated**, with an error that names
+  the shape, the path and the construct: `&&` and a nested `[` inside a class, a class that starts with `]`,
+  an unescaped `-` as a range endpoint, inline flag groups that are not leading (`a(?i)b`, `(?i:...)`),
+  `\p{IsAlphabetic}`, unknown `sh:flags`.
+- **`sh:hasValue` is checked when an instance is validated.** It requires the value to be **among** the
+  values of the property, so the instance DSL's setters accept any value (`tag("y")` on a property with
+  `sh:hasValue "x"`); the DSL's `validate()` - run when an instance block ends - reports
+  `tag must have the value: x` when `x` is missing. (The wrapper's embedded `validate()` does not check
+  `sh:hasValue`; use a `ValidationContext` for it.)
+
 - **Cardinality counts every value.** `sh:minCount`/`sh:maxCount` count all values of the path whatever
   their term kind (IRIs, blank nodes, literals), including literal `sh:in` enum values. Checking the kind is
   left to `sh:datatype`, `sh:nodeKind` and `sh:class`.
@@ -276,8 +322,8 @@ initialisation.
 - **Inherited `sh:in` lists are intersected.** When a subtype restates `sh:in` for an inherited path, a value
   must be a member of both lists. Members are compared as RDF terms, language tags ignoring case (`"x"@en` and
   `"x"@EN` are one member). When the lists have **no member in common**, every value of the path is rejected
-  (the same holds for an explicit `sh:in ()`), and generation logs a warning naming the shape and the path; no
-  check is silently dropped.
+  (the same holds for an explicit `sh:in ()`, which the parser keeps as an empty list), and generation logs a
+  warning naming the shape and the path; no check is silently dropped.
 - **Numeric bounds are exact.** Bounds are held as `BigDecimal` values in the model, so a bound such as
   `9223372036854775807` is not rounded. Wrapper `validate()`, instance-DSL setters and the DSL's `validate()`
   all compare values exactly against the bound's decimal form; `NaN` is never within bounds.
@@ -353,6 +399,10 @@ package-qualified name, so the DSL compiles when it is generated into a differen
 
 ## Naming
 
+- **Built-in names are not shadowed.** A class whose name is a type that Kotlin imports by default
+  (`ex:String`, `ex:Pair`, `ex:List`, `ex:Result`, ...) would shadow that type in every generated file of its
+  package. It is generated with the suffix `Type` (`StringType`, `PairType`) and a warning says so; a JSON-LD
+  context term cannot choose a shadowing name either.
 - **Types** come from the JSON-LD context term mapped to the class IRI, else the IRI's local name,
   converted to PascalCase.
 - **Properties** come from `sh:name`, else the path's local name, converted to camelCase

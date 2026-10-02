@@ -53,7 +53,26 @@ internal class ValidationCodeGenerator(
                 val name = property.propertyName
 
                 val inMembers = ShaclInCode.members(c.inValuesTyped, c.inValues, iriValued = property.isIriValued)
-                val hasConstraints = c.minLength != null || c.maxLength != null || c.pattern != null
+                val hasConstraints = c.minLength != null || c.maxLength != null || c.patterns.isNotEmpty()
+
+                // sh:hasValue: each required value must be among the values of the property (an IRI or the lexical
+                // form of a literal), however many other values there are - and also when there is none.
+                c.hasValues.forEach { required ->
+                    functionBuilder.addComment("Check %L sh:hasValue", name)
+                    functionBuilder.beginControlFlow(
+                        "if (graph.find(resource, %L).none { triple -> when (val obj = triple.obj) { is %T -> obj.lexical == %S; is %T -> obj.value == %S; else -> false } })",
+                        iri, literalClass, required, iriClass, required,
+                    )
+                    functionBuilder.addStatement("violations.add(%S)", "$name must have the value: $required")
+                    functionBuilder.endControlFlow()
+                }
+
+                if (c.nodeKindUnsatisfiable) {
+                    functionBuilder.addComment("%L: the sh:nodeKind constraints that apply have no node kind in common", name)
+                    functionBuilder.beginControlFlow("if (graph.find(resource, %L).isNotEmpty())", iri)
+                    functionBuilder.addStatement("violations.add(%S)", "$name: no value satisfies the sh:nodeKind constraints that apply")
+                    functionBuilder.endControlFlow()
+                }
 
                 if (hasConstraints) {
                     functionBuilder.addComment("Validate %L constraints", name)
@@ -74,9 +93,9 @@ internal class ValidationCodeGenerator(
                         functionBuilder.addStatement("violations.add(%S)", "$name must have maxLength <= $it")
                         functionBuilder.endControlFlow()
                     }
-                    c.pattern?.let {
-                        functionBuilder.beginControlFlow("if (value == null || !%N.containsMatchIn(value))", ShaclPatterns.constantName(it, c.patternFlags))
-                        functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $it")
+                    c.patterns.forEach { (pattern, flags) ->
+                        functionBuilder.beginControlFlow("if (value == null || !%N.containsMatchIn(value))", ShaclPatterns.constantName(pattern, flags))
+                        functionBuilder.addStatement("violations.add(%S)", "$name must match pattern: $pattern")
                         functionBuilder.endControlFlow()
                     }
                     functionBuilder.endControlFlow()

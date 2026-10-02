@@ -1,24 +1,21 @@
 package com.geoknoesis.kastor.gen.validation.jena
 
-import com.geoknoesis.kastor.gen.runtime.GraphStateCache
 import com.geoknoesis.kastor.gen.runtime.ValidationResult
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfTriple
+import com.geoknoesis.kastor.rdf.UpdateQuery
 import com.geoknoesis.kastor.rdf.jena.JenaBridge
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.logging.Handler
-import java.util.logging.Level
-import java.util.logging.LogRecord
-import java.util.logging.Logger
 
 /**
  * Graphs of a Jena repository go through the shared cache (one copy and one shapes parse per content version, not
@@ -149,32 +146,18 @@ class JenaRepositoryGraphCacheTest {
     }
 
     @Test
-    fun `an invalid cache size property is reported and the default is used`() {
-        val records = ArrayList<LogRecord>()
-        val handler = object : Handler() {
-            override fun publish(record: LogRecord) {
-                synchronized(records) { records += record }
-            }
-            override fun flush() {}
-            override fun close() {}
-        }
-        val logger = Logger.getLogger(GraphStateCache::class.java.name)
-        logger.addHandler(handler)
+    fun `an invalid cache size property falls back to the default`() {
+        // That the invalid value is reported once is a rule of the shared cache, tested with it (runtime module):
+        // here only what this validator does with the property.
         val previous = System.getProperty(JenaValidation.MAX_CACHED_GRAPHS_PROPERTY)
         try {
             for (invalid in listOf("0", "abc", "-3")) {
                 System.setProperty(JenaValidation.MAX_CACHED_GRAPHS_PROPERTY, invalid)
-                repeat(2) { JenaValidation().use { v -> assertEquals(JenaValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs) } }
-                val warnings = synchronized(records) {
-                    records.filter { it.level == Level.WARNING && it.message.contains("=\"$invalid\"") }
-                }
-                assertEquals(1, warnings.size, "one warning for $invalid, however many validators are created")
-                assertTrue(warnings.single().message.contains(JenaValidation.MAX_CACHED_GRAPHS_PROPERTY), warnings.single().message)
+                JenaValidation().use { v -> assertEquals(JenaValidation.DEFAULT_MAX_CACHED_GRAPHS, v.maxCachedGraphs, invalid) }
             }
             System.setProperty(JenaValidation.MAX_CACHED_GRAPHS_PROPERTY, " 5 ")
             JenaValidation().use { v -> assertEquals(5, v.maxCachedGraphs) }
         } finally {
-            logger.removeHandler(handler)
             if (previous == null) {
                 System.clearProperty(JenaValidation.MAX_CACHED_GRAPHS_PROPERTY)
             } else {
@@ -182,4 +165,43 @@ class JenaRepositoryGraphCacheTest {
             }
         }
     }
+
+    @Test
+    fun `a Jena repository graph with a statement Kastor's term model rejects is validated from a native copy`() {
+        val repo = JenaRepository.MemoryRepository()
+        try {
+            // A language subtag of nine letters: legal in Turtle and in Jena, rejected by Kastor's LangString.
+            repo.update(
+                UpdateQuery(
+                    """
+                    PREFIX ex: <http://example.org/>
+                    INSERT DATA { ex:a a ex:Person ; ex:name "x"@abcdefghi . ex:b a ex:Person . }
+                    """.trimIndent(),
+                ),
+            )
+            assertThrows(IllegalArgumentException::class.java, { repo.defaultGraph.getTriples() }, "the strict read fails")
+
+            JenaValidation.fromTurtle(shapes).use { v ->
+                repeat(3) { assertEquals(ValidationResult.Ok, v.validate(repo.defaultGraph, ex("a"))) }
+                assertTrue(v.validate(repo.defaultGraph, ex("b")) is ValidationResult.Violations)
+                assertEquals(1, v.loadCount, "the copy is still found by handle and stamp")
+                assertEquals(1, v.readCount)
+
+                // Another graph of the repository changes: the repository-wide stamp moves, this graph does not.
+                repo.editGraph(ex("other")).addTriples(people("z"))
+                assertEquals(ValidationResult.Ok, v.validate(repo.defaultGraph, ex("a")))
+                assertEquals(1, v.loadCount, "an unchanged graph keeps its copy")
+                assertEquals(2, v.readCount)
+                assertEquals(ValidationResult.Ok, v.validate(repo.defaultGraph, ex("a")))
+                assertEquals(2, v.readCount, "and the new stamp hits without a read")
+
+                repo.editDefaultGraph().addTriple(RdfTriple(ex("b"), ex("name"), Literal("b")))
+                assertEquals(ValidationResult.Ok, v.validate(repo.defaultGraph, ex("b")), "a change is detected")
+                assertEquals(2, v.loadCount)
+            }
+        } finally {
+            repo.close()
+        }
+    }
+
 }

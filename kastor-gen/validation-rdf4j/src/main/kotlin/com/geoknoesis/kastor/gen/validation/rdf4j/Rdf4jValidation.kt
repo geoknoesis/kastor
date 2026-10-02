@@ -1,6 +1,7 @@
 package com.geoknoesis.kastor.gen.validation.rdf4j
 
 import com.geoknoesis.kastor.gen.runtime.GraphStateCache
+import com.geoknoesis.kastor.gen.runtime.KastorGenInternalApi
 import com.geoknoesis.kastor.gen.runtime.ShaclSeverity
 import com.geoknoesis.kastor.gen.runtime.ShaclViolation
 import com.geoknoesis.kastor.gen.runtime.ValidationContext
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.shacl.ShaclSail
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException
 import com.geoknoesis.kastor.rdf.VersionedRdfGraph
+import java.util.concurrent.atomic.AtomicIntegerArray
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
 import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
 
@@ -56,7 +58,10 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * - Graphs that implement [VersionedRdfGraph] (`MemoryGraph`, the named graphs of the memory repository,
  *   repositories whose provider stamps its graphs) are checked in O(1) by comparing the modification stamp with the
  *   one of the loaded copy. A new handle of the same named graph (`repository.getGraph(name)` on every call) finds
- *   the copy loaded for an equal handle.
+ *   the copy loaded for an equal handle. When the stamp moved (it is usually repository-wide: a write to any graph
+ *   of the repository moves it) the graph is read once, by one caller - concurrent callers wait for it instead of
+ *   reading the graph too - and the store is kept as it is when the content of this graph turns out to be
+ *   unchanged.
  * - Graphs without a stamp (wrapped external stores, SPARQL-endpoint graphs, user-defined graphs) are **read in full
  *   on every call**: `getTriples()` (one download of a remote graph) and an order-independent digest of every
  *   triple, to find out whether the loaded copy is still current. Only the conversion and the store writes are
@@ -76,14 +81,20 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * this is how to size the validators shared by generated wrappers). When more graphs than that are validated, the
  * least recently used copy that no call is using is released. A call does not wait for the validation of another
  * graph: when every cached copy is in use, the call validates in a private temporary store that is released when
- * the call returns. Temporary stores are bounded too (at most [maxCachedGraphs] at a time): beyond that a call waits
- * for a store to become free and fails with [com.geoknoesis.kastor.gen.runtime.GraphStateCacheSaturatedException]
- * after 10 seconds, instead of building an unbounded number of stores. Raise the limit when more graphs than the
- * default are validated repeatedly (each miss converts and loads the whole graph).
+ * the call returns. At most [maxCachedGraphs] temporary stores are built that way at a time: beyond that a call
+ * waits for a store to become free for a quarter of a second and then builds a private store all the same, so a
+ * validation is slowed down under such a load but neither stalls nor fails (the users of the other stores may be
+ * waiting for a repository lock that this very caller holds). Raise the limit when more graphs than the default are
+ * validated repeatedly (each miss converts and loads the whole graph). A thread that is interrupted while it waits
+ * for another caller gets a [com.geoknoesis.kastor.gen.runtime.GraphStateCacheInterruptedException] (its interrupt
+ * status stays set).
  *
- * ## Locking
- * The data graph is read only while the validator holds no lock, so [validate] may be called inside a repository
- * transaction (`repository.transaction { wrapper.validate() }`) while other threads validate the same graph.
+ * ## Locking and transactions
+ * The data graph is read only while the validator holds no lock, and on the calling thread, so [validate] may be
+ * called inside a repository transaction (`repository.transaction { wrapper.validate() }`) while other threads
+ * validate the same graph: it validates what the calling thread reads, its uncommitted writes included, and a store
+ * is only ever used for a caller whose own modification stamp it was loaded for. A thread inside its transaction is
+ * never served the committed content it has changed, and no other thread is served uncommitted content.
  *
  * Each [validate] call evaluates only the shapes that target the focus node: the target declarations
  * (`sh:targetClass` including `rdfs:subClassOf` instances and implicit class targets, `sh:targetNode`,
@@ -104,6 +115,7 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * base-direction support, so the direction of an RDF 1.2 directional language string is dropped (the language tag
  * is kept).
  */
+@OptIn(KastorGenInternalApi::class)
 class Rdf4jValidation private constructor(
   private val fixedShapes: List<Statement>?,
   /** Maximum number of data graphs whose converted copy is kept (one in-memory store each). */
@@ -145,6 +157,10 @@ class Rdf4jValidation private constructor(
   @Volatile internal var beforeLoadCommit: (() -> Unit)? = null
   /** Test hook: creates the store of a data graph. */
   @Volatile internal var repositoryFactory: () -> SailRepository = ::newRepository
+  /** Test hook: called for every event of the cache, on the validating thread. */
+  @Volatile internal var onCacheEvent: ((GraphStateCache.Event) -> Unit)? = null
+
+  private val events = AtomicIntegerArray(GraphStateCache.Event.entries.size)
 
   /**
    * The converted copy of one data graph: its store and the shapes embedded in the data. A reload updates it in
@@ -158,15 +174,23 @@ class Rdf4jValidation private constructor(
     load = ::load,
     release = { it.repository.shutDown() },
     owner = "Rdf4jValidation",
-    settings = GraphStateCache.Settings(assumeImmutable = assumeImmutable),
+    settings = GraphStateCache.Settings(
+      assumeImmutable = assumeImmutable,
+      probe = { event ->
+        events.incrementAndGet(event.ordinal)
+        onCacheEvent?.invoke(event)
+      },
+    ),
   )
 
   /** Test hook: number of content digests computed. */
-  internal val digestCount: Int get() = cache.digestCount
+  internal val digestCount: Int get() = events.get(GraphStateCache.Event.DIGEST.ordinal)
   /** Test hook: number of graphs converted and loaded into a store. */
-  internal val loadCount: Int get() = cache.loadCount
+  internal val loadCount: Int get() = events.get(GraphStateCache.Event.LOAD.ordinal)
   /** Test hook: number of validations that ran in a private temporary store. */
-  internal val temporaryStoreCount: Int get() = cache.temporaryCount
+  internal val temporaryStoreCount: Int get() = events.get(GraphStateCache.Event.TEMPORARY.ordinal)
+  /** Test hook: number of times the content of a data graph was read. */
+  internal val readCount: Int get() = events.get(GraphStateCache.Event.GRAPH_READ.ordinal)
   private val fixedShapeIndex: ShapeIndex? by lazy(LazyThreadSafetyMode.PUBLICATION) {
     fixedShapes?.let { ShapeIndex(it) }
   }

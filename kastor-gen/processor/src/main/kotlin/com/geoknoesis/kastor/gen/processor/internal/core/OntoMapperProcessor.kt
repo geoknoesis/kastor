@@ -85,7 +85,7 @@ public class OntoMapperProcessor(
       if (!symbol.validate() || symbol !is KSClassDeclaration) {
         return@forEach
       }
-      val rdfAnn = symbol.annotations.find { it.shortName.asString() == "Rdf" } ?: return@forEach
+      val rdfAnn = symbol.annotations.find { it.isKastorRdf() } ?: return@forEach
       val iriRaw = rdfAnn.arguments.find { it.name?.asString() == "iri" }?.value as? String ?: ""
       val shaclRaw = rdfAnn.arguments.find { it.name?.asString() == "shacl" }?.value as? String ?: ""
       if (iriRaw.isBlank() || shaclRaw.isNotBlank()) {
@@ -190,9 +190,9 @@ public class OntoMapperProcessor(
   private fun prefixMappingsFor(classDecl: KSClassDeclaration): Map<String, String> {
     val into = LinkedHashMap<String, String>()
     classDecl.findContainingKsFile()?.annotations
-      ?.filter { it.shortName.asString() == "Rdf" }
+      ?.filter { it.isKastorRdf() }
       ?.forEach { mergePrefixesFromRdfAnnotation(it, into) }
-    classDecl.annotations.filter { it.shortName.asString() == "Rdf" }.forEach { ann ->
+    classDecl.annotations.filter { it.isKastorRdf() }.forEach { ann ->
       mergePrefixesFromRdfAnnotation(ann, into)
     }
     return into
@@ -328,9 +328,9 @@ public class OntoMapperProcessor(
     var current: KSPropertyDeclaration? = property
     val seen = HashSet<KSPropertyDeclaration>()
     while (current != null && seen.add(current)) {
-      val annotation = current.annotations.find { it.shortName.asString() == "Rdf" }
-        ?: current.getter?.annotations?.find { it.shortName.asString() == "Rdf" }
-        ?: current.setter?.annotations?.find { it.shortName.asString() == "Rdf" }
+      val annotation = current.annotations.find { it.isKastorRdf() }
+        ?: current.getter?.annotations?.find { it.isKastorRdf() }
+        ?: current.setter?.annotations?.find { it.isKastorRdf() }
       if (annotation != null) return annotation
       current = current.findOverridee()
     }
@@ -356,7 +356,7 @@ public class OntoMapperProcessor(
    * opted in as registered by hand (`@RdfMaterializable`, or listed in [MATERIALIZABLE_TYPES_OPTION]).
    */
   private fun isMaterializable(declaration: KSClassDeclaration, resolver: Resolver): Boolean {
-    if (declaration.annotations.any { it.shortName.asString() == "Rdf" }) return true
+    if (declaration.annotations.any { it.isKastorRdf() }) return true
     val qualified = declaration.qualifiedName?.asString() ?: return false
     if (qualified in materializableTypes) return true
     val optedIn = declaration.annotations.any {

@@ -146,3 +146,12 @@ public class AnnotationParser(private val logger: KSPLogger) {
     }
   }
 }
+
+/**
+ * Whether this annotation is Kastor's `@Rdf` (`com.geoknoesis.kastor.gen.annotations.Rdf`): the short name is
+ * compared first (cheap), then the resolved annotation class, so an annotation of another library that is also
+ * named `Rdf` is never taken for it.
+ */
+internal fun KSAnnotation.isKastorRdf(): Boolean =
+    shortName.asString() == "Rdf" &&
+        annotationType.resolve().declaration.qualifiedName?.asString() == RDF_ANNOTATION_FQN
