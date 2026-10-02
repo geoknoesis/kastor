@@ -24,8 +24,12 @@ import com.geoknoesis.kastor.rdf.sparql.SparqlServiceDescriptionGenerator
 
 val provider = RdfProviderRegistry.getProvider("jena") ?: error("rdf-jena is not on the classpath")
 val serviceUri = "http://example.org/sparql"
-val description = SparqlServiceDescriptionGenerator(serviceUri, provider.getCapabilities())
-    .generateServiceDescription()
+val description = SparqlServiceDescriptionGenerator(
+    serviceUri,
+    provider.getCapabilities(),
+    endpoint = "http://example.org/sparql",            // where queries are sent (sd:endpoint)
+    updateEndpoint = "http://example.org/sparql/update" // optional
+).generateServiceDescription()
 
 println("Service Description:")
 description.getTriples().forEach { triple ->
@@ -80,12 +84,14 @@ The snippets below show the triples in abbreviated Turtle for readability. `gene
 @prefix ksparql: <https://kastor.geoknoesis.com/ns/sparql#> .
 
 <http://example.org/sparql> a sd:Service, ksparql:Sparql12Service ;
-    sd:endpoint <http://example.org/sparql/sparql> ;
+    sd:endpoint <http://example.org/sparql> ;
     sd:updateEndpoint <http://example.org/sparql/update> ;
     ksparql:supportedSparqlVersion "1.2" .
 ```
 
 `ksparql:Sparql12Service` is added only when `sparqlVersion` starts with `1.2`.
+
+`sd:endpoint` and `sd:updateEndpoint` are written only for the URLs passed as `endpoint` and `updateEndpoint`; with neither, the description names no endpoint. The service URI only identifies the service: nothing is derived from it. (Earlier versions invented `<serviceUri>/sparql` and `<serviceUri>/update`, which for a service URI that already is the endpoint produced URLs such as `http://example.org/sparql/sparql`.) For a service identified by its own endpoint URL, pass that URL as `endpoint` too.
 
 ### Supported Languages and Formats
 
@@ -206,8 +212,8 @@ val generator = SparqlServiceDescriptionGenerator(serviceUri, capabilities)
 // Generate as RDF graph
 val graph = generator.generateServiceDescription()
 
-// Generate as SPARQL results
-val sparqlResults = generator.generateAsSparqlResult()
+// Generate as the text of a SELECT query that yields the description when it is run
+val selectQuery = generator.generateAsSelectQuery()
 
 // Generate as Turtle
 val turtle = generator.generateAsTurtle()
@@ -216,7 +222,7 @@ val turtle = generator.generateAsTurtle()
 val jsonLd = generator.generateAsJsonLd()
 ```
 
-`generateAsTurtle()` and `generateAsJsonLd()` declare the `sd` and `ksparql` prefixes. `generateAsSparqlResult()` returns a `SELECT ?subject ?predicate ?object` query with the triples in a `VALUES` block. SPARQL forbids blank nodes in `VALUES`, so blank nodes (such as the dataset node) are replaced by skolem IRIs:
+`generateAsTurtle()` and `generateAsJsonLd()` declare the `sd` and `ksparql` prefixes. `generateAsSelectQuery()` returns the text of a `SELECT ?subject ?predicate ?object` query with the triples in a `VALUES` block: a query, not a query result; run it against any endpoint to get the description as rows. (It was called `generateAsSparqlResult()`, which is deprecated and returns the same text.) SPARQL forbids blank nodes in `VALUES`, so blank nodes (such as the dataset node) are replaced by skolem IRIs:
 
 - for hierarchical service URIs with an authority, RDF 1.1 well-known IRIs such as `http://example.org/.well-known/genid/dataset`;
 - for opaque or authority-less service URIs (for example `urn:`), `urn:kastor:genid:<hash>:<label>`, where `<hash>` is derived from the service URI.

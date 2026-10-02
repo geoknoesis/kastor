@@ -46,10 +46,14 @@ repo.select(SparqlSelectQuery("SELECT ?s ?label WHERE { ?s rdfs:label ?label }")
 | `TripleTerm` | RDF 1.2 quoted triple term |
 | `RdfResource` | IRI or blank node |
 | `RdfTerm` | Any term |
-| `String` | **Lexical** form of a literal only (not an IRI string) |
-| `Int`, `Long`, `Double`, `Boolean` | XSD-friendly conversions (same rules as `BindingSet.getInt`, etc.) |
+| `String` | **Lexical** form of a literal of any datatype (not an IRI string) |
+| `Int`, `Long` | A literal of datatype `xsd:integer` or a type derived from it (`xsd:long`, `xsd:int`, `xsd:nonNegativeInteger`, `xsd:unsignedInt`, ...) whose value fits the type asked for |
+| `Double` | A literal of a numeric datatype (the integer types, `xsd:decimal`, `xsd:float`, `xsd:double`), `INF`, `-INF` and `NaN` included |
+| `Boolean` | An `xsd:boolean` literal (`true`, `false`, `1`, `0`) |
 
 Use **`getAsOrThrow`** when a variable must be present and typed; use **`getAs`** when absence or mismatch should yield **`null`**.
+
+The **datatype decides**, not the look of the text: `"42"` (an `xsd:string`), `"42"@en` and `"42"^^xsd:date` are not numbers, `"42"^^xsd:decimal` is not an `Int`, and `"3000000000"^^xsd:integer` is a `Long` but not an `Int` (`getAs<Int>` returns `null`, `getAsOrThrow<Int>` throws). This is stricter than `BindingSet.getInt`, which parses the lexical form of any literal. A type argument that is not in the table (`Short`, `BigInteger`, ...) is a mistake in the call: both functions throw `IllegalArgumentException` naming the supported types, instead of returning `null` as if the value were absent.
 
 ### Step 2: Enforce columns across the whole result
 
@@ -69,6 +73,10 @@ val rows = runBlocking {
 ```
 
 Collecting the flow honours **structured concurrency**: cancel the coroutine scope to stop consuming further rows.
+
+- **Where the rows are read**: reading a result is blocking I/O, so `asFlow(...)` reads it on `Dispatchers.IO`, whatever dispatcher the collector runs on (`Dispatchers.Main`, a single-threaded dispatcher, ...). Pass a dispatcher as the first argument to choose another one: `result.asFlow(myBlockingDispatcher, "s", "p", "o")`.
+- **Cancellation**: when the collector is cancelled while a read is blocked, the reading thread is interrupted and a result that is `AutoCloseable` is closed, which ends a read that waits for the network. The collector sees the cancellation, not whatever the aborted read threw.
+- **Closing**: a result that is `AutoCloseable` is closed when the flow ends, by completion, failure or cancellation. Collect the flow once.
 
 ### Step 3: Stream triples with `Flow`
 

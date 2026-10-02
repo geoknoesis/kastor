@@ -146,6 +146,8 @@ val query = select("name", "age") {
 
 This will generate SPARQL with the `foaf:` prefix, making it more readable while still using type-safe vocabulary constants in your Kotlin code.
 
+**The empty prefix**: `prefix("", "http://example.org/fn#")` declares `PREFIX : <http://example.org/fn#>`, so that names such as `:double` can be used, for example as a function name: `function(":double", x)`. Every query form and `update { }` accept it.
+
 ### 4.1. Common Prefixes
 
 Kastor provides built-in support for common vocabularies. You can use `addCommonPrefixes()` to add multiple standard prefixes at once:
@@ -540,7 +542,22 @@ WHERE {
 
 **In plain English**: "Find people and their friends, friends of friends, friends of friends of friends, etc."
 
-**Note**: paths are parenthesised by operator precedence when rendered. `negation()` accepts only IRIs and inverse IRIs (`!(p|^q)`). The bounded repetition helpers `exactly`, `atLeast`, `atMost` and `between` build `{n,m}` paths, which are not standard SPARQL 1.1/1.2, so the renderer rejects them. Expand them into explicit sequences or alternatives instead.
+**Note**: paths are parenthesised by operator precedence when rendered. `negation()` accepts only IRIs and inverse IRIs (`!(p|^q)`).
+
+#### Bounded repetition
+
+SPARQL 1.1/1.2 has no `{n,m}` quantifier (it was dropped from the final grammar). The helpers `exactly`, `atLeast`, `atMost` and `between` therefore write the repetition out as the sequence it stands for, which every endpoint understands:
+
+| DSL | Rendered path |
+|-----|---------------|
+| `path(p).exactly(3)` | `p/p/p` |
+| `path(p).between(1, 3)` | `p/p?/p?` |
+| `path(p).atMost(2)` | `p?/p?` |
+| `path(p).atLeast(2)` | `p/p+` |
+| `path(p).atLeast(1)` / `atLeast(0)` | `p+` / `p*` |
+| `(path(a) alternative path(b)).exactly(2)` | `(a\|b)/(a\|b)` |
+
+Because every step is written, a repetition is limited to 64 steps (`MAX_PATH_REPETITION`) and all nested repetitions of one path to 1024 steps; use `oneOrMore()` / `zeroOrMore()` when the upper bound does not matter. Bounds that have no SPARQL form are rejected with `IllegalArgumentException` when the path is built: a negative bound, an upper bound below the lower one, and the empty path (`exactly(0)`, `atMost(0)`). As with `?` in SPARQL, `atMost(n)` and `between(0, n)` include zero steps, so the subject itself is among the results.
 
 ### 16. Alternative Relationships
 
@@ -875,13 +892,115 @@ WHERE {
 }
 ```
 
+### 25. EXISTS and NOT EXISTS
+
+`exists { }` and `notExists { }` are conditions over a graph pattern: they are true for a solution when the pattern, with that solution's bindings, has (or has no) match. The block takes whatever a `where { }` block takes.
+
+```kotlin
+val query = select("person") {
+    where {
+        triple(`var`("person"), namePred, `var`("name"))
+        filter { exists { triple(`var`("person"), emailPred, `var`("email")) } }
+        filter { notExists { triple(`var`("person"), phonePred, `var`("phone")) } }
+    }
+}
+```
+
+**Generated SPARQL**:
+```sparql
+SELECT ?person
+WHERE {
+  ?person <http://example.org/name> ?name .
+  FILTER(EXISTS {
+  ?person <http://example.org/email> ?email .
+})
+  FILTER(NOT EXISTS {
+  ?person <http://example.org/phone> ?phone .
+})
+}
+```
+
+They are expressions like any other: combine them with `and`, `or`, `not(...)` or `!`, and use them in `bind`, in a projection, in `having { }` and in `orderBy`.
+
+### 26. IN, NOT IN, unary minus and NOT
+
+```kotlin
+val query = select("person") {
+    where {
+        triple(`var`("person"), agePred, `var`("age"))
+        triple(`var`("person"), cityPred, `var`("city"))
+        filter(`var`("city").isIn(iri("http://example.org/Paris"), iri("http://example.org/Rome")))   // ?city IN (<...>, <...>)
+        filter { `var`("age").expr().isNotIn(18.toLiteral().expr(), 21.toLiteral().expr()) }          // ?age NOT IN (...)
+        bind(`var`("debt"), -`var`("age").expr())                                                      // BIND(-?age AS ?debt)
+        filter { !bound(`var`("nickname")) }                                                           // FILTER(!(BOUND(?nickname)))
+    }
+}
+```
+
+- `x.isIn(a, b)` / `x.isNotIn(a, b)` take expressions (or, on a variable, terms); `x isIn listOf(...)` takes a collection. An empty list is legal: `IN ()` is false and `NOT IN ()` true.
+- `-expression` is arithmetic negation; `!condition` is the same as `not(condition)`.
+- Operands are bracketed where SPARQL's precedence requires it (`-(?a + ?b)`, `(?a > ?b) IN (true)`), so the query means the expression tree you built.
+
+### 27. Grouping by an expression
+
+`groupBy(expression)` groups by a computed value, and `groupBy(expression, alias)` names it so that it can be projected:
+
+```kotlin
+val query = select {
+    variable("decade")
+    expression(countAll(), "people")
+    where { triple(`var`("person"), agePred, `var`("age")) }
+    groupBy(function("FLOOR", `var`("age").expr() div 10.toLiteral().expr()), `var`("decade"))
+}
+```
+
+**Generated SPARQL** (literals abbreviated):
+```sparql
+SELECT ?decade (COUNT(*) AS ?people)
+WHERE {
+  ?person <http://example.org/age> ?age .
+}
+GROUP BY (FLOOR((?age / 10)) AS ?decade)
+```
+
+Plain variables (`groupBy(v1, v2)`) are written first, then the expressions, each in the order given.
+
+### 28. SERVICE SILENT
+
+`service(endpoint) { }` renders `SERVICE <endpoint> { ... }`. Pass `silent = true` for `SERVICE SILENT`, with which a remote service that fails contributes one solution without bindings instead of failing the whole query:
+
+```kotlin
+where {
+    service(iri("https://query.example.org/sparql"), silent = true) {
+        triple(`var`("s"), `var`("p"), `var`("o"))
+    }
+}
+```
+
+### 29. Function calls as conditions
+
+`function(name, args...)` builds a call of a built-in, a prefixed name (declare the prefix) or an IRI. The call is an expression and a condition alike, so it can stand directly in a filter:
+
+```kotlin
+select("s") {
+    prefix("ex", "http://example.org/fn#")
+    where {
+        triple(`var`("s"), namePred, `var`("name"))
+        filter { function("ex:isCommon", `var`("name").expr()) and not(function("isBLANK", `var`("s").expr())) }
+        bind(`var`("upper"), function("UCASE", `var`("name").expr()))
+    }
+}
+```
+
 ## Query Rules Enforced by the Renderer
 
 The renderer rejects queries that are not legal SPARQL with `IllegalArgumentException` instead of sending them:
 
 - **Projections with GROUP BY / HAVING**: a query with `groupBy(...)` or `having { }` must list its projection explicitly. `SELECT *` or an empty projection (`select { }` with no variables or expressions, which renders `SELECT *`) is rejected.
 - **`*` mixed with variables**: a `WildcardSelectItemAst` cannot be combined with other projection items.
-- **Blank nodes**: a blank node label may be used in only one basic graph pattern of a query (FILTER, BIND and VALUES do not end a basic graph pattern, but OPTIONAL, UNION, MINUS, GRAPH, sub-groups and similar elements do), or in only one operation of an update request. Use a variable to join across patterns. Blank nodes are also rejected inside expressions (FILTER, BIND, SELECT, ORDER BY, HAVING; use a variable or `BNODE()`) and inside triple terms in `VALUES`.
+- **Blank nodes**: a blank node label may be used in only one basic graph pattern of a query (FILTER, BIND and VALUES do not end a basic graph pattern, but OPTIONAL, UNION, MINUS, GRAPH, sub-groups and similar elements do), or in only one operation of an update request. Use a variable to join across patterns. Blank nodes are also rejected inside expressions (FILTER, BIND, SELECT, ORDER BY, HAVING; use a variable or `BNODE()`) and inside triple terms in `VALUES`. The pattern of an `exists { }` / `notExists { }` is a group of its own, so a label used there cannot also be used in the patterns around it.
+- **Bounded path repetition**: bounds without a SPARQL form and repetitions of more than 64 steps (1024 for nested repetitions) are rejected; see [Bounded repetition](#bounded-repetition).
+- **Builders and the AST**: `build()` on a builder returns an AST that later calls on the builder do not change.
 
 ## Validation
 

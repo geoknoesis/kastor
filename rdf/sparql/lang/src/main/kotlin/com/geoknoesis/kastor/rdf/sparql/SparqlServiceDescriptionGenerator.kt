@@ -16,10 +16,23 @@ import java.security.MessageDigest
  * advertised; `sd:extensionFunction` lists only real extension functions
  * ([SparqlExtensionFunction.isBuiltIn] `== false`). Federation is advertised with the standard
  * `sd:feature sd:BasicFederatedQuery`.
+ *
+ * The description names the endpoints it is given and no other: nothing is derived from
+ * [serviceUri], which only identifies the service. (Earlier versions invented
+ * `<serviceUri>/sparql` and `<serviceUri>/update`.)
+ *
+ * @param serviceUri the IRI that identifies the service; the subject of the description.
+ * @param capabilities what the service supports.
+ * @param endpoint the URL at which the service answers SPARQL Protocol requests (`sd:endpoint`), or
+ *   `null` to state none. For a service identified by its own endpoint URL, pass that URL again.
+ * @param updateEndpoint the URL for SPARQL Update requests when it is advertised separately, or
+ *   `null` to state none.
  */
-class SparqlServiceDescriptionGenerator(
+class SparqlServiceDescriptionGenerator @JvmOverloads constructor(
     private val serviceUri: String,
-    private val capabilities: ProviderCapabilities
+    private val capabilities: ProviderCapabilities,
+    private val endpoint: String? = null,
+    private val updateEndpoint: String? = null,
 ) {
 
     /**
@@ -36,8 +49,9 @@ class SparqlServiceDescriptionGenerator(
         if (capabilities.sparqlVersion.startsWith("1.2")) {
             triples.add(RdfTriple(service, RDF.type, KastorSparqlVocabulary.Sparql12Service))
         }
-        triples.add(RdfTriple(service, SPARQL_SD.endpointProp, Iri("$serviceUri/sparql")))
-        triples.add(RdfTriple(service, SPARQL_SD.updateEndpointProp, Iri("$serviceUri/update")))
+        // Only what the caller stated: an endpoint is a fact about a deployment, not something to derive.
+        endpoint?.let { triples.add(RdfTriple(service, SPARQL_SD.endpointProp, Iri(it))) }
+        updateEndpoint?.let { triples.add(RdfTriple(service, SPARQL_SD.updateEndpointProp, Iri(it))) }
 
         // SPARQL version support
         triples.add(RdfTriple(service, KastorSparqlVocabulary.supportedSparqlVersion, string(capabilities.sparqlVersion)))
@@ -217,9 +231,22 @@ class SparqlServiceDescriptionGenerator(
             .take(8).joinToString("") { "%02x".format(it) }
 
     /**
-     * Generate service description as SPARQL query result.
+     * The former name of [generateAsSelectQuery]. It never returned a query result: it returns the
+     * text of a SELECT query.
      */
-    fun generateAsSparqlResult(): String {
+    @Deprecated(
+        "It returns the text of a SELECT query, not a query result; the name said otherwise",
+        ReplaceWith("generateAsSelectQuery()"),
+    )
+    fun generateAsSparqlResult(): String = generateAsSelectQuery()
+
+    /**
+     * The service description as the text of a SPARQL SELECT query that needs no data: its
+     * `VALUES` block holds the triples of the description, so that running it anywhere yields them
+     * as rows of `?subject ?predicate ?object`. Blank nodes, which `VALUES` cannot hold, are
+     * replaced by skolem IRIs. It is a query, not a query result; to get the result, run it.
+     */
+    fun generateAsSelectQuery(): String {
         val graph = generateServiceDescription()
         val triples = graph.getTriples()
 

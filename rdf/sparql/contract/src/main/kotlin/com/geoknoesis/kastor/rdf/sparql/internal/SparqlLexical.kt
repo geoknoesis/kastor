@@ -108,9 +108,12 @@ object SparqlLexical {
         return name
     }
 
-    /** Validate a prefix label against `PN_PREFIX`. */
+    /**
+     * Validate a prefix label against `PN_PREFIX`. The label of a namespace (`PNAME_NS`) is optional,
+     * so the empty string, the empty prefix of `PREFIX : <...>`, is a prefix label too.
+     */
     fun prefixLabel(prefix: String): String {
-        require(PN_PREFIX.matches(prefix)) { "Invalid SPARQL prefix label: '$prefix'" }
+        require(prefix.isEmpty() || PN_PREFIX.matches(prefix)) { "Invalid SPARQL prefix label: '$prefix'" }
         return prefix
     }
 
