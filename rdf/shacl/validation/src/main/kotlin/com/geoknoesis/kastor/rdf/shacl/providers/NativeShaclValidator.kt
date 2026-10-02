@@ -2085,7 +2085,7 @@ internal class NativeShaclValidator(
             result = ctx.patternWorker().run { runPattern(c, lexical, ctx) }
         }
         val outcome =
-            when (result!!) {
+            when (result) {
                 PatternRun.MATCH -> PatternOutcome.MATCH
                 PatternRun.NO_MATCH -> PatternOutcome.NO_MATCH
                 PatternRun.OUT_OF_BUDGET -> PatternOutcome(
