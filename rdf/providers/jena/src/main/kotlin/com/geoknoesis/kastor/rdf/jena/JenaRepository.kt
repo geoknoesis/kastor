@@ -253,7 +253,10 @@ class JenaRepository private constructor(
     /** Shared inference view of the newest snapshot read so far, if any. */
     @Volatile private var currentView: SnapshotView? = null
 
-    /** Snapshot seen by this thread's read transaction, or null when it is not provable. */
+    /**
+     * Snapshot seen by this thread's read transaction, or null when it is not provable. Set for every variant except
+     * plain TDB2, which looks its data version up when a modification stamp is asked for.
+     */
     private val readSnapshot = ThreadLocal<Snapshot?>()
 
     /**
@@ -333,7 +336,8 @@ class JenaRepository private constructor(
         dataset.begin(mode)
         try {
             if (mode == ReadWrite.READ) {
-                readSnapshot.set(snapshotAfterBegin(before))
+                // (A plain TDB2 store needs the snapshot for modification stamps only: it is looked up on demand.)
+                if (inference || !tdb2) readSnapshot.set(snapshotAfterBegin(before))
             } else {
                 writeStamp.set(stamps.incrementAndGet())
                 if (tracksWrittenGraphs) writtenGraphs.set(HashSet<String>().also { if (writes != null) it.add(writes) })
@@ -450,7 +454,7 @@ class JenaRepository private constructor(
     internal fun modificationStamp(): Long = withRead {
         if (dataset.transactionMode() == ReadWrite.WRITE) return@withRead writeStamp.get() ?: stamps.incrementAndGet()
         // Unprovable snapshot (a commit raced with this transaction's begin): a value nobody else gets.
-        val snapshot = readSnapshot.get() ?: return@withRead stamps.incrementAndGet()
+        val snapshot = readSnapshot.get() ?: (if (tdb2) snapshotAfterBegin(0L) else null) ?: return@withRead stamps.incrementAndGet()
         synchronized(stampLock) {
             val stamped = stampedSnapshot
             if (stamped == null || !stamped.sameAs(snapshot)) {
