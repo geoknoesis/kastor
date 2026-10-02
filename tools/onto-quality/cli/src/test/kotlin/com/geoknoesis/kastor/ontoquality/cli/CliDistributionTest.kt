@@ -27,12 +27,36 @@ class CliDistributionTest {
 
     private val windows = System.getProperty("os.name").lowercase().contains("win")
 
+    /** The end of what a child process wrote, for failure messages. */
+    private fun tail(file: java.io.File): String =
+        try {
+            file.readText(Charsets.UTF_8).takeLast(4_000).ifEmpty { "(nothing)" }
+        } catch (e: java.io.IOException) {
+            "(unreadable: ${e.message})"
+        }
+
     private class Launch(val code: Int, val out: String, val err: String)
 
-    private fun runScript(vararg args: String): Launch {
-        val script = install.resolve("bin").resolve(if (windows) "onto-qa.bat" else "onto-qa")
-        assertTrue(script.isRegularFile(), "start script $script is missing; bin holds ${install.resolve("bin").listDirectoryEntries().map { it.name }}")
-        val command = (if (windows) listOf("cmd.exe", "/c", script.toString()) else listOf("sh", script.toString())) + args
+    /**
+     * The command line that starts [script]. On Windows `cmd.exe /c <script> <args>` breaks as soon as the script path
+     * and an argument both contain a space: cmd strips the first and the last quote of the whole line. The reliable
+     * form is `cmd /s /c ""<script>" <args>"`: with `/s` exactly the outer pair of quotes is removed. The whole inner
+     * line is one process argument (already quoted, so Java passes it through unchanged).
+     */
+    private fun startCommand(script: Path, args: List<String>): List<String> {
+        if (!windows) return listOf("sh", script.toString()) + args
+        val inner =
+            (listOf(script.toString()) + args).joinToString(" ") { arg ->
+                require('"' !in arg) { "a quote in an argument cannot be passed to cmd: $arg" }
+                if (arg.any { it.isWhitespace() || it in "&()[]{}^=;!'+,~" }) "\"$arg\"" else arg
+            }
+        return listOf("cmd.exe", "/d", "/s", "/c", "\"$inner\"")
+    }
+
+    private fun runScript(vararg args: String, installation: Path = install): Launch {
+        val script = installation.resolve("bin").resolve(if (windows) "onto-qa.bat" else "onto-qa")
+        assertTrue(script.isRegularFile(), "start script $script is missing; bin holds ${installation.resolve("bin").listDirectoryEntries().map { it.name }}")
+        val command = startCommand(script, args.toList())
         val outFile = dir.resolve("stdout.txt").toFile()
         val errFile = dir.resolve("stderr.txt").toFile()
         val builder = ProcessBuilder(command).redirectOutput(outFile).redirectError(errFile)
@@ -45,7 +69,9 @@ class CliDistributionTest {
         process.outputStream.close()
         if (!process.waitFor(180, TimeUnit.SECONDS)) {
             process.destroyForcibly()
-            error("the start script did not exit: $command")
+            process.waitFor(30, TimeUnit.SECONDS)
+            // A slow machine is told apart from a hung child by what the child wrote before it was stopped.
+            error("the start script did not exit within 180 s: $command\n--- stdout ---\n${tail(outFile)}\n--- stderr ---\n${tail(errFile)}")
         }
         return Launch(process.exitValue(), outFile.readText(Charsets.UTF_8), errFile.readText(Charsets.UTF_8))
     }
@@ -66,6 +92,45 @@ class CliDistributionTest {
         assertEquals(EXIT_OK, result.code, result.err)
         assertTrue(result.out.contains("totalNamedClasses"), result.out)
         assertFalse(result.err.contains("SLF4J"), "no SLF4J binding in the distribution: ${result.err}")
+    }
+
+    /**
+     * The installation in a directory whose name has a space, next to the real one (same volume): the start scripts
+     * are copied, the jars hard-linked (copied where the file system has no hard links).
+     */
+    private fun installationWithSpace(): Path {
+        val spaced = Files.createTempDirectory(install.toAbsolutePath().parent, "install with space ")
+        for (sub in listOf("bin", "lib")) {
+            val target = Files.createDirectories(spaced.resolve(sub))
+            for (entry in install.resolve(sub).listDirectoryEntries()) {
+                val copy = target.resolve(entry.name)
+                if (sub == "bin") {
+                    Files.copy(entry, copy, java.nio.file.StandardCopyOption.COPY_ATTRIBUTES)
+                } else {
+                    try {
+                        Files.createLink(copy, entry)
+                    } catch (_: Exception) {
+                        Files.copy(entry, copy)
+                    }
+                }
+            }
+        }
+        return spaced
+    }
+
+    @Test
+    fun `the start script runs from a directory with a space and takes a path with a space`() {
+        val data = Files.createDirectories(dir.resolve("my data"))
+        val file = data.resolve("onto one.ttl")
+        Files.writeString(file, "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n<http://example.org/A> a owl:Class .\n")
+        val spaced = installationWithSpace()
+        try {
+            val result = runScript("metrics", file.toString(), "--format", "json", installation = spaced)
+            assertEquals(EXIT_OK, result.code, result.err)
+            assertTrue(result.out.contains("totalNamedClasses"), result.out)
+        } finally {
+            spaced.toFile().deleteRecursively()
+        }
     }
 
     @Test
