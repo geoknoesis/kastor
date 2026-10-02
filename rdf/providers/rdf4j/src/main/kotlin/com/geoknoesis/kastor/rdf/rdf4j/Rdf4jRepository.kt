@@ -296,8 +296,18 @@ class Rdf4jRepository(
         /** Update text that may introduce RDF-star triple values without them already being stored. */
         private val MAY_CREATE_TRIPLE_VALUES = Regex("<<|(?i)\\btriple\\s*\\(|\\bload\\b|\\bservice\\b")
 
-        /** Update text that may hold a `USING` clause (a `WITH` graph is then not the whole dataset of `WHERE`). */
-        private val USING_CLAUSE = Regex("(?i)\\busing\\b")
+        /**
+         * For every operation of the update request [sparql], in order, whether it has a `USING` / `USING NAMED` clause
+         * of its own. Read from the syntax tree of RDF4J's SPARQL parser (the one the update was prepared with), so
+         * the word in a literal, an IRI or a comment, or a clause of another operation, is never taken for one.
+         */
+        private fun usingClauses(sparql: String): List<Boolean> =
+            org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder.parseUpdateSequence(sparql).updateContainers
+                .mapNotNull { it.update }
+                .map { operation ->
+                    val with = (operation as? org.eclipse.rdf4j.query.parser.sparql.ast.ASTModify)?.withClause
+                    operation.datasetClauseList.any { it !== with }
+                }
 
         private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
@@ -585,14 +595,17 @@ class Rdf4jRepository(
      *   are not changed.
      * - Only updates executed by an RDF4J Sail are changed; a wrapped remote repository keeps its server's behaviour.
      *
-     * @param sparql the update text, only used to tell `WITH` alone from `WITH` combined with `USING`.
+     * @param sparql the update text. RDF4J's dataset of `WITH <g>` alone equals the one of `WITH <g> ... USING <g>`, so
+     *   whether an operation has a `USING` clause of its own is read from the parser's syntax tree of this text
+     *   ([usingClauses]); the text is parsed that second time only for a request with such a `WITH` operation.
      */
     private fun Update.onKastorUpdateDataset(conn: RepositoryConnection, sparql: String): Update {
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return this
         val nil = org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL
         // Asked when the operation is evaluated, not now: earlier operations of the request may create named graphs.
         val storeGraphs = { iriContexts(conn) }
-        for (expr in parsed.updateExprs) {
+        val using: List<Boolean> by lazy { usingClauses(sparql).takeIf { it.size == parsed.updateExprs.size }.orEmpty() }
+        for ((index, expr) in parsed.updateExprs.withIndex()) {
             val declared = parsed.datasetMapping[expr]
             val dataset: org.eclipse.rdf4j.query.Dataset? = when (expr) {
                 // RDF4J's DELETE DATA passes its default remove graphs to the Sail as they are (it does not translate
@@ -610,9 +623,11 @@ class Rdf4jRepository(
                         )
                         else -> {
                             // WITH <g> alone is parsed as the default graph g, also for insertions and removals.
-                            val withOnly = declared.defaultInsertGraph != null && declared.namedGraphs.isEmpty() &&
-                                declared.defaultGraphs == setOf(declared.defaultInsertGraph) && !USING_CLAUSE.containsMatchIn(sparql)
-                            val needsNamed = withOnly && reads.named
+                            val withGraphOnly = declared.defaultInsertGraph != null && declared.namedGraphs.isEmpty() &&
+                                declared.defaultGraphs == setOf(declared.defaultInsertGraph)
+                            // Without a USING clause of its own, GRAPH in WHERE reads the store's named graphs. (An
+                            // operation the syntax tree does not account for is left as RDF4J parsed it.)
+                            val needsNamed = withGraphOnly && reads.named && !using.getOrElse(index) { true }
                             val needsRemove = declared.defaultRemoveGraphs.isEmpty()
                             if (!needsNamed && !needsRemove) {
                                 null
