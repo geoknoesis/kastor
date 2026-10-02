@@ -58,21 +58,23 @@ class PreparationBudgetTest {
         val first = executor.submit {
             cache.getOrCompile("first") {
                 entered.countDown()
-                check(release.await(5, TimeUnit.SECONDS))
+                check(release.await(120, TimeUnit.SECONDS))
                 ShapesCompiler.compile(emptyList(), ValidationConfig())
             }
         }
         try {
-            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            assertTrue(entered.await(60, TimeUnit.SECONDS))
+            // The waiter's budget runs out while the owner is still compiling. Its clock advances by one each time it
+            // is consulted, so the budget is used up after a few consultations, on any machine and without waiting.
             assertFailsWith<ShaclValidationException> {
-                cache.getOrCompile("first", ValidationBudget(Duration.ofMillis(30))) { error("must not compile") }
+                cache.getOrCompile("first", expires()) { error("must not compile") }
             }
             // A different key is not blocked by the in-flight compilation (compilation runs outside the lock).
             val other = ShapesCompiler.compile(emptyList(), ValidationConfig())
-            assertTrue(cache.getOrCompile("second", ValidationBudget(Duration.ofSeconds(2))) { other } === other)
+            assertTrue(cache.getOrCompile("second", ValidationBudget(null)) { other } === other)
         } finally {
             release.countDown()
-            first.get(5, TimeUnit.SECONDS)
+            first.get(120, TimeUnit.SECONDS)
             executor.shutdownNow()
         }
     }

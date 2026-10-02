@@ -27,13 +27,13 @@ ShaclValidation.validator(
 - Prefer **`validate(dataGraph, shapesGraph)`** with both graphs in RDF.
 - **`validate(graph, List<ShaclShape>)`** and **`validateConstraints`** are **not** implemented by any bundled engine (**native**, its `memory` alias, **RDF4J**) when the list is non-empty. The native engine and its `memory` alias throw **`UnsupportedShaclOperationException`** (a `ShaclValidationException`) with a message to use a shapes graph; the RDF4J bridge throws **`UnsupportedOperationException`**.
 - **`ValidationConfig.parallelValidation = true`** and **`streamingMode = true`** are rejected by the native engine and its `memory` alias with **`UnsupportedShaclOperationException`** when the validator is created.
-- **`ValidationConfig.includeWarnings = false`** empties `ValidationReport.warnings` (results of severity `sh:Warning` are still reported). **`batchSize`**, **`enableExplanations`**, **`enableSuggestions`** and **`validateInactiveShapes`** are deprecated: they never had an effect.
+- **`ValidationConfig.includeWarnings = false`** empties `ValidationReport.warnings` (results of severity `sh:Warning` are still reported). **`batchSize`**, **`enableExplanations`**, **`enableSuggestions`**, **`validateInactiveShapes`**, **`customParameters`** and **`streaming`** are deprecated: they never had an effect. **`ShapesDigestMode.SHAPES_RDF_CANONICAL_DIGEST`** (not implemented: every validation fails) and **`ImportConfig.allowImportFetch`** (nothing is fetched; `true` only turns an unresolved import into an exception instead of a warning) are deprecated too.
 - **`EnginePreference.BRIDGE_FIRST`** prefers a bridge such as `rdf4j` when one is on the classpath and otherwise resolves to the native engine.
 
 ## Resource limits (all engines)
 
 - **`ValidationConfig.maxCombinedGraphTriples`** — reject `data.size() + shapes.size()` above this value **before** validation (default **`Long.MAX_VALUE`**). Use **`ValidationConfig.rdf4jUntrustedInputLimits()`** for conservative starter values (applies to RDF4J and native).
-- **`ValidationConfig.patternTimeout`** — time budget of one `sh:pattern` evaluation (default **1 s**, native engine). A value on which a pattern exceeds it, or on which the regular expression engine runs out of stack, is **reported** as an undecided result naming the pattern (`isPatternTimeout` / `isPatternTooComplex`, `ksh:resultStatus ksh:PatternTimeout` / `ksh:PatternTooComplex` in RDF) that blocks conformance; validation continues with the rest of the data. With `strictMode = true` validation fails instead. Only `timeout` aborts a run.
+- **`ValidationConfig.patternTimeout`** — budget of one `sh:pattern` evaluation (default **1 s**, native engine), counted in steps of the regular expression engine (50,000 per millisecond) so that the outcome does not depend on the machine; the wall clock is a backstop at ten times the duration. Long values are matched on a dedicated thread with a fixed 16 MiB stack. A value on which a pattern exceeds the budget, or on which the regular expression engine runs out of stack, is **reported** as an undecided result naming the pattern (`isPatternTimeout` / `isPatternTooComplex`, `ksh:resultStatus ksh:PatternTimeout` / `ksh:PatternTooComplex` in RDF) that blocks conformance; validation continues with the rest of the data. With `strictMode = true` validation fails instead. Only `timeout` aborts a run.
 - **`ValidationConfig.maxViolations`** — max violation rows returned; if the engine collects more, **`ValidationReport.violationsTruncated`** is **`true`** and the returned list is capped.
 
 ## SPI registration
@@ -63,9 +63,11 @@ Providers are loaded via `META-INF/services/com.geoknoesis.kastor.rdf.shacl.Shac
   (flags `i`, `m`, `s`, `x`, `q`); invalid patterns fail compilation. Patterns have XPath `fn:matches` semantics: they
   are translated to `java.util.regex` so that `$`, multi-line `^`, `.`, `\d`, `\w` and `\s` mean what XML Schema
   regular expressions define, with one exception: `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`, i.e. Unicode-aware **and**
-  accepting `_` as `java.util.regex` engines do (`\W` is its complement). `java.util.regex` idioms that would change
-  meaning (`&&`, nested classes, inline flags, `\p{IsX}` for a non-block) fail compilation instead of being
-  reinterpreted. Ill-formed RDF lists (a cell with a missing or repeated `rdf:first` / `rdf:rest`) and sequence or
+  accepting `_` as `java.util.regex` engines do (`\W` is its complement). A leading inline flag group (`(?i)…`,
+  flags `i`, `m`, `s`, `x`), script names (`\p{IsLatin}`) and POSIX bracket expressions (`[[:alpha:]]`) are translated
+  with their intended meaning. Idioms that would change meaning (`&&`, nested classes, inline flags elsewhere, a `]`
+  right after `[`, `\p{IsX}` for a name that is neither a block nor a script) fail compilation instead of being
+  reinterpreted. The `i` flag does not affect category escapes (`\p{Lu}`). Ill-formed RDF lists (a cell with a missing or repeated `rdf:first` / `rdf:rest`) and sequence or
   alternative paths with fewer than two members fail compilation; list cells may be IRIs.
 - **SHACL-SPARQL.** `sh:sparql` constraints need a SPARQL-capable provider at runtime (`rdf-jena` or `rdf-rdf4j`);
   without one validation fails with a `ShaclValidationException` naming the missing module, and the provider

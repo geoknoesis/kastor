@@ -40,6 +40,8 @@ class CrossEngineShaclSmokeTest {
    * Kastor native engine; [rdf4j] and [jena] say the same for the bridge engines and default to [native]. A case
    * where they differ documents a **known divergence** ([divergence] explains it): the native engine evaluates
    * patterns as XPath / XML Schema regular expressions, the bridge engines hand them to `java.util.regex`.
+   * `java.util.regex` idioms the native engine translates with their intended meaning (a leading inline flag group,
+   * script names) are among the agreed cases.
    */
   private class PatternCase(
       val pattern: String,
@@ -55,6 +57,10 @@ class CrossEngineShaclSmokeTest {
   private val jose = "Jos" + Char(0xE9)
   private val lineSeparator = Char(0x2028).toString()
   private val verticalTab = Char(0x0B).toString()
+  private val alpha = Char(0x3B1).toString()
+  private val greekExtended = Char(0x1F00).toString()
+  private val eAcute = Char(0xE9).toString()
+  private val eAcuteUpper = Char(0xC9).toString()
   private val emailPattern = "^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$"
 
   private val agreedPatternCases =
@@ -84,6 +90,20 @@ class CrossEngineShaclSmokeTest {
           PatternCase("^<.+?>$", null, "<a>", native = true),
           PatternCase("^\\s+$", null, " \t", native = true),
           PatternCase("b", null, "abc", native = true),
+          // A leading inline flag group, as shapes written for java.util.regex engines use it, means the same on the
+          // native engine (it is read as sh:flags).
+          PatternCase("(?i)^abc$", null, "ABC", native = true),
+          PatternCase("(?i)^abc$", null, "abd", native = false),
+          PatternCase("^abc$", null, "ABC", native = false),
+          PatternCase("(?i)^[a-c]+$", null, "AbC", native = true),
+          PatternCase("(?s)^a.c$", null, "a\nc", native = true),
+          PatternCase("(?m)^b$", null, "a\nb", native = true),
+          PatternCase("(?im)^B$", null, "a\nb", native = true),
+          PatternCase("(?i)^b$", "m", "a\nB", native = true),
+          PatternCase("(?x)^ a b $", null, "ab", native = true),
+          // A script name: not XML Schema, but meant as java.util.regex reads it.
+          PatternCase("^\\p{IsLatin}+$", null, "abc", native = true),
+          PatternCase("^\\p{IsLatin}+$", null, alpha, native = false),
       )
 
   /**
@@ -107,6 +127,14 @@ class CrossEngineShaclSmokeTest {
               divergence = "with flag m, ^ matches after a line feed only in XPath; java.util.regex also after CR, U+0085, U+2028, U+2029"),
           PatternCase("^\\s$", null, verticalTab, native = false, rdf4j = true, jena = true,
               divergence = "\\s is space, tab, line feed and carriage return in XML Schema; java.util.regex adds U+000B and U+000C"),
+          PatternCase("(?i)^" + eAcute + "$", null, eAcuteUpper, native = true, rdf4j = false, jena = false,
+              divergence = "a leading (?i) is the XPath i flag, which is Unicode-aware; in java.util.regex (?i) alone is US-ASCII"),
+          PatternCase("^\\p{IsGreek}$", null, greekExtended, native = false, rdf4j = true, jena = true,
+              divergence = "\\p{IsGreek} is the block U+0370..U+03FF in XML Schema; java.util.regex reads it as the script, which has U+1F00"),
+          PatternCase("^\\p{Lu}$", "i", "a", native = false, rdf4j = true, jena = true,
+              divergence = "XPath: the i flag does not affect category escapes; java.util.regex makes \\p{Lu} match every cased letter"),
+          PatternCase("^[[:alpha:]]+$", null, "b", native = true, rdf4j = false, jena = false,
+              divergence = "a POSIX bracket expression is translated; java.util.regex reads a nested class of the characters ':', a, l, p, h"),
       )
 
   /** A Turtle string literal for [text], ASCII only (control and non-ASCII characters as numeric escapes). */

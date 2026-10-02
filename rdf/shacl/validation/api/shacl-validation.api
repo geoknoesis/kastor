@@ -117,6 +117,7 @@ public final class com/geoknoesis/kastor/rdf/shacl/KastorShaclVocabulary {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/KastorShaclVocabulary;
 	public static final field NAMESPACE Ljava/lang/String;
 	public static final field PREFIX Ljava/lang/String;
+	public static final field VERSION Ljava/lang/String;
 	public static final field VOCABULARY_RESOURCE Ljava/lang/String;
 	public final fun getPatternTimeout-tqZU9bw ()Ljava/lang/String;
 	public final fun getPatternTooComplex-tqZU9bw ()Ljava/lang/String;

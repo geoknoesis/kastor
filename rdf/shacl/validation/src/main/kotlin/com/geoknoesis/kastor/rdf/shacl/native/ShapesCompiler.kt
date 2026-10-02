@@ -753,7 +753,9 @@ internal object ShapesCompiler {
                         else -> constraints.add(PropertyConstraint.ClassAnyOf(opts))
                     }
                 }
-                else -> Unit
+                // A literal (or triple term) is not a class: the shapes graph is ill-formed. Dropping the constraint
+                // would validate nothing where the author asked for a class.
+                else -> throw ShapeCompileException("sh:class of shape $subject expects a class IRI or an RDF list of IRIs, got $co")
             }
         }
         // Every sh:nodeKind value is its own constraint (all must hold); an RDF list value allows any listed kind.
@@ -765,7 +767,10 @@ internal object ShapesCompiler {
                         index.parseRdfList(nk).map {
                             it as? Iri ?: throw ShapeCompileException("sh:nodeKind list entries must be IRIs: $it")
                         }
-                    else -> emptyList()
+                    else -> throw ShapeCompileException(
+                        "sh:nodeKind of shape $subject expects one of the sh:NodeKind IRIs (sh:IRI, sh:BlankNode, " +
+                            "sh:Literal, ...) or an RDF list of them, got $nk",
+                    )
                 }
             if (kinds.isNotEmpty()) constraints.add(PropertyConstraint.NodeKind(kinds.distinct()))
         }

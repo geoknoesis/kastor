@@ -100,9 +100,10 @@ class KastorShaclVocabularyTest {
         val validator = NativeShaclValidator(
             ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING, patternTimeout = java.time.Duration.ofMillis(50)),
         )
-        // Deterministic pattern budget: the clock advances one millisecond per consultation.
-        var now = 0L
-        validator.patternClock = { now += 1_000_000L; now }
+        // Deterministic: the pattern budget is counted in steps (the backstop clock stands still), and the pattern
+        // evaluation thread has a stack that the 300,000 repetitions of the ex:deep value cannot fit in.
+        validator.patternClock = { 0L }
+        validator.patternWorkerStackBytes = 512L * 1024
         val report = validator.validate(data, shapes)
         val rdf = report.toShaclValidationReportRdf().getTriples()
 
