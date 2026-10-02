@@ -6,6 +6,7 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.executor.ollama.client.OllamaClient
+import ai.koog.prompt.params.LLMParams
 
 /**
  * Minimal seam over the LLM transport: one system + user message in, the first reply's text out.
@@ -15,19 +16,23 @@ internal interface ExplanationLlmSession : AutoCloseable {
     suspend fun complete(systemPrompt: String, userMessage: String): String?
 }
 
+/** The request for one batch; the reply is limited to [maxOutputTokens] tokens by the provider. */
+internal fun explanationPrompt(systemPrompt: String, userMessage: String, maxOutputTokens: Int): Prompt =
+    Prompt
+        .builder("onto-quality-explain")
+        .system(systemPrompt)
+        .user(userMessage)
+        .build()
+        .withParams(LLMParams(maxTokens = maxOutputTokens))
+
 /** Koog-backed session (OpenAI, Anthropic or Ollama per [LlmExplanationConfig.provider]). */
 internal class KoogExplanationLlmSession(config: LlmExplanationConfig) : ExplanationLlmSession {
     private val model = config.resolvedModel()
     private val executor = MultiLLMPromptExecutor(createLlmClient(config))
+    private val maxOutputTokens = config.maxOutputTokens
 
     override suspend fun complete(systemPrompt: String, userMessage: String): String? {
-        val prompt =
-            Prompt
-                .builder("onto-quality-explain")
-                .system(systemPrompt)
-                .user(userMessage)
-                .build()
-        return executor.execute(prompt, model, emptyList()).firstOrNull()?.content
+        return executor.execute(explanationPrompt(systemPrompt, userMessage, maxOutputTokens), model, emptyList()).firstOrNull()?.content
     }
 
     override fun close() {

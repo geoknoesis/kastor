@@ -8,6 +8,19 @@ import ai.koog.prompt.executor.ollama.client.OllamaModels
 import java.time.Duration
 
 /** Backing LLM vendor (Koog client selection). */
+/** `scheme://user:password@host` in running text; the credentials are group 2. */
+private val URL_CREDENTIALS = Regex("([A-Za-z][A-Za-z0-9+.\\-]*://)([^/\\s?#]*)@")
+
+/** [text] with the user name and password of every URL replaced by `***` (the part between `://` and `@`). */
+internal fun redactUrlCredentials(text: String): String =
+    if (!text.contains("://")) text else URL_CREDENTIALS.replace(text) { "${it.groupValues[1]}***@" }
+
+/** The credentials of [url] (`user:password`, and the password alone), or nothing when it has none. */
+internal fun urlCredentials(url: String?): List<String> {
+    val userInfo = url?.let { URL_CREDENTIALS.find(it) }?.groupValues?.get(2)?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    return listOf(userInfo, userInfo.substringAfter(':', "")).filter { it.isNotBlank() }
+}
+
 enum class LlmProvider {
     OPENAI,
     ANTHROPIC,
@@ -34,7 +47,8 @@ enum class ExplanationModelPreset {
  * Otherwise [modelPreset] selects a catalog model; [ExplanationModelPreset.AUTO] uses a pragmatic default per provider.
  *
  * API keys: when [apiKey] is null, [OPENAI_API_KEY] / [ANTHROPIC_API_KEY] are read from the environment. Ollama ignores [apiKey].
- * [toString] redacts [apiKey] so configs can be logged safely.
+ * [toString] redacts [apiKey] and any credentials in [baseUrl] (`http://user:password@host`) so configs can be logged
+ * safely.
  *
  * Reliability: every LLM request is bounded by [requestTimeout]; transient failures (timeouts, HTTP 408 / 429 / 5xx,
  * connection errors) are retried up to [maxRetries] times, waiting [retryBackoff] × 2^attempt with jitter (or the
@@ -65,6 +79,11 @@ data class LlmExplanationConfig @JvmOverloads constructor(
      * exhausted (e.g. HTTP 503 throughout) — after which the remaining batches are not sent.
      */
     val circuitBreakerThreshold: Int = 3,
+    /**
+     * Most tokens the model may generate for one request (sent as the provider's "max tokens" parameter), so a reply
+     * cannot grow without bound. A batch of 12 findings needs about 2,000; raise it for larger batches.
+     */
+    val maxOutputTokens: Int = DEFAULT_MAX_OUTPUT_TOKENS,
 ) {
     init {
         require(!requestTimeout.isNegative && !requestTimeout.isZero) { "requestTimeout must be positive" }
@@ -72,16 +91,24 @@ data class LlmExplanationConfig @JvmOverloads constructor(
         require(!retryBackoff.isNegative) { "retryBackoff must not be negative" }
         require(!maxTotalDuration.isNegative && !maxTotalDuration.isZero) { "maxTotalDuration must be positive" }
         require(circuitBreakerThreshold >= 1) { "circuitBreakerThreshold must be at least 1" }
+        require(maxOutputTokens in 1..MAX_OUTPUT_TOKENS_LIMIT) { "maxOutputTokens must be between 1 and $MAX_OUTPUT_TOKENS_LIMIT" }
     }
 
     override fun toString(): String =
-        "LlmExplanationConfig(provider=$provider, apiKey=${if (apiKey == null) "null" else "***"}, baseUrl=$baseUrl, " +
+        "LlmExplanationConfig(provider=$provider, apiKey=${if (apiKey == null) "null" else "***"}, baseUrl=${baseUrl?.let(::redactUrlCredentials)}, " +
             "modelId=$modelId, modelPreset=$modelPreset, requestTimeout=$requestTimeout, maxRetries=$maxRetries, " +
-            "retryBackoff=$retryBackoff, maxTotalDuration=$maxTotalDuration, circuitBreakerThreshold=$circuitBreakerThreshold)"
+            "retryBackoff=$retryBackoff, maxTotalDuration=$maxTotalDuration, circuitBreakerThreshold=$circuitBreakerThreshold, " +
+            "maxOutputTokens=$maxOutputTokens)"
 
     companion object {
         const val OPENAI_API_KEY = "OPENAI_API_KEY"
         const val ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
+
+        /** Default of [maxOutputTokens]. */
+        const val DEFAULT_MAX_OUTPUT_TOKENS: Int = 8192
+
+        /** Upper bound of [maxOutputTokens]. */
+        const val MAX_OUTPUT_TOKENS_LIMIT: Int = 1_000_000
     }
 
     internal fun resolvedModel(): LLModel {

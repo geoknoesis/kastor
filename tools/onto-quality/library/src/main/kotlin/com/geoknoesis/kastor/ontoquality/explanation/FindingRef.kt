@@ -14,12 +14,14 @@ import java.security.MessageDigest
  * constraint type, violation codes), **not** from row position in [com.geoknoesis.kastor.ontoquality.QualityReport.findings],
  * so importance-based reordering does not change refs.
  *
- * Blank nodes are keyed by [QualityFinding.blankNodeKeys] (a hash of the content and context of the node, unique
- * within the asserted graph, set by [com.geoknoesis.kastor.ontoquality.QualityChecker]), so refs of findings on e.g.
- * `owl:Restriction` nodes do not change when the same file is parsed again or a reasoner is switched on, and two
- * blank nodes never share a ref. Blank-node labels that a message interpolates are replaced by the same keys
- * ([QualityFinding.stableMessage]). Without a key the parser label is used, which is stable only within one parse.
- * Anonymous shapes are keyed without their blank-node label for the same reason.
+ * Blank nodes are keyed by [QualityFinding.blankNodeKeys] (a hash of the structure and the owner chain of the node,
+ * unique within the asserted graph, set by [com.geoknoesis.kastor.ontoquality.QualityChecker]), so refs of findings on
+ * e.g. `owl:Restriction` nodes do not change when the same file is parsed again or a reasoner is switched on, and two
+ * blank nodes never share a ref. Blank-node references (`_:label`) that a message interpolates are replaced by the
+ * same keys ([QualityFinding.stableMessage]). Without a key the parser label of a focus node or value is used, which
+ * is stable only within one parse. Blank nodes of a result path belong to the shapes graph: they are keyed on that
+ * graph, and without a key they are written as `_:` only, like anonymous shapes, whose blank-node label is left out
+ * for the same reason.
  */
 @JvmInline
 value class FindingRef(val hexSha256: String) {
@@ -59,7 +61,7 @@ value class FindingRef(val hexSha256: String) {
                 append(finding.tier.name).append('\u001f')
                 append(pitfallKey(finding)).append('\u001f')
                 append(termKey(v.focusNode, finding)).append('\u001f')
-                append(v.path?.joinToString("\u001e") { termKey(it, finding) } ?: "").append('\u001f')
+                append(v.path?.joinToString("\u001e") { pathKey(it, finding) } ?: "").append('\u001f')
                 append(v.value?.let { termKey(it, finding) } ?: "")
             }
         }
@@ -84,6 +86,10 @@ value class FindingRef(val hexSha256: String) {
                 is com.geoknoesis.kastor.ontoquality.PitfallReference.KastorExtension -> "KASTOR:${p.code}"
                 com.geoknoesis.kastor.ontoquality.PitfallReference.Convention -> "CONVENTION"
             }
+
+        /** A blank node in a path is a node of the shapes graph: its parser label never reaches the ref. */
+        private fun pathKey(term: RdfTerm, finding: QualityFinding): String =
+            if (term is BlankNode) finding.blankNodeKeys[term] ?: "_:" else termKey(term, finding)
 
         private fun termKey(term: RdfTerm, finding: QualityFinding): String =
             when (term) {
