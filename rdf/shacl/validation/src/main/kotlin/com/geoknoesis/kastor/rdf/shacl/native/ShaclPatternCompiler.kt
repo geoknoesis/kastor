@@ -40,7 +40,9 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * Passed through, because the meaning is the same: lazy and possessive quantifiers, back-references, non-capturing
  * and named groups, lookarounds, atomic groups, general-category escapes (`\p{Lu}`) and `\Q…\E` quoting (a quoted
  * section is copied verbatim, so `$`, `^` and `.` inside it stay literal). `$`, `^`, `.` and the class escapes
- * inside such groups are still translated. Portable shapes should stick to the XML Schema subset.
+ * inside such groups are still translated. Escapes that only `java.util.regex` has (`\b`, `\A`, `\z`, `\h`…) keep
+ * their Java meaning; note that `\b` uses Java's own (ASCII) notion of a word character, not the `\w` above.
+ * Portable shapes should stick to the XML Schema subset.
  *
  * Rejected, because `java.util.regex` would read them differently from what the author of a Java-style pattern
  * means, or because the translation cannot honour them:

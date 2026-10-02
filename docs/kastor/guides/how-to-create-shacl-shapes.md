@@ -100,6 +100,8 @@ property("http://example.org/email") {
 }
 ```
 
+This pattern accepts `john_doe@example.org`: `\w` matches letters, digits and the underscore on every engine. On the Kastor native validator `\w` and `\d` are also Unicode-aware, and `$` matches only at the end of the value; see [Pattern constraints](../api/shacl-dsl-guide.md#pattern-constraints) for the differences from Java regular expressions.
+
 #### Numeric ranges
 
 ```kotlin

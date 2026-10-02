@@ -80,9 +80,11 @@ if (!report.isValid) {
 - Property shapes default to `sh:Violation`; they do not inherit a node shape's severity.
 - Deactivated shapes and shapes without constraints accept every node. Literal value nodes can conform to nested shapes (`sh:node`, `sh:and`/`sh:or`/`sh:xone`/`sh:not`, qualified value shapes).
 - Repeatable parameters (`sh:pattern`, `sh:hasValue`, bounds, …) produce one constraint per value. Repeating a single-valued parameter (`sh:minCount`, `sh:flags`, `sh:in`, …) is a shape compilation error. `sh:pattern` is compiled once, at shape compile time, and supports the flags `i`, `m`, `s`, `x` and `q`.
-- `sh:pattern` follows XPath `fn:matches` (XML Schema regular expressions), not `java.util.regex` defaults. `$` matches only at the end of the value (with `m`: before a line feed), never before a final newline. With `m`, `^` matches at the start and after a line feed only. `.` matches everything except line feed and carriage return unless `s` is set. `\d` is any Unicode decimal digit, `\s` is exactly space, tab, line feed and carriage return, and `\w` is every character except punctuation, separators and control/unassigned characters: `^\w+$` accepts `José`, and symbols such as `+` are word characters, but `_` (connector punctuation) is **not**; write `[\w_]` for identifiers. Character-class subtraction (`[a-z-[aeiou]]`), `\i` / `\c` and `\p{IsBlock}` are supported.
-- One pattern evaluation (one pattern against one value) may take at most `ValidationConfig.patternTimeout` (default 1 second). A pattern that backtracks catastrophically fails validation with a `ShaclValidationException` naming the pattern, the shape and the focus node, instead of running until the run-wide `timeout`.
-- RDF lists in the shapes graph (`sh:in`, `sh:and` / `sh:or` / `sh:xone`, `sh:languageIn`, `sh:ignoredProperties`, sequence and alternative paths) must be well-formed: a cell with a missing or repeated `rdf:first` / `rdf:rest` is a shape compilation error rather than a silently truncated list.
+- `sh:pattern` follows XPath `fn:matches` (XML Schema regular expressions), not `java.util.regex` defaults. `$` matches only at the end of the value (with `m`: before a line feed), never before a final newline. With `m`, `^` matches at the start and after a line feed only. `.` matches everything except line feed and carriage return unless `s` is set. `\d` is any Unicode decimal digit and `\s` is exactly space, tab, line feed and carriage return.
+- `\w` is `[_\p{L}\p{M}\p{N}\p{S}]`: the XML Schema class (every character except punctuation, separators and control/unassigned characters, so `^\w+$` accepts `José` and symbols such as `+` are word characters) **plus the underscore**. XML Schema excludes `_`; it is accepted because shapes are usually written against engines that evaluate patterns with `java.util.regex` (Jena, RDF4J, TopBraid), where `\w` matches `_`. `\W` is the exact complement. The [SHACL DSL guide](../api/shacl-dsl-guide.md#pattern-constraints) lists the remaining differences from Java regular expressions.
+- The pattern syntax follows one rule. XML Schema syntax is translated: character-class subtraction (`[a-z-[aeiou]]`, which must end its class and may nest), `\i` / `\c` (the XML `NameStartChar` / `NameChar` productions) and their complements `\I` / `\C`, and block escapes `\p{IsBasicLatin}` (the Unicode block name without spaces). `java.util.regex` syntax that means the same after translation is passed through: lazy and possessive quantifiers, back-references, non-capturing and named groups, lookarounds, `\Q…\E`. `java.util.regex` syntax that would mean something else is **rejected** when the shapes are compiled (`ShapeCompileException`): class intersection `&&`, an unescaped `[` inside a class (nested classes and unions, POSIX `[[:alpha:]]`), inline flag groups such as `(?i)` or `(?m)` (use `sh:flags`), and `\p{IsX}` where `X` is not a Unicode block (Java scripts and binary properties such as `\p{IsLatin}`, `\p{IsAlphabetic}`).
+- One pattern evaluation (one pattern against one value) may take at most `ValidationConfig.patternTimeout` (default 1 second). A value on which a pattern uses up this budget (catastrophic backtracking), or on which the regular expression engine runs out of stack (an alternation under a quantifier such as `(a|b)*` on a very long value), does **not** abort the run. The constraint is *undecided* for that value: the report gets a result that names the pattern, has the shape's severity and `sh:PatternConstraintComponent`, and is marked `isPatternTimeout` / `isPatternTooComplex` (`ksh:resultStatus ksh:PatternTimeout` / `ksh:PatternTooComplex` in RDF). The value is not accepted, so the report cannot conform because of it, and validation continues with the other values and focus nodes. A shape that reads the answer through `sh:not`, `sh:or` and the like gets "undefined" (see [three-valued conformance](#three-valued-conformance)), so an undecided pattern never satisfies or silently fails an outer constraint. With `strictMode = true`, validation throws `ShaclValidationException` naming the pattern instead. Only the run-wide `timeout` aborts a run.
+- RDF lists in the shapes graph (`sh:in`, `sh:and` / `sh:or` / `sh:xone`, `sh:languageIn`, `sh:ignoredProperties`, sequence and alternative paths) must be well-formed: a cell with a missing or repeated `rdf:first` / `rdf:rest` is a shape compilation error rather than a silently truncated list. List cells may be blank nodes or IRIs. A sequence path and an alternative path need at least two members: `sh:path ( )` and `sh:path ( ex:p )` are shape compilation errors. The shapes graph is read as a set of triples, so a graph implementation that returns the same triple twice does not make a parameter look repeated.
 - Classes that are also shapes act as implicit class targets. Value comparisons (`sh:lessThan`, bounds, …) follow the SPARQL operator mapping for datatypes, and literals are checked for XSD lexical validity.
 
 ### Three-valued conformance
@@ -95,7 +97,7 @@ The native engine answers every nested conformance check (`sh:node`, logical con
 
 As a result, reports never depend on the order of operands, constraints or targets. When one value node is undefined, the definite violations of the other value nodes are still reported, and the undefined value adds an undefined result (see below). Qualified value counts use a lower bound (values that definitely conform) and an upper bound (values that conform or are undefined). A count is undefined only when the two bounds lead to different outcomes.
 
-Undefined answers only come from recursive shapes, described next.
+Undefined answers come from recursive shapes, described next, and from `sh:pattern` evaluations that could not be completed (see [conformance semantics](#conformance-semantics)).
 
 ### Recursive shapes
 
@@ -162,12 +164,23 @@ When a candidate's membership is undefined (recursion through a non-monotone ope
 
 `ValidationViolation` carries the full result path (`resultPathNode`, plus `resultPathTriples` for blank-node paths), the shape's `sh:message` values with language tags (`resultMessages`) and `sourceConstraint` (for example, the SHACL-SPARQL constraint node). `toShaclValidationReportRdf()` emits `sh:resultPath`, `sh:resultMessage` and `sh:sourceConstraint`, emits `sh:value` only for components that define it, and emits one `sh:closed` result per offending triple.
 
-Two things the SHACL report vocabulary cannot express are exported with Kastor extension properties (`KastorShaclVocabulary`, prefix `ksh:`, namespace `https://kastor.geoknoesis.com/ns/shacl#`). They are additional triples on the `sh:ValidationResult`; nothing is minted in the `sh:` namespace, and consumers of the standard vocabulary can ignore them.
+What the SHACL report vocabulary cannot express is exported with Kastor extension terms (`KastorShaclVocabulary`, prefix `ksh:`, namespace `https://kastor.geoknoesis.com/ns/shacl#`). They are additional triples on the `sh:ValidationReport` and its `sh:ValidationResult` nodes; nothing is minted in the `sh:` namespace, and consumers of the standard vocabulary can ignore them.
 
-| Property | Meaning |
-|----------|---------|
-| `ksh:resultStatus ksh:UndefinedRecursion` | The result reports an **undefined** answer (`isUndefinedRecursion`), not a failure. It has the severity and constraint component a failure would have, so without this triple an RDF consumer could not tell the two apart. |
-| `ksh:reifier` | On a `sh:reifierShape` result: the reifier that does not conform. `sh:value` is the object of the reified triple, so several failing reifiers of one triple differ only by this property (and by the engine message). In Kotlin it is `violation.context[ValidationViolation.REIFIER_CONTEXT_KEY]`. |
+| Term | Meaning |
+|------|---------|
+| `ksh:resultStatus` | On a result: the constraint was **not decided**, which is not the same as a failure (`violation.isUndecided`, `violation.resultStatus`). The result has the severity and constraint component a failure would have, so without this triple an RDF consumer could not tell the two apart. Its value is one of the three statuses below. |
+| `ksh:UndefinedRecursion` | The constraint depends on a recursive shape dependency through a non-monotone operator (`isUndefinedRecursion`). |
+| `ksh:PatternTimeout` | A `sh:pattern` evaluation used up `ValidationConfig.patternTimeout` on a value (`isPatternTimeout`). |
+| `ksh:PatternTooComplex` | The regular expression engine ran out of stack while matching a `sh:pattern` (`isPatternTooComplex`). |
+| `ksh:reifier` | On a `sh:reifierShape` result: the reifier that does not conform, or whose conformance is undecided. `sh:value` is the object of the reified triple, so several reifiers of one triple differ only by this property (and by the engine message). In Kotlin it is `violation.context[ValidationViolation.REIFIER_CONTEXT_KEY]`. |
+| `ksh:warning` | On the report: the message of a report-level warning (`report.warnings` entries without a resource), for example a construct skipped under `IGNORE_WITH_WARNING`. Warnings do not affect `sh:conforms`; this property keeps a conforming RDF report from hiding what was not validated. |
+
+The vocabulary is published as a Turtle document inside the `rdf-shacl-validation` JAR, at the classpath resource `KastorShaclVocabulary.VOCABULARY_RESOURCE` (`/com/geoknoesis/kastor/rdf/shacl/kastor-shacl.ttl`). Every term has an `rdfs:label`, an `rdfs:comment` and `rdfs:isDefinedBy`; `ksh:ResultStatus` is the class of the three statuses. `KastorShaclVocabulary.terms` lists the terms, and a test checks that every `ksh:` term the engine emits is declared in the document.
+
+```kotlin
+val vocabulary = KastorShaclVocabulary::class.java.getResourceAsStream(KastorShaclVocabulary.VOCABULARY_RESOURCE)!!
+    .use { Rdf.parse(it.readBytes().decodeToString(), RdfFormat.TURTLE) }
+```
 
 Each failing reifier yields its own result; results that would be identical are reported once. `sh:reificationRequired` is a parameter of `sh:ReifierShapeConstraintComponent`, which is the component reported for both `ConstraintType.REIFIER_SHAPE` and `ConstraintType.REIFICATION_REQUIRED` results.
 
@@ -225,15 +238,22 @@ try {
 }
 ```
 
-To skip these constructs instead, set `ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)`. Each skipped construct is listed in `report.warnings` ("Unsupported SHACL feature ignored: ..."). These are report warnings, not validation results, so they do not change `isValid`.
+To skip these constructs instead, set `ValidationConfig(unsupportedFeatures = UnsupportedFeatureHandling.IGNORE_WITH_WARNING)`. Each skipped construct is listed in `report.warnings` ("Unsupported SHACL feature ignored: ..."). These are report warnings, not validation results, so they do not change `isValid`. `toShaclValidationReportRdf()` exports them as `ksh:warning` literals on the report node, so the RDF report does not say `sh:conforms true` without a trace of what was skipped. `ValidationConfig(includeWarnings = false)` leaves them out of the report (and of its RDF export).
 
 Detection only inspects declared and implicit shapes, plus the nodes reachable from them through shape-valued parameters. Data triples that share the shapes graph are therefore never mistaken for expressions. For example, `validate(g, g)` works when `g` has blank-node `sh:targetNode` values that carry data triples.
 
 **Blank node `sh:targetNode` values.** In SHACL 1.2 the values of `sh:targetNode` are node expressions: an IRI or a literal is a constant, a blank node is a computed expression. A blank node of the shapes graph can only denote a data node when the two graphs share it (the same graph validated against itself, or shapes discovered from the data). The engine therefore applies this rule:
 
-1. A blank node whose own triples use expression syntax is a node expression (`NODE_EXPRESSION` / `SPARQL_NODE_EXPRESSION`): SHACL, `shnex:` or `sparql:` vocabulary (`sh:path`, `sh:select`, `sparql:concat ( … )`), an RDF list, or a call `[ ex:fn ( … ) ]` of a function declared in the shapes graph.
-2. Any other blank node is an ordinary target if it is a node of the data graph.
-3. Otherwise it can never be a focus node and is not validated. If it has the syntax of a call (`[ ex:fn ( … ) ]` with `ex:fn` undeclared, for example a function from an import that was not resolved), it is reported as an unsupported `NODE_EXPRESSION` (failure, or warning with `IGNORE_WITH_WARNING`). Any other such blank node produces a report warning saying that the target is ignored.
+1. A blank node whose own triples use vocabulary that has no reading as data is a node expression (`NODE_EXPRESSION` / `SPARQL_NODE_EXPRESSION`), whatever the data graph is: a SPARQL expression (`sh:select`, `sh:sparqlExpr`), the `shnex:` or `sparql:` namespaces as predicate or type (`shnex:pathValues`, `sparql:concat ( … )`), or a call `[ ex:fn ( … ) ]` of a function declared in the shapes graph.
+2. Any other blank node is an **ordinary target if it is a node of the data graph**, regardless of its predicates: a plain node, an RDF list cell, a node that carries `sh:` predicates or a SHACL type (a shape used as data), or a call-shaped node whose function is not declared.
+3. Otherwise it can never be a focus node, and the shape would silently go unvalidated. It is reported as an unsupported `NODE_EXPRESSION`, like the expressions of rule 1: a failure by default, a report warning with `IGNORE_WITH_WARNING`. This is the same for every such blank node, whatever its triples look like.
+
+### Configuration options that are rejected or have no effect
+
+- `parallelValidation = true` and `streamingMode = true` are not supported by the native engine (provider ids `kastor` and `memory`). Creating a validator with either throws `UnsupportedShaclOperationException`, a `ShaclValidationException`.
+- `validate(graph, List<ShaclShape>)` and `validateConstraints(graph, constraints)` throw the same exception for a non-empty list: pass the shapes as an RDF graph. The RDF4J bridge throws `UnsupportedOperationException` for these two calls.
+- `includeWarnings = false` empties `report.warnings` and nothing else: results are reported whatever their severity, including `sh:Warning`.
+- `batchSize`, `enableExplanations`, `enableSuggestions` and `validateInactiveShapes` are deprecated. No engine ever read them: validation is not batched, `explanation` and `suggestedFix` are never filled, and a shape with `sh:deactivated true` is never validated. They remain only for binary compatibility.
 
 ### W3C conformance
 
@@ -248,6 +268,7 @@ The task fails instead of skipping when the suite is missing, and every case is 
 - Each known deviation in `W3cKnownDeviations` has an `UnsupportedShaclFeature` category and must fail with an `UnsupportedShaclFeatureException` for exactly that category. At the pinned commit there are 11: 4 SPARQL constraint components, 1 node expression, 3 SPARQL node expressions and 3 SHACL functions.
 - `sht:Failure` cases must fail with their expected category (a pre-binding restriction or a shapes compile failure), never with an unsupported feature.
 - `sh:conformanceDisallows` cases check the engine's own `isValid` and exported `sh:conforms`.
+- Result graphs are compared after removing the `ksh:` triples, so an undecided result would look like a failure. A case therefore fails if the engine emits any result with a `ksh:resultStatus` (undefined recursion, pattern timeout, pattern too complex), unless the case is listed with a reason in `W3cKnownDeviations`. No case is listed: the engine decides every constraint of the suite.
 
 See the [module README](../../../rdf/shacl/validation/README.md).
 
