@@ -33,7 +33,12 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  *   the sub-select, so an outer binding must not apply to it (Jena substitutes it anyway);
  * - the variable is bound to a literal or a triple term and is used as the predicate of a triple
  *   pattern, or as the name of a GRAPH or SERVICE. Only an IRI is legal there, so the substituted
- *   text would not parse (Jena's own substitution silently matches nothing).
+ *   text would not parse (Jena's own substitution silently matches nothing). This covers RDF 1.2
+ *   syntax too: the predicate inside a reified triple (`<< s p o >>`) or a triple term
+ *   (`<<( s p o )>>`, also in expressions), the predicates of an annotation block (`{| p o |}`),
+ *   a reifier (`~ r`), which is an IRI or a blank node, and the subject of a triple term written
+ *   in an expression (a triple term in a triple pattern may have a literal subject, as any triple
+ *   pattern may).
  *
  * Lexical handling:
  * - SPARQL 1.1 codepoint escapes (backslash-u plus 4 hex digits, backslash-U plus 8 hex digits;
@@ -46,6 +51,9 @@ package com.geoknoesis.kastor.rdf.sparql.internal
  *   Escaped characters in prefixed local names (`ex:a\#b`) belong to the name.
  * - A number ends where its digits end, as in the SPARQL grammar: `(1AS ?x)` is the number `1`
  *   followed by the keyword `AS`.
+ * - A constant that starts with `<` or ends with `>` is separated by a space from a `<` or `>`
+ *   written directly next to the variable it replaces (`?a<?v` becomes `?a< <urn:x>`), because
+ *   `<<` and `>>` are tokens of their own in SPARQL 1.2.
  */
 object SparqlInitialBindings {
 
@@ -87,8 +95,11 @@ object SparqlInitialBindings {
             tokens.forEachIndexed { index, token ->
                 val replacement = replacements[index] ?: return@forEachIndexed
                 append(sparql, last, decoded.originalOffset(token.start))
+                // `?a<?v` must not become `?a<<urn:x>`: `<<` and `>>` are tokens of their own in SPARQL 1.2.
+                if (replacement.startsWith("<") && isNotEmpty() && this[length - 1] == '<') append(' ')
                 append(replacement)
                 last = decoded.originalOffset(token.end)
+                if (replacement.endsWith(">") && last < sparql.length && sparql[last] == '>') append(' ')
             }
             append(sparql, last, sparql.length)
         }
@@ -169,7 +180,11 @@ object SparqlInitialBindings {
         private fun substitute(index: Int, pattern: Boolean = false) {
             if (!bound(index)) return
             if (index in iriOnly && tokens[index].name in nonIris) {
-                reject(tokens[index].name, "it is used as a predicate or as the name of a GRAPH or SERVICE, where only an IRI can be bound")
+                reject(
+                    tokens[index].name,
+                    "it is used where only an IRI can be bound: as a predicate, as a reifier, as the subject of a triple term in an " +
+                        "expression, or as the name of a GRAPH or SERVICE",
+                )
             }
             // `BOUND(constant)` is not legal SPARQL text (BOUND takes a variable); a bound variable is always
             // bound, which is how Jena evaluates its substituted `BOUND`. `(true)` is legal wherever BOUND(...) is,
@@ -303,6 +318,8 @@ object SparqlInitialBindings {
             // Parenthesis depth within the innermost enclosing braces: > 0 is an expression position.
             var parens = 0
             val outer = ArrayDeque<Int>()
+            // Per open brace, whether it opened a group; an annotation block `{| ... |}` belongs to the group around it.
+            val groups = ArrayDeque<Boolean>()
             var i = from
             while (i < to) {
                 val t = tokens[i]
@@ -315,11 +332,13 @@ object SparqlInitialBindings {
                     t.isPunct('{') -> {
                         outer.addLast(parens)
                         parens = 0
-                        frames.addLast(Frame(i))
+                        val group = !opensAnnotation(tokens, i)
+                        groups.addLast(group)
+                        if (group) frames.addLast(Frame(i))
                     }
                     t.isPunct('}') && outer.isNotEmpty() -> {
                         parens = outer.removeLast()
-                        close(frames.removeLast())
+                        if (groups.removeLast()) close(frames.removeLast())
                     }
                     t.isPunct('(') -> parens++
                     t.isPunct(')') -> parens--
@@ -539,6 +558,12 @@ object SparqlInitialBindings {
 
     // ------------------------------------------------------------------ IRI-only positions
 
+    /** Whether the `{` at [index] opens an annotation block `{|`: a `|` follows it directly. */
+    private fun opensAnnotation(tokens: List<Token>, index: Int): Boolean {
+        val next = tokens.getOrNull(index + 1) ?: return false
+        return next.kind == Kind.WORD && next.text[0] == '|' && next.start == tokens[index].end
+    }
+
     /** A constant that is certainly not an IRI: a literal (quoted, numeric or boolean) or a triple term. */
     private fun isNotAnIri(constant: String): Boolean {
         val first = constant.firstOrNull() ?: return false
@@ -554,11 +579,30 @@ object SparqlInitialBindings {
      *
      * It follows the triple-pattern grammar on tokens (subject, verb or property path, object lists, blank node
      * property lists, collections, and the keywords that start other patterns) only as far as needed to tell which
-     * term is the verb. Where it meets syntax it does not know (RDF 1.2 triple terms, for example) it reports nothing
-     * until the next `.`, `;`, brace or pattern keyword, so it never reports a position that is not a verb.
+     * term is the verb. That includes RDF 1.2 syntax: a reified triple `<< s p o >>` and a triple term
+     * `<<( s p o )>>` (wherever they occur: as a subject or object, nested in one another, in a collection, or, for
+     * triple terms, in an expression of a FILTER, BIND, projection or solution modifier) have a verb of their own; an
+     * annotation block `{| p o ; p o |}` is a property list; and the reifier after `~` is an IRI, a blank node or a
+     * variable, so it is reported too, as is the subject of a triple term in an expression (an IRI or a variable;
+     * in a triple pattern the grammar also allows a literal). Where it meets syntax it does not know it reports nothing until the next `.`,
+     * `;`, brace or pattern keyword, so it never reports a position where a literal is legal.
      */
     private class IriOnlyPositions(private val tokens: List<Token>) {
-        private enum class Scope { QUERY, GROUP, DATA, PROPERTY_LIST, COLLECTION, EXPRESSION, PATH }
+        private enum class Scope {
+            QUERY, GROUP, DATA, PROPERTY_LIST, COLLECTION, EXPRESSION, PATH,
+
+            /** Inside `{| ... |}`: a property list. */
+            ANNOTATION,
+
+            /** Inside `<< ... >>`: subject, verb, object and an optional reifier. */
+            REIFIED_TRIPLE,
+
+            /** Inside `<<( ... )>>` in a triple pattern: subject, verb, object. */
+            TRIPLE_TERM,
+
+            /** Inside `<<( ... )>>` in an expression: the same, but the subject is no literal either. */
+            EXPRESSION_TRIPLE_TERM,
+        }
 
         private enum class Expect {
             /** A subject, or a keyword starting another pattern. */
@@ -576,6 +620,8 @@ object SparqlInitialBindings {
             CONSTRAINT,
             /** After VALUES: the variable (list) and the data block. */
             VALUES,
+            /** After `~`: the reifier (optional), or what may follow an object. */
+            REIFIER,
             /** Unknown syntax: nothing is reported until the next reset. */
             LOST,
         }
@@ -588,7 +634,7 @@ object SparqlInitialBindings {
         /** The state after a complete term (variable, IRI, literal, blank node, collection) in state [expect]. */
         private fun afterTerm(expect: Expect): Expect = when (expect) {
             Expect.SUBJECT -> Expect.VERB
-            Expect.PATH_OR_OBJECT, Expect.OBJECT -> Expect.SEPARATOR
+            Expect.PATH_OR_OBJECT, Expect.OBJECT, Expect.REIFIER -> Expect.SEPARATOR
             Expect.NAME -> Expect.SUBJECT
             Expect.CONSTRAINT, Expect.VALUES -> expect
             Expect.VERB, Expect.SEPARATOR, Expect.LOST -> Expect.LOST
@@ -603,11 +649,49 @@ object SparqlInitialBindings {
             while (frames.size > depth) frames.removeLast()
         }
 
+        /** The number of tokens of the `<<` (2) or `<<(` (3) that starts at [index], or 0. */
+        private fun tripleOpening(index: Int): Int {
+            if (!adjacentWord(index, "<") || !adjacentWord(index + 1, "<", after = index)) return 0
+            val paren = tokens.getOrNull(index + 2)
+            return if (paren != null && paren.isPunct('(') && paren.start == tokens[index + 1].end) 3 else 2
+        }
+
+        /** Whether the token at [index] is the word [text], directly after the token at [after] when given. */
+        private fun adjacentWord(index: Int, text: String, after: Int = -1): Boolean {
+            val token = tokens.getOrNull(index) ?: return false
+            return token.kind == Kind.WORD && token.text == text && (after < 0 || token.start == tokens[after].end)
+        }
+
+        private fun isPattern(scope: Scope) =
+            scope == Scope.GROUP || scope == Scope.PROPERTY_LIST || scope == Scope.ANNOTATION || isTriple(scope)
+
+        private fun isTriple(scope: Scope) =
+            scope == Scope.REIFIED_TRIPLE || scope == Scope.TRIPLE_TERM || scope == Scope.EXPRESSION_TRIPLE_TERM
+
+        /** Whether a triple term opened in [scope] is part of an expression (and not of a triple pattern). */
+        private fun isExpression(scope: Scope) =
+            scope == Scope.EXPRESSION || scope == Scope.QUERY || scope == Scope.EXPRESSION_TRIPLE_TERM
+
         fun scan(): Set<Int> {
             var i = 0
             while (i < tokens.size) {
                 val token = tokens[i]
                 val frame = frames.last()
+                // A reified triple or a triple term is a term wherever it stands, and has a verb of its own.
+                val opening = if (frame.scope == Scope.DATA) 0 else tripleOpening(i)
+                if (opening > 0) {
+                    if (isPattern(frame.scope)) frame.expect = afterTerm(frame.expect)
+                    push(
+                        when {
+                            opening == 2 -> Scope.REIFIED_TRIPLE
+                            isExpression(frame.scope) -> Scope.EXPRESSION_TRIPLE_TERM
+                            else -> Scope.TRIPLE_TERM
+                        },
+                        Expect.SUBJECT,
+                    )
+                    i += opening
+                    continue
+                }
                 when (frame.scope) {
                     Scope.DATA -> if (token.isPunct('}')) pop(Scope.DATA)
                     Scope.QUERY -> when {
@@ -622,22 +706,23 @@ object SparqlInitialBindings {
                     Scope.PATH -> when {
                         token.isPunct('(') -> push(Scope.PATH)
                         token.isPunct(')') -> pop(Scope.PATH)
-                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                        token.isPunct('}') -> closeBrace()
                     }
                     Scope.EXPRESSION -> when {
                         token.isPunct('(') -> push(Scope.EXPRESSION)
                         token.isPunct(')') -> pop(Scope.EXPRESSION)
                         token.isPunct('{') -> open(i)
-                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                        token.isPunct('}') -> closeBrace()
                     }
                     Scope.COLLECTION -> when {
                         token.isPunct('(') -> push(Scope.COLLECTION)
                         token.isPunct(')') -> pop(Scope.COLLECTION)
                         token.isPunct('[') -> push(Scope.PROPERTY_LIST, Expect.VERB)
                         token.isPunct('{') -> open(i)
-                        token.isPunct('}') -> pop(Scope.GROUP, Scope.QUERY)
+                        token.isPunct('}') -> closeBrace()
                     }
-                    Scope.GROUP, Scope.PROPERTY_LIST -> i = pattern(i, frame)
+                    Scope.GROUP, Scope.PROPERTY_LIST, Scope.ANNOTATION, Scope.REIFIED_TRIPLE, Scope.TRIPLE_TERM, Scope.EXPRESSION_TRIPLE_TERM ->
+                        i = pattern(i, frame)
                 }
                 i++
             }
@@ -649,13 +734,28 @@ object SparqlInitialBindings {
             if (index + 1 < tokens.size && tokens[index + 1].isKeyword("SELECT")) push(Scope.QUERY) else push(Scope.GROUP, Expect.SUBJECT)
         }
 
+        /** Leaves the innermost scope that a brace opened (the `}` of `|}` included). */
+        private fun closeBrace() = pop(Scope.GROUP, Scope.QUERY, Scope.ANNOTATION)
+
         /** Handles the token at [index] in a group or blank node property list; returns the index of the last token consumed. */
         private fun pattern(index: Int, frame: Frame): Int {
             val token = tokens[index]
+            if (token.isPunct('{') && opensAnnotation(tokens, index)) {
+                // An annotation block follows an object (and its reifier), and more objects or verbs may follow it.
+                frame.expect = Expect.SEPARATOR
+                val annotation = Frame(Scope.ANNOTATION, Expect.VERB)
+                frames.addLast(annotation)
+                // The `|` may be glued to the first verb (`{|ex:p`).
+                val bar = tokens[index + 1].text
+                if (bar.length > 1) word(bar.substring(1), annotation)
+                return index + 1
+            }
             when (token.kind) {
                 Kind.PUNCT -> punctuation(token.text[0], index, frame)
                 Kind.VAR -> {
-                    if (frame.expect == Expect.VERB || frame.expect == Expect.NAME) found.add(index)
+                    val iriOnly = frame.expect == Expect.VERB || frame.expect == Expect.NAME || frame.expect == Expect.REIFIER ||
+                        (frame.expect == Expect.SUBJECT && frame.scope == Scope.EXPRESSION_TRIPLE_TERM)
+                    if (iriOnly) found.add(index)
                     frame.expect = if (frame.expect == Expect.VERB) Expect.OBJECT else afterTerm(frame.expect)
                 }
                 Kind.IRI -> frame.expect = if (frame.expect == Expect.VERB) Expect.PATH_OR_OBJECT else afterTerm(frame.expect)
@@ -678,7 +778,7 @@ object SparqlInitialBindings {
                     frame.expect = Expect.SUBJECT
                     open(index)
                 }
-                '}' -> pop(Scope.GROUP, Scope.QUERY)
+                '}' -> closeBrace()
                 '[' -> {
                     frame.expect = afterTerm(frame.expect)
                     push(Scope.PROPERTY_LIST, Expect.VERB)
@@ -698,16 +798,17 @@ object SparqlInitialBindings {
                         frame.expect = afterTerm(frame.expect)
                         push(Scope.COLLECTION)
                     }
-                    Expect.SEPARATOR, Expect.NAME, Expect.LOST -> {
+                    Expect.SEPARATOR, Expect.NAME, Expect.REIFIER, Expect.LOST -> {
                         frame.expect = Expect.LOST
                         push(Scope.EXPRESSION)
                     }
                 }
                 ')' -> Unit
-                ',' -> frame.expect = if (frame.expect == Expect.SEPARATOR) Expect.OBJECT else Expect.LOST
+                // A reifier may be left out (`~ ,`): the separator then follows the `~` itself.
+                ',' -> frame.expect = if (frame.expect == Expect.SEPARATOR || frame.expect == Expect.REIFIER) Expect.OBJECT else Expect.LOST
                 ';' -> frame.expect = when (frame.expect) {
                     // `;` may be repeated, and may end the property list.
-                    Expect.SEPARATOR, Expect.VERB, Expect.LOST -> Expect.VERB
+                    Expect.SEPARATOR, Expect.REIFIER, Expect.VERB, Expect.LOST -> Expect.VERB
                     else -> Expect.LOST
                 }
             }
@@ -716,6 +817,8 @@ object SparqlInitialBindings {
         /** Skips the language tag or datatype of the string literal at [index]; returns the index of its last token. */
         private fun literalEnd(index: Int, frame: Frame): Int {
             val suffix = tokens.getOrNull(index + 1)?.takeIf { it.kind == Kind.WORD } ?: return index
+            // `"x"@en>>` or `"1"^^ex:dt>>`: the word also closes the triple, which [word] sees to.
+            if (closesTriple(suffix.text, frame)) return index
             if (suffix.text.startsWith("@")) {
                 if (endsTriples(suffix.text)) dot(frame)
                 return index + 1
@@ -736,7 +839,20 @@ object SparqlInitialBindings {
             frame.expect = if (frame.scope == Scope.GROUP) Expect.SUBJECT else Expect.LOST
         }
 
+        private fun closesTriple(word: String, frame: Frame) =
+            isTriple(frame.scope) && ">>" in word
+
         private fun word(text: String, frame: Frame) {
+            if (closesTriple(text, frame)) {
+                // `>>`, possibly glued to the last term before it (`ex:o>>`) and to what follows (`>>.`).
+                val close = text.indexOf(">>")
+                if (close > 0) word(text.substring(0, close), frame)
+                pop(frame.scope)
+                val rest = text.substring(close + 2)
+                val outer = frames.last()
+                if (rest.isNotEmpty() && isPattern(outer.scope)) word(rest, outer)
+                return
+            }
             var core = text
             // A dot written without white space before the next term (`. ex:s`) or after a term (`ex:o.`).
             if (core.startsWith(".") && (core.length == 1 || core[1] !in '0'..'9')) {
@@ -752,6 +868,12 @@ object SparqlInitialBindings {
 
         /** One word without leading or trailing dot: a keyword, a term, or a piece of a property path. */
         private fun element(core: String, frame: Frame) {
+            if (core[0] == '~') {
+                // A reifier follows an object: `~` alone (the reifier, if any, is the next token) or `~ex:r`.
+                val afterObject = frame.expect == Expect.SEPARATOR || frame.expect == Expect.REIFIER
+                frame.expect = if (!afterObject) Expect.LOST else if (core.length == 1) Expect.REIFIER else Expect.SEPARATOR
+                return
+            }
             val keyword = core.uppercase().takeIf { it in PATTERN_KEYWORDS && frame.scope == Scope.GROUP }
             frame.expect = when {
                 keyword == "OPTIONAL" || keyword == "MINUS" || keyword == "UNION" || keyword == "LATERAL" -> Expect.SUBJECT
@@ -762,6 +884,8 @@ object SparqlInitialBindings {
                 // NOT, EXISTS and function names belong to the constraint being read.
                 frame.expect == Expect.CONSTRAINT || frame.expect == Expect.VALUES -> frame.expect
                 keyword != null -> Expect.LOST
+                // The reifier was left out; the word is whatever follows an object (nothing this scan knows).
+                frame.expect == Expect.REIFIER -> if (isTerm(core)) Expect.SEPARATOR else Expect.LOST
                 frame.expect == Expect.VERB -> verb(core)
                 frame.expect == Expect.PATH_OR_OBJECT && continuesPath(core) -> afterPathPiece(core)
                 isTerm(core) -> afterTerm(frame.expect)

@@ -173,4 +173,100 @@ class SparqlInitialBindingsTest {
             ),
         )
     }
+
+    @Test
+    fun `RDF 1_2 triple terms, reified triples and annotation blocks have IRI-only positions too`() {
+        val literal = mapOf("v" to "\"x\"")
+        for (query in listOf(
+            // reified triples
+            "SELECT * WHERE { << ?s ?v ?o >> <urn:q> ?z }",
+            "SELECT * WHERE { <<?s ?v ?o>> <urn:q> ?z }",
+            "SELECT * WHERE { << ?s <urn:p> ?o >> ?v ?z }",
+            "SELECT * WHERE { ?x <urn:q> << ?s ?v ?o >> }",
+            "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >> ; ?v ?z }",
+            "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >>. ?z ?v ?y }",
+            "SELECT * WHERE { << ?s ?v ?o ~ <urn:r> >> <urn:q> ?z }",
+            "SELECT * WHERE { << << ?a ?v ?b >> <urn:p> ?o >> <urn:q> ?z }",
+            "SELECT * WHERE { << ?a <urn:p> << ?b ?v ?c >> >> <urn:q> ?z }",
+            "SELECT * WHERE { << ?s <urn:p> \"x\"@en>> ?v ?z }",
+            "PREFIX ex: <urn:> SELECT * WHERE { <<ex:s ?v ex:o>> ex:q ?z }",
+            "PREFIX ex: <urn:> SELECT * WHERE { <<ex:s ex:p ex:o>> ?v ?z }",
+            "SELECT * WHERE { [ <urn:p> << ?a ?v ?b >> ] <urn:q> ?z }",
+            "SELECT * WHERE { ?s <urn:p> (1 << ?a ?v ?b >>) }",
+            // reifiers: a variable, an IRI or a blank node, never a literal
+            "SELECT * WHERE { ?s <urn:p> ?o ~ ?v }",
+            "SELECT * WHERE { ?s <urn:p> ?o ~?v }",
+            "SELECT * WHERE { << ?s <urn:p> ?o ~ ?v >> <urn:q> ?z }",
+            "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> ; ?v ?z }",
+            "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ?o ~ex:r ; ?v ?z }",
+            "SELECT * WHERE { ?s ?v ?o ~ }",
+            // triple terms, in patterns and in expressions
+            "SELECT * WHERE { ?x <urn:q> <<( ?s ?v ?o )>> }",
+            "SELECT * WHERE { ?x <urn:q> <<(?s ?v ?o)>>. }",
+            "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> ?o )>> ; ?v ?z }",
+            "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> <<( ?a ?v ?b )>> )>> }",
+            "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s ?v ?o )>>) }",
+            "SELECT * WHERE { ?x <urn:q> ?t FILTER(isTRIPLE(<<( ?s ?v ?o )>>) && ?t = 1) }",
+            "SELECT * WHERE { BIND(<<( ?s ?v ?o )>> AS ?t) ?s <urn:p> ?o }",
+            "SELECT (<<( ?s ?v ?o )>> AS ?t) WHERE { ?s <urn:p> ?o }",
+            "SELECT ?o WHERE { ?s <urn:p> ?o } ORDER BY (<<( ?s ?v ?o )>>)",
+            // ... where the subject is no literal either
+            "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?v <urn:p> ?o )>>) }",
+            "SELECT * WHERE { BIND(<<( <urn:s> <urn:p> <<( ?v <urn:p> 1 )>> )>> AS ?t) ?s <urn:p> ?o }",
+            // annotation blocks
+            "SELECT * WHERE { ?s <urn:p> ?o {| ?v ?z |} }",
+            "SELECT * WHERE { ?s <urn:p> ?o {|?v ?z|} }",
+            "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z ; ?v ?y |} }",
+            "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} ; ?v ?y }",
+            "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z {| ?v ?y |} |} }",
+            "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> {| ?v ?z |} }",
+            "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?z |} {| ?v ?y |} }",
+            "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o {| ex:q ex:r|} ; ?v ?z }",
+            "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o{|ex:q 1|}. ?z ?v ?y }",
+        )) {
+            val e = assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.apply(query, literal) }, query)
+            assertEquals(true, e.message!!.contains("only an IRI"), e.message)
+            assertEquals(query.replace("?v", "<urn:a>"), SparqlInitialBindings.apply(query, mapOf("v" to "<urn:a>")), query)
+            assertThrows(IllegalArgumentException::class.java, { SparqlInitialBindings.validate(query, setOf("v"), setOf("v")) }, query)
+            SparqlInitialBindings.validate(query, setOf("v"), emptySet())
+        }
+        // Subjects and objects of the same constructs accept a literal.
+        for (query in listOf(
+            "SELECT * WHERE { << ?v <urn:p> ?v >> <urn:q> ?v }",
+            "SELECT * WHERE { ?x <urn:q> << ?s <urn:p> ?o >> , ?v . ?v <urn:l> ?z }",
+            "SELECT * WHERE { ?x <urn:q> <<( ?v <urn:p> ?v )>> , ?v }",
+            "SELECT * WHERE { ?x <urn:q> <<( ?s <urn:p> <<( ?v <urn:p> ?v )>> )>> }",
+            "SELECT * WHERE { << ?a <urn:p> <<( ?b <urn:p> ?v )>> >> <urn:q> ?z }",
+            "SELECT * WHERE { ?x <urn:q> ?t FILTER(?t = <<( ?s <urn:p> ?v )>>) }",
+            "SELECT * WHERE { ?s <urn:p> ?o {| <urn:q> ?v ; <urn:r> ?v , ?v |} , ?v . ?v <urn:l> ?y }",
+            "SELECT * WHERE { ?s <urn:p> ?o ~ <urn:r> {| <urn:q> ?v |} , ?v }",
+            "SELECT * WHERE { ?s <urn:p> ?o ~ ?r {| <urn:q> ?v |} }",
+            "PREFIX ex: <urn:> SELECT * WHERE { ?x ex:q <<ex:s ex:p 1>>. ?v ex:l ?z }",
+            "PREFIX ex: <urn:> SELECT * WHERE { ?s ex:p ex:o{|ex:q ?v|} }",
+            // Not RDF 1.2 syntax at all: comparisons next to IRIs and variables.
+            "SELECT * WHERE { ?s <urn:p> ?o FILTER(?o < <urn:x> || ?o<?v || ?v>?o) ?v <urn:l> ?z }",
+        )) {
+            assertEquals(query.replace("?v", "\"x\""), SparqlInitialBindings.apply(query, literal), query)
+            SparqlInitialBindings.validate(query, setOf("v"), setOf("v"))
+        }
+        // An IRI next to a comparison operator stays apart from it: `<<` and `>>` would be RDF 1.2 tokens.
+        assertEquals(
+            "SELECT * WHERE { ?s <urn:p> ?o FILTER(?o< <urn:a> || <urn:a> >?o || ?o<=<urn:a> || <urn:a>=?o) }",
+            SparqlInitialBindings.apply("SELECT * WHERE { ?s <urn:p> ?o FILTER(?o<?v || ?v>?o || ?o<=?v || ?v=?o) }", mapOf("v" to "<urn:a>")),
+        )
+    }
+
+    @Test
+    fun `an annotation block is not a group of its own`() {
+        // The BIND that declares an expression variable goes to the group around the annotation block, never inside `{| |}`.
+        val t = "<<( <urn:a> <urn:p> 1 )>>"
+        assertEquals(
+            "SELECT * WHERE { BIND($t AS ?k) ?s <urn:p> ?z {| <urn:q> (?k 1) ; <urn:r> $t |} OPTIONAL { BIND($t AS ?k) ?z <urn:q> ?y {| <urn:r> (?k) |} } }",
+            SparqlInitialBindings.apply(
+                "SELECT * WHERE { ?s <urn:p> ?z {| <urn:q> (?o 1) ; <urn:r> ?o |} OPTIONAL { ?z <urn:q> ?y {| <urn:r> (?o) |} } }",
+                mapOf("o" to t),
+                mapOf("o" to "k"),
+            ),
+        )
+    }
 }
