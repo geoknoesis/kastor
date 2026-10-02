@@ -1201,12 +1201,45 @@ interface RdfGraph {
  * A graph that exposes a cheap modification stamp, so callers that cache work derived from its content (for example
  * a SHACL validator's copy of the data) can detect changes without scanning the triples.
  *
- * [modificationStamp] changes (it is never reused for the same graph instance) whenever the content of the graph
- * changes; if two reads on the same instance return the same value, the content was not modified in between. A
- * change of the stamp does not guarantee that the content differs (e.g. a triple added and then removed).
+ * ## The contract
  *
- * **Consumers must read the stamp before the content.** The stamp and the content are two separate reads, and the
- * graph may change between them:
+ * **The stamp identifies the content that the calling thread would read right now.** Whenever two reads of
+ * [modificationStamp] of one graph (the same instance, or equal handles of the same graph of the same repository)
+ * return the same value - on whichever threads, at whichever times - the content that each reading thread would have
+ * read from the graph at the moment of its stamp read is the same. The converse does not hold: a different stamp
+ * does not guarantee different content (a triple added and then removed). Only equality is meaningful.
+ *
+ * 1. **Committed stamp.** Outside write transactions a graph has one stamp, its *committed stamp*, and every thread
+ *    reads it. A change of the content made outside a transaction replaces it by a value the graph never had.
+ * 2. **A thread inside its own write transaction** ([RdfRepository.transaction]) reads *transaction-private* stamps
+ *    for the graphs that transaction has changed: values the graph never had, that no other thread ever reads, and
+ *    that each further write of the transaction to the graph replaces by a new one. For a graph its transaction has
+ *    not changed, the thread reads the committed stamp.
+ * 3. **Every other thread keeps reading the last committed stamp** until the commit completes: never the stamp of
+ *    content it cannot read. (A thread whose read transaction pins a snapshot reads the stamp of that snapshot for
+ *    as long as it reads that snapshot.)
+ * 4. **Commit** replaces the committed stamp of every graph the transaction changed by a new value - one the graph
+ *    never had, not one of the private stamps - no later than the moment the changed content becomes visible to
+ *    other threads.
+ * 5. **Rollback** leaves the committed stamps as they were before the transaction (the content is what it was), and
+ *    the private stamps of the transaction are never returned again, to any thread. A provider that cannot tell that
+ *    the content was restored may publish new committed stamps instead.
+ * 6. **No reuse.** A value is never returned for two different contents of a graph: not across removal and
+ *    re-creation of a named graph, and not after a rolled back transaction.
+ * 7. **Reads do not block.** A stamp read does not wait for a writer or for the transaction of another thread: a
+ *    cache keyed by the stamp is there to avoid reading the graph, and must be able to serve the committed content
+ *    while a long transaction is open.
+ * 8. **Failure.** A stamp read fails where a content read would fail for good (for example with
+ *    [IllegalStateException] on a closed repository) - for every graph of the repository alike, default or named.
+ *
+ * A cache shared between threads and keyed by (graph handle, stamp) is therefore safe without reading the graph on a
+ * hit: a thread never finds, under the stamp it reads, a state built from uncommitted content of another thread's
+ * transaction (no dirty read), and a thread inside a transaction never finds, under the stamp it reads, a state
+ * built before one of its own writes (no missed own write).
+ *
+ * ## Consumers: read the stamp before the content
+ *
+ * The stamp and the content are two separate reads, and outside a transaction the graph may change between them:
  *
  * ```kotlin
  * val stamp = graph.modificationStamp      // 1. stamp
@@ -1216,29 +1249,16 @@ interface RdfGraph {
  * ```
  *
  * A change between the two reads then leaves newer content under an older stamp, which only costs a reload on the
- * next call. In the opposite order (content, then stamp) older content would be stored under the newer stamp and
- * served as current until the next change: a stale cache hit. To read both atomically, read them inside
- * [RdfRepository.readTransaction] of the owning repository where the provider holds a lock for it (the memory
- * provider does).
- *
- * **The stamp may be read at any time.** A stamp read should not wait for a writer: a cache keyed by the stamp is
- * there to avoid reading the graph, and must be able to serve a graph that a long transaction of another thread has
- * not touched. A stamp read while another thread's transaction is open may therefore be the stamp of a change that
- * is not committed yet (or will be rolled back). That is harmless under the protocol above: the content read that
- * follows sees committed content only, and the stamp it is stored under is either the stamp of that content or one
- * that never occurs again. (The memory provider reads the stamp without taking its lock; its content reads wait for
- * the transaction.)
- *
- * Implementations must change the stamp no later than the moment the changed content becomes visible to other
- * readers, must not reuse a value (also across removal and re-creation of a named graph, and after a rolled back
- * transaction), and should fail a stamp read where a content read would fail for good (for example with
- * [IllegalStateException] on a closed repository) - for every graph of the repository alike, default or named.
+ * next call (the older stamp is never returned again once the content has changed). In the opposite order (content,
+ * then stamp) older content would be stored under the newer stamp and served as current until the next change: a
+ * stale cache hit. To read both atomically, read them inside [RdfRepository.readTransaction] of the owning repository
+ * where the provider holds a lock for it (the memory provider does).
  */
 interface VersionedRdfGraph : RdfGraph {
     /**
-     * A value that differs from every earlier value of this graph instance once its content has changed. Read it
-     * **before** the content it is meant to describe (see [VersionedRdfGraph]). Only equality is meaningful to
-     * consumers.
+     * The stamp of the content the calling thread would read from this graph right now (see [VersionedRdfGraph]):
+     * the committed stamp, or inside the caller's own write transaction the private stamp of its latest write to
+     * the graph. Read it **before** the content it is meant to describe. Only equality is meaningful to consumers.
      */
     val modificationStamp: Long
 }

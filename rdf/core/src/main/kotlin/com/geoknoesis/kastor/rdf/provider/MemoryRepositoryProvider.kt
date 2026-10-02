@@ -76,6 +76,10 @@ class MemoryRepositoryProvider : RdfProvider {
  *   until then, so waiting for such work from inside a block deadlocks.
  * - **Rollback** runs every undo action even if one fails; undo failures are attached to the original
  *   exception as suppressed exceptions, and the original exception is rethrown.
+ * - **Modification stamps** ([VersionedRdfGraph]) respect transaction isolation: the thread inside a [transaction]
+ *   reads transaction-private stamps for the graphs it has changed (a new one after each of its writes), every other
+ *   thread keeps reading the last committed stamp until the commit completes, a commit gives every changed graph a
+ *   new committed stamp, and a rollback leaves the committed stamps as they were. Stamp reads never take the lock.
  *
  * **Resource Management:**
  * - Always use [use] or call [close] explicitly
@@ -95,11 +99,21 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
      */
     private val stamps = java.util.concurrent.atomic.AtomicLong()
     /**
-     * The current stamp of every named graph that ever had a backing graph: the stamp of that graph or, while the
-     * name has none, the stamp taken when it was removed. Written while holding the write lock, each time with a
-     * fresh value of [stamps]; read without a lock, so a stamp read never waits for a writer.
+     * The committed stamp of the default graph ([DEFAULT_GRAPH_KEY]) and of every named graph that ever had a backing
+     * graph (its [Iri]): the stamp of the content every thread outside the open write transaction reads. Written
+     * while holding the write lock, each time with a fresh value of [stamps] - by a write outside a transaction, and
+     * by the commit of a transaction for the graphs it changed; read without a lock, so a stamp read never waits for
+     * a writer.
      */
-    private val namedStamps = java.util.concurrent.ConcurrentHashMap<Iri, Long>()
+    private val committedStamps = java.util.concurrent.ConcurrentHashMap<Any, Long>()
+    /** The thread inside the open write transaction, or null: the only thread that reads [transactionStamps]. */
+    @Volatile private var transactionThread: Thread? = null
+    /**
+     * The transaction-private stamps of the graphs the open write transaction has changed, renewed by each of its
+     * writes. Only touched by [transactionThread], while it holds the write lock; no other thread ever sees a value
+     * of it: a commit publishes fresh committed stamps for its keys, a rollback drops it.
+     */
+    private var transactionStamps: HashMap<Any, Long>? = null
 
     // Access is checked before taking a lock: a write attempted while holding the read lock
     // (inside readTransaction) must fail rather than deadlock on lock upgrade.
@@ -112,13 +126,35 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         undoLog?.add(undo)
     }
 
-    /** A backing graph for [name] (null: the default graph); every stamp it takes is published for its name. */
-    private fun newGraph(name: Iri?) = MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo) {
-        stamps.incrementAndGet().also { stamp -> if (name != null) namedStamps[name] = stamp }
+    /**
+     * Gives the graph [key] a new stamp; called while holding the write lock, for every change of its content
+     * (including the undo actions of a rollback). Inside a write transaction the stamp is private to it.
+     */
+    private fun touched(key: Any) {
+        val fresh = stamps.incrementAndGet()
+        val private = transactionStamps
+        if (private != null) private[key] = fresh else committedStamps[key] = fresh
+    }
+
+    /**
+     * The stamp of the content the calling thread would read from the graph [key] right now: the private stamp of
+     * its own open write transaction if that changed the graph, otherwise the committed stamp. Takes no lock.
+     */
+    private fun stampOf(key: Any): Long {
+        checkAccess(false)
+        if (transactionThread === Thread.currentThread()) transactionStamps?.get(key)?.let { return it }
+        return committedStamps[key] ?: 0L
+    }
+
+    /** A backing graph for [name] (null: the default graph); its stamps are kept by the repository under its name. */
+    private fun newGraph(name: Iri?): MemoryGraph {
+        val key: Any = name ?: DEFAULT_GRAPH_KEY
+        touched(key)
+        return MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo, { touched(key) }, { stampOf(key) })
     }
 
     /** Records that [name] lost its backing graph; called while holding the write lock. */
-    private fun markAbsent(name: Iri) { namedStamps[name] = stamps.incrementAndGet() }
+    private fun markAbsent(name: Iri) = touched(name)
 
     /** Puts [graph] back as [name] (rollback) with a fresh stamp; called while holding the write lock. */
     private fun restore(name: Iri, graph: MemoryGraph) {
@@ -175,19 +211,34 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         lock.write {
             checkAccess(true)
             val log = ArrayList<() -> Unit>()
+            val private = HashMap<Any, Long>()
             undoLog = log
+            transactionStamps = private
+            transactionThread = Thread.currentThread()
             transactionMode.set(true)
+            // True when the content other threads will read may differ from what they read before the transaction.
+            var publish = true
             try {
                 operations(this)
             } catch (e: Throwable) {
                 undoLog = null // undo actions must not journal themselves
+                publish = false
                 for (i in log.indices.reversed()) {
                     // Keep rolling back and keep the caller's failure as the primary exception.
-                    try { log[i]() } catch (undoFailure: Throwable) { if (undoFailure !== e) e.addSuppressed(undoFailure) }
+                    try { log[i]() } catch (undoFailure: Throwable) {
+                        // The content may not be what it was: the changed graphs get new committed stamps.
+                        publish = true
+                        if (undoFailure !== e) e.addSuppressed(undoFailure)
+                    }
                 }
                 throw e
             } finally {
                 undoLog = null
+                // Still holding the write lock: the committed stamps change before the content becomes visible. A
+                // complete rollback publishes nothing: the content is what the committed stamps already stand for.
+                if (publish) private.keys.forEach { committedStamps[it] = stamps.incrementAndGet() }
+                transactionStamps = null
+                transactionThread = null
                 transactionMode.remove()
             }
         }
@@ -232,9 +283,10 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override fun getCapabilities(): ProviderCapabilities = MemoryRepositoryProvider().getCapabilities("memory")
 
     /**
-     * Live view of a named graph; resolves the backing graph on every call. Its [modificationStamp] is the backing
-     * graph's (stamps are unique across the repository), or the stamp recorded when the graph was removed.
-     * It is read like the stamp of the default graph: without taking the lock, failing once the repository is closed.
+     * Live view of a named graph; resolves the backing graph on every call. Its [modificationStamp] is the stamp the
+     * repository keeps for the name (stamps are unique across the repository), also while the name has no backing
+     * graph. It is read like the stamp of the default graph: without taking the lock, as the calling thread sees the
+     * graph (see [VersionedRdfGraph]), failing once the repository is closed.
      */
     private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph, VersionedRdfGraph {
         private val repository: MemoryRepository get() = this@MemoryRepository
@@ -248,7 +300,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
             }
         }
 
-        override val modificationStamp: Long get() { checkAccess(false); return namedStamps[name] ?: 0L }
+        override val modificationStamp: Long get() = stampOf(name)
 
         override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
             reading { it?.find(subject, predicate, obj) ?: emptyList() }
@@ -267,6 +319,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         override fun hashCode(): Int = name.hashCode()
         override fun toString(): String = "MemoryGraph($name)"
     }
+
+    private companion object {
+        /** Key of the default graph in the stamp tables (named graphs are keyed by their [Iri]). */
+        val DEFAULT_GRAPH_KEY = Any()
+    }
 }
 
 /**
@@ -280,8 +337,10 @@ class MemoryGraph internal constructor(
     private val lock: ReentrantReadWriteLock,
     private val access: (Boolean) -> Unit,
     private val recordUndo: ((() -> Unit) -> Unit)?,
-    /** Shared stamp source of a repository's graphs; `null` counts this graph's own modifications. */
-    private val nextStamp: (() -> Long)? = null,
+    /** Tells the owning repository that the content changed (it keeps the stamps); `null` for a stand-alone graph. */
+    private val onChange: (() -> Unit)? = null,
+    /** The stamp the owning repository keeps for this graph, as the calling thread sees it; `null` as [onChange]. */
+    private val repositoryStamp: (() -> Long)? = null,
 ) : MutableRdfGraph, VersionedRdfGraph {
     constructor() : this(emptyList())
     constructor(initialTriples: Collection<RdfTriple>) : this(initialTriples, ReentrantReadWriteLock(), {}, null)
@@ -290,20 +349,23 @@ class MemoryGraph internal constructor(
     private val subjects = mutableMapOf<RdfResource, MutableSet<RdfTriple>>()
     private val predicates = mutableMapOf<Iri, MutableSet<RdfTriple>>()
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
-    /** Moved (under the write lock) by every change of the content, including transaction rollbacks. */
-    @Volatile private var stamp = nextStamp?.invoke() ?: 0L
+    /** The stamp of a stand-alone graph: moved (under the write lock) by every change of the content. */
+    @Volatile private var stamp = 0L
     /**
-     * Read without taking the lock, so it never waits for a write or a transaction of another thread: a cache
-     * keyed by the stamp keeps serving a graph that a long transaction has not touched. For a graph the open
-     * transaction of another thread did change, it is the stamp of the latest change so far, a value no earlier
-     * read returned; read **before** the content, as [VersionedRdfGraph] requires, it cannot produce a stale cache
-     * hit. It fails with [IllegalStateException] once the owning repository is closed, like a read of the content
-     * (a stand-alone graph has no repository and never fails).
+     * The stamp of the content the calling thread would read right now (see [VersionedRdfGraph]). Read without
+     * taking the lock, so it never waits for a write or a transaction of another thread: a cache keyed by the stamp
+     * keeps serving the committed content while a long transaction is open. For a graph of a repository, the thread
+     * inside a write transaction reads the transaction-private stamp of its latest write to the graph, and every
+     * other thread the last committed stamp. It fails with [IllegalStateException] once the owning repository is
+     * closed, like a read of the content (a stand-alone graph has no repository and never fails).
      */
-    override val modificationStamp: Long get() { access(false); return stamp }
+    override val modificationStamp: Long get() {
+        val ofRepository = repositoryStamp ?: return stamp
+        return ofRepository()
+    }
 
     /** Moves the stamp to a new value; called while holding the write lock. */
-    internal fun touch() { stamp = nextStamp?.invoke() ?: (stamp + 1) }
+    internal fun touch() { if (onChange != null) onChange.invoke() else stamp++ }
     init { if (initialTriples.isNotEmpty()) addTriples(initialTriples) }
 
     private fun addUnlocked(triple: RdfTriple) {

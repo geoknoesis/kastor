@@ -41,7 +41,7 @@ class MemoryGraphModificationStampTest {
     }
 
     @Test
-    fun `a rolled back transaction changes the stamp of the default graph`() {
+    fun `a rolled back transaction leaves the committed stamp of the default graph as it was`() {
         val repo = MemoryRepository(RdfConfig(providerId = "memory"))
         val g = repo.defaultGraph as VersionedRdfGraph
         val before = g.modificationStamp
@@ -52,6 +52,9 @@ class MemoryGraphModificationStampTest {
             }
         }
         assertEquals(0, g.size())
+        // The content is what it was, and so is the stamp that stands for it.
+        assertEquals(before, g.modificationStamp)
+        repo.editDefaultGraph().addTriple(t1)
         assertTrue(g.modificationStamp > before)
     }
 
@@ -78,7 +81,7 @@ class MemoryGraphModificationStampTest {
             repo.transaction { editGraph(name).addTriple(t2); removeGraph(name); error("rollback") }
         }
         assertEquals(0, view.size())
-        changed("a rolled back transaction")
+        unchanged("a rolled back transaction")
         repo.editGraph(name).addTriple(t1); changed("add after rollback")
         repo.clear(); changed("clearing the repository")
         assertTrue(repo.editGraph(name) is VersionedRdfGraph)
@@ -133,7 +136,7 @@ class MemoryGraphModificationStampTest {
             val during = changed.map { graph -> pool.submit<Long> { graph.modificationStamp }.get(10, TimeUnit.SECONDS) }
             val untouchedDuring = pool.submit<Long> { untouched.modificationStamp }.get(10, TimeUnit.SECONDS)
             assertEquals(untouchedBefore, untouchedDuring, "a graph the transaction did not change keeps its stamp: a cache hit")
-            during.zip(before).forEach { (now, earlier) -> assertNotEquals(earlier, now, "a changed graph shows a new stamp at once") }
+            assertEquals(before, during, "another thread keeps reading the committed stamps while the transaction is open")
             // A content read still waits for the transaction.
             val content = pool.submit<Int> { changed[0].size() }
             assertThrows(java.util.concurrent.TimeoutException::class.java) { content.get(200, TimeUnit.MILLISECONDS) }
@@ -141,7 +144,7 @@ class MemoryGraphModificationStampTest {
             writer.get(10, TimeUnit.SECONDS)
             assertEquals(2, content.get(10, TimeUnit.SECONDS))
             changed.zip(during).forEach { (graph, mid) ->
-                assertNotEquals(mid, graph.modificationStamp, "the stamp read in the middle of the transaction is not the committed one")
+                assertNotEquals(mid, graph.modificationStamp, "the commit gives a changed graph a new committed stamp")
             }
             assertEquals(untouchedBefore, untouched.modificationStamp)
             // Inside a read transaction the stamp can be read as well.
@@ -164,6 +167,8 @@ class MemoryGraphModificationStampTest {
         val name = Iri("urn:g")
         val pool = Executors.newCachedThreadPool()
         val stop = AtomicBoolean(false)
+        val stopReaders = AtomicBoolean(false)
+        val enoughChecks = CountDownLatch(400)
         val staleHits = ConcurrentLinkedQueue<String>()
         val hits = AtomicInteger()
         val checks = AtomicInteger()
@@ -193,8 +198,7 @@ class MemoryGraphModificationStampTest {
                             6 -> repo.removeGraph(name)
                             else -> repo.editGraph(name).addTriples(triples.shuffled(random).take(3))
                         }
-                        // Leave readers a window in which the graph is unchanged, so cache hits occur.
-                        if (random.nextInt(4) == 0) Thread.sleep(1)
+                        Thread.yield()
                     }
                 }
             }
@@ -203,7 +207,9 @@ class MemoryGraphModificationStampTest {
                     val graph = (if (r % 2 == 0) repo.defaultGraph else repo.getGraph(name)) as VersionedRdfGraph
                     var cachedStamp = Long.MIN_VALUE
                     var cachedContent = emptySet<RdfTriple>()
-                    while (!stop.get()) {
+                    var quiet = 0
+                    // Until told to stop, and then twice more: with the writers gone the second round is a cache hit.
+                    while (!stopReaders.get() || quiet++ < 2) {
                         // The consumer protocol: stamp first, then content.
                         val stamp = graph.modificationStamp
                         if (stamp != cachedStamp) {
@@ -218,6 +224,7 @@ class MemoryGraphModificationStampTest {
                             current = graph.getTriples().toSet()
                         }
                         checks.incrementAndGet()
+                        enoughChecks.countDown()
                         if (currentStamp == cachedStamp) {
                             hits.incrementAndGet()
                             if (current != cachedContent) staleHits.add("stamp $cachedStamp: cached $cachedContent, current $current")
@@ -225,14 +232,18 @@ class MemoryGraphModificationStampTest {
                     }
                 }
             }
-            Thread.sleep(1_500)
+            // No clock decides how long the test runs: 400 checks against running writers, however long they take.
+            assertTrue(enoughChecks.await(120, TimeUnit.SECONDS), "only ${checks.get()} checks in two minutes")
             stop.set(true)
-            (writers + readers).forEach { it.get(20, TimeUnit.SECONDS) }
+            writers.forEach { it.get(60, TimeUnit.SECONDS) }
+            stopReaders.set(true)
+            readers.forEach { it.get(60, TimeUnit.SECONDS) }
             assertTrue(staleHits.isEmpty(), "stale cache hits: ${staleHits.take(3)}")
-            assertTrue(checks.get() > 100, "too few checks: ${checks.get()}")
-            assertTrue(hits.get() > 0, "the cache was never hit, so the test checked nothing")
+            assertTrue(checks.get() >= 400, "too few checks: ${checks.get()}")
+            assertTrue(hits.get() >= readers.size, "every reader ends with a cache hit on the quiet graph: ${hits.get()}")
         } finally {
             stop.set(true)
+            stopReaders.set(true)
             pool.shutdownNow()
             repo.close()
         }
