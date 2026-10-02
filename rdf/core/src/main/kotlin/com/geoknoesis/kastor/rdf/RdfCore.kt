@@ -241,7 +241,7 @@ object Rdf {
      * ```kotlin
      * val repo = Rdf.repository {
      *     providerId = "jena"
-     *     variantId = "tdb2"
+     *     variantId = "tdb2-inference"
      *     location = "/path/to/storage"
      *     inference = true
      *     requirements = ProviderRequirements(
