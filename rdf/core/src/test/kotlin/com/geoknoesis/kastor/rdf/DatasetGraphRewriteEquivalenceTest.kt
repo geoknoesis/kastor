@@ -65,7 +65,7 @@ class DatasetGraphRewriteEquivalenceTest {
         "SELECT * { ?s <urn:q> ?n GRAPH $name { ?s ?p ?o } }",
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { ?s ?x ?y OPTIONAL { ?y ?z ?w } { ?a ?b ?c } UNION { GRAPH ?h { ?d ?e ?f } } } } }",
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { ?s <urn:p>/<urn:q>* [ <urn:r> ?v ] ; a ?t . (?l 1 \"x\"@en true) <urn:p> \$z } } }",
-        // Patterns whose variables in scope are not simply "every variable written": the pattern is kept.
+        // Patterns whose variables in scope are not simply "every variable written".
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { ?s ?x ?y FILTER(?y != ?unbound) } } }",
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { ?s ?x ?y BIND(1 AS ?b) } } }",
         "SELECT * { ?s <urn:p> ?o OPTIONAL { GRAPH $name { ?s ?x ?y MINUS { ?s ?m ?n } } } }",
@@ -99,9 +99,9 @@ class DatasetGraphRewriteEquivalenceTest {
                 "{ VALUES (?h ?y ?x ?z) { } FILTER EXISTS { ?y ?x ?z } } } } } } }",
             rewritten("SELECT * { ?s ?p ?o OPTIONAL { GRAPH ?g { ?s ?x ?y OPTIONAL { GRAPH ?h { ?y ?x ?z } } } } }"),
         )
-        // FILTER, BIND, MINUS, VALUES, sub-selects and SERVICE keep the pattern (inside a group that yields nothing).
-        val kept = rewritten("SELECT * { GRAPH <urn:g1> { ?s ?p ?o FILTER(?o > 1) GRAPH ?h { ?a ?b ?c } } }")!!
-        assertTrue(kept.contains("?s ?p ?o FILTER(?o > 1)") && kept.contains("FILTER(false)"), kept)
+        // SERVICE keeps the pattern (inside a group that yields nothing): its remote group is not analysed.
+        val kept = rewritten("SELECT * { GRAPH <urn:g1> { ?s ?p ?o SERVICE <urn:ep> { ?o ?q ?r } GRAPH ?h { ?a ?b ?c } } }")!!
+        assertTrue(kept.contains("?s ?p ?o SERVICE <urn:ep> { ?o ?q ?r }") && kept.contains("FILTER(false)"), kept)
         assertTrue(kept.contains("{ VALUES (?h ?a ?b ?c) { } FILTER EXISTS { ?a ?b ?c } }"), "a simple pattern nested in a kept one is replaced: $kept")
     }
 }

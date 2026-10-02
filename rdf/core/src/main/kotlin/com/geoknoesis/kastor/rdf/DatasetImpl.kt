@@ -19,8 +19,9 @@ import java.io.Closeable
  *    copied. A query that uses `GRAPH` and cannot be analysed (a `GRAPH` or `SERVICE` that is not followed by a name
  *    and a balanced group, an unterminated string, or codepoint escapes that change how the query reads, see below)
  *    is rejected with [IllegalArgumentException].
- * 3. Everything else - graphs from different repositories, untracked graphs, or the store's
- *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it) -
+ * 3. Everything else - graphs from different repositories, untracked graphs, the store's
+ *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it), or graphs of a
+ *    repository without a SPARQL engine (the graph-only `memory` provider) -
  *    is materialized into a temporary repository
  *
  * **Dataset clauses:** the dataset defines the default and named graphs, so queries that declare
@@ -203,6 +204,9 @@ internal class DatasetImpl(
 
     private fun buildQueryPlan(): QueryPlan? {
         val repository = defaultGraphRefs.firstOrNull()?.sourceRepository ?: return null
+        // A repository without a SPARQL engine cannot run the query in place: its graphs are read through the graph
+        // API and queried in the temporary repository, as the graphs of several repositories are.
+        if (repository is com.geoknoesis.kastor.rdf.provider.MemoryRepository) return null
         if (defaultGraphRefs.any { it.sourceRepository != repository }) return null
         if (namedGraphRefs.any { (name, ref) -> ref.sourceRepository != repository || ref.sourceGraphName != name }) {
             return null
@@ -441,14 +445,14 @@ internal object SparqlDatasetClauses {
      * Rewrites [query] so that every top-level-or-nested `GRAPH` pattern of its WHERE clause evaluates as it would
      * against an empty named-graph set - no solutions - while the default graph is still read in place:
      *
-     * - `GRAPH name { P }`, where `P` consists of triple patterns, `OPTIONAL`, `UNION`, nested groups and `GRAPH`
-     *   patterns only, becomes `{ VALUES (vars) { } FILTER EXISTS { P } }` over the graph variable and every
-     *   variable written in `P`: exactly the variables `GRAPH name { P }` has in scope. The empty table has no
-     *   solution for the filter to test, so `P` is never evaluated; it stays in the query, so the engine still
-     *   checks its syntax.
-     * - Any other `GRAPH ?g { P }` (with `FILTER`, `BIND`, `MINUS`, `VALUES`, a sub-select or `SERVICE`, whose
-     *   variables are not all in scope) becomes `{ VALUES ?g { } { P } }`.
-     * - Any other `GRAPH <iri> { P }` (or a prefixed name), including one without variables, becomes
+     * - `GRAPH name { P }`, where the variables in scope of `P` can be told ([patternVariables]: `P` consists of
+     *   triple patterns, `OPTIONAL`, `UNION`, nested groups, `GRAPH`, `FILTER`, `BIND`, `MINUS`, `VALUES` and
+     *   sub-selects), becomes `{ VALUES (vars) { } FILTER EXISTS { P } }` over the graph variable and the variables
+     *   in scope of `P`: exactly the variables `GRAPH name { P }` has in scope. The empty table has no solution for
+     *   the filter to test, so `P` is never evaluated; it stays in the query, so the engine still checks its syntax.
+     * - Any other `GRAPH ?g { P }` (with `SERVICE`, a sub-select followed by `VALUES`, an expression the scanner
+     *   cannot read reliably, or a word it does not know) becomes `{ VALUES ?g { } { P } }`, which evaluates `P`.
+     * - Any other `GRAPH <iri> { P }` (or a prefixed name), including one without variables in scope, becomes
      *   `{ { P } FILTER(false) }`.
      *
      * All replacements are standard SPARQL 1.1 and produce no solutions, exactly as a GRAPH pattern does when the
@@ -541,30 +545,185 @@ internal object SparqlDatasetClauses {
     }
 
     /**
-     * The variables written in the tokens [from] until [until] - the inside of a group - in order of appearance, if
-     * every one of them is in scope of the group: the tokens are triple patterns (with paths, blank node property
-     * lists, collections and triple terms), nested groups, `OPTIONAL`, `UNION` and `GRAPH` only. Null if any other
-     * word occurs (`FILTER`, `BIND`, `MINUS`, `VALUES`, `SELECT`, `SERVICE`, a function): the variables of such
-     * constructs are not all in scope, and telling which are takes a parser.
+     * The variables in scope of the group whose inside is the tokens [from] until [until] (SPARQL 1.1 section
+     * 18.2.1), in order of first appearance, or null if they cannot be told with certainty.
+     *
+     * - Triple patterns (with paths, blank node property lists, collections and triple terms), nested groups,
+     *   `OPTIONAL`, `UNION` and `GRAPH`: every variable written is in scope.
+     * - `FILTER`: no variable of the constraint is in scope.
+     * - `MINUS { ... }`: no variable of its group is in scope.
+     * - `BIND(expr AS ?v)`: `?v` is in scope, the variables of `expr` are not.
+     * - `VALUES ?v { ... }` and `VALUES (?v ?w) { ... }`: the variables of the table are in scope.
+     * - A sub-select: the variables it projects are in scope - those listed, the `?v` of each `(expr AS ?v)`, or for
+     *   `SELECT *` the variables in scope of its own pattern.
+     *
+     * Null for anything else: `SERVICE` (the remote group is not analysed), a sub-select with a trailing `VALUES`
+     * clause, a word that is none of the above (a keyword this scanner does not know), an unbalanced bracket, and an
+     * expression in which a `<` may have been read as the start of an IRI (`?a<?b&&?c>1`).
      */
     private fun patternVariables(text: String, tokens: List<Token>, from: Int, until: Int): List<String>? {
-        val variables = ArrayList<String>()
-        for (k in from until until) {
-            val token = tokens[k]
-            when (token.kind) {
-                Kind.VAR -> variables.add(text.substring(token.start, token.end))
-                Kind.WORD -> {
-                    val first = text[token.start]
-                    val numberOrName = first in '0'..'9' || first == '.' || isPrefixedName(text, token)
-                    if (!numberOrName) {
-                        val word = text.substring(token.start, token.end)
-                        if (word != "a" && word.uppercase() !in SIMPLE_PATTERN_WORDS) return null
+        val variables = LinkedHashSet<String>()
+        return if (Scope(text, tokens).group(from, until, variables)) variables.toList() else null
+    }
+
+    /** The scope analysis of [patternVariables] over the [tokens] of [text]. */
+    private class Scope(private val text: String, private val tokens: List<Token>) {
+        private fun punct(index: Int, c: Char) = tokens[index].kind == Kind.PUNCT && text[tokens[index].start] == c
+        private fun keyword(index: Int, word: String) = isKeyword(text, tokens[index], word)
+        private fun variable(index: Int) = text.substring(tokens[index].start, tokens[index].end)
+
+        /** Adds the variables in scope of the group content [from] until [until] to [out]; false if not certain. */
+        fun group(from: Int, until: Int, out: MutableSet<String>): Boolean {
+            // The content of a group is a sub-select, or patterns.
+            if (from < until && keyword(from, "SELECT")) return subSelect(from, until, out)
+            var k = from
+            while (k < until) {
+                val token = tokens[k]
+                when (token.kind) {
+                    Kind.VAR -> { out.add(variable(k)); k++ }
+                    Kind.PUNCT -> {
+                        if (punct(k, '{')) {
+                            val close = closing(k, until, '{', '}') ?: return false
+                            if (!group(k + 1, close, out)) return false
+                            k = close + 1
+                        } else k++
                     }
+                    Kind.WORD -> {
+                        val first = text[token.start]
+                        if (first in '0'..'9' || first == '.' || isPrefixedName(text, token)) { k++; continue }
+                        val word = text.substring(token.start, token.end)
+                        k = when {
+                            word == "a" || word.uppercase() in SIMPLE_PATTERN_WORDS -> k + 1
+                            word.equals("FILTER", ignoreCase = true) -> constraintEnd(k + 1, until)
+                            word.equals("MINUS", ignoreCase = true) -> groupEnd(k + 1, until)
+                            word.equals("BIND", ignoreCase = true) -> {
+                                val assigned = assignment(k + 1, until) ?: return false
+                                out.add(variable(assigned.first))
+                                assigned.second
+                            }
+                            word.equals("VALUES", ignoreCase = true) -> inlineData(k + 1, until, out)
+                            else -> null
+                        } ?: return false
+                    }
+                    else -> k++
                 }
-                else -> Unit
             }
+            return true
         }
-        return variables
+
+        /** Index of the token closing the bracket [open] at [openIndex], before [until]; null if there is none. */
+        private fun closing(openIndex: Int, until: Int, open: Char, close: Char): Int? {
+            var depth = 0
+            for (j in openIndex until until) {
+                if (tokens[j].kind != Kind.PUNCT) continue
+                val c = text[tokens[j].start]
+                if (c == open) depth++ else if (c == close && --depth == 0) return j
+            }
+            return null
+        }
+
+        /** Index after the `{ ... }` group that must start at [index]; null if there is none. */
+        private fun groupEnd(index: Int, until: Int): Int? {
+            if (index >= until || !punct(index, '{')) return null
+            return closing(index, until, '{', '}')?.plus(1)
+        }
+
+        /**
+         * Index of the `)` closing the `(` at [openIndex], if the expression between them was certainly read as it
+         * is written. An IRI token that follows an operand (`?a<?b&&?c>1` reads as the IRI `<?b&&?c>`) may be a
+         * comparison that swallowed brackets and variables: such an expression is not certain.
+         */
+        private fun expressionEnd(openIndex: Int, until: Int): Int? {
+            val close = closing(openIndex, until, '(', ')') ?: return null
+            for (j in openIndex + 1 until close) {
+                if (tokens[j].kind != Kind.IRI) continue
+                val before = tokens[j - 1]
+                val operand = before.kind == Kind.VAR || before.kind == Kind.WORD || before.kind == Kind.STRING ||
+                    before.kind == Kind.IRI || punct(j - 1, ')')
+                if (operand) return null
+            }
+            return close
+        }
+
+        /**
+         * Index after the constraint of a `FILTER` that starts at [index]: `( expr )`, `[NOT] EXISTS { ... }`, or a
+         * built-in or function call `name( ... )`.
+         */
+        private fun constraintEnd(index: Int, until: Int): Int? {
+            var j = index
+            if (j >= until) return null
+            if (punct(j, '(')) return expressionEnd(j, until)?.plus(1)
+            if (keyword(j, "NOT")) j++
+            if (j < until && keyword(j, "EXISTS")) return groupEnd(j + 1, until)
+            if (j != index) return null
+            val callable = tokens[j].kind == Kind.IRI || tokens[j].kind == Kind.WORD
+            if (!callable || j + 1 >= until || !punct(j + 1, '(')) return null
+            return expressionEnd(j + 1, until)?.plus(1)
+        }
+
+        /**
+         * For `( expr AS ?v )` starting at [index]: the index of `?v` and the index after the closing bracket.
+         */
+        private fun assignment(index: Int, until: Int): Pair<Int, Int>? {
+            if (index >= until || !punct(index, '(')) return null
+            val close = expressionEnd(index, until) ?: return null
+            if (close - 2 <= index || tokens[close - 1].kind != Kind.VAR || !keyword(close - 2, "AS")) return null
+            return (close - 1) to (close + 1)
+        }
+
+        /** Adds the variables of `VALUES ?v { ... }` or `VALUES ( ?v ... ) { ... }` at [index]; index after it. */
+        private fun inlineData(index: Int, until: Int, out: MutableSet<String>): Int? {
+            var j = index
+            if (j >= until) return null
+            if (tokens[j].kind == Kind.VAR) {
+                out.add(variable(j))
+                j++
+            } else if (punct(j, '(')) {
+                j++
+                while (j < until && tokens[j].kind == Kind.VAR) { out.add(variable(j)); j++ }
+                if (j >= until || !punct(j, ')')) return null
+                j++
+            } else return null
+            return groupEnd(j, until)
+        }
+
+        /** The projected variables of the sub-select that fills the group [from] until [until]. */
+        private fun subSelect(from: Int, until: Int, out: MutableSet<String>): Boolean {
+            var j = from + 1
+            if (j < until && (keyword(j, "DISTINCT") || keyword(j, "REDUCED"))) j++
+            val projected = ArrayList<String>()
+            var star = false
+            while (true) {
+                if (j >= until) return false
+                when {
+                    tokens[j].kind == Kind.VAR -> { projected.add(variable(j)); j++ }
+                    punct(j, '*') -> { star = true; j++ }
+                    punct(j, '(') -> {
+                        val assigned = assignment(j, until) ?: return false
+                        projected.add(variable(assigned.first))
+                        j = assigned.second
+                    }
+                    keyword(j, "WHERE") -> { j++; break }
+                    punct(j, '{') -> break
+                    else -> return false
+                }
+            }
+            if (j >= until || !punct(j, '{')) return false
+            val close = closing(j, until, '{', '}') ?: return false
+            if (star) {
+                if (projected.isNotEmpty() || !group(j + 1, close, out)) return false
+            } else {
+                if (projected.isEmpty()) return false
+                out.addAll(projected)
+            }
+            // Solution modifiers may follow; a trailing VALUES clause joins its variables in, so it is not certain,
+            // and neither is an expression with an IRI the scanner may have misread.
+            for (m in close + 1 until until) {
+                val token = tokens[m]
+                if (token.kind == Kind.IRI || punct(m, '{') || punct(m, '}') || keyword(m, "VALUES")) return false
+            }
+            return true
+        }
     }
 
     /** Index of the `}` token closing the `{` at [openIndex], or null if unbalanced. */
@@ -641,10 +800,35 @@ internal object SparqlDatasetClauses {
         return false
     }
 
-    /** U+00B7, allowed inside names and variable names. */
-    private val MIDDLE_DOT = 0xB7.toChar()
+    /** The SPARQL production `PN_CHARS_BASE`: the letters a name or a variable name may start with. */
+    private fun isPnCharsBase(codePoint: Int): Boolean =
+        codePoint in 'A'.code..'Z'.code || codePoint in 'a'.code..'z'.code ||
+            codePoint in 0x00C0..0x00D6 || codePoint in 0x00D8..0x00F6 || codePoint in 0x00F8..0x02FF ||
+            codePoint in 0x0370..0x037D || codePoint in 0x037F..0x1FFF || codePoint in 0x200C..0x200D ||
+            codePoint in 0x2070..0x218F || codePoint in 0x2C00..0x2FEF || codePoint in 0x3001..0xD7FF ||
+            codePoint in 0xF900..0xFDCF || codePoint in 0xFDF0..0xFFFD || codePoint in 0x10000..0xEFFFF
 
-    private fun isNameChar(c: Char) = c.isLetterOrDigit() || c == '_' || c == '-' || c == '.' || c == MIDDLE_DOT
+    /** First character of the SPARQL production `VARNAME`: `PN_CHARS_U | [0-9]`. */
+    private fun isVarNameStart(codePoint: Int): Boolean =
+        isPnCharsBase(codePoint) || codePoint == '_'.code || codePoint in '0'.code..'9'.code
+
+    /**
+     * Later characters of `VARNAME`: `PN_CHARS_U | [0-9] | U+00B7 | [U+0300-U+036F] | [U+203F-U+2040]` - the
+     * middle dot, the combining diacritical marks, and the undertie and character tie.
+     */
+    private fun isVarNamePart(codePoint: Int): Boolean =
+        isVarNameStart(codePoint) || codePoint == 0x00B7 || codePoint in 0x0300..0x036F || codePoint in 0x203F..0x2040
+
+    /**
+     * Index after the name character at [index] of [q] - `PN_CHARS` (what [isVarNamePart] allows, and `-`) or a dot -
+     * or [index] itself if there is none.
+     */
+    private fun nameCharEnd(q: String, index: Int): Int {
+        val codePoint = q.codePointAt(index)
+        return if (isVarNamePart(codePoint) || codePoint == '-'.code || codePoint == '.'.code) {
+            index + Character.charCount(codePoint)
+        } else index
+    }
 
     /** End of the exponent (`e`, optional sign, digits) starting at [from], or -1 if there is none. */
     private fun exponentEnd(q: String, from: Int): Int {
@@ -729,10 +913,15 @@ internal object SparqlDatasetClauses {
                         tokens.add(Token(Kind.PUNCT, i, i + 1)); i++
                     }
                 }
-                (c == '?' || c == '$') && i + 1 < n && (q[i + 1].isLetterOrDigit() || q[i + 1] == '_') -> {
+                (c == '?' || c == '$') && i + 1 < n && isVarNameStart(q.codePointAt(i + 1)) -> {
+                    // VAR1 / VAR2: the sign and a VARNAME.
                     val start = i
                     i++
-                    while (i < n && (q[i].isLetterOrDigit() || q[i] == '_' || q[i] == MIDDLE_DOT)) i++
+                    while (i < n) {
+                        val codePoint = q.codePointAt(i)
+                        if (!isVarNamePart(codePoint)) break
+                        i += Character.charCount(codePoint)
+                    }
                     tokens.add(Token(Kind.VAR, start, i))
                 }
                 c == '@' && i + 1 < n && q[i + 1].isLetter() -> {
@@ -764,22 +953,35 @@ internal object SparqlDatasetClauses {
                     }
                     tokens.add(Token(Kind.WORD, start, i))
                 }
-                c.isLetter() || c == '_' || c == ':' -> {
+                isPnCharsBase(q.codePointAt(i)) || c == '_' || c == ':' -> {
                     val start = i
                     // A prefix (possibly empty) directly followed by a colon makes a prefixed name or blank node label.
                     var j = i
-                    while (j < n && isNameChar(q[j])) j++
+                    while (j < n) {
+                        val next = nameCharEnd(q, j)
+                        if (next == j) break
+                        j = next
+                    }
                     if (j < n && q[j] == ':' && (j == i || q[j - 1] != '.')) {
                         var k = j + 1
                         while (k < n) {
                             val d = q[k]
-                            if (d == '\\' && k + 1 < n) k += 2 else if (isNameChar(d) || d == ':' || d == '%') k++ else break
+                            if (d == '\\' && k + 1 < n) { k += 2; continue }
+                            if (d == ':' || d == '%') { k++; continue }
+                            val next = nameCharEnd(q, k)
+                            if (next == k) break
+                            k = next
                         }
                         // A local name does not end with an (unescaped) dot.
                         while (k > j + 1 && q[k - 1] == '.' && q[k - 2] != '\\') k--
                         i = k
                     } else {
-                        while (i < n && (q[i].isLetterOrDigit() || q[i] == '_')) i++
+                        // A keyword or a boolean: letters, digits and '_'.
+                        while (i < n) {
+                            val codePoint = q.codePointAt(i)
+                            if (!(isPnCharsBase(codePoint) || codePoint == '_'.code || codePoint in '0'.code..'9'.code)) break
+                            i += Character.charCount(codePoint)
+                        }
                     }
                     tokens.add(Token(Kind.WORD, start, i))
                 }
