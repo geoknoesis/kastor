@@ -8,6 +8,7 @@ import org.apache.jena.query.Dataset
 import org.apache.jena.query.DatasetFactory
 import org.apache.jena.query.QueryExecution
 import org.apache.jena.query.QueryExecutionFactory
+import org.apache.jena.query.QueryCancelledException
 import org.apache.jena.query.QueryFactory
 import org.apache.jena.query.ReadWrite
 import org.apache.jena.rdf.model.Model
@@ -40,16 +41,34 @@ import java.util.concurrent.atomic.AtomicLong
  * - a query **timeout** or an interrupted reader stops the reasoner: store reads check the cancellation of the
  *   step they belong to.
  *
- * **Poisoned views.** A step that was cancelled after it started, or that failed, may leave the shared goal tables
- * half-updated, so the snapshot's view is then *poisoned*:
- * - it is never handed to another read transaction; later readers get a fresh view of the snapshot;
- * - every further step on it fails with [RdfInferenceException], whoever the reader is: an iterator that was open
- *   on the view delivers the results it had already fetched and then fails, it never ends as if the results were
- *   complete. (The reader whose step was cancelled gets the cancellation itself, as for any query timeout.)
- * - a read transaction that held the view switches to a fresh view of the same snapshot for its *next* reads (of any
- *   graph); the iterators it still has open on the poisoned view fail as described above. Retrying the read is safe.
+ * **Cancelled and failed steps.** What a step leaves behind depends on where it stops:
+ * - cancelled while still **queued**: it never runs;
+ * - cancelled at a **clean point**, that is before it called the reasoner or between two results it takes from it
+ *   (every loop over reasoner results checks the cancellation per result, so a step needs no store read to notice
+ *   it), or while it **prepares a graph** that no other step has seen yet: the reasoner's shared state is intact,
+ *   the view stays healthy and nobody else notices anything;
+ * - cancelled or failed **inside the reasoner** (a store read made by backward chaining observes the cancellation,
+ *   or throws): the shared goal tables may be half-updated, so the view is *poisoned*;
+ * - cancelled but **still running** after a short grace (100 ms; a blocking store read, a long computation that
+ *   reads nothing): the reader stops waiting and the view is poisoned as well, because nothing else could run on
+ *   it for as long as that step lasts. The step ends at its next store read or result; its worker and read
+ *   transaction are released then.
  *
- * A step cancelled while it was still queued never ran and does not poison the view.
+ * In every case the reader whose step was cancelled gets the cancellation itself (after the grace at the latest),
+ * as for any query timeout.
+ *
+ * **Poisoned views.** A poisoned view is never handed to another read transaction; later readers get a fresh view
+ * of the snapshot (a new worker, read transaction and RDFS preparation). For the readers that were using it:
+ * - a lookup (`hasTriple`, `size`, an `ASK`-like probe) and a `find` that has **not returned any result yet**,
+ *   including one whose step was waiting behind the step that poisoned the view, are repeated transparently on a
+ *   fresh view of the same snapshot (at most three times per operation);
+ * - an iterator that has **already returned results** delivers the ones it had fetched and then fails with
+ *   [RdfInferenceException]: the rest cannot be told apart from the results of a fresh run, and it must never end
+ *   as if the results were complete. Retrying the read is safe;
+ * - the transaction's *next* reads (of any graph) use the fresh view.
+ *
+ * When no shared view of the snapshot can be opened any more (a commit happened since), the transaction continues
+ * on a private view instead.
  *
  * Named graphs are prepared lazily, when a read first touches them. A view is released when a newer snapshot
  * replaces it (after commits) and no read transaction uses it any more, after the view idle timeout (default
@@ -363,6 +382,17 @@ class JenaRepository private constructor(
         if (dataset.transactionMode() == ReadWrite.WRITE) return privateView(graphKey, model)
         // Unprovable snapshot: a private lazy view, confined to this thread and never shared.
         val snapshot = readSnapshot.get() ?: return privateView(graphKey, model)
+        return ModelFactory.createModelForGraph(RestartableInferenceGraph { sharedGraph(snapshot, graphKey, model) })
+    }
+
+    /**
+     * The graph a read transaction (the one that saw [snapshot]) reads [graphKey] from: the prepared graph of the
+     * shared view it holds, of a fresh shared view when that one was poisoned, or a private inference graph when no
+     * shared view of the snapshot can be opened any more.
+     */
+    private fun sharedGraph(snapshot: Snapshot, graphKey: String, model: Model): Graph {
+        // Only the transaction that created the graph may resolve it (its views are released when it ends).
+        check(readSnapshot.get() === snapshot) { "An inference view was used outside the read transaction it belongs to" }
         var view = transactionView.get()
         if (view != null && view.poisoned) {
             transactionView.remove()
@@ -370,10 +400,10 @@ class JenaRepository private constructor(
             view = null
         }
         if (view == null) {
-            view = acquireView(snapshot) ?: return privateView(graphKey, model)
+            view = acquireView(snapshot) ?: return privateView(graphKey, model).graph
             transactionView.set(view)
         }
-        return ModelFactory.createModelForGraph(view.graph(graphKey))
+        return view.graph(graphKey)
     }
 
     /**
@@ -563,7 +593,19 @@ class JenaRepository private constructor(
 
         /** The inference graph of [graphKey] in this snapshot, prepared on first use. */
         fun graph(graphKey: String): SharedInferenceGraph =
-            graphs[graphKey] ?: call { graphs.getOrPut(graphKey) { prepare(graphKey) } }
+            graphs[graphKey] ?: call { graphs[graphKey] ?: prepareIsolated(graphKey).also { graphs[graphKey] = it } }
+
+        /**
+         * [prepare] builds a new inference graph that no other step can see before it is published: when it fails
+         * or is cancelled (inside one of its store reads), nothing shared is left half-done.
+         */
+        private fun prepareIsolated(graphKey: String): SharedInferenceGraph = try {
+            prepare(graphKey)
+        } catch (cancelled: QueryCancelledException) {
+            throw CleanStepCancellation()
+        } catch (failure: Throwable) {
+            throw CleanStepFailure(failure)
+        }
 
         /** Runs on the worker, inside its read transaction. */
         private fun prepare(graphKey: String): SharedInferenceGraph {
@@ -578,29 +620,45 @@ class JenaRepository private constructor(
         /**
          * Runs [block] as a step on the worker. Fails without running it when the view is poisoned or was stopped by
          * [close]; the check is repeated on the worker because a step may wait behind the one that poisons the view.
+         *
+         * How the step ends decides what becomes of the view (see "Poisoned views" in [JenaRepository]):
+         * - it completes, or stops at a clean cancellation point ([checkpoint]: before it did anything, or between
+         *   two results), or fails in work nothing else can see ([CleanStepFailure]): the view stays healthy;
+         * - it fails or is cancelled anywhere else, that is inside the reasoner: the view is poisoned here, on the
+         *   worker, before any other step runs;
+         * - its reader cancelled it and it is still running after the cancel grace: the reader poisons the view.
          */
         override fun <T> call(block: () -> T): T {
             checkUsable()
-            return worker.call(onBroken = ::poison) {
+            return worker.call(hooks.cancelGraceNanos, onStuck = ::poison) {
                 checkUsable()
-                block()
+                checkpoint()
+                try {
+                    block()
+                } catch (clean: CleanStepCancellation) {
+                    throw clean
+                } catch (clean: CleanStepFailure) {
+                    throw clean.failure
+                } catch (broken: Throwable) {
+                    poison()
+                    throw broken
+                }
             }
+        }
+
+        override fun checkpoint() {
+            hooks.onStepCheckpoint()
+            InferenceCancellation.checkpoint()
         }
 
         private fun checkUsable() {
             if (abandoned) throw RdfRepositoryException("Repository is closed", RdfErrorCode.REPOSITORY_CLOSED)
-            if (poisoned) {
-                throw RdfInferenceException(
-                    "The shared inference view of this snapshot was invalidated because a reasoning step of one of " +
-                        "its readers was cancelled or failed half-way; results read from it could be incomplete. " +
-                        "Retry the read: it is served by a fresh view.",
-                )
-            }
+            if (poisoned) throw inferenceViewInvalidated()
         }
 
         override fun submitQuietly(block: () -> Unit) = worker.submitQuietly(block)
 
-        /** A step was cancelled or failed half-way: the shared goal tables may be inconsistent, so stop sharing. */
+        /** A step stopped or failed inside the reasoner: the shared goal tables may be inconsistent, so stop sharing. */
         private fun poison() {
             poisoned = true
             forgetView(this)
@@ -619,7 +677,7 @@ class JenaRepository private constructor(
         val endTransaction = { if (dataset.isInTransaction) dataset.end() }
         val opened = try {
             hooks.onOpenView()
-            worker.call(onBroken = {}) {
+            worker.call(hooks.cancelGraceNanos, onStuck = {}) {
                 val before = generation.get()
                 dataset.begin(ReadWrite.READ)
                 val seen = snapshotAfterBegin(before)
