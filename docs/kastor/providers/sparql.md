@@ -67,6 +67,8 @@ results.forEach { binding ->
 | `maxGetUrlLength` | `maxGetUrlLength`: longest request URL sent with `queryMethod = GET`; longer queries are sent as a form-encoded POST | 2000 |
 | `followCrossOriginRedirects` | `followCrossOriginRedirects` (`true`/`false`) | `false` |
 | `maxRedirects` | `maxRedirects`: redirects followed per request | 5 |
+| `maxResultRowChars` | `maxResultRowChars`: longest single result row (or skipped JSON value such as `head`), in characters of JSON text; see [Result decoding](#result-decoding) | 4194304 (4 Mi; was 16 Mi) |
+| `strictContentType` | `strictContentType` (`true`/`false`): a successful SELECT/ASK response must declare a JSON media type; see [Result decoding](#result-decoding) | `true` |
 
 ```kotlin
 val repo = RdfProviderRegistry.create(
@@ -98,8 +100,10 @@ val direct = SparqlRepository(
 
 Configuration is validated when `SparqlEndpointConfig` is created (invalid values throw `IllegalArgumentException`):
 
-- Headers the HTTP client manages itself (`Host`, `Content-Length`, `Connection`, `Expect`, `Upgrade`, in any letter case) cannot be set through `headers` / `header.<Name>`. Header values must not contain line breaks.
-- Timeouts, byte caps, `maxGetUrlLength`, `insertBatchSize` and `maxBlankNodeComponentTriples` must be positive; `maxRedirects` must not be negative (`0` disables redirects).
+- Headers the HTTP client manages itself (`Host`, `Content-Length`, `Connection`, `Expect`, `Upgrade`, in any letter case) cannot be set through `headers` / `header.<Name>`.
+- Header names must be RFC 9110 tokens. Header values may contain visible ASCII, ISO-8859-1 characters, and spaces or tabs between them: no line breaks or other control characters, no characters beyond ISO-8859-1, and no leading or trailing white space. Because this is checked up front, a request is never refused later, when it is built.
+- Timeouts, byte caps, `maxResultRowChars`, `maxGetUrlLength`, `insertBatchSize` and `maxBlankNodeComponentTriples` must be positive; `maxRedirects` must not be negative (`0` disables redirects).
+- A timeout too long to be counted in nanoseconds (about 292 years: `Duration.ofMillis(Long.MAX_VALUE)`, `ChronoUnit.FOREVER.duration`, or `Long.MAX_VALUE` as a `...Millis` option) means "no limit". This is the way to switch off `connectTimeout` and `readTimeout`, which cannot be `null`.
 - `SparqlEndpointConfig.toString()` never prints passwords or URL-embedded credentials.
 
 When HTTP Basic credentials would be sent over plain `http` (for the query or the update endpoint), the repository logs a warning once per endpoint through `System.Logger`. Use `https` for authenticated endpoints.
@@ -114,6 +118,15 @@ When HTTP Basic credentials would be sent over plain `http` (for the query or th
 | `streamingRequestTimeout` | not used | whole call, including the time your consumer spends on rows |
 | per-call `timeout` of `withSelectRows(query, bindings, timeout)` | not applicable | whole call: headers, every read and the time your consumer spends on rows (the shorter of this and `streamingRequestTimeout` applies) |
 
+Which option bounds what:
+
+- **Connecting**: `connectTimeout`.
+- **Waiting for the response headers**: the earliest of `requestTimeout` and, for streams, `streamingRequestTimeout` or the per-call `timeout`; `readTimeout` when none of them is set. It is one budget for the whole call, measured from its start, however many redirects are followed.
+- **Each read of the response body**: `readTimeout`, cut short by a whole-call deadline that ends earlier.
+- **The whole call**: `requestTimeout` for buffered calls; `streamingRequestTimeout` and the per-call `timeout` for streams. An untimed stream has no whole-call deadline.
+
+The adapter enforces all of these itself and sets no timeout on the HTTP request, so the behaviour is the same on every JDK. A deadline that is "unbounded" (see above) is simply not applied; the other limits still are. A call that hits a limit fails with `RdfQueryException` naming the limit, and the response is closed.
+
 Because `requestTimeout` stops at the response headers for untimed streams, a slow row consumer is never cut off by it. Set `streamingRequestTimeout` if a stream must finish within a fixed time, or use the timed `withSelectRows` overload. Time between reads counts towards the whole-call deadline and is checked on the next read and before each buffered row is handed to the consumer. With `requestTimeout = null`, a server that accepts the connection but never answers is still bounded by `readTimeout`.
 
 ## Redirects
@@ -122,8 +135,32 @@ The client follows redirects itself (up to `maxRedirects`):
 
 - `307` and `308` are followed for every request and keep the method and body.
 - `301`, `302` and `303` are followed only for GET queries. When a POST gets one of these statuses, the call fails with `RdfQueryException` instead of silently turning into a GET without the query. Configure the redirect target as the endpoint URL instead.
-- A redirect to another origin (different scheme, host or port) fails by default. With `followCrossOriginRedirects = true` it is followed, but custom `headers` and credentials are not sent to the other origin.
+- A redirect to another origin (different scheme, host or port) fails by default. With `followCrossOriginRedirects = true` it is followed, but custom `headers` and credentials are not sent to the other origin (a warning is logged when they are dropped).
+- A redirect from `https` to plain `http` is always refused, also with `followCrossOriginRedirects = true`: the query, and for `307`/`308` the request body, would be re-sent unencrypted. Configure the `http` URL as the endpoint if cleartext is intended.
+- All hops share the one budget for the wait for response headers (see [Timeouts](#timeouts)); a redirect does not restart it.
 - A redirect without a `Location` header, or to a non-http(s) URL or a URL with embedded credentials, fails.
+
+## Result decoding
+
+SELECT and ASK results are read as SPARQL 1.1 Query Results JSON (`application/sparql-results+json`), by a streaming decoder that holds one row at a time.
+
+- **Content-Type**: with `strictContentType = true` (default) a successful response must declare `application/sparql-results+json`, `application/json` or another `+json` type (`text/plain` is also accepted for ASK, for endpoints that answer a bare `true`/`false`); a response without a Content-Type is parsed. Anything else, such as the HTML of a login page, fails with `RdfQueryException` naming the type. Set `strictContentType = false` for a legacy server that labels its JSON `text/json` or similar; the body must still be SPARQL JSON.
+- **Encoding**: UTF-8. One leading byte order mark is ignored; malformed UTF-8 is an error and is never replaced with U+FFFD.
+- **Strict JSON**: only space, tab, line feed and carriage return are white space; numbers, `true`, `false`, `null`, strings and escapes must be valid JSON, also in the parts the adapter does not use. A `results` or `bindings` member repeated after the one that was read is an error.
+- **Row size**: no single row, and no single skipped value such as `head`, may be longer than `maxResultRowChars` characters of JSON text (UTF-16 code units; quotes, escapes and inner white space count). This also holds for streamed responses with `maxStreamedResponseBytes` unbounded.
+- **Nesting**: JSON values may be nested at most 128 levels deep.
+- **Memory**: only what a binding needs is kept: the variable names of a row and each term's `type`, `value`, `xml:lang` and `datatype`. `head`, unknown members and nested values are checked and skipped without being stored. A row therefore needs at most two bytes of heap per character for its strings (8 MB at the default limit) plus roughly 200 bytes per variable it binds, and a scratch buffer of up to twice the size of its largest string while that string is read.
+- **ASK** uses the same decoder: `{"boolean": true}` (other members are skipped) or plain `true`/`false`.
+- Error messages never quote the response body beyond a short, printable excerpt of a term's type.
+
+### RDF 1.2 results are not supported
+
+The adapter decodes SPARQL 1.1 terms only: `uri`, `bnode`, `literal` (and the legacy `typed-literal`). Results of a SPARQL 1.2 server that contain
+
+- a triple term (`"type": "triple"`), or
+- a literal with a base direction (`"its:dir"`, or `"direction"` in older drafts)
+
+fail with `RdfQueryException`, and the message says that RDF 1.2 result terms are not supported. They are never silently dropped or turned into something else. Queries can still *use* SPARQL 1.2 syntax if the server accepts it, as long as the result rows hold RDF 1.1 terms; project the parts of a triple term (`SUBJECT(?t)`, `PREDICATE(?t)`, `OBJECT(?t)`) or use a Jena- or RDF4J-backed repository to read such results.
 
 ## Streaming and Initial Bindings
 
@@ -164,6 +201,7 @@ The following are rejected with `IllegalArgumentException` before any request is
 - The query assigns the bound variable with `BIND(… AS ?var)`, `(expr AS ?var)` or `VALUES` (inline or trailing).
 - The bound variable is used inside a sub-select that does not project it. There it is a different, local variable, so an outer binding must not apply to it.
 - A binding value is a blank node.
+- A literal (or a triple term) is bound to a variable that stands where only an IRI is legal: the predicate of a triple pattern, the name of a `GRAPH` or `SERVICE`, and in SPARQL 1.2 syntax the predicate inside a reified triple `<< s p o >>` or a triple term `<<( s p o )>>`, a predicate of an annotation block `{| p o |}`, a reifier (`~ r`), or the subject of a triple term in an expression. The substituted text would not parse, so it is rejected up front (the Jena and RDF4J providers reject it the same way).
 
 Bindings are not appended as a trailing `VALUES` block.
 
@@ -186,7 +224,7 @@ String literals are escaped with the same rules as the query DSL renderer. Among
 
 ## Error Handling
 
-Transport, HTTP, redirect and result-format failures surface as `RdfQueryException` (HTTP error bodies are included). Exceptions thrown by your own `withSelectRows` consumer propagate unchanged. After `close()`, every operation throws `IllegalStateException("Repository is closed")`.
+Transport, HTTP, redirect and result-format failures surface as `RdfQueryException` (HTTP error bodies are included), from `select`, `withSelectRows`, `ask` and `update` alike; this includes a request that cannot be built or sent at all, an interrupted call (the thread's interrupt flag stays set) and a cancelled exchange. Exceptions thrown by your own `withSelectRows` consumer propagate unchanged. After `close()`, every operation throws `IllegalStateException("Repository is closed")`.
 
 ```kotlin
 try {
