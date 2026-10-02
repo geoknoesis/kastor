@@ -418,6 +418,42 @@ class RecursionSolverDifferentialTest {
         assertTrue(disjointWithSiblings >= 20, coverage)
     }
 
+    // --- results from recorded evaluations -----------------------------------------------------------------------------
+
+    /**
+     * The results of failing and undefined focus nodes come from the solver's recorded evaluations
+     * ([NativeShaclValidator.reportRecordingCapacity]). They must be the very results a separate report evaluation
+     * produces: the same list, in the same order, with the same messages, for every random case — also when the bound
+     * on recordings makes the two ways alternate within one run.
+     */
+    @Test
+    fun `results from recorded solver evaluations are those of a separate report evaluation`() {
+        var fromRecordings = 0L
+        var mixed = 0L
+        for (seed in 1L..400L) {
+            val case = generate(seed)
+            val data = case.dataGraph()
+            val shapes = case.shapesGraph(case.shapes.indices.associateWith { (0 until case.nodes).toList() })
+            val separate = validator().also { it.reportRecordingCapacity = 0 }
+            val expected = separate.validate(data, shapes).violations
+            assertEquals(0L, separate.recordedReports, "recording is disabled: ${case.describe()}")
+
+            val recording = validator()
+            assertEquals(expected, recording.validate(data, shapes).violations, "recorded results: ${case.describe()}")
+            // Every failing or undefined focus node of a recursive shape was reported without another evaluation.
+            assertEquals(0L, recording.separateReportEvaluations, case.describe())
+            assertEquals(separate.separateReportEvaluations, recording.recordedReports, case.describe())
+            fromRecordings += recording.recordedReports
+
+            // A bound so small that recording stops and resumes as recordings are reported.
+            val bounded = validator().also { it.reportRecordingCapacity = 3 }
+            assertEquals(expected, bounded.validate(data, shapes).violations, "bounded recording: ${case.describe()}")
+            if (bounded.recordedReports > 0 && bounded.separateReportEvaluations > 0) mixed++
+        }
+        assertTrue(fromRecordings >= 300, "focus nodes reported from recordings: $fromRecordings")
+        assertTrue(mixed >= 10, "runs that used both ways: $mixed")
+    }
+
     // --- restart recovery --------------------------------------------------------------------------------------------
 
     private val notNext = """

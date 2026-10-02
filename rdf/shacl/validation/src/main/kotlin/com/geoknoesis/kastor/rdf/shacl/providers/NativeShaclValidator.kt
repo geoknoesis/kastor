@@ -103,6 +103,17 @@ import com.geoknoesis.kastor.rdf.shacl.native.stronglyConnectedComponents
  *   result is marked [ValidationViolation.isUndefinedRecursion] and has the source shape's declared severity and the
  *   constraint's component, so it affects conformance exactly as a failure would: the report conforms only when it
  *   conforms whatever the undefined answers are.
+ * - Results of recursive shapes. The focus nodes of a recursive shape are questions of its component, so the solver
+ *   answers them. A question that is such a focus node is evaluated in a mode that also materializes its results
+ *   and logs, per constraint, the solver answers the results depend on. When the focus node turns out to fail or to
+ *   be undefined, its results are taken from that evaluation: the constraints whose logged answers are the final
+ *   ones keep their recorded results, and only a constraint that was given another answer (the recording pass
+ *   assumes "conforms") is evaluated again, on the value nodes already computed. The focus node itself is not
+ *   evaluated a second time. What recordings retain is bounded; beyond the bound a focus node gets a separate report
+ *   evaluation, with the same results.
+ * - `sh:pattern` evaluations are bounded in regular expression engine steps and, for long values, run on a thread
+ *   with a fixed stack size, so their outcome does not depend on the machine or on the caller's stack (see
+ *   [ValidationConfig.patternTimeout]).
  */
 internal class NativeShaclValidator(
     private val config: ValidationConfig,
@@ -192,6 +203,20 @@ internal class NativeShaclValidator(
     /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
     @Volatile internal var patternEvaluations = 0L
 
+    /**
+     * Bound on what the recorded evaluations of recursive focus nodes may retain at any time (results, solver reads
+     * and units, summed over the recordings that are waiting to be reported). While it is exceeded, further focus
+     * nodes are not recorded: their results come from a separate report evaluation, as they did before recordings
+     * existed. Test seam: `0` disables recording altogether.
+     */
+    @Volatile internal var reportRecordingCapacity: Long = 200_000L
+
+    /** Test instrumentation: failing or undefined recursive focus nodes whose results came from a recorded solver evaluation. */
+    @Volatile internal var recordedReports = 0L
+
+    /** Test instrumentation: failing or undefined recursive focus nodes that needed a separate report evaluation. */
+    @Volatile internal var separateReportEvaluations = 0L
+
     /** Test instrumentation: `sh:pattern` evaluations run on the pattern evaluation thread. */
     @Volatile internal var patternWorkerEvaluations = 0L
 
@@ -252,9 +277,11 @@ internal class NativeShaclValidator(
     /**
      * How a shape is evaluated: [REPORT] materializes every result; [CONFORMS] only needs the three-valued answer and
      * stops at the first definite failure; [EXHAUSTIVE] also only needs the answer but evaluates every constraint and
-     * operand, so that the recursive questions it reads do not depend on the answers it receives.
+     * operand, so that the recursive questions it reads do not depend on the answers it receives; [RECORD] is
+     * exhaustive too and materializes every result, together with the solver answers each result depends on
+     * ([Recording]).
      */
-    private enum class Mode { REPORT, CONFORMS, EXHAUSTIVE }
+    private enum class Mode { REPORT, CONFORMS, EXHAUSTIVE, RECORD }
 
     /** [depth] counts nested checks of non-recursive shapes. */
     private data class DepthState(val depth: Int, val mode: Mode) {
@@ -285,9 +312,35 @@ internal class NativeShaclValidator(
         }
     }
 
-    /** Outcome of one shape evaluation: results in [Mode.REPORT], otherwise only the three-valued answer. */
+    /** A read of the recursion solver by a recorded evaluation: the question and the answer the evaluation was given. */
+    private class SolverRead(val node: RdfTerm, val shape: RdfResource, val answer: Conformance)
+
+    /**
+     * A part of a recorded evaluation that read the recursion solver: one constraint (or logical constraint, or
+     * `sh:node` reference) applied to one set of value nodes. Its results are `results[resultsFrom, resultsTo)` of
+     * the [Recording], it made the reads `reads[readsFrom, readsTo)`, and [replay] evaluates it again into another
+     * sink. Units do not overlap and are in evaluation order.
+     */
+    private class ResultUnit(val resultsFrom: Int, val resultsTo: Int, val readsFrom: Int, val readsTo: Int, val replay: (Sink) -> Unit)
+
+    /**
+     * The results of one solver evaluation of a conformance question ([Mode.RECORD]), kept so that the report of a
+     * failing or undefined focus node of a recursive shape does not need another evaluation: see
+     * [recordedResults].
+     */
+    private class Recording(val results: List<ValidationViolation>, val reads: List<SolverRead>, val units: List<ResultUnit>) {
+        /** What the recording retains, for the bound on retained recordings. */
+        val size: Int get() = 1 + results.size + reads.size + units.size
+    }
+
+    /** Outcome of one shape evaluation: results in [Mode.REPORT] and [Mode.RECORD], otherwise only the three-valued answer. */
     private class Sink(val mode: Mode) {
         val results = ArrayList<ValidationViolation>()
+        /** Whether results are materialized. */
+        val reports: Boolean get() = mode == Mode.REPORT || mode == Mode.RECORD
+        /** [Mode.RECORD]: the reads of the recursion solver by this evaluation, and its [ResultUnit]s. */
+        var reads: ArrayList<SolverRead>? = null
+        var units: ArrayList<ResultUnit>? = null
         var failed = false
         var undefined = false
         /** First cause of [undefined] that is not undefined recursion (an undecided pattern), if any. */
@@ -296,7 +349,7 @@ internal class NativeShaclValidator(
         var recursion = false
         /** Only [Mode.CONFORMS] stops early, and only on a definite failure (Kleene conjunction). */
         val stop: Boolean get() = failed && mode == Mode.CONFORMS
-        val exhaustive: Boolean get() = mode == Mode.EXHAUSTIVE
+        val exhaustive: Boolean get() = mode == Mode.EXHAUSTIVE || mode == Mode.RECORD
         fun conformance(): Conformance =
             when {
                 failed -> Conformance.FAILS
@@ -465,6 +518,27 @@ internal class NativeShaclValidator(
         fun patternWorker(): PatternWorker = patternWorker ?: PatternWorker(patternWorkerStackBytes).also { patternWorker = it }
         /** Solver of the recursive component currently being evaluated (routes references into that component). */
         var solver: RecursionSolver? = null
+        /**
+         * The focus nodes of the recursive shapes that are validated as targets, per shape: the conformance
+         * questions whose results will be reported, so the solver records them ([Mode.RECORD]). A shape whose focus
+         * nodes are not known yet is absent (its focus nodes get an ordinary report evaluation).
+         */
+        val reportedFocusNodes = HashMap<RdfResource, Set<TermKey>>()
+        /** The latest recorded evaluation of each such question, until it is reported or found to conform. */
+        val recordings = HashMap<AtomKey, Recording>()
+        /** Sum of [Recording.size] over [recordings]: recording stops while it exceeds [recordingCapacity]. */
+        var recordedSize = 0L
+        var recordingCapacity = 0L
+        /** The sink of the [Mode.RECORD] evaluation under way, which logs the solver reads; null otherwise. */
+        var recordingSink: Sink? = null
+
+        fun records(node: RdfTerm, shape: RdfResource): Boolean =
+            recordedSize < recordingCapacity && reportedFocusNodes[shape]?.contains(TermKey(node)) == true
+
+        fun keepRecording(key: AtomKey, recording: Recording?) {
+            val previous = if (recording == null) recordings.remove(key) else recordings.put(key, recording)
+            recordedSize += (recording?.size ?: 0) - (previous?.size ?: 0)
+        }
         val reportPaths = HashMap<RdfResource, ReportPath>()
         private val session = lazy {
             SparqlConstraintEvaluator.Session(
@@ -554,6 +628,10 @@ internal class NativeShaclValidator(
             // Distinct focus nodes validated against at least one shape (ValidationStatistics.validatedResources).
             val validatedFocusNodes = HashSet<TermKey>()
             fun record(results: List<ValidationViolation>) {
+                // Strict mode: a constraint that undefined recursion leaves undecided fails the validation. The check
+                // is made on the results that are reported, not where they are built: the solver also builds results
+                // (recorded evaluations) under answers that are not final yet.
+                if (config.strictMode) results.firstOrNull { it.isUndefinedRecursion }?.let { throw ShaclValidationException(it.message) }
                 totalResults += results.size
                 blockingResults += results.count { blocking(it.severity, it.resultSeverityIri?.let { iri -> Iri(iri) }) }
                 for (result in results) {
@@ -562,10 +640,38 @@ internal class NativeShaclValidator(
                 }
             }
 
+            // A shape whose focus nodes are answered by the recursion solver: see the loop below.
+            fun answeredBySolver(shape: CompiledNodeShape) = shape.shapeNode in compiled.recursiveComponents &&
+                compiled.referencedNodeShapes[shape.shapeNode] === shape && shape.shapeNode !in compiled.referencedPropertyShapes
+            // The focus nodes of the recursive shapes are computed before anything is validated, so that the solver
+            // knows which of its questions will be reported, whichever shape's validation asks them first.
+            ctx.recordingCapacity = reportRecordingCapacity
+            val targetsOfRecursiveShapes = java.util.IdentityHashMap<CompiledNodeShape, Pair<List<RdfTerm>, List<ValidationViolation>>>()
+            if (reportRecordingCapacity > 0) {
+                for (shape in compiled.orderedNodeShapes) {
+                    if (shape.deactivated || !answeredBySolver(shape)) continue
+                    ctx.checkDeadline()
+                    val undecided = ArrayList<ValidationViolation>()
+                    val all = computeFocusNodes(shape, ctx, undecided)
+                    targetsOfRecursiveShapes[shape] = all to undecided
+                    ctx.reportedFocusNodes[shape.shapeNode] =
+                        (if (focusOnly == null) all else all.filter { it == focusOnly }).mapTo(HashSet()) { TermKey(it) }
+                }
+            }
+
             for (shape in compiled.orderedNodeShapes) {
                 ctx.checkDeadline()
-                val undecidedTargets = ArrayList<ValidationViolation>()
-                val allFocusNodes = computeFocusNodes(shape, ctx, undecidedTargets)
+                val known = targetsOfRecursiveShapes[shape]
+                val undecidedTargets: List<ValidationViolation>
+                val allFocusNodes: List<RdfTerm>
+                if (known != null) {
+                    allFocusNodes = known.first
+                    undecidedTargets = known.second
+                } else {
+                    val undecided = ArrayList<ValidationViolation>()
+                    allFocusNodes = computeFocusNodes(shape, ctx, undecided)
+                    undecidedTargets = undecided
+                }
                 record(if (focusOnly == null) undecidedTargets else undecidedTargets.filter { it.focusNode == focusOnly })
                 if (shape.uniqueValuesForProps.isNotEmpty()) {
                     val (rows, count) = validateUniqueValuesForShape(shape, allFocusNodes, focusOnly, ctx, config.maxViolations - violations.size)
@@ -576,17 +682,30 @@ internal class NativeShaclValidator(
                 val focusNodes = if (focusOnly == null) allFocusNodes else allFocusNodes.filter { it == focusOnly }
                 validatedConstraintSlots += countConstraintEvaluationSlots(shape, focusNodes.size)
                 if (!shape.deactivated) for (focus in focusNodes) validatedFocusNodes.add(TermKey(focus))
-                // The solver answers every question of a recursive shape's component at once; a focus node it found
-                // conforming has no results, so its report evaluation is skipped. A focus node it found failing or
-                // undefined is evaluated once more, in report mode: the solver's own evaluations cannot produce the
-                // results, because they run before the answers they read are final (the recording pass assumes
-                // "conforms") and stop at the first failure afterwards. The report pass re-runs only this shape's own
-                // constraints; every nested conformance check is a memo hit.
-                val recursive = shape.shapeNode in compiled.recursiveComponents &&
-                    compiled.referencedNodeShapes[shape.shapeNode] === shape && shape.shapeNode !in compiled.referencedPropertyShapes
+                // The solver answers every question of a recursive shape's component at once. A focus node it found
+                // conforming has no results. For one it found failing or undefined, the results come from the
+                // evaluation by which the solver settled the question (recordedResults): the focus node is not
+                // evaluated again. Only when no recording is available (recording is bounded, see
+                // reportRecordingCapacity) is the focus node evaluated once more, in report mode; that pass re-runs
+                // only this shape's own constraints, every nested conformance check being a memo hit.
+                val recursive = answeredBySolver(shape)
                 for (focus in focusNodes) {
                     ctx.checkDeadline()
-                    if (recursive && conformance(focus, shape.shapeNode, ctx, DepthState(0, Mode.CONFORMS)) == Conformance.CONFORMS) continue
+                    if (recursive) {
+                        if (conformance(focus, shape.shapeNode, ctx, DepthState(0, Mode.CONFORMS)) == Conformance.CONFORMS) continue
+                        val key = AtomKey(TermKey(focus), shape.shapeNode)
+                        val recording = ctx.recordings[key]
+                        if (recording != null) {
+                            ctx.keepRecording(key, null)
+                            val results = recordedResults(recording, ctx)
+                            if (results != null) {
+                                recordedReports++
+                                record(results)
+                                continue
+                            }
+                        }
+                        separateReportEvaluations++
+                    }
                     val sink = Sink(Mode.REPORT)
                     validateNodeShape(focus, shape, ctx, DepthState(0, Mode.REPORT), sink)
                     record(sink.results)
@@ -821,7 +940,11 @@ internal class NativeShaclValidator(
         val component = compiled.recursiveComponents[ref]
         if (component != null) {
             val active = ctx.solver
-            if (active != null && active.component == component) return readInSolver(active, key, value, ref, negative)
+            if (active != null && active.component == component) {
+                val answer = readInSolver(active, key, value, ref, negative)
+                ctx.recordingSink?.reads?.add(SolverRead(value, ref, answer))
+                return answer
+            }
             return solve(key, value, ref, component, ctx, state)
         }
         val next = state.nested()
@@ -838,15 +961,120 @@ internal class NativeShaclValidator(
     /** Evaluates every constraint of [ref] for [value] in the (non-report) mode of [state]. */
     private fun evaluateConformance(value: RdfTerm, ref: RdfResource, ctx: ValidationContext, state: DepthState): Conformance {
         val sink = Sink(state.mode)
+        // A nested evaluation is not part of a recorded one: its solver reads (of another component) are its own.
+        val outer = ctx.recordingSink
+        ctx.recordingSink = null
+        try {
+            evaluateInto(value, ref, ctx, state, sink)
+        } finally {
+            ctx.recordingSink = outer
+        }
+        val answer = sink.conformance()
+        rememberCause(AtomKey(TermKey(value), ref), sink, answer, ctx)
+        return answer
+    }
+
+    private fun evaluateInto(value: RdfTerm, ref: RdfResource, ctx: ValidationContext, state: DepthState, sink: Sink) {
         val propertyShape = ctx.compiled.referencedPropertyShapes[ref]
         if (propertyShape != null) {
             validatePropertyShape(value, propertyShape, ctx, state, sink)
         } else {
             ctx.compiled.referencedNodeShapes[ref]?.let { validateNodeShape(value, it, ctx, state, sink) }
         }
+    }
+
+    /**
+     * One evaluation of the solver question [key] = ([node], [shape]) at nesting [depth]: [exhaustive] in the
+     * recording pass, stopping at the first failure otherwise. When the question is a focus node whose results will
+     * be reported ([ValidationContext.records]), the evaluation is a [Mode.RECORD] one (exhaustive in either pass,
+     * which reads exactly the questions its recording pass registered) and replaces the question's [Recording].
+     */
+    private fun evaluateQuestion(key: AtomKey, node: RdfTerm, shape: RdfResource, ctx: ValidationContext, depth: Int, exhaustive: Boolean): Conformance {
+        val record = ctx.records(node, shape)
+        val mode = if (record) Mode.RECORD else if (exhaustive) Mode.EXHAUSTIVE else Mode.CONFORMS
+        val sink = Sink(mode)
+        if (record) {
+            sink.reads = ArrayList()
+            sink.units = ArrayList()
+        }
+        val outer = ctx.recordingSink
+        ctx.recordingSink = if (record) sink else null
+        try {
+            evaluateInto(node, shape, ctx, DepthState(depth, mode), sink)
+        } finally {
+            ctx.recordingSink = outer
+        }
         val answer = sink.conformance()
-        rememberCause(AtomKey(TermKey(value), ref), sink, answer, ctx)
+        rememberCause(key, sink, answer, ctx)
+        // Without a recording, an earlier one stays: any recorded evaluation of the question will do (recordedResults).
+        if (record) ctx.keepRecording(key, Recording(sink.results, sink.reads!!, sink.units!!))
         return answer
+    }
+
+    /**
+     * The results of a focus node from the [recording] of the evaluation by which the solver settled its question,
+     * exactly as a report evaluation would produce them, or null when they cannot be derived from it.
+     *
+     * A recorded evaluation is a report evaluation whose solver reads were answered by the solver at the time: with
+     * "conforms" in the recording pass, with the value a question had then (or "undefined" while it was unsettled)
+     * afterwards. Everything else it reads is final when it is read (the memo of settled answers, other components,
+     * the data). So its results are the final ones wherever the answers it was given are the final answers. The reads
+     * are grouped by the [ResultUnit] that made them. A unit whose answers are all definite and equal to the final
+     * ones contributes its recorded results; any other unit is evaluated again, now that every answer is final —
+     * that is one constraint on the value nodes already computed, not the shape. An undefined answer always replays
+     * its unit, because the result of an undefined answer states its cause, which is only known in the end. A read
+     * outside every unit (there is none in the engine) cannot be replayed: null, and the caller evaluates the focus
+     * node again.
+     */
+    private fun recordedResults(recording: Recording, ctx: ValidationContext): List<ValidationViolation>? {
+        val reads = recording.reads
+        if (reads.isEmpty()) return recording.results
+        val top = DepthState(0, Mode.CONFORMS)
+        var changedAny = false
+        val changed = BooleanArray(reads.size) { i ->
+            val read = reads[i]
+            // A question the solve did not explore (the reader failed whatever its answer) is solved now.
+            val isFinal = read.answer != Conformance.UNDEFINED && conformance(read.node, read.shape, ctx, top) == read.answer
+            if (!isFinal) changedAny = true
+            !isFinal
+        }
+        if (!changedAny) return recording.results
+        val out = ArrayList<ValidationViolation>(recording.results.size)
+        var resultAt = 0
+        var readAt = 0
+        for (unit in recording.units) {
+            for (i in readAt until unit.readsFrom) if (changed[i]) return null
+            for (i in resultAt until unit.resultsFrom) out.add(recording.results[i])
+            if ((unit.readsFrom until unit.readsTo).any { changed[it] }) {
+                val sink = Sink(Mode.REPORT)
+                unit.replay(sink)
+                out.addAll(sink.results)
+            } else {
+                for (i in unit.resultsFrom until unit.resultsTo) out.add(recording.results[i])
+            }
+            resultAt = unit.resultsTo
+            readAt = unit.readsTo
+        }
+        for (i in readAt until reads.size) if (changed[i]) return null
+        for (i in resultAt until recording.results.size) out.add(recording.results[i])
+        return out
+    }
+
+    /**
+     * Runs [body], a self-contained part of a shape evaluation (see [ResultUnit]), on this sink. In a recorded
+     * evaluation, a part that read the recursion solver is registered with the results it produced and the reads it
+     * made, so that it can be evaluated again alone.
+     */
+    private inline fun Sink.unit(crossinline body: (Sink) -> Unit) {
+        val log = reads
+        if (log == null) {
+            body(this)
+            return
+        }
+        val resultsFrom = results.size
+        val readsFrom = log.size
+        body(this)
+        if (log.size > readsFrom) units!!.add(ResultUnit(resultsFrom, results.size, readsFrom, log.size) { sink -> body(sink) })
     }
 
     /**
@@ -934,7 +1162,12 @@ internal class NativeShaclValidator(
                 }
                 toRecord = solver.atoms.keys.toList()
             }
-            for ((key, atom) in solver.atoms) if (atom.resolved) ctx.memo[key] = atom.value
+            for ((key, atom) in solver.atoms) {
+                if (!atom.resolved) continue
+                ctx.memo[key] = atom.value
+                // A conforming focus node has no results to report.
+                if (atom.value == Conformance.CONFORMS && ctx.recordings.isNotEmpty()) ctx.keepRecording(key, null)
+            }
             return solver.atoms.getValue(rootKey).value
         } finally {
             ctx.solver = savedSolver
@@ -943,7 +1176,6 @@ internal class NativeShaclValidator(
 
     /** Step 1: evaluates each question once with recursive reads answered "conforms", recording those reads. */
     private fun recordDependencies(solver: RecursionSolver, start: Collection<AtomKey>, ctx: ValidationContext, state: DepthState) {
-        val recordingState = DepthState(state.depth, Mode.EXHAUSTIVE)
         val recorded = HashSet<AtomKey>()
         val pending = ArrayDeque(start)
         while (pending.isNotEmpty()) {
@@ -956,7 +1188,7 @@ internal class NativeShaclValidator(
             solver.recording = reads
             val result =
                 try {
-                    evaluateConformance(atom.node, atom.shape, ctx, recordingState)
+                    evaluateQuestion(key, atom.node, atom.shape, ctx, state.depth, exhaustive = true)
                 } finally {
                     solver.recording = saved
                 }
@@ -1068,7 +1300,7 @@ internal class NativeShaclValidator(
         val saved = solver.evaluating
         solver.evaluating = atom
         try {
-            return evaluateConformance(atom.node, atom.shape, ctx, state)
+            return evaluateQuestion(AtomKey(TermKey(atom.node), atom.shape), atom.node, atom.shape, ctx, state.depth, exhaustive = false)
         } finally {
             solver.evaluating = saved
         }
@@ -1118,13 +1350,13 @@ internal class NativeShaclValidator(
 
     private inline fun Sink.fail(build: () -> ValidationViolation) {
         failed = true
-        if (mode == Mode.REPORT) results.add(build())
+        if (reports) results.add(build())
     }
 
     private fun Sink.failAll(list: List<ValidationViolation>) {
         if (list.isEmpty()) return
         failed = true
-        if (mode == Mode.REPORT) results.addAll(list)
+        if (reports) results.addAll(list)
     }
 
     /**
@@ -1149,7 +1381,7 @@ internal class NativeShaclValidator(
         val because = why?.pattern
         if (because != null && cause == null) cause = because
         if (why == null || why.recursion) recursion = true
-        if (mode != Mode.REPORT) return
+        if (!reports) return
         val result =
             if (why == null || why.recursion) {
                 undefinedRecursionResult(focus, tpl, type, value, node, shape, because)
@@ -1166,7 +1398,7 @@ internal class NativeShaclValidator(
     private fun Sink.undecidedPattern(focus: RdfTerm, tpl: ResultTemplate, value: RdfTerm, because: Undecided) {
         undefined = true
         if (cause == null) cause = because
-        if (mode != Mode.REPORT) return
+        if (!reports) return
         // The engine's explanation, never the shape's sh:message: the constraint was not found violated.
         results.add(
             violation(focus, tpl, constraintStub(ConstraintType.PATTERN, tpl.path?.predicate), because.reason, value, messages = emptyList())
@@ -1204,7 +1436,8 @@ internal class NativeShaclValidator(
         val alsoPattern = pattern?.let { ". The answer is also undefined for another reason: ${it.reason}" }.orEmpty()
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): whether ${displayTerm(node)} " +
             "conforms to ${shape.displayId()} cannot be decided, so this ${type.name} constraint could not be evaluated$alsoPattern"
-        if (config.strictMode) throw ShaclValidationException(message)
+        // In strict mode the result fails the validation when it is reported (see runValidation), not here: a
+        // recorded evaluation of the solver may build it under answers that are not final.
         // The declared severity of the source shape: the result blocks conformance exactly when a failure would.
         return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
             .copy(violationCode = ValidationViolation.UNDEFINED_RECURSION_CODE)
@@ -1259,18 +1492,22 @@ internal class NativeShaclValidator(
         val tpl = ResultTemplate(shape.shapeNode, shape.severity, shape.severityCustomIri, shape.messages, null)
 
         for (nr in shape.nodeRefs) {
-            sink.outcome(ctx, conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
-                violation(focus, tpl, constraintStub(ConstraintType.NODE), "sh:node constraint failed for ${nr.displayId()}", value = focus)
+            sink.unit { s ->
+                s.outcome(ctx, conformance(focus, nr, ctx, state), focus, tpl, ConstraintType.NODE, focus, focus, nr) {
+                    violation(focus, tpl, constraintStub(ConstraintType.NODE), "sh:node constraint failed for ${nr.displayId()}", value = focus)
+                }
             }
             if (sink.stop) return
         }
 
         for (exprRef in shape.nodeByExpressionRefs) {
-            sink.outcome(ctx, conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
-                violation(
-                    focus, tpl, constraintStub(ConstraintType.NODE_BY_EXPRESSION),
-                    "sh:nodeByExpression constraint failed", value = focus, sourceConstraint = exprRef,
-                )
+            sink.unit { s ->
+                s.outcome(ctx, conformance(focus, exprRef, ctx, state), focus, tpl, ConstraintType.NODE_BY_EXPRESSION, focus, focus, exprRef) {
+                    violation(
+                        focus, tpl, constraintStub(ConstraintType.NODE_BY_EXPRESSION),
+                        "sh:nodeByExpression constraint failed", value = focus, sourceConstraint = exprRef,
+                    )
+                }
             }
             if (sink.stop) return
         }
@@ -1286,7 +1523,7 @@ internal class NativeShaclValidator(
         }
 
         for (part in shape.logicalParts) {
-            evalLogical(focus, focus, tpl, part, ctx, state, sink)
+            sink.unit { s -> evalLogical(focus, focus, tpl, part, ctx, state, s) }
             if (sink.stop) return
         }
 
@@ -1502,6 +1739,24 @@ internal class NativeShaclValidator(
         path: ShaclPath?,
         sink: Sink,
     ) {
+        for (c in constraints) {
+            if (sink.stop) return
+            sink.unit { s -> evaluateConstraint(focus, tpl, values, c, ctx, state, currentShape, path, s) }
+        }
+    }
+
+    /** Evaluates the constraint [c] on the value nodes [values] of [focus]. */
+    private fun evaluateConstraint(
+        focus: RdfTerm,
+        tpl: ResultTemplate,
+        values: List<RdfTerm>,
+        c: PropertyConstraint,
+        ctx: ValidationContext,
+        state: DepthState,
+        currentShape: RdfResource,
+        path: ShaclPath?,
+        sink: Sink,
+    ) {
         val data = ctx.data
         val pathPredicate = tpl.path?.predicate
 
@@ -1516,281 +1771,278 @@ internal class NativeShaclValidator(
             sourceConstraint: RdfTerm? = null,
         ) {
             sink.failed = true
-            if (sink.mode == Mode.REPORT) {
+            if (sink.reports) {
                 sink.results.add(violation(focus, tpl, constraintStub(type, pathPredicate, params), message, value, severity, severityIri, messages, sourceConstraint))
             }
         }
 
         fun fingerprints(terms: List<RdfTerm>): Set<String> = terms.mapTo(HashSet()) { shaclRdfTermFingerprint(it) }
 
-        for (c in constraints) {
-            if (sink.stop) return
-            when (c) {
-                // Cardinality results carry no sh:value (SHACL §4.2.1 / §4.2.2).
-                is PropertyConstraint.MinCount ->
-                    if (values.size < c.n) add(ConstraintType.MIN_COUNT, "Minimum cardinality ${c.n} required, found ${values.size}", params = mapOf("min" to c.n, "actual" to values.size))
-                is PropertyConstraint.MaxCount ->
-                    if (values.size > c.n) add(ConstraintType.MAX_COUNT, "Maximum cardinality ${c.n} allowed, found ${values.size}", params = mapOf("max" to c.n, "actual" to values.size))
-                is PropertyConstraint.Datatype ->
-                    values.forEach { v ->
-                        if (!literalMatchesShaclDatatypes(v, c.allowed)) {
-                            add(
-                                ConstraintType.DATATYPE,
-                                "Value $v does not match allowed datatype(s) ${c.allowed.joinToString { it.value }}",
-                                v,
-                                severity = c.severityOverride ?: tpl.severity,
-                                severityIri = if (c.severityOverride != null) null else tpl.severityCustomIri,
-                                messages = c.messages.ifEmpty { tpl.messages },
-                            )
-                        }
+        when (c) {
+            // Cardinality results carry no sh:value (SHACL §4.2.1 / §4.2.2).
+            is PropertyConstraint.MinCount ->
+                if (values.size < c.n) add(ConstraintType.MIN_COUNT, "Minimum cardinality ${c.n} required, found ${values.size}", params = mapOf("min" to c.n, "actual" to values.size))
+            is PropertyConstraint.MaxCount ->
+                if (values.size > c.n) add(ConstraintType.MAX_COUNT, "Maximum cardinality ${c.n} allowed, found ${values.size}", params = mapOf("max" to c.n, "actual" to values.size))
+            is PropertyConstraint.Datatype ->
+                values.forEach { v ->
+                    if (!literalMatchesShaclDatatypes(v, c.allowed)) {
+                        add(
+                            ConstraintType.DATATYPE,
+                            "Value $v does not match allowed datatype(s) ${c.allowed.joinToString { it.value }}",
+                            v,
+                            severity = c.severityOverride ?: tpl.severity,
+                            severityIri = if (c.severityOverride != null) null else tpl.severityCustomIri,
+                            messages = c.messages.ifEmpty { tpl.messages },
+                        )
                     }
-                is PropertyConstraint.Class ->
-                    values.forEach { v ->
-                        val ok = v is RdfResource && data.typesOf(v).any { t -> c.iri in data.superclassCone(t) }
-                        if (!ok) add(ConstraintType.CLASS, "Expected rdf:type (subclass of) ${c.iri.value} for value $v", v)
-                    }
-                is PropertyConstraint.ClassAnyOf ->
-                    values.forEach { v ->
-                        val ok = v is RdfResource && c.options.any { req -> data.typesOf(v).any { t -> req in data.superclassCone(t) } }
-                        if (!ok) add(ConstraintType.CLASS, "Expected rdf:type matching one of ${c.options.joinToString { it.value }} for value $v", v)
-                    }
-                is PropertyConstraint.NodeKind ->
-                    values.forEach { v ->
-                        if (!c.kinds.any { matchesNodeKind(v, it) }) add(ConstraintType.NODE_KIND, "Node kind ${c.kinds.joinToString { it.value }} required for $v", v)
-                    }
-                is PropertyConstraint.Pattern ->
-                    values.forEach { v ->
-                        val lex = literalLexicalString(v)
-                        val outcome = if (lex == null) PatternOutcome.NO_MATCH else matchPattern(c, lex, currentShape, ctx)
-                        when {
-                            outcome.undecided != null -> sink.undecidedPattern(focus, tpl, v, outcome.undecided)
-                            !outcome.matches -> add(ConstraintType.PATTERN, "Pattern ${c.pattern} violated for value $v", v)
-                        }
-                    }
-                is PropertyConstraint.MinLength ->
-                    values.forEach { v ->
-                        val lex = literalLexicalString(v)
-                        if (lex == null || lex.codePointCount(0, lex.length) < c.n) add(ConstraintType.MIN_LENGTH, "minLength ${c.n} violated for $v", v)
-                    }
-                is PropertyConstraint.MaxLength ->
-                    values.forEach { v ->
-                        val lex = literalLexicalString(v)
-                        if (lex == null || lex.codePointCount(0, lex.length) > c.n) add(ConstraintType.MAX_LENGTH, "maxLength ${c.n} violated for $v", v)
-                    }
-                is PropertyConstraint.In ->
-                    values.forEach { v ->
-                        if (!c.allowed.any { shaclRdfTermEquals(it, v) }) add(ConstraintType.IN, "Value $v not in sh:in", v)
-                    }
-                is PropertyConstraint.HasValue ->
-                    if (values.none { shaclRdfTermEquals(it, c.value) }) add(ConstraintType.HAS_VALUE, "sh:hasValue missing ${c.value}")
-                is PropertyConstraint.LanguageIn ->
-                    values.forEach { v ->
-                        val lang = (v as? LangString)?.lang?.takeIf { it.isNotEmpty() }
-                        val ok = lang != null && c.langs.any { allowed -> languageTagMatchesLanguageRange(lang, allowed) }
-                        if (!ok) add(ConstraintType.LANGUAGE_IN, "languageIn violated for $v", v)
-                    }
-                is PropertyConstraint.UniqueLang ->
-                    if (c.enabled) {
-                        // Language tags are compared case-insensitively.
-                        val duplicated = values.mapNotNull { v -> (v as? LangString)?.let { "${it.lang.lowercase()}\u0000${it.direction?.token ?: ""}" } }
-                            .groupingBy { it }.eachCount().filter { it.value > 1 }.keys
-                        duplicated.forEach { _ -> add(ConstraintType.UNIQUE_LANG, "sh:uniqueLang violated") }
-                    }
-                is PropertyConstraint.EqualsPath -> {
-                    val other = PathEvaluator.evaluate(focus, c.otherPath, data)
-                    val otherKeys = fingerprints(other)
-                    val valueKeys = fingerprints(values)
-                    values.filter { shaclRdfTermFingerprint(it) !in otherKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: value $it is missing from the referenced path", it) }
-                    other.filter { shaclRdfTermFingerprint(it) !in valueKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: referenced value $it is missing from the path", it) }
                 }
-                is PropertyConstraint.DisjointPath -> {
-                    val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
-                    values.filter { shaclRdfTermFingerprint(it) in otherKeys }.forEach { add(ConstraintType.DISJOINT, "sh:disjoint violated: $it is shared with the referenced path", it) }
+            is PropertyConstraint.Class ->
+                values.forEach { v ->
+                    val ok = v is RdfResource && data.typesOf(v).any { t -> c.iri in data.superclassCone(t) }
+                    if (!ok) add(ConstraintType.CLASS, "Expected rdf:type (subclass of) ${c.iri.value} for value $v", v)
                 }
-                // One result per (value, other value) pair that is not ordered; orderViolations sorts once when it can.
-                is PropertyConstraint.LessThanPath ->
-                    for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = true)) {
-                        add(ConstraintType.LESS_THAN, "sh:lessThan violated comparing $v and $w", v)
-                        if (sink.stop) break
+            is PropertyConstraint.ClassAnyOf ->
+                values.forEach { v ->
+                    val ok = v is RdfResource && c.options.any { req -> data.typesOf(v).any { t -> req in data.superclassCone(t) } }
+                    if (!ok) add(ConstraintType.CLASS, "Expected rdf:type matching one of ${c.options.joinToString { it.value }} for value $v", v)
+                }
+            is PropertyConstraint.NodeKind ->
+                values.forEach { v ->
+                    if (!c.kinds.any { matchesNodeKind(v, it) }) add(ConstraintType.NODE_KIND, "Node kind ${c.kinds.joinToString { it.value }} required for $v", v)
+                }
+            is PropertyConstraint.Pattern ->
+                values.forEach { v ->
+                    val lex = literalLexicalString(v)
+                    val outcome = if (lex == null) PatternOutcome.NO_MATCH else matchPattern(c, lex, currentShape, ctx)
+                    when {
+                        outcome.undecided != null -> sink.undecidedPattern(focus, tpl, v, outcome.undecided)
+                        !outcome.matches -> add(ConstraintType.PATTERN, "Pattern ${c.pattern} violated for value $v", v)
                     }
-                is PropertyConstraint.LessThanOrEqualsPath ->
-                    for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = false)) {
-                        add(ConstraintType.LESS_THAN_OR_EQUALS, "sh:lessThanOrEquals violated comparing $v and $w", v)
-                        if (sink.stop) break
-                    }
-                is PropertyConstraint.MinInclusive ->
-                    values.forEach { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
-                is PropertyConstraint.MaxInclusive ->
-                    values.forEach { v -> if (!satisfiesMaxInclusive(v, c.bound)) add(ConstraintType.MAX_INCLUSIVE, "maxInclusive violated for $v vs bound ${c.bound}", v) }
-                is PropertyConstraint.MinExclusive ->
-                    values.forEach { v -> if (!satisfiesMinExclusive(v, c.bound)) add(ConstraintType.MIN_EXCLUSIVE, "minExclusive violated for $v vs bound ${c.bound}", v) }
-                is PropertyConstraint.MaxExclusive ->
-                    values.forEach { v -> if (!satisfiesMaxExclusive(v, c.bound)) add(ConstraintType.MAX_EXCLUSIVE, "maxExclusive violated for $v vs bound ${c.bound}", v) }
-                is PropertyConstraint.Qualified -> {
-                    // SHACL §4.7.3: with sh:qualifiedValueShapesDisjoint, values conforming to a sibling shape don't count.
-                    // The count lies in [definite, possible]; only an outcome that depends on undefined answers is undefined.
-                    // A maximum makes the shape a negative dependency; sibling exclusion always is one.
-                    var definite = 0
-                    var possible = 0
-                    var undecided: Pair<RdfTerm, RdfResource>? = null
-                    for (v in values) {
-                        val own = conformance(v, c.shape, ctx, state, negative = c.max != null)
-                        var counted = own
-                        var question: RdfResource? = if (own == Conformance.UNDEFINED) c.shape else null
-                        if (c.disjoint && (own != Conformance.FAILS || sink.exhaustive)) {
-                            for (s in c.siblings) {
-                                when (conformance(v, s, ctx, state, negative = true)) {
-                                    Conformance.CONFORMS -> counted = Conformance.FAILS
-                                    Conformance.UNDEFINED -> if (counted != Conformance.FAILS) {
-                                        counted = Conformance.UNDEFINED
-                                        if (question == null || prefersUndefined(ctx, v to question, v, s)) question = s
-                                    }
-                                    Conformance.FAILS -> Unit
+                }
+            is PropertyConstraint.MinLength ->
+                values.forEach { v ->
+                    val lex = literalLexicalString(v)
+                    if (lex == null || lex.codePointCount(0, lex.length) < c.n) add(ConstraintType.MIN_LENGTH, "minLength ${c.n} violated for $v", v)
+                }
+            is PropertyConstraint.MaxLength ->
+                values.forEach { v ->
+                    val lex = literalLexicalString(v)
+                    if (lex == null || lex.codePointCount(0, lex.length) > c.n) add(ConstraintType.MAX_LENGTH, "maxLength ${c.n} violated for $v", v)
+                }
+            is PropertyConstraint.In ->
+                values.forEach { v ->
+                    if (!c.allowed.any { shaclRdfTermEquals(it, v) }) add(ConstraintType.IN, "Value $v not in sh:in", v)
+                }
+            is PropertyConstraint.HasValue ->
+                if (values.none { shaclRdfTermEquals(it, c.value) }) add(ConstraintType.HAS_VALUE, "sh:hasValue missing ${c.value}")
+            is PropertyConstraint.LanguageIn ->
+                values.forEach { v ->
+                    val lang = (v as? LangString)?.lang?.takeIf { it.isNotEmpty() }
+                    val ok = lang != null && c.langs.any { allowed -> languageTagMatchesLanguageRange(lang, allowed) }
+                    if (!ok) add(ConstraintType.LANGUAGE_IN, "languageIn violated for $v", v)
+                }
+            is PropertyConstraint.UniqueLang ->
+                if (c.enabled) {
+                    // Language tags are compared case-insensitively.
+                    val duplicated = values.mapNotNull { v -> (v as? LangString)?.let { "${it.lang.lowercase()}\u0000${it.direction?.token ?: ""}" } }
+                        .groupingBy { it }.eachCount().filter { it.value > 1 }.keys
+                    duplicated.forEach { _ -> add(ConstraintType.UNIQUE_LANG, "sh:uniqueLang violated") }
+                }
+            is PropertyConstraint.EqualsPath -> {
+                val other = PathEvaluator.evaluate(focus, c.otherPath, data)
+                val otherKeys = fingerprints(other)
+                val valueKeys = fingerprints(values)
+                values.filter { shaclRdfTermFingerprint(it) !in otherKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: value $it is missing from the referenced path", it) }
+                other.filter { shaclRdfTermFingerprint(it) !in valueKeys }.forEach { add(ConstraintType.EQUALS, "sh:equals: referenced value $it is missing from the path", it) }
+            }
+            is PropertyConstraint.DisjointPath -> {
+                val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
+                values.filter { shaclRdfTermFingerprint(it) in otherKeys }.forEach { add(ConstraintType.DISJOINT, "sh:disjoint violated: $it is shared with the referenced path", it) }
+            }
+            // One result per (value, other value) pair that is not ordered; orderViolations sorts once when it can.
+            is PropertyConstraint.LessThanPath ->
+                for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = true)) {
+                    add(ConstraintType.LESS_THAN, "sh:lessThan violated comparing $v and $w", v)
+                    if (sink.stop) break
+                }
+            is PropertyConstraint.LessThanOrEqualsPath ->
+                for ((v, w) in orderViolations(values, PathEvaluator.evaluate(focus, c.otherPath, data), strict = false)) {
+                    add(ConstraintType.LESS_THAN_OR_EQUALS, "sh:lessThanOrEquals violated comparing $v and $w", v)
+                    if (sink.stop) break
+                }
+            is PropertyConstraint.MinInclusive ->
+                values.forEach { v -> if (!satisfiesMinInclusive(v, c.bound)) add(ConstraintType.MIN_INCLUSIVE, "minInclusive violated for $v vs bound ${c.bound}", v) }
+            is PropertyConstraint.MaxInclusive ->
+                values.forEach { v -> if (!satisfiesMaxInclusive(v, c.bound)) add(ConstraintType.MAX_INCLUSIVE, "maxInclusive violated for $v vs bound ${c.bound}", v) }
+            is PropertyConstraint.MinExclusive ->
+                values.forEach { v -> if (!satisfiesMinExclusive(v, c.bound)) add(ConstraintType.MIN_EXCLUSIVE, "minExclusive violated for $v vs bound ${c.bound}", v) }
+            is PropertyConstraint.MaxExclusive ->
+                values.forEach { v -> if (!satisfiesMaxExclusive(v, c.bound)) add(ConstraintType.MAX_EXCLUSIVE, "maxExclusive violated for $v vs bound ${c.bound}", v) }
+            is PropertyConstraint.Qualified -> {
+                // SHACL §4.7.3: with sh:qualifiedValueShapesDisjoint, values conforming to a sibling shape don't count.
+                // The count lies in [definite, possible]; only an outcome that depends on undefined answers is undefined.
+                // A maximum makes the shape a negative dependency; sibling exclusion always is one.
+                var definite = 0
+                var possible = 0
+                var undecided: Pair<RdfTerm, RdfResource>? = null
+                for (v in values) {
+                    val own = conformance(v, c.shape, ctx, state, negative = c.max != null)
+                    var counted = own
+                    var question: RdfResource? = if (own == Conformance.UNDEFINED) c.shape else null
+                    if (c.disjoint && (own != Conformance.FAILS || sink.exhaustive)) {
+                        for (s in c.siblings) {
+                            when (conformance(v, s, ctx, state, negative = true)) {
+                                Conformance.CONFORMS -> counted = Conformance.FAILS
+                                Conformance.UNDEFINED -> if (counted != Conformance.FAILS) {
+                                    counted = Conformance.UNDEFINED
+                                    if (question == null || prefersUndefined(ctx, v to question, v, s)) question = s
                                 }
-                                if (counted == Conformance.FAILS && !sink.exhaustive) break
+                                Conformance.FAILS -> Unit
                             }
-                        }
-                        when (counted) {
-                            Conformance.CONFORMS -> { definite++; possible++ }
-                            Conformance.UNDEFINED -> {
-                                possible++
-                                val asked = question ?: c.shape
-                                if (prefersUndefined(ctx, undecided, v, asked)) undecided = v to asked
-                            }
-                            Conformance.FAILS -> Unit
+                            if (counted == Conformance.FAILS && !sink.exhaustive) break
                         }
                     }
-                    val u = undecided
-                    if (c.min != null) {
-                        if (possible < c.min) {
-                            add(ConstraintType.QUALIFIED_MIN_COUNT, "qualifiedMinCount violated (required ${c.min}, found $definite)", params = mapOf("min" to c.min, "actual" to definite))
-                        } else if (definite < c.min && u != null) {
-                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MIN_COUNT, null, u.first, u.second)
+                    when (counted) {
+                        Conformance.CONFORMS -> { definite++; possible++ }
+                        Conformance.UNDEFINED -> {
+                            possible++
+                            val asked = question ?: c.shape
+                            if (prefersUndefined(ctx, undecided, v, asked)) undecided = v to asked
                         }
+                        Conformance.FAILS -> Unit
                     }
-                    if (c.max != null) {
-                        if (definite > c.max) {
-                            add(ConstraintType.QUALIFIED_MAX_COUNT, "qualifiedMaxCount violated (max ${c.max}, found $definite)", params = mapOf("max" to c.max, "actual" to definite))
-                        } else if (possible > c.max && u != null) {
-                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MAX_COUNT, null, u.first, u.second)
+                }
+                val u = undecided
+                if (c.min != null) {
+                    if (possible < c.min) {
+                        add(ConstraintType.QUALIFIED_MIN_COUNT, "qualifiedMinCount violated (required ${c.min}, found $definite)", params = mapOf("min" to c.min, "actual" to definite))
+                    } else if (definite < c.min && u != null) {
+                        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MIN_COUNT, null, u.first, u.second)
+                    }
+                }
+                if (c.max != null) {
+                    if (definite > c.max) {
+                        add(ConstraintType.QUALIFIED_MAX_COUNT, "qualifiedMaxCount violated (max ${c.max}, found $definite)", params = mapOf("max" to c.max, "actual" to definite))
+                    } else if (possible > c.max && u != null) {
+                        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.QUALIFIED_MAX_COUNT, null, u.first, u.second)
+                    }
+                }
+            }
+            is PropertyConstraint.MinListLength ->
+                values.forEach { v ->
+                    val members = data.expandDataList(v)
+                    if (members == null || members.size < c.n) add(ConstraintType.MIN_LIST_LENGTH, "sh:minListLength requires at least ${c.n} list members", v)
+                }
+            is PropertyConstraint.MaxListLength ->
+                values.forEach { v ->
+                    val members = data.expandDataList(v)
+                    if (members == null || members.size > c.n) add(ConstraintType.MAX_LIST_LENGTH, "sh:maxListLength allows at most ${c.n} list members", v)
+                }
+            is PropertyConstraint.MemberShape ->
+                values.forEach { v ->
+                    val members = data.expandDataList(v)
+                    if (members == null) {
+                        add(ConstraintType.MEMBER_SHAPE, "Value is not a valid SHACL RDF list", v)
+                    } else {
+                        var failing = false
+                        var undecided: Pair<RdfTerm, RdfResource>? = null
+                        for (m in members) {
+                            when (conformance(m, c.nestedShape, ctx, state)) {
+                                Conformance.FAILS -> { failing = true; if (!sink.exhaustive) break }
+                                Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, m, c.nestedShape)) undecided = m to c.nestedShape
+                                Conformance.CONFORMS -> Unit
+                            }
+                        }
+                        val u = undecided
+                        if (failing) {
+                            add(ConstraintType.MEMBER_SHAPE, "sh:memberShape violated for list value", v)
+                        } else if (u != null) {
+                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.MEMBER_SHAPE, v, u.first, c.nestedShape)
                         }
                     }
                 }
-                is PropertyConstraint.MinListLength ->
-                    values.forEach { v ->
-                        val members = data.expandDataList(v)
-                        if (members == null || members.size < c.n) add(ConstraintType.MIN_LIST_LENGTH, "sh:minListLength requires at least ${c.n} list members", v)
-                    }
-                is PropertyConstraint.MaxListLength ->
-                    values.forEach { v ->
-                        val members = data.expandDataList(v)
-                        if (members == null || members.size > c.n) add(ConstraintType.MAX_LIST_LENGTH, "sh:maxListLength allows at most ${c.n} list members", v)
-                    }
-                is PropertyConstraint.MemberShape ->
+            is PropertyConstraint.UniqueMembers ->
+                if (c.enabled) {
                     values.forEach { v ->
                         val members = data.expandDataList(v)
                         if (members == null) {
-                            add(ConstraintType.MEMBER_SHAPE, "Value is not a valid SHACL RDF list", v)
-                        } else {
-                            var failing = false
-                            var undecided: Pair<RdfTerm, RdfResource>? = null
-                            for (m in members) {
-                                when (conformance(m, c.nestedShape, ctx, state)) {
-                                    Conformance.FAILS -> { failing = true; if (!sink.exhaustive) break }
-                                    Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, m, c.nestedShape)) undecided = m to c.nestedShape
-                                    Conformance.CONFORMS -> Unit
-                                }
-                            }
-                            val u = undecided
-                            if (failing) {
-                                add(ConstraintType.MEMBER_SHAPE, "sh:memberShape violated for list value", v)
-                            } else if (u != null) {
-                                sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.MEMBER_SHAPE, v, u.first, c.nestedShape)
-                            }
-                        }
-                    }
-                is PropertyConstraint.UniqueMembers ->
-                    if (c.enabled) {
-                        values.forEach { v ->
-                            val members = data.expandDataList(v)
-                            if (members == null) {
-                                add(ConstraintType.UNIQUE_MEMBERS, "Value is not a valid SHACL RDF list", v)
-                            } else if (distinctShaclTerms(members).size != members.size) {
-                                add(ConstraintType.UNIQUE_MEMBERS, "sh:uniqueMembers violated", v)
-                            }
-                        }
-                    }
-                is PropertyConstraint.SubsetOfPath -> {
-                    val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
-                    values.forEach { v ->
-                        if (shaclRdfTermFingerprint(v) !in otherKeys) add(ConstraintType.SUBSET_OF, "sh:subsetOf violated: value not reachable via referenced path", v)
-                    }
-                }
-                is PropertyConstraint.SingleLine ->
-                    if (c.enabled) {
-                        values.forEach { v ->
-                            val lex = literalLexicalString(v)
-                            if (lex != null && singleLineBreakRegex.containsMatchIn(lex)) add(ConstraintType.SINGLE_LINE, "sh:singleLine violated", v)
-                        }
-                    }
-                is PropertyConstraint.SomeValue -> {
-                    var matched = false
-                    var undecided: Pair<RdfTerm, RdfResource>? = null
-                    for (v in values) {
-                        when (conformance(v, c.nestedShape, ctx, state)) {
-                            Conformance.CONFORMS -> { matched = true; if (!sink.exhaustive) break }
-                            Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, v, c.nestedShape)) undecided = v to c.nestedShape
-                            Conformance.FAILS -> Unit
-                        }
-                    }
-                    val u = undecided
-                    if (!matched) {
-                        if (u != null) {
-                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SOME_VALUE, null, u.first, c.nestedShape)
-                        } else {
-                            add(ConstraintType.SOME_VALUE, "sh:someValue requires at least one conforming value")
+                            add(ConstraintType.UNIQUE_MEMBERS, "Value is not a valid SHACL RDF list", v)
+                        } else if (distinctShaclTerms(members).size != members.size) {
+                            add(ConstraintType.UNIQUE_MEMBERS, "sh:uniqueMembers violated", v)
                         }
                     }
                 }
-                is PropertyConstraint.RootClass ->
-                    values.forEach { v ->
-                        val cls = v as? Iri
-                        if (cls == null) {
-                            add(ConstraintType.ROOT_CLASS, "sh:rootClass expects an IRI class value", v)
-                        } else if (c.roots.none { it in data.superclassCone(cls) }) {
-                            add(ConstraintType.ROOT_CLASS, "sh:rootClass violated for $cls", v)
-                        }
-                    }
-                is PropertyConstraint.Shape ->
-                    values.forEach { v ->
-                        when (conformance(v, c.nestedShape, ctx, state)) {
-                            Conformance.FAILS -> add(ConstraintType.SHAPE, "sh:shape constraint failed for ${c.nestedShape.displayId()}", v)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SHAPE, v, v, c.nestedShape)
-                            Conformance.CONFORMS -> Unit
-                        }
-                    }
-                is PropertyConstraint.Node ->
-                    values.forEach { v ->
-                        when (conformance(v, c.nestedShape, ctx, state)) {
-                            Conformance.FAILS -> add(ConstraintType.NODE, "sh:node constraint failed for ${c.nestedShape.displayId()}", v)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE, v, v, c.nestedShape)
-                            Conformance.CONFORMS -> Unit
-                        }
-                    }
-                is PropertyConstraint.NodeByExpression ->
-                    values.forEach { v ->
-                        when (conformance(v, c.nestedShape, ctx, state)) {
-                            Conformance.FAILS ->
-                                add(ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${c.nestedShape.displayId()}", v, sourceConstraint = c.nestedShape)
-                            Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, c.nestedShape)
-                            Conformance.CONFORMS -> Unit
-                        }
-                    }
-                is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path))
-                is PropertyConstraint.ReifierShape,
-                is PropertyConstraint.ReificationRequired,
-                -> Unit
+            is PropertyConstraint.SubsetOfPath -> {
+                val otherKeys = fingerprints(PathEvaluator.evaluate(focus, c.otherPath, data))
+                values.forEach { v ->
+                    if (shaclRdfTermFingerprint(v) !in otherKeys) add(ConstraintType.SUBSET_OF, "sh:subsetOf violated: value not reachable via referenced path", v)
+                }
             }
+            is PropertyConstraint.SingleLine ->
+                if (c.enabled) {
+                    values.forEach { v ->
+                        val lex = literalLexicalString(v)
+                        if (lex != null && singleLineBreakRegex.containsMatchIn(lex)) add(ConstraintType.SINGLE_LINE, "sh:singleLine violated", v)
+                    }
+                }
+            is PropertyConstraint.SomeValue -> {
+                var matched = false
+                var undecided: Pair<RdfTerm, RdfResource>? = null
+                for (v in values) {
+                    when (conformance(v, c.nestedShape, ctx, state)) {
+                        Conformance.CONFORMS -> { matched = true; if (!sink.exhaustive) break }
+                        Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, v, c.nestedShape)) undecided = v to c.nestedShape
+                        Conformance.FAILS -> Unit
+                    }
+                }
+                val u = undecided
+                if (!matched) {
+                    if (u != null) {
+                        sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SOME_VALUE, null, u.first, c.nestedShape)
+                    } else {
+                        add(ConstraintType.SOME_VALUE, "sh:someValue requires at least one conforming value")
+                    }
+                }
+            }
+            is PropertyConstraint.RootClass ->
+                values.forEach { v ->
+                    val cls = v as? Iri
+                    if (cls == null) {
+                        add(ConstraintType.ROOT_CLASS, "sh:rootClass expects an IRI class value", v)
+                    } else if (c.roots.none { it in data.superclassCone(cls) }) {
+                        add(ConstraintType.ROOT_CLASS, "sh:rootClass violated for $cls", v)
+                    }
+                }
+            is PropertyConstraint.Shape ->
+                values.forEach { v ->
+                    when (conformance(v, c.nestedShape, ctx, state)) {
+                        Conformance.FAILS -> add(ConstraintType.SHAPE, "sh:shape constraint failed for ${c.nestedShape.displayId()}", v)
+                        Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SHAPE, v, v, c.nestedShape)
+                        Conformance.CONFORMS -> Unit
+                    }
+                }
+            is PropertyConstraint.Node ->
+                values.forEach { v ->
+                    when (conformance(v, c.nestedShape, ctx, state)) {
+                        Conformance.FAILS -> add(ConstraintType.NODE, "sh:node constraint failed for ${c.nestedShape.displayId()}", v)
+                        Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE, v, v, c.nestedShape)
+                        Conformance.CONFORMS -> Unit
+                    }
+                }
+            is PropertyConstraint.NodeByExpression ->
+                values.forEach { v ->
+                    when (conformance(v, c.nestedShape, ctx, state)) {
+                        Conformance.FAILS ->
+                            add(ConstraintType.NODE_BY_EXPRESSION, "sh:nodeByExpression constraint failed for ${c.nestedShape.displayId()}", v, sourceConstraint = c.nestedShape)
+                        Conformance.UNDEFINED -> sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.NODE_BY_EXPRESSION, v, v, c.nestedShape)
+                        Conformance.CONFORMS -> Unit
+                    }
+                }
+            is PropertyConstraint.Sparql -> sink.failAll(evaluateSparql(focus, tpl, c, ctx, currentShape, path))
+            is PropertyConstraint.ReifierShape,
+            is PropertyConstraint.ReificationRequired,
+            -> Unit
         }
     }
 
@@ -1966,7 +2218,7 @@ internal class NativeShaclValidator(
         if (sink.stop) return
         for (part in ps.logicalParts) {
             for (v in values) {
-                evalLogical(focus, v, tpl, part, ctx, state, sink)
+                sink.unit { s -> evalLogical(focus, v, tpl, part, ctx, state, s) }
                 if (sink.stop) return
             }
         }
@@ -1979,15 +2231,17 @@ internal class NativeShaclValidator(
         if (focus is RdfResource &&
             ps.constraints.any { it is PropertyConstraint.ReifierShape || it is PropertyConstraint.ReificationRequired }
         ) {
-            validateReifierPropertyConstraints(
-                focus = focus,
-                tpl = tpl,
-                claims = tripleClaimsMatchingSimplePath(focus, ps.path, ctx.data),
-                constraints = ps.constraints,
-                ctx = ctx,
-                state = state,
-                sink = sink,
-            )
+            sink.unit { s ->
+                validateReifierPropertyConstraints(
+                    focus = focus,
+                    tpl = tpl,
+                    claims = tripleClaimsMatchingSimplePath(focus, ps.path, ctx.data),
+                    constraints = ps.constraints,
+                    ctx = ctx,
+                    state = state,
+                    sink = s,
+                )
+            }
         }
     }
 
@@ -2042,7 +2296,7 @@ internal class NativeShaclValidator(
                         )
                         Conformance.FAILS -> {
                             sink.failed = true
-                            if (sink.mode == Mode.REPORT) {
+                            if (sink.reports) {
                                 // sh:value is the object of the reified triple (W3C reifierShape-001), so the failing
                                 // reifier is carried by the message and the result context (exported as ksh:reifier).
                                 val result = violation(
