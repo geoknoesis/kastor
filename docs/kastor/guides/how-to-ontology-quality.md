@@ -106,6 +106,8 @@ onto-qa check ontology.ttl --catalog all --reasoner hermit
 
 `--reasoner owl-micro` (`OntoQualityReasoningProfile.OWL_MICRO`) runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`): faster than `owl-rl`, but less complete. `--reasoner owl-rl` (`OWL_RL`) runs Jena's full OWL rule reasoner (`ReasonerType.OWL_RL`). The two profiles are distinct. For example, `owl-rl` derives `owl:sameAs` between two values of an `owl:FunctionalProperty`, while `owl-micro` has no equality reasoning and does not.
 
+A reasoner only changes what the **entailment-aware** detectors see (SKOS integrity conditions such as S9, S25, S27, S46, and shapes of your own catalogues). **Structural** detectors (cycles, orphans, missing declarations, annotations, naming: the whole `owl-quality`, `modern-engineering`, `rdf12-quality` and `embedding-quality` catalogues) always evaluate the ontology as written, so `--reasoner rdfs` does not report a `rdfs:subClassOf` cycle on every class or hide undeclared classes. Each shape states its graph with `oqsh:evaluatedOn`; see [Which graph a detector evaluates](../../../tools/onto-quality/library/README.md#which-graph-a-detector-evaluates).
+
 **CLI `--catalog all`** uses **`QualityChecker.default()`**, so the OOPS registry is present and **K07** metadata applies when **HermiT** reports inconsistency. Requires **`:rdf:reasoning-hermit`** (and its transitive deps) on the classpath for the CLI artifact.
 
 Design and limitations: [Reasoning in Kastor](../design/reasoning-in-kastor.md), operational traps: [Reasoning ontology pitfalls](../design/reasoning-ontology-pitfalls.md).

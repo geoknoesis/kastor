@@ -97,7 +97,7 @@ produced by the SHACL engine.
 
 If metrics computation fails, the checker logs the error and continues without rankings or the metrics “top findings” section. **`VirtualMachineError`** (and subclasses) are rethrown.
 
-With a reasoning profile (**`check(ontology, profile)`**, CLI **`--with-metrics --reasoner …`**), SHACL validation runs on the materialised graph but the **`MetricsProvider`** always receives the **asserted** ontology: reasoner closures (reflexive/transitive `rdfs:subClassOf`, `rdfs:Resource` typing) would otherwise turn every class into a cycle participant and make depth, coupling and importance meaningless.
+With a reasoning profile (**`check(ontology, profile)`**, CLI **`--with-metrics --reasoner …`**), entailment-aware detectors run on the materialised graph (structural ones on the asserted graph, see [Which graph a detector evaluates](#which-graph-a-detector-evaluates)) and the **`MetricsProvider`** always receives the **asserted** ontology: reasoner closures (reflexive/transitive `rdfs:subClassOf`, `rdfs:Resource` typing) would otherwise turn every class into a cycle participant and make depth, coupling and importance meaningless.
 
 ## Reports, Markdown, and references
 
@@ -178,7 +178,7 @@ Failures are isolated per batch: explanations from successful batches are kept, 
 
 ## RDF reasoning before validation
 
-Optional **materialization** merges asserted triples with **Jena** RDFS or OWL RL rule inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated, and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
+Optional **materialization** merges asserted triples with **Jena** RDFS or OWL RL rule inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated by the detectors that are meant to see entailments (the structural ones keep the asserted graph), and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
 
 **Library:**
 
@@ -188,6 +188,22 @@ import com.geoknoesis.kastor.ontoquality.reasoning.OntoQualityReasoningProfile
 
 val report = checker.check(ontology, OntoQualityReasoningProfile.RDFS)
 ```
+
+### Which graph a detector evaluates
+
+With a reasoner on, each detector runs on the graph its shape declares with **`oqsh:evaluatedOn`** (a comment next to the annotation in each catalogue gives the reason):
+
+| Value | Detectors | Graph |
+| --- | --- | --- |
+| `oqsh:AssertedGraph` | **Structural**: what the author wrote. Every shape of `owl-quality` (metadata, annotations, declarations P11/P19/P27/P34/P35, hierarchy cycles P06, orphans P04, inverses, deprecation, naming, P24/P33/P36–P40, P01, P23, K01), `modern-engineering`, `rdf12-quality` and `embedding-quality`; in `skos-validation` the lexical and hygiene conventions: empty / padded labels, one-sided `skos:related`, self-links, `skos:broader` cycles, same-scheme mapping links, `skos:memberList` presence. | The ontology as parsed. |
+| `oqsh:EntailedGraph` | **Semantic**: what the ontology means. In `skos-validation` the integrity conditions and membership conventions: S9 and Concept/Collection disjointness, S13, S14, a concept has a preferred label, S27, S25 / S6 / S4 / S32 value typing, S46, top concept in scheme, concept in a scheme, unique notation per scheme. | Asserted plus inferred triples. |
+| *(none)* | Shapes of your own catalogues. The `data-quality` catalogue ships constraint components only; they follow the shape that uses them. | Asserted plus inferred triples (as before the annotation existed). |
+
+A reasoner's closure contains `C rdfs:subClassOf C` for every class and axiomatic triples on the built-in vocabulary, and types every referenced class: on that graph a structural detector fires on every class (P06) or goes silent (P04, P34). So `--reasoner` can only add findings of the entailed kind, plus **K07**. Cycle detectors (P06) additionally require a cycle through a *different* class or property, so a bare `A rdfs:subClassOf A` is not a finding on any graph. The annotation is read on targeted shapes; add it to a shape of your own catalogue to pin it to the asserted graph.
+
+### Focus nodes of graph-level detectors
+
+Every bundled detector reports the offending resource as the focus node, names it in the message, and so gets one finding ref per offender: **P27** (the property, with its mismatched equivalent as value), **P34** (the undeclared class), **P20** (the entity with the malformed annotations), **P40** (the entity minted in a foreign namespace, with the ontology as value), **P01** (the IRI that is both class and property) and the deprecated-reference check (the deprecated entity, with the referrer as value). **P35** has to scan the whole graph (SHACL has no target for predicates): its focus node is `owl:Thing` and the undeclared predicate is the result **value**, reported once and interpolated in the message.
 
 **CLI:** `onto-qa check model.ttl --reasoner rdfs` (or `owl-micro`, `owl-rl`, `hermit`, default `none`). `owl-micro` runs Jena's OWL Micro rule reasoner (`ReasonerType.OWL_MICRO`: RDFS plus property axioms, equality and simple class expressions; faster, less complete); `owl-rl` runs Jena's OWL rule reasoner (`ReasonerType.OWL_RL`). Use **`--catalog all`** to match **`QualityChecker.default()`** (includes registry metadata for **K07**). With **`--with-metrics`**, metrics and importance ranking are computed on the asserted graph (see [Metrics integration](#metrics-integration-optional)).
 
