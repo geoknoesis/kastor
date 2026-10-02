@@ -70,12 +70,24 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
  * **Lenient reads** ([Rdf4jRepository.lenientRead]): statements that cannot be converted to Kastor terms are skipped
  * with a logged warning instead of failing the read, and [size] counts only convertible statements.
  *
+ * **Identity:** a graph object is a handle, not a copy. Two handles are equal when they denote the same graph (the
+ * same context) of the same [Rdf4jRepository] object, so a handle obtained anew for every call
+ * (`repository.getGraph(name)`) finds what was stored under an equal one. Handles of two [Rdf4jRepository] objects are
+ * never equal, also when both wrap one RDF4J repository.
+ *
  * @param context the named-graph context, or null for the default graph.
  */
-internal class Rdf4jGraph(
-    private val repo: Rdf4jRepository,
+internal open class Rdf4jGraph(
+    protected val repo: Rdf4jRepository,
     private val context: Resource? = null,
 ) : MutableRdfGraph {
+
+    final override fun equals(other: Any?): Boolean =
+        this === other || (other is Rdf4jGraph && other.repo === repo && other.context == context)
+
+    final override fun hashCode(): Int = 31 * System.identityHashCode(repo) + (context?.hashCode() ?: 0)
+
+    override fun toString(): String = "Rdf4jGraph(${context ?: "default graph"})"
 
     override fun addTriple(triple: RdfTriple) = repo.withWriteConnection { conn -> add(conn, triple) }
 
@@ -493,4 +505,14 @@ internal class Rdf4jGraph(
     private companion object {
         val LOG: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(Rdf4jGraph::class.java)
     }
+}
+
+/**
+ * A graph of a repository whose content only that repository object changes (see [Rdf4jRepository.versioned]): every
+ * write is counted, so the graph carries a modification stamp. The stamp is the one of the repository (a write to any
+ * of its graphs changes it), which the contract allows: a changed stamp does not promise changed content.
+ */
+internal class Rdf4jVersionedGraph(repo: Rdf4jRepository, context: Resource?) : Rdf4jGraph(repo, context), VersionedRdfGraph {
+    /** Fails with [IllegalStateException] on a closed repository, like a content read. */
+    override val modificationStamp: Long get() = repo.modificationStamp()
 }

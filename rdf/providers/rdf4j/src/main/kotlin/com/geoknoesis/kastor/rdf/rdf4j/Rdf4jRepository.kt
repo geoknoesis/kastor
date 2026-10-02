@@ -191,10 +191,62 @@ class Rdf4jRepository(
      */
     internal fun tripleValuesPossible(): Boolean = starCapable && (!trackQuotedSubjects || tripleValuesMayExist)
 
+    /**
+     * Counts the changes made through this repository: it moves after every write operation, and before and after
+     * the commit (or after the rollback) of every transaction that wrote. See [modificationStamp].
+     */
+    private val modifications = java.util.concurrent.atomic.AtomicLong()
+
+    /** Commits (of transactions that wrote) in progress: between the two counter changes around `commit()`. */
+    private val commitsInFlight = java.util.concurrent.atomic.AtomicInteger()
+
+    /** True once the current thread's transaction has written through this repository. */
+    private val wroteInTransaction = ThreadLocal<Boolean>()
+
+    /**
+     * True for a repository whose content only this object can change: it was created by a factory method (see
+     * [withVariant]) and its statements are all written ones (no inference). Its graphs then carry a modification
+     * stamp ([com.geoknoesis.kastor.rdf.VersionedRdfGraph]). A repository wrapping an externally created store, which
+     * other code may write to, and an inferencing repository do not claim one.
+     */
+    internal val versioned: Boolean get() = trackQuotedSubjects && !inference
+
+    /**
+     * A value that differs from every value returned before once the content visible to the caller may have changed
+     * through this repository: the contract of [com.geoknoesis.kastor.rdf.VersionedRdfGraph.modificationStamp], with
+     * the granularity of the whole repository (a write to any graph changes the stamp of every graph). Only meaningful
+     * while every write goes through this repository.
+     *
+     * Every write operation (graph API, SPARQL `UPDATE`, dataset load, `clear`, `removeGraph`) changes the counter when
+     * it returns, also when it fails, so a thread sees a new stamp after its own uncommitted writes. A transaction
+     * that wrote changes it again immediately before and after its commit, and after a rollback. A commit is not atomic
+     * with those changes, so a read made while one is in progress returns a value of its own that is never returned
+     * again: two reads only return the same value when no commit happened between them, and nothing blocks.
+     */
+    internal fun modificationStamp(): Long {
+        check(!closed.get()) { "Repository is closed" }
+        val before = modifications.get()
+        // Unchanged counter around a moment without a commit in progress: no commit overlaps this read.
+        if (commitsInFlight.get() == 0 && modifications.get() == before) return before
+        return modifications.incrementAndGet()
+    }
+
+    /** Records a write made by the current thread, see [modificationStamp]. */
+    private fun noteWrite() {
+        wroteInTransaction.set(true)
+        modifications.incrementAndGet()
+    }
+
     internal fun <T> withWriteConnection(block: (RepositoryConnection) -> T): T {
         check(readOnly.get() != true) { "Cannot write inside a read transaction" }
         var result: Any? = null
-        runInTransaction(false) { result = withConnection(block) }
+        runInTransaction(false) {
+            try {
+                result = withConnection(block)
+            } finally {
+                noteWrite()
+            }
+        }
         @Suppress("UNCHECKED_CAST")
         return result as T
     }
@@ -347,13 +399,17 @@ class Rdf4jRepository(
     // after an explicit close) shutting the repository down twice.
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     
-    override val defaultGraph: RdfGraph = Rdf4jGraph(this, null)
+    /**
+     * Graph handles are equal when they denote the same graph of the same repository object (see [Rdf4jGraph]). The
+     * graphs of a [versioned] repository implement [com.geoknoesis.kastor.rdf.VersionedRdfGraph].
+     */
+    override val defaultGraph: RdfGraph get() = graphHandle(null)
 
     /** A handle of the graph stored in [context] (the default graph for null). */
-    private fun graphHandle(context: org.eclipse.rdf4j.model.Resource?): Rdf4jGraph = Rdf4jGraph(this, context)
+    private fun graphHandle(context: org.eclipse.rdf4j.model.Resource?): Rdf4jGraph =
+        if (versioned) Rdf4jVersionedGraph(this, context) else Rdf4jGraph(this, context)
 
-    override fun getGraph(name: Iri): RdfGraph =
-        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+    override fun getGraph(name: Iri): RdfGraph = graphHandle(valueFactory.createIRI(name.value))
 
     override fun hasGraph(name: Iri): Boolean = withConnection { conn ->
         conn.hasStatement(null, null, null, false, valueFactory.createIRI(name.value))
@@ -377,8 +433,7 @@ class Rdf4jRepository(
         }
     }
 
-    override fun createGraph(name: Iri): RdfGraph =
-        Rdf4jGraph(this, valueFactory.createIRI(name.value))
+    override fun createGraph(name: Iri): RdfGraph = getGraph(name)
 
     override fun removeGraph(name: Iri): Boolean = withWriteConnection { conn ->
         val context = valueFactory.createIRI(name.value)
@@ -894,13 +949,31 @@ class Rdf4jRepository(
             try {
                 conn.begin()
                 operations(this)
-                conn.commit()
+                if (wroteInTransaction.get() == true) {
+                    // The committed content becomes visible somewhere between these two changes of the counter.
+                    commitsInFlight.incrementAndGet()
+                    modifications.incrementAndGet()
+                    try {
+                        conn.commit()
+                    } finally {
+                        modifications.incrementAndGet()
+                        commitsInFlight.decrementAndGet()
+                    }
+                } else {
+                    conn.commit()
+                }
             } catch (e: Throwable) {
-                if (conn.isActive) conn.rollback()
+                try {
+                    if (conn.isActive) conn.rollback()
+                } finally {
+                    // The writes this thread saw inside the transaction are gone.
+                    if (wroteInTransaction.get() == true) modifications.incrementAndGet()
+                }
                 throw e
             } finally {
                 txConnection.remove()
                 readOnly.remove()
+                wroteInTransaction.remove()
                 quotedScanInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
