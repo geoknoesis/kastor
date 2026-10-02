@@ -52,7 +52,7 @@ A change is breaking when it is any of:
 
 **Deprecation.** A declaration is deprecated with `@Deprecated(level = WARNING)` and a `ReplaceWith` where possible, for at least one minor release before it moves to `ERROR` and then to removal. Security and correctness fixes may break without a deprecation cycle; the changelog says so explicitly. After 1.0, deprecated APIs are removed only in a major release.
 
-**Supported platforms.** Artifacts target **JDK 21** bytecode and are tested on JDK 21 (Linux and Windows on every change, macOS on `main` and weekly). They are compiled with **Kotlin 2.4.20**; consumers need a Kotlin 2.4 compiler or newer. The `kastor-gen` processor is built for **KSP 2.3.12**, and the Gradle plugin is tested with **Gradle 9.5**. Other combinations are not supported. Versions are recorded in `gradle/libs.versions.toml`; changes to any of them are platform changes under this policy.
+**Supported platforms.** Artifacts target **JDK 21** bytecode and are tested on JDK 21 (Linux and Windows on every change, macOS on `main` and weekly). They are compiled with **Kotlin 2.4.20**; consumers need a Kotlin 2.4 compiler or newer. The `kastor-gen` processor is built for **KSP 2.3.12**, and the Gradle plugin is tested with **Gradle 9.8**. Other combinations are not supported. Versions are recorded in `gradle/libs.versions.toml`; changes to any of them are platform changes under this policy.
 
 ## Local release checks
 
