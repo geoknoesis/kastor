@@ -35,6 +35,10 @@ public abstract interface annotation class com/geoknoesis/kastor/gen/annotations
 
 public final class com/geoknoesis/kastor/gen/annotations/RdfKt {
 	public static final field RDF_ANNOTATION_FQN Ljava/lang/String;
+	public static final field RDF_MATERIALIZABLE_ANNOTATION_FQN Ljava/lang/String;
+}
+
+public abstract interface annotation class com/geoknoesis/kastor/gen/annotations/RdfMaterializable : java/lang/annotation/Annotation {
 }
 
 public final class com/geoknoesis/kastor/gen/annotations/ValidationAnnotations : java/lang/Enum {

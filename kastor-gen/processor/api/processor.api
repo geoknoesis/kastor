@@ -940,10 +940,15 @@ public final class com/geoknoesis/kastor/gen/processor/internal/core/GenerationC
 }
 
 public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor : com/google/devtools/ksp/processing/SymbolProcessor {
+	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor$Companion;
+	public static final field MATERIALIZABLE_TYPES_OPTION Ljava/lang/String;
 	public fun <init> (Lcom/google/devtools/ksp/processing/CodeGenerator;Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/Map;)V
 	public fun finish ()V
 	public fun onError ()V
 	public fun process (Lcom/google/devtools/ksp/processing/Resolver;)Ljava/util/List;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor$Companion {
 }
 
 public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessorProvider : com/google/devtools/ksp/processing/SymbolProcessorProvider {
