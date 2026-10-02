@@ -240,7 +240,9 @@ costs the other readers of the same view depends on where the step stops:
 When a view is poisoned, lookups (`hasTriple`, `size`) and finds/queries that have **not returned a result yet**
 continue transparently on a fresh view of the same snapshot. An iterator that has already returned results fails
 with `RdfInferenceException` (the remaining results could not be told apart from a fresh run's); retrying the read
-is safe. A fresh view costs a new worker, read transaction and RDFS preparation, so a reader with very tight
+is safe. **A failed iterator stays failed:** once a step of an inference iterator has failed or was cancelled, every
+further `hasNext()` / `next()` throws the same failure again (after the results fetched before it are consumed), so
+code that catches the exception and goes on iterating never takes a truncated result for a complete one. A fresh view costs a new worker, read transaction and RDFS preparation, so a reader with very tight
 timeouts on expensive inference queries still slows the others down: prefer timeouts that the common query meets.
 
 #### Closing
@@ -280,7 +282,20 @@ The graphs a Jena repository hands out (`defaultGraph`, `getGraph(name)`, `editG
   - Every commit and every rollback through the repository changes it; it is the stamp of the **store**, so a
     write to any graph changes the stamp of all handles. For inference variants it is the stamp of the underlying
     store as well.
-  - Reading it costs one read transaction when none is open.
+  - Reading it is cheap: inside a transaction of the caller it comes from that transaction's state; outside one,
+    an in-memory store reads its commit generation without beginning a transaction (so do `defaultGraph` and
+    `getGraph(name)`), while a TDB2 store begins one read transaction to learn the data version of the location.
+  - **Writes through the Jena API count too.** The store's own dataset, models and graphs are never handed out:
+    `JenaBridge.getJenaModel(graph)` / `getJenaGraph(graph)` (and the `getJenaModel()` / `getJenaGraph()`
+    extensions) return, for a repository graph, a live Jena view of the asserted graph whose every mutation
+    (`add`, `remove`, `removeAll`, `Graph.delete` / `remove` / `clear`, `GraphUtil` bulk operations, statement and
+    resource mutators) is a write transaction of the repository: its own one outside `repository.transaction { }`,
+    the enclosing one inside it. Such a write therefore moves the stamp and is seen by inference views like any
+    Kastor write. `Model.executeInTxn { }` / `calculateInTxn { }` run in a repository write transaction;
+    `Model.begin()` / `commit()` / `abort()` throw `UnsupportedOperationException` (use
+    `repository.transaction { }`), iterators of the view do not support `remove()`, and closing the view does not
+    close the store. **Behaviour change:** these functions used to return the store's own model, whose writes
+    bypassed the repository (stale stamps, stale inference views) and which exposed the dataset.
 - Graphs that are **not** owned by a repository claim no stamp: graphs wrapped with `JenaBridge.fromJenaModel` /
   `fromJenaGraph` / `toKastorGraph()` (the model can change behind Kastor's back) and graphs returned by
   `parseGraph`.
@@ -292,6 +307,27 @@ if (stamp == null || stamp != cached?.stamp) {
     cached = Cached(stamp, derive(graph))                       // 2. content, stored under the stamp read before it
 }
 ```
+
+### Jena's special graph names
+
+Jena reserves the graph names `urn:x-arq:...`. A Jena repository treats them as follows:
+
+- `urn:x-arq:DefaultGraph` (and `urn:x-arq:DefaultGraphNode`) **is the default graph**: `getGraph` / `editGraph`
+  return the default graph's handle (equal to `defaultGraph`), a write through it is a write to the default graph,
+  `hasGraph` answers for the default graph, and `removeGraph` rejects the name with `IllegalArgumentException`
+  (clear the default graph instead).
+- `urn:x-arq:UnionGraph` is exposed as a **read-only** graph: the union of every named graph (the default graph is
+  not part of it), with the RDFS entailments of that union on an inference repository. It is available through
+  `getGraph(Iri("urn:x-arq:UnionGraph"))` and in queries (`GRAPH <urn:x-arq:UnionGraph> { ... }`), and is never
+  listed by `listGraphs()`. Writing through its handle (or through its Jena view) fails with
+  `UnsupportedOperationException`; `removeGraph` rejects the name. The union graph depends on **every** graph: any
+  commit that wrote something retires an inference view that has prepared it, and a view kept across such a commit
+  never serves it.
+- Any other `urn:x-arq:` name is handled with the same caution (a write through it counts as a write to every graph).
+
+**Behaviour change:** the default-graph alias used to be a handle of its own (not equal to `defaultGraph`), and on
+an in-memory inference repository a commit to a member graph (or a write through the alias) could leave an inference
+view serving the union graph (or the default graph) as it was before the commit.
 
 ### Blank-node graph names (skolem graphs)
 
@@ -320,6 +356,17 @@ for (graph in repo.listGraphs()) {
 }
 ```
 
+**SPARQL `UPDATE` does the same.** Jena itself lets an update request create a graph named by a blank node: `LOAD`
+of a quad document (TriG, N-Quads) with blank graph labels, and `INSERT { GRAPH ?g { ... } }` with `?g` bound to a
+blank node. Such a graph would be invisible to `listGraphs()` and unreachable through `getGraph()`, so when the
+request ends, in the same transaction, every graph it created under a blank-node name is moved to
+`urn:kastor:skolem:<load>:<id>` (one random `<load>` id per update request; `<id>` is the blank node's id), exactly
+as the RDF4J provider does. Only the graph name changes: where the blank node is used as a subject or object it
+stays a blank node. A repository created by Kastor therefore never holds a blank-node graph; blank-node graphs that
+other software wrote to a TDB2 location before the request are left alone. Requests that cannot create such a graph
+(no `LOAD` without `INTO GRAPH`, no `INSERT` template with a graph variable) are not inspected. **Behaviour
+change:** such graphs used to stay blank-node graphs that `listGraphs()` did not list.
+
 ### Parsing, literals and Jena interop
 
 - **Lexical forms are preserved exactly**: `"007"^^xsd:integer` stays `"007"`. Only the exact lexical forms `"true"` / `"false"` become boolean singletons.
@@ -327,7 +374,7 @@ for (graph in repo.listGraphs()) {
 - **Strict parsing**: syntax errors are not silently skipped. Without a base IRI, relative IRIs are a parse error.
 - **Strict bridge reads**: graphs wrapped with `JenaBridge.fromJenaModel(model)`, `JenaBridge.fromJenaGraph(graph)` or `toKastorGraph()` fail a read with `IllegalArgumentException` when they meet a statement Kastor cannot represent (e.g. `xml:lang="en_US"` or an IRI that RFC 3987 rejects). Lenient reads are opt-in: `fromJenaModel(model, strictRead = false)` / `fromJenaGraph(graph, strictRead = false)` skip such statements with one warning per read, and `size()` then counts only the statements reads return (a full scan).
 - **Language-tag case**: Jena canonicalises tag case whenever it creates a language-tagged literal, so `"x"@en-us` is stored and read back as `"x"@en-US`. Kastor equality ignores tag case, so lookups by either spelling still match.
-- **`JenaBridge.toJenaModel(graph)`** returns the wrapped model for standalone Jena-backed graphs. For a graph that belongs to a repository, it returns a **detached copy** (including inferences for inference variants), because the live store model is only valid inside repository transactions. Use **`JenaBridge.copyToJenaModel(graph)`** when you always need an independent copy.
+- **`JenaBridge.toJenaModel(graph)`** returns the wrapped model for standalone Jena-backed graphs. For a graph that belongs to a repository, it returns a **detached copy** (including inferences for inference variants), because the live store model is only valid inside repository transactions. Use **`JenaBridge.copyToJenaModel(graph)`** when you always need an independent copy, and **`JenaBridge.getJenaModel(graph)`** for a live view of the asserted graph whose writes go through the repository (see "Graph handles: identity and modification stamps").
 
 ### 6. Multiple Repository Usage
 

@@ -385,10 +385,20 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
 
         /** No further step will be made: the results ended, the iterator was closed, or a step failed. */
         private var exhausted = false
+
+        /**
+         * What ended the find before its results did (a failed or cancelled step). The iterator **stays failed**:
+         * once the results fetched before are consumed, every further `hasNext()` / `next()` throws it again, so a
+         * caller that catches the failure and goes on can never take the truncated result for a complete one.
+         */
+        private var failure: Throwable? = null
+        private var closed = false
         private var chunkSize = FIRST_CHUNK
 
         override fun hasNext(): Boolean {
+            if (closed) return false
             if (buffer.isNotEmpty()) return true
+            failure?.let { throw it }
             if (exhausted) return false
             val size = chunkSize
             val chunk = try {
@@ -410,6 +420,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
                 // The step failed, or its reader stopped waiting for it (cancellation): the step may still have
                 // opened the reasoner's iterator, which only the owner can close.
                 exhausted = true
+                failure = e
                 releaseSource()
                 throw e
             }
@@ -426,6 +437,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
 
         override fun close() {
             buffer.clear()
+            closed = true
             if (exhausted) return
             exhausted = true
             releaseSource()

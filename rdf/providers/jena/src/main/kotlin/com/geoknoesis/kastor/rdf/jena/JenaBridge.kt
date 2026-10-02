@@ -69,8 +69,8 @@ object JenaBridge {
      * - A standalone Jena-backed graph (created by [fromJenaModel] / [fromJenaGraph] or a Jena parser)
      *   returns its wrapped model itself (no copy).
      * - A graph that belongs to a [JenaRepository] returns a **detached copy** of what the graph's
-     *   reads expose (including inferences for inference variants): the live store model is only
-     *   valid inside repository transactions and must not be mutated behind the repository's back.
+     *   reads expose (including inferences for inference variants). Use [getJenaModel] for a live
+     *   model of the asserted graph whose writes go through the repository.
      * - Any other graph is copied into a new default model.
      *
      * Use [copyToJenaModel] when an independent copy is always required.
@@ -273,26 +273,34 @@ object JenaBridge {
     }
 
     /**
-     * Gets the underlying Jena Model from a Kastor RdfGraph.
+     * Gets a live Jena Model of a Kastor RdfGraph, or null if the graph is not Jena-backed.
      *
-     * For repository-backed graphs this is the live asserted store model: only use it inside a
-     * repository transaction and never mutate it directly.
+     * - A standalone Jena-backed graph returns the model it wraps.
+     * - A graph of a [JenaRepository] returns a model over the **asserted** store graph (no inferences) whose every
+     *   mutation is a write of the repository: `add`, `remove`, `removeAll`, bulk operations and statement mutators
+     *   each run in a repository write transaction (their own one outside `repository.transaction { }`, the enclosing
+     *   one inside it), so modification stamps, inference views and other readers see them like any Kastor write.
+     *   `Model.executeInTxn { }` / `calculateInTxn { }` run in a repository write transaction; `Model.begin()`,
+     *   `commit()` and `abort()` are refused (use `repository.transaction { }`), iterators do not support `remove()`,
+     *   and `close()` does not close the store. Reads follow the store's rules: a TDB2 graph can only be read inside
+     *   a repository transaction. The store's own model, graph and dataset objects are never handed out.
      *
      * @param rdfGraph The Kastor RdfGraph
-     * @return The underlying Jena Model, or null if not Jena-backed
+     * @return A live Jena Model of the graph, or null if not Jena-backed
      */
     fun getJenaModel(rdfGraph: RdfGraph): Model? {
-        return if (rdfGraph is JenaGraph) rdfGraph.model else null
+        return if (rdfGraph is JenaGraph) rdfGraph.nativeModel else null
     }
 
     /**
-     * Gets the underlying Jena Graph from a Kastor RdfGraph.
+     * Gets a live Jena Graph of a Kastor RdfGraph, or null if the graph is not Jena-backed: the graph of
+     * [getJenaModel] (see there for what a repository graph's Jena view does with writes).
      *
      * @param rdfGraph The Kastor RdfGraph
-     * @return The underlying Jena Graph, or null if not Jena-backed
+     * @return A live Jena Graph of the graph, or null if not Jena-backed
      */
     fun getJenaGraph(rdfGraph: RdfGraph): Graph? {
-        return if (rdfGraph is JenaGraph) rdfGraph.model.graph else null
+        return if (rdfGraph is JenaGraph) rdfGraph.nativeModel.graph else null
     }
 
     /**
