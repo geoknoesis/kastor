@@ -10,9 +10,11 @@ import java.util.regex.PatternSyntaxException
 /**
  * `sh:pattern` values are XPath (`fn:matches`) regular expressions. Generated code runs them with
  * `kotlin.text.Regex` (java.util.regex), so XPath syntax whose meaning differs is translated first:
- * - `\d` / `\D` are Unicode decimal digits (`\p{Nd}`), `\w` / `\W` are "everything but punctuation, separators and
- *   other characters" (`[^\p{P}\p{Z}\p{C}]`, so `_` is not a word character but symbols such as `$` are), and
- *   `\s` / `\S` are exactly space, tab, newline and carriage return; Java's defaults are ASCII-only or wider;
+ * - `\d` / `\D` are Unicode decimal digits (`\p{Nd}`); `\w` is "everything but punctuation, separators and other
+ *   characters" (`[^\p{P}\p{Z}\p{C}]`, the XML Schema definition, so symbols such as `$` are word characters) **plus
+ *   the underscore** `_`, which XML Schema leaves out but the Kastor SHACL validator and every mainstream regex
+ *   dialect count as a word character; `\W` is its complement (so it does not match `_`); and `\s` / `\S` are
+ *   exactly space, tab, newline and carriage return. Java's defaults are ASCII-only or wider;
  * - `\i` / `\I` (XML name-start characters) and `\c` / `\C` (XML name characters), approximated with Unicode
  *   letter/digit classes plus `_`, `:`, `.`, `-` and U+00B7;
  * - character-class subtraction `[base-[excluded]]` becomes `[[base]&&[^[excluded]]]`, with every operand a
@@ -38,7 +40,12 @@ internal object ShaclPatterns {
     private const val NAME_START = "\\p{L}_:"
     private const val NAME_CHAR = "\\p{L}\\p{Nd}._:\\-\\u00B7"
     private const val SPACE = " \\t\\n\\r"
-    private const val NOT_WORD = "\\p{P}\\p{Z}\\p{C}"
+    /** XML Schema's non-word characters; the underscore (a `\p{P}` character) is taken out of them, see [WORD]. */
+    private const val XSD_NOT_WORD = "\\p{P}\\p{Z}\\p{C}"
+    /** `\w` as a self-contained class (a union member when nested in a class): XML Schema word characters and `_`. */
+    private const val WORD = "[_[^$XSD_NOT_WORD]]"
+    /** `\W` as a self-contained class: the complement of [WORD]. */
+    private const val NOT_WORD = "[[$XSD_NOT_WORD]&&[^_]]"
 
     fun toJava(pattern: String, flags: String?): String {
         val f = flags.orEmpty()
@@ -105,9 +112,9 @@ internal object ShaclPatterns {
             return when (n) {
                 'd' -> "\\p{Nd}"
                 'D' -> "\\P{Nd}"
-                // Nested classes are unions inside a Java class, so the negated forms work in both contexts.
-                'w' -> "[^$NOT_WORD]"
-                'W' -> if (inClass) NOT_WORD else "[$NOT_WORD]"
+                // Nested classes are unions inside a Java class, so the self-contained forms work in both contexts.
+                'w' -> WORD
+                'W' -> NOT_WORD
                 's' -> if (inClass) SPACE else "[$SPACE]"
                 'S' -> "[^$SPACE]"
                 'i' -> if (inClass) NAME_START else "[$NAME_START]"
