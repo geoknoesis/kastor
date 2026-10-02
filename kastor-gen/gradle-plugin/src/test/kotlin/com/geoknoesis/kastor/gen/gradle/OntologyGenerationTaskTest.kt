@@ -51,6 +51,24 @@ class OntologyGenerationTaskTest {
     private fun output(t: OntologyGenerationTask): File = t.outputDirectory.get().asFile
 
     @Test
+    fun `shaclFile and contextFile have no convention - the resolved files are shaclInput and contextInput`() {
+        val t = task { interfacePackage = "demo.domain" }
+        // Documented in the plugin reference: the properties are unset unless the build script sets them.
+        assertFalse(t.shaclFile.isPresent)
+        assertFalse(t.contextFile.isPresent)
+        assertEquals(File(dir, "shapes.ttl").canonicalFile, t.shaclInput.canonicalFile)
+        assertEquals(File(dir, "dcat-us_3.0_context.jsonld").canonicalFile, t.contextInput.canonicalFile)
+        assertEquals(
+            listOf(File(dir, "shapes.ttl"), File(dir, "src/main/resources/shapes.ttl")).map { it.canonicalFile },
+            t.shaclCandidates.files.map { it.canonicalFile },
+        )
+        // A file set explicitly still takes precedence over the path.
+        val explicit = write("other/explicit.ttl", shapes)
+        t.shaclFile.set(explicit)
+        assertEquals(explicit.canonicalFile, t.shaclInput.canonicalFile)
+    }
+
+    @Test
     fun `optional settings default relative to interfacePackage`() {
         val t = task {
             interfacePackage = "demo.domain"
