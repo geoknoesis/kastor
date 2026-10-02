@@ -130,6 +130,19 @@ class JenaRepository private constructor(
      */
     private val generation = AtomicLong()
 
+    /** Source of modification stamps (see [modificationStamp]): every value is handed out for one state only. */
+    private val stamps = AtomicLong()
+
+    /** Guards [stampedSnapshot] and [snapshotStamp]. */
+    private val stampLock = Any()
+
+    /** The committed snapshot [snapshotStamp] was issued for; null after a write transaction of this repository ended. */
+    private var stampedSnapshot: Snapshot? = null
+    private var snapshotStamp = 0L
+
+    /** Stamp of the calling thread's write transaction; renewed by each of its writes. */
+    private val writeStamp = ThreadLocal<Long?>()
+
     /** Committed state seen by a read transaction: [version] of the storage identified by [store]. */
     private class Snapshot(val store: Any, val version: Long) {
         fun sameAs(other: Snapshot) = store === other.store && version == other.version
@@ -171,20 +184,21 @@ class JenaRepository private constructor(
         check(!closed.get()) { "Repository is closed" }
         if (dataset.isInTransaction) {
             check(mode != ReadWrite.WRITE || dataset.transactionMode() == ReadWrite.WRITE) { "Cannot write inside a read transaction" }
-            if (mode != ReadWrite.WRITE || !inference) return block()
+            if (mode != ReadWrite.WRITE) return block()
             // Every write of a transaction goes through a nested withWrite: the private inference models built
-            // before it are stale afterwards.
+            // before it are stale afterwards, and the transaction's modification stamp changes.
             privateViews.remove()
             try {
                 return block()
             } finally {
                 privateViews.remove()
+                writeStamp.set(stamps.incrementAndGet())
             }
         }
         val before = generation.get()
         dataset.begin(mode)
         try {
-            if (inference && mode == ReadWrite.READ) readSnapshot.set(snapshotAfterBegin(before))
+            if (mode == ReadWrite.READ) readSnapshot.set(snapshotAfterBegin(before)) else writeStamp.set(stamps.incrementAndGet())
             val result = block()
             if (mode == ReadWrite.WRITE) commit()
             return result
@@ -192,6 +206,11 @@ class JenaRepository private constructor(
             if (mode == ReadWrite.WRITE) dataset.abort()
             throw e
         } finally {
+            if (mode == ReadWrite.WRITE) {
+                writeStamp.remove()
+                // Committed or rolled back: the next stamp read of any reader gets a new value.
+                synchronized(stampLock) { stampedSnapshot = null }
+            }
             readSnapshot.remove()
             privateViews.remove()
             transactionView.get()?.let { transactionView.remove(); it.release() }
@@ -217,7 +236,7 @@ class JenaRepository private constructor(
     }
 
     private fun commit() {
-        if (!inference || tdb2) {
+        if (tdb2) {
             dataset.commit()
             if (inference) retireCurrentView()
             return
@@ -227,7 +246,45 @@ class JenaRepository private constructor(
             dataset.commit()
         } finally {
             generation.incrementAndGet()
-            retireCurrentView()
+            if (inference) retireCurrentView()
+        }
+    }
+
+    /**
+     * Modification stamp of the store, as seen by the calling thread (see `VersionedRdfGraph` for the contract; read
+     * it before the content it describes). Every graph handle of this repository reports this value.
+     *
+     * The stamp is a function of the **committed state the caller reads**, not of the wall-clock moment:
+     * - outside a transaction and in a read transaction it identifies the snapshot the read sees: the TDB2 data
+     *   version of the storage (shared by every repository and every other TDB2 client of the location, so a commit
+     *   through another instance changes it), or the commit generation of an in-memory store. A read transaction
+     *   that is older than a commit therefore keeps reporting a value different from the one readers of the newer
+     *   content get;
+     * - inside a write transaction it is private to that transaction and changes with each of its writes, so
+     *   uncommitted content is never confused with committed content, nor with the content after a rollback;
+     * - a commit **and a rollback** through this repository always change it (also when the content is the same
+     *   afterwards), and so does every write path, since all of them run in a write transaction: graph edits,
+     *   `removeGraph`, `clear`, `update`, dataset loads.
+     *
+     * Values come from one increasing counter per repository and are never reused. Two readers of the same snapshot
+     * get the same value as long as no reader of another snapshot asks in between (a new value is then issued, which
+     * only costs consumers a reload). Reading it costs one read transaction when the caller has none open.
+     *
+     * A stamp is claimed because every write to the store goes through this class: the dataset is created by the
+     * factory functions and never handed out for writing. Views over a caller's own Jena `Model` (`JenaBridge`)
+     * have no stamp.
+     */
+    internal fun modificationStamp(): Long = withRead {
+        if (dataset.transactionMode() == ReadWrite.WRITE) return@withRead writeStamp.get() ?: stamps.incrementAndGet()
+        // Unprovable snapshot (a commit raced with this transaction's begin): a value nobody else gets.
+        val snapshot = readSnapshot.get() ?: return@withRead stamps.incrementAndGet()
+        synchronized(stampLock) {
+            val stamped = stampedSnapshot
+            if (stamped == null || !stamped.sameAs(snapshot)) {
+                stampedSnapshot = snapshot
+                snapshotStamp = stamps.incrementAndGet()
+            }
+            snapshotStamp
         }
     }
 
@@ -560,9 +617,9 @@ class JenaRepository private constructor(
         override fun supportsTransactionAbort(): Boolean = false
     }
 
-    private val defaultGraphView by lazy { JenaGraph(dataset.defaultModel, this, DEFAULT_GRAPH_KEY) }
+    private val defaultGraphView by lazy { JenaRepositoryGraph(dataset.defaultModel, this, DEFAULT_GRAPH_KEY) }
     override val defaultGraph: RdfGraph get() = withRead { defaultGraphView }
-    override fun getGraph(name: Iri): RdfGraph = withRead { JenaGraph(dataset.getNamedModel(name.value), this, name.value) }
+    override fun getGraph(name: Iri): RdfGraph = withRead { JenaRepositoryGraph(dataset.getNamedModel(name.value), this, name.value) }
     override fun hasGraph(name: Iri): Boolean = withRead { !dataset.getNamedModel(name.value).isEmpty }
     override fun listGraphs(): List<Iri> = withRead { dataset.listNames().asSequence().map(::Iri).toList() }
     override fun createGraph(name: Iri): RdfGraph = getGraph(name)
