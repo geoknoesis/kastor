@@ -417,7 +417,8 @@ class SparqlLangHardeningTest {
         try {
             val result = Recording { bindings(4) }
             assertEquals(4, result.asFlow(executor.asCoroutineDispatcher(), "x").toList().size)
-            assertEquals(listOf("result-reader"), result.readers.map { it.name }.distinct())
+            // In debug mode kotlinx.coroutines appends " @coroutine#N" to the name of a thread while it runs a coroutine.
+            assertEquals(listOf("result-reader"), result.readers.map { it.name.substringBefore(" @") }.distinct())
             assertEquals(0L, result.closed.count)
 
             // A failing read fails the flow with what it threw, and the result is closed.
