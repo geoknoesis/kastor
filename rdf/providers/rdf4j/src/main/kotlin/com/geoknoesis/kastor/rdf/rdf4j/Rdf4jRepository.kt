@@ -137,6 +137,60 @@ class Rdf4jRepository(
         tripleValuesMayExist = true
     }
 
+    /** The quoted triples of this repository that have a hashed reifier id, see [HashedReifierIndex]. */
+    private val hashedReifiers = HashedReifierIndex()
+
+    /** Registers a value this repository is about to write (its oversized triples get a hashed reifier id). */
+    internal fun noteWrittenValue(value: org.eclipse.rdf4j.model.Value) = hashedReifiers.written(value)
+
+    /** Told the hashed reifiers that reads of this repository produce, so that they resolve without a scan. */
+    internal val hashedReifiersRead: (String, org.eclipse.rdf4j.model.Triple) -> Unit = hashedReifiers::read
+
+    /** Forgets what this object knows about hashed reifiers, as a new process wrapping the same store would (for tests). */
+    internal fun forgetHashedReifiers() = hashedReifiers.forget()
+
+    /**
+     * The quoted triples of the hashed reifier [ids] of a pattern (see [Rdf4jTerms.reifierFor]); an id that stands for
+     * no triple of this repository is left out. The caller keeps the result for the whole operation.
+     *
+     * Answered from the index of this repository ([HashedReifierIndex]) and from [obj] (the object of the pattern:
+     * `_:r rdf:reifies <<( t )>>` names the triple of `_:r` itself). The store is scanned, once, only for an id that
+     * neither knows while the index may be incomplete, and never when the store cannot hold triple values.
+     */
+    internal fun resolveHashedReifiers(
+        conn: RepositoryConnection,
+        ids: Set<String>,
+        obj: TripleTerm?,
+    ): Map<String, org.eclipse.rdf4j.model.Triple> {
+        val resolved = HashMap<String, org.eclipse.rdf4j.model.Triple>()
+        val reclaimed = hashedReifiers.lookup(ids, resolved)
+        if (resolved.size == ids.size) return resolved
+        if (obj != null) {
+            val named: (String, org.eclipse.rdf4j.model.Triple) -> Unit = { id, triple ->
+                if (id in ids && id !in resolved) {
+                    resolved[id] = triple
+                    hashedReifiers.read(id, triple)
+                }
+            }
+            Rdf4jTerms.forEachHashedReifier(Rdf4jTerms.toRdf4jValue(obj), sink = named)
+            // The store form of the object, when it mentions reifiers that are resolved by now.
+            if (resolved.isNotEmpty()) Rdf4jTerms.forEachHashedReifier(Rdf4jTerms.toRdf4jStarValue(obj, resolved), sink = named)
+            if (resolved.size == ids.size) return resolved
+        }
+        if (!tripleValuesPossible()) return resolved
+        val inTransaction = txConnection.get() != null
+        if (reclaimed.all { it in resolved } && hashedReifiers.covers(inTransaction)) return resolved
+        val found = hashedReifiers.rebuild(inTransaction, controlled = trackQuotedSubjects) { index ->
+            conn.getStatements(null, null, null, false).use { result ->
+                for (statement in result) {
+                    if (statement.subject is org.eclipse.rdf4j.model.Triple || statement.`object` is org.eclipse.rdf4j.model.Triple) index(statement)
+                }
+            }
+        }
+        for (id in ids) if (id !in resolved) found[id]?.let { resolved[id] = it }
+        return resolved
+    }
+
     /** Highest quoted-subject level written by the current thread's outermost transaction, if any. */
     private val quotedWrittenInTransaction = ThreadLocal<QuotedLevel?>()
 
@@ -147,6 +201,8 @@ class Rdf4jRepository(
     internal fun noteQuotedWrite(level: QuotedLevel) {
         if (nativeBase || level == QuotedLevel.NONE) return
         tripleValuesMayExist = true
+        // Triple values of unknown content (a SPARQL update): the index of hashed reifiers no longer covers the store.
+        if (level == QuotedLevel.UNKNOWN) hashedReifiers.invalidate()
         quotedScanInTransaction.get()?.let { cached ->
             if (level == QuotedLevel.UNKNOWN) quotedScanInTransaction.remove()
             else if (level.ordinal > cached.ordinal) quotedScanInTransaction.set(level)
@@ -386,6 +442,7 @@ class Rdf4jRepository(
             trackQuotedSubjects = true
             if (quotedState == QuotedLevel.UNKNOWN) quotedState = QuotedLevel.NONE
         }
+        hashedReifiers.trust()
     }
 
     /**
@@ -472,7 +529,7 @@ class Rdf4jRepository(
     private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(): Sequence<RdfTriple> {
         val reifies = HashSet<RdfTriple>()
         return iterator().asSequence()
-            .flatMap { statement -> Rdf4jTerms.triplesOf(statement) }
+            .flatMap { statement -> Rdf4jTerms.triplesOf(statement, null, hashedReifiersRead) }
             .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || reifies.add(it) }
     }
 
@@ -1079,8 +1136,10 @@ class Rdf4jRepository(
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
                     quotedWrittenInTransaction.remove()
                     raiseQuoted(level)
+                    if (level == QuotedLevel.UNKNOWN) hashedReifiers.invalidate()
                     quotedWritersInFlight.decrementAndGet()
                 }
+                hashedReifiers.transactionEnded()
             }
         }
     }

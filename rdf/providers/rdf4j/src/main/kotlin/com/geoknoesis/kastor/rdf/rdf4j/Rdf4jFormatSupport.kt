@@ -453,6 +453,8 @@ internal object Rdf4jFormatSupport {
                         checkedTriples(statement, null)
                         rdf4jRepo.noteQuotedWrite(Rdf4jTerms.quotedLevel(statement.subject, statement.`object`))
                         if (statement.`object` is org.eclipse.rdf4j.model.Triple) rdf4jRepo.noteTripleValue()
+                        rdf4jRepo.noteWrittenValue(statement.subject)
+                        rdf4jRepo.noteWrittenValue(statement.`object`)
                         val context = when (val name = statement.context) {
                             is org.eclipse.rdf4j.model.BNode -> connection.valueFactory.createIRI(skolemGraphName(load, name.id))
                             else -> name
