@@ -53,25 +53,33 @@ import org.eclipse.rdf4j.model.Literal as Rdf4jLiteral
  * ShaclSail validates data held in its own store, so the Kastor graph is converted to RDF4J statements. The
  * validator keeps one in-memory repository per data graph, for up to [maxCachedGraphs] graphs (see
  * [GraphStateCache] for the exact rules). A graph is (re)loaded only when it is new or its content changed:
- * - Graphs that implement [VersionedRdfGraph] (such as `MemoryGraph` and the named graphs of the memory repository)
- *   are checked in O(1) by comparing the modification stamp with the one of the loaded copy. A new handle of the same
- *   named graph (`repository.getGraph(name)` on every call) finds the copy loaded for an equal handle.
- * - Other graphs (e.g. graphs of an RDF4J or Jena repository) are identified by an order-independent SHA-256-based
- *   digest of their triples, which costs one pass over the triples per call but no conversion or store writes; a new
- *   handle with unchanged content finds the loaded copy.
+ * - Graphs that implement [VersionedRdfGraph] (`MemoryGraph`, the named graphs of the memory repository,
+ *   repositories whose provider stamps its graphs) are checked in O(1) by comparing the modification stamp with the
+ *   one of the loaded copy. A new handle of the same named graph (`repository.getGraph(name)` on every call) finds
+ *   the copy loaded for an equal handle.
+ * - Graphs without a stamp (wrapped external stores, SPARQL-endpoint graphs, user-defined graphs) are **read in full
+ *   on every call**: `getTriples()` (one download of a remote graph) and an order-independent digest of every
+ *   triple, to find out whether the loaded copy is still current. Only the conversion and the store writes are
+ *   saved. Validating N nodes of such a graph with N [validate] calls therefore reads it N times; use one
+ *   [validateAll] call (one read for all the nodes), or create the validator with `assumeImmutable = true` when the
+ *   graphs do not change while the validator lives (a graph found again by its handle is then not read again, and
+ *   changes are not detected). When such a graph changes, the copy of an equal handle is replaced in place; for
+ *   handles without handle equality the copy of the previous content stays cached until it is evicted or expires
+ *   (see [GraphStateCache]).
  *
- * Validating many nodes of one graph therefore converts and loads it once. A reload is atomic: the data, the change
- * marker and the embedded shapes are replaced together after the store transaction commits, so a failed conversion
- * or load leaves the previous state intact.
+ * A reload is atomic: the data, the change marker and the embedded shapes are replaced together after the store
+ * transaction commits, so a failed conversion or load leaves the previous state intact.
  *
  * ## Cache size
  * The number of cached graphs defaults to [DEFAULT_MAX_CACHED_GRAPHS] and can be set per validator (constructor
  * argument) or process-wide with the system property [MAX_CACHED_GRAPHS_PROPERTY] (read when a validator is created;
  * this is how to size the validators shared by generated wrappers). When more graphs than that are validated, the
- * least recently used copy that no call is using is released. A call never waits for the validation of another
+ * least recently used copy that no call is using is released. A call does not wait for the validation of another
  * graph: when every cached copy is in use, the call validates in a private temporary store that is released when
- * the call returns. Raise the limit when more graphs than the default are validated repeatedly (each miss converts
- * and loads the whole graph).
+ * the call returns. Temporary stores are bounded too (at most [maxCachedGraphs] at a time): beyond that a call waits
+ * for a store to become free and fails with [com.geoknoesis.kastor.gen.runtime.GraphStateCacheSaturatedException]
+ * after 10 seconds, instead of building an unbounded number of stores. Raise the limit when more graphs than the
+ * default are validated repeatedly (each miss converts and loads the whole graph).
  *
  * ## Locking
  * The data graph is read only while the validator holds no lock, so [validate] may be called inside a repository
@@ -100,13 +108,15 @@ class Rdf4jValidation private constructor(
   private val fixedShapes: List<Statement>?,
   /** Maximum number of data graphs whose converted copy is kept (one in-memory store each). */
   val maxCachedGraphs: Int,
+  /** Whether graphs without a modification stamp are assumed not to change while this validator lives. */
+  val assumeImmutable: Boolean,
 ) : ValidationContext, AutoCloseable {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
-  constructor() : this(null as List<Statement>?, configuredMaxCachedGraphs())
+  constructor() : this(null as List<Statement>?, configuredMaxCachedGraphs(), false)
 
   /** Validates against the SHACL shapes in [shapes] (converted once at construction). */
-  constructor(shapes: RdfGraph) : this(toStatements(shapes.getTriples()), configuredMaxCachedGraphs())
+  constructor(shapes: RdfGraph) : this(toStatements(shapes.getTriples()), configuredMaxCachedGraphs(), false)
 
   /**
    * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph), keeping the
@@ -114,7 +124,22 @@ class Rdf4jValidation private constructor(
    *
    * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
    */
-  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) : this(shapes?.let { toStatements(it.getTriples()) }, maxCachedGraphs)
+  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) : this(shapes, maxCachedGraphs, false)
+
+  /**
+   * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph).
+   *
+   * @param maxCachedGraphs maximum number of data graphs whose converted copy is kept (by default the configured
+   *   size, see [MAX_CACHED_GRAPHS_PROPERTY])
+   * @param assumeImmutable the caller guarantees that data graphs **without a modification stamp** do not change
+   *   while this validator lives: such a graph, once loaded, is not read again when it is passed again (the same
+   *   graph object, or a handle equal to it), instead of being read in full on every call to detect changes. A
+   *   change of such a graph is then **not detected**: results keep describing the content first seen. Graphs with
+   *   a modification stamp are still checked on every call.
+   * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+   */
+  constructor(shapes: RdfGraph? = null, maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean) :
+    this(shapes?.let { toStatements(it.getTriples()) }, maxCachedGraphs, assumeImmutable)
 
   /** Test hook: runs inside the load transaction, before commit (to simulate a store failure). */
   @Volatile internal var beforeLoadCommit: (() -> Unit)? = null
@@ -133,6 +158,7 @@ class Rdf4jValidation private constructor(
     load = ::load,
     release = { it.repository.shutDown() },
     owner = "Rdf4jValidation",
+    settings = GraphStateCache.Settings(assumeImmutable = assumeImmutable),
   )
 
   /** Test hook: number of content digests computed. */
@@ -155,8 +181,9 @@ class Rdf4jValidation private constructor(
     const val DEFAULT_MAX_CACHED_GRAPHS: Int = 16
 
     /**
-     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size
-     * (a positive integer; other values are ignored).
+     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size: a
+     * positive integer. Any other value (`0`, `abc`) is reported once with a WARN log entry (`System.Logger`
+     * `com.geoknoesis.kastor.gen.runtime.GraphStateCache`) and the default is used.
      */
     const val MAX_CACHED_GRAPHS_PROPERTY: String = "kastor.validation.rdf4j.maxCachedGraphs"
 
@@ -167,7 +194,7 @@ class Rdf4jValidation private constructor(
     const val MAX_CACHED_GRAPHS: Int = DEFAULT_MAX_CACHED_GRAPHS
 
     private fun configuredMaxCachedGraphs(): Int =
-      System.getProperty(MAX_CACHED_GRAPHS_PROPERTY)?.trim()?.toIntOrNull()?.takeIf { it >= 1 } ?: DEFAULT_MAX_CACHED_GRAPHS
+      GraphStateCache.configuredMaxEntries(MAX_CACHED_GRAPHS_PROPERTY, DEFAULT_MAX_CACHED_GRAPHS)
 
     /** Creates a validator from SHACL shapes written in Turtle. */
     @JvmStatic
@@ -268,12 +295,27 @@ class Rdf4jValidation private constructor(
   }
 
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
+    val focusValue = toFocusValue(focus)
+    // The cache reads the data graph before it takes the graph's entry lock; the block only uses the store.
+    return cache.use(data) { store -> validateLoaded(store, focusValue) }
+  }
+
+  /**
+   * Validates every node of [focuses] against one state of [data]: the graph is checked for changes (and, without a
+   * modification stamp, read) once for all of them. Calls for the same data graph wait until the batch is done.
+   */
+  override fun validateAll(data: RdfGraph, focuses: Collection<RdfTerm>): Map<RdfTerm, ValidationResult> {
+    val values = LinkedHashMap<RdfTerm, Resource>()
+    focuses.forEach { focus -> if (focus !in values) values[focus] = toFocusValue(focus) }
+    if (values.isEmpty()) return emptyMap()
+    return cache.use(data) { store -> values.mapValuesTo(LinkedHashMap()) { (_, value) -> validateLoaded(store, value) } }
+  }
+
+  private fun toFocusValue(focus: RdfTerm): Resource {
     if (focus !is Iri && focus !is BlankNode) {
       throw IllegalArgumentException("SHACL focus node must be an IRI or blank node, got: $focus")
     }
-    val focusValue = toResource(focus)
-    // The cache reads the data graph before it takes the graph's entry lock; the block only uses the store.
-    return cache.use(data) { store -> validateLoaded(store, focusValue) }
+    return toResource(focus)
   }
 
   /**
