@@ -167,8 +167,58 @@ class JenaInferenceViewReuseTest {
     }
 
     /**
+     * The kept-view path, step by step: commits alternate between two graphs, and after each one the graph that was
+     * **not** written is read from the view kept across the commit (counted by
+     * [JenaRepository.keptInferenceViewReads]) while the written graph is read from a fresh view. Neither read may
+     * miss a committed link.
+     */
+    @Test
+    @Timeout(120)
+    fun `after each alternating commit the unchanged graph is read from the kept view and the written graph from a fresh one`() {
+        JenaRepository.MemoryRepositoryWithInference(Duration.ofMinutes(10)).use { repo ->
+            val x = Iri(ex + "x")
+            repo.transaction { listOf(g1, g2).forEach { editGraph(it).addTriple(RdfTriple(x, type, cls(0))) } }
+            val links = mutableMapOf(g1 to 0, g2 to 0)
+            fun chain(g: Iri): Set<Iri> =
+                repo.getGraph(g).find(x, type, null).map { it.obj }.filterIsInstance<Iri>().filter { it.value.startsWith(ex + "C") }.toSet()
+            fun committed(g: Iri): Set<Iri> = (0..links.getValue(g)).map(::cls).toSet()
+
+            // The current view has prepared g1 only.
+            assertEquals(committed(g1), chain(g1))
+            var view = assertNotNull(repo.currentInferenceView())
+            assertEquals(setOf(g1.value), repo.preparedInferenceGraphs())
+            assertEquals(0, repo.keptInferenceViewReads(), "no commit yet: every read was of the view's own snapshot")
+
+            var unchanged = g1
+            var written = g2
+            for (round in 1..20) {
+                repo.editGraph(written).addTriple(RdfTriple(cls(links.getValue(written)), subClassOf, cls(links.getValue(written) + 1)))
+                links[written] = links.getValue(written) + 1
+                assertSame(view, repo.currentInferenceView(), "round $round: the commit to $written wrote no graph the view has prepared")
+
+                val keptBefore = repo.keptInferenceViewReads()
+                assertEquals(committed(unchanged), chain(unchanged), "round $round: $unchanged from the kept view")
+                assertEquals(keptBefore + 1, repo.keptInferenceViewReads(), "round $round: the read of $unchanged must be served by the kept view")
+                assertSame(view, repo.currentInferenceView(), "round $round")
+
+                assertEquals(committed(written), chain(written), "round $round: $written must be read as committed")
+                assertEquals(keptBefore + 1, repo.keptInferenceViewReads(), "round $round: the written graph is not served by the kept view")
+                val fresh = assertNotNull(repo.currentInferenceView())
+                assertNotSame(view, fresh, "round $round: $written needs a view of the snapshot that contains the commit")
+                assertEquals(setOf(written.value), repo.preparedInferenceGraphs(), "round $round")
+
+                // The fresh view has prepared the graph just read: the roles swap for the next commit.
+                view = fresh
+                unchanged = written.also { written = unchanged }
+            }
+            assertEquals(20, repo.keptInferenceViewReads())
+        }
+    }
+
+    /**
      * Commits alternate between two graphs while readers keep views of both alive: whatever view a reader is handed
-     * (kept or fresh), a graph is never read as it was before its latest commit.
+     * (kept or fresh), a graph is never read as it was before its latest commit. (Which view serves a read depends on
+     * the interleaving here; the kept-view path is pinned down by the test above.)
      */
     @Test
     @Timeout(180)

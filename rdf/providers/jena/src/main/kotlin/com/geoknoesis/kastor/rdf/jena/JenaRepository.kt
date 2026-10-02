@@ -341,6 +341,15 @@ class JenaRepository private constructor(
     private val privateViewsBuilt = AtomicLong()
 
     /**
+     * Reads that a shared view answered for a reader of a **later** snapshot than its own (diagnostic: the view was
+     * kept across at least one commit, see "Views and commits").
+     */
+    private val keptViewReads = AtomicLong()
+
+    /** The worker threads of this repository's inference views that are running (each removes itself when it ends). */
+    private val workerThreads: MutableSet<Thread> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /**
      * Private inference models of this thread's transaction, by graph key (see [privateView]). Dropped when the
      * transaction ends and, in a write transaction, by every write.
      */
@@ -580,6 +589,7 @@ class JenaRepository private constructor(
         val view = held.firstOrNull { it.serves(graphKey, snapshot) }
             ?: acquireView(snapshot, graphKey)?.also { held.add(it) }
             ?: return privateView(graphKey, model).graph
+        if (!view.snapshot.sameAs(snapshot)) keptViewReads.incrementAndGet()
         return view.graph(graphKey)
     }
 
@@ -645,6 +655,15 @@ class JenaRepository private constructor(
 
     /** Identity of the shared inference view of the newest snapshot, if any (diagnostic). */
     internal fun currentInferenceView(): Any? = currentView
+
+    /** Whether [view] (a value of [currentInferenceView]) was poisoned by a step that failed or stopped half-way (diagnostic). */
+    internal fun isPoisonedInferenceView(view: Any?): Boolean = (view as? SnapshotView)?.poisoned == true
+
+    /** Reads served by a view kept across a commit, for a reader of a later snapshot (diagnostic). */
+    internal fun keptInferenceViewReads(): Long = keptViewReads.get()
+
+    /** The worker threads of this repository's inference views that have not ended yet (diagnostic). */
+    internal fun inferenceWorkerThreads(): List<Thread> = snapshotOf(workerThreads)
 
     /** Steps waiting for the worker of the current shared view (diagnostic). */
     internal fun queuedInferenceSteps(): Int = currentView?.queuedSteps() ?: 0
@@ -829,7 +848,7 @@ class JenaRepository private constructor(
          */
         override fun <T> call(block: () -> T): T {
             checkUsable()
-            return worker.call(hooks.cancelGraceNanos, onStuck = ::poison) {
+            return worker.call(hooks.cancelGraceNanos, onStuck = ::poison, onSubmitted = { hooks.onStepSubmitted() }) {
                 checkUsable()
                 checkpoint()
                 try {
@@ -849,6 +868,8 @@ class JenaRepository private constructor(
             hooks.onStepCheckpoint()
             InferenceCancellation.checkpoint()
         }
+
+        override fun resultTaken() = hooks.onStepResult()
 
         private fun checkUsable() {
             if (abandoned) throw RdfRepositoryException("Repository is closed", RdfErrorCode.REPOSITORY_CLOSED)
@@ -872,7 +893,7 @@ class JenaRepository private constructor(
      * transaction does not see exactly [snapshot] (a commit happened in between).
      */
     private fun openView(snapshot: Snapshot): SnapshotView? {
-        val worker = InferenceWorker("kastor-jena-inference")
+        val worker = InferenceWorker("kastor-jena-inference", workerThreads)
         val endTransaction = { if (dataset.isInTransaction) dataset.end() }
         val opened = try {
             hooks.onOpenView()
@@ -1023,7 +1044,7 @@ class JenaRepository private constructor(
                 .timeout(timeout.toMillis().coerceAtLeast(1), java.util.concurrent.TimeUnit.MILLISECONDS).build()
         }
         // The deadline also stops inference work that Jena's own timeout cannot interrupt (see InferenceCancellation).
-        val deadline = System.nanoTime() + timeout.toNanos().coerceAtLeast(1)
+        val deadline = hooks.clock() + timeout.toNanos().coerceAtLeast(1)
         exec.use { consumeRows(it, query.sparql, deadline, consume) }
     }
 
@@ -1039,7 +1060,7 @@ class JenaRepository private constructor(
     }
 
     private inline fun <T> withDeadline(deadline: Long?, crossinline block: () -> T): T =
-        if (deadline == null) block() else InferenceCancellation.withDeadline(deadline) { block() }
+        if (deadline == null) block() else InferenceCancellation.withDeadline(deadline, { hooks.clock() }) { block() }
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withRead {
         val exec = queryOperation(query.sparql) { QueryExecutionFactory.create(QueryFactory.create(query.sparql), queryDataset()) }

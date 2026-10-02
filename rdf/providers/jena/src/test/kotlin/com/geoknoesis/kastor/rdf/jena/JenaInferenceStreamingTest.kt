@@ -70,21 +70,30 @@ class JenaInferenceStreamingTest {
     @Test
     @Timeout(300)
     fun `a query timeout stops a long inference iteration`() {
-        JenaRepository.MemoryRepositoryWithInference().use { repo ->
+        JenaRepository.MemoryRepositoryWithInference(Duration.ofMinutes(10)).use { repo ->
+            // The query's deadline is measured with the repository's clock, which only moves when the test says so
+            // (Jena's own timer, on real time, never fires within the hour given to the query).
+            val now = java.util.concurrent.atomic.AtomicLong()
+            repo.hooks.clock = now::get
             load(repo)
             warmUp(repo)
             val before = repo.inferenceBaseReads()
-            assertFailsWith<RdfQueryException> {
-                repo.withSelectRows(SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }"), emptyMap(), Duration.ofMillis(300)) { rows ->
+            var consumed = 0
+            val error = assertFailsWith<RdfQueryException> {
+                repo.withSelectRows(SparqlSelectQuery("SELECT * WHERE { ?s ?p ?o }"), emptyMap(), Duration.ofHours(1)) { rows ->
                     val iterator = rows.iterator()
                     assertTrue(iterator.hasNext())
                     iterator.next()
-                    Thread.sleep(700)
-                    var n = 0
-                    while (iterator.hasNext()) { iterator.next(); n++ }
-                    n
+                    consumed++
+                    now.addAndGet(Duration.ofHours(2).toNanos()) // the deadline passes while the consumer is busy
+                    while (iterator.hasNext()) {
+                        iterator.next()
+                        consumed++
+                    }
                 }
             }
+            assertTrue(error.cause is org.apache.jena.query.QueryCancelledException, "the iteration was cancelled: ${error.cause}")
+            assertTrue(consumed in 1 until instances, "the iteration must stop early ($consumed rows)")
             val reads = repo.inferenceBaseReads() - before
             assertTrue(reads < instances / 4, "a timed-out query must stop reading the store ($reads store reads)")
             // The repository stays usable after the cancelled query.

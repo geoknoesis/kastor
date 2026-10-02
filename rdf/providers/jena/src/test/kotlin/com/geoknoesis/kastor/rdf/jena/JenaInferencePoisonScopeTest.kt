@@ -3,6 +3,7 @@ package com.geoknoesis.kastor.rdf.jena
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.SparqlSelectQuery
+import com.geoknoesis.kastor.rdf.RdfInferenceException
 import org.apache.jena.query.QueryCancelledException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -65,16 +66,13 @@ class JenaInferencePoisonScopeTest {
         }
     }
 
-    /** Called on the worker, inside a step: returns once the step's reader has cancelled it. */
+    /**
+     * Called on the worker, inside a step: returns once the step's reader has cancelled it (a wait for that condition,
+     * bounded only so that a broken cancellation fails the test instead of hanging it).
+     */
     private fun awaitCancelled() {
         val deadline = System.nanoTime() + waitNanos
-        while (!InferenceCancellation.cancelled() && System.nanoTime() - deadline < 0) Thread.sleep(1)
-    }
-
-    private fun awaitQueued(repo: JenaRepository, steps: Int) {
-        val deadline = System.nanoTime() + waitNanos
-        while (repo.queuedInferenceSteps() < steps && System.nanoTime() - deadline < 0) Thread.sleep(2)
-        assertEquals(steps, repo.queuedInferenceSteps(), "steps waiting behind the running one")
+        while (!InferenceCancellation.cancelled() && System.nanoTime() - deadline < 0) Thread.onSpinWait()
     }
 
     @Test
@@ -130,10 +128,12 @@ class JenaInferencePoisonScopeTest {
             val view = warmUp(repo)
             repo.hooks.cancelGraceNanos = waitNanos
             val betweenResults = CountDownLatch(1)
-            // Checkpoints of the reader's first step: its start, before its first result, after its first result.
-            val checkpoints = AtomicInteger()
+            // The checkpoint the step passes right after it took its first result from the reasoner: between two
+            // results of one step, however many checkpoints a step has before its first result.
+            val results = AtomicInteger()
+            repo.hooks.onStepResult = { results.incrementAndGet() }
             repo.hooks.onStepCheckpoint = {
-                if (checkpoints.incrementAndGet() == 3) {
+                if (results.get() == 1 && betweenResults.count == 1L) {
                     betweenResults.countDown()
                     awaitCancelled()
                 }
@@ -190,7 +190,28 @@ class JenaInferencePoisonScopeTest {
     fun `a step that aborts inside the reasoner poisons the view as soon as it ends`() {
         repository().use { repo ->
             val view = warmUp(repo)
+            assertFalse(repo.isPoisonedInferenceView(view))
+            // Never reached: only the step's own end may poison the view here, not a reader giving up on a stuck step.
             repo.hooks.cancelGraceNanos = waitNanos
+            // Another reader is half-way through a result on the same view.
+            val holding = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val delivered = AtomicInteger()
+            val other = Attempt {
+                repo.withSelectRows(SparqlSelectQuery("SELECT ?s WHERE { ?s a <${cls(4).value}> }")) { rows ->
+                    val iterator = rows.iterator()
+                    iterator.next()
+                    delivered.incrementAndGet()
+                    holding.countDown()
+                    assertTrue(release.await(120, TimeUnit.SECONDS))
+                    while (iterator.hasNext()) {
+                        iterator.next()
+                        delivered.incrementAndGet()
+                    }
+                }
+            }
+            assertTrue(holding.await(60, TimeUnit.SECONDS))
+
             val inRead = CountDownLatch(1)
             val armed = AtomicInteger(1)
             repo.hooks.onStoreRead = {
@@ -204,8 +225,25 @@ class JenaInferencePoisonScopeTest {
             cancelled.thread.interrupt()
             cancelled.join()
             assertTrue(cancelled.failure.get() is QueryCancelledException, "${cancelled.failure.get()}")
-            assertNotSame(view, repo.currentInferenceView(), "a backward-chaining step stopped at a store read may leave the tables half-updated")
+
+            // A backward-chaining step stopped at a store read may leave the goal tables half-updated: the view is
+            // poisoned (not merely dropped), and it is no longer handed out.
+            assertTrue(repo.isPoisonedInferenceView(view), "the view must be poisoned by the step that aborted inside the reasoner")
+            assertNull(repo.currentInferenceView(), "a poisoned view is not the current view any more")
+
+            // The concurrent reader already holds results of that view: it must fail, never end as if complete.
+            release.countDown()
+            other.join()
+            val failure = other.failure.get()
+            assertTrue(failure is RdfInferenceException, "the concurrent reader must see the invalidation: $failure")
+            assertTrue(failure.cause is InferenceViewInvalidated, "${failure.cause}")
+            assertTrue(delivered.get() in 1 until instances, "it got the results fetched before, not all: ${delivered.get()}")
+
+            // Later readers get a fresh, healthy view.
             assertEquals(instances, repo.defaultGraph.find(null, type, cls(2)).size)
+            val fresh = assertNotNull(repo.currentInferenceView())
+            assertNotSame(view, fresh)
+            assertFalse(repo.isPoisonedInferenceView(fresh))
         }
     }
 
@@ -226,16 +264,18 @@ class JenaInferencePoisonScopeTest {
             }
             val stuck = Attempt { repo.defaultGraph.find(null, type, cls(2)).size }
             assertTrue(inRead.await(60, TimeUnit.SECONDS))
-            // ... two other readers queue behind it: a find that has not delivered anything yet, and a lookup ...
+            // ... two other readers hand their steps to the worker, which is busy: a find that has not delivered
+            // anything yet, and a lookup ...
+            val waiting = CountDownLatch(2)
+            repo.hooks.onStepSubmitted = { waiting.countDown() }
             val finding = Attempt { repo.defaultGraph.find(null, type, cls(3)).size }
-            awaitQueued(repo, 1)
             val asking = Attempt { repo.defaultGraph.hasTriple(RdfTriple(instance(7), type, cls(4))) }
-            awaitQueued(repo, 2)
+            assertTrue(waiting.await(60, TimeUnit.SECONDS), "both readers must be waiting behind the stuck step")
             // ... and its reader gives up: the step does not end within the grace, so the view is given up.
             stuck.thread.interrupt()
             stuck.join()
             assertTrue(stuck.failure.get() is QueryCancelledException, "${stuck.failure.get()}")
-            assertNotSame(view, repo.currentInferenceView())
+            assertTrue(repo.isPoisonedInferenceView(view), "a step that outlasts the cancel grace costs the view")
             proceed.countDown()
 
             finding.join()
