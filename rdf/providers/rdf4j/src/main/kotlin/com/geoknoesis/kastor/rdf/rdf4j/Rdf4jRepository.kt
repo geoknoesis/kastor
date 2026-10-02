@@ -412,10 +412,16 @@ class Rdf4jRepository(
         result.use { consume(it.viewTriples().guardedBy(query.sparql)) }
     }
 
-    /** The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). */
+    /**
+     * The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). Every
+     * `_:r rdf:reifies <<( s p o )>>` triple is returned once, whether it comes from a stored statement (an explicit
+     * one), is implied by a statement about the quoted triple, or both; only those triples are remembered for that.
+     */
     private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(): Sequence<RdfTriple> {
-        val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-        return iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }
+        val reifies = HashSet<RdfTriple>()
+        return iterator().asSequence()
+            .flatMap { statement -> Rdf4jTerms.triplesOf(statement) }
+            .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || reifies.add(it) }
     }
 
     /**
