@@ -161,4 +161,17 @@ internal object W3cKnownDeviations {
         val file = manifestPath.toString().replace(java.io.File.separatorChar, '/')
         return deviations.entries.firstOrNull { (suffix, _) -> file.endsWith("/$suffix") }?.value
     }
+
+    /**
+     * Cases (same path matching as [deviations]) in which the engine may report **undecided** results
+     * (`ksh:resultStatus`: undefined recursion, pattern timeout, pattern too complex) where the expected report has
+     * definite ones, mapped to the reason. Every other case fails when the engine emits an undecided result (see
+     * [assertNoUndecidedResults]). Empty: the engine decides every constraint of the approved W3C SHACL 1.2 suite.
+     */
+    private val undecidedResults: Map<String, String> = linkedMapOf()
+
+    fun undecidedResultsAllowed(manifestPath: Path): String? {
+        val file = manifestPath.toString().replace(java.io.File.separatorChar, '/')
+        return undecidedResults.entries.firstOrNull { (suffix, _) -> file.endsWith("/$suffix") }?.value
+    }
 }

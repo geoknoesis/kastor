@@ -117,9 +117,15 @@ public final class com/geoknoesis/kastor/rdf/shacl/KastorShaclVocabulary {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/shacl/KastorShaclVocabulary;
 	public static final field NAMESPACE Ljava/lang/String;
 	public static final field PREFIX Ljava/lang/String;
+	public static final field VOCABULARY_RESOURCE Ljava/lang/String;
+	public final fun getPatternTimeout-tqZU9bw ()Ljava/lang/String;
+	public final fun getPatternTooComplex-tqZU9bw ()Ljava/lang/String;
 	public final fun getReifier-tqZU9bw ()Ljava/lang/String;
 	public final fun getResultStatus-tqZU9bw ()Ljava/lang/String;
+	public final fun getResultStatusClass-tqZU9bw ()Ljava/lang/String;
+	public final fun getTerms ()Ljava/util/List;
 	public final fun getUndefinedRecursion-tqZU9bw ()Ljava/lang/String;
+	public final fun getWarning-tqZU9bw ()Ljava/lang/String;
 }
 
 public final class com/geoknoesis/kastor/rdf/shacl/PerformanceProfile : java/lang/Enum {
@@ -364,6 +370,11 @@ public final class com/geoknoesis/kastor/rdf/shacl/UnsupportedShaclFeatureExcept
 	public final fun getFeatures ()Ljava/util/Set;
 }
 
+public final class com/geoknoesis/kastor/rdf/shacl/UnsupportedShaclOperationException : com/geoknoesis/kastor/rdf/shacl/ShaclValidationException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
 public final class com/geoknoesis/kastor/rdf/shacl/ValidationConfig {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/shacl/ValidationConfig$Companion;
 	public fun <init> ()V
@@ -596,6 +607,8 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationSummary {
 
 public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
 	public static final field Companion Lcom/geoknoesis/kastor/rdf/shacl/ValidationViolation$Companion;
+	public static final field PATTERN_TIMEOUT_CODE Ljava/lang/String;
+	public static final field PATTERN_TOO_COMPLEX_CODE Ljava/lang/String;
 	public static final field REIFIER_CONTEXT_KEY Ljava/lang/String;
 	public static final field UNDEFINED_RECURSION_CODE Ljava/lang/String;
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;Lcom/geoknoesis/kastor/rdf/shacl/ShaclConstraint;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/RdfTerm;Ljava/util/List;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/RdfTerm;)V
@@ -630,6 +643,7 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
 	public final fun getResultPathNode ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
 	public final fun getResultPathTriples ()Ljava/util/List;
 	public final fun getResultSeverityIri ()Ljava/lang/String;
+	public final fun getResultStatus-UX4i1w8 ()Ljava/lang/String;
 	public final fun getSeverity ()Lcom/geoknoesis/kastor/rdf/shacl/ViolationSeverity;
 	public final fun getShapeUri ()Ljava/lang/String;
 	public final fun getSourceConstraint ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
@@ -637,6 +651,9 @@ public final class com/geoknoesis/kastor/rdf/shacl/ValidationViolation {
 	public final fun getValue ()Lcom/geoknoesis/kastor/rdf/RdfTerm;
 	public final fun getViolationCode ()Ljava/lang/String;
 	public fun hashCode ()I
+	public final fun isPatternTimeout ()Z
+	public final fun isPatternTooComplex ()Z
+	public final fun isUndecided ()Z
 	public final fun isUndefinedRecursion ()Z
 	public fun toString ()Ljava/lang/String;
 }

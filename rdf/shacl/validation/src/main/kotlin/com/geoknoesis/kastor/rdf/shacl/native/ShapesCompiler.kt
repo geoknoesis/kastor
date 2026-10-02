@@ -30,9 +30,10 @@ internal data class Targets(
     val targetObjectsOf: List<Iri> = emptyList(),
     /**
      * Blank node [targetNodes] that have the syntax of a function call `[ fn ( … ) ]` (a single triple whose object
-     * is an RDF list), mapped to `fn`, although `fn` is not declared as a function in the shapes graph. Such a node
-     * is a target only when it is a node of the data graph; otherwise it is reported as an unsupported node
-     * expression at validation time (see [ShapesCompiler] `isTargetNodeExpression`).
+     * is an RDF list), mapped to `fn`, although `fn` is not declared as a function in the shapes graph. Like every
+     * blank node target, such a node is a target only when it is a node of the data graph; otherwise it is reported
+     * as an unsupported node expression at validation time, and the report names `fn` (see [ShapesCompiler]
+     * `isTargetNodeExpression`).
      */
     val callShapedTargets: Map<BlankNode, Iri> = emptyMap(),
 )
@@ -335,24 +336,27 @@ internal object ShapesCompiler {
      * and a blank node of the shapes graph can only denote a node of the data graph when both graphs share it (the
      * same graph validated against itself, or shapes discovered from the data). The rule is therefore:
      *
-     * 1. **Compile time (this function).** The blank node is a node expression when its own triples are expression
-     *    syntax: SHACL, SHACL node-expression or SPARQL function vocabulary (`sh:path`, `sh:select`, `shnex:…`,
-     *    `sparql:concat`, a SHACL type…), an RDF list, or a single call `[ ex:fn ( … ) ]` of a function **declared**
-     *    in the shapes graph (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or described with SHACL function
-     *    vocabulary such as `sh:parameter`). It is reported per [ValidationConfig.unsupportedFeatures].
-     * 2. **Validation time.** Any other blank node is a plain target if it is a node of the data graph. If it is
-     *    not, it can never be a focus node: a call-shaped one (`[ ex:fn ( … ) ]` with `ex:fn` undeclared, e.g. a
-     *    function from an import that was not resolved; see [Targets.callShapedTargets]) is reported as an
-     *    unsupported node expression per [ValidationConfig.unsupportedFeatures], and any other one yields a report
-     *    warning saying that the target matches nothing. A shape is thus never silently left unvalidated.
+     * 1. **Compile time (this function).** The blank node is a node expression, whatever the data graph is, when its
+     *    own triples use vocabulary that has **no reading as data**: a SPARQL expression (`sh:select`,
+     *    `sh:sparqlExpr`, the SHACL SPARQL expression types), the SHACL node-expression (`shnex:`) or SPARQL
+     *    function (`sparql:`) namespaces as predicate or type, or a single call `[ ex:fn ( … ) ]` of a function
+     *    **declared** in the shapes graph (`ex:fn` typed `sh:Function` / `sh:SPARQLFunction` or described with SHACL
+     *    function vocabulary such as `sh:parameter`). It is reported per [ValidationConfig.unsupportedFeatures]
+     *    (W3C `sparql/targets/targetNode-select-001` validates such a shapes graph against itself).
+     * 2. **Validation time.** Any other blank node — a plain one, an RDF list cell, one that carries `sh:`
+     *    predicates or a SHACL type (a shape used as data), a call-shaped one `[ ex:fn ( … ) ]` with `ex:fn`
+     *    undeclared — is an **ordinary target when it is a node of the data graph**, regardless of its predicates.
+     *    When it is not, it can never be a focus node and the shape would silently go unvalidated: it is then an
+     *    unsupported node expression, handled per [ValidationConfig.unsupportedFeatures] like the ones of rule 1
+     *    (failure, or a report warning under [UnsupportedFeatureHandling.IGNORE_WITH_WARNING]).
      */
     private fun isTargetNodeExpression(term: RdfTerm, index: ShapeGraphIndex): Boolean {
         if (term !is BlankNode) return false
         val predicates = index.predicates(term)
         if (predicates.isEmpty()) return false
-        fun expressionVocabulary(t: RdfTerm) =
-            t is Iri && (t.value.startsWith(SHACL.namespace) || t.value.startsWith(SHNEX_NAMESPACE) || t.value.startsWith(SPARQL_NAMESPACE))
-        if (predicates.any { expressionVocabulary(it) || it == RDF.first || it == RDF.rest }) return true
+        if (isNodeExpression(term, index)) return true
+        fun expressionVocabulary(t: RdfTerm) = t is Iri && (t.value.startsWith(SHNEX_NAMESPACE) || t.value.startsWith(SPARQL_NAMESPACE))
+        if (predicates.any { expressionVocabulary(it) }) return true
         if (index.objects(term, RDF.type).any { expressionVocabulary(it) }) return true
         val call = callPredicate(term, index) ?: return false
         return isDeclaredFunction(call, index)
@@ -1088,182 +1092,6 @@ internal object ShapesCompiler {
         val v = lit.lexical.toIntOrNull() ?: throw ShapeCompileException("$role invalid lexical ${lit.lexical}")
         if (v < 0) throw ShapeCompileException("$role must be non-negative")
         return v
-    }
-}
-
-/**
- * Compiles `sh:pattern` with `sh:flags` into a JVM [Regex] that follows XPath `fn:matches` (XML Schema regular
- * expressions), which is what SHACL prescribes through SPARQL `REGEX`.
- *
- * Flags: `i` (case-insensitive, Unicode-aware), `m` (multi-line), `s` (dot matches all), `x` (whitespace outside
- * character classes is removed from the pattern) and `q` (the pattern is matched literally; only `i` combines with
- * it). Unknown flags or syntactically invalid patterns raise [ShapeCompileException].
- *
- * Patterns are evaluated with `java.util.regex`, so syntax whose meaning differs is translated first
- * ([XPathRegexTranslator]):
- * - `$` matches at the end of input only, or with `m` before a line feed. Java's `$` also matches before a final
- *   line terminator, so `^\d+$` would accept `"123\n"`.
- * - `^` with `m` matches at the start of input and after a line feed. Only U+000A ends a line in XPath; Java's
- *   multi-line anchors also treat carriage return, U+0085, U+2028 and U+2029 as line terminators (Java's `MULTILINE`
- *   mode is therefore never used).
- * - `.` without `s` matches every character except line feed and carriage return (Java also excludes U+0085, U+2028
- *   and U+2029).
- * - `\d` / `\D` are Unicode decimal digits (`\p{Nd}`); `\w` / `\W` are "everything but punctuation, separators and
- *   other characters", so `José` is a word, symbols such as `+` are word characters and `_` (connector punctuation)
- *   is not; `\s` / `\S` are exactly space, tab, line feed and carriage return. Java's defaults are ASCII-only for
- *   `\d` and `\w` and wider for `\s`.
- * - `\i` / `\I` (XML name-start characters) and `\c` / `\C` (XML name characters) are approximated with Unicode
- *   letter/digit classes plus `_`, `:`, `.`, `-` and U+00B7.
- * - Character-class subtraction `[base-[excluded]]` becomes `[[base]&&[^[excluded]]]`, and Unicode block escapes
- *   `\p{IsBlock}` become `\p{InBlock}`. A literal `&` or `[` inside a class is escaped (operators in Java classes).
- *
- * `java.util.regex` still accepts a superset of XML Schema regular expressions (lookarounds, possessive quantifiers,
- * back-references, `\Q…\E` quoting). Those are passed through; a `\Q…\E` section is copied verbatim, so `$`, `^` and
- * `.` inside it stay literal. Portable shapes should stick to the common subset.
- */
-internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
-    val options = mutableSetOf<RegexOption>()
-    var quote = false
-    var extended = false
-    var multiLine = false
-    flags?.forEach { c ->
-        when (c) {
-            'i' -> options.add(RegexOption.IGNORE_CASE)
-            'm' -> multiLine = true
-            's' -> options.add(RegexOption.DOT_MATCHES_ALL)
-            'x' -> extended = true
-            'q' -> quote = true
-            else -> throw ShapeCompileException("Unsupported sh:flags character '$c' in \"$flags\"")
-        }
-    }
-    val source =
-        if (quote) {
-            Regex.escape(pattern)
-        } else {
-            XPathRegexTranslator(pattern, extended, multiLine, dotAll = RegexOption.DOT_MATCHES_ALL in options).translate()
-        }
-    return try {
-        Regex(source, options)
-    } catch (e: java.util.regex.PatternSyntaxException) {
-        throw ShapeCompileException("Invalid sh:pattern \"$pattern\": ${e.description}", e)
-    }
-}
-
-/** Translates one XPath / XML Schema regular expression to `java.util.regex` syntax (see [compileShaclPattern]). */
-private class XPathRegexTranslator(
-    private val p: String,
-    private val extended: Boolean,
-    private val multiLine: Boolean,
-    private val dotAll: Boolean,
-) {
-    private var i = 0
-
-    fun translate(): String {
-        val out = StringBuilder(p.length + 16)
-        while (i < p.length) {
-            val c = p[i]
-            when {
-                c == '\\' && i + 1 < p.length -> out.append(escape(inClass = false))
-                c == '[' -> out.append(charClass())
-                c == '$' -> {
-                    out.append(if (multiLine) "(?=\\n|\\z)" else "\\z")
-                    i++
-                }
-                c == '^' && multiLine -> {
-                    out.append("(?:\\A|(?<=\\n))")
-                    i++
-                }
-                c == '.' && !dotAll -> {
-                    out.append("[^\\n\\r]")
-                    i++
-                }
-                extended && (c == ' ' || c == '\t' || c == '\n' || c == '\r') -> i++
-                else -> {
-                    out.append(c)
-                    i++
-                }
-            }
-        }
-        return out.toString()
-    }
-
-    /** Translates the escape starting at [i] (a backslash with a following character) and moves past it. */
-    private fun escape(inClass: Boolean): String {
-        val n = p[i + 1]
-        if (n == 'Q') {
-            // Java literal quoting (not XPath syntax): copied verbatim up to and including `\E`, or to the end.
-            val end = p.indexOf("\\E", i + 2)
-            val stop = if (end < 0) p.length else end + 2
-            return p.substring(i, stop).also { i = stop }
-        }
-        if ((n == 'p' || n == 'P') && p.startsWith("{Is", i + 2)) {
-            i += 5 // the block name and `}` are copied as ordinary characters
-            return "\\" + n + "{In"
-        }
-        i += 2
-        return when (n) {
-            'd' -> "\\p{Nd}"
-            'D' -> "\\P{Nd}"
-            // Inside a class the positive forms are spliced in as members; a nested negated class is a union member.
-            'w' -> if (inClass) WORD else "[$WORD]"
-            'W' -> if (inClass) NOT_WORD else "[$NOT_WORD]"
-            's' -> if (inClass) SPACE else "[$SPACE]"
-            'S' -> "[^$SPACE]"
-            'i' -> if (inClass) NAME_START else "[$NAME_START]"
-            'I' -> "[^$NAME_START]"
-            'c' -> if (inClass) NAME_CHAR else "[$NAME_CHAR]"
-            'C' -> "[^$NAME_CHAR]"
-            else -> "\\" + n
-        }
-    }
-
-    /**
-     * Translates the character class expression starting at [i] (`[`) into a self-contained Java class and moves
-     * past its closing `]`. An unterminated class is returned unterminated so that compiling it fails.
-     */
-    private fun charClass(): String {
-        i++ // [
-        val negated = i < p.length && p[i] == '^'
-        if (negated) i++
-        val group = StringBuilder()
-        var subtraction: String? = null
-        while (i < p.length) {
-            val c = p[i]
-            when {
-                c == ']' -> {
-                    i++
-                    val base = if (negated) "[^$group]" else "[$group]"
-                    return if (subtraction == null) base else "[$base&&[^$subtraction]]"
-                }
-                c == '\\' && i + 1 < p.length -> group.append(escape(inClass = true))
-                c == '-' && i + 1 < p.length && p[i + 1] == '[' -> {
-                    i++
-                    subtraction = charClass()
-                }
-                c == '[' -> {
-                    group.append("\\[")
-                    i++
-                }
-                c == '&' -> {
-                    group.append("\\&")
-                    i++
-                }
-                else -> {
-                    group.append(c)
-                    i++
-                }
-            }
-        }
-        return (if (negated) "[^" else "[") + group
-    }
-
-    private companion object {
-        /** XML Schema `\w`: every character except punctuation (P), separators (Z) and "other" (C). */
-        const val WORD = "\\p{L}\\p{M}\\p{N}\\p{S}"
-        const val NOT_WORD = "\\p{P}\\p{Z}\\p{C}"
-        const val SPACE = " \\t\\n\\r"
-        const val NAME_START = "\\p{L}_:"
-        const val NAME_CHAR = "\\p{L}\\p{Nd}._:\\-\\u00B7"
     }
 }
 
