@@ -930,7 +930,11 @@ internal class HelperCall<T>(private val pool: UrlLoadHelperPool, action: () -> 
             action()
         } finally {
             val pending = synchronized(lock) { returned = true; cleanup }
-            pending?.let { runCatching(it) }
+            if (pending != null) {
+                // The interrupt that came with the abandonment was for the call, not for the clean-up after it.
+                Thread.interrupted()
+                runCatching(pending)
+            }
         }
     }
 
@@ -1046,6 +1050,8 @@ internal class StreamHelper(private val input: InputStream, private val idleNano
                 lock.unlock()
             }
             if (pending != null) {
+                // The interrupt that came with the abandonment was for the read, not for the clean-up after it.
+                Thread.interrupted()
                 runCatching(pending)
                 return
             }
