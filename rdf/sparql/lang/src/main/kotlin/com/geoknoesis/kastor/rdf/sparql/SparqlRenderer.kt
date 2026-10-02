@@ -340,23 +340,46 @@ object SparqlRenderer {
             }
             renderTerm(expr.term)
         }
+        // Relational expressions do not chain in the grammar (`?a = ?b = ?c` is not legal), so an operand
+        // must bind tighter than a comparison.
         is ComparisonExpressionAst ->
-            "${renderComparisonOperand(expr.left)} ${expr.operator.symbol} ${renderComparisonOperand(expr.right)}"
-        is AndExpressionAst -> "(${renderExpression(expr.left)} && ${renderExpression(expr.right)})"
-        is OrExpressionAst -> "(${renderExpression(expr.left)} || ${renderExpression(expr.right)})"
+            "${renderOperand(expr.left, Precedence.ADDITIVE)} ${expr.operator.symbol} ${renderOperand(expr.right, Precedence.ADDITIVE)}"
+        is AndExpressionAst ->
+            "(${renderOperand(expr.left, Precedence.RELATIONAL)} && ${renderOperand(expr.right, Precedence.RELATIONAL)})"
+        is OrExpressionAst ->
+            "(${renderOperand(expr.left, Precedence.RELATIONAL)} || ${renderOperand(expr.right, Precedence.RELATIONAL)})"
         is NotExpressionAst -> "!(${renderExpression(expr.expression)})"
         is FunctionCallAst ->
             "${SparqlSyntax.functionName(expr.name)}(${expr.arguments.joinToString(", ") { renderExpression(it) }})"
         is ConditionalExpressionAst ->
             "IF(${renderExpression(expr.condition)}, ${renderExpression(expr.thenValue)}, ${renderExpression(expr.elseValue)})"
         is AggregateExpressionAst -> renderAggregate(expr)
+        // `?a = ?b + ?c` is `?a = (?b + ?c)`: a comparison that is an operand needs its own brackets.
         is ArithmeticExpressionAst ->
-            "(${renderExpression(expr.left)} ${expr.operator.symbol} ${renderExpression(expr.right)})"
+            "(${renderOperand(expr.left, Precedence.UNARY)} ${expr.operator.symbol} ${renderOperand(expr.right, Precedence.UNARY)})"
     }
 
-    /** Relational expressions are not associative in the grammar, so nested comparisons need brackets. */
-    private fun renderComparisonOperand(expr: ExpressionAst): String =
-        if (expr is ComparisonExpressionAst) "(${renderExpression(expr)})" else renderExpression(expr)
+    /**
+     * How tightly the text [renderExpression] writes for an expression holds together, in the order
+     * of the SPARQL grammar (ConditionalOrExpression ... PrimaryExpression). Only what the renderer
+     * writes without enclosing brackets can be less than [PRIMARY].
+     */
+    private enum class Precedence { RELATIONAL, ADDITIVE, UNARY, PRIMARY }
+
+    private fun precedence(expr: ExpressionAst): Precedence = when (expr) {
+        // Written bare: `left op right`.
+        is ComparisonExpressionAst -> Precedence.RELATIONAL
+        // Written `!(...)`.
+        is NotExpressionAst -> Precedence.UNARY
+        // Written in their own brackets, so they are bracketed expressions.
+        is AndExpressionAst, is OrExpressionAst, is ArithmeticExpressionAst -> Precedence.PRIMARY
+        // Terms, calls, IF and aggregates are primary expressions; their arguments are complete expressions.
+        is TermExpressionAst, is FunctionCallAst, is ConditionalExpressionAst, is AggregateExpressionAst -> Precedence.PRIMARY
+    }
+
+    /** [expr] as an operand of an operator that needs at least [required]: bracketed when it binds less tightly. */
+    private fun renderOperand(expr: ExpressionAst, required: Precedence): String =
+        if (precedence(expr) < required) "(${renderExpression(expr)})" else renderExpression(expr)
 
     private fun renderAggregate(expr: AggregateExpressionAst): String = buildString {
         append(expr.function.functionName)
