@@ -380,6 +380,7 @@ class JenaProvider : RdfProvider {
  * }
  * ```
  */
+@JvmName("blankNodeIdOfSkolemGraph")
 fun blankNodeIdOfSkolemGraph(graphName: Iri): String? = JenaParsing.blankNodeIdOfSkolemGraph(graphName.value)
 
 /** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */
