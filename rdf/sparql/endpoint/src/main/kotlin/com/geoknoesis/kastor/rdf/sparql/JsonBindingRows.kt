@@ -18,25 +18,74 @@ import java.nio.charset.CodingErrorAction
  * SELECT rows ([rows]) are decoded one at a time, straight from the stream and in a single pass, and
  * an ASK result ([ask]) is read the same way.
  *
- * Only what a binding needs is stored: the variable names of a row and, per binding, its `type`,
- * `value`, `xml:lang` and `datatype`. Everything else (`head`, unknown members, nested values) is
- * checked to be JSON and skipped without being stored.
+ * Only what a result needs is stored: the variable names of `head.vars` (when `head` precedes the
+ * rows), the variable names of a row and, per binding, its `type`, `value`, `xml:lang` and
+ * `datatype`. Everything else (the other members of `head`, unknown members, nested values) is
+ * checked and skipped without being stored.
  *
- * Strictness:
+ * JSON: the whole document, skipped content included, must match the JSON grammar (RFC 8259), with
+ * nothing after it.
  * - The input must be UTF-8; malformed byte sequences are an error, not replaced. One leading byte
  *   order mark is ignored.
  * - Only space, tab, line feed and carriage return are white space.
- * - No single value (a row, a field name, or a skipped value such as `head`) may be longer than
+ * - Inside a string every control character (U+0000 to U+001F) must be escaped.
+ * - Beyond the grammar, a string must not hold an unpaired surrogate: a `\u` escape of a high
+ *   surrogate must be followed at once by the escape of a low surrogate, and a low surrogate
+ *   must follow a high one. (Such text is not Unicode and cannot be part of an RDF term.)
+ * - No single value (a row, a field name, `head`, or a skipped value) may be longer than
  *   [maxValueChars] characters of JSON text, and none may be nested deeper than [MAX_DEPTH].
- * - The members `results` and `bindings` (and `boolean` for ASK) must not be repeated after the one
- *   that was read.
+ *
+ * SPARQL results:
+ * - The members this decoder reads must not be repeated: `head`, `vars`, `results`, `bindings` (and
+ *   `boolean` for ASK), a variable within a row, and `type`, `value`, `xml:lang` and `datatype`
+ *   within a binding. A general JSON parser would keep one of them, the first or the last. Members
+ *   that are skipped are not compared with each other.
+ * - `head` is an object and its `vars`, when present, an array of strings. A row may only bind
+ *   variables that `vars` lists, when a `head` with `vars` precedes `results`; a `head` that follows
+ *   the rows is only checked for its form (the rows were delivered by then), and a result without
+ *   `head` or `vars` is read as it is.
+ * - `type`, `value`, `xml:lang` and `datatype` are strings; a number, `true`, `false` or `null` in
+ *   their place is an error. An empty `xml:lang` is read as no language tag.
+ * - A language tag goes with no `datatype` or with `rdf:langString`; with any other datatype the
+ *   binding is contradictory and rejected.
  * - RDF 1.2 result terms (`"type":"triple"`, and literals with a base direction, `its:dir` or
  *   `direction`) are not supported and are rejected by name.
  *
- * Every such failure is an [IllegalStateException] whose message never quotes more than a short,
+ * Terms the RDF model refuses (an invalid IRI or datatype IRI, a language tag that is not
+ * well-formed, a blank node without a label, an unpaired surrogate inside a row) are handled as
+ * [malformedTerms] says: [MalformedTermPolicy.FAIL] fails the result at that row;
+ * [MalformedTermPolicy.SKIP_ROW] leaves the row out, counts it in [skippedRows] and goes on. Under
+ * both, everything else in this list is an error.
+ *
+ * Every failure is an [IllegalStateException] whose message never quotes more than a short,
  * printable excerpt of the input; I/O failures of the underlying stream propagate as they are.
+ *
+ * @param created called for every object created for decoded content (a string, a term, a row);
+ *   skipped content creates none, which is what the tests assert through it. `null` in production.
  */
-internal class JsonBindingRows(input: InputStream, private val maxValueChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS) {
+internal class JsonBindingRows(
+    input: InputStream,
+    private val maxValueChars: Int = SparqlEndpointConfig.DEFAULT_MAX_RESULT_ROW_CHARS,
+    private val malformedTerms: MalformedTermPolicy = MalformedTermPolicy.FAIL,
+    private val created: (() -> Unit)? = null,
+) {
+    /** Rows left out under [MalformedTermPolicy.SKIP_ROW] so far. */
+    var skippedRows = 0L
+        private set
+
+    /** Why the first of the [skippedRows] was skipped: its position, the variable and the term's fault; printable and short. */
+    var firstSkipped: String? = null
+        private set
+
+    /** Rows read so far, skipped ones included. */
+    private var rowNumber = 0L
+
+    /** Whether a row is being decoded whose malformed terms are to be skipped rather than reported. */
+    private var skipping = false
+
+    /** Why the row being decoded is skipped, once a malformed term was met in it. */
+    private var defect: String? = null
+
     // Decoding in 8K chunks into a private buffer: no per-character lock (PushbackReader and the
     // buffered reader it wrapped synchronize every read call).
     private val source = InputStreamReader(
@@ -54,12 +103,6 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
     /** Scratch space for one string or scalar. */
     private var text = StringBuilder()
 
-    /**
-     * Objects created for decoded content so far: strings, terms and rows. Skipped content creates
-     * none, which is what the tests assert through this counter.
-     */
-    internal var materialised = 0L
-        private set
 
     private fun fill(): Boolean {
         val count = try {
@@ -193,20 +236,34 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
     private fun string(out: StringBuilder?) {
         advance()
         out?.setLength(0)
+        // Whether the character before was the escape of a high surrogate, which only the escape of a low one may follow.
+        var high = false
         while (true) {
             if (position == limit && !fill()) malformed(-1, "'\"'")
             // Take the run of plain characters in the buffer in one go.
             var end = position
-            while (end < limit && buffer[end] != '"' && buffer[end] != '\\') end++
+            while (end < limit) {
+                val plain = buffer[end]
+                if (plain == '"' || plain == '\\' || plain < ' ') break
+                end++
+            }
             if (end > position) {
+                if (high) {
+                    unpairedSurrogate()
+                    high = false
+                }
                 charge(end - position)
                 out?.append(buffer, position, end - position)
                 position = end
                 if (end == limit) continue
             }
             val c = buffer[position]
+            if (c < ' ') error("Malformed SPARQL JSON: a control character (U+%04X) inside a string must be escaped".format(c.code))
             advance()
-            if (c == '"') return
+            if (c == '"') {
+                if (high) unpairedSurrogate()
+                return
+            }
             val escape = peek()
             if (escape < 0) malformed(escape, "an escape")
             advance()
@@ -225,7 +282,7 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
                             in '0'.code..'9'.code -> digit - '0'.code
                             in 'a'.code..'f'.code -> digit - 'a'.code + 10
                             in 'A'.code..'F'.code -> digit - 'A'.code + 10
-                            else -> malformed(digit, "four hex digits after \\u")
+                            else -> malformed(digit, "four hex digits in a unicode escape")
                         }
                         advance()
                         code = code * 16 + value
@@ -234,8 +291,20 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
                 }
                 else -> malformed(escape, "a JSON escape after '\\'")
             }
+            val low = escape == 'u'.code && Character.isLowSurrogate(decoded)
+            if (high != low) unpairedSurrogate()
+            high = escape == 'u'.code && Character.isHighSurrogate(decoded)
             out?.append(decoded)
         }
+    }
+
+    /**
+     * An unpaired surrogate escape: a fault of the term it is in when rows with such terms are
+     * skipped, and an error anywhere else.
+     */
+    private fun unpairedSurrogate() {
+        if (!skipping) error("Malformed SPARQL JSON: a string holds an unpaired surrogate escape")
+        if (defect == null) defect = "a string holds an unpaired surrogate escape"
     }
 
     /** Decodes the string whose opening quote is the next character. */
@@ -318,7 +387,7 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
 
     private fun takeText(): String {
         val result = text.toString()
-        materialised++
+        created?.invoke()
         // One unusually large value must not keep a large buffer alive for the rest of the stream.
         if (text.capacity() > RETAINED_TEXT_CHARS) text = StringBuilder()
         return result
@@ -327,79 +396,175 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
     // ------------------------------------------------------------------ document structure
 
     /**
-     * Enters the object that starts next and skips its members up to [name], leaving the reader in
-     * front of that member's value.
+     * Runs [member] for each member of the object that starts next, with its name in [text] and the
+     * reader in front of its value. The object is part of one bounded value.
      */
-    private fun member(name: String) {
-        expect('{')
-        while (true) {
-            val c = skipWhitespace()
-            check(c == '"'.code) { if (c < 0) "Truncated SPARQL JSON" else "SPARQL JSON missing $name" }
-            val found = bounded {
-                fieldName()
-                nameIs(name)
-            }
-            expect(':')
-            if (found) return
-            skipValue()
-            val next = skipWhitespace()
-            check(next == ','.code) { if (next < 0) "Truncated SPARQL JSON" else "SPARQL JSON missing $name" }
+    private inline fun members(what: String, member: () -> Unit) {
+        val open = skipWhitespace()
+        if (open != '{'.code) malformed(open, what)
+        advance()
+        var c = skipWhitespace()
+        if (c == '}'.code) {
             advance()
+            return
+        }
+        while (true) {
+            if (c != '"'.code) malformed(c, "a field name")
+            fieldName()
+            expect(':')
+            member()
+            c = skipWhitespace()
+            if (c == '}'.code) {
+                advance()
+                return
+            }
+            if (c != ','.code) malformed(c, "',' or '}'")
+            advance()
+            c = skipWhitespace()
         }
     }
 
-    /**
-     * Skips the remaining members of the current object and its closing brace. The member [read],
-     * whose value was consumed already, must not occur again: a general JSON parser would keep the
-     * last one, which a streaming reader cannot.
-     */
-    private fun finishObject(read: String) {
-        var c = skipWhitespace()
-        while (c == ','.code) {
-            advance()
-            val next = skipWhitespace()
-            if (next != '"'.code) malformed(next, "a field name")
-            val repeated = bounded {
-                fieldName()
-                nameIs(read)
-            }
-            check(!repeated) { "Malformed SPARQL JSON: more than one '$read' member" }
-            expect(':')
-            skipValue()
-            c = skipWhitespace()
-        }
-        if (c != '}'.code) malformed(c, "',' or '}'")
-        advance()
-    }
+    private fun once(seen: Boolean, name: String) = check(!seen) { "Malformed SPARQL JSON: more than one '$name' member" }
 
     private fun end() = check(skipWhitespace() == -1) { "Trailing content in SPARQL JSON" }
 
-    /** The rows of a SELECT result, decoded as they are read. */
-    fun rows(): Sequence<BindingSet> = sequence {
-        member("results")
-        member("bindings")
+    /**
+     * Reads `head`, which counts as one value: the variables of its `vars`, or `null` when it has
+     * none. Its other members are checked and skipped.
+     */
+    private fun head(): Set<String>? {
+        skipWhitespace()
+        return bounded {
+            var vars: MutableSet<String>? = null
+            members("the 'head' object") {
+                if (nameIs("vars")) {
+                    once(vars != null, "vars")
+                    vars = vars()
+                } else {
+                    skip(1)
+                }
+            }
+            vars
+        }
+    }
+
+    private fun vars(): MutableSet<String> {
+        val vars = LinkedHashSet<String>()
         expect('[')
         var c = skipWhitespace()
         if (c == ']'.code) {
             advance()
-        } else {
-            while (true) {
-                if (c != '{'.code) malformed(c, "a result row (an object)")
-                yield(bounded { row() })
-                c = skipWhitespace()
-                if (c == ']'.code) {
-                    advance()
-                    break
-                }
-                if (c != ','.code) malformed(c, "',' or ']' in the bindings array")
+            return vars
+        }
+        while (true) {
+            if (c != '"'.code) malformed(c, "a variable name (a string) in 'vars'")
+            vars.add(string())
+            c = skipWhitespace()
+            if (c == ']'.code) {
                 advance()
-                c = skipWhitespace()
+                return vars
+            }
+            if (c != ','.code) malformed(c, "',' or ']'")
+            advance()
+            c = skipWhitespace()
+        }
+    }
+
+    /** The rows of a SELECT result, decoded as they are read. */
+    fun rows(): Sequence<BindingSet> = sequence {
+        var headRead = false
+        var resultsRead = false
+        var declared: Set<String>? = null
+        var open = skipWhitespace()
+        if (open != '{'.code) malformed(open, "a SPARQL JSON result (an object)")
+        advance()
+        open = skipWhitespace()
+        if (open != '}'.code) {
+            while (true) {
+                if (open != '"'.code) malformed(open, "a field name")
+                bounded { fieldName() }
+                val isHead = nameIs("head")
+                val isResults = nameIs("results")
+                expect(':')
+                when {
+                    isHead -> {
+                        once(headRead, "head")
+                        headRead = true
+                        val vars = head()
+                        // A head that follows the rows cannot be held against them: they were delivered.
+                        if (!resultsRead) declared = vars
+                    }
+                    isResults -> {
+                        once(resultsRead, "results")
+                        resultsRead = true
+                        results(declared)
+                    }
+                    else -> skipValue()
+                }
+                open = skipWhitespace()
+                if (open == '}'.code) break
+                if (open != ','.code) malformed(open, "',' or '}'")
+                advance()
+                open = skipWhitespace()
             }
         }
-        finishObject("bindings")
-        finishObject("results")
+        advance()
+        check(resultsRead) { "SPARQL JSON missing results" }
         end()
     }.constrainOnce()
+
+    /** Reads the `results` object and yields the rows of its `bindings`. */
+    private suspend fun SequenceScope<BindingSet>.results(declared: Set<String>?) {
+        var bindingsRead = false
+        var open = skipWhitespace()
+        if (open != '{'.code) malformed(open, "the 'results' object")
+        advance()
+        open = skipWhitespace()
+        if (open != '}'.code) {
+            while (true) {
+                if (open != '"'.code) malformed(open, "a field name")
+                bounded { fieldName() }
+                val isBindings = nameIs("bindings")
+                expect(':')
+                if (isBindings) {
+                    once(bindingsRead, "bindings")
+                    bindingsRead = true
+                    bindings(declared)
+                } else {
+                    skipValue()
+                }
+                open = skipWhitespace()
+                if (open == '}'.code) break
+                if (open != ','.code) malformed(open, "',' or '}'")
+                advance()
+                open = skipWhitespace()
+            }
+        }
+        advance()
+        check(bindingsRead) { "SPARQL JSON missing bindings" }
+    }
+
+    private suspend fun SequenceScope<BindingSet>.bindings(declared: Set<String>?) {
+        expect('[')
+        var c = skipWhitespace()
+        if (c == ']'.code) {
+            advance()
+            return
+        }
+        while (true) {
+            if (c != '{'.code) malformed(c, "a result row (an object)")
+            val row = bounded { row(declared) }
+            if (row != null) yield(row)
+            c = skipWhitespace()
+            if (c == ']'.code) {
+                advance()
+                return
+            }
+            if (c != ','.code) malformed(c, "',' or ']' in the bindings array")
+            advance()
+            c = skipWhitespace()
+        }
+    }
 
     /**
      * An ASK result: the `boolean` member of the JSON document, or the bare `true`/`false` (in any
@@ -473,28 +638,56 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
 
     // ------------------------------------------------------------------ rows
 
-    /** Decodes the row whose opening brace is the next character. */
-    private fun row(): BindingSet {
+    /**
+     * Decodes the row whose opening brace is the next character; `null` for a row that is skipped
+     * because of a malformed term, which is then counted.
+     */
+    private fun row(declared: Set<String>?): BindingSet? {
+        rowNumber++
+        skipping = malformedTerms == MalformedTermPolicy.SKIP_ROW
+        defect = null
+        try {
+            val terms = terms(declared)
+            val reason = defect ?: return MapBindingSet(terms)
+            skippedRows++
+            if (firstSkipped == null) firstSkipped = "row $rowNumber: $reason"
+            return null
+        } finally {
+            skipping = false
+        }
+    }
+
+    private fun terms(declared: Set<String>?): Map<String, RdfTerm> {
         advance()
         val terms = LinkedHashMap<String, RdfTerm>()
-        materialised++
+        created?.invoke()
         var c = skipWhitespace()
         if (c == '}'.code) {
             advance()
-            return MapBindingSet(terms)
+            return terms
         }
         while (true) {
             if (c != '"'.code) malformed(c, "a field name")
             val variable = string()
+            check(variable !in terms) { "Malformed SPARQL JSON: more than one binding for variable '${excerpt(variable)}' in a row" }
+            check(declared == null || variable in declared) {
+                "Malformed SPARQL JSON: a row binds variable '${excerpt(variable)}', which 'vars' in 'head' does not declare"
+            }
             expect(':')
             val open = skipWhitespace()
             if (open != '{'.code) malformed(open, "a binding (an object)")
-            terms[variable] = binding()
-            materialised++
+            val term = binding(variable)
+            if (term != null) {
+                terms[variable] = term
+                created?.invoke()
+            } else {
+                // The row is skipped; the name still stands for its binding, so that a repeat is noticed.
+                terms[variable] = PLACEHOLDER
+            }
             c = skipWhitespace()
             if (c == '}'.code) {
                 advance()
-                return MapBindingSet(terms)
+                return terms
             }
             if (c != ','.code) malformed(c, "',' or '}'")
             advance()
@@ -502,8 +695,11 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
         }
     }
 
-    /** Decodes the binding (an RDF term) whose opening brace is the next character. */
-    private fun binding(): RdfTerm {
+    /**
+     * Decodes the binding (an RDF term) of [variable] whose opening brace is the next character;
+     * `null` when the term is malformed and its row is skipped.
+     */
+    private fun binding(variable: String): RdfTerm? {
         advance()
         var type: String? = null
         var value: String? = null
@@ -511,6 +707,7 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
         var datatype: String? = null
         var structuredValue = false
         var directional = false
+        var seen = 0
         var c = skipWhitespace()
         if (c == '}'.code) {
             advance()
@@ -526,18 +723,21 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
                     nameIs("its:dir") || nameIs("direction") -> DIRECTION
                     else -> OTHER
                 }
+                if (member in TYPE..DATATYPE) {
+                    once(seen and (1 shl member) != 0, MEMBER_NAMES[member])
+                    seen = seen or (1 shl member)
+                }
                 expect(':')
                 val start = skipWhitespace()
-                val structured = start == '{'.code || start == '['.code
                 when (member) {
-                    TYPE -> type = if (structured) notAString("type") else memberText()
+                    TYPE -> type = memberText("type", start)
                     VALUE -> {
                         // The value of a triple term is an object; it is reported once the type is known.
-                        structuredValue = structured
-                        value = if (structured) null.also { skip(BINDING_MEMBER_DEPTH) } else memberText()
+                        structuredValue = start == '{'.code || start == '['.code
+                        if (structuredValue) skip(BINDING_MEMBER_DEPTH) else value = memberText("value", start)
                     }
-                    LANG -> lang = if (structured) notAString("xml:lang") else memberText()
-                    DATATYPE -> datatype = if (structured) notAString("datatype") else memberText()
+                    LANG -> lang = memberText("xml:lang", start)
+                    DATATYPE -> datatype = memberText("datatype", start)
                     DIRECTION -> {
                         directional = true
                         skip(BINDING_MEMBER_DEPTH)
@@ -559,36 +759,50 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
                 "which decodes SPARQL 1.1 results only"
         }
         if (structuredValue) notAString("value")
-        check(type != null && value != null) { "SPARQL binding missing required field" }
+        val kind = type ?: error("SPARQL binding missing required field")
+        val text = value ?: error("SPARQL binding missing required field")
+        val tag = lang?.takeIf { it.isNotEmpty() }
+        val datatypeIri = datatype
+        val literal = kind == "literal" || kind == "typed-literal"
+        check(literal || kind == "uri" || kind == "bnode") { "Unsupported SPARQL result binding type: '${excerpt(kind)}'" }
+        if (literal) {
+            check(!directional) {
+                "Literals with a base direction in SPARQL results (RDF 1.2 'its:dir' / 'direction') are not supported " +
+                    "by this adapter, which decodes SPARQL 1.1 results only"
+            }
+            check(tag == null || datatypeIri == null || datatypeIri == LANG_STRING) {
+                "Malformed SPARQL JSON: a literal has the 'xml:lang' '${excerpt(tag.orEmpty())}' and the 'datatype' " +
+                    "'${excerpt(datatypeIri.orEmpty())}'; a language tag only goes with rdf:langString"
+            }
+        }
+        // A fault met while this row's strings were read (an unpaired surrogate) is one of this row, whatever the term.
+        if (defect != null) return null
         return try {
-            when (type) {
-                "uri" -> Iri(value)
+            when {
+                kind == "uri" -> Iri(text)
                 // Kept verbatim (e.g. Virtuoso `nodeID://b1`); see SparqlGraph for what can be done with it.
-                "bnode" -> BlankNode(value)
-                "literal", "typed-literal" -> {
-                    check(!directional) {
-                        "Literals with a base direction in SPARQL results (RDF 1.2 'its:dir' / 'direction') are not supported " +
-                            "by this adapter, which decodes SPARQL 1.1 results only"
-                    }
-                    when {
-                        !lang.isNullOrEmpty() -> LangString(value, lang)
-                        datatype != null -> Literal(value, Iri(datatype))
-                        else -> Literal(value, XSD.string)
-                    }
-                }
-                else -> error("Unsupported SPARQL result binding type: '${excerpt(type)}'")
+                kind == "bnode" -> BlankNode(text)
+                tag != null -> LangString(text, tag)
+                datatypeIri != null -> Literal(text, Iri(datatypeIri))
+                else -> Literal(text, XSD.string)
             }
         } catch (e: IllegalArgumentException) {
-            throw IllegalStateException("SPARQL result holds an invalid term: ${excerpt(e.message.orEmpty())}", e)
+            val fault = excerpt(e.message.orEmpty())
+            if (!skipping) throw IllegalStateException("SPARQL result holds an invalid term: $fault", e)
+            defect = "variable '${excerpt(variable, VARIABLE_EXCERPT_CHARS)}': $fault"
+            null
         }
     }
 
     private fun notAString(member: String): Nothing = error("Malformed SPARQL JSON: the '$member' of a binding must be a string")
 
-    /** The text of a binding member that is a string or another scalar; `null` for JSON `null`. */
-    private fun memberText(): String? {
-        if (peek() == '"'.code) return string()
-        return if (scalar(text) == NULL) null else takeText()
+    /** The text of the binding member [member], which must be a string; [start] is its first character. */
+    private fun memberText(member: String, start: Int): String {
+        if (start != '"'.code) {
+            if (start < 0) malformed(start, "a value")
+            notAString(member)
+        }
+        return string()
     }
 
     private companion object {
@@ -600,6 +814,10 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
         const val RETAINED_TEXT_CHARS = 64 * 1024
         const val BYTE_ORDER_MARK = 0xFEFF
         const val TRIPLE_TYPE = "triple"
+        const val LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+
+        /** Stands for the binding of a variable in a row that is skipped. */
+        val PLACEHOLDER: RdfTerm = BlankNode("skipped")
         const val NOT_AN_ASK_RESULT = "SPARQL ASK response is neither a SPARQL JSON result nor true/false"
 
         const val NUMBER = 0
@@ -614,15 +832,19 @@ internal class JsonBindingRows(input: InputStream, private val maxValueChars: In
         const val DATATYPE = 4
         const val DIRECTION = 5
 
+        /** The members that must not be repeated, by their number. */
+        val MEMBER_NAMES = arrayOf("", "type", "value", "xml:lang", "datatype")
+
         const val EXCERPT_CHARS = 80
+        const val VARIABLE_EXCERPT_CHARS = 40
 
         /** JSON white space (RFC 8259): space, tab, line feed, carriage return. */
         fun isWhitespace(c: Int): Boolean = c == ' '.code || c == '\t'.code || c == '\n'.code || c == '\r'.code
 
         /** At most [EXCERPT_CHARS] characters of [text], with anything that is not printable ASCII replaced. */
-        fun excerpt(text: String): String {
-            val shown = text.take(EXCERPT_CHARS).map { if (it in ' '..'~') it else '?' }.joinToString("")
-            return if (text.length > EXCERPT_CHARS) "$shown..." else shown
+        fun excerpt(text: String, chars: Int = EXCERPT_CHARS): String {
+            val shown = text.take(chars).map { if (it in ' '..'~') it else '?' }.joinToString("")
+            return if (text.length > chars) "$shown..." else shown
         }
     }
 }

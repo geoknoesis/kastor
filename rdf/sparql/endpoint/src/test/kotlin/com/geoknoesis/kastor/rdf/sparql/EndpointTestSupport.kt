@@ -121,21 +121,58 @@ internal fun HttpExchange.trickleRows(rows: Int, gapMillis: Long) {
     }
 }
 
+/**
+ * Sends the response headers at once and then [rows] rows spread evenly over [duration]. Between
+ * the rows a space (white space the decoder skips) is written every [beatMillis], so that the body
+ * lasts as long as asked while no read of the client waits for more than a beat. The sleep only
+ * lets time pass; nothing waits for it.
+ */
+internal fun HttpExchange.spreadRows(rows: Int, duration: Duration, beatMillis: Long = 25) {
+    responseHeaders.add("Content-Type", "application/sparql-results+json")
+    sendResponseHeaders(200, 0)
+    val start = System.nanoTime()
+    responseBody.use { out ->
+        out.write("{\"head\":{\"vars\":[\"x\"]},\"results\":{\"bindings\":[".toByteArray())
+        repeat(rows) { row ->
+            if (row > 0) out.write(",".toByteArray())
+            out.write("{\"x\":{\"type\":\"literal\",\"value\":\"$row\"}}".toByteArray())
+            out.flush()
+            val due = duration.toNanos() / rows * (row + 1)
+            while (System.nanoTime() - start < due) {
+                Thread.sleep(beatMillis)
+                out.write(' '.code)
+                out.flush()
+            }
+        }
+        out.write("]}}".toByteArray())
+    }
+}
+
 /** A server that accepts connections but never sends a response; [accepted] holds its connections. */
 internal class SilentServer : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
     val accepted = CopyOnWriteArrayList<Socket>()
+    private val arrivals = java.util.concurrent.Semaphore(0)
     val url: String get() = "http://127.0.0.1:${server.localPort}/sparql"
 
     init {
         Thread {
             try {
-                while (true) accepted += server.accept()
+                while (true) {
+                    accepted += server.accept()
+                    arrivals.release()
+                }
             } catch (_: IOException) {
                 // server closed
             }
         }.apply { isDaemon = true }.start()
     }
+
+    /**
+     * Waits until [count] connections (more than those waited for before) are in [accepted]: they are
+     * accepted by another thread, which may lag behind the client that connected.
+     */
+    fun awaitAccepted(count: Int): Boolean = arrivals.tryAcquire(count, SLOW_HOST_SLACK_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)
 
     override fun close() {
         server.close()
@@ -203,20 +240,33 @@ internal fun com.geoknoesis.kastor.rdf.BindingSet.asMap(): Map<String, com.geokn
  * What a general-purpose JSON parser (kotlinx.serialization) and a plain reading of the SPARQL 1.1
  * JSON results format make of a document: the reference the streaming decoder is compared with.
  * It throws (anything) for a document it does not accept.
+ *
+ * The parser is more lenient than JSON in two ways, which are checked here on the text and on the
+ * parsed tree: control characters must be escaped inside strings, and no string may hold an
+ * unpaired surrogate. It keeps the last of repeated members, which the decoder rejects where it
+ * reads members; a document the decoder accepts has none of those, so both read it alike.
  */
 internal object ReferenceJsonResults {
+    private const val LANG_STRING = "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"
+
     fun rows(json: String): List<Map<String, com.geoknoesis.kastor.rdf.RdfTerm>> {
-        val root = kotlinx.serialization.json.Json.parseToJsonElement(json) as kotlinx.serialization.json.JsonObject
+        val root = parse(json)
         val results = root.getValue("results") as kotlinx.serialization.json.JsonObject
         val bindings = results.getValue("bindings") as kotlinx.serialization.json.JsonArray
+        val head = root["head"]?.let { it as kotlinx.serialization.json.JsonObject }
+        val vars = head?.get("vars")?.let { vars -> (vars as kotlinx.serialization.json.JsonArray).map(::string) }
+        // Only a `head` that precedes the rows can be held against them.
+        val declared = if (root.keys.indexOf("head") < root.keys.indexOf("results")) vars else null
         return bindings.map { row ->
-            (row as kotlinx.serialization.json.JsonObject).mapValues { (_, binding) -> term(binding as kotlinx.serialization.json.JsonObject) }
+            (row as kotlinx.serialization.json.JsonObject).mapValues { (variable, binding) ->
+                check(declared == null || variable in declared) { "undeclared variable" }
+                term(binding as kotlinx.serialization.json.JsonObject)
+            }
         }
     }
 
     fun ask(json: String): Boolean {
-        val root = kotlinx.serialization.json.Json.parseToJsonElement(json) as kotlinx.serialization.json.JsonObject
-        val value = root.getValue("boolean") as kotlinx.serialization.json.JsonPrimitive
+        val value = parse(json).getValue("boolean") as kotlinx.serialization.json.JsonPrimitive
         return when (value.content) {
             "true" -> true
             "false" -> false
@@ -224,10 +274,60 @@ internal object ReferenceJsonResults {
         }
     }
 
-    private fun text(binding: kotlinx.serialization.json.JsonObject, member: String): String? = when (val value = binding[member]) {
-        null, kotlinx.serialization.json.JsonNull -> null
-        else -> (value as kotlinx.serialization.json.JsonPrimitive).content
+    private fun parse(json: String): kotlinx.serialization.json.JsonObject {
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(json)
+        escapedControlCharacters(json)
+        pairedSurrogates(root)
+        return root as kotlinx.serialization.json.JsonObject
     }
+
+    /** [json] is known to be what the parser accepts; inside its strings every control character must be escaped. */
+    private fun escapedControlCharacters(json: String) {
+        var inString = false
+        var i = 0
+        while (i < json.length) {
+            val c = json[i]
+            when {
+                !inString -> inString = c == '"'
+                c.code == 92 -> i++
+                c == '"' -> inString = false
+                else -> check(c >= ' ') { "a raw control character in a string" }
+            }
+            i++
+        }
+    }
+
+    private fun pairedSurrogates(element: kotlinx.serialization.json.JsonElement) {
+        when (element) {
+            is kotlinx.serialization.json.JsonObject -> element.forEach { (name, value) ->
+                pairedSurrogates(name)
+                pairedSurrogates(value)
+            }
+            is kotlinx.serialization.json.JsonArray -> element.forEach(::pairedSurrogates)
+            is kotlinx.serialization.json.JsonPrimitive -> if (element.isString) pairedSurrogates(element.content)
+        }
+    }
+
+    private fun pairedSurrogates(text: String) {
+        var i = 0
+        while (i < text.length) {
+            if (Character.isHighSurrogate(text[i])) {
+                check(i + 1 < text.length && Character.isLowSurrogate(text[i + 1])) { "an unpaired surrogate" }
+                i += 2
+            } else {
+                check(!Character.isLowSurrogate(text[i])) { "an unpaired surrogate" }
+                i++
+            }
+        }
+    }
+
+    private fun string(value: kotlinx.serialization.json.JsonElement): String {
+        val primitive = value as kotlinx.serialization.json.JsonPrimitive
+        check(primitive.isString) { "not a string" }
+        return primitive.content
+    }
+
+    private fun text(binding: kotlinx.serialization.json.JsonObject, member: String): String? = binding[member]?.let(::string)
 
     private fun term(binding: kotlinx.serialization.json.JsonObject): com.geoknoesis.kastor.rdf.RdfTerm {
         val type = text(binding, "type") ?: error("no type")
@@ -240,7 +340,10 @@ internal object ReferenceJsonResults {
             "literal", "typed-literal" -> {
                 check("its:dir" !in binding && "direction" !in binding) { "directional" }
                 when {
-                    !lang.isNullOrEmpty() -> com.geoknoesis.kastor.rdf.LangString(value, lang)
+                    !lang.isNullOrEmpty() -> {
+                        check(datatype == null || datatype == LANG_STRING) { "a language tag and another datatype" }
+                        com.geoknoesis.kastor.rdf.LangString(value, lang)
+                    }
                     datatype != null -> com.geoknoesis.kastor.rdf.Literal(value, com.geoknoesis.kastor.rdf.Iri(datatype))
                     else -> com.geoknoesis.kastor.rdf.Literal(value, com.geoknoesis.kastor.rdf.vocab.XSD.string)
                 }

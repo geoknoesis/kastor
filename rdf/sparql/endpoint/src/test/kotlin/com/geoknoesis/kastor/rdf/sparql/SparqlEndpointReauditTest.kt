@@ -371,8 +371,12 @@ class SparqlEndpointReauditTest {
         SparqlRepository(endpoint.url).use { repo ->
             assertTrue(repo.ask(SparqlAskQuery("ASK {}")))
             assertThrows(RdfQueryException::class.java) { repo.update(UpdateQuery("INSERT DATA { <urn:a> <urn:b> <urn:c> }")) }
+            // Nothing to wait for: the endpoint records a request before it drops the connection, and the
+            // HTTP client reports the failure only when it has given up, so a re-sent update would be
+            // recorded by now. The endpoint still answers, on a new connection.
+            assertEquals(1, endpoint.requests.count { it.contentType == "application/sparql-update" })
+            assertTrue(repo.ask(SparqlAskQuery("ASK {}")))
         }
-        Thread.sleep(300)
         assertEquals(1, endpoint.requests.count { it.contentType == "application/sparql-update" })
     }
 

@@ -52,9 +52,13 @@ class SparqlEndpointProtocolTest {
     @Test
     @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `no timer is set on the HTTP request so a header limit never covers the response body`() {
-        // The body takes 6 x 400 ms; every limit below is 2 s.
-        val limit = Duration.ofSeconds(2)
-        LocalEndpoint { exchange, _ -> exchange.trickleRows(rows = 6, gapMillis = 400) }.use { endpoint ->
+        // Every limit below is 4 s and every body lasts a little longer, while the server writes a byte
+        // every 25 ms: a call whose limit covered the body would always fail, and no single read waits
+        // for longer than the server (or the host) pauses. The 400 ms pauses this test used to have
+        // between rows left a read timeout only 1.6 s of slack.
+        val limit = Duration.ofSeconds(4)
+        val body = limit.plusMillis(300)
+        LocalEndpoint { exchange, _ -> exchange.spreadRows(rows = 6, duration = body) }.use { endpoint ->
             val sent = CopyOnWriteArrayList<HttpRequest>()
             val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
             val transport = HttpTransport { request ->
@@ -113,6 +117,8 @@ class SparqlEndpointProtocolTest {
                 }
             }
             // Every timed-out exchange was cancelled: the server sees its connection closed, not left waiting.
+            // The connections are accepted by the server's own thread, so they are waited for before they are counted.
+            assertTrue(server.awaitAccepted(calls), "the server accepted ${server.accepted.size} of $calls connections")
             assertEquals(calls, server.accepted.size)
             for (socket in server.accepted) {
                 socket.soTimeout = SLOW_HOST_SLACK_MILLIS.toInt()
