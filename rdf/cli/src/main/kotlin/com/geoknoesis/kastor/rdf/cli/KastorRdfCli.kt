@@ -8,10 +8,11 @@ import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfFormatException
 import com.geoknoesis.kastor.rdf.RdfGraph
+import com.geoknoesis.kastor.rdf.RdfResource
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.TripleTerm
-import com.geoknoesis.kastor.rdf.isIsomorphicTo
+import com.geoknoesis.kastor.rdf.WeisfeilerLehmanIsomorphism
 import com.geoknoesis.kastor.rdf.jena.JenaProvider
 import com.geoknoesis.kastor.rdf.jena.JenaRepository
 import com.geoknoesis.kastor.rdf.provider.MemoryGraph
@@ -42,10 +43,11 @@ import kotlin.system.exitProcess
 fun main(args: Array<String>) {
     // Redirected output (a file, a pipe) is UTF-8 whatever the platform charset: a Windows code page would turn
     // unmappable characters into '?'. An interactive console is written in its own charset, or it would show UTF-8
-    // bytes as garbage unless the user had switched it to UTF-8 (chcp 65001).
-    val charset = standardStreamCharset(interactiveConsoleCharset())
-    val out = printStream(FileOutputStream(FileDescriptor.out), charset)
-    val err = printStream(FileOutputStream(FileDescriptor.err), charset)
+    // bytes as garbage unless the user had switched it to UTF-8 (chcp 65001). Each stream is decided on its own:
+    // with `kastor-rdf diff a b > result.txt` stdout is UTF-8 while stderr, still on the console, keeps its charset.
+    val charsets = standardStreamCharsets(StandardStreamFacts.ofThisJvm())
+    val out = printStream(FileOutputStream(FileDescriptor.out), charsets.out)
+    val err = printStream(FileOutputStream(FileDescriptor.err), charsets.err)
     System.setOut(out)
     System.setErr(err)
     val code = runCli(args.toList(), out, err)
@@ -57,13 +59,73 @@ fun main(args: Array<String>) {
 /** A line-flushed [PrintStream] over [stream], writing [charset]. */
 internal fun printStream(stream: OutputStream, charset: Charset): PrintStream = PrintStream(BufferedOutputStream(stream), true, charset)
 
-/** The charset for stdout and stderr: the console's when there is an interactive one, else UTF-8. */
+/** The charsets of stdout and stderr. */
+internal data class StandardStreamCharsets(val out: Charset, val err: Charset)
+
+/**
+ * What the JVM knows about its standard streams.
+ *
+ * @param stdoutTerminalEncoding `sun.stdout.encoding`: set by the JVM only when stdout is a terminal (its encoding).
+ * @param stderrTerminalEncoding `sun.stderr.encoding`: the same for stderr.
+ * @param consoleCharset the charset of the interactive console ([interactiveConsoleCharset]), null without one.
+ */
+internal class StandardStreamFacts(
+    val stdoutTerminalEncoding: String?,
+    val stderrTerminalEncoding: String?,
+    val consoleCharset: Charset?,
+) {
+    companion object {
+        fun ofThisJvm(): StandardStreamFacts =
+            StandardStreamFacts(
+                stdoutTerminalEncoding = property("sun.stdout.encoding"),
+                stderrTerminalEncoding = property("sun.stderr.encoding"),
+                consoleCharset = interactiveConsoleCharset(),
+            )
+
+        private fun property(name: String): String? =
+            try {
+                System.getProperty(name)?.takeIf { it.isNotBlank() }
+            } catch (_: SecurityException) {
+                null
+            }
+    }
+}
+
+/**
+ * The charset of each standard stream, decided per stream: the console charset when **that** stream is a terminal,
+ * UTF-8 when it is redirected.
+ *
+ * The JVM tells which stream is a terminal through `sun.stdout.encoding` / `sun.stderr.encoding` (it sets each one
+ * only when the stream is attached to a terminal). When neither is set but there is an interactive console (a JVM
+ * that does not provide the properties), the console only tells that stdin and stdout are terminals; stderr is then
+ * written like stdout.
+ */
+internal fun standardStreamCharsets(facts: StandardStreamFacts): StandardStreamCharsets {
+    val perStream = facts.stdoutTerminalEncoding != null || facts.stderrTerminalEncoding != null
+
+    fun charset(terminalEncoding: String?): Charset =
+        when {
+            terminalEncoding != null -> charsetOrNull(terminalEncoding) ?: facts.consoleCharset ?: Charsets.UTF_8
+            perStream -> Charsets.UTF_8
+            else -> standardStreamCharset(facts.consoleCharset)
+        }
+    return StandardStreamCharsets(out = charset(facts.stdoutTerminalEncoding), err = charset(facts.stderrTerminalEncoding))
+}
+
+private fun charsetOrNull(name: String): Charset? =
+    try {
+        Charset.forName(name)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+/** The charset of a stream when only the console is known: the charset of the console when there is one, else UTF-8. */
 internal fun standardStreamCharset(consoleCharset: Charset?): Charset = consoleCharset ?: Charsets.UTF_8
 
 /**
- * The charset of the interactive console this JVM is attached to, or null when output is redirected (or the charset
- * cannot be determined). `System.console()` is null when the standard streams are redirected; on JDK 22 and later it
- * can be non-null even then, and `Console.isTerminal()` tells.
+ * The charset of the interactive console this JVM is attached to, or null when there is none (or the charset cannot
+ * be determined). `System.console()` is null when the standard streams are redirected; on JDK 22 and later it can be
+ * non-null even then, and `Console.isTerminal()` (called reflectively, it does not exist before) tells.
  */
 internal fun interactiveConsoleCharset(): Charset? {
     val console = System.console() ?: return null
@@ -88,13 +150,26 @@ private class ParsedInput(val defaultGraph: RdfGraph, val namedGraphs: Map<Strin
     /**
      * The dataset as one graph: every quad becomes `<graph> <urn:kastor:rdf-cli:contains> <<( s p o )>>`, so one graph
      * isomorphism check maps blank nodes consistently across the default graph and all named graphs.
+     *
+     * It is a view: the quads are wrapped as they are read and the graphs are not copied into a second indexed graph.
      */
-    fun asQuadGraph(): RdfGraph =
-        MemoryGraph(
-            (listOf(DEFAULT_GRAPH to defaultGraph) + namedGraphs.map { Iri(it.key) to it.value }).flatMap { (name, graph) ->
-                graph.getTriples().map { RdfTriple(name, CONTAINS, TripleTerm(it)) }
-            },
-        )
+    fun asQuadGraph(): RdfGraph = QuadView(listOf(DEFAULT_GRAPH to defaultGraph) + namedGraphs.map { Iri(it.key) to it.value })
+
+    private class QuadView(private val graphs: List<Pair<Iri, RdfGraph>>) : RdfGraph {
+        private val byName = graphs.toMap()
+
+        override fun getTriplesSequence(): Sequence<RdfTriple> =
+            graphs.asSequence().flatMap { (name, graph) -> graph.getTriplesSequence().map { RdfTriple(name, CONTAINS, TripleTerm(it)) } }
+
+        override fun getTriples(): List<RdfTriple> = getTriplesSequence().toList()
+
+        override fun hasTriple(triple: RdfTriple): Boolean {
+            val quad = triple.obj as? TripleTerm ?: return false
+            return triple.predicate == CONTAINS && byName[triple.subject]?.hasTriple(quad.triple) == true
+        }
+
+        override fun size(): Int = graphs.sumOf { it.second.size() }
+    }
 
     private companion object {
         val DEFAULT_GRAPH = Iri("urn:kastor:rdf-cli:default-graph")
@@ -120,13 +195,30 @@ internal const val EXIT_RUNTIME_ERROR = 3
 /** Default wall-clock limit of the `diff` isomorphism check, in seconds (`--timeout`). */
 internal const val DEFAULT_DIFF_TIMEOUT_SECONDS = 60L
 
+/** Default limit of the backtracking assignments the `diff` isomorphism check may try (`--max-search-states`). */
+internal const val DEFAULT_DIFF_SEARCH_STATES = 1_000_000
+
+/**
+ * Limits of one isomorphism check.
+ *
+ * @param timeout wall-clock limit; null for none.
+ * @param maxSearchStates backtracking assignments; null for no limit, which also lifts the work budget that otherwise
+ *   scales with the size of the input.
+ */
+internal data class IsomorphismLimits(val timeout: Duration?, val maxSearchStates: Int? = DEFAULT_DIFF_SEARCH_STATES)
+
 private class CliError(message: String, val code: Int = EXIT_USAGE) : RuntimeException(message)
 
 /** What the commands use to read files and compare graphs; tests replace them. */
 internal class CliRuntime(
     val open: (Path) -> InputStream = { it.inputStream() },
-    /** Graph isomorphism with a wall-clock limit (null: none); throws [GraphIsomorphismLimitException] at a limit. */
-    val isomorphic: (RdfGraph, RdfGraph, Duration?) -> Boolean = { a, b, timeout -> a.isIsomorphicTo(b, null, timeout) },
+    /** Graph isomorphism within [IsomorphismLimits]; throws [GraphIsomorphismLimitException] at a limit. */
+    val isomorphic: (RdfGraph, RdfGraph, IsomorphismLimits) -> Boolean = { a, b, limits ->
+        val states = limits.maxSearchStates
+        WeisfeilerLehmanIsomorphism(states ?: Int.MAX_VALUE, if (states == null) Long.MAX_VALUE else null, limits.timeout).areIsomorphic(a, b)
+    },
+    /** Nanosecond clock of the overall `diff` deadline. */
+    val nanoTime: () -> Long = System::nanoTime,
 )
 
 /** Runs the CLI and returns the process exit code ([EXIT_OK], [EXIT_USAGE], [EXIT_NOT_ISOMORPHIC], [EXIT_RUNTIME_ERROR]). */
@@ -192,7 +284,7 @@ private fun printUsage(out: PrintStream) {
           kastor-rdf help
           kastor-rdf parse <file> [FORMAT]
           kastor-rdf to-turtle <file> [INPUT_FORMAT]
-          kastor-rdf diff [--timeout <seconds>] <file1> <file2> [FORMAT]
+          kastor-rdf diff [--timeout <seconds>] [--max-search-states <n>] <file1> <file2> [FORMAT]
 
         Exit status: 0 success; 1 usage or input error (bad or extra arguments, unknown format, missing file,
         parse error); 2 diff found the inputs not isomorphic; 3 runtime error (I/O, RDF provider, internal, out of memory).
@@ -212,7 +304,12 @@ private fun printUsage(out: PrintStream) {
         graphs as one dataset (blank nodes shared across graphs must correspond).
 
         diff --timeout <seconds>: wall-clock limit of the blank-node matching (default $DEFAULT_DIFF_TIMEOUT_SECONDS; 0 = no limit).
+        It is one limit for the whole comparison: for datasets, the per-graph comparisons share what is left of it.
+        diff --max-search-states <n>: backtracking assignments the matching may try (default $DEFAULT_DIFF_SEARCH_STATES; 0 = no limit,
+        which also lifts the work budget that otherwise scales with the size of the inputs).
         When the inputs are not isomorphic, diff prints up to $SAMPLE_LINES of the triples found in only one input, per input.
+        Blank nodes in that sample are numbered in order of appearance (_:b1, _:b2, ...), so the same inputs give the
+        same lines whatever labels their parser made up.
 
         Examples:
           ./gradlew :rdf:cli:run --args="parse data/example.ttl"
@@ -241,12 +338,19 @@ private fun cmdToTurtle(rest: List<String>, out: PrintStream, runtime: CliRuntim
     return 0
 }
 
-/** `diff` arguments: `--timeout <seconds>` (or `--timeout=<seconds>`) anywhere, then two files and an optional format. */
+/**
+ * `diff` arguments: `--timeout <seconds>` and `--max-search-states <n>` (or `--option=<value>`) anywhere, then two
+ * files and an optional format.
+ */
 private class DiffArguments(rest: List<String>) {
     val positional = ArrayList<String>()
 
     /** Wall-clock limit of the isomorphism check; null for none (`--timeout 0`). */
     var timeout: Duration? = Duration.ofSeconds(DEFAULT_DIFF_TIMEOUT_SECONDS)
+        private set
+
+    /** Backtracking assignments the isomorphism check may try; null for no limit (`--max-search-states 0`). */
+    var maxSearchStates: Int? = DEFAULT_DIFF_SEARCH_STATES
         private set
 
     init {
@@ -259,6 +363,11 @@ private class DiffArguments(rest: List<String>) {
                     i++
                 }
                 arg.startsWith("--timeout=") -> timeout = seconds(arg.substringAfter('='))
+                arg == "--max-search-states" -> {
+                    maxSearchStates = states(rest.getOrNull(i + 1) ?: throw CliError("--max-search-states requires a number (0 = no limit)"))
+                    i++
+                }
+                arg.startsWith("--max-search-states=") -> maxSearchStates = states(arg.substringAfter('='))
                 arg.startsWith("--") -> throw CliError("Unknown option: $arg")
                 else -> positional += arg
             }
@@ -272,6 +381,12 @@ private class DiffArguments(rest: List<String>) {
         val seconds = value.toLongOrNull()?.takeIf { it in 0..MAX_TIMEOUT_SECONDS }
             ?: throw CliError("--timeout must be a whole number of seconds from 0 (no limit) to $MAX_TIMEOUT_SECONDS, not '${oneLine(value)}'")
         return if (seconds == 0L) null else Duration.ofSeconds(seconds)
+    }
+
+    private fun states(value: String): Int? {
+        val states = value.toIntOrNull()?.takeIf { it >= 0 }
+            ?: throw CliError("--max-search-states must be a whole number from 0 (no limit) to ${Int.MAX_VALUE}, not '${oneLine(value)}'")
+        return if (states == 0) null else states
     }
 
     private companion object {
@@ -289,19 +404,38 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream, runt
     val first = read(p1, format1, runtime)
     val second = read(p2, format2, runtime)
     val timeout = arguments.timeout
+    val maxSearchStates = arguments.maxSearchStates
+    // One deadline for the whole comparison: a dataset is compared as a whole and then, to say where it differs,
+    // graph by graph. Each of those checks gets what is left of --timeout, not the full limit again.
+    val started = runtime.nanoTime()
 
-    fun isomorphic(a: RdfGraph, b: RdfGraph): Boolean =
-        try {
-            runtime.isomorphic(a, b, timeout)
+    fun stopped(reason: GraphIsomorphismLimitException.Reason, message: String?): CliError {
+        val advice =
+            when (reason) {
+                GraphIsomorphismLimitException.Reason.TIME ->
+                    " (limit: ${timeout?.seconds ?: 0} s for the whole comparison; raise it with --timeout <seconds>, 0 = no limit)"
+                GraphIsomorphismLimitException.Reason.SEARCH_STATES ->
+                    " (limit: ${maxSearchStates ?: 0} search states; raise it with --max-search-states <n>, 0 = no limit; --timeout does not change it)"
+                GraphIsomorphismLimitException.Reason.WORK ->
+                    " (work limit, which scales with the size of the inputs; --max-search-states 0 lifts it, --timeout does not change it)"
+                else -> " (${reason.name.lowercase().replace('_', ' ')} limit; --timeout and --max-search-states do not change it)"
+            }
+        return CliError("kastor-rdf: error: diff stopped without an answer: ${oneLine(message)}$advice", EXIT_RUNTIME_ERROR)
+    }
+
+    fun isomorphic(a: RdfGraph, b: RdfGraph): Boolean {
+        val remaining =
+            timeout?.let {
+                val left = it.minusNanos(runtime.nanoTime() - started)
+                if (left.isZero || left.isNegative) throw stopped(GraphIsomorphismLimitException.Reason.TIME, "Graph isomorphism time limit exceeded")
+                left
+            }
+        return try {
+            runtime.isomorphic(a, b, IsomorphismLimits(remaining, maxSearchStates))
         } catch (e: GraphIsomorphismLimitException) {
-            val advice =
-                if (e.reason == GraphIsomorphismLimitException.Reason.TIME) {
-                    " (limit: ${timeout?.seconds ?: 0} s; raise it with --timeout <seconds>, 0 = no limit)"
-                } else {
-                    " (${e.reason.name.lowercase().replace('_', ' ')} limit; --timeout does not change it)"
-                }
-            throw CliError("kastor-rdf: error: diff stopped without an answer: ${oneLine(e.message)}$advice", EXIT_RUNTIME_ERROR)
+            throw stopped(e.reason, e.message)
         }
+    }
 
     // One isomorphism check decides: on the graphs themselves, or (datasets) on the quads, so that blank nodes shared
     // across graphs must correspond.
@@ -351,14 +485,15 @@ private fun cmdDiff(rest: List<String>, out: PrintStream, err: PrintStream, runt
 private const val SAMPLE_LINES = 64
 
 /**
- * What [graph] has that [other] lacks, in one pass and bounded memory: the [SAMPLE_LINES] smallest triples without
- * blank nodes that are not in [other] (kept in a bounded priority queue; nothing is sorted or serialised in full),
- * and, for the case where there are none, the smallest triples with blank nodes (their labels cannot be compared
- * across files, so all of them are candidates).
+ * What [graph] has that [other] lacks: the [SAMPLE_LINES] smallest triples without blank nodes that are not in
+ * [other], found in one pass with a bounded priority queue (nothing is sorted or serialised in full).
+ *
+ * When there are none, the sample is of the triples with blank nodes (their labels cannot be compared across files,
+ * so all of them are candidates). Parser labels differ on every parse, so that sample is chosen and printed without
+ * them ([blankSample]): two more passes over the graph, made only when the sample is printed.
  */
-private class DifferenceSample(graph: RdfGraph, other: RdfGraph) {
+private class DifferenceSample(private val graph: RdfGraph, other: RdfGraph) {
     private val ground = PriorityQueue(SAMPLE_LINES + 1, compareByDescending<Pair<String, RdfTriple>> { it.first })
-    private val blank = PriorityQueue(SAMPLE_LINES + 1, compareByDescending<Pair<String, RdfTriple>> { it.first })
 
     /** Triples without blank nodes that [other] does not have. */
     var onlyHere = 0
@@ -369,16 +504,14 @@ private class DifferenceSample(graph: RdfGraph, other: RdfGraph) {
         for (t in graph.getTriplesSequence()) {
             if (hasBlankNode(t.subject) || hasBlankNode(t.obj)) {
                 withBlankNodes++
-                offer(blank, t)
             } else if (!other.hasTriple(t)) {
                 onlyHere++
-                offer(ground, t)
+                offer(ground, "${t.subject} ${t.predicate} ${t.obj}", t)
             }
         }
     }
 
-    private fun offer(queue: PriorityQueue<Pair<String, RdfTriple>>, t: RdfTriple) {
-        val key = "${t.subject} ${t.predicate} ${t.obj}"
+    private fun offer(queue: PriorityQueue<Pair<String, RdfTriple>>, key: String, t: RdfTriple) {
         if (queue.size < SAMPLE_LINES) {
             queue += key to t
         } else if (key < queue.peek().first) {
@@ -390,18 +523,87 @@ private class DifferenceSample(graph: RdfGraph, other: RdfGraph) {
     private fun hasBlankNode(term: RdfTerm): Boolean =
         term is BlankNode || (term is TripleTerm && (hasBlankNode(term.triple.subject) || hasBlankNode(term.triple.obj)))
 
-    fun print(err: PrintStream, label: String, file: String) {
-        val (queue, total, title) =
-            if (onlyHere > 0) {
-                Triple(ground, onlyHere, "triples only in $file")
-            } else {
-                Triple(blank, withBlankNodes, "triples with blank nodes in $file; its other triples are all in the other input")
+    /** [term] with every blank node written by [blank] (labels never reach the text). */
+    private fun render(term: RdfTerm, blank: (BlankNode) -> String): String =
+        when (term) {
+            is BlankNode -> blank(term)
+            is TripleTerm -> "<<( ${render(term.triple.subject, blank)} ${term.triple.predicate} ${render(term.triple.obj, blank)} )>>"
+            else -> term.toString()
+        }
+
+    private fun render(t: RdfTriple, blank: (BlankNode) -> String): String = "${render(t.subject, blank)} ${t.predicate} ${render(t.obj, blank)}"
+
+    private fun blankNodes(term: RdfTerm, into: MutableList<BlankNode>) {
+        when (term) {
+            is BlankNode -> into += term
+            is TripleTerm -> {
+                blankNodes(term.triple.subject, into)
+                blankNodes(term.triple.obj, into)
             }
+            else -> Unit
+        }
+    }
+
+    /**
+     * The [SAMPLE_LINES] smallest triples with blank nodes in an order that does not depend on labels, with their
+     * blank nodes renamed `b1`, `b2`, … in order of appearance.
+     *
+     * A blank node is first described by its triples (position, predicate and the other term, other blank nodes left
+     * anonymous), accumulated into one number per node; a triple is then ordered by its text with every blank node
+     * replaced by that number. Triples that this cannot tell apart (structurally alike nodes) may be taken in either
+     * order: they print as the same lines.
+     */
+    private fun blankSample(): List<RdfTriple> {
+        val signatures = HashMap<BlankNode, Long>()
+        val nodes = ArrayList<BlankNode>(2)
+        for (t in graph.getTriplesSequence()) {
+            nodes.clear()
+            blankNodes(t.subject, nodes)
+            blankNodes(t.obj, nodes)
+            if (nodes.isEmpty()) continue
+            val shape = render(t) { "_:" }
+            nodes.forEachIndexed { position, node -> signatures.merge(node, hash("$position $shape"), Long::plus) }
+        }
+        val queue = PriorityQueue(SAMPLE_LINES + 1, compareByDescending<Pair<String, RdfTriple>> { it.first })
+        for (t in graph.getTriplesSequence()) {
+            if (!hasBlankNode(t.subject) && !hasBlankNode(t.obj)) continue
+            offer(queue, render(t) { "_:" + java.lang.Long.toHexString(signatures.getValue(it)) }, t)
+        }
+        val names = HashMap<BlankNode, BlankNode>()
+
+        fun rename(term: RdfTerm): RdfTerm =
+            when (term) {
+                is BlankNode -> names.getOrPut(term) { BlankNode("b${names.size + 1}") }
+                is TripleTerm -> TripleTerm(RdfTriple(rename(term.triple.subject) as RdfResource, term.triple.predicate, rename(term.triple.obj)))
+                else -> term
+            }
+        return queue.sortedBy { it.first }.map { (_, t) -> RdfTriple(rename(t.subject) as RdfResource, t.predicate, rename(t.obj)) }
+    }
+
+    /** FNV-1a, 64 bits: a fixed hash, so the order of the sample is the same in every JVM. */
+    private fun hash(text: String): Long {
+        var h = -0x340d631b7bdddcdbL
+        for (c in text) {
+            h = (h xor c.code.toLong()) * 0x100000001b3L
+        }
+        return h
+    }
+
+    fun print(err: PrintStream, label: String, file: String) {
+        val blank = onlyHere == 0
+        val total = if (blank) withBlankNodes else onlyHere
         if (total == 0) return
+        val sample = if (blank) blankSample() else ground.map { it.second }
+        val title =
+            if (blank) {
+                "triples with blank nodes in $file (numbered in order of appearance); its other triples are all in the other input"
+            } else {
+                "triples only in $file"
+            }
         err.println("--- $label: $title (sorted N-Triples, first lines) ---")
-        val lines = MemoryGraph(queue.map { it.second }).serialize(RdfFormat.N_TRIPLES).lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.sorted()
+        val lines = MemoryGraph(sample).serialize(RdfFormat.N_TRIPLES).lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.sorted()
         lines.forEach(err::println)
-        if (total > queue.size) err.println("... (${total - queue.size} more)")
+        if (total > sample.size) err.println("... (${total - sample.size} more)")
     }
 }
 
