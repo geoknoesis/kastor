@@ -55,11 +55,18 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail
  * **Blank-node graphs:** Kastor names graphs by IRI, so a context named by a blank node is not a graph of the
  * repository. Every write path of this class that could create one gives the graph an IRI instead, of the form
  * `urn:kastor:skolem:<load>:<blank node id>` (see [Rdf4jFormatSupport.parseDataset]): loading a TriG / N-Quads
- * dataset, and a SPARQL `UPDATE` with `LOAD` of a quad document or `INSERT` into a graph named by a variable (when the
- * request ends; an operation of the same request after the one that created the graph still sees it under its blank
- * name). A repository created by a factory method therefore never holds a blank-node context. A wrapped store may:
- * what other RDF4J code wrote there is left as it is, and is uniformly invisible - to [listGraphs], to `GRAPH` in every
- * query and update, and to patterns outside `GRAPH`. (Only `serializeDataset` still writes those statements.)
+ * dataset, and a SPARQL `UPDATE` with `LOAD` of a quad document or `INSERT` into a graph named by a variable. For an
+ * update this happens when the request ends, whether it succeeds or fails (a request that fails part-way inside a
+ * `transaction { }` whose caller carries on leaves its earlier operations in the transaction; their blank-node graphs
+ * are renamed all the same); an operation of the same request after the one that created the graph still sees it
+ * under its blank name. A repository that this class created empty therefore never holds a blank-node context.
+ *
+ * A store may hold blank-node contexts that other RDF4J code wrote: a wrapped store, and a persistent store that a
+ * factory method reopens (looked for once, when it is opened). They are left as they are - **a blank-node context that
+ * existed before a request is never renamed** - and are uniformly invisible: to [listGraphs], to `GRAPH` in every query
+ * and update, and to patterns outside `GRAPH`. (Only `serializeDataset` still writes those statements.) The rule
+ * that remains: an `INSERT { GRAPH ?g { ... } }` whose `?g` is bound to the blank node of such an existing context
+ * adds its statements to that context, where they are as invisible as the rest of it.
  *
  * **Update dataset:** SPARQL `UPDATE` follows the same contract, as on the Jena provider. Outside `GRAPH`, the `WHERE`
  * clause of `DELETE` / `INSERT` (and `DELETE WHERE`) matches the default graph only, and a template or a
@@ -450,6 +457,20 @@ class Rdf4jRepository(
         private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
+    /**
+     * True when the store of a repository created by a factory method held blank-node contexts when it was opened (a
+     * persistent store that other RDF4J code wrote to): they are not graphs of the repository, so no query may run
+     * without a dataset. See [holdsNoBlankContexts].
+     */
+    @Volatile private var foreignBlankContexts = false
+
+    /**
+     * True for a repository that holds no blank-node context: only this object changes it (it was created by a
+     * factory method), every write path of this class names graphs by IRI, and its store had none when opened. A
+     * query or update that only reads inside `GRAPH` then needs no dataset: every context is a named graph.
+     */
+    private val holdsNoBlankContexts: Boolean get() = trackQuotedSubjects && !foreignBlankContexts
+
     /** Provider variant this repository was created as (null for a wrapped, externally created repository). */
     private var variantId: String? = null
 
@@ -464,6 +485,8 @@ class Rdf4jRepository(
             if (quotedState == QuotedLevel.UNKNOWN) quotedState = QuotedLevel.NONE
         }
         hashedReifiers.trust()
+        // Only a persistent store can hold anything at this point.
+        if (nativeBase) foreignBlankContexts = repository.connection.use { conn -> !conn.isEmpty && blankContexts(conn).isNotEmpty() }
     }
 
     /**
@@ -662,9 +685,10 @@ class Rdf4jRepository(
      * - A query that reads inside `GRAPH` gets `RDF4J.NIL` as its default graph and the repository's IRI-named contexts
      *   (the graphs of [listGraphs], see [iriContexts] for what enumerating them costs) as its named graphs. Blank-node
      *   contexts are never named graphs.
-     * - Except that a query that only reads inside `GRAPH`, on a repository created by a factory method, runs without
-     *   a dataset: such a repository holds no blank-node context (see the class documentation), so every context is
-     *   one of those named graphs and nothing has to be enumerated.
+     * - Except that a query that only reads inside `GRAPH`, on a repository created by a factory method whose store
+     *   held no blank-node context when it was opened, runs without a dataset: such a repository holds no blank-node
+     *   context (see the class documentation), so every context is one of those named graphs and nothing has to be
+     *   enumerated.
      * - Only queries evaluated by an RDF4J Sail are changed; a wrapped remote repository (HTTP or SPARQL endpoint)
      *   keeps the dataset its server defines.
      *
@@ -674,7 +698,7 @@ class Rdf4jRepository(
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return this
         if (parsed.dataset != null) return this
         val reads = GraphReads.of(parsed.tupleExpr)
-        if (reads.named && !reads.default && trackQuotedSubjects) return this
+        if (reads.named && !reads.default && holdsNoBlankContexts) return this
         val dataset = org.eclipse.rdf4j.query.impl.SimpleDataset()
         dataset.addDefaultGraph(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL)
         if (reads.named) iriContexts(conn).forEach(dataset::addNamedGraph)
@@ -760,8 +784,8 @@ class Rdf4jRepository(
      * - `DELETE` / `INSERT ... WHERE` and `DELETE WHERE` **without `WITH` / `USING`**: default graph `RDF4J.NIL` for
      *   `WHERE` and for default removals; insertions without `GRAPH` go to the default graph as before. As for queries,
      *   a `WHERE` that reads inside `GRAPH` gets the IRI-named contexts as named graphs (never a blank-node context),
-     *   and one that only reads inside `GRAPH` on a repository created by a factory method needs no named graphs at
-     *   all. They are asked for when the operation starts, so it sees graphs created by earlier operations of the same
+     *   and one that only reads inside `GRAPH` on a repository that holds no blank-node context needs no named graphs
+     *   at all. They are asked for when the operation starts, so it sees graphs created by earlier operations of the same
      *   request or transaction.
      * - `WITH <g>` (without `USING`): `g` is the default graph of `WHERE` and of the templates, as RDF4J parses it;
      *   `GRAPH` inside `WHERE` still reads the IRI-named graphs of the store (RDF4J alone would give it none).
@@ -795,7 +819,7 @@ class Rdf4jRepository(
                 is org.eclipse.rdf4j.query.algebra.Modify -> {
                     val reads = GraphReads.of(expr.whereExpr)
                     when {
-                        declared == null && reads.named && !reads.default && trackQuotedSubjects ->
+                        declared == null && reads.named && !reads.default && holdsNoBlankContexts ->
                             UpdateDataset(removeGraphs = setOf(nil))
                         declared == null -> UpdateDataset(
                             defaultGraphs = setOf(nil),
@@ -1034,7 +1058,8 @@ class Rdf4jRepository(
      *
      * A graph the request creates under a blank-node name (`LOAD` of a quad document with blank graph labels, `INSERT`
      * into `GRAPH ?g` with `?g` bound to a blank node) is given a skolem IRI when the request ends, in the same
-     * transaction (see the class documentation).
+     * transaction and also when the request fails (see the class documentation). Blank-node contexts that existed
+     * before the request are never renamed.
      */
     override fun update(query: UpdateQuery) {
         withWriteConnection { conn ->
@@ -1046,9 +1071,24 @@ class Rdf4jRepository(
             if (quotedSyntax) noteQuotedWrite(QuotedLevel.UNKNOWN)
             queryOperation(query.sparql, "Failed to execute SPARQL UPDATE", "UPDATE") {
                 val prepared = conn.prepareUpdate(QueryLanguage.SPARQL, query.sparql).onKastorUpdateDataset(conn, query.sparql)
-                val foreign = blankContextsToKeep(conn, prepared)
-                prepared.execute()
-                if (foreign != null) skolemizeBlankContexts(conn, foreign)
+                val existing = blankContextsToKeep(conn, prepared)
+                var failure: Throwable? = null
+                try {
+                    prepared.execute()
+                } catch (e: Throwable) {
+                    failure = e
+                    throw e
+                } finally {
+                    // Also after a failure: the operations before the failing one stay in the transaction when the
+                    // caller of an outer `transaction { }` catches the exception.
+                    if (existing != null && (failure == null || conn.isActive)) {
+                        try {
+                            skolemizeBlankContexts(conn, existing)
+                        } catch (e: Exception) {
+                            failure?.addSuppressed(e) ?: throw e
+                        }
+                    }
+                }
             }
             // Checked after executing, so a triple value written concurrently (and visible to the update) counts.
             if (!quotedSyntax && tripleValuesMayExist) noteQuotedWrite(QuotedLevel.UNKNOWN)
@@ -1057,9 +1097,10 @@ class Rdf4jRepository(
     }
 
     /**
-     * The blank-node contexts that exist before [update] runs and are not its own (none on a repository created by a
-     * factory method, which never holds one), or null when the update cannot create a blank-node context: it has no
-     * `LOAD` without `INTO GRAPH` and no `INSERT` template with a variable graph name.
+     * The blank-node contexts that exist before [update] runs, which are not its own and are not renamed (none on a
+     * repository that holds no blank-node context, see [holdsNoBlankContexts]: nothing is enumerated there), or null
+     * when the update cannot create a blank-node context: it has no `LOAD` without `INTO GRAPH` and no `INSERT`
+     * template with a variable graph name.
      */
     private fun blankContextsToKeep(conn: RepositoryConnection, update: Update): Set<org.eclipse.rdf4j.model.BNode>? {
         val parsed = (update as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return null
@@ -1071,7 +1112,7 @@ class Rdf4jRepository(
             }
         }
         if (!mayCreate) return null
-        return if (trackQuotedSubjects) emptySet() else blankContexts(conn)
+        return if (holdsNoBlankContexts) emptySet() else blankContexts(conn)
     }
 
     private fun hasVariableContext(template: org.eclipse.rdf4j.query.algebra.TupleExpr): Boolean {
