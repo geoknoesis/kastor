@@ -415,23 +415,11 @@ class Rdf4jRepository(
         conn.hasStatement(null, null, null, false, valueFactory.createIRI(name.value))
     }
 
-    override fun listGraphs(): List<Iri> = withConnection { conn ->
-        // Datasets loaded through this provider never have blank-node contexts: `parseDataset` skolemizes
-        // blank-node graph names to `urn:kastor:skolem:` IRIs (see Rdf4jFormatSupport.parseDataset). A store
-        // written by other RDF4J code (or by SPARQL `LOAD`) may still report `BNode` contexts in `contextIDs`;
-        // their string form (`genid-...`) is not a valid absolute IRI and they cannot be named in
-        // `GRAPH <iri> { ... }`, so they are left out here.
-        conn.contextIDs.use { iter ->
-            val out = mutableListOf<Iri>()
-            while (iter.hasNext()) {
-                val ctx = iter.next()
-                if (ctx is org.eclipse.rdf4j.model.IRI) {
-                    out.add(Iri(ctx.stringValue()))
-                }
-            }
-            out
-        }
-    }
+    /**
+     * The graphs with an IRI name that hold statements. Blank-node contexts (which only other RDF4J code can create,
+     * see [Rdf4jRepository]) are not graphs of a Kastor repository and are not listed.
+     */
+    override fun listGraphs(): List<Iri> = withConnection { conn -> iriContexts(conn).map { Iri(it.stringValue()) } }
 
     override fun createGraph(name: Iri): RdfGraph = getGraph(name)
 
@@ -606,8 +594,43 @@ class Rdf4jRepository(
         return this
     }
 
-    /** The IRI-named contexts of the store as [conn] sees them (the graphs of [listGraphs]). */
-    private fun iriContexts(conn: RepositoryConnection): Set<IRI> {
+    /** The IRI-named contexts found by one enumeration, and the [modificationStamp] read before it. */
+    private class ContextList(val stamp: Long, val contexts: Set<IRI>)
+
+    /** The list for readers of the committed state. */
+    @Volatile private var committedContexts: ContextList? = null
+
+    /** The list for the current thread's transaction, once it has written (it then sees its own uncommitted graphs). */
+    private val transactionContexts = ThreadLocal<ContextList?>()
+
+    /** The [modificationStamp] at the start of the current thread's transaction. */
+    private val transactionStartStamp = ThreadLocal<Long?>()
+
+    /**
+     * The IRI-named contexts of the store as [conn] sees them (the graphs of [listGraphs]).
+     *
+     * Enumerating contexts is expensive (a `MemoryStore` walks every IRI and blank node it holds), so a repository
+     * created by a factory method, which only this object changes, enumerates once and reuses the list until the next
+     * write: the list is kept with the [modificationStamp] read before the enumeration and is current while the
+     * stamp is unchanged. Readers of the committed state share one list. A transaction uses it too until it writes
+     * (while the stamp is the one it started with, it sees that same state); after its first write it keeps a list of
+     * its own, which includes its uncommitted graphs, until its next write. A repository wrapping an externally
+     * created store, which other code may change, enumerates every time.
+     *
+     * @param reuse false to enumerate regardless (for a caller that knows of writes the stamp does not show yet).
+     */
+    private fun iriContexts(conn: RepositoryConnection, reuse: Boolean = true): Set<IRI> {
+        if (!trackQuotedSubjects || !reuse) return enumerateIriContexts(conn)
+        val stamp = modificationStamp()
+        val shared = txConnection.get() == null || transactionStartStamp.get() == stamp
+        val known = if (shared) committedContexts else transactionContexts.get()
+        if (known != null && known.stamp == stamp) return known.contexts
+        val current = ContextList(stamp, java.util.Collections.unmodifiableSet(enumerateIriContexts(conn)))
+        if (shared) committedContexts = current else transactionContexts.set(current)
+        return current.contexts
+    }
+
+    private fun enumerateIriContexts(conn: RepositoryConnection): Set<IRI> {
         val out = LinkedHashSet<IRI>()
         conn.contextIDs.use { contexts -> while (contexts.hasNext()) (contexts.next() as? IRI)?.let(out::add) }
         return out
@@ -670,7 +693,8 @@ class Rdf4jRepository(
         val parsed = (this as? org.eclipse.rdf4j.repository.sail.SailUpdate)?.parsedUpdate ?: return this
         val nil = org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL
         // Asked when the operation is evaluated, not now: earlier operations of the request may create named graphs.
-        val storeGraphs = { iriContexts(conn) }
+        // Their writes are not counted before the whole request returns, so only its first operation reuses the list.
+        fun storeGraphs(index: Int): () -> Set<IRI> = { iriContexts(conn, reuse = index == 0) }
         val using: List<Boolean> by lazy { usingClauses(sparql).takeIf { it.size == parsed.updateExprs.size }.orEmpty() }
         for ((index, expr) in parsed.updateExprs.withIndex()) {
             val declared = parsed.datasetMapping[expr]
@@ -686,7 +710,7 @@ class Rdf4jRepository(
                         declared == null -> UpdateDataset(
                             defaultGraphs = setOf(nil),
                             removeGraphs = setOf(nil),
-                            storeGraphs = if (reads.named) storeGraphs else null,
+                            storeGraphs = if (reads.named) storeGraphs(index) else null,
                         )
                         else -> {
                             // WITH <g> alone is parsed as the default graph g, also for insertions and removals.
@@ -703,7 +727,7 @@ class Rdf4jRepository(
                                     defaultGraphs = declared.defaultGraphs,
                                     removeGraphs = if (needsRemove) setOf(nil) else declared.defaultRemoveGraphs,
                                     insertGraph = declared.defaultInsertGraph,
-                                    storeGraphs = if (needsNamed) storeGraphs else null,
+                                    storeGraphs = if (needsNamed) storeGraphs(index) else null,
                                     declaredNamedGraphs = declared.namedGraphs,
                                 )
                             }
@@ -948,6 +972,7 @@ class Rdf4jRepository(
             readOnly.set(read)
             try {
                 conn.begin()
+                if (trackQuotedSubjects) transactionStartStamp.set(modificationStamp())
                 operations(this)
                 if (wroteInTransaction.get() == true) {
                     // The committed content becomes visible somewhere between these two changes of the counter.
@@ -974,6 +999,8 @@ class Rdf4jRepository(
                 txConnection.remove()
                 readOnly.remove()
                 wroteInTransaction.remove()
+                transactionStartStamp.remove()
+                transactionContexts.remove()
                 quotedScanInTransaction.remove()
                 quotedWrittenInTransaction.get()?.let { level ->
                     // Raise again after commit/rollback, so a scan that ran while the write was invisible is discarded.
