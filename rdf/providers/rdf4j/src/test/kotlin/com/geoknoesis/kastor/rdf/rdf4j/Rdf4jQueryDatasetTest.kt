@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 /**
  * The dataset Kastor gives RDF4J queries: the default graph is the statements without a context (RDF4J's own default
  * is the union of all contexts), named graphs are the contexts. Covers what the cross-provider tests of
- * `:rdf:testkit` cannot: blank-node contexts and a wrapped, externally created store.
+ * `:rdf:testkit` cannot: blank-node contexts (never named graphs) and a wrapped, externally created store.
  */
 class Rdf4jQueryDatasetTest {
     private val vf = SimpleValueFactory.getInstance()
@@ -55,10 +55,12 @@ class Rdf4jQueryDatasetTest {
     }
 
     @Test
-    fun `a query that only reads inside GRAPH sees every context, including blank-node contexts`() {
-        assertEquals(listOf("blank", "named"), select("SELECT ?o { GRAPH ?g { ?s ?p ?o } }"))
+    fun `a query that only reads inside GRAPH sees the IRI-named graphs`() {
+        // A blank-node context (written by other RDF4J code) is not a graph of the Kastor dataset, for any query.
+        assertEquals(listOf("named"), select("SELECT ?o { GRAPH ?g { ?s ?p ?o } }"))
         assertEquals(listOf("named"), select("SELECT ?o { GRAPH <urn:g> { ?s ?p ?o } }"))
-        assertTrue(repo.ask(SparqlAskQuery("ASK { GRAPH ?g { ?s ?p \"blank\" } }")))
+        assertFalse(repo.ask(SparqlAskQuery("ASK { GRAPH ?g { ?s ?p \"blank\" } }")))
+        assertTrue(repo.ask(SparqlAskQuery("ASK { GRAPH ?g { ?s ?p \"named\" } }")))
         assertFalse(repo.ask(SparqlAskQuery("ASK { GRAPH ?g { ?s ?p \"default\" } }")))
     }
 

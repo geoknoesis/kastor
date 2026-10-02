@@ -114,11 +114,11 @@ internal object Rdf4jTerms {
      * **Hashed ids** (triples whose encoded id would be longer than [MAX_REIFIER_ID_LENGTH], e.g. a quoted triple with
      * a literal of about 750 KB or more): `kastor-star-sha256-<64 hex digits>`, the SHA-256 of the same encoding. The
      * id is short whatever the size of the triple, so reading valid data never fails on an id limit. It does not carry
-     * the triple: every hashed id this process produces is remembered (a bounded, softly referenced map from id to
-     * triple), and [quotedTripleOf] answers from that map. An id that is not in the map (after a restart, or once it
-     * was evicted) is resolved by [Rdf4jGraph] with one scan of the store for the triple with that hash; an id that
-     * resolves nowhere is an ordinary blank node. The two forms cannot be confused: `sha256-<64 hex>` never passes the
-     * 8-digit checksum of the encoded form.
+     * the triple, and nothing is remembered here: this function is pure. A hashed id is resolved by the repository
+     * whose graph it is used with, from that repository's own index of oversized triples ([HashedReifierIndex]); the
+     * functions below that need the triple of a reifier take the ids an operation has resolved as `hashed`. A hashed id
+     * that resolves to no triple of the repository is an ordinary blank node. The two forms cannot be confused:
+     * `sha256-<64 hex>` never passes the 8-digit checksum of the encoded form.
      *
      * @throws ReifierLimitException when [triple] nests quoted triples deeper than [MAX_REIFIER_NESTING].
      */
@@ -126,7 +126,7 @@ internal object Rdf4jTerms {
         val encoded = StringBuilder().also { encodeValue(triple, it, 1) }.toString().toByteArray(Charsets.UTF_8)
         // Unpadded base64 length, plus the prefix, the separator and the checksum.
         val idLength = STAR_REIFIER_PREFIX.length + (encoded.size * 4L + 2) / 3 + 1 + CHECKSUM_LENGTH
-        if (idLength > MAX_REIFIER_ID_LENGTH) return hashedReifierFor(triple, encoded)
+        if (idLength > MAX_REIFIER_ID_LENGTH) return hashedReifierFor(encoded)
         val payload = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(encoded)
         return BlankNode("$STAR_REIFIER_PREFIX$payload-${checksum(encoded)}")
     }
@@ -135,38 +135,12 @@ internal object Rdf4jTerms {
     private const val HASHED_MARKER = "sha256-"
     private const val HASH_LENGTH = 64
 
-    /** Most hashed reifiers remembered at a time; older ones are resolved from the store again when needed. */
-    private const val MAX_REMEMBERED_HASHED_REIFIERS = 64
-
-    /** Hashed reifier id to its quoted triple, least recently used first; guarded by itself. */
-    private val hashedReifiers =
-        object : LinkedHashMap<String, java.lang.ref.SoftReference<Triple>>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, java.lang.ref.SoftReference<Triple>>): Boolean =
-                size > MAX_REMEMBERED_HASHED_REIFIERS
-        }
-
-    private fun hashedReifierFor(triple: Triple, encoded: ByteArray): BlankNode {
+    private fun hashedReifierFor(encoded: ByteArray): BlankNode {
         val digest = java.security.MessageDigest.getInstance("SHA-256").digest(encoded)
-        val id = STAR_REIFIER_PREFIX + HASHED_MARKER + hex(digest, digest.size)
-        synchronized(hashedReifiers) {
-            // A copy made of plain values, so the map never keeps a store's own value objects alive.
-            if (hashedReifiers[id]?.get() == null) hashedReifiers[id] = java.lang.ref.SoftReference(detached(triple) as Triple)
-        }
-        return BlankNode(id)
+        return BlankNode(STAR_REIFIER_PREFIX + HASHED_MARKER + hex(digest, digest.size))
     }
 
-    private fun detached(value: Value): Value = when (value) {
-        is Triple -> valueFactory.createTriple(detached(value.subject) as Resource, detached(value.predicate) as IRI, detached(value.`object`))
-        is IRI -> valueFactory.createIRI(value.stringValue())
-        is BNode -> valueFactory.createBNode(value.id)
-        is Rdf4jLiteral -> {
-            val language = value.language.orElse(null)
-            if (language != null) valueFactory.createLiteral(value.label, language) else valueFactory.createLiteral(value.label, value.datatype)
-        }
-        else -> value
-    }
-
-    /** True when [id] has the form of a hashed reifier id (whether or not its triple is currently known). */
+    /** True when [id] has the form of a hashed reifier id (whether or not it stands for a triple of some store). */
     fun isHashedReifierId(id: String): Boolean {
         val start = STAR_REIFIER_PREFIX.length + HASHED_MARKER.length
         if (id.length != start + HASH_LENGTH || !id.startsWith(STAR_REIFIER_PREFIX) || !id.startsWith(HASHED_MARKER, STAR_REIFIER_PREFIX.length)) return false
@@ -175,38 +149,68 @@ internal object Rdf4jTerms {
     }
 
     /**
-     * Hashed reifier ids in subject position in [term] (a subject, or a triple term, at any depth) whose quoted triple
-     * this process does not know. Blank nodes in object position are ordinary blank nodes and are not looked at.
+     * Collects the hashed reifier ids in subject position in [term] (a subject, or a triple term, at any depth).
+     * Blank nodes in object position are ordinary blank nodes and are not looked at.
      */
-    fun unresolvedHashedReifiers(term: RdfTerm?, out: MutableSet<String>) {
+    fun hashedReifierIds(term: RdfTerm?, out: MutableSet<String>) {
         when (term) {
-            is BlankNode -> if (isHashedReifierId(term.id) && quotedTripleOf(term.id) == null) out.add(term.id)
+            is BlankNode -> if (isHashedReifierId(term.id)) out.add(term.id)
             is TripleTerm -> {
-                unresolvedHashedReifiers(term.triple.subject, out)
-                if (term.triple.obj is TripleTerm) unresolvedHashedReifiers(term.triple.obj, out)
+                hashedReifierIds(term.triple.subject, out)
+                if (term.triple.obj is TripleTerm) hashedReifierIds(term.triple.obj, out)
             }
             else -> Unit
         }
     }
 
     /**
-     * Remembers the hashed reifiers of the quoted triples in [value] (at any depth), so that their ids resolve.
-     * Used to resolve a hashed id from the content of a store.
+     * Fewest characters (in all the terms of a triple) for its encoded id to exceed [MAX_REIFIER_ID_LENGTH]: the id is
+     * 4/3 of the UTF-8 encoding, a character encodes to at most 3 bytes, and the field markers of a triple of maximum
+     * nesting add a few thousand bytes. Smaller triples are known to have an encoded id without encoding them.
      */
-    fun rememberHashedReifiers(value: Value) {
-        if (value !is Triple) return
-        try {
-            reifierFor(value)
-        } catch (_: ReifierLimitException) {
-            // nested too deeply to have a reifier at all
-            return
+    private const val MIN_HASHED_CHARACTERS = 250_000
+
+    /** Characters of all the terms of [value], or [limit] or more as soon as that is reached; -1 when nested too deeply. */
+    private fun characters(value: Value, limit: Int, depth: Int): Int = when (value) {
+        is Triple -> {
+            if (depth >= MAX_REIFIER_NESTING) return -1
+            var total = 0
+            for (part in arrayOf(value.subject, value.predicate, value.`object`)) {
+                val size = characters(part, limit, depth + 1)
+                if (size < 0) return -1
+                total += size
+                if (total >= limit) return limit
+            }
+            total
         }
-        rememberHashedReifiers(value.subject)
-        rememberHashedReifiers(value.`object`)
+        is Rdf4jLiteral -> value.label.length + (value.language.orElse(null)?.length ?: value.datatype.stringValue().length)
+        is BNode -> value.id.length
+        else -> value.stringValue().length
     }
 
-    /** Forgets every remembered hashed reifier, as a new process would have (for tests). */
-    internal fun forgetHashedReifiers() = synchronized(hashedReifiers) { hashedReifiers.clear() }
+    /**
+     * Feeds [sink] the quoted triples in [value] (the value itself and the triples nested in it) whose reifier id is
+     * a hashed one, with that id. Costs nothing but a length check for the triples of ordinary size.
+     *
+     * @param skip asked before a large triple is encoded and hashed; true leaves it out (the caller knows its id).
+     */
+    fun forEachHashedReifier(value: Value, skip: (Triple) -> Boolean = { false }, sink: (String, Triple) -> Unit) {
+        if (value !is Triple) return
+        val size = characters(value, MIN_HASHED_CHARACTERS, 0)
+        // Too small for a hashed id, and so is everything inside it.
+        if (size in 0 until MIN_HASHED_CHARACTERS) return
+        // (A triple nested too deeply has no reifier at all; the triples inside it may.)
+        if (size >= 0 && !skip(value)) {
+            val id = try {
+                reifierFor(value).id
+            } catch (_: ReifierLimitException) {
+                null
+            }
+            if (id != null && isHashedReifierId(id)) sink(id, value)
+        }
+        forEachHashedReifier(value.subject, skip, sink)
+        forEachHashedReifier(value.`object`, skip, sink)
+    }
 
     /**
      * Deepest quoted-triple nesting a reifier id may encode. Deeper triples (whether written to the store or forged
@@ -233,14 +237,15 @@ internal object Rdf4jTerms {
     }
 
     /**
-     * The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier
-     * (for a hashed id: when its triple is not currently remembered, see [reifierFor]).
+     * The quoted triple a reifier id produced by [reifierFor] stands for, or null when [id] is not such a reifier.
+     * @param hashed the hashed reifier ids the operation has resolved (see [reifierFor]); a hashed id that is not in
+     *   it is an ordinary blank node.
      * @throws ReifierLimitException when [id] carries the reifier prefix but is longer than [MAX_REIFIER_ID_LENGTH] or
      *   encodes a triple nested deeper than [MAX_REIFIER_NESTING].
      */
-    fun quotedTripleOf(id: String): Triple? {
+    fun quotedTripleOf(id: String, hashed: Map<String, Triple> = emptyMap()): Triple? {
         if (!id.startsWith(STAR_REIFIER_PREFIX)) return null
-        if (isHashedReifierId(id)) return synchronized(hashedReifiers) { hashedReifiers[id]?.get() }
+        if (isHashedReifierId(id)) return hashed[id]
         requireIdLength(id)
         val separator = id.lastIndexOf('-')
         if (separator <= STAR_REIFIER_PREFIX.length) return null
@@ -261,23 +266,24 @@ internal object Rdf4jTerms {
     }
 
     /** True when the subject [term] is a reifier produced by [reifierFor]: its store form is a quoted triple. */
-    fun mentionsStarReifier(term: RdfResource?): Boolean = term is BlankNode && quotedTripleOf(term.id) != null
+    fun mentionsStarReifier(term: RdfResource?, hashed: Map<String, Triple> = emptyMap()): Boolean =
+        term is BlankNode && quotedTripleOf(term.id, hashed) != null
 
     /**
      * True when the store form of the object [term] differs from its plain form: it is a triple term with a reifier
      * in a subject position (at any depth). A reifier blank node that is itself an object - of the statement or of a
      * triple term - is an ordinary blank node there, see [toRdf4jStarValue].
      */
-    fun objectMentionsStarReifier(term: RdfTerm?): Boolean =
-        term is TripleTerm && (mentionsStarReifier(term.triple.subject) || objectMentionsStarReifier(term.triple.obj))
+    fun objectMentionsStarReifier(term: RdfTerm?, hashed: Map<String, Triple> = emptyMap()): Boolean =
+        term is TripleTerm && (mentionsStarReifier(term.triple.subject, hashed) || objectMentionsStarReifier(term.triple.obj, hashed))
 
     /**
      * Store form of a subject for RDF-star capable stores: a reifier blank node becomes the quoted triple it stands
      * for, so writing the RDF 1.2 reified view back reproduces the original RDF-star statement instead of adding a
      * duplicate plain-blank-node copy.
      */
-    fun toRdf4jStarResource(term: RdfResource): Resource =
-        (term as? BlankNode)?.let { quotedTripleOf(it.id) } ?: toRdf4jResource(term)
+    fun toRdf4jStarResource(term: RdfResource, hashed: Map<String, Triple> = emptyMap()): Resource =
+        (term as? BlankNode)?.let { quotedTripleOf(it.id, hashed) } ?: toRdf4jResource(term)
 
     /**
      * Store form of an object for RDF-star capable stores: reifiers in a **subject** position inside triple terms
@@ -288,11 +294,11 @@ internal object Rdf4jTerms {
      * different triple from the one written: an RDF4J triple value in object position *is* a triple term, and only in
      * subject position (which RDF 1.2 cannot represent) does a reifier stand for it.
      */
-    fun toRdf4jStarValue(term: RdfTerm): Value = when (term) {
+    fun toRdf4jStarValue(term: RdfTerm, hashed: Map<String, Triple> = emptyMap()): Value = when (term) {
         is TripleTerm -> valueFactory.createTriple(
-            toRdf4jStarResource(term.triple.subject),
+            toRdf4jStarResource(term.triple.subject, hashed),
             toRdf4jIri(term.triple.predicate),
-            toRdf4jStarValue(term.triple.obj),
+            toRdf4jStarValue(term.triple.obj, hashed),
         )
         else -> toRdf4jValue(term)
     }
@@ -390,8 +396,15 @@ internal object Rdf4jTerms {
      *
      * @param seen quoted triples whose `rdf:reifies` triple was already emitted (for de-duplication across a
      *   stream of statements); `null` emits them every time.
+     * @param hashed told every quoted triple that got a hashed reifier id, with that id (see [reifierFor]).
      */
-    fun triplesOf(subject: Resource, predicate: IRI, obj: Value, seen: MutableSet<Triple>? = null): List<RdfTriple> {
+    fun triplesOf(
+        subject: Resource,
+        predicate: IRI,
+        obj: Value,
+        seen: MutableSet<Triple>? = null,
+        hashed: ((String, Triple) -> Unit)? = null,
+    ): List<RdfTriple> {
         val main = RdfTriple(fromRdf4jResource(subject), fromRdf4jIri(predicate), fromRdf4jValue(obj))
         if (subject !is Triple && obj !is Triple) return listOf(main)
         val quoted = LinkedHashSet<Triple>()
@@ -402,15 +415,20 @@ internal object Rdf4jTerms {
         result.add(main)
         for (triple in quoted) {
             if (seen == null || seen.add(triple)) {
-                result.add(RdfTriple(reifierFor(triple), com.geoknoesis.kastor.rdf.vocab.RDF.reifies, fromRdf4jValue(triple)))
+                val reifier = reifierFor(triple)
+                if (hashed != null && isHashedReifierId(reifier.id)) hashed(reifier.id, triple)
+                result.add(RdfTriple(reifier, com.geoknoesis.kastor.rdf.vocab.RDF.reifies, fromRdf4jValue(triple)))
             }
         }
         return result
     }
 
     /** [triplesOf] for a whole [org.eclipse.rdf4j.model.Statement] (its context is ignored). */
-    fun triplesOf(statement: org.eclipse.rdf4j.model.Statement, seen: MutableSet<Triple>? = null): List<RdfTriple> =
-        triplesOf(statement.subject, statement.predicate, statement.`object`, seen)
+    fun triplesOf(
+        statement: org.eclipse.rdf4j.model.Statement,
+        seen: MutableSet<Triple>? = null,
+        hashed: ((String, Triple) -> Unit)? = null,
+    ): List<RdfTriple> = triplesOf(statement.subject, statement.predicate, statement.`object`, seen, hashed)
 
     /** True if converting the statement yields more than one triple (it involves an RDF-star subject). */
     fun hasQuotedSubject(statement: org.eclipse.rdf4j.model.Statement): Boolean {
