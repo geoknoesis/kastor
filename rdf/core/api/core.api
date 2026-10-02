@@ -131,6 +131,9 @@ public final class com/geoknoesis/kastor/rdf/DefaultRdfProvider {
 	public final fun set-0G_iFZQ (Ljava/lang/String;)V
 }
 
+public abstract interface class com/geoknoesis/kastor/rdf/DescribesQueryDataset {
+}
+
 public final class com/geoknoesis/kastor/rdf/DetailedProviderCapabilities {
 	public fun <init> (Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;Lcom/geoknoesis/kastor/rdf/ProviderCategory;Ljava/util/Map;Ljava/util/Set;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/PerformanceMetrics;Ljava/util/List;)V
 	public synthetic fun <init> (Lcom/geoknoesis/kastor/rdf/ProviderCapabilities;Lcom/geoknoesis/kastor/rdf/ProviderCategory;Ljava/util/Map;Ljava/util/Set;Ljava/util/List;Lcom/geoknoesis/kastor/rdf/PerformanceMetrics;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

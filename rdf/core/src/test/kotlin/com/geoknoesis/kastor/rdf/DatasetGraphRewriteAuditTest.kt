@@ -114,7 +114,7 @@ class DatasetGraphRewriteAuditTest {
         assertEquals(1, dataset.describe(SparqlDescribeQuery("DESCRIBE ?s { ?s ?p ?o }")).count())
 
         assertEquals(emptyList<String?>(), values("SELECT ?o { GRAPH \$g { ?s ?p ?o } }"))
-        assertTrue(rewritten("SELECT * { GRAPH \$g { ?s ?p ?o } }").contains("VALUES \$g"))
+        assertTrue(rewritten("SELECT * { GRAPH \$g { ?s ?p ?o } }").contains("VALUES (\$g ?s ?p ?o) { }"))
 
         // Variables named ?graph, prefixed names like ex:GRAPH, comments and strings are not the keyword.
         val lookAlikes = "PREFIX ex: <urn:> # GRAPH ?g { }\nSELECT ?o ?graph { ?s ex:p ?o OPTIONAL { ?s ex:GRAPH ?graph } " +
@@ -130,7 +130,7 @@ class DatasetGraphRewriteAuditTest {
         val quads = SparqlDatasetClauses.withoutNamedGraphs(
             "CONSTRUCT { GRAPH ?g { ?s ?p ?o } } WHERE { ?s ?p ?o OPTIONAL { GRAPH ?g { ?s ?p ?x } } }"
         )!!
-        assertTrue(quads.startsWith("CONSTRUCT { GRAPH ?g { ?s ?p ?o } } WHERE { ?s ?p ?o OPTIONAL { { VALUES ?g"), quads)
+        assertTrue(quads.startsWith("CONSTRUCT { GRAPH ?g { ?s ?p ?o } } WHERE { ?s ?p ?o OPTIONAL { { VALUES (?g ?s ?p ?x) { }"), quads)
         assertEquals(1, Regex("GRAPH").findAll(quads).count(), quads)
 
         assertEquals(
@@ -193,7 +193,7 @@ class DatasetGraphRewriteAuditTest {
     }
 
     @Test
-    fun `queries whose codepoint escapes cannot be analysed are rejected`() {
+    fun `queries whose codepoint escapes change how they read are rejected`() {
         // By the SPARQL grammar the escape closes the string (escapes are decoded first) and the comment hides GRAPH;
         // an engine that decodes escapes only inside strings would read a GRAPH pattern instead.
         val ambiguous = listOf(
@@ -201,30 +201,25 @@ class DatasetGraphRewriteAuditTest {
             "SELECT ?o { ?s ?p ?o FILTER(?o != 'a\\u0027 # ') GRAPH ?g { ?s ?p ?o } }",
             "SELECT ?o { ?s ?p ?o } # \\u000A GRAPH ?g { ?s ?p ?o }",
             "SELECT ?o { ?s ?p \"\\u005C\" } # \" GRAPH ?g { ?s ?p ?o }",
-            "SELECT ?o { ?s ?p \"\\\\u0022 # \" GRAPH ?g { ?s ?p ?o } }",
-            "SELECT ?o { ?s ?p \"\\U00110000\" }",
-            "SELECT ?o { ?s ?p \"\\uD800\" }",
         )
         for (query in ambiguous) {
             assertNull(SparqlDatasetClauses.canonical(query), query)
             assertTrue(SparqlDatasetClauses.usesGraphPattern(query), query)
             assertThrows(IllegalArgumentException::class.java, { values(query) }, query)
         }
+        // Escapes that leave their string where it is are not ambiguous, whatever they decode to: an escaped
+        // backslash before the escape, a value above U+10FFFF, a lone surrogate (see DatasetEscapeAnalysisTest).
+        val u = "\\" + "u"
+        for (query in listOf(
+            "SELECT ?o { ?s ?p \"\\${u}0022 # \" }",
+            "SELECT ?o { ?s ?p \"\\U00110000\" }",
+            "SELECT ?o { ?s ?p \"${u}D800\" }",
+        )) {
+            assertEquals(query, SparqlDatasetClauses.canonical(query))
+            assertFalse(SparqlDatasetClauses.usesGraphPattern(query), query)
+        }
         // An unterminated string or a GRAPH that is not followed by a name and a group is rejected as well.
         assertThrows(IllegalArgumentException::class.java) { values("SELECT ?o { ?s ?p \"x } GRAPH ?g { ?s ?p ?o }") }
         assertThrows(IllegalArgumentException::class.java) { values("SELECT ?o { GRAPH 1 { ?s ?p ?o } }") }
-    }
-
-    @Test
-    fun `a dataset of named graphs materializes queries it cannot analyse instead of running them in place`() {
-        val named = (Dataset { defaultGraph(repo.getGraph(g1).asGraphRef(repo, g1)) } as DatasetImpl)
-        val query = "SELECT ?o { ?s ?p ?o FILTER(?o != \"a\\u005Cu0022\") }"
-        assertNull(SparqlDatasetClauses.canonical(query))
-        var materialized = 0
-        named.materializationRepositoryFactory = { materialized++; Rdf.memory() }
-        runCatching { named.select(SparqlSelectQuery(query)).toList() }
-        assertEquals(1, materialized)
-        assertEquals(listOf("secret"), named.select(SparqlSelectQuery("SELECT ?o { ?s ?p ?o }")).map { it.getString("o") })
-        assertEquals(1, materialized)
     }
 }

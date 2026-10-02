@@ -67,7 +67,7 @@ class DatasetEmptyNamedGraphsTest {
     fun `the named-graph rewrite keeps the GRAPH variable in scope and leaves the rest of the query unchanged`() {
         val rewritten = SparqlDatasetClauses.withoutNamedGraphs("SELECT * { ?s ?p ?o OPTIONAL { GRAPH ?g { ?s ?p ?x } } }")!!
         assertFalse(SparqlDatasetClauses.usesGraphPattern(rewritten), rewritten)
-        assertTrue(rewritten.contains("VALUES ?g"), rewritten)
+        assertTrue(rewritten.contains("VALUES (?g ?s ?p ?x) { }"), rewritten)
         assertTrue(rewritten.startsWith("SELECT * { ?s ?p ?o OPTIONAL { "), rewritten)
         assertEquals(
             listOf("default"),
