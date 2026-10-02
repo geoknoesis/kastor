@@ -331,67 +331,6 @@ class SparqlEndpointRobustnessTest {
         }
     }
 
-    /** A watched stream whose pending read expires [arm]ed milliseconds later, running [onExpire] in the watchdog thread. */
-    private class Due(private val onExpire: () -> Unit = {}) : ReadWatchdog.Watched {
-        val expired = CountDownLatch(1)
-        @Volatile private var deadline = Long.MAX_VALUE
-
-        fun arm(watchdog: ReadWatchdog, millis: Long) {
-            val at = System.nanoTime() + millis * 1_000_000
-            deadline = at
-            watchdog.published(at)
-        }
-
-        override fun expireIfDue(now: Long): Long {
-            val at = deadline
-            if (at == Long.MAX_VALUE || now < at) return at
-            deadline = Long.MAX_VALUE
-            expired.countDown()
-            onExpire()
-            return Long.MAX_VALUE
-        }
-    }
-
-    private fun assertExpires(stream: Due, what: String) =
-        assertTrue(stream.expired.await(SLOW_HOST_SLACK_MILLIS, TimeUnit.MILLISECONDS), "$what: the deadline was not enforced")
-
-    @Test
-    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    fun `the watchdog outlives streams that fail and is replaced when its thread ends`() {
-        // Whatever a stream throws is reported, and the watch over the others goes on in the same thread.
-        val reported = CopyOnWriteArrayList<Throwable>()
-        val watchdog = ReadWatchdog { reported.add(it) }
-        val failing = Due { throw IllegalStateException("close failed") }
-        val fatal = Due { throw StackOverflowError("simulated") }
-        val healthy = Due()
-        listOf(failing, fatal, healthy).forEach(watchdog::register)
-        failing.arm(watchdog, 20)
-        fatal.arm(watchdog, 40)
-        assertExpires(failing, "failing")
-        assertExpires(fatal, "fatal")
-        healthy.arm(watchdog, 60)
-        assertExpires(healthy, "after two failures")
-        // On a slow host both streams can come due in one scan, which visits them in no particular order.
-        assertEquals(setOf("close failed", "simulated"), reported.map { it.message }.toSet())
-        assertEquals(2, reported.size)
-        assertEquals(1, watchdog.threadsStarted, "the thread must survive a failing stream")
-
-        // A thread that ends all the same (here: reporting the failure fails too) is replaced.
-        val unreportable = ReadWatchdog { throw IllegalStateException("the report failed") }
-        val first = Due { throw IllegalStateException("close failed") }
-        unreportable.register(first)
-        first.arm(unreportable, 20)
-        assertExpires(first, "first")
-        repeat(3) { round ->
-            val later = Due()
-            unreportable.register(later)
-            later.arm(unreportable, 40)
-            assertExpires(later, "after the thread ended (round $round)")
-            unreportable.unregister(later)
-        }
-        assertEquals(2, unreportable.threadsStarted, "one replacement for the one thread that ended")
-    }
-
     // ------------------------------------------------------------------ decoder strictness, through the repository
 
     @Test

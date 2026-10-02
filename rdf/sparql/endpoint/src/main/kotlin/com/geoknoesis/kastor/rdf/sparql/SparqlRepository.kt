@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 private const val RESULTS_JSON = "application/sparql-results+json"
 private const val FORM_ENCODED = "application/x-www-form-urlencoded"
 private const val MAX_ERROR_BODY_BYTES = 4096
+private const val MAX_ERROR_DETAIL_CHARS = 512
 private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
 
 /**
@@ -66,6 +67,45 @@ private object SharedHttpClients {
 }
 
 /**
+ * What of an HTTP error body goes into an exception message (and from there into logs): one line of
+ * at most [MAX_ERROR_DETAIL_CHARS] characters, followed by `...` when the body was longer. Runs of
+ * white space and line breaks become one space; control characters, invisible format characters
+ * (bidirectional overrides among them) and anything that is not a character are written as their
+ * escape, so that a body can neither forge log lines nor hide what it says.
+ */
+internal fun errorDetail(body: String): String {
+    val out = StringBuilder()
+    var space = false
+    var i = 0
+    while (i < body.length) {
+        val codePoint = body.codePointAt(i)
+        i += Character.charCount(codePoint)
+        val type = Character.getType(codePoint)
+        if (codePoint in LINE_BREAKS || type == Character.SPACE_SEPARATOR.toInt()) {
+            space = out.isNotEmpty()
+            continue
+        }
+        val escaped = type == Character.CONTROL.toInt() || type == Character.FORMAT.toInt() || type == Character.SURROGATE.toInt() ||
+            type == Character.PRIVATE_USE.toInt() || type == Character.UNASSIGNED.toInt()
+        val text = when {
+            !escaped -> String(Character.toChars(codePoint))
+            codePoint <= 0xFFFF -> "%cu%04X".format(BACKSLASH, codePoint)
+            else -> "%cu{%X}".format(BACKSLASH, codePoint)
+        }
+        if (out.length + (if (space) 1 else 0) + text.length > MAX_ERROR_DETAIL_CHARS) return out.append("...").toString()
+        if (space) out.append(' ')
+        space = false
+        out.append(text)
+    }
+    return out.toString()
+}
+
+private val BACKSLASH = 92.toChar()
+
+/** Tab, line feed, vertical tab, form feed, carriage return, next line, line separator, paragraph separator. */
+private val LINE_BREAKS = setOf(0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x85, 0x2028, 0x2029)
+
+/**
  * Starts one HTTP exchange; the future completes when the response headers have arrived, and
  * cancelling it (`cancel(true)`) aborts the exchange. Production code uses the shared [HttpClient];
  * tests substitute their own to observe requests or to play a server they cannot run locally.
@@ -105,20 +145,28 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
  *   [SparqlEndpointConfig.maxResultRowChars] characters is read into memory; rows are decoded one
  *   at a time, straight from the stream.
  * - Connections are pooled and reused (HTTP/1.1 keep-alive). Repositories with the same connect
- *   timeout share one HTTP client, which is shut down when the last of them is closed, so always
- *   [close] repositories you no longer use.
+ *   timeout share one HTTP client, which is shut down when the last of them is closed, and all
+ *   repositories share the daemon thread that enforces read deadlines, which ends when the last of
+ *   them is closed (and starts again on demand). So always [close] repositories you no longer use.
  * - Exceptions thrown by a [withSelectRows] consumer propagate unchanged; transport, HTTP and
- *   result-format failures surface as [RdfQueryException] (HTTP error bodies are included), from
- *   every operation alike. Using a closed repository throws [IllegalStateException] from every
+ *   result-format failures surface as [RdfQueryException], from every operation alike. The message
+ *   for an HTTP error status quotes the start of the response body as one printable line of at
+ *   most 512 characters, with control characters escaped. Using a closed repository throws [IllegalStateException] from every
  *   operation.
  * - Results are decoded as SPARQL 1.1 JSON, strictly: UTF-8 only (a leading byte order mark is
- *   ignored, malformed bytes are an error), JSON white space only. RDF 1.2 result terms (triple
- *   terms, literals with a base direction) are rejected with a message that says so.
+ *   ignored, malformed bytes are an error), JSON white space only, no unescaped control character
+ *   or unpaired surrogate in a string, no repeated member where one is read, string members only
+ *   in a binding, and no variable that a preceding `head` does not declare. RDF 1.2 result terms
+ *   (triple terms, literals with a base direction) are rejected with a message that says so.
+ * - A row with a term the RDF model refuses (an IRI that is relative or holds a space, for example)
+ *   fails the query, or is skipped with one logged warning per query when
+ *   [SparqlEndpointConfig.malformedTerms] is [MalformedTermPolicy.SKIP_ROW].
  * - No transactions; CONSTRUCT/DESCRIBE are unsupported (this module has no RDF parser).
  */
 class SparqlRepository internal constructor(
     val config: SparqlEndpointConfig,
     transport: HttpTransport?,
+    private val watchdog: ReadWatchdog = ReadWatchdog.shared,
 ) : RdfRepository {
 
     constructor(config: SparqlEndpointConfig) : this(config, null)
@@ -146,6 +194,8 @@ class SparqlRepository internal constructor(
     private val transport: HttpTransport = transport ?: HttpTransport { client.sendAsync(it, HttpResponse.BodyHandlers.ofInputStream()) }
 
     init {
+        // The thread that enforces read deadlines runs while a repository is open (and for streams still being read).
+        watchdog.retain()
         insecureAuthorizationWarning(config)?.let { warning ->
             if (INSECURE_AUTH_WARNED.add(HttpTarget.redact(config.endpoint) + " " + config.updateEndpoint?.let(HttpTarget::redact))) {
                 LOGGER.log(System.Logger.Level.WARNING, warning)
@@ -234,9 +284,10 @@ class SparqlRepository internal constructor(
         ensureOpen()
         val startTime = System.currentTimeMillis()
         var rows = 0
+        var decoder: JsonBindingRows? = null
         try {
             val result = exchange(sparql, update = false, byteLimit = byteLimit, timeouts = timeouts) { input, checkDeadline ->
-                val sequence = JsonBindingRows(input, config.maxResultRowChars).rows()
+                val sequence = JsonBindingRows(input, config.maxResultRowChars, config.malformedTerms).also { decoder = it }.rows()
                     .guarded(sparql, checkDeadline)
                     .onEach { rows++ }
                 consume(sequence)
@@ -246,6 +297,17 @@ class SparqlRepository internal constructor(
         } catch (e: RdfQueryException) {
             RdfDebug.logQueryError("SELECT", sparql, "Failed to execute: ${e.message}")
             throw e
+        } finally {
+            // Once per query, however it ended: the rows that were left out are not in what the caller saw.
+            decoder?.let { read ->
+                if (read.skippedRows > 0) {
+                    LOGGER.log(
+                        System.Logger.Level.WARNING,
+                        "Skipped ${read.skippedRows} SPARQL result row(s) holding terms that are not valid RDF terms for Kastor " +
+                            "(malformedTerms = SKIP_ROW); first: ${read.firstSkipped}",
+                    )
+                }
+            }
         }
     }
 
@@ -334,12 +396,16 @@ class SparqlRepository internal constructor(
     override fun getCapabilities(): ProviderCapabilities = SPARQL_ENDPOINT_CAPABILITIES
 
     /**
-     * Marks the repository closed and releases its share of the HTTP client; the client and its
-     * connection pool are shut down when no open repository uses them. In-flight requests may
-     * complete. Idempotent.
+     * Marks the repository closed and releases its share of the HTTP client and of the thread that
+     * enforces read deadlines; the client and its connection pool are shut down, and the thread
+     * ends, when no open repository uses them. In-flight requests may complete, and their reads are
+     * still timed. Idempotent.
      */
     override fun close() {
-        if (closed.compareAndSet(false, true)) SharedHttpClients.release(config.connectTimeout)
+        if (closed.compareAndSet(false, true)) {
+            SharedHttpClients.release(config.connectTimeout)
+            watchdog.release()
+        }
     }
 
     private fun ensureOpen() = check(!closed.get()) { "Repository is closed" }
@@ -451,7 +517,7 @@ class SparqlRepository internal constructor(
                     request = Request(next, request.contentType, request.body)
                     continue
                 }
-                val guarded = GuardedInputStream(open, config.readTimeout, overallDeadlineNanos, timeouts.overall)
+                val guarded = GuardedInputStream(open, watchdog, config.readTimeout, overallDeadlineNanos, timeouts.overall)
                 open = guarded
                 if (status !in 200..299) {
                     val detail = readErrorBody(guarded)
@@ -493,9 +559,10 @@ class SparqlRepository internal constructor(
         // and to the whole exchange, body included, from JDK 26 (JDK-8208693). The header wait is
         // bounded by send() and the body by GuardedInputStream, on every JDK.
         val builder = HttpRequest.newBuilder(request.uri)
+        // The configuration refuses custom headers with the names set here, so none of these is ever replaced.
+        headers.forEach { (name, value) -> builder.setHeader(name, value) }
         if (!update) builder.setHeader("Accept", RESULTS_JSON)
         request.contentType?.let { builder.setHeader("Content-Type", it) }
-        headers.forEach { (name, value) -> builder.setHeader(name, value) }
         authorization?.let { builder.setHeader("Authorization", it) }
         val body = request.body
         if (body == null) builder.GET() else builder.POST(HttpRequest.BodyPublishers.ofByteArray(body))
@@ -588,8 +655,9 @@ class SparqlRepository internal constructor(
         return media == "application/json" || media.endsWith("+json") || (plainTextAllowed && media == "text/plain")
     }
 
+    /** The start of an error body, as [errorDetail] lets it into a message. */
     private fun readErrorBody(input: InputStream): String = try {
-        String(input.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8).trim()
+        errorDetail(String(input.readNBytes(MAX_ERROR_BODY_BYTES), Charsets.UTF_8))
     } catch (_: IOException) {
         ""
     }
@@ -631,6 +699,7 @@ class SparqlRepository internal constructor(
      */
     private class GuardedInputStream(
         private val raw: InputStream,
+        private val watchdog: ReadWatchdog,
         readTimeout: Duration,
         private val deadlineNanos: Long?,
         overall: Duration?,
@@ -647,7 +716,7 @@ class SparqlRepository internal constructor(
             private set
 
         init {
-            ReadWatchdog.shared.register(this)
+            watchdog.register(this)
         }
 
         override fun read(): Int {
@@ -675,7 +744,7 @@ class SparqlRepository internal constructor(
             if (deadline != null) {
                 readMessage = if (byDeadline) deadlineMessage else readTimeoutMessage
                 readDeadline.set(deadline)
-                ReadWatchdog.shared.published(deadline)
+                watchdog.published(deadline)
             }
             try {
                 return raw.read(b, off, len)
@@ -704,7 +773,7 @@ class SparqlRepository internal constructor(
         }
 
         override fun close() {
-            ReadWatchdog.shared.unregister(this)
+            watchdog.unregister(this)
             raw.close()
         }
 
@@ -762,16 +831,23 @@ class SparqlRepository internal constructor(
         private fun sameOrigin(a: URI, b: URI) =
             a.scheme.equals(b.scheme, ignoreCase = true) && a.host.equals(b.host, ignoreCase = true) && effectivePort(a) == effectivePort(b)
 
-        /** The warning logged (once per endpoint) when Basic credentials would travel over plain http, or `null`. */
+        /**
+         * The warning logged (once per endpoint) when credentials would travel over plain http, or
+         * `null`: HTTP Basic credentials (configured or embedded in the URL) and custom headers
+         * whose name says that they carry a credential (see [SparqlEndpointConfig.credentialHeaders]).
+         * It names the endpoints and the headers, never a value.
+         */
         fun insecureAuthorizationWarning(config: SparqlEndpointConfig): String? {
-            val query = HttpTarget.parse(config.endpoint)
-            val update = config.updateEndpoint?.let(HttpTarget::parse) ?: query
-            val exposed = listOf(query, update).filter { target ->
-                target.isPlainHttp && (config.username != null || target.userInfoAuthorization != null)
+            val endpoints = listOfNotNull(config.endpoint, config.updateEndpoint).distinct()
+            val headers = config.credentialHeaders().map { "header '$it'" }
+            val exposed = endpoints.mapNotNull { endpoint ->
+                val target = HttpTarget.parse(endpoint)
+                val basic = config.username != null || target.userInfoAuthorization != null
+                val credentials = (if (basic) listOf("HTTP Basic authentication") else emptyList()) + headers
+                if (target.isPlainHttp && credentials.isNotEmpty()) "${HttpTarget.redact(endpoint)} (${credentials.joinToString()})" else null
             }
             if (exposed.isEmpty()) return null
-            return "SPARQL endpoint ${exposed.joinToString { HttpTarget.redact(it.url.toString()) }} uses HTTP Basic " +
-                "authentication over plain http; credentials are sent unencrypted. Use https."
+            return "Credentials are sent unencrypted over plain http to SPARQL endpoint ${exposed.joinToString(" and ")}. Use https."
         }
     }
 }
@@ -791,6 +867,12 @@ class SparqlRepository internal constructor(
  *   therefore be copied into another graph.
  * - [hasTriple], [find], [removeTriple] and [removeTriples] cannot address an existing blank node
  *   by label and throw [IllegalArgumentException]; use an explicit `DELETE WHERE` pattern instead.
+ *
+ * ## Reads
+ * [find] and [getTriples] check every row the endpoint returns: a row that is not a triple (a
+ * variable left unbound, a literal as subject, anything but an IRI as predicate) fails with
+ * [RdfQueryException]. With [MalformedTermPolicy.SKIP_ROW] rows with malformed terms are left out,
+ * while [size] is counted by the endpoint and still includes them.
  *
  * ## Batched writes are not atomic
  * [addTriples] and [removeTriples] send one request per batch. Every triple is validated and
@@ -956,9 +1038,26 @@ class SparqlGraph(
         val body = "${subject?.let { SparqlTermFormat.term(it, ::rejectBlankNode) } ?: "?s"} " +
             "${predicate?.let { SparqlTermFormat.iriRef(it.value) } ?: "?p"} " +
             "${obj?.let { SparqlTermFormat.term(it, ::rejectBlankNode) } ?: "?o"} ."
-        val result = repository.select(SparqlSelectQuery("SELECT * WHERE { ${pattern(body)} }"))
-        return result.map { row -> RdfTriple(subject ?: row.get("s") as RdfResource,
-            predicate ?: row.get("p") as Iri, obj ?: row.get("o") as RdfTerm) }
+        val query = "SELECT * WHERE { ${pattern(body)} }"
+        val result = repository.select(SparqlSelectQuery(query))
+        // The endpoint is not trusted to answer with triples: a row that is none is reported, not cast.
+        fun notATriple(variable: String, term: RdfTerm?, expected: String): Nothing = throw RdfQueryException(
+            "SPARQL endpoint returned a row that is not a triple: ?$variable is " +
+                when (term) {
+                    null -> "unbound"
+                    is Literal -> "a literal, not $expected"
+                    is BlankNode -> "a blank node, not $expected"
+                    is Iri -> "an IRI, not $expected"
+                    else -> "a ${term.javaClass.simpleName}, not $expected"
+                },
+            query = query,
+        )
+        return result.map { row ->
+            val s = subject ?: row.get("s").let { it as? RdfResource ?: notATriple("s", it, "an IRI or a blank node") }
+            val p = predicate ?: row.get("p").let { it as? Iri ?: notATriple("p", it, "an IRI") }
+            val o = obj ?: row.get("o") ?: notATriple("o", null, "an RDF term")
+            RdfTriple(s, p, o)
+        }
     }
 
     override fun clear(): Boolean {

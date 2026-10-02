@@ -238,7 +238,7 @@ class SparqlServiceDescriptionTest {
         )
         assertEquals(1, model.listStatements(null, model.createProperty("urn:y"), null as org.apache.jena.rdf.model.RDFNode?).toList().size + 1)
 
-        assertParsesQuery(generator.generateAsSparqlResult())
+        assertParsesQuery(generator.generateAsSelectQuery())
     }
 
     @Test

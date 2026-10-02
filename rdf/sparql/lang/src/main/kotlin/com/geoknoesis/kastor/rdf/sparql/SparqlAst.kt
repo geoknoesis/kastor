@@ -30,6 +30,9 @@ sealed interface SparqlQueryAst {
 
 /**
  * SELECT query AST.
+ *
+ * `GROUP BY` lists the variables of [groupBy] followed by the conditions of [groupByExpressions]
+ * (expressions, optionally named with `AS`).
  */
 data class SelectQueryAst(
     val selectItems: List<SelectItemAst>,
@@ -44,7 +47,8 @@ data class SelectQueryAst(
     val limit: Int? = null,
     val offset: Int? = null,
     val distinct: Boolean = false,
-    val reduced: Boolean = false
+    val reduced: Boolean = false,
+    val groupByExpressions: List<GroupConditionAst> = emptyList(),
 ) : SparqlQueryAst {
     init {
         require(limit == null || limit >= 0) { "LIMIT must not be negative: $limit" }
@@ -52,11 +56,58 @@ data class SelectQueryAst(
         require(WildcardSelectItemAst !in selectItems || selectItems.size == 1) {
             "SELECT * cannot be combined with other projection items"
         }
-        require((groupBy.isEmpty() && having.isEmpty()) || (selectItems.isNotEmpty() && WildcardSelectItemAst !in selectItems)) {
+        val grouped = groupBy.isNotEmpty() || groupByExpressions.isNotEmpty() || having.isNotEmpty()
+        require(!grouped || (selectItems.isNotEmpty() && WildcardSelectItemAst !in selectItems)) {
             "SELECT * (or an empty projection) is not legal with GROUP BY or HAVING; project the grouped variables and aggregates explicitly"
         }
     }
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(
+        selectItems: List<SelectItemAst>,
+        version: String? = null,
+        prefixes: List<PrefixDeclaration> = emptyList(),
+        where: GraphPatternAst? = null,
+        from: List<Iri> = emptyList(),
+        fromNamed: List<Iri> = emptyList(),
+        groupBy: List<Var> = emptyList(),
+        having: List<FilterExpressionAst> = emptyList(),
+        orderBy: List<OrderClauseAst> = emptyList(),
+        limit: Int? = null,
+        offset: Int? = null,
+        distinct: Boolean = false,
+        reduced: Boolean = false,
+    ) : this(selectItems, version, prefixes, where, from, fromNamed, groupBy, having, orderBy, limit, offset, distinct, reduced, emptyList())
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy")
+    fun copyWithoutGroupConditions(
+        selectItems: List<SelectItemAst> = this.selectItems,
+        version: String? = this.version,
+        prefixes: List<PrefixDeclaration> = this.prefixes,
+        where: GraphPatternAst? = this.where,
+        from: List<Iri> = this.from,
+        fromNamed: List<Iri> = this.fromNamed,
+        groupBy: List<Var> = this.groupBy,
+        having: List<FilterExpressionAst> = this.having,
+        orderBy: List<OrderClauseAst> = this.orderBy,
+        limit: Int? = this.limit,
+        offset: Int? = this.offset,
+        distinct: Boolean = this.distinct,
+        reduced: Boolean = this.reduced,
+    ): SelectQueryAst = SelectQueryAst(
+        selectItems, version, prefixes, where, from, fromNamed, groupBy, having, orderBy, limit, offset, distinct, reduced, groupByExpressions,
+    )
 }
+
+/**
+ * One condition of `GROUP BY` that is not a plain variable: `(expression)` or, with an [alias],
+ * `(expression AS ?alias)`, which makes the value available to the projection, HAVING and ORDER BY.
+ */
+data class GroupConditionAst(
+    val expression: ExpressionAst,
+    val alias: Var? = null,
+)
 
 /**
  * ASK query AST.
@@ -181,12 +232,23 @@ data class GraphPatternAstImpl(
 ) : GraphPatternAst
 
 /**
- * SERVICE pattern: SERVICE endpoint { pattern }
+ * SERVICE pattern: `SERVICE endpoint { pattern }`, or `SERVICE SILENT endpoint { pattern }` when
+ * [silent]: a failure of the remote service then yields one solution without bindings instead of
+ * failing the query.
  */
 data class ServicePatternAst(
     val endpoint: RdfTerm,
-    val pattern: GraphPatternAst
-) : GraphPatternAst
+    val pattern: GraphPatternAst,
+    val silent: Boolean = false,
+) : GraphPatternAst {
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    constructor(endpoint: RdfTerm, pattern: GraphPatternAst) : this(endpoint, pattern, false)
+
+    @Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+    @JvmName("copy")
+    fun copyWithoutSilent(endpoint: RdfTerm = this.endpoint, pattern: GraphPatternAst = this.pattern): ServicePatternAst =
+        ServicePatternAst(endpoint, pattern, silent)
+}
 
 /**
  * VALUES clause: VALUES ?var { value1 value2 ... }
@@ -358,16 +420,41 @@ data class SequencePathAst(
 ) : PropertyPathAst
 
 /**
- * Range: path{n}, path{n,}, path{,m}, path{n,m}
+ * Bounded repetition of a path: [min] to [max] steps, or [min] and more when [max] is `null`.
  *
- * Not part of SPARQL 1.1/1.2 (it was dropped from the final grammar); the
- * renderer rejects it.
+ * SPARQL 1.1/1.2 has no `{n,m}` quantifier (it was dropped from the final grammar), so the renderer
+ * writes the repetition out as the sequence it stands for: `p{3}` as `p/p/p`, `p{1,3}` as
+ * `p/p?/p?`, `p{0,2}` as `p?/p?`, `p{2,}` as `p/p+`, `p{1,}` as `p+` and `p{0,}` as `p*`.
+ *
+ * Because every step is written, a repetition is limited to [MAX_PATH_REPETITION] steps (and nested
+ * repetitions to [MAX_EXPANDED_PATH_STEPS] steps in all). `p{0}` and `p{0,0}`, the empty path, have
+ * no SPARQL form and are rejected, as are a negative [min] and a [max] below [min]. The bounds are
+ * checked by the path builders (`exactly`, `atLeast`, `atMost`, `between`) and again when a query is
+ * rendered.
  */
 data class RangePathAst(
     val path: PropertyPathAst,
     val min: Int,
     val max: Int?
 ) : PropertyPathAst
+
+/** The most steps one bounded path repetition ([RangePathAst]) may be written out to. */
+const val MAX_PATH_REPETITION: Int = 64
+
+/** The most steps all bounded repetitions of one property path may be written out to together. */
+const val MAX_EXPANDED_PATH_STEPS: Int = 1024
+
+/** Checks the bounds of a [RangePathAst]; every message says "repetition". */
+internal fun requirePathRepetition(min: Int, max: Int?) {
+    require(min >= 0) { "A path repetition cannot have a negative lower bound: $min" }
+    require(max == null || max >= min) { "The upper bound of a path repetition must not be below its lower bound: {$min,$max}" }
+    require(max == null || max >= 1) {
+        "A path repetition of at most zero steps is the empty path, which SPARQL cannot express: {$min,$max}"
+    }
+    require((max ?: min) <= MAX_PATH_REPETITION) {
+        "A path repetition is written out step by step and is limited to $MAX_PATH_REPETITION steps: {$min,${max ?: ""}}"
+    }
+}
 
 // ============================================================================
 // EXPRESSIONS
@@ -422,6 +509,30 @@ data class OrExpressionAst(
 data class NotExpressionAst(
     val expression: FilterExpressionAst
 ) : FilterExpressionAst
+
+/**
+ * `EXISTS { pattern }`, or `NOT EXISTS { pattern }` when [negated]: whether [pattern] has a
+ * solution given the bindings of the solution the expression is evaluated for.
+ */
+data class ExistsExpressionAst(
+    val pattern: GraphPatternAst,
+    val negated: Boolean = false,
+) : FilterExpressionAst
+
+/**
+ * `expression IN (values)`, or `expression NOT IN (values)` when [negated]. An empty list is legal:
+ * `IN ()` is false and `NOT IN ()` true.
+ */
+data class InExpressionAst(
+    val expression: ExpressionAst,
+    val values: List<ExpressionAst>,
+    val negated: Boolean = false,
+) : FilterExpressionAst
+
+/** Arithmetic negation: `-expression`. */
+data class UnaryMinusExpressionAst(
+    val expression: ExpressionAst,
+) : ExpressionAst
 
 /**
  * Built-in function call.

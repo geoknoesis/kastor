@@ -404,15 +404,15 @@ class Sparql12ComplianceTest {
 
     @Test
     fun `test property paths - range`() {
-        // {n,m} repetition is not part of SPARQL 1.1/1.2 and is rejected rather than
-        // emitted as syntax standard endpoints cannot parse.
-        assertThrows(IllegalArgumentException::class.java) {
-            select {
-                where {
-                    propertyPath(`var`("person"), path(FOAF.knows).between(2, 4), `var`("friend"))
-                }
+        // {n,m} repetition is not part of SPARQL 1.1/1.2: it is written as the sequence it stands
+        // for, never as syntax standard endpoints cannot parse.
+        val query = select {
+            where {
+                propertyPath(`var`("person"), path(FOAF.knows).between(2, 4), `var`("friend"))
             }
         }
+        val knows = "<http://xmlns.com/foaf/0.1/knows>"
+        assertTrue(assertParsesQuery(query.sparql).contains("$knows/$knows/$knows?/$knows?"), query.sparql)
     }
 
     @Test

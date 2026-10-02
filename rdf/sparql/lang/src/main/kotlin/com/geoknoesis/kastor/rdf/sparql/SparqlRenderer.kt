@@ -62,9 +62,9 @@ object SparqlRenderer {
         append(renderGroup(query.where ?: EMPTY_GROUP, 0))
         append("\n")
 
-        if (query.groupBy.isNotEmpty()) {
+        if (query.groupBy.isNotEmpty() || query.groupByExpressions.isNotEmpty()) {
             append("GROUP BY ")
-            append(query.groupBy.joinToString(" ") { SparqlSyntax.variable(it) })
+            append((query.groupBy.map { SparqlSyntax.variable(it) } + query.groupByExpressions.map { renderGroupCondition(it) }).joinToString(" "))
             append("\n")
         }
         if (query.having.isNotEmpty()) {
@@ -125,6 +125,15 @@ object SparqlRenderer {
         }
     }
 
+    /**
+     * `GroupCondition ::= BuiltInCall | FunctionCall | '(' Expression ( 'AS' Var )? ')' | Var`: the
+     * bracketed form holds any expression, so it is the one that is written.
+     */
+    private fun renderGroupCondition(condition: GroupConditionAst): String {
+        val alias = condition.alias?.let { " AS ${SparqlSyntax.variable(it)}" }.orEmpty()
+        return "(${renderExpression(condition.expression)}$alias)"
+    }
+
     // ============================================================================
     // SELECT ITEMS
     // ============================================================================
@@ -175,10 +184,16 @@ object SparqlRenderer {
             }
         }
         is GraphPatternAstImpl -> "GRAPH ${renderGraphName(pattern.graphName, "GRAPH")} ${renderGroup(pattern.pattern, depth)}"
-        is ServicePatternAst -> "SERVICE ${renderGraphName(pattern.endpoint, "SERVICE")} ${renderGroup(pattern.pattern, depth)}"
+        is ServicePatternAst ->
+            "SERVICE ${if (pattern.silent) "SILENT " else ""}${renderGraphName(pattern.endpoint, "SERVICE")} ${renderGroup(pattern.pattern, depth)}"
         is ValuesPatternAst -> renderValues(pattern, depth)
         is PropertyPathPatternAst -> {
             requireSubject(pattern.subject)
+            val steps = expandedSteps(pattern.path)
+            require(steps <= MAX_EXPANDED_PATH_STEPS) {
+                "The bounded repetitions of a property path are written out step by step, which takes $steps steps here; " +
+                    "at most $MAX_EXPANDED_PATH_STEPS are supported. Use `+` or `*` where the upper bound does not matter"
+            }
             "${renderTerm(pattern.subject)} ${renderPath(pattern.path, PathPrecedence.ALTERNATIVE)} ${renderTerm(pattern.obj)} ."
         }
         is TripleTermPatternAst -> throw IllegalArgumentException(
@@ -304,11 +319,44 @@ object SparqlRenderer {
         is AlternativePathAst ->
             "${renderPath(path.left, PathPrecedence.ALTERNATIVE)}|${renderPath(path.right, PathPrecedence.ALTERNATIVE)}" to PathPrecedence.ALTERNATIVE
         is NegationPathAst -> renderNegatedPropertySet(path.path) to PathPrecedence.PRIMARY
-        is RangePathAst -> throw IllegalArgumentException(
-            "Bounded path repetition {n,m} is not part of SPARQL 1.1/1.2; " +
-                "expand it into an explicit sequence/alternative of paths"
-        )
+        // SPARQL has no `{n,m}` quantifier: the repetition is written as the sequence it stands for.
+        is RangePathAst -> renderPathWithPrecedence(expandRange(path))
     }
+
+    /**
+     * [range] without a quantifier: `min` steps, followed by `max - min` optional steps, or by a
+     * repeated step when there is no upper bound (`p{2,}` is `p/p+`, `p{0,}` is `p*`).
+     */
+    private fun expandRange(range: RangePathAst): PropertyPathAst {
+        requirePathRepetition(range.min, range.max)
+        val step = range.path
+        val max = range.max
+        if (max == null && range.min == 0) return ZeroOrMorePathAst(step)
+        val steps = ArrayList<PropertyPathAst>()
+        if (max == null) {
+            repeat(range.min - 1) { steps += step }
+            steps += OneOrMorePathAst(step)
+        } else {
+            repeat(range.min) { steps += step }
+            repeat(max - range.min) { steps += ZeroOrOnePathAst(step) }
+        }
+        return steps.reduce { left, right -> SequencePathAst(left, right) }
+    }
+
+    /** How many steps [path] is once its bounded repetitions are written out; saturates instead of overflowing. */
+    private fun expandedSteps(path: PropertyPathAst): Long = when (path) {
+        is BasicPathAst -> 1
+        is OneOrMorePathAst -> expandedSteps(path.path)
+        is ZeroOrMorePathAst -> expandedSteps(path.path)
+        is ZeroOrOnePathAst -> expandedSteps(path.path)
+        is InversePathAst -> expandedSteps(path.path)
+        is NegationPathAst -> expandedSteps(path.path)
+        is SequencePathAst -> saturated(expandedSteps(path.left) + expandedSteps(path.right))
+        is AlternativePathAst -> saturated(expandedSteps(path.left) + expandedSteps(path.right))
+        is RangePathAst -> saturated(expandedSteps(path.path) * maxOf(1, (path.max ?: path.min).toLong().coerceIn(0, Int.MAX_VALUE.toLong())))
+    }
+
+    private fun saturated(steps: Long): Long = minOf(steps, Int.MAX_VALUE.toLong())
 
     /** `!iri`, `!^iri` or `!(iri|^iri|...)` — the only forms the grammar allows after `!`. */
     private fun renderNegatedPropertySet(path: PropertyPathAst): String {
@@ -349,6 +397,13 @@ object SparqlRenderer {
         is OrExpressionAst ->
             "(${renderOperand(expr.left, Precedence.RELATIONAL)} || ${renderOperand(expr.right, Precedence.RELATIONAL)})"
         is NotExpressionAst -> "!(${renderExpression(expr.expression)})"
+        // `'-' PrimaryExpression`: anything that is not primary is bracketed, a nested minus included (`-(-?a)`).
+        is UnaryMinusExpressionAst -> "-${renderOperand(expr.expression, Precedence.PRIMARY)}"
+        // `NumericExpression ('NOT')? 'IN' ExpressionList`: relational like a comparison, with complete expressions in the list.
+        is InExpressionAst ->
+            "${renderOperand(expr.expression, Precedence.ADDITIVE)} ${if (expr.negated) "NOT IN" else "IN"} " +
+                "(${expr.values.joinToString(", ") { renderExpression(it) }})"
+        is ExistsExpressionAst -> "${if (expr.negated) "NOT EXISTS" else "EXISTS"} ${renderGroup(expr.pattern, 0)}"
         is FunctionCallAst ->
             "${SparqlSyntax.functionName(expr.name)}(${expr.arguments.joinToString(", ") { renderExpression(it) }})"
         is ConditionalExpressionAst ->
@@ -367,10 +422,12 @@ object SparqlRenderer {
     private enum class Precedence { RELATIONAL, ADDITIVE, UNARY, PRIMARY }
 
     private fun precedence(expr: ExpressionAst): Precedence = when (expr) {
-        // Written bare: `left op right`.
-        is ComparisonExpressionAst -> Precedence.RELATIONAL
-        // Written `!(...)`.
-        is NotExpressionAst -> Precedence.UNARY
+        // Written bare: `left op right`, `left IN (...)`.
+        is ComparisonExpressionAst, is InExpressionAst -> Precedence.RELATIONAL
+        // Written `!(...)` and `-operand`.
+        is NotExpressionAst, is UnaryMinusExpressionAst -> Precedence.UNARY
+        // `EXISTS { ... }` and `NOT EXISTS { ... }` are built-in calls.
+        is ExistsExpressionAst -> Precedence.PRIMARY
         // Written in their own brackets, so they are bracketed expressions.
         is AndExpressionAst, is OrExpressionAst, is ArithmeticExpressionAst -> Precedence.PRIMARY
         // Terms, calls, IF and aggregates are primary expressions; their arguments are complete expressions.
@@ -424,10 +481,10 @@ object SparqlRenderer {
      */
     private fun isOrderConstraintOrVar(expression: ExpressionAst): Boolean = when (expression) {
         is TermExpressionAst -> expression.term is Var
-        is FunctionCallAst, is AggregateExpressionAst -> true
+        is FunctionCallAst, is AggregateExpressionAst, is ExistsExpressionAst -> true
         // Rendered as `(left op right)`.
         is AndExpressionAst, is OrExpressionAst, is ArithmeticExpressionAst -> true
-        is ComparisonExpressionAst, is NotExpressionAst, is ConditionalExpressionAst -> false
+        is ComparisonExpressionAst, is NotExpressionAst, is ConditionalExpressionAst, is InExpressionAst, is UnaryMinusExpressionAst -> false
     }
 
     // ============================================================================
@@ -611,6 +668,33 @@ object SparqlRenderer {
 
         fun checkQuery(query: SparqlQueryAst) {
             query.whereClause()?.let { walk(it) }
+            if (query is SelectQueryAst) walkClauses(query)
+        }
+
+        /** The patterns of `EXISTS` in the projection, GROUP BY, HAVING and ORDER BY: each is a group of its own. */
+        private fun walkClauses(query: SelectQueryAst) {
+            val expressions = query.selectItems.filterIsInstance<AliasedSelectItemAst>().map { it.expression } +
+                query.groupByExpressions.map { it.expression } + query.having + query.orderBy.map { it.expression }
+            expressions.forEach(::walkExists)
+        }
+
+        private fun walkExists(expression: ExpressionAst) {
+            when (expression) {
+                is ExistsExpressionAst -> walk(expression.pattern)
+                is TermExpressionAst -> Unit
+                is ComparisonExpressionAst -> { walkExists(expression.left); walkExists(expression.right) }
+                is AndExpressionAst -> { walkExists(expression.left); walkExists(expression.right) }
+                is OrExpressionAst -> { walkExists(expression.left); walkExists(expression.right) }
+                is NotExpressionAst -> walkExists(expression.expression)
+                is UnaryMinusExpressionAst -> walkExists(expression.expression)
+                is InExpressionAst -> { walkExists(expression.expression); expression.values.forEach(::walkExists) }
+                is FunctionCallAst -> expression.arguments.forEach(::walkExists)
+                is ConditionalExpressionAst -> {
+                    walkExists(expression.condition); walkExists(expression.thenValue); walkExists(expression.elseValue)
+                }
+                is AggregateExpressionAst -> expression.expression?.let(::walkExists)
+                is ArithmeticExpressionAst -> { walkExists(expression.left); walkExists(expression.right) }
+            }
         }
 
         fun checkUpdate(update: UpdateRequestAst) {
@@ -652,7 +736,10 @@ object SparqlRenderer {
                         term(element.quotedTriple.subject, scope); term(element.quotedTriple.obj, scope); term(element.obj, scope)
                     }
                     is TripleTermPatternAst -> tripleTerm(element, scope)
-                    is FilterPatternAst, is BindPatternAst, is ValuesPatternAst -> Unit
+                    // They do not end the basic graph pattern; a pattern inside EXISTS is a group of its own.
+                    is FilterPatternAst -> walkExists(element.expression)
+                    is BindPatternAst -> walkExists(element.expression)
+                    is ValuesPatternAst -> Unit
                     else -> {
                         nested(element)
                         scope = newScope()
@@ -669,7 +756,10 @@ object SparqlRenderer {
                 is MinusPatternAst -> { walk(element.left); walk(element.right) }
                 is GraphPatternAstImpl -> walk(element.pattern)
                 is ServicePatternAst -> walk(element.pattern)
-                is SubSelectPatternAst -> element.query.where?.let { walk(it) }
+                is SubSelectPatternAst -> {
+                    element.query.where?.let { walk(it) }
+                    walkClauses(element.query)
+                }
                 else -> Unit
             }
         }

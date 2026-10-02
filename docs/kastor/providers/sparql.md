@@ -69,6 +69,7 @@ results.forEach { binding ->
 | `maxRedirects` | `maxRedirects`: redirects followed per request | 5 |
 | `maxResultRowChars` | `maxResultRowChars`: longest single result row (or skipped JSON value such as `head`), in characters of JSON text; see [Result decoding](#result-decoding) | 4194304 (4 Mi; was 16 Mi) |
 | `strictContentType` | `strictContentType` (`true`/`false`): a successful SELECT/ASK response must declare a JSON media type; see [Result decoding](#result-decoding) | `true` |
+| `malformedTerms` | `malformedTerms` (`FAIL`/`SKIP_ROW`): what happens to a result row with a term the RDF model refuses; see [Malformed terms](#malformed-terms) | `FAIL` |
 
 ```kotlin
 val repo = RdfProviderRegistry.create(
@@ -100,13 +101,15 @@ val direct = SparqlRepository(
 
 Configuration is validated when `SparqlEndpointConfig` is created (invalid values throw `IllegalArgumentException`):
 
-- Headers the HTTP client manages itself (`Host`, `Content-Length`, `Connection`, `Expect`, `Upgrade`, in any letter case) cannot be set through `headers` / `header.<Name>`.
+- Headers the HTTP client manages itself (`Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Expect`, `Upgrade`, in any letter case) cannot be set through `headers` / `header.<Name>`.
+- Neither can the two headers the adapter sets on every request, `Accept` (it asks for `application/sparql-results+json`, the only result format it reads) and `Content-Type` (the media type of the body it sends, which follows from `queryMethod` / `updateMethod`). A custom value would break every query, so it is refused with a message that says why.
+- An `Authorization` header (a bearer token, for example) can be set, but not together with `username`/`password` or with credentials in an endpoint URL: there would be two sources for one header.
 - Header names must be RFC 9110 tokens. Header values may contain visible ASCII, ISO-8859-1 characters, and spaces or tabs between them: no line breaks or other control characters, no characters beyond ISO-8859-1, and no leading or trailing white space. Because this is checked up front, a request is never refused later, when it is built.
 - Timeouts, byte caps, `maxResultRowChars`, `maxGetUrlLength`, `insertBatchSize` and `maxBlankNodeComponentTriples` must be positive; `maxRedirects` must not be negative (`0` disables redirects).
 - A timeout too long to be counted in nanoseconds (about 292 years: `Duration.ofMillis(Long.MAX_VALUE)`, `ChronoUnit.FOREVER.duration`, or `Long.MAX_VALUE` as a `...Millis` option) means "no limit". This is the way to switch off `connectTimeout` and `readTimeout`, which cannot be `null`.
 - `SparqlEndpointConfig.toString()` never prints passwords or URL-embedded credentials.
 
-When HTTP Basic credentials would be sent over plain `http` (for the query or the update endpoint), the repository logs a warning once per endpoint through `System.Logger`. Use `https` for authenticated endpoints.
+When credentials would be sent over plain `http` (for the query or the update endpoint), the repository logs a warning once per endpoint through `System.Logger`. This covers HTTP Basic credentials and custom headers whose name says that they carry a credential: `Authorization`, `Proxy-Authorization`, `Cookie`, and any name containing `auth`, `key`, `token`, `secret`, `password`, `credential` or `session` (`X-API-Key`, `X-Auth-Token`, ...). The warning names the endpoint and the headers, never a value. Use `https` for authenticated endpoints.
 
 ## Timeouts
 
@@ -146,12 +149,41 @@ SELECT and ASK results are read as SPARQL 1.1 Query Results JSON (`application/s
 
 - **Content-Type**: with `strictContentType = true` (default) a successful response must declare `application/sparql-results+json`, `application/json` or another `+json` type (`text/plain` is also accepted for ASK, for endpoints that answer a bare `true`/`false`); a response without a Content-Type is parsed. Anything else, such as the HTML of a login page, fails with `RdfQueryException` naming the type. Set `strictContentType = false` for a legacy server that labels its JSON `text/json` or similar; the body must still be SPARQL JSON.
 - **Encoding**: UTF-8. One leading byte order mark is ignored; malformed UTF-8 is an error and is never replaced with U+FFFD.
-- **Strict JSON**: only space, tab, line feed and carriage return are white space; numbers, `true`, `false`, `null`, strings and escapes must be valid JSON, also in the parts the adapter does not use. A `results` or `bindings` member repeated after the one that was read is an error.
+- **Strict JSON**: the whole document must match the JSON grammar, also in the parts the adapter does not use. Only space, tab, line feed and carriage return are white space; numbers, `true`, `false`, `null`, strings and escapes must be valid JSON; inside a string every control character (U+0000 to U+001F) must be escaped. Beyond the grammar, a string must not hold an unpaired surrogate (a `\u` escape of half a surrogate pair): such text is not Unicode.
+- **No repeated members**: a member the adapter reads must occur once: `head`, `vars`, `results`, `bindings` (`boolean` for ASK), a variable within a row, and `type`, `value`, `xml:lang`, `datatype` within a binding. General JSON parsers keep the first or the last of repeated members; the adapter rejects them instead of picking one. (Earlier versions kept the last binding of a repeated variable or member.) Members that are skipped are not compared.
+- **Declared variables**: `head` must be an object and its `vars` an array of strings. When `head` precedes `results`, as it does in practice, a row that binds a variable `vars` does not list is an error. A `head` that follows the rows is only checked for its form, and a result without `head` or without `vars` is read as it is.
+- **Bindings**: `type`, `value`, `xml:lang` and `datatype` must be strings; a number, `true`, `false` or `null` in their place is an error (they used to be read as their text, and `null` as absent). An empty `xml:lang` means no language tag. A language tag together with a `datatype` other than `rdf:langString` is contradictory and rejected (the tag used to win silently).
 - **Row size**: no single row, and no single skipped value such as `head`, may be longer than `maxResultRowChars` characters of JSON text (UTF-16 code units; quotes, escapes and inner white space count). This also holds for streamed responses with `maxStreamedResponseBytes` unbounded.
 - **Nesting**: JSON values may be nested at most 128 levels deep.
-- **Memory**: only what a binding needs is kept: the variable names of a row and each term's `type`, `value`, `xml:lang` and `datatype`. `head`, unknown members and nested values are checked and skipped without being stored. A row therefore needs at most two bytes of heap per character for its strings (8 MB at the default limit) plus roughly 200 bytes per variable it binds, and a scratch buffer of up to twice the size of its largest string while that string is read.
+- **Memory**: only what a result needs is kept: the variable names of `head.vars` (when `head` precedes the rows), the variable names of a row and each term's `type`, `value`, `xml:lang` and `datatype`. The rest of `head`, unknown members and nested values are checked and skipped without being stored. A row therefore needs at most two bytes of heap per character for its strings (8 MB at the default limit) plus roughly 200 bytes per variable it binds, and a scratch buffer of up to twice the size of its largest string while that string is read.
 - **ASK** uses the same decoder: `{"boolean": true}` (other members are skipped) or plain `true`/`false`.
 - Error messages never quote the response body beyond a short, printable excerpt of a term's type.
+
+### Malformed terms
+
+Endpoints return what was loaded into them, and that includes terms the RDF model (and Kastor's `Iri`, `LangString` and `BlankNode`) refuses: an IRI that is relative or contains a space or one of `< > " { } | ^` and the backtick or backslash, a datatype IRI of that kind, a language tag that is not well-formed, a blank node without a label, or text with an unpaired surrogate escape. `malformedTerms` says what happens to a result row that holds one:
+
+| `malformedTerms` | Behaviour |
+|------------------|-----------|
+| `FAIL` (default) | The query fails with `RdfQueryException` at that row. A streamed `withSelectRows` has delivered the rows before it by then. |
+| `SKIP_ROW` | The whole row is left out and the remaining rows are delivered. One warning per query is logged through `System.Logger` (logger `com.geoknoesis.kastor.rdf.sparql.SparqlRepository`) with the number of rows skipped and the first offending term: its row, variable and fault. |
+
+```kotlin
+val repo = SparqlRepository(
+    SparqlEndpointConfig(
+        endpoint = "https://example.org/sparql",
+        malformedTerms = MalformedTermPolicy.SKIP_ROW,
+    )
+)
+// or: options = mapOf("location" to "https://example.org/sparql", "malformedTerms" to "SKIP_ROW")
+```
+
+`SKIP_ROW` is the counterpart of the RDF4J provider's `lenientRead` for graph reads: what cannot be represented is skipped with a logged count, never repaired or guessed at.
+
+- The row is skipped as a whole. It is never delivered with the offending variable unbound, because that could not be told from a solution in which the variable really is unbound (an `OPTIONAL` that did not match).
+- Only terms are concerned. A response that is not JSON or not a SPARQL JSON result (everything listed under [Result decoding](#result-decoding): repeated members, members that are not strings, undeclared variables, RDF 1.2 terms) fails under both policies, as do the size limits and I/O errors. An unpaired surrogate outside the rows fails too.
+- The endpoint does not know about skipped rows: `COUNT` and other aggregates include them, so `SparqlGraph.size()` can be larger than the number of triples `getTriples()` returns, and `LIMIT`/`OFFSET` are applied before rows are skipped, so a page can hold fewer rows than requested.
+- ASK results hold no terms and are not affected.
 
 ### RDF 1.2 results are not supported
 
@@ -205,6 +237,10 @@ The following are rejected with `IllegalArgumentException` before any request is
 
 Bindings are not appended as a trailing `VALUES` block.
 
+## Lifecycle
+
+Repositories with the same connect timeout share one HTTP client, and all repositories share one daemon thread (`kastor-sparql-deadline`) that enforces read timeouts and deadlines. Both are released by `close()`: the HTTP client is shut down and the thread ends when the last open repository is closed (the thread starts again on demand, also for a stream that is still being read after its repository was closed). Close the repositories you no longer use, so that nothing of the adapter keeps running, for example across redeployments of a web application.
+
 ## Capabilities
 
 The provider reports what this HTTP adapter itself supports, not what the remote server might: `sparqlVersion = "1.1"`, no RDF-star / triple terms (RDF 1.2 triple terms and directional literals are not decoded from results), no federation, no transactions. Property paths, aggregation, sub-selects, named graphs and updates are reported as supported.
@@ -219,12 +255,13 @@ The adapter reports `supportsFederation = false`. Queries are sent to the endpoi
 - A group larger than `maxBlankNodeComponentTriples` is rejected with `IllegalArgumentException` before anything is sent.
 - `removeTriples` runs one `ASK … VALUES` (to report whether anything existed) plus one `DELETE DATA` per batch. The operation is **not atomic**.
 - `hasTriple`, `find`, `removeTriple` and `removeTriples` cannot address an existing blank node by label and fail with `IllegalArgumentException`; use an explicit `DELETE WHERE` pattern instead.
+- `find` and `getTriples` check every row the endpoint returns: a row that leaves `?s`, `?p` or `?o` unbound, has a literal as subject, or anything but an IRI as predicate fails with `RdfQueryException` ("not a triple") instead of a `ClassCastException`.
 
 String literals are escaped with the same rules as the query DSL renderer. Among other things, a `u` or `U` directly after a backslash in the text is sent as `u` / `U`, so servers that decode `\uXXXX` escapes before parsing cannot change the value (see [SPARQL fundamentals](../concepts/sparql-fundamentals.md#literal-escaping)).
 
 ## Error Handling
 
-Transport, HTTP, redirect and result-format failures surface as `RdfQueryException` (HTTP error bodies are included), from `select`, `withSelectRows`, `ask` and `update` alike; this includes a request that cannot be built or sent at all, an interrupted call (the thread's interrupt flag stays set) and a cancelled exchange. Exceptions thrown by your own `withSelectRows` consumer propagate unchanged. After `close()`, every operation throws `IllegalStateException("Repository is closed")`.
+Transport, HTTP, redirect and result-format failures surface as `RdfQueryException`, from `select`, `withSelectRows`, `ask` and `update` alike. For an HTTP error status the message quotes the start of the response body as one printable line: at most 512 characters (followed by `...` when the body was longer), line breaks and runs of white space collapsed to a space, and control characters and invisible format characters written as `\uXXXX`, so that a response can neither forge log lines nor hide text. These failures include a request that cannot be built or sent at all, an interrupted call (the thread's interrupt flag stays set) and a cancelled exchange. Exceptions thrown by your own `withSelectRows` consumer propagate unchanged. After `close()`, every operation throws `IllegalStateException("Repository is closed")`.
 
 ```kotlin
 try {
@@ -232,7 +269,7 @@ try {
     results.forEach { println(it) }
 } catch (e: RdfQueryException) {
     // Transport failures (including timeouts), HTTP error statuses such as 401/403,
-    // refused redirects, response-size limits and malformed results. HTTP error bodies are part of the message.
+    // refused redirects, response-size limits and malformed results. The start of an HTTP error body is part of the message.
     println("SPARQL error [${e.errorCode.code}]: ${e.message}")
     e.query?.let { println("Query: $it") }
 } catch (e: IllegalArgumentException) {

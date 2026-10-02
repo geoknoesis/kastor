@@ -126,6 +126,7 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
     private val from = mutableListOf<Iri>()
     private val fromNamed = mutableListOf<Iri>()
     private val groupBy = mutableListOf<Var>()
+    private val groupByExpressions = mutableListOf<GroupConditionAst>()
     private val having = mutableListOf<FilterExpressionAst>()
     private val orderBy = mutableListOf<OrderClauseAst>()
     private var limit: Int? = null
@@ -138,7 +139,7 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
     }
     
     fun prefix(prefix: String, namespace: String) {
-        prefixes.add(PrefixDeclaration(prefix, namespace))
+        prefixes.add(SparqlSyntax.prefixDeclaration(prefix, namespace))
     }
     
     fun from(graph: Iri) {
@@ -182,6 +183,15 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
     fun groupBy(vararg variables: Var) {
         groupBy.addAll(variables)
     }
+
+    /**
+     * `GROUP BY (expression)` or, with an [alias], `GROUP BY (expression AS ?alias)`; the alias can
+     * then be projected. Conditions are written after the variables of `groupBy(vararg)`, in the
+     * order they were added.
+     */
+    fun groupBy(expression: ExpressionAst, alias: Var? = null) {
+        groupByExpressions.add(GroupConditionAst(expression, alias))
+    }
     
     fun having(block: HavingBuilder.() -> Unit) {
         val builder = HavingBuilder()
@@ -207,20 +217,22 @@ class SelectBuilder(initialItems: List<SelectItemAst>) {
         offset = value
     }
     
+    /** The query as built so far; later calls on this builder do not change it. */
     fun build(): SelectQueryAst = SelectQueryAst(
-        selectItems = items,
+        selectItems = items.toList(),
         version = version,
-        prefixes = prefixes,
+        prefixes = prefixes.toList(),
         where = where,
-        from = from,
-        fromNamed = fromNamed,
-        groupBy = groupBy,
-        having = having,
-        orderBy = orderBy,
+        from = from.toList(),
+        fromNamed = fromNamed.toList(),
+        groupBy = groupBy.toList(),
+        having = having.toList(),
+        orderBy = orderBy.toList(),
         limit = limit,
         offset = offset,
         distinct = distinct,
-        reduced = reduced
+        reduced = reduced,
+        groupByExpressions = groupByExpressions.toList(),
     )
 }
 
@@ -241,7 +253,7 @@ class AskBuilder {
     }
     
     fun prefix(prefix: String, namespace: String) {
-        prefixes.add(PrefixDeclaration(prefix, namespace))
+        prefixes.add(SparqlSyntax.prefixDeclaration(prefix, namespace))
     }
     
     fun from(graph: Iri) {
@@ -260,10 +272,10 @@ class AskBuilder {
     
     fun build(): AskQueryAst = AskQueryAst(
         version = version,
-        prefixes = prefixes,
+        prefixes = prefixes.toList(),
         where = where,
-        from = from,
-        fromNamed = fromNamed
+        from = from.toList(),
+        fromNamed = fromNamed.toList()
     )
 }
 
@@ -285,7 +297,7 @@ class ConstructBuilder {
     }
     
     fun prefix(prefix: String, namespace: String) {
-        prefixes.add(PrefixDeclaration(prefix, namespace))
+        prefixes.add(SparqlSyntax.prefixDeclaration(prefix, namespace))
     }
     
     fun from(graph: Iri) {
@@ -323,12 +335,12 @@ class ConstructBuilder {
     }
     
     fun build(): ConstructQueryAst = ConstructQueryAst(
-        template = template,
+        template = template.toList(),
         version = version,
-        prefixes = prefixes,
+        prefixes = prefixes.toList(),
         where = where,
-        from = from,
-        fromNamed = fromNamed
+        from = from.toList(),
+        fromNamed = fromNamed.toList()
     )
 }
 
@@ -349,7 +361,7 @@ class DescribeBuilder(private val initialTerms: List<RdfTerm>) {
     }
     
     fun prefix(prefix: String, namespace: String) {
-        prefixes.add(PrefixDeclaration(prefix, namespace))
+        prefixes.add(SparqlSyntax.prefixDeclaration(prefix, namespace))
     }
     
     fun from(graph: Iri) {
@@ -367,12 +379,12 @@ class DescribeBuilder(private val initialTerms: List<RdfTerm>) {
     }
     
     fun build(): DescribeQueryAst = DescribeQueryAst(
-        describeTerms = initialTerms,
+        describeTerms = initialTerms.toList(),
         version = version,
-        prefixes = prefixes,
+        prefixes = prefixes.toList(),
         where = where,
-        from = from,
-        fromNamed = fromNamed
+        from = from.toList(),
+        fromNamed = fromNamed.toList()
     )
 }
 
@@ -453,9 +465,17 @@ class PatternBuilder {
     }
     
     fun service(endpoint: RdfTerm, block: PatternBuilder.() -> Unit) {
+        service(endpoint, silent = false, block = block)
+    }
+
+    /**
+     * `SERVICE endpoint { block }`, or `SERVICE SILENT endpoint { block }` when [silent]: a remote
+     * service that fails then contributes one solution without bindings instead of failing the query.
+     */
+    fun service(endpoint: RdfTerm, silent: Boolean, block: PatternBuilder.() -> Unit) {
         val builder = PatternBuilder()
         builder.apply(block)
-        patterns.add(ServicePatternAst(endpoint, builder.build()))
+        patterns.add(ServicePatternAst(endpoint, builder.build(), silent))
     }
     
     fun values(variable: Var, vararg values: RdfTerm) {
@@ -506,7 +526,7 @@ class PatternBuilder {
         patterns.add(SubSelectPatternAst(builder.build()))
     }
     
-    fun build(): GraphPatternAst = GroupPatternAst(patterns)
+    fun build(): GraphPatternAst = GroupPatternAst(patterns.toList())
 }
 
 /** Collects the branches of [PatternBuilder.unionOf]. */
@@ -583,10 +603,26 @@ infix fun PropertyPathAst.alternative(other: PropertyPathAst): PropertyPathAst =
 infix fun PropertyPathAst.sequence(other: PropertyPathAst): PropertyPathAst =
     SequencePathAst(this, other)
 
-fun PropertyPathAst.exactly(n: Int): PropertyPathAst = RangePathAst(this, n, n)
-fun PropertyPathAst.atLeast(n: Int): PropertyPathAst = RangePathAst(this, n, null)
-fun PropertyPathAst.atMost(m: Int): PropertyPathAst = RangePathAst(this, 0, m)
-fun PropertyPathAst.between(n: Int, m: Int): PropertyPathAst = RangePathAst(this, n, m)
+/**
+ * Exactly [n] steps of this path. SPARQL has no `{n}` quantifier, so the query spells the
+ * repetition out (`p/p/p` for `exactly(3)`); see [RangePathAst] for the limits. [n] must be 1 to
+ * [MAX_PATH_REPETITION].
+ */
+fun PropertyPathAst.exactly(n: Int): PropertyPathAst = repetition(n, n)
+
+/** [n] or more steps of this path: `p/p+` for `atLeast(2)`, `p+` for `atLeast(1)`, `p*` for `atLeast(0)`. */
+fun PropertyPathAst.atLeast(n: Int): PropertyPathAst = repetition(n, null)
+
+/** Zero to [m] steps of this path: `p?/p?` for `atMost(2)`. A subject is always reached from itself by zero steps. */
+fun PropertyPathAst.atMost(m: Int): PropertyPathAst = repetition(0, m)
+
+/** [n] to [m] steps of this path: `p/p?/p?` for `between(1, 3)`. */
+fun PropertyPathAst.between(n: Int, m: Int): PropertyPathAst = repetition(n, m)
+
+private fun PropertyPathAst.repetition(min: Int, max: Int?): PropertyPathAst {
+    requirePathRepetition(min, max)
+    return RangePathAst(this, min, max)
+}
 
 // ============================================================================
 // EXPRESSION BUILDERS
@@ -681,9 +717,52 @@ infix fun FilterExpressionAst.or(other: FilterExpressionAst): FilterExpressionAs
 
 fun not(expr: FilterExpressionAst): FilterExpressionAst = NotExpressionAst(expr)
 
+/** `!condition`, the same as [not]. */
+@JvmName("negated")
+operator fun FilterExpressionAst.not(): FilterExpressionAst = NotExpressionAst(this)
+
+/** Arithmetic negation: `-expression`. */
+operator fun ExpressionAst.unaryMinus(): ExpressionAst = UnaryMinusExpressionAst(this)
+
+/** `EXISTS { block }`: true for a solution when the pattern, with that solution's bindings, has a match. */
+fun exists(block: PatternBuilder.() -> Unit): FilterExpressionAst = ExistsExpressionAst(PatternBuilder().apply(block).build())
+
+/** `NOT EXISTS { block }`: true for a solution when the pattern, with that solution's bindings, has no match. */
+fun notExists(block: PatternBuilder.() -> Unit): FilterExpressionAst =
+    ExistsExpressionAst(PatternBuilder().apply(block).build(), negated = true)
+
+/** `this IN (values)`; with no value it is false. */
+fun ExpressionAst.isIn(vararg values: ExpressionAst): FilterExpressionAst = InExpressionAst(this, values.toList())
+
+/** `this IN (values)`; with no value it is false. */
+infix fun ExpressionAst.isIn(values: Collection<ExpressionAst>): FilterExpressionAst = InExpressionAst(this, values.toList())
+
+/** `this NOT IN (values)`; with no value it is true. */
+fun ExpressionAst.isNotIn(vararg values: ExpressionAst): FilterExpressionAst = InExpressionAst(this, values.toList(), negated = true)
+
+/** `this NOT IN (values)`; with no value it is true. */
+infix fun ExpressionAst.isNotIn(values: Collection<ExpressionAst>): FilterExpressionAst =
+    InExpressionAst(this, values.toList(), negated = true)
+
+/** `?this IN (terms)` for IRIs and literals. */
+fun Var.isIn(vararg terms: RdfTerm): FilterExpressionAst = InExpressionAst(TermExpressionAst(this), terms.map(::TermExpressionAst))
+
+/** `?this NOT IN (terms)` for IRIs and literals. */
+fun Var.isNotIn(vararg terms: RdfTerm): FilterExpressionAst =
+    InExpressionAst(TermExpressionAst(this), terms.map(::TermExpressionAst), negated = true)
+
 // Built-in functions
-fun function(name: String, vararg args: ExpressionAst): ExpressionAst =
+/**
+ * A call of the function [name]: a built-in (`STRLEN`), a prefixed name (`ex:fn`, or `:fn` with the
+ * empty prefix) or an IRI. The result is an expression and a filter condition alike, so the call
+ * can stand in `bind`, in a projection and directly in `filter { ... }`.
+ */
+fun function(name: String, vararg args: ExpressionAst): FunctionCallAst =
     FunctionCallAst(name, args.toList())
+
+@Deprecated(BINARY_COMPATIBILITY, level = DeprecationLevel.HIDDEN)
+@JvmName("function")
+fun functionAsExpression(name: String, vararg args: ExpressionAst): ExpressionAst = function(name, *args)
 
 // Common SPARQL functions
 fun bound(variable: Var): FilterExpressionAst = FunctionCallAst("BOUND", listOf(TermExpressionAst(variable)))
@@ -863,7 +942,7 @@ class UpdateBuilder {
     }
     
     fun prefix(prefix: String, namespace: String) {
-        prefixes.add(PrefixDeclaration(prefix, namespace))
+        prefixes.add(SparqlSyntax.prefixDeclaration(prefix, namespace))
     }
     
     fun insertData(block: InsertDataBuilder.() -> Unit) {
@@ -945,8 +1024,8 @@ class UpdateBuilder {
 
     fun build(): UpdateRequestAst = UpdateRequestAst(
         version = version,
-        prefixes = prefixes,
-        operations = operations
+        prefixes = prefixes.toList(),
+        operations = operations.toList()
     )
 }
 
@@ -984,8 +1063,8 @@ class InsertDataBuilder {
     }
     
     fun build(): InsertDataOperationAst = InsertDataOperationAst(
-        data = data,
-        graphData = graphData
+        data = data.toList(),
+        graphData = graphData.toList()
     )
 }
 
@@ -1013,8 +1092,8 @@ class DeleteDataBuilder {
     }
     
     fun build(): DeleteDataOperationAst = DeleteDataOperationAst(
-        data = data,
-        graphData = graphData
+        data = data.toList(),
+        graphData = graphData.toList()
     )
 }
 
@@ -1074,7 +1153,7 @@ class ModifyBuilder {
                 val nested = mutableListOf<QuadBlockAst>()
                 extractQuadPatterns(pattern.pattern, inner, nested)
                 require(nested.isEmpty()) { "GRAPH blocks cannot be nested in a DELETE/INSERT template" }
-                graphs.add(QuadBlockAst(pattern.graphName, inner))
+                graphs.add(QuadBlockAst(pattern.graphName, inner.toList()))
             }
             else -> throw IllegalArgumentException(
                 "DELETE/INSERT templates may only contain triple patterns and GRAPH blocks; " +
@@ -1084,14 +1163,14 @@ class ModifyBuilder {
     }
 
     fun build(): ModifyOperationAst = ModifyOperationAst(
-        delete = delete,
-        insert = insert,
+        delete = delete.toList(),
+        insert = insert.toList(),
         where = where,
-        using = using,
-        usingNamed = usingNamed,
+        using = using.toList(),
+        usingNamed = usingNamed.toList(),
         with = with,
-        deleteGraphs = deleteGraphs,
-        insertGraphs = insertGraphs
+        deleteGraphs = deleteGraphs.toList(),
+        insertGraphs = insertGraphs.toList()
     )
 }
 
