@@ -127,8 +127,11 @@ class JenaInferenceViewRobustnessTest {
             val running = Attempt { repo.defaultGraph.find(null, type, cls(3)).size }
             assertTrue(blocked.inRead.await(30, TimeUnit.SECONDS))
 
+            // Only the second reader's step counts. The first reader passes this hook too, for the step it is blocked
+            // in: its worker can reach the store read before the reader's own thread gets from handing the step over
+            // to the hook, which would then report a hand-over the second reader has not made yet.
             val submitted = CountDownLatch(1)
-            repo.hooks.onStepSubmitted = { submitted.countDown() }
+            repo.hooks.onStepSubmitted = { if (Thread.currentThread() !== running.thread) submitted.countDown() }
             val queued = Attempt { repo.defaultGraph.hasTriple(RdfTriple(instance(1), type, cls(4))) }
             assertTrue(submitted.await(30, TimeUnit.SECONDS), "the second reader must hand its step to the worker")
             assertEquals(1, repo.queuedInferenceSteps(), "the second reader's step waits behind the blocked one")

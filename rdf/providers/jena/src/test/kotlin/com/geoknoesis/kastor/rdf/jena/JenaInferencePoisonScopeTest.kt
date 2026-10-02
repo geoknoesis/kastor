@@ -266,11 +266,13 @@ class JenaInferencePoisonScopeTest {
             assertTrue(inRead.await(60, TimeUnit.SECONDS))
             // ... two other readers hand their steps to the worker, which is busy: a find that has not delivered
             // anything yet, and a lookup ...
+            // (The stuck reader passes this hook too, possibly only now: its own hand-over does not count.)
             val waiting = CountDownLatch(2)
-            repo.hooks.onStepSubmitted = { waiting.countDown() }
+            repo.hooks.onStepSubmitted = { if (Thread.currentThread() !== stuck.thread) waiting.countDown() }
             val finding = Attempt { repo.defaultGraph.find(null, type, cls(3)).size }
             val asking = Attempt { repo.defaultGraph.hasTriple(RdfTriple(instance(7), type, cls(4))) }
             assertTrue(waiting.await(60, TimeUnit.SECONDS), "both readers must be waiting behind the stuck step")
+            assertEquals(2, repo.queuedInferenceSteps(), "both steps wait behind the stuck one")
             // ... and its reader gives up: the step does not end within the grace, so the view is given up.
             stuck.thread.interrupt()
             stuck.join()
