@@ -63,11 +63,13 @@ internal enum class ValueKind {
 
 /**
  * `Regex("pattern")` / `Regex("pattern", setOf(RegexOption.X))` for an `sh:pattern` (XPath syntax, translated by
- * [ShaclPatterns.toJava]) honouring SHACL `sh:flags` (i, m, s, x, q).
+ * [ShaclPatterns.translate]) honouring SHACL `sh:flags` (i, m, s, x, q).
  */
 internal fun regexCode(pattern: String, flags: String?): CodeBlock {
-    val options = ShaclPatterns.options(flags)
-    val source = ShaclPatterns.toJava(pattern, flags)
+    // The options of the pattern: those of sh:flags and those of a leading inline flag group.
+    val translated = ShaclPatterns.translate(pattern, flags)
+    val options = translated.options
+    val source = translated.source
     return if (options.isEmpty()) {
         CodeBlock.of("%T(%S)", Regex::class, source)
     } else {

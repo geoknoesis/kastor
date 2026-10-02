@@ -18,6 +18,7 @@ import com.geoknoesis.kastor.gen.processor.testing.prop
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -102,5 +103,82 @@ class PatternGenerationTest {
         assertFailsWith<InvalidConfigurationException> {
             InstanceDslGenerator(RecordingLogger()).generate(InstanceDslRequest("codes", model, "gen.pattern.dsl", DslGenerationOptions()))
         }
+    }
+
+    /**
+     * The rules shared with the Kastor SHACL validator (the tables in `utils/parity` pin the translation itself):
+     * `java.util.regex` syntax that would not mean the same is rejected when the code is generated, with a message
+     * that names the shape, the path and the construct.
+     */
+    @Test
+    fun `patterns that cannot be translated faithfully fail generation naming the shape the path and the construct`() {
+        val rejected = listOf(
+            // pattern, flags, what the message says
+            Triple("[a-c[x-z]]", null, "unescaped '['"),
+            Triple("[a-z&&[^aeiou]]", null, "'&&'"),
+            Triple("[]a]", null, "']'"),
+            Triple("[a--b]", null, "unescaped '-'"),
+            Triple("a(?i)b", null, "inline flag group \"(?i)\""),
+            Triple("(?i:abc)", null, "inline flag group \"(?i:\""),
+            Triple("(?u)abc", null, "inline flag group \"(?u)\""),
+            Triple("${backslash}p{IsAlphabetic}", null, "neither a Unicode block nor a Unicode script"),
+            Triple("[[:word:]]", null, "POSIX"),
+            Triple("(?x)a # comment", null, "'#'"),
+            Triple("abc", "z", "Unsupported sh:flags character 'z'"),
+        )
+        for ((pattern, flags, expected) in rejected) {
+            val model = model(prop("broken").copy(pattern = pattern, patternFlags = flags))
+            for (generate in listOf<() -> Unit>(
+                { OntologyWrapperGenerator(RecordingLogger()).generateWrappers(model, "gen.pattern") },
+                { InstanceDslGenerator(RecordingLogger()).generate(InstanceDslRequest("codes", model, "gen.pattern.dsl", DslGenerationOptions())) },
+            )) {
+                val e = assertFailsWith<InvalidConfigurationException>(pattern) { generate() }
+                val message = e.message!!
+                assertTrue("${EX}CodeShape" in message && "${EX}broken" in message, "$pattern: $message")
+                assertTrue(expected in message, "$pattern: expected \"$expected\" in: $message")
+            }
+        }
+    }
+
+    @Test
+    fun `leading inline flags POSIX classes and script names are generated with their meaning`() {
+        val model = OntologyModel(
+            listOf(
+                ShaclShape(
+                    EX + "CodeShape", EX + "Code",
+                    listOf(
+                        prop("caseless").copy(pattern = "(?i)^abc$"),
+                        prop("posix").copy(pattern = "^[[:alpha:]_]+$"),
+                        prop("script").copy(pattern = "^${backslash}p{IsLatin}+$"),
+                        prop("upper").copy(pattern = "^x${backslash}p{Lu}$", patternFlags = "i"),
+                    ),
+                )
+            ),
+            emptyContext,
+        )
+        val dsl = InstanceDslGenerator(RecordingLogger()).generate(InstanceDslRequest("codes", model, "gen.flags.dsl", DslGenerationOptions()))
+        assertTrue("RegexOption.IGNORE_CASE" in dsl.toString(), "the leading (?i) became an option of the generated Regex")
+        assertFalse("Regex(\"(?i)" in dsl.toString(), "and is no longer part of the pattern that is compiled")
+        assertTrue("Regex(\"^abc" in dsl.toString(), dsl.toString())
+        val probe = """
+            package gen.flags.dsl
+
+            import com.geoknoesis.kastor.rdf.Iri
+            import com.geoknoesis.kastor.rdf.provider.MemoryGraph
+
+            private fun ok(block: CodeBuilder.() -> Unit): String =
+                try { CodeBuilder(Iri("urn:c"), MemoryGraph()).block(); "ok" } catch (e: IllegalArgumentException) { "no" }
+
+            fun probe(): String = listOf(
+                ok { caseless("ABC") }, ok { caseless("abd") },
+                ok { posix("ab_C") }, ok { posix("a1") },
+                ok { script("abc") }, ok { script("a1") },
+                // XPath: the i flag does not make a category escape case-insensitive.
+                ok { upper("XA") }, ok { upper("xa") },
+            ).joinToString("|")
+        """.trimIndent()
+        val result = KotlinSourceCompiler.compile(listOf(dsl), mapOf("gen/flags/dsl/Probe.kt" to probe))
+        result.assertOk()
+        assertEquals("ok|no|ok|no|ok|no|ok|no", result.classLoader().loadClass("gen.flags.dsl.ProbeKt").getMethod("probe").invoke(null))
     }
 }
