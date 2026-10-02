@@ -29,11 +29,18 @@ import java.security.MessageDigest
  * whatever its length; a member is owned by the list (its position is not part of its key, so inserting or removing
  * another member does not re-key it). Cyclic, branching or shared lists are followed cell by cell.
  *
- * **Work is bounded by the findings, not by the graph.** Only these blank nodes are read (through
- * [RdfGraph.find]; the graph is never read in full):
+ * **Work is bounded by the findings, not by the graph.** Only these blank nodes are described:
  * - the connected components (blank nodes linked by triples, in either direction) of the requested nodes;
  * - their **IRI context**: the components hanging off the same IRI by the same predicate as a requested component
- *   (at most [MAX_SIBLINGS] objects per IRI and predicate), which is where a duplicate of a requested node can be.
+ *   (at most [MAX_SIBLINGS] blank-node objects per IRI and predicate), which is where a duplicate of a requested node can be.
+ *
+ * **Cost in graph reads.** A described blank node costs two [RdfGraph.find] calls (its triples as subject and as
+ * object), a context edge one, plus one call for `rdf:reifies` triples. A component has no size limit, and for some
+ * providers a `find` is a scan or a round trip, so after [MAX_LOOKUPS] calls the graph is read **once** in full
+ * ([RdfGraph.getTriplesSequence]) into an index of the triples that touch a blank node, and every later lookup is
+ * answered from it. A call therefore costs at most [MAX_LOOKUPS] `find` calls plus one pass over the graph, and the
+ * keys are the same either way. The index holds the triples with a blank-node subject or object for the duration
+ * of the call.
  *
  * Descriptions are hash accumulators (two `Long`s per node and round, predicates interned), not strings.
  *
@@ -44,10 +51,26 @@ import java.security.MessageDigest
  * 2. for nodes of one component that refinement cannot separate, by a canonical labelling of the component (a node is
  *    singled out, the colours are refined again, and so on; the node to single out is chosen by looking one step
  *    ahead). Components of more than [MAX_CANON_NODES] nodes skip this step;
- * 3. nodes that are still tied are interchangeable (an automorphism of the graph maps one to the other, so they get
- *    the same findings): they are numbered by the position of their component among the objects of its first IRI
- *    owner and predicate, as [RdfGraph.find] returns them. For a given graph and serialisation order that position is
- *    fixed and does not depend on which nodes have findings; either order gives the same set of keys and refs.
+ * 3. where canonical labelling is skipped or runs out of budget (the caps below), by two cheaper values that do
+ *    not depend on labels either: the signature of the component (its size and the colours of all its nodes), then
+ *    the surroundings of the node (every link of its component, described by the distances of its two ends from the
+ *    node and their colours; at most [MAX_PROFILE_WORK] node and link visits per call);
+ * 4. nodes that are still tied are, in practice, interchangeable (an automorphism of the graph maps one to the
+ *    other, so they get the same findings and either order gives the same set of keys and refs). They are numbered
+ *    by the position of their component among the objects of its first IRI owner and predicate, as the graph
+ *    returns them, and last by the order in which they were reached. That last order follows the serialisation and,
+ *    for stores without a stable iteration order, the parser labels: it is the only step that is not canonical,
+ *    and it only decides between nodes that steps 1-3 could not tell apart.
+ *
+ * **Caps.** Beyond them keys stay unique and label-free, but the numbering of duplicates relies on steps 3-4:
+ * - [MAX_SIBLINGS] (10,000): objects of one IRI and predicate searched for duplicates of a requested node; a larger
+ *   fan-out is not searched, so a duplicate there is numbered only if it is requested itself;
+ * - [MAX_CANON_NODES] (512): largest component that is labelled canonically (step 2);
+ * - [MAX_CANON_WORK] (2,000,000 node visits per call): budget of canonical labelling; [MAX_CANON_CHOICES] (16):
+ *   largest tied group for which the node to single out is chosen by looking ahead;
+ * - [MAX_PROFILE_WORK] (4,000,000 visits per call): budget of step 3;
+ * - [DEPTH_ROUNDS] (64): steps followed through blank nodes; deeper differences do not reach a key;
+ * - [MAX_LOOKUPS] (256): `find` calls before the graph is read once in full.
  *
  * Duplicates are searched in the components listed above. A duplicate whose component hangs off no IRI at all (a
  * root blank node such as `[] a owl:AllDisjointClasses`) is numbered only together with the requested nodes.
@@ -63,7 +86,7 @@ internal object BlankNodeKeys {
     /** Most steps followed through blank nodes, down the structure of a node and up its owner chain. */
     const val DEPTH_ROUNDS: Int = 64
 
-    /** Most objects of one IRI and predicate that are searched for duplicates of a requested node. */
+    /** Most blank-node objects of one IRI and predicate that are searched for duplicates of a requested node. */
     const val MAX_SIBLINGS: Int = 10_000
 
     /** Largest component that is labelled canonically to order duplicates inside it. */
@@ -75,6 +98,12 @@ internal object BlankNodeKeys {
     /** Node visits available to canonical labelling per call; beyond it the remaining ties keep graph order. */
     const val MAX_CANON_WORK: Long = 2_000_000
 
+    /** Node and link visits available per call to describe the surroundings of tied nodes. */
+    const val MAX_PROFILE_WORK: Long = 4_000_000
+
+    /** [RdfGraph.find] calls after which the graph is read once in full and indexed. */
+    const val MAX_LOOKUPS: Int = 256
+
     private const val MAX_TRIPLE_TERM_DEPTH: Int = 64
 
     /** Work done by one [compute] call, for tests. */
@@ -84,16 +113,34 @@ internal object BlankNodeKeys {
 
         /** Calls of [RdfGraph.find]. */
         var lookups: Int = 0
+
+        /** Full reads of the graph ([RdfGraph.getTriplesSequence]): 0, or 1 once [lookups] reached the limit. */
+        var fullReads: Int = 0
     }
 
     /**
      * Keys for the [nodes] that occur in [graph] (others are left out).
      *
      * @param prefix start of every key; callers keying nodes of two graphs use two prefixes.
+     * @param maxLookups [RdfGraph.find] calls after which the graph is read once in full ([MAX_LOOKUPS]).
      */
-    fun compute(graph: RdfGraph, nodes: Set<BlankNode>, prefix: String = "_:k", stats: Stats? = null): Map<BlankNode, String> {
+    fun compute(
+        graph: RdfGraph,
+        nodes: Set<BlankNode>,
+        prefix: String = "_:k",
+        stats: Stats? = null,
+        maxLookups: Int = MAX_LOOKUPS,
+    ): Map<BlankNode, String> {
         if (nodes.isEmpty()) return emptyMap()
-        return Keying(graph, stats ?: Stats()).keys(nodes, prefix)
+        return Keying(graph, stats ?: Stats(), maxLookups).keys(nodes, prefix)
+    }
+
+    /** The triples that touch a blank node, read in one pass over the graph. */
+    private class Scan {
+        val bySubject = HashMap<BlankNode, MutableList<RdfTriple>>()
+        val byObject = HashMap<BlankNode, MutableList<RdfTriple>>()
+        val byRootEdge = HashMap<RootEdge, MutableList<RdfTriple>>()
+        val reifies = ArrayList<RdfTriple>()
     }
 
     /** Links of a node: parallel arrays of a label hash and the index of the node at the other end. */
@@ -183,9 +230,13 @@ internal object BlankNodeKeys {
 
     private data class Colour(val hi: Long, val lo: Long)
 
+    private val ZERO = Colour(0, 0)
+
     private data class TiedGroup(val hi: Long, val lo: Long, val component: Int)
 
-    private class Keying(private val graph: RdfGraph, private val stats: Stats) {
+    private class Keying(private val graph: RdfGraph, private val stats: Stats, private val maxLookups: Int) {
+        private var scan: Scan? = null
+        private var lookups = 0
         private val nodes = ArrayList<Node>()
         private val byTerm = HashMap<BlankNode, Node>()
         private val queue = ArrayDeque<Node>()
@@ -210,7 +261,7 @@ internal object BlankNodeKeys {
         /** `rdf:reifies` triples by the blank nodes inside their triple term. */
         private val reified: Map<BlankNode, List<RdfTriple>> by lazy(LazyThreadSafetyMode.NONE) {
             val map = HashMap<BlankNode, MutableList<RdfTriple>>()
-            for (t in find(null, RDF.reifies, null)) {
+            for (t in reifiesTriples()) {
                 val term = t.obj as? TripleTerm ?: continue
                 val found = LinkedHashSet<BlankNode>()
                 collectBlankNodes(term, found, 0)
@@ -267,8 +318,39 @@ internal object BlankNodeKeys {
 
         private fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
             stats.lookups++
+            lookups++
             return graph.find(subject, predicate, obj)
         }
+
+        /** The index of the whole graph once the lookup limit is reached, else null. */
+        private fun scanned(): Scan? {
+            scan?.let { return it }
+            if (lookups < maxLookups) return null
+            stats.fullReads++
+            val index = Scan()
+            for (t in graph.getTriplesSequence()) {
+                val s = t.subject
+                val o = t.obj
+                if (s is BlankNode) index.bySubject.getOrPut(s) { ArrayList(4) }.add(t)
+                if (o is BlankNode) {
+                    index.byObject.getOrPut(o) { ArrayList(2) }.add(t)
+                    if (s is Iri) index.byRootEdge.getOrPut(RootEdge(s, t.predicate)) { ArrayList(2) }.add(t)
+                }
+                if (t.predicate == RDF.reifies) index.reifies.add(t)
+            }
+            scan = index
+            return index
+        }
+
+        private fun triplesOf(node: BlankNode): List<RdfTriple> = scanned()?.let { it.bySubject[node].orEmpty() } ?: find(node, null, null)
+
+        private fun triplesTo(node: BlankNode): List<RdfTriple> = scanned()?.let { it.byObject[node].orEmpty() } ?: find(null, null, node)
+
+        /** The triples of [edge] with a blank-node object, in the order of the graph. */
+        private fun blankObjectsOf(edge: RootEdge): List<RdfTriple> =
+            scanned()?.let { it.byRootEdge[edge].orEmpty() } ?: find(edge.subject, edge.predicate, null).filter { it.obj is BlankNode }
+
+        private fun reifiesTriples(): List<RdfTriple> = scanned()?.reifies ?: find(null, RDF.reifies, null)
 
         private fun node(term: BlankNode): Node =
             byTerm[term] ?: Node(term, nodes.size).also {
@@ -290,7 +372,7 @@ internal object BlankNodeKeys {
 
         private fun describe(n: Node, requested: Boolean) {
             stats.describedNodes++
-            for (t in find(n.term, null, null)) {
+            for (t in triplesOf(n.term)) {
                 n.present = true
                 val p = t.predicate
                 when (val o = t.obj) {
@@ -337,7 +419,7 @@ internal object BlankNodeKeys {
                     }
                 }
             }
-            for (t in find(null, null, n.term)) {
+            for (t in triplesTo(n.term)) {
                 n.present = true
                 val s = t.subject
                 if (s is BlankNode) {
@@ -381,7 +463,7 @@ internal object BlankNodeKeys {
         /** The components that hang off the same IRI by the same predicate as a requested component. */
         private fun describeContext() {
             for (edge in contextEdges.toList()) {
-                val siblings = find(edge.subject, edge.predicate, null)
+                val siblings = blankObjectsOf(edge)
                 if (siblings.size > MAX_SIBLINGS) continue
                 for (t in siblings) {
                     val o = t.obj
@@ -606,6 +688,10 @@ internal object BlankNodeKeys {
             private val refined = BooleanArray(components)
             private val labelled = BooleanArray(components)
             private val positions = HashMap<Int, Int>()
+            private val signatures = arrayOfNulls<Colour>(components)
+            private val profiles = HashMap<Int, Colour>()
+            private val distance = IntArray(nodes.size) { -1 }
+            private var profileWork = 0L
 
             fun sort(nodesOfClass: ArrayList<Node>) {
                 for (node in nodesOfClass) {
@@ -629,10 +715,80 @@ internal object BlankNodeKeys {
                         .thenComparator { a, b -> stableLo[a.index].compareTo(stableLo[b.index]) }
                         .thenComparator { a, b -> canonHi[a.index].compareTo(canonHi[b.index]) }
                         .thenComparator { a, b -> canonLo[a.index].compareTo(canonLo[b.index]) }
+                        .thenComparator { a, b -> compareColours(signature(a.component), signature(b.component)) }
+                        .thenComparator { a, b -> compareColours(profile(a.index), profile(b.index)) }
                         .thenComparator { a, b -> compareComponents(a.component, b.component) }
                         .thenComparator { a, b -> a.index.compareTo(b.index) },
                 )
             }
+
+            private fun compareColours(a: Colour, b: Colour): Int {
+                val byHi = a.hi.compareTo(b.hi)
+                return if (byHi != 0) byHi else a.lo.compareTo(b.lo)
+            }
+
+            /** The size of a (refined) component and the colours of all its nodes: the same for every labelling. */
+            private fun signature(component: Int): Colour =
+                signatures[component] ?: run {
+                    var hi = 0L
+                    var lo = 0L
+                    for (i in members[component]) {
+                        hi += mix(stableHi[i], stableLo[i])
+                        lo += mix(stableLo[i] xor ALT, stableHi[i])
+                    }
+                    val size = members[component].size.toLong()
+                    Colour(mix(hi, size), mix(lo, size)).also { signatures[component] = it }
+                }
+
+            /**
+             * The surroundings of a node: every link of its component, described by the distances of its two ends
+             * from the node and by their colours. It tells apart nodes that colour refinement leaves tied (a node of
+             * a 6-cycle and a node of a 3-cycle) without singling nodes out, in one breadth-first pass per node.
+             * Zero once [MAX_PROFILE_WORK] is spent.
+             */
+            private fun profile(index: Int): Colour =
+                profiles.getOrPut(index) {
+                    if (profileWork > MAX_PROFILE_WORK) return@getOrPut ZERO
+                    val reached = ArrayList<Int>()
+                    distance[index] = 0
+                    reached += index
+                    var at = 0
+                    while (at < reached.size) {
+                        val node = nodes[reached[at++]]
+                        val next = distance[node.index] + 1
+                        for (pass in 0..1) {
+                            val links = if (pass == 0) node.down else node.up
+                            for (k in 0 until links.size) {
+                                val target = links.targets[k]
+                                if (distance[target] < 0) {
+                                    distance[target] = next
+                                    reached += target
+                                }
+                            }
+                        }
+                    }
+                    var hi = 0L
+                    var lo = 0L
+                    var visits = reached.size.toLong()
+                    for (i in reached) {
+                        val node = nodes[i]
+                        for (pass in 0..1) {
+                            val links = if (pass == 0) node.down else node.up
+                            val direction = if (pass == 0) 0L else UP
+                            visits += links.size
+                            for (k in 0 until links.size) {
+                                val target = links.targets[k]
+                                val ends = mix(distance[i].toLong(), distance[target].toLong())
+                                val label = mix(ends, links.labels[k] xor direction)
+                                hi += mix(mix(mix(label, stableHi[i]), stableLo[i]), mix(stableHi[target], stableLo[target]))
+                                lo += mix(mix(mix(label xor ALT, stableLo[i]), stableHi[i]), mix(stableLo[target], stableHi[target]))
+                            }
+                        }
+                    }
+                    for (i in reached) distance[i] = -1
+                    profileWork += visits
+                    Colour(hi, lo)
+                }
 
             /** By first root edge, then by position among the objects of that edge; components without one last. */
             private fun compareComponents(a: Int, b: Int): Int {
@@ -650,7 +806,7 @@ internal object BlankNodeKeys {
 
             private fun position(component: Int, edge: RootEdge): Int =
                 positions.getOrPut(component) {
-                    find(edge.subject, edge.predicate, null).indexOfFirst { t -> (t.obj as? BlankNode)?.let { byTerm[it]?.component } == component }
+                    blankObjectsOf(edge).indexOfFirst { t -> (t.obj as? BlankNode)?.let { byTerm[it]?.component } == component }
                 }
 
             /**
@@ -701,8 +857,9 @@ internal object BlankNodeKeys {
              * Gives every node of the component its own colour, in a way that depends on the structure only: while
              * some nodes share a colour, one node of the group with the smallest colour is singled out and the
              * colours are refined again. The node is the one whose singling out gives the smallest colouring (nodes
-             * that give the same colouring are interchangeable as far as one step ahead can tell; the first in graph
-             * order is taken).
+             * that give the same colouring are interchangeable as far as one step ahead can tell; the first reached
+             * is taken). Without look-ahead (a group above [MAX_CANON_CHOICES], or the budget spent) the node with
+             * the smallest surroundings ([profile]) is taken.
              */
             private fun canon(component: IntArray) {
                 for (i in component) {
@@ -713,6 +870,12 @@ internal object BlankNodeKeys {
                     val group = smallestTiedGroup(component) ?: break
                     if (canonWork > 2 * MAX_CANON_WORK) break
                     var choice = group[0]
+                    if (group.size > MAX_CANON_CHOICES || canonWork > MAX_CANON_WORK) {
+                        // No look-ahead: take the node with the smallest surroundings rather than the first reached.
+                        for (candidate in group) {
+                            if (compareColours(profile(candidate), profile(choice)) < 0) choice = candidate
+                        }
+                    }
                     if (group.size <= MAX_CANON_CHOICES && canonWork <= MAX_CANON_WORK) {
                         val savedHi = LongArray(component.size) { canonHi[component[it]] }
                         val savedLo = LongArray(component.size) { canonLo[component[it]] }
