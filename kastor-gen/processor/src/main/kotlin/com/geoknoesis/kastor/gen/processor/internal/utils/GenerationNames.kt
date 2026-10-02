@@ -50,6 +50,19 @@ public object GenerationNames {
     /** Whether [name] is a Kotlin hard keyword (needs backticks). */
     public fun isKeyword(name: String): Boolean = NamingUtils.isKeyword(name)
 
+    /**
+     * One message per class of [model] whose name is a type that Kotlin imports by default (`String`, `Pair`, `List`,
+     * ...): such a class is generated under that name plus `Type`, because a generated `String` would shadow
+     * `kotlin.String` in every generated file of its package. Sorted by class IRI.
+     */
+    public fun renamedTypeWarnings(model: OntologyModel): List<String> =
+        model.shapes.map { it.targetClass }.distinct().sorted().mapNotNull { iri ->
+            NamingUtils.shadowedBuiltin(iri, model.context)?.let { builtin ->
+                "class <$iri>: the name '$builtin' is a type that Kotlin imports by default and would shadow it in the " +
+                    "generated code; the generated type is named '${NamingUtils.domainName(iri, model.context)}'"
+            }
+        }
+
     /** Kotlin type names of all shapes in [model]. */
     public fun knownTypes(model: OntologyModel): Set<String> =
         model.shapes.map { NamingUtils.domainName(it.targetClass, model.context) }.toSet()
@@ -151,7 +164,13 @@ public object GenerationNames {
             if (!merged.deactivated && effectiveIn != null && effectiveIn.isEmpty()) {
                 warn(
                     "shape <${shape.shapeIri}>: the sh:in lists that apply to <$path> (its own and the inherited ones) " +
-                        "have no member in common, so every value of <$path> is rejected by validation"
+                        "have no member in common (or the list is empty), so every value of <$path> is rejected by validation"
+                )
+            }
+            if (!merged.deactivated && merged.nodeKindUnsatisfiable) {
+                warn(
+                    "shape <${shape.shapeIri}>: the sh:nodeKind constraints that apply to <$path> (its own and the inherited " +
+                        "ones) have no node kind in common, so every value of <$path> is rejected by validation"
                 )
             }
 
@@ -261,10 +280,39 @@ public object GenerationNames {
         else -> listOf("literal", TypeMapper.literalMapping(p.datatype).type.toString())
     }
 
+    private const val SH = "http://www.w3.org/ns/shacl#"
+
+    /** The term kinds each `sh:nodeKind` value allows. */
+    private val NODE_KINDS: Map<String, Set<String>> = linkedMapOf(
+        "${SH}IRI" to setOf("IRI"),
+        "${SH}BlankNode" to setOf("BlankNode"),
+        "${SH}Literal" to setOf("Literal"),
+        "${SH}BlankNodeOrIRI" to setOf("BlankNode", "IRI"),
+        "${SH}BlankNodeOrLiteral" to setOf("BlankNode", "Literal"),
+        "${SH}IRIOrLiteral" to setOf("IRI", "Literal"),
+    )
+
     /**
-     * Conjunction of two declarations of one path; for non-orderable parameters [a]'s value wins. A `sh:deactivated`
-     * declaration contributes no constraints: conjoined with an active one, only the active one's constraints remain
-     * (the member keeps [a]'s name).
+     * The `sh:nodeKind` that both [a] and [b] allow, and whether none exists. Unknown node kind IRIs cannot be
+     * intersected: equal ones are kept, different ones are unsatisfiable together.
+     */
+    private fun intersectNodeKinds(a: String?, b: String?): Pair<String?, Boolean> {
+        if (a == null || b == null || a == b) return (a ?: b) to false
+        val kindsA = NODE_KINDS[a]
+        val kindsB = NODE_KINDS[b]
+        if (kindsA == null || kindsB == null) return a to true
+        val common = kindsA intersect kindsB
+        val kind = NODE_KINDS.entries.firstOrNull { it.value == common }?.key
+        return if (kind == null) a to true else kind to false
+    }
+
+    /**
+     * Conjunction of two declarations of one path: every constraint of both applies. Bounds keep the tighter one,
+     * `sh:in` lists are intersected, **every** `sh:pattern` and **every** `sh:hasValue` is kept (a value must match
+     * each pattern; each required value must be present), and `sh:nodeKind`s are intersected (no common kind:
+     * [ShaclProperty.nodeKindUnsatisfiable]). For parameters that only describe the member (name, datatype, class)
+     * [a]'s value wins. A `sh:deactivated` declaration contributes no constraints: conjoined with an active one,
+     * only the active one's constraints remain (the member keeps [a]'s name).
      */
     private fun conjoin(a: ShaclProperty, b: ShaclProperty): ShaclProperty {
         if (a.deactivated != b.deactivated) {
@@ -292,6 +340,9 @@ public object GenerationNames {
             b.inValues == null -> a.inValues
             else -> a.inValues.filter { it in b.inValues }
         }
+        val patterns = (a.patterns + b.patterns).distinct()
+        val hasValues = (a.hasValues + b.hasValues).distinct()
+        val (nodeKind, noCommonKind) = intersectNodeKinds(a.nodeKind, b.nodeKind)
         return a.copy(
             description = a.description.ifBlank { b.description },
             datatype = a.datatype ?: b.datatype,
@@ -300,8 +351,9 @@ public object GenerationNames {
             maxCount = lo(a.maxCount, b.maxCount),
             minLength = hi(a.minLength, b.minLength),
             maxLength = lo(a.maxLength, b.maxLength),
-            pattern = a.pattern ?: b.pattern,
-            patternFlags = if (a.pattern != null) a.patternFlags else b.patternFlags,
+            pattern = patterns.firstOrNull()?.pattern,
+            patternFlags = patterns.firstOrNull()?.flags,
+            additionalPatterns = patterns.drop(1),
             minInclusive = hi(a.minInclusive, b.minInclusive),
             maxInclusive = lo(a.maxInclusive, b.maxInclusive),
             minExclusive = hi(a.minExclusive, b.minExclusive),
@@ -310,8 +362,10 @@ public object GenerationNames {
             inValuesTyped = inTyped
                 ?: (a.inValuesTyped ?: b.inValuesTyped)?.let { typed -> if (inValues == null) typed else typed.filter { it.value in inValues } },
             enumName = a.enumName ?: b.enumName,
-            hasValue = a.hasValue ?: b.hasValue,
-            nodeKind = a.nodeKind ?: b.nodeKind,
+            hasValue = hasValues.firstOrNull(),
+            additionalHasValues = hasValues.drop(1),
+            nodeKind = nodeKind,
+            nodeKindUnsatisfiable = a.nodeKindUnsatisfiable || b.nodeKindUnsatisfiable || noCommonKind,
             qualifiedValueShape = a.qualifiedValueShape ?: b.qualifiedValueShape,
             qualifiedMinCount = a.qualifiedMinCount ?: b.qualifiedMinCount,
             qualifiedMaxCount = a.qualifiedMaxCount ?: b.qualifiedMaxCount,

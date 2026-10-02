@@ -77,7 +77,7 @@ public class OntologyProcessor internal constructor(
       }
       var handled = false
 
-      symbol.annotations.filter { it.shortName.asString() == "Rdf" }.forEach { ann ->
+      symbol.annotations.filter { it.isKastorRdf() }.forEach { ann ->
         annotationParser.parseInstanceDslFromRdf(ann, defaultPkg)?.let { request ->
           handled = true
           val key = "${request.targetPackage}|${request.dslName}|${request.shaclPath}"

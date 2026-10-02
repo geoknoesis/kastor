@@ -274,13 +274,23 @@ public class OntologyWrapperGenerator(
                 )
                 functionBuilder.endControlFlow()
             }
-            property.nodeKind?.let { nodeKind ->
+            if (property.nodeKindUnsatisfiable) {
+                // The node kinds that apply (own and inherited) have no kind in common: no value satisfies them.
                 functionBuilder.beginControlFlow("%L.forEach { value ->", values)
-                check(
-                    CodeBlock.of("!%T.hasNodeKind(value, Iri(%S))", graphOps, nodeKind),
-                    "nodeKind", pred, "sh:nodeKind <$nodeKind> violated for $pred", CodeBlock.of("value"),
+                functionBuilder.addStatement(
+                    "violations += %L",
+                    violation("nodeKind", pred, "the sh:nodeKind constraints that apply to $pred have no node kind in common", CodeBlock.of("value")),
                 )
                 functionBuilder.endControlFlow()
+            } else {
+                property.nodeKind?.let { nodeKind ->
+                    functionBuilder.beginControlFlow("%L.forEach { value ->", values)
+                    check(
+                        CodeBlock.of("!%T.hasNodeKind(value, Iri(%S))", graphOps, nodeKind),
+                        "nodeKind", pred, "sh:nodeKind <$nodeKind> violated for $pred", CodeBlock.of("value"),
+                    )
+                    functionBuilder.endControlFlow()
+                }
             }
             property.targetClass?.let { cls ->
                 functionBuilder.beginControlFlow("%L.forEach { value ->", values)
@@ -295,16 +305,17 @@ public class OntologyWrapperGenerator(
 
             // String-based constraints apply to the string of every value node: the lexical form of a literal or the
             // IRI string of an IRI. A blank node (or triple term) has no string and violates them (SHACL 4.4).
-            if (property.pattern != null || property.minLength != null || property.maxLength != null) {
+            if (property.patterns.isNotEmpty() || property.minLength != null || property.maxLength != null) {
                 functionBuilder.beginControlFlow("%L.forEach { value ->", values)
                 functionBuilder.addStatement(
                     "val str: String? = when (value) { is %T -> value.lexical; is %T -> value.value; else -> null }",
                     literalClass, iriClass,
                 )
-                property.pattern?.let { pat ->
+                // Every pattern that applies (own and inherited) must match.
+                property.patterns.forEach { (pat, flags) ->
                     val constant = "PATTERN_${patternIndex++}"
                     // Lazy: a pattern the JVM cannot compile only fails validate(), never class initialisation.
-                    companion.addProperty(ShaclPatterns.lazyProperty(pat, property.patternFlags, constant))
+                    companion.addProperty(ShaclPatterns.lazyProperty(pat, flags, constant))
                     check(CodeBlock.of("str == null || !%N.containsMatchIn(str)", constant), "pattern", pred, "pattern $pat violated for $pred", CodeBlock.of("value"))
                 }
                 property.minLength?.let {

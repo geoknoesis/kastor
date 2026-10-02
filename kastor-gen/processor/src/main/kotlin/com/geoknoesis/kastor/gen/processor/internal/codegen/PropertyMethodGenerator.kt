@@ -287,17 +287,16 @@ private fun buildKdoc(property: PropertyBuilderModel): String {
         if (property.constraints.minLength != null) {
             append("\nMin length: ${property.constraints.minLength}")
         }
-        if (property.constraints.pattern != null) {
-            append("\nPattern: ${property.constraints.pattern}")
-        }
+        property.constraints.patterns.forEach { append("\nPattern: ${it.pattern}") }
     })
 }
 
 /**
  * Emits `require(...)` checks for the SHACL constraints that can be evaluated on the setter argument.
  * Checks are datatype-aware: length/pattern checks only for text, numeric bounds only for numeric types
- * (BigInteger/BigDecimal compare exactly), `sh:in`/`sh:hasValue` against the lexical form. Constraints that
- * do not apply to [valueType] are left to `validate()` / SHACL validation.
+ * (BigInteger/BigDecimal compare exactly), `sh:in` against the lexical form. Constraints that do not apply to
+ * [valueType] are left to `validate()` / SHACL validation, and so is `sh:hasValue`: it requires a value to be
+ * **among** the values of the property, which says nothing about any single value handed to a setter.
  */
 private fun addImmediateValidation(
     functionBuilder: FunSpec.Builder,
@@ -322,10 +321,11 @@ private fun addImmediateValidation(
         c.maxLength?.let {
             functionBuilder.addStatement("require(%L.let { it.codePointCount(0, it.length) } <= %L) { %S }", text, it, "$name must have maxLength <= $it")
         }
-        c.pattern?.let {
-            // The lazily compiled constant is emitted once per file by InstanceDslGenerator.
+        // Every pattern that applies (own and inherited) must match. The lazily compiled constants are emitted once
+        // per file by InstanceDslGenerator.
+        c.patterns.forEach { (pattern, flags) ->
             functionBuilder.addStatement(
-                "require(%N.containsMatchIn(%L)) { %S }", ShaclPatterns.constantName(it, c.patternFlags), text, "$name must match pattern: $it"
+                "require(%N.containsMatchIn(%L)) { %S }", ShaclPatterns.constantName(pattern, flags), text, "$name must match pattern: $pattern"
             )
         }
     }
@@ -340,10 +340,6 @@ private fun addImmediateValidation(
                 lexical, values.map { CodeBlock.of("%S", it) }.joinToCode(", "), "$name must be one of: ${values.joinToString()}"
             )
         }
-    }
-
-    c.hasValue?.let {
-        functionBuilder.addStatement("require(%L == %S) { %S }", lexical, it, "$name must equal: $it")
     }
 
     // Numeric bounds compare exactly: the value is encoded as an XSD numeric literal and compared with the bound's

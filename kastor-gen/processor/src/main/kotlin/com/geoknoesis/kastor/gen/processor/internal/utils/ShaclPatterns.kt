@@ -196,9 +196,9 @@ internal object ShaclPatterns {
     /** Invalid patterns in [model], one message per shape and path. */
     fun problems(model: OntologyModel): List<String> =
         model.shapes.sortedBy { it.targetClass }.flatMap { shape ->
-            shape.properties.sortedBy { it.path }.mapNotNull { property ->
-                property.pattern?.let { pattern ->
-                    error(pattern, property.patternFlags)?.let {
+            shape.properties.sortedBy { it.path }.flatMap { property ->
+                property.patterns.mapNotNull { (pattern, flags) ->
+                    error(pattern, flags)?.let {
                         "shape <${shape.shapeIri}>, path <${property.path}>: sh:pattern \"$pattern\" is not a valid regular expression ($it)"
                     }
                 }

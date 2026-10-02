@@ -89,7 +89,21 @@ public data class PropertyConstraints(
     val qualifiedMaxCount: Int? = null,
     /** The `sh:in` members as RDF terms (IRI, or literal with datatype and language tag); see [inValues]. */
     val inValuesTyped: List<ShaclInValue>? = null,
+    /** Further `sh:pattern`s of the path (other property shapes, inherited): each must match, like [pattern]. */
+    val additionalPatterns: List<ShaclPattern> = emptyList(),
+    /** Further `sh:hasValue`s of the path: each must be among the values, like [hasValue]. */
+    val additionalHasValues: List<String> = emptyList(),
+    /** The `sh:nodeKind`s that apply to the path have no kind in common: every value is rejected. */
+    val nodeKindUnsatisfiable: Boolean = false,
 ) {
+    /** Every `sh:pattern` that applies: [pattern] (with [patternFlags]) and [additionalPatterns]. */
+    val patterns: List<ShaclPattern>
+        get() = listOfNotNull(pattern?.let { ShaclPattern(it, patternFlags) }) + additionalPatterns
+
+    /** Every `sh:hasValue` that applies: [hasValue] and [additionalHasValues]. */
+    val hasValues: List<String>
+        get() = listOfNotNull(hasValue) + additionalHasValues
+
     public companion object {
         /**
          * Creates PropertyConstraints from a ShaclProperty.
@@ -110,7 +124,10 @@ public data class PropertyConstraints(
                 nodeKind = property.nodeKind,
                 qualifiedValueShape = property.qualifiedValueShape,
                 qualifiedMinCount = property.qualifiedMinCount,
-                qualifiedMaxCount = property.qualifiedMaxCount
+                qualifiedMaxCount = property.qualifiedMaxCount,
+                additionalPatterns = property.additionalPatterns,
+                additionalHasValues = property.additionalHasValues,
+                nodeKindUnsatisfiable = property.nodeKindUnsatisfiable,
             )
         }
     }

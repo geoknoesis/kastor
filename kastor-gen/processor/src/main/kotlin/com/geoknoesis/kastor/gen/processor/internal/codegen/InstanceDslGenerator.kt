@@ -208,7 +208,7 @@ public class InstanceDslGenerator(
 
         // sh:pattern regexes referenced by setters and validate(): compiled lazily once per pattern, not per call.
         classBuilders.flatMap { it.properties }
-            .mapNotNull { p -> p.constraints.pattern?.let { it to p.constraints.patternFlags } }
+            .flatMap { p -> p.constraints.patterns }
             .distinct()
             .sortedBy { (pattern, flags) -> ShaclPatterns.constantName(pattern, flags) }
             .forEach { (pattern, flags) -> fileBuilder.addProperty(ShaclPatterns.lazyProperty(pattern, flags)) }
@@ -299,15 +299,22 @@ public class InstanceDslGenerator(
             .returns(ClassName(CodegenConstants.RDF_PACKAGE, "RdfResource"))
 
         functionBuilder.addStatement("val resource = %T(iri)", ClassName(CodegenConstants.RDF_PACKAGE, "Iri"))
-        functionBuilder.addStatement("graph.addTriple(resource, %T.type, %L)",
+        // The instance is built in a scratch graph and only written to the DSL's graph once configure and validate
+        // succeeded: a rejected value or a failed validation leaves no triple of it behind. The scratch graph starts
+        // with what the graph already says about the resource, so a second block for one resource is validated
+        // together with the first.
+        functionBuilder.addStatement("val scratch = %T()", ClassName(CodegenConstants.RDF_PROVIDER_PACKAGE, "MemoryGraph"))
+        functionBuilder.addStatement("scratch.addTriples(graph.find(resource))")
+        functionBuilder.addStatement("scratch.addTriple(resource, %T.type, %L)",
             ClassName(CodegenConstants.VOCAB_PACKAGE, "RDF"), classIriCodeBlock)
-        functionBuilder.addStatement("val builder = %T(resource, graph)", ClassName(packageName, builderClassName))
+        functionBuilder.addStatement("val builder = %T(resource, scratch)", ClassName(packageName, builderClassName))
         functionBuilder.addStatement("builder.configure()")
 
         if (options.validation.enabled) {
             functionBuilder.addStatement("builder.validate()")
         }
 
+        functionBuilder.addStatement("graph.addTriples(scratch.getTriples())")
         functionBuilder.addStatement("instances.add(resource)")
         functionBuilder.addStatement("return resource")
 

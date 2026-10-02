@@ -305,7 +305,8 @@ public class ShaclParser(private val logger: KSPLogger) {
                             null
                         }
                     }
-                }.takeIf { it.isNotEmpty() }
+                }
+                // An empty list stays an empty list: `sh:in ()` allows no value, which is not "no sh:in".
             }
 
             return ShaclProperty(

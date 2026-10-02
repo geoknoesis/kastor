@@ -86,7 +86,30 @@ public data class ShaclProperty(
     val message: String? = null,
     /** `sh:deactivated true`: the property shape's constraints are not validated and do not make the member required. */
     val deactivated: Boolean = false,
-)
+    /**
+     * Further `sh:pattern`s that apply to the same path (declared by another property shape of the node shape, or
+     * inherited): SHACL constraints are a conjunction, so a value must match [pattern] **and** each of these.
+     */
+    val additionalPatterns: List<ShaclPattern> = emptyList(),
+    /** Further `sh:hasValue`s that apply to the same path: each must be among the values, like [hasValue]. */
+    val additionalHasValues: List<String> = emptyList(),
+    /**
+     * True when the `sh:nodeKind`s that apply to the path (its own and the inherited ones) have no kind in common:
+     * no value satisfies them, so validation rejects every value. [nodeKind] then keeps the first declaration's kind.
+     */
+    val nodeKindUnsatisfiable: Boolean = false,
+) {
+    /** Every `sh:pattern` that applies to the path: [pattern] (with [patternFlags]) and [additionalPatterns]. */
+    val patterns: List<ShaclPattern>
+        get() = listOfNotNull(pattern?.let { ShaclPattern(it, patternFlags) }) + additionalPatterns
+
+    /** Every `sh:hasValue` that applies to the path: [hasValue] and [additionalHasValues]. */
+    val hasValues: List<String>
+        get() = listOfNotNull(hasValue) + additionalHasValues
+}
+
+/** One `sh:pattern` with its `sh:flags`. */
+public data class ShaclPattern(val pattern: String, val flags: String? = null)
 
 /**
  * Model representing a JSON-LD context.
