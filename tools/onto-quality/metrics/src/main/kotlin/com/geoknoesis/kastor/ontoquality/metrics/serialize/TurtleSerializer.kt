@@ -77,11 +77,15 @@ internal object TurtleSerializer {
         return tripleLines.joinToString("\n")
     }
 
+    /**
+     * One datatype per metric, the `rdfs:range` its property declares in `kastor-metrics.ttl`: counts and depths are
+     * `xsd:integer`, every ratio and mean is `xsd:decimal` (four decimals) even when its value is whole, so a
+     * consumer never sees the same metric change datatype between two ontologies.
+     */
     private fun turtleLexical(m: MetricValue): String {
         val v = m.rawValue
-        val isInt = kotlin.math.abs(v - kotlin.math.round(v)) < 1e-9 && kotlin.math.abs(v) < 1e15
-        return if (isInt) {
-            "${v.toLong()}"
+        return if (m.metricIri in KastorMetricsVocab.integerMetrics) {
+            "${Math.round(v)}"
         } else {
             "\"${String.format(java.util.Locale.US, "%.4f", v)}\"^^xsd:decimal"
         }

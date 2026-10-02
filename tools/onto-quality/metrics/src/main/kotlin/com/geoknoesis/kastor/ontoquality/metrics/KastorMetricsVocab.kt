@@ -60,6 +60,13 @@ object KastorMetricsVocab {
     const val siblingCohortCount = "${NS}siblingCohortCount"
     const val maxSiblingCohortSize = "${NS}maxSiblingCohortSize"
 
+    /**
+     * Metrics whose property has `rdfs:range xsd:integer` in `kastor-metrics.ttl`; every other metric is an
+     * `xsd:decimal`. A metric is always written with its declared datatype, whatever its value.
+     */
+    internal val integerMetrics: Set<String> =
+        setOf(depthOfInheritanceTree, conceptCount, orphanConceptCount, siblingCohortCount, maxSiblingCohortSize)
+
     const val oquareDITOnto = "${OQUARE_NS}DITOnto"
     const val oquareNACOnto = "${OQUARE_NS}NACOnto"
     const val oquareNOCOnto = "${OQUARE_NS}NOCOnto"

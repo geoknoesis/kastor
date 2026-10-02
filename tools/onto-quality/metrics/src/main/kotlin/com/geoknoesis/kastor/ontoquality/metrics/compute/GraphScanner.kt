@@ -87,6 +87,41 @@ internal object GraphScanner {
     private val OWL_SOME_VALUES_FROM = "${OWL.namespace}someValuesFrom"
     private val OWL_ALL_VALUES_FROM = "${OWL.namespace}allValuesFrom"
     private val OWL_ON_CLASS = "${OWL.namespace}onClass"
+    private val OWL_INTERSECTION_OF = "${OWL.namespace}intersectionOf"
+    private val OWL_UNION_OF = "${OWL.namespace}unionOf"
+    private val RDF_FIRST = "${RDF.namespace}first"
+    private val RDF_REST = "${RDF.namespace}rest"
+
+    /**
+     * The anonymous class-expression nodes of [start]: the node itself and, through `owl:intersectionOf` /
+     * `owl:unionOf` lists (nested to any depth), every blank-node operand. A defined class
+     * (`owl:equivalentClass [ owl:intersectionOf ( :Base [ a owl:Restriction … ] ) ]`) has its restrictions there.
+     * Iterative, and each node and list cell is visited once, so malformed (cyclic) lists terminate.
+     */
+    private fun expressionNodes(
+        start: String,
+        operandLists: Map<String, List<String>>,
+        listFirst: Map<String, String>,
+        listRest: Map<String, String>,
+    ): Set<String> {
+        if (start !in operandLists) return setOf(start)
+        val seen = LinkedHashSet<String>()
+        val cells = HashSet<String>()
+        val queue = ArrayDeque<String>()
+        queue.addLast(start)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (!seen.add(node)) continue
+            for (head in operandLists[node].orEmpty()) {
+                var cell: String? = head
+                while (cell != null && cells.add(cell)) {
+                    listFirst[cell]?.let(queue::addLast)
+                    cell = listRest[cell]
+                }
+            }
+        }
+        return seen
+    }
 
     fun scan(graph: RdfGraph, config: MetricsConfig): ScanBundle {
         val owlThing = OWL.Thing.value
@@ -124,6 +159,11 @@ internal object GraphScanner {
 
         /// restriction node key -> class fillers (owl:someValuesFrom / owl:allValuesFrom / owl:onClass IRIs)
         val restrictionFillers = mutableMapOf<String, MutableSet<String>>()
+
+        /// class-expression node key -> heads of its owl:intersectionOf / owl:unionOf lists; list cells (blank operands only)
+        val operandLists = mutableMapOf<String, MutableList<String>>()
+        val listFirst = mutableMapOf<String, String>()
+        val listRest = mutableMapOf<String, String>()
         val rangePairs = mutableListOf<Pair<String, String>>()
 
         val importsList = mutableListOf<String>()
@@ -194,6 +234,14 @@ internal object GraphScanner {
             if ((t.predicate == RDFS.subClassOf || t.predicate == OWL.equivalentClass) && subIri != null) {
                 val o = t.obj
                 if (o is BlankNode) classExpressionLinks.add(subIri to o.toString())
+            }
+
+            if (t.obj is BlankNode && t.subject is BlankNode) {
+                when (p) {
+                    OWL_INTERSECTION_OF, OWL_UNION_OF -> operandLists.getOrPut(sk) { mutableListOf() }.add(t.obj.toString())
+                    RDF_FIRST -> listFirst[sk] = t.obj.toString()
+                    RDF_REST -> listRest[sk] = t.obj.toString()
+                }
             }
 
             if (t.predicate == OWL.onProperty && objIri != null) {
@@ -295,15 +343,23 @@ internal object GraphScanner {
                 }
                 .toSet()
 
-        /// P_C: declared object/datatype properties used by a named class via rdfs:domain or an owl:Restriction.
+        /// P_C: declared object/datatype properties used by a named class via rdfs:domain or an owl:Restriction
+        /// (attached directly, or as an operand of an owl:intersectionOf / owl:unionOf class expression).
         val usableProperties = objectProperties + datatypeProperties
         val propertiesOfClass = mutableMapOf<String, MutableSet<String>>()
         for ((prop, dom) in domainPairs) {
             if (dom !in namedClasses || prop !in usableProperties) continue
             propertiesOfClass.getOrPut(dom) { mutableSetOf() }.add(prop)
         }
+        /// A restriction may sit directly on the class or inside owl:intersectionOf / owl:unionOf lists (defined classes).
+        val restrictionsOfClass = mutableListOf<Pair<String, String>>()
         for ((cls, node) in classExpressionLinks) {
             if (cls !in namedClasses) continue
+            for (expr in expressionNodes(node, operandLists, listFirst, listRest)) {
+                if (expr in onPropertyOf) restrictionsOfClass.add(cls to expr)
+            }
+        }
+        for ((cls, node) in restrictionsOfClass) {
             for (prop in onPropertyOf[node].orEmpty()) {
                 if (prop in usableProperties) propertiesOfClass.getOrPut(cls) { mutableSetOf() }.add(prop)
             }
@@ -320,8 +376,8 @@ internal object GraphScanner {
                 if (range in namedClasses && range != dom) couplingsOf.getOrPut(dom) { mutableSetOf() }.add(range)
             }
         }
-        for ((cls, node) in classExpressionLinks) {
-            if (cls !in namedClasses || onPropertyOf[node].orEmpty().none { it in usableProperties }) continue
+        for ((cls, node) in restrictionsOfClass) {
+            if (onPropertyOf[node].orEmpty().none { it in usableProperties }) continue
             for (filler in restrictionFillers[node].orEmpty()) {
                 if (filler in namedClasses && filler != cls) couplingsOf.getOrPut(cls) { mutableSetOf() }.add(filler)
             }
@@ -378,6 +434,7 @@ internal object GraphScanner {
                 pathCount = hierarchy.pathCount,
                 totalPathLength = hierarchy.totalPathLength,
                 couplingsOf = couplingsOf.mapValues { it.value.toSet() },
+                hierarchyTraversalSteps = hierarchy.steps,
             )
 
         val distinctImports = importsList.distinct()
@@ -468,6 +525,7 @@ internal object GraphScanner {
         val depthOf: Map<String, Int>,
         val pathCount: Double,
         val totalPathLength: Double,
+        val steps: Long,
     )
 
     /**
@@ -512,13 +570,16 @@ internal object GraphScanner {
                 lengths[c] = 1.0
             }
         }
+        var steps = 0L
         while (queue.isNotEmpty()) {
             val c = queue.removeFirst()
+            steps++
             val d = depth.getValue(c)
             val p = paths.getValue(c)
             val len = lengths.getValue(c)
             for (child in subClassChildrenOf[c].orEmpty()) {
                 if (!acyclic(child)) continue
+                steps++
                 depth[child] = maxOf(depth[child] ?: 0, min(d + 1, maxCap))
                 paths[child] = (paths[child] ?: 0.0) + p
                 lengths[child] = (lengths[child] ?: 0.0) + len + p
@@ -536,6 +597,6 @@ internal object GraphScanner {
             pathCount += paths[leaf] ?: 0.0
             totalLength += lengths[leaf] ?: 0.0
         }
-        return HierarchyDp(depthOf, pathCount, totalLength)
+        return HierarchyDp(depthOf, pathCount, totalLength, steps)
     }
 }
