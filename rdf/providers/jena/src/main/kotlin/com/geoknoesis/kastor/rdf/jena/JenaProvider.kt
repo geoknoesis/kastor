@@ -53,14 +53,14 @@ class JenaProvider : RdfProvider {
     override fun createRepository(variantId: String, config: RdfConfig): RdfRepository {
         return when (variantId) {
             "memory" -> JenaRepository.MemoryRepository()
-            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference(viewIdleTimeout(config))
+            "memory-inference" -> JenaRepository.MemoryRepositoryWithInference(viewIdleTimeout(config), closeTimeout(config), closeGrace(config))
             "tdb2" -> {
                 val location = config.options["location"] ?: "data"
                 JenaRepository.Tdb2Repository(location)
             }
             "tdb2-inference" -> {
                 val location = config.options["location"] ?: "data"
-                JenaRepository.Tdb2RepositoryWithInference(location, viewIdleTimeout(config))
+                JenaRepository.Tdb2RepositoryWithInference(location, viewIdleTimeout(config), closeTimeout(config), closeGrace(config))
             }
             else -> throw IllegalArgumentException("Unsupported Jena repository variant: $variantId")
         }
@@ -74,6 +74,28 @@ class JenaProvider : RdfProvider {
         val raw = config.options["viewIdleTimeoutMillis"] ?: return JenaRepository.DEFAULT_VIEW_IDLE_TIMEOUT
         val millis = requireNotNull(raw.trim().toLongOrNull()?.takeIf { it > 0 }) {
             "viewIdleTimeoutMillis must be a positive number of milliseconds, got '$raw'"
+        }
+        return java.time.Duration.ofMillis(millis)
+    }
+
+    /**
+     * How long `close()` waits for readers that still hold an inference view: option `closeTimeoutMillis` (a number of
+     * milliseconds, 0 or more), default [JenaRepository.DEFAULT_CLOSE_TIMEOUT].
+     */
+    private fun closeTimeout(config: RdfConfig): java.time.Duration =
+        nonNegativeMillis(config, "closeTimeoutMillis") ?: JenaRepository.DEFAULT_CLOSE_TIMEOUT
+
+    /**
+     * How long `close()` then waits for the workers of the views it stopped: option `closeGraceMillis` (a number of
+     * milliseconds, 0 or more), default [JenaRepository.DEFAULT_CLOSE_GRACE].
+     */
+    private fun closeGrace(config: RdfConfig): java.time.Duration =
+        nonNegativeMillis(config, "closeGraceMillis") ?: JenaRepository.DEFAULT_CLOSE_GRACE
+
+    private fun nonNegativeMillis(config: RdfConfig, option: String): java.time.Duration? {
+        val raw = config.options[option] ?: return null
+        val millis = requireNotNull(raw.trim().toLongOrNull()?.takeIf { it >= 0 }) {
+            "$option must be a number of milliseconds (0 or more), got '$raw'"
         }
         return java.time.Duration.ofMillis(millis)
     }

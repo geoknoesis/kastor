@@ -58,11 +58,15 @@ import java.util.concurrent.atomic.AtomicLong
  * inside a write transaction the view is private too, so uncommitted changes are visible. Private views are kept for
  * the transaction and, in a write transaction, rebuilt after its next write.
  *
- * **Closing.** [close] retires every view and waits up to 10 seconds for the read transactions that still hold
- * one, so that no worker's read transaction outlives the store. Readers still running at that limit are named in a
- * WARN log entry; their views are then stopped and their further reads fail with [RdfRepositoryException]
- * ([RdfErrorCode.REPOSITORY_CLOSED]). Operations started after [close] fail with [IllegalStateException]
- * ("Repository is closed").
+ * **Closing.** [close] retires every view and waits for the read transactions that still hold one, so that no
+ * worker's read transaction outlives the store. The wait is bounded by the *close timeout* (default
+ * [DEFAULT_CLOSE_TIMEOUT], 10 seconds): readers still running at that limit are named in a WARN log entry; their
+ * views are then stopped, their further reads fail with [RdfRepositoryException]
+ * ([RdfErrorCode.REPOSITORY_CLOSED]), and `close()` waits up to the *close grace* (default [DEFAULT_CLOSE_GRACE],
+ * 2 seconds) for their workers to end their read transactions before it closes the store. Both limits are options
+ * of the `*WithInference` factory functions and of the provider (`closeTimeoutMillis`, `closeGraceMillis`); zero
+ * means "do not wait". Operations started after [close] fail with [IllegalStateException] ("Repository is
+ * closed"). Concurrent `close()` calls all return only after the store is closed.
  *
  * Memory use of a view is Jena's own for lazy RDFS inference: the forward deductions (schema-level for the RDFS
  * rules) plus the backward-chaining tables of the goals queried so far in that snapshot, plus at most one chunk of
@@ -78,11 +82,20 @@ class JenaRepository private constructor(
     private val variantId: String = if (inference) "memory-inference" else "memory",
     /** A snapshot view nobody has used for this long is released (its worker ends its read transaction). */
     private val viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT,
+    /** Longest time [close] waits for readers that still hold an inference view. */
+    closeTimeout: java.time.Duration = DEFAULT_CLOSE_TIMEOUT,
+    /** Longest time [close] then waits for the workers it stopped under those readers. */
+    closeGrace: java.time.Duration = DEFAULT_CLOSE_GRACE,
 ) : RdfRepository {
     private val closed = AtomicBoolean(false)
 
+    /** Released when the `close()` call that won [closed] has closed the store (or failed to). */
+    private val storeClosed = java.util.concurrent.CountDownLatch(1)
+
     init {
         require(!viewIdleTimeout.isNegative && !viewIdleTimeout.isZero) { "viewIdleTimeout must be positive, got $viewIdleTimeout" }
+        require(!closeTimeout.isNegative) { "closeTimeout must not be negative, got $closeTimeout" }
+        require(!closeGrace.isNegative) { "closeGrace must not be negative, got $closeGrace" }
     }
 
     companion object {
@@ -93,12 +106,37 @@ class JenaRepository private constructor(
         @JvmField
         val DEFAULT_VIEW_IDLE_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(1)
 
+        /**
+         * Default of the time [close] waits for read transactions that still hold an inference view (see
+         * [MemoryRepositoryWithInference] and [Tdb2RepositoryWithInference] to change it).
+         */
+        @JvmField
+        val DEFAULT_CLOSE_TIMEOUT: java.time.Duration = java.time.Duration.ofSeconds(10)
+
+        /**
+         * Default of the further time [close] waits, after it stopped the views of readers that outlasted the close
+         * timeout, for their workers to end their read transactions.
+         */
+        @JvmField
+        val DEFAULT_CLOSE_GRACE: java.time.Duration = java.time.Duration.ofSeconds(2)
+
         fun MemoryRepository(): JenaRepository = JenaRepository(DatasetFactory.createTxnMem())
 
         /** In-memory store with lazy RDFS inference; an inference view unused for [viewIdleTimeout] is released. */
         @JvmOverloads
         fun MemoryRepositoryWithInference(viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT): JenaRepository =
             JenaRepository(DatasetFactory.createTxnMem(), true, "memory-inference", viewIdleTimeout)
+
+        /**
+         * In-memory store with lazy RDFS inference and an explicit [close] policy: `close()` waits up to
+         * [closeTimeout] for read transactions that still hold an inference view, then stops their views and waits up
+         * to [closeGrace] for the workers to end. Both may be zero (do not wait); neither may be negative.
+         */
+        fun MemoryRepositoryWithInference(
+            viewIdleTimeout: java.time.Duration,
+            closeTimeout: java.time.Duration,
+            closeGrace: java.time.Duration,
+        ): JenaRepository = JenaRepository(DatasetFactory.createTxnMem(), true, "memory-inference", viewIdleTimeout, closeTimeout, closeGrace)
 
         fun Tdb2Repository(location: String): JenaRepository =
             JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), false, "tdb2")
@@ -111,6 +149,21 @@ class JenaRepository private constructor(
         @JvmOverloads
         fun Tdb2RepositoryWithInference(location: String, viewIdleTimeout: java.time.Duration = DEFAULT_VIEW_IDLE_TIMEOUT): JenaRepository =
             JenaRepository(TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference", viewIdleTimeout)
+
+        /**
+         * TDB2 store with lazy RDFS inference and an explicit [close] policy (see the in-memory overload): `close()`
+         * waits up to [closeTimeout] for readers holding an inference view, then up to [closeGrace] for the workers
+         * it stopped.
+         */
+        fun Tdb2RepositoryWithInference(
+            location: String,
+            viewIdleTimeout: java.time.Duration,
+            closeTimeout: java.time.Duration,
+            closeGrace: java.time.Duration,
+        ): JenaRepository = JenaRepository(
+            TDB2Factory.connectDataset(Paths.get(location).toAbsolutePath().toString()), true, "tdb2-inference",
+            viewIdleTimeout, closeTimeout, closeGrace,
+        )
 
         private const val DEFAULT_GRAPH_KEY = ""
     }
@@ -165,7 +218,10 @@ class JenaRepository private constructor(
     private val baseReads = AtomicLong()
 
     /** Test seams of the inference views. */
-    internal val hooks = JenaInferenceHooks()
+    internal val hooks = JenaInferenceHooks().also {
+        it.closeWaitNanos = closeTimeout.toNanos()
+        it.closeGraceNanos = closeGrace.toNanos()
+    }
 
     /** Transaction-private inference models built so far (diagnostic). */
     private val privateViewsBuilt = AtomicLong()
@@ -766,9 +822,19 @@ class JenaRepository private constructor(
 
     override fun isClosed(): Boolean = closed.get()
 
+    /**
+     * Closes the repository (see "Closing" in the class documentation). The first call does the work; a call made
+     * while it is in progress **waits for it** and returns only once the store is closed, like the first one, so
+     * that every caller may rely on the store being released (delete a TDB2 directory, reconnect, ...). Later calls
+     * return at once.
+     */
     override fun close() {
         check(!dataset.isInTransaction) { "Cannot close inside a transaction" }
-        if (closed.compareAndSet(false, true)) {
+        if (!closed.compareAndSet(false, true)) {
+            awaitStoreClosed()
+            return
+        }
+        try {
             synchronized(viewLock) { currentView = null }
             // Retire every view (a view still used by another thread's read stops when that read ends), then wait
             // for those reads and for the workers, so that no read transaction outlives close().
@@ -797,7 +863,25 @@ class JenaRepository private constructor(
                 }
             }
             dataset.close()
+            hooks.onStoreClosed()
+        } finally {
+            // Also when closing failed: nobody may wait forever for a close that will not be retried.
+            storeClosed.countDown()
         }
+    }
+
+    /** Waits for the `close()` call that is closing the store; an interrupt is kept for the caller and does not cut the wait short. */
+    private fun awaitStoreClosed() {
+        var interrupted = false
+        while (true) {
+            try {
+                storeClosed.await()
+                break
+            } catch (_: InterruptedException) {
+                interrupted = true
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
     }
 
     /** Waits for [view]'s worker to exit (see [SnapshotView.awaitStopped]) and then stops tracking it. */

@@ -109,11 +109,14 @@ internal class JenaInferenceHooks {
     /** Monotonic clock in nanoseconds used for idle bookkeeping. */
     @Volatile var clock: () -> Long = System::nanoTime
 
-    /** Longest time `close()` waits for readers to release their inference views. */
+    /** Longest time `close()` waits for readers to release their inference views (set from the repository's options). */
     @Volatile var closeWaitNanos: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(10)
 
-    /** Longest time `close()` then waits for workers it stopped forcibly to end their read transactions. */
+    /** Longest time `close()` then waits for workers it stopped forcibly to end their read transactions (likewise). */
     @Volatile var closeGraceNanos: Long = java.util.concurrent.TimeUnit.SECONDS.toNanos(2)
+
+    /** Runs in `close()` right after the store was closed. */
+    @Volatile var onStoreClosed: () -> Unit = {}
 
     /** Runs in `close()` after the views were retired, before it waits for them. */
     @Volatile var onCloseWaiting: () -> Unit = {}
