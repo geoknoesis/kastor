@@ -517,9 +517,13 @@ object Rdf {
     /**
      * Parse RDF data from an input stream into a graph.
      * 
-     * **Note:** The input stream is automatically closed after parsing.
+     * **The caller owns [inputStream]:** it is read (to its end, or up to the error) but never closed, whichever
+     * provider parses it and whether parsing succeeds or fails. Close it yourself, for example with `use`:
+     * `stream.use { Rdf.parseFromInputStream(it, "TURTLE") }`. The same holds for every `parseFromInputStream`,
+     * `parseStreaming` and `parseDataset` overload that takes a stream. Only the scoped [openTripleStream] (and
+     * `parseStreamingFlow`, which is built on it) takes ownership of the stream it is given.
      * 
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; not closed
      * @param format The RDF format
      * @return A new MutableRdfGraph containing the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
@@ -530,9 +534,9 @@ object Rdf {
     /**
      * Parse RDF data from an input stream into a graph, resolving relative IRIs against [baseIri].
      *
-     * **Note:** The input stream is automatically closed after parsing.
+     * **The caller owns [inputStream]:** it is read but never closed, whether parsing succeeds or fails.
      *
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; not closed
      * @param format The RDF format
      * @param baseIri Absolute IRI for relative references, passed to [RdfProvider.parseGraph]; null keeps the
      *   provider's default (relative IRIs are then errors with the bundled providers)
@@ -596,7 +600,7 @@ object Rdf {
      * }
      * ```
      * 
-     * @param inputStream The input stream containing RDF data
+     * @param inputStream The input stream containing RDF data; the caller owns it, it is not closed
      * @param format The RDF format
      * @return A sequence over the parsed triples
      * @throws RdfFormatException if parsing fails or format is not supported
@@ -807,7 +811,7 @@ object Rdf {
      * named graph structure.
      * 
      * @param repository The repository to populate with parsed data
-     * @param inputStream The input stream containing RDF dataset data
+     * @param inputStream The input stream containing RDF dataset data; the caller owns it, it is not closed
      * @param format The RDF quad format
      * @throws RdfFormatException if parsing fails or format is not supported
      */
@@ -817,7 +821,7 @@ object Rdf {
 
     /**
      * Parse an RDF dataset from an input stream into [repository], resolving relative IRIs against [baseIri]
-     * (passed to [RdfProvider.parseDataset]).
+     * (passed to [RdfProvider.parseDataset]). The caller owns [inputStream]: it is read but not closed.
      *
      * @param baseIri Absolute IRI for relative references; null keeps the provider's default
      * @throws RdfFormatException if parsing fails or format is not supported

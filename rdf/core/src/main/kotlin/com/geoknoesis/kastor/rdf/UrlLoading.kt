@@ -1080,10 +1080,18 @@ internal class BoundedInputStream(input: InputStream, private val limit: Long) :
     }
 }
 
-/** Counts bytes read, so a parse can tell whether a provider consumed input before declining it. */
+/**
+ * Counts bytes read, so a parse can tell whether a provider consumed input before declining it.
+ *
+ * [close] does **not** close the underlying stream: this is the stream the `parseFromInputStream`, `parseStreaming`
+ * and `parseDataset` entry points of [Rdf] hand to a provider, and the stream they were given stays the caller's to
+ * close, whatever the provider's parser does when it is done (Jena's parsers close their input).
+ */
 internal class CountingInputStream(input: InputStream) : FilterInputStream(input) {
     var count = 0L
         private set
+
+    override fun close() = Unit
 
     override fun read(): Int {
         val b = super.read()
