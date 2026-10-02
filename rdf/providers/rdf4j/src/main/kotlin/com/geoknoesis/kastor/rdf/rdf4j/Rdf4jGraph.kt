@@ -461,9 +461,11 @@ internal open class Rdf4jGraph(
      * (native stores) or the repository tracks that none exist, and reads are strict or every stored statement is known
      * to be convertible (lenient repositories created by a factory method and never changed by SPARQL `UPDATE`).
      *
-     * The statements are counted in one pass over the graph (converting only those that involve quoted subjects or
-     * reifier blank nodes, or every statement for a lenient read) in the remaining cases. Each of them needs
-     * information RDF4J has no count or index for, so the pass cannot be avoided:
+     * The statements are counted in one pass over the graph (converting only those that hold a triple value or a
+     * reifier blank node as subject, or every statement for a lenient read) in the remaining cases. Statements with a
+     * triple-term object are among the converted ones on purpose: a stored `s p <<( _:r q z )>>` and an RDF-star
+     * `s p << <<t>> q z >>` are one triple of the graph. Each of these cases needs information RDF4J has no count or
+     * index for, so the pass cannot be avoided:
      * - inference repositories: RDF4J's count covers explicit statements only, and reads include the inferred ones;
      * - stores that hold (or may hold) quoted-triple subjects, at any nesting, or whose content is not tracked
      *   (wrapped, externally created RDF-star capable stores, or a tracked store right after a SPARQL update that may
