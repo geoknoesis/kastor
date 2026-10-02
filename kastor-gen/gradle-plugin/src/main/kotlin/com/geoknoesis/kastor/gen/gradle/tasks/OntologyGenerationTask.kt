@@ -58,14 +58,16 @@ abstract class OntologyGenerationTask : DefaultTask() {
     abstract val contextPath: Property<String>
 
     /**
-     * The SHACL file, when configured directly. Unset by default: the file is then looked up from [shaclPath] when
-     * the task runs (see [shaclCandidates]).
+     * The SHACL file. Set it to name the file directly; by **convention** it is the file [shaclPath] resolves to: the
+     * first of [shaclCandidates] that exists (no value when none does, or when no path is configured). Build scripts
+     * can read `shaclFile.get()`.
      *
-     * **No convention.** Earlier 0.3.0 snapshots resolved [shaclPath] into this property while the build was
-     * configured; that convention was removed without a deprecation period (as an input it would be frozen in the
-     * configuration cache). `shaclFile.get()` therefore fails unless the build script set the property: read
-     * [shaclInput] (at execution time) for the file the task uses, or [shaclCandidates] to wire it as an input of
-     * another task. See the migration table in the Gradle plugin reference.
+     * The convention is looked up when the value is asked for, never while the task is configured, and it is backed
+     * by a Gradle `ValueSource`: a value read at execution time (the task itself, a `doLast`) is computed in that
+     * build and is not stored in the configuration cache, so a file that appears at, or disappears from, a candidate
+     * location is picked up when the configuration is reused. A build script that reads it while the build is being
+     * **configured** makes the lookup an input of the configuration cache: Gradle then repeats it on every build and
+     * re-configures when the answer changed.
      */
     @get:InputFile
     @get:Optional
@@ -73,10 +75,9 @@ abstract class OntologyGenerationTask : DefaultTask() {
     open val shaclFile: RegularFileProperty = project.objects.fileProperty()
 
     /**
-     * The JSON-LD context, when configured directly; optional (without a context, type and property names come from
-     * IRIs and `sh:name`). Unset by default: the file is then looked up from [contextPath] when the task runs.
-     *
-     * **No convention** (see [shaclFile]): read [contextInput] / [contextCandidates] instead of `contextFile.get()`.
+     * The JSON-LD context; optional (without a context, type and property names come from IRIs and `sh:name`). Set
+     * it to name the file directly; by convention it is the file [contextPath] resolves to (see [shaclFile]), and it
+     * has no value when no context is configured or the file is missing.
      */
     @get:InputFile
     @get:Optional
@@ -117,6 +118,18 @@ abstract class OntologyGenerationTask : DefaultTask() {
         val root = project.layout.projectDirectory.asFile
         shaclCandidates.from(shaclPath.map { ontologyInputCandidates(root, it) }.orElse(emptyList()))
         contextCandidates.from(contextPath.map { ontologyInputCandidates(root, it) }.orElse(emptyList()))
+        shaclFile.convention(firstExisting(shaclPath, root))
+        contextFile.convention(firstExisting(contextPath, root))
+    }
+
+    /**
+     * The first existing candidate of [path], as a provider that looks at the file system only when it is asked for
+     * its value (a `ValueSource`: Gradle does not evaluate it to store the configuration cache).
+     */
+    private fun firstExisting(path: Property<String>, root: File): org.gradle.api.provider.Provider<org.gradle.api.file.RegularFile> {
+        val candidates = path.map { value -> ontologyInputCandidates(root, value).map { it.absolutePath } }.orElse(emptyList())
+        val found = project.providers.of(FirstExistingFile::class.java) { spec -> spec.parameters.candidates.set(candidates) }
+        return project.layout.file(found.map { File(it) })
     }
 
     /**
@@ -392,6 +405,15 @@ abstract class OntologyGenerationTask : DefaultTask() {
             }
         }
     }
+}
+
+/** The first of the candidate paths that is an existing file; no value when none is (or there is no candidate). */
+internal abstract class FirstExistingFile : org.gradle.api.provider.ValueSource<String, FirstExistingFile.Parameters> {
+    interface Parameters : org.gradle.api.provider.ValueSourceParameters {
+        val candidates: org.gradle.api.provider.ListProperty<String>
+    }
+
+    override fun obtain(): String? = parameters.candidates.get().firstOrNull { File(it).isFile }
 }
 
 /**
