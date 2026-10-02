@@ -58,8 +58,11 @@ import java.util.concurrent.ThreadLocalRandom
  *   8 elements; a batch whose user message would still exceed 120,000 characters is not sent and is recorded as a
  *   failure (use a smaller [ExplanationOptions.batchSize]). The previous reply echoed in a JSON repair request is cut
  *   to 20,000 characters. Cutting does not change a finding's [FindingRef].
+ * - Replies: a request asks for at most [LlmExplanationConfig.maxOutputTokens] tokens; a reply of more than 500,000
+ *   characters fails its batch; every text field of a reply is cut to 2,000 characters and the suggested actions to 10.
  * - Failure reasons: provider error text is copied into [ExplanationFailure.reason] on one line, with control and
- *   bidi characters made visible, the API key replaced by `***`, and at most 500 characters. The original exception
+ *   bidi characters made visible, the API key (whatever its length) and URL credentials (`http://user:password@host`)
+ *   replaced by `***`, and at most 500 characters. The original exception
  *   is kept in [ExplanationFailure.cause] (never written to reports) for `--debug` style diagnostics.
  *
  * Blank nodes appear in prompts, and in the `promptRunId`, by their parse-independent key
@@ -160,10 +163,10 @@ class DefaultQualityExplanationEnricher internal constructor(
                         all.add(
                             FindingExplanation(
                                 findingRef = ref,
-                                summary = item.summary,
-                                whyItMatters = item.whyItMatters,
-                                suggestedActions = item.suggestedActions,
-                                confidenceNote = item.confidenceNote,
+                                summary = cap(item.summary, MAX_REPLY_FIELD_CHARS),
+                                whyItMatters = item.whyItMatters?.let { cap(it, MAX_REPLY_FIELD_CHARS) },
+                                suggestedActions = item.suggestedActions.take(MAX_REPLY_ACTIONS).map { cap(it, MAX_REPLY_FIELD_CHARS) },
+                                confidenceNote = item.confidenceNote?.let { cap(it, MAX_REPLY_FIELD_CHARS) },
                                 modelId = modelId,
                                 providerKind = config.provider.name.lowercase(),
                                 promptRunId = runId,
@@ -188,10 +191,18 @@ class DefaultQualityExplanationEnricher internal constructor(
     ): LlmExplanationPayload {
         val raw = completeWithRetry(session, userMessage, budget)
         if (raw.isNullOrBlank()) throw BatchFailure("LLM returned an empty reply")
+        requireReplyWithinLimit(raw)
         parseLlmJson(stripMarkdownFence(raw))?.let { return it }
-        val repaired = completeWithRetry(session, buildRepairMessage(raw), budget)
-        return parseLlmJson(stripMarkdownFence(repaired.orEmpty()))
+        val repaired = completeWithRetry(session, buildRepairMessage(raw), budget).orEmpty()
+        requireReplyWithinLimit(repaired)
+        return parseLlmJson(stripMarkdownFence(repaired))
             ?: throw BatchFailure("LLM reply was not valid explanation JSON (after one repair attempt)")
+    }
+
+    private fun requireReplyWithinLimit(reply: String) {
+        if (reply.length > MAX_REPLY_CHARS) {
+            throw BatchFailure("LLM reply has ${reply.length} characters, which exceeds the limit of $MAX_REPLY_CHARS characters; it was not used")
+        }
     }
 
     private suspend fun completeWithRetry(
@@ -304,6 +315,15 @@ class DefaultQualityExplanationEnricher internal constructor(
         /** Longest previous reply echoed in a JSON repair request, in characters. */
         const val MAX_REPAIR_REPLY_CHARS = 20_000
 
+        /** Longest reply that is parsed, in characters; a longer one fails its batch. */
+        const val MAX_REPLY_CHARS = 500_000
+
+        /** Longest text field of a reply (summary, why it matters, one suggested action, note), in characters. */
+        const val MAX_REPLY_FIELD_CHARS = 2_000
+
+        /** Most suggested actions kept per finding. */
+        const val MAX_REPLY_ACTIONS = 10
+
         const val TRUNCATED = "…[truncated]"
 
         const val DATA_OPEN = "<findings-json>"
@@ -341,23 +361,28 @@ class DefaultQualityExplanationEnricher internal constructor(
             return text.substring(0, end) + TRUNCATED
         }
 
-        /** API keys that must never appear in a failure reason: the configured one and the provider variables. */
+        /**
+         * Secrets that must never appear in a failure reason: the configured API key and the provider variables,
+         * whatever their length, and the credentials of [LlmExplanationConfig.baseUrl]. Longest first, so a secret
+         * that contains another is replaced as a whole.
+         */
         fun secretsToRedact(config: LlmExplanationConfig): List<String> =
-            listOfNotNull(
-                config.apiKey,
-                System.getenv(LlmExplanationConfig.OPENAI_API_KEY),
-                System.getenv(LlmExplanationConfig.ANTHROPIC_API_KEY),
-            ).filter { it.length >= MIN_SECRET_CHARS }.distinct()
+            (
+                listOfNotNull(
+                    config.apiKey,
+                    System.getenv(LlmExplanationConfig.OPENAI_API_KEY),
+                    System.getenv(LlmExplanationConfig.ANTHROPIC_API_KEY),
+                ) + urlCredentials(config.baseUrl)
+            ).filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
 
-        private const val MIN_SECRET_CHARS = 8
         private val WHITESPACE_RUN = Regex("\\s+")
 
         /**
-         * A failure reason safe to store and print: [secrets] replaced by `***`, one line, control and bidi characters
-         * made visible, at most [MAX_FAILURE_REASON_CHARS] characters.
+         * A failure reason safe to store and print: [secrets] and the credentials of any URL replaced by `***`, one
+         * line, control and bidi characters made visible, at most [MAX_FAILURE_REASON_CHARS] characters.
          */
         fun failureReason(text: String, secrets: List<String>): String {
-            var out = text
+            var out = redactUrlCredentials(text)
             for (secret in secrets) out = out.replace(secret, "***")
             // Bound the work on huge provider bodies before the regular expression runs.
             out = out.take(MAX_FAILURE_REASON_CHARS * 8)
