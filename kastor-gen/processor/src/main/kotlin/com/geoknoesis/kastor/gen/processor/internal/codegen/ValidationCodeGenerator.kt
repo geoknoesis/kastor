@@ -90,7 +90,11 @@ internal class ValidationCodeGenerator(
                     functionBuilder.beginControlFlow("graph.find(resource, %L).forEach { triple ->", iri)
                     functionBuilder.addStatement("val value = triple.obj")
                     functionBuilder.beginControlFlow("if (!(%L))", ShaclInCode.isMember("value", members, property.datatype))
-                    functionBuilder.addStatement("violations.add(%S)", "$name must be one of: ${members.joinToString { it.value }}")
+                    functionBuilder.addStatement(
+                        "violations.add(%S)",
+                        if (members.isEmpty()) "$name has an sh:in without members: no value is allowed"
+                        else "$name must be one of: ${members.joinToString { it.value }}",
+                    )
                     functionBuilder.endControlFlow()
                     functionBuilder.endControlFlow()
                 }

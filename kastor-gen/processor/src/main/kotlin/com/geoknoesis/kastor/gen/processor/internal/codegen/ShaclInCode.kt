@@ -20,19 +20,31 @@ internal object ShaclInCode {
     /**
      * The members to compare with: the typed members when the model has them, otherwise the plain [values] read as
      * IRIs ([iriValued]) or as literals without a type of their own; null when there is no `sh:in`.
+     *
+     * An **empty** list is not "no `sh:in`": it is an `sh:in` that no value satisfies (`sh:in ()`, or the conjunction
+     * of an inherited and a restated list without a common member), and it is returned as an empty list so that the
+     * generated check rejects every value.
      */
-    fun members(typed: List<ShaclInValue>?, values: List<String>?, iriValued: Boolean): List<ShaclInValue>? =
-        typed?.takeIf { it.isNotEmpty() }
-            ?: values?.takeIf { it.isNotEmpty() }?.map { ShaclInValue(value = it, isIri = iriValued) }
+    fun members(typed: List<ShaclInValue>?, values: List<String>?, iriValued: Boolean): List<ShaclInValue>? = when {
+        !typed.isNullOrEmpty() -> typed
+        !values.isNullOrEmpty() -> values.map { ShaclInValue(value = it, isIri = iriValued) }
+        typed != null || values != null -> emptyList()
+        else -> null
+    }
 
     /**
-     * Boolean expression that is true when the RDF term expression [value] is one of [members].
+     * Boolean expression that is true when the RDF term expression [value] is one of [members]; `false` when there
+     * are no members.
      *
      * @param propertyDatatype the property's `sh:datatype`: the datatype of literal members that carry none. A
      *   literal member without any datatype information is compared by lexical form only.
      */
     fun isMember(value: String, members: List<ShaclInValue>, propertyDatatype: String?): CodeBlock =
-        members.map { matches(value, it, propertyDatatype) }.joinToCode(" || ")
+        if (members.isEmpty()) CodeBlock.of("false") else members.map { matches(value, it, propertyDatatype) }.joinToCode(" || ")
+
+    /** Whether [a] and [b] are the same RDF term: language tags are compared ignoring case (BCP 47). */
+    fun sameMember(a: ShaclInValue, b: ShaclInValue): Boolean =
+        a.value == b.value && a.isIri == b.isIri && a.datatype == b.datatype && a.language.equals(b.language, ignoreCase = true)
 
     private fun matches(value: String, member: ShaclInValue, propertyDatatype: String?): CodeBlock {
         if (member.isIri) return CodeBlock.of("%L == %T(%S)", value, iriClass, member.value)
