@@ -88,12 +88,22 @@ class ReauditNativeInternalsTest {
                 cache.getOrCompile("k") { calls.incrementAndGet(); started.countDown(); release.await(); throw ShapeCompileException("boom") }
             }
         }
-        assertTrue(started.await(10, TimeUnit.SECONDS))
-        val waiter = CompletableFuture.supplyAsync { runCatching { cache.getOrCompile("k") { calls.incrementAndGet(); error("recompiled") } } }
-        Thread.sleep(300)
+        assertTrue(started.await(60, TimeUnit.SECONDS))
+        // The owner may only fail once the waiter holds the owner's attempt: a waiter that arrives after the failure
+        // would rightly compile again. The cache counts a hit when it hands the attempt to the waiter, and the waiter
+        // consults its budget (this clock) between that and waiting, so the latch opens exactly then - no sleep.
+        val joined = CountDownLatch(1)
+        val waiterBudget = ValidationBudget(Duration.ofMinutes(10)) {
+            if (cache.statistics().hits >= 1L) joined.countDown()
+            System.nanoTime()
+        }
+        val waiter = CompletableFuture.supplyAsync {
+            runCatching { cache.getOrCompile("k", waiterBudget) { calls.incrementAndGet(); error("recompiled") } }
+        }
+        assertTrue(joined.await(60, TimeUnit.SECONDS), "the waiter joined the owner's compilation")
         release.countDown()
         owner.join()
-        val result = waiter.get(10, TimeUnit.SECONDS)
+        val result = waiter.get(60, TimeUnit.SECONDS)
         assertTrue(result.exceptionOrNull() is ShapeCompileException, result.toString())
         assertEquals(1, calls.get())
     }

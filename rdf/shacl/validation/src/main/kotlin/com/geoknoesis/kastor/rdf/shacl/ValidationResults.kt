@@ -174,7 +174,7 @@ data class ValidationViolation(
         /** [violationCode] of results about undefined recursive shape dependencies (see [isUndefinedRecursion]). */
         const val UNDEFINED_RECURSION_CODE: String = "kastor:UndefinedRecursion"
 
-        /** [violationCode] of results about a `sh:pattern` evaluation that exceeded its time budget (see [isPatternTimeout]). */
+        /** [violationCode] of results about a `sh:pattern` evaluation that exceeded its budget (see [isPatternTimeout]). */
         const val PATTERN_TIMEOUT_CODE: String = "kastor:PatternTimeout"
 
         /** [violationCode] of results about a `sh:pattern` evaluation that exhausted the stack (see [isPatternTooComplex]). */

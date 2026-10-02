@@ -8,12 +8,12 @@ import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.string
 import com.geoknoesis.kastor.rdf.vocab.RDF
+import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidatorProvider
 import java.time.Duration
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -166,16 +166,28 @@ class NativeReauditSemanticsTest {
 
     // --- resource bounds ---
 
-    @Test fun `uniqueValuesFor with 100000 duplicates finishes quickly and stays capped`() {
+    /**
+     * A validator whose run budget is **work**, not time: its clock advances by one each time the engine consults the
+     * budget (it does in every loop), so the run fails with "timed out" exactly when it consults the budget more than
+     * [consultations] times. The bound holds on any machine and under any load.
+     */
+    private fun workBounded(consultations: Long, config: ValidationConfig = ValidationConfig.default()): NativeShaclValidator {
+        var now = 0L
+        return NativeShaclValidator(config.copy(timeout = Duration.ofNanos(consultations))).also { it.budgetClock = { now++ } }
+    }
+
+    @Test fun `uniqueValuesFor with 100000 duplicates is linear and stays capped`() {
+        val n = 100_000
         val data = Rdf.graph {
-            for (i in 0 until 100_000) {
+            for (i in 0 until n) {
                 ex("n$i") - RDF.type - ex("T")
                 ex("n$i") - ex("key") - string("same")
             }
         }
-        val report = assertTimeoutPreemptively<ValidationReport>(Duration.ofSeconds(60)) {
-            validate(data, "ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor ( ex:key ) .")
-        }
+        val shapes = g("ex:S a sh:NodeShape ; sh:targetClass ex:T ; sh:uniqueValuesFor ( ex:key ) .")
+        // Linear: a bounded number of budget consultations per triple and per target. Comparing the targets pairwise
+        // would need n * n / 2 = 5,000,000,000 steps and exceed this bound thousands of times over.
+        val report = workBounded(40L * n).validate(data, shapes)
         assertFalse(report.isValid)
         assertTrue(report.violationsTruncated)
         assertEquals(ValidationConfig.default().maxViolations, report.violations.size)
@@ -184,7 +196,9 @@ class NativeReauditSemanticsTest {
     @Test fun `nested zeroOrOne paths over a self loop do not blow up`() {
         val path = (1..30).joinToString(" ") { "[ sh:zeroOrOnePath ex:p ]" }
         val shapes = "ex:S a sh:NodeShape ; sh:targetNode ex:a ; sh:property [ sh:path ( $path ) ; sh:minCount 1 ; sh:maxCount 1 ] ."
-        val report = assertTimeoutPreemptively<ValidationReport>(Duration.ofSeconds(20)) { validate("ex:a ex:p ex:a .", shapes) }
+        // Set semantics: each of the 30 segments maps the one-node frontier to itself. Multiplying bindings instead
+        // would take 2^30 steps; the run may consult its budget 10,000 times.
+        val report = workBounded(10_000).validate(g("ex:a ex:p ex:a ."), g(shapes))
         assertTrue(report.isValid, report.violations.toString())
     }
 

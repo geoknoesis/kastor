@@ -115,12 +115,36 @@ internal class NativeShaclValidator(
         const val UNDEFINED_RECURSION =
             "Recursive shape dependency through a non-monotone operator (sh:not, sh:xone, sh:qualifiedMaxCount, disjoint qualified value shapes) is undefined"
         val messagePlaceholder = Regex("\\{[?$]([A-Za-z_][A-Za-z0-9_]*)\\}")
+
+        /**
+         * Nanoseconds of [ValidationConfig.patternTimeout] that one step of the regular expression engine (one
+         * character read) stands for: 50,000 steps per millisecond. `java.util.regex` reads several times as many
+         * characters per second on current hardware, so an evaluation normally reaches its step budget well before
+         * the configured duration has passed.
+         */
+        const val PATTERN_NANOS_PER_STEP = 20L
+
+        /** The wall clock stops a pattern evaluation only at this multiple of [ValidationConfig.patternTimeout]. */
+        const val PATTERN_WALL_CLOCK_FACTOR = 10L
+
+        /** Stack size of the pattern evaluation thread of a run (see [matchPattern]). */
+        const val PATTERN_WORKER_STACK_BYTES = 16L * 1024 * 1024
+
+        /** Values at least this long (UTF-16 code units) are matched on the pattern evaluation thread. */
+        const val PATTERN_INLINE_MAX_LENGTH = 1024
     }
 
     private val compileCache = NativeCompileCache()
 
     private val patternTimeoutNanos: Long =
         try { config.patternTimeout.toNanos() } catch (e: ArithmeticException) { Long.MAX_VALUE }
+
+    /** Step budget of one pattern evaluation: [ValidationConfig.patternTimeout] at [PATTERN_NANOS_PER_STEP]. */
+    private val patternStepBudget: Long = (patternTimeoutNanos / PATTERN_NANOS_PER_STEP).coerceAtLeast(1)
+
+    /** Wall-clock backstop of one pattern evaluation, saturating. */
+    private val patternBackstopNanos: Long =
+        if (patternTimeoutNanos > Long.MAX_VALUE / PATTERN_WALL_CLOCK_FACTOR) Long.MAX_VALUE else patternTimeoutNanos * PATTERN_WALL_CLOCK_FACTOR
 
     /**
      * Structural digests of recently validated shapes snapshots (finding: avoid re-sorting and re-hashing an
@@ -152,14 +176,32 @@ internal class NativeShaclValidator(
     @Volatile internal var dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = null
 
     /**
-     * Test seam: the clock of the per-pattern budget ([ValidationConfig.patternTimeout]), a `System.nanoTime`-like
-     * source. Tests inject a deterministic clock so that they do not depend on wall-clock time. Never set in
-     * production code.
+     * Test seam: the clock of the wall-clock backstop of the per-pattern budget ([ValidationConfig.patternTimeout]),
+     * a `System.nanoTime`-like source. Tests inject a deterministic clock so that they do not depend on wall-clock
+     * time. Never set in production code.
      */
     @Volatile internal var patternClock: () -> Long = System::nanoTime
 
+    /**
+     * Test seam: the clock of the run budget ([ValidationConfig.timeout]). A test that injects a clock which advances
+     * by one each time it is consulted turns the timeout into a bound on the work of a run (the engine consults the
+     * budget in every loop), independent of the machine. Never set in production code.
+     */
+    @Volatile internal var budgetClock: () -> Long = System::nanoTime
+
     /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
     @Volatile internal var patternEvaluations = 0L
+
+    /** Test instrumentation: `sh:pattern` evaluations run on the pattern evaluation thread. */
+    @Volatile internal var patternWorkerEvaluations = 0L
+
+    /** Test seam: stack size of the pattern evaluation thread. Never set in production code. */
+    @Volatile internal var patternWorkerStackBytes: Long = PATTERN_WORKER_STACK_BYTES
+
+    /**
+     * Test seam: values shorter than this are first matched on the validating thread. Never set in production code.
+     */
+    @Volatile internal var patternInlineMaxLength: Int = PATTERN_INLINE_MAX_LENGTH
 
     private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
         synchronized(digestMemo) {
@@ -229,6 +271,12 @@ internal class NativeShaclValidator(
      */
     private class Undecided(val code: String, val reason: String)
 
+    /**
+     * Why a conformance answer is undefined: undefined [recursion], an undecided [pattern], or both. A question that
+     * is undefined without an entry in [ValidationContext.undefined] is undefined by recursion only.
+     */
+    private class UndefinedCause(val recursion: Boolean, val pattern: Undecided?)
+
     /** Outcome of one `sh:pattern` evaluation: an answer, or the reason why there is none. */
     private class PatternOutcome(val matches: Boolean, val undecided: Undecided?) {
         companion object {
@@ -244,6 +292,8 @@ internal class NativeShaclValidator(
         var undefined = false
         /** First cause of [undefined] that is not undefined recursion (an undecided pattern), if any. */
         var cause: Undecided? = null
+        /** Whether [undefined] is (also) caused by undefined recursion. */
+        var recursion = false
         /** Only [Mode.CONFORMS] stops early, and only on a definite failure (Kleene conjunction). */
         val stop: Boolean get() = failed && mode == Mode.CONFORMS
         val exhaustive: Boolean get() = mode == Mode.EXHAUSTIVE
@@ -316,29 +366,75 @@ internal class NativeShaclValidator(
     private class PatternBudgetExceeded : RuntimeException(null, null, false, false)
 
     /**
-     * A CharSequence for regex matching that consults, every 1024 character reads, the run deadline and the deadline
-     * of this one pattern evaluation ([evaluationDeadlineNanos], an instant of [clock]). A backtracking match reads
-     * characters all the time, so both are honoured promptly.
+     * The budget of one pattern evaluation: [limit] steps of the regular expression engine, and the instant
+     * [deadlineNanos] of the wall-clock backstop.
+     */
+    private class PatternBudget(val limit: Long, val deadlineNanos: Long) {
+        var steps = 0L
+    }
+
+    /**
+     * A CharSequence for regex matching that counts the character reads of the regular expression engine (its
+     * **steps**: a backtracking match reads characters all the time) and stops the match with
+     * [PatternBudgetExceeded] when the evaluation has used up its [PatternBudget]. The steps are what is counted, so
+     * whether an evaluation is stopped does not depend on the speed or the load of the machine. Every 1024 steps it
+     * also consults the run deadline and the wall-clock backstop of the evaluation (an instant of [clock]).
      */
     private class DeadlineCharSequence(
         private val value: String,
         private val budget: ValidationBudget,
         private val clock: () -> Long,
-        private val evaluationDeadlineNanos: Long,
+        private val evaluation: PatternBudget,
     ) : CharSequence {
-        private var reads = 0
         override val length: Int get() = value.length
         override fun get(index: Int): Char {
-            if ((++reads and 1023) == 0) {
+            val steps = ++evaluation.steps
+            if ((steps and 1023L) == 0L) {
+                if (steps >= evaluation.limit) throw PatternBudgetExceeded()
                 budget.check("pattern matching")
-                if (clock() - evaluationDeadlineNanos >= 0) throw PatternBudgetExceeded()
+                if (clock() - evaluation.deadlineNanos >= 0) throw PatternBudgetExceeded()
             }
             return value[index]
         }
         override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
-            DeadlineCharSequence(value.substring(startIndex, endIndex), budget, clock, evaluationDeadlineNanos)
+            DeadlineCharSequence(value.substring(startIndex, endIndex), budget, clock, evaluation)
         override fun toString(): String = value
     }
+
+    /**
+     * The pattern evaluation thread of one validation run: a single daemon thread with a fixed stack size, created
+     * when the first evaluation needs it and stopped when the run ends. `java.util.regex` matches an alternation
+     * under a quantifier recursively, so whether such a match completes depends on the stack that is left; on this
+     * thread that is always the same amount, whatever the stack size of the validating thread and however deeply
+     * nested the shape that asks.
+     */
+    private class PatternWorker(stackBytes: Long) : AutoCloseable {
+        private val executor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+            Thread(null, task, "kastor-shacl-pattern", stackBytes).apply { isDaemon = true }
+        }
+
+        /** Runs [task] on the thread and waits for it; its exceptions are rethrown here. */
+        fun <T> run(task: () -> T): T {
+            val future = executor.submit(java.util.concurrent.Callable { task() })
+            try {
+                return future.get()
+            } catch (e: java.util.concurrent.ExecutionException) {
+                throw e.cause ?: e
+            } catch (e: InterruptedException) {
+                // The validating thread was cancelled: stop the match (it checks its interrupt flag) and fail the run.
+                future.cancel(true)
+                Thread.currentThread().interrupt()
+                throw ShaclValidationException("SHACL pattern matching timed out or was cancelled")
+            }
+        }
+
+        override fun close() {
+            executor.shutdownNow()
+        }
+    }
+
+    /** Result of running one pattern against one value. */
+    private enum class PatternRun { MATCH, NO_MATCH, OUT_OF_BUDGET, OUT_OF_STACK }
 
     private class ValidationContext(
         val compiled: CompiledShapeGraph,
@@ -346,21 +442,27 @@ internal class NativeShaclValidator(
         val budget: ValidationBudget,
         private val repositoryFactory: () -> com.geoknoesis.kastor.rdf.RdfRepository,
         private val sparqlInPlace: SparqlQueryable?,
-        /** Clock of the per-pattern budget (`System.nanoTime` unless a test injects one). */
+        /** Clock of the wall-clock backstop of the per-pattern budget (`System.nanoTime` unless a test injects one). */
         private val patternClock: () -> Long,
+        private val patternWorkerStackBytes: Long,
     ) : AutoCloseable {
         val memo = HashMap<AtomKey, Conformance>()
         /**
-         * Conformance questions answered "undefined" because of an undecided pattern rather than undefined recursion,
-         * with that cause: the result of the constraint that reads the answer reports the cause and its status.
+         * Why a conformance question was last answered "undefined", when an undecided pattern is (one of) the
+         * cause(s): the result of the constraint that reads the answer reports the cause and its status. The entry is
+         * rewritten by every evaluation of the question, so it describes the evaluation that gave the final answer; a
+         * question that is undefined without an entry is undefined by recursion only.
          */
-        val undecided = HashMap<AtomKey, Undecided>()
+        val undefined = HashMap<AtomKey, UndefinedCause>()
         /**
-         * Undecided pattern evaluations of this run, per (pattern constraint, lexical form): the answer for a value is
-         * the same every time it is asked (a budget measured in time would not guarantee that), and the budget is
-         * spent once per value rather than once per focus node or solver pass.
+         * Pattern evaluations of this run that are remembered, per (pattern constraint, lexical form): every
+         * undecided one, and every one that ran on the pattern evaluation thread. The answer for such a value is the
+         * same every time it is asked, and its budget is spent once per value rather than once per focus node or
+         * solver pass.
          */
-        val patternIssues = HashMap<Pair<PropertyConstraint.Pattern, String>, Undecided>()
+        val patternOutcomes = HashMap<Pair<PropertyConstraint.Pattern, String>, PatternOutcome>()
+        private var patternWorker: PatternWorker? = null
+        fun patternWorker(): PatternWorker = patternWorker ?: PatternWorker(patternWorkerStackBytes).also { patternWorker = it }
         /** Solver of the recursive component currently being evaluated (routes references into that component). */
         var solver: RecursionSolver? = null
         val reportPaths = HashMap<RdfResource, ReportPath>()
@@ -377,14 +479,20 @@ internal class NativeShaclValidator(
         }
         fun select(query: String, bindings: Map<String, RdfTerm>) =
             session.value.select(query, bindings, Duration.ofNanos(budget.remainingNanos()))
-        /** [value] for one pattern evaluation that may take at most [evaluationNanos]. */
-        fun text(value: String, evaluationNanos: Long): CharSequence {
+        /** [value] for one pattern evaluation of at most [steps] steps that may last at most [backstopNanos]. */
+        fun text(value: String, steps: Long, backstopNanos: Long): CharSequence {
             val now = patternClock()
             // Saturating: a huge budget must not overflow into the past.
-            val deadline = if (evaluationNanos >= Long.MAX_VALUE - now) Long.MAX_VALUE else now + evaluationNanos
-            return DeadlineCharSequence(value, budget, patternClock, deadline)
+            val deadline = if (backstopNanos >= Long.MAX_VALUE - now) Long.MAX_VALUE else now + backstopNanos
+            return DeadlineCharSequence(value, budget, patternClock, PatternBudget(steps, deadline))
         }
-        override fun close() { if (session.isInitialized()) session.value.close() }
+        override fun close() {
+            try {
+                patternWorker?.close()
+            } finally {
+                if (session.isInitialized()) session.value.close()
+            }
+        }
     }
 
     override fun validate(graph: RdfGraph, shapes: RdfGraph): ValidationReport =
@@ -401,7 +509,7 @@ internal class NativeShaclValidator(
         focusOnly: RdfResource? = null,
         sparqlInPlace: SparqlQueryable? = null,
     ): ValidationReport {
-        val budget = ValidationBudget(config.timeout)
+        val budget = ValidationBudget(config.timeout, budgetClock)
         budget.check("admission")
         val start = System.nanoTime()
         val combinedEstimate = graph.size().toLong() + shapes.size().toLong()
@@ -433,7 +541,7 @@ internal class NativeShaclValidator(
             compileCache.getOrCompile(cacheKey, budget) { ShapesCompiler.compile(mergedShapesTriples, config, budget) }
         } catch (e: ShapeCompileException) { throw ShaclValidationException("SHACL compile failed: ${e.message}", e) }
         val dataIndex = DataGraphIndex(graph, budget, config.maxPathValueNodes)
-        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, patternClock).use { ctx ->
+        ValidationContext(compiled, dataIndex, budget, sparqlRepositoryFactory, sparqlInPlace, patternClock, patternWorkerStackBytes).use { ctx ->
             ctx.checkDeadline()
             val targetWarnings = checkBlankNodeTargets(compiled, dataIndex)
 
@@ -737,9 +845,36 @@ internal class NativeShaclValidator(
             ctx.compiled.referencedNodeShapes[ref]?.let { validateNodeShape(value, it, ctx, state, sink) }
         }
         val answer = sink.conformance()
-        // An answer that is undefined because of an undecided pattern keeps its cause for the constraint that reads it.
-        if (answer == Conformance.UNDEFINED) sink.cause?.let { ctx.undecided.putIfAbsent(AtomKey(TermKey(value), ref), it) }
+        rememberCause(AtomKey(TermKey(value), ref), sink, answer, ctx)
         return answer
+    }
+
+    /**
+     * Records why the question [key] was just answered [answer] by the evaluation in [sink]: when the answer is
+     * undefined and an undecided pattern is among the causes, the pattern and whether undefined recursion is a cause
+     * too. Any other answer clears the entry of an earlier evaluation (a solver pass under other assumptions), so a
+     * cause never outlives the answer it explains.
+     */
+    private fun rememberCause(key: AtomKey, sink: Sink, answer: Conformance, ctx: ValidationContext) {
+        val pattern = sink.cause
+        if (answer == Conformance.UNDEFINED && pattern != null) {
+            ctx.undefined[key] = UndefinedCause(sink.recursion, pattern)
+        } else if (ctx.undefined.isNotEmpty()) {
+            ctx.undefined.remove(key)
+        }
+    }
+
+    /**
+     * Whether the undefined answer of ([node], [shape]) should be reported instead of the one of [current] (null:
+     * none yet) by a constraint that depends on several undefined answers. Undefined recursion is preferred to an
+     * undecided pattern, and the first one in evaluation order among equals, so the reported status does not depend
+     * on the order of the operands.
+     */
+    private fun prefersUndefined(ctx: ValidationContext, current: Pair<RdfTerm, RdfResource>?, node: RdfTerm, shape: RdfResource): Boolean {
+        if (current == null) return true
+        if (ctx.undefined.isEmpty()) return false
+        fun byRecursion(n: RdfTerm, s: RdfResource) = ctx.undefined[AtomKey(TermKey(n), s)]?.recursion ?: true
+        return !byRecursion(current.first, current.second) && byRecursion(node, shape)
     }
 
     private fun readInSolver(solver: RecursionSolver, key: AtomKey, value: RdfTerm, ref: RdfResource, negative: Boolean): Conformance {
@@ -862,8 +997,12 @@ internal class NativeShaclValidator(
             }
             if (!refine(solver, members, memberSet, atoms, ctx, evaluationState)) {
                 if (solver.restart) return
-                // Every remaining question lies on a cycle through a negative dependency.
-                atoms.forEach { solver.settle(it, Conformance.UNDEFINED) }
+                // Every remaining question lies on a cycle through a negative dependency: undefined by recursion,
+                // whatever else (an undecided pattern) its last evaluation found.
+                for ((index, atom) in atoms.withIndex()) {
+                    solver.settle(atom, Conformance.UNDEFINED)
+                    if (ctx.undefined.isNotEmpty()) ctx.undefined[members[index]]?.let { ctx.undefined[members[index]] = UndefinedCause(true, it.pattern) }
+                }
                 continue
             }
             val rest = members.filter { !solver.atoms.getValue(it).resolved }
@@ -990,8 +1129,10 @@ internal class NativeShaclValidator(
 
     /**
      * An outcome that depends on the undefined answer "does [node] conform to [shape]". The answer is undefined
-     * because of undefined recursion, or because of an undecided pattern ([ValidationContext.undecided]), in which
-     * case the result reports that cause. [context] is added to the result's [ValidationViolation.context].
+     * because of undefined recursion, because of an undecided pattern, or both ([ValidationContext.undefined]). The
+     * result has the status of **one** cause, chosen deterministically: undefined recursion when it is a cause
+     * (`ksh:UndefinedRecursion`; its message also names the pattern that could not be evaluated, if any), otherwise
+     * the pattern's status. [context] is added to the result's [ValidationViolation.context].
      */
     private fun Sink.undefinedAnswer(
         ctx: ValidationContext,
@@ -1004,15 +1145,17 @@ internal class NativeShaclValidator(
         context: Map<String, Any> = emptyMap(),
     ) {
         undefined = true
-        val because = ctx.undecided[AtomKey(TermKey(node), shape)]
+        val why = if (ctx.undefined.isEmpty()) null else ctx.undefined[AtomKey(TermKey(node), shape)]
+        val because = why?.pattern
         if (because != null && cause == null) cause = because
+        if (why == null || why.recursion) recursion = true
         if (mode != Mode.REPORT) return
         val result =
-            if (because == null) {
-                undefinedRecursionResult(focus, tpl, type, value, node, shape)
+            if (why == null || why.recursion) {
+                undefinedRecursionResult(focus, tpl, type, value, node, shape, because)
             } else {
                 val message = "Whether ${displayTerm(node)} conforms to ${shape.displayId()} cannot be decided, so this " +
-                    "${type.name} constraint could not be evaluated: ${because.reason}"
+                    "${type.name} constraint could not be evaluated: ${because!!.reason}"
                 violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
                     .copy(violationCode = because.code)
             }
@@ -1056,9 +1199,11 @@ internal class NativeShaclValidator(
         value: RdfTerm?,
         node: RdfTerm,
         shape: RdfResource,
+        pattern: Undecided? = null,
     ): ValidationViolation {
+        val alsoPattern = pattern?.let { ". The answer is also undefined for another reason: ${it.reason}" }.orEmpty()
         val message = "$UNDEFINED_RECURSION (SHACL does not define recursive shapes): whether ${displayTerm(node)} " +
-            "conforms to ${shape.displayId()} cannot be decided, so this ${type.name} constraint could not be evaluated"
+            "conforms to ${shape.displayId()} cannot be decided, so this ${type.name} constraint could not be evaluated$alsoPattern"
         if (config.strictMode) throw ShaclValidationException(message)
         // The declared severity of the source shape: the result blocks conformance exactly when a failure would.
         return violation(focus, tpl, constraintStub(type, tpl.path?.predicate), message, value, messages = emptyList())
@@ -1075,8 +1220,10 @@ internal class NativeShaclValidator(
         targetWhere: RdfResource,
         ctx: ValidationContext,
     ): ValidationViolation {
-        // Undefined because of an undecided pattern (strict mode already failed), or because of undefined recursion.
-        val because = ctx.undecided[AtomKey(TermKey(candidate), targetWhere)]
+        // Undefined because of an undecided pattern (strict mode already failed), because of undefined recursion, or
+        // both: recursion is reported when it is a cause (see Sink.undefinedAnswer).
+        val why = ctx.undefined[AtomKey(TermKey(candidate), targetWhere)]
+        val because = why?.pattern?.takeIf { !why.recursion }
         val membership = "sh:targetWhere membership of ${displayTerm(candidate)} in ${targetWhere.displayId()} cannot be decided, " +
             "so ${shape.shapeNode.displayId()} could not be validated for it"
         val message =
@@ -1163,11 +1310,11 @@ internal class NativeShaclValidator(
         when (part) {
             is NodeLogicalPart.And -> {
                 var failing: RdfResource? = null
-                var undecided: RdfResource? = null
+                var undecided: Pair<RdfTerm, RdfResource>? = null
                 for (op in part.operands) {
                     when (conformance(logicalTarget, op, ctx, state)) {
                         Conformance.FAILS -> { if (failing == null) failing = op; if (!sink.exhaustive) break }
-                        Conformance.UNDEFINED -> if (undecided == null) undecided = op
+                        Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, logicalTarget, op)) undecided = logicalTarget to op
                         Conformance.CONFORMS -> Unit
                     }
                 }
@@ -1176,23 +1323,23 @@ internal class NativeShaclValidator(
                 if (f != null) {
                     sink.fail { violation(reportFocus, tpl, stub, "sh:and failed: value does not conform to ${f.displayId()}", value = logicalTarget) }
                 } else if (u != null) {
-                    sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                    sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u.second)
                 }
             }
             is NodeLogicalPart.Or -> {
                 var matched = false
-                var undecided: RdfResource? = null
+                var undecided: Pair<RdfTerm, RdfResource>? = null
                 for (op in part.operands) {
                     when (conformance(logicalTarget, op, ctx, state)) {
                         Conformance.CONFORMS -> { matched = true; if (!sink.exhaustive) break }
-                        Conformance.UNDEFINED -> if (undecided == null) undecided = op
+                        Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, logicalTarget, op)) undecided = logicalTarget to op
                         Conformance.FAILS -> Unit
                     }
                 }
                 val u = undecided
                 if (!matched) {
                     if (u != null) {
-                        sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                        sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u.second)
                     } else {
                         sink.fail { violation(reportFocus, tpl, stub, "sh:or requires at least one matching shape", value = logicalTarget) }
                     }
@@ -1200,11 +1347,11 @@ internal class NativeShaclValidator(
             }
             is NodeLogicalPart.Xone -> {
                 var matches = 0
-                var undecided: RdfResource? = null
+                var undecided: Pair<RdfTerm, RdfResource>? = null
                 for (op in part.operands) {
                     when (conformance(logicalTarget, op, ctx, state, negative = true)) {
                         Conformance.CONFORMS -> matches++
-                        Conformance.UNDEFINED -> if (undecided == null) undecided = op
+                        Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, logicalTarget, op)) undecided = logicalTarget to op
                         Conformance.FAILS -> Unit
                     }
                     if (matches > 1 && !sink.exhaustive) break
@@ -1214,7 +1361,7 @@ internal class NativeShaclValidator(
                     matches > 1 -> sink.fail {
                         violation(reportFocus, tpl, stub, "sh:xone requires exactly one matching shape (found more than one)", value = logicalTarget)
                     }
-                    u != null -> sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u)
+                    u != null -> sink.undefinedAnswer(ctx, reportFocus, tpl, type, logicalTarget, logicalTarget, u.second)
                     matches == 0 -> sink.fail {
                         violation(reportFocus, tpl, stub, "sh:xone requires exactly one matching shape (found none)", value = logicalTarget)
                     }
@@ -1496,7 +1643,7 @@ internal class NativeShaclValidator(
                                     Conformance.CONFORMS -> counted = Conformance.FAILS
                                     Conformance.UNDEFINED -> if (counted != Conformance.FAILS) {
                                         counted = Conformance.UNDEFINED
-                                        if (question == null) question = s
+                                        if (question == null || prefersUndefined(ctx, v to question, v, s)) question = s
                                     }
                                     Conformance.FAILS -> Unit
                                 }
@@ -1505,7 +1652,11 @@ internal class NativeShaclValidator(
                         }
                         when (counted) {
                             Conformance.CONFORMS -> { definite++; possible++ }
-                            Conformance.UNDEFINED -> { possible++; if (undecided == null) undecided = v to (question ?: c.shape) }
+                            Conformance.UNDEFINED -> {
+                                possible++
+                                val asked = question ?: c.shape
+                                if (prefersUndefined(ctx, undecided, v, asked)) undecided = v to asked
+                            }
                             Conformance.FAILS -> Unit
                         }
                     }
@@ -1542,11 +1693,11 @@ internal class NativeShaclValidator(
                             add(ConstraintType.MEMBER_SHAPE, "Value is not a valid SHACL RDF list", v)
                         } else {
                             var failing = false
-                            var undecided: RdfTerm? = null
+                            var undecided: Pair<RdfTerm, RdfResource>? = null
                             for (m in members) {
                                 when (conformance(m, c.nestedShape, ctx, state)) {
                                     Conformance.FAILS -> { failing = true; if (!sink.exhaustive) break }
-                                    Conformance.UNDEFINED -> if (undecided == null) undecided = m
+                                    Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, m, c.nestedShape)) undecided = m to c.nestedShape
                                     Conformance.CONFORMS -> Unit
                                 }
                             }
@@ -1554,7 +1705,7 @@ internal class NativeShaclValidator(
                             if (failing) {
                                 add(ConstraintType.MEMBER_SHAPE, "sh:memberShape violated for list value", v)
                             } else if (u != null) {
-                                sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.MEMBER_SHAPE, v, u, c.nestedShape)
+                                sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.MEMBER_SHAPE, v, u.first, c.nestedShape)
                             }
                         }
                     }
@@ -1584,18 +1735,18 @@ internal class NativeShaclValidator(
                     }
                 is PropertyConstraint.SomeValue -> {
                     var matched = false
-                    var undecided: RdfTerm? = null
+                    var undecided: Pair<RdfTerm, RdfResource>? = null
                     for (v in values) {
                         when (conformance(v, c.nestedShape, ctx, state)) {
                             Conformance.CONFORMS -> { matched = true; if (!sink.exhaustive) break }
-                            Conformance.UNDEFINED -> if (undecided == null) undecided = v
+                            Conformance.UNDEFINED -> if (prefersUndefined(ctx, undecided, v, c.nestedShape)) undecided = v to c.nestedShape
                             Conformance.FAILS -> Unit
                         }
                     }
                     val u = undecided
                     if (!matched) {
                         if (u != null) {
-                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SOME_VALUE, null, u, c.nestedShape)
+                            sink.undefinedAnswer(ctx, focus, tpl, ConstraintType.SOME_VALUE, null, u.first, c.nestedShape)
                         } else {
                             add(ConstraintType.SOME_VALUE, "sh:someValue requires at least one conforming value")
                         }
@@ -1646,45 +1797,85 @@ internal class NativeShaclValidator(
     /**
      * One `sh:pattern` evaluation, bounded by [ValidationConfig.patternTimeout].
      *
-     * A value on which the pattern uses up its budget, or on which `java.util.regex` runs out of stack (it matches
-     * an alternation under a quantifier recursively: one group of frames per repetition), has no answer. That is not
-     * an error of the run: one slow or hostile literal must not prevent the validation of everything else. The
-     * constraint is **undecided** for that value ([PatternOutcome.undecided]): the caller reports a result naming the
-     * pattern, marked `ksh:PatternTimeout` / `ksh:PatternTooComplex`, which blocks conformance as a failure would
-     * (the value is not accepted), and a shape that reads the answer through `sh:not`, `sh:or`… gets "undefined",
-     * so an undecided pattern can neither satisfy nor silently fail an outer constraint. Validation then goes on.
-     * With [ValidationConfig.strictMode] it fails instead, as for undefined recursion. The run-wide
-     * [ValidationConfig.timeout] is still enforced during the match ([DeadlineCharSequence]) and aborts the run.
+     * **Budget.** The evaluation may take [patternStepBudget] steps of the regular expression engine (character
+     * reads, [DeadlineCharSequence]): the configured duration at 50,000 steps per millisecond. Steps are counted, not
+     * time, so whether a value is decided does not depend on the machine, its load or a garbage collection pause.
+     * The wall clock is only a backstop, at [PATTERN_WALL_CLOCK_FACTOR] times the configured duration.
+     *
+     * **Stack.** `java.util.regex` matches an alternation under a quantifier recursively (one group of frames per
+     * repetition), so a long value can exhaust the stack, and whether it does depends on the stack that is left
+     * where the match starts. Values of [PATTERN_INLINE_MAX_LENGTH] characters or more are therefore matched on the
+     * run's pattern evaluation thread ([PatternWorker]), whose stack has a fixed size
+     * ([PATTERN_WORKER_STACK_BYTES]): the outcome is the same at any shape nesting depth and for any stack size of
+     * the validating thread. Shorter values are matched on the validating thread (a thread hand-over per value would
+     * dominate the cost of ordinary patterns); if that overflows, the match is repeated on the evaluation thread,
+     * so it is still the fixed stack that decides. Every outcome of the evaluation thread is remembered for the run:
+     * a value decided once stays decided.
+     *
+     * A value on which the pattern uses up its budget, or exhausts the stack of the evaluation thread, has no
+     * answer. That is not an error of the run: one slow or hostile literal must not prevent the validation of
+     * everything else. The constraint is **undecided** for that value ([PatternOutcome.undecided]): the caller
+     * reports a result naming the pattern, marked `ksh:PatternTimeout` / `ksh:PatternTooComplex`, which blocks
+     * conformance as a failure would (the value is not accepted), and a shape that reads the answer through `sh:not`,
+     * `sh:or`… gets "undefined", so an undecided pattern can neither satisfy nor silently fail an outer constraint.
+     * Validation then goes on. With [ValidationConfig.strictMode] it fails instead, as for undefined recursion. The
+     * run-wide [ValidationConfig.timeout] is still enforced during the match and aborts the run.
      *
      * An undecided answer is remembered for the run, so the same value is matched (and the budget spent) once.
      */
     private fun matchPattern(c: PropertyConstraint.Pattern, lexical: String, shape: RdfResource, ctx: ValidationContext): PatternOutcome {
-        if (ctx.patternIssues.isNotEmpty()) ctx.patternIssues[c to lexical]?.let { return PatternOutcome(false, it) }
+        if (ctx.patternOutcomes.isNotEmpty()) ctx.patternOutcomes[c to lexical]?.let { return it }
         patternEvaluations++
-        val undecided =
-            try {
-                return if (c.regex.containsMatchIn(ctx.text(lexical, patternTimeoutNanos))) PatternOutcome.MATCH else PatternOutcome.NO_MATCH
-            } catch (e: PatternBudgetExceeded) {
-                Undecided(
-                    ValidationViolation.PATTERN_TIMEOUT_CODE,
-                    "${describe(c, shape)} exceeded ValidationConfig.patternTimeout (${config.patternTimeout}) on a value of " +
-                        "${lexical.length} characters, so whether the value matches is unknown and it is not accepted; the " +
-                        "pattern probably backtracks catastrophically (nested or overlapping quantifiers)",
+        var result = if (lexical.length < patternInlineMaxLength) runPattern(c, lexical, ctx) else null
+        val onWorker = result == null || result == PatternRun.OUT_OF_STACK
+        if (onWorker) {
+            patternWorkerEvaluations++
+            result = ctx.patternWorker().run { runPattern(c, lexical, ctx) }
+        }
+        val outcome =
+            when (result!!) {
+                PatternRun.MATCH -> PatternOutcome.MATCH
+                PatternRun.NO_MATCH -> PatternOutcome.NO_MATCH
+                PatternRun.OUT_OF_BUDGET -> PatternOutcome(
+                    false,
+                    Undecided(
+                        ValidationViolation.PATTERN_TIMEOUT_CODE,
+                        "${describe(c, shape)} used up its evaluation budget (ValidationConfig.patternTimeout = " +
+                            "${config.patternTimeout}: $patternStepBudget regular expression engine steps, or " +
+                            "$PATTERN_WALL_CLOCK_FACTOR times that duration) on a value of ${lexical.length} characters, so " +
+                            "whether the value matches is unknown and it is not accepted; the pattern probably backtracks " +
+                            "catastrophically (nested or overlapping quantifiers)",
+                    ),
                 )
-            } catch (e: StackOverflowError) {
-                // The stack is unwound up to here, so it is safe to go on. Only the match is abandoned.
-                Undecided(
-                    ValidationViolation.PATTERN_TOO_COMPLEX_CODE,
-                    "${describe(c, shape)} could not be evaluated on a value of ${lexical.length} characters: the regular " +
-                        "expression engine ran out of stack, so whether the value matches is unknown and it is not accepted; " +
-                        "an alternation under a quantifier such as (a|b)* recurses once per repetition - rewrite it as a " +
-                        "character class ([ab]*) or bound the value with sh:maxLength",
+                PatternRun.OUT_OF_STACK -> PatternOutcome(
+                    false,
+                    Undecided(
+                        ValidationViolation.PATTERN_TOO_COMPLEX_CODE,
+                        "${describe(c, shape)} could not be evaluated on a value of ${lexical.length} characters: the regular " +
+                            "expression engine ran out of stack, so whether the value matches is unknown and it is not accepted; " +
+                            "an alternation under a quantifier such as (a|b)* recurses once per repetition - rewrite it as a " +
+                            "character class ([ab]*) or bound the value with sh:maxLength",
+                    ),
                 )
             }
-        if (config.strictMode) throw ShaclValidationException(undecided.reason)
-        ctx.patternIssues[c to lexical] = undecided
-        return PatternOutcome(false, undecided)
+        val undecided = outcome.undecided
+        if (undecided != null && config.strictMode) throw ShaclValidationException(undecided.reason)
+        if (undecided != null || onWorker) ctx.patternOutcomes[c to lexical] = outcome
+        return outcome
     }
+
+    /**
+     * Matches [c] against [lexical] on the current thread. A stack overflow is caught here: the stack is unwound up
+     * to this frame, so it is safe to go on; only the match is abandoned.
+     */
+    private fun runPattern(c: PropertyConstraint.Pattern, lexical: String, ctx: ValidationContext): PatternRun =
+        try {
+            if (c.regex.containsMatchIn(ctx.text(lexical, patternStepBudget, patternBackstopNanos))) PatternRun.MATCH else PatternRun.NO_MATCH
+        } catch (e: PatternBudgetExceeded) {
+            PatternRun.OUT_OF_BUDGET
+        } catch (e: StackOverflowError) {
+            PatternRun.OUT_OF_STACK
+        }
 
     private fun describe(c: PropertyConstraint.Pattern, shape: RdfResource): String {
         val flags = c.flags?.let { " (sh:flags \"$it\")" }.orEmpty()
