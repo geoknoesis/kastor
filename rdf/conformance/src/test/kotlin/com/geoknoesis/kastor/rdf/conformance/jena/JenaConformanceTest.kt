@@ -14,7 +14,8 @@ import org.junit.jupiter.api.TestFactory
  * Runs the W3C RDF 1.2 syntax test suites against Kastor's Jena provider.
  *
  * The test factory walks `test-data/rdf12/` manifests, turning each test row into a dynamic test.
- * When the W3C data has not been initialised, the factory yields a single skipped test.
+ * When the W3C data is not there, the factory yields a single **failing** test (a skipped one only with
+ * `-PconformanceAllowMissingData=true`): the suite must not go green without running.
  * Known deviations must be listed by IRI with a reason and failure signature in `conformance-allowlist.tsv`.
  *
  * Eval expectations are parsed by the independent reference parser, not by the Jena provider under test.

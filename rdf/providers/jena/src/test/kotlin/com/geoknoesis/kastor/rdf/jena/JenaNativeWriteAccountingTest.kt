@@ -106,8 +106,9 @@ class JenaNativeWriteAccountingTest {
     @Timeout(300)
     fun `a write through the native model changes the stamp and a stamp-keyed cache never serves the old content`() {
         for ((variant, open) in repositories()) {
-            for ((name, write) in nativeWrites()) {
-                open().use { repo ->
+            // One store per variant: every case leaves its graph empty again.
+            open().use { repo ->
+                for ((name, write) in nativeWrites()) {
                     for (graph in listOf(repo.defaultGraph, repo.getGraph(g1))) {
                         val what = "$variant, $name, $graph"
                         repo.transaction { (graph as com.geoknoesis.kastor.rdf.MutableRdfGraph).addTriples((1..3).map(::triple)) }

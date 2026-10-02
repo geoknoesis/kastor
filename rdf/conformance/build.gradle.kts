@@ -1,9 +1,10 @@
 // W3C RDF 1.2 conformance harness. Runs the parser/serializer test suites
 // shipped at https://github.com/w3c/rdf-tests against Kastor's Jena and RDF4J
-// providers. The test data is checked in as a git submodule under
-// `rdf/conformance/test-data/`; if the submodule is not initialised the test
-// factories skip with a clear message, so a stock `./gradlew test` stays green
-// on a fresh clone that omits `--recursive`.
+// providers. The test data lives under `rdf/conformance/test-data/` (fetched by
+// `scripts/fetch-conformance-data.py`, or another directory given with
+// `-PconformanceDataDir=<dir>`). When it is missing, `:rdf:conformance:test` FAILS:
+// a suite that skips itself goes green without running. Skipping is an explicit
+// opt-out: `-PconformanceAllowMissingData=true`.
 
 dependencies {
   implementation(project(":rdf:core"))
@@ -24,11 +25,15 @@ tasks.named<Test>("test") {
   corpus?.let { systemProperty("conformance.dataDir", it) }
   // Maintainers: -PconformanceAllowlistProposal=<file> appends a proposed allowlist row per failing/skipped test.
   providers.gradleProperty("conformanceAllowlistProposal").orNull?.let { systemProperty("conformance.allowlistProposal", it) }
+  // Explicit opt-out for a checkout without the corpus: the full suite is then skipped instead of failing.
+  val allowMissingData = providers.gradleProperty("conformanceAllowMissingData").orNull == "true"
+  systemProperty("conformance.allowMissingData", allowMissingData.toString())
+  inputs.property("conformanceAllowMissingData", allowMissingData)
   inputs.files(fileTree(corpus ?: "test-data"))
 }
 
 // The full W3C corpus is large; it is not part of `check`. Use `conformanceSmokeTest`
-// for the bundled fixture, or `:rdf:conformance:test` after initializing the submodule.
+// for the bundled fixture, or `:rdf:conformance:test` after fetching the corpus.
 tasks.named("check") {
   setDependsOn(dependsOn.filterNot { it.toString().contains("test") })
 }

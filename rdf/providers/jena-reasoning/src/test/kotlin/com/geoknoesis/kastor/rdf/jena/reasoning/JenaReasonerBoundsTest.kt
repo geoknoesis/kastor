@@ -69,45 +69,64 @@ class JenaReasonerBoundsTest {
         assertTrue(error.message!!.contains("timed out"), error.message)
     }
 
+    /**
+     * Deterministic: time is an injected clock that only moves when the scenario says so (a preparation "takes" the
+     * whole budget; waiting for a permit that is not free "takes" the rest of it), and the workers are the ones this
+     * reasoner's own thread factory created, joined instead of being looked up among the JVM's threads.
+     */
     @Test
+    @org.junit.jupiter.api.Timeout(300)
     fun `an uninterruptible rule preparation is abandoned at the deadline and abandoned work is capped`() {
         val release = CountDownLatch(1)
         val started = AtomicInteger()
-        // Emulates Jena's prepare(): ignores interrupts until released.
+        val now = AtomicLong()
+        val timeout = Duration.ofHours(1)
+        // Emulates Jena's prepare(): it outlasts the caller's budget and ignores interrupts until released.
         val stuckPrepare: (org.apache.jena.rdf.model.InfModel) -> Unit = {
             started.incrementAndGet()
+            now.addAndGet(timeout.toNanos())
             while (true) {
                 try {
-                    if (release.await(10, TimeUnit.SECONDS)) break
+                    release.await()
+                    break
                 } catch (_: InterruptedException) {
                     // keep going, like uninterruptible preparation
                 }
             }
         }
         val cap = 2
-        val permits = Semaphore(cap)
-        val reasoner = JenaReasoner(ReasonerConfig.rdfs().copy(timeout = Duration.ofMillis(200)), System::nanoTime, stuckPrepare, permits)
-        fun liveWorkers() = Thread.getAllStackTraces().keys.count { it.name == "kastor-jena-prepare" && it.isAlive }
+        // A timed acquire never waits: when no permit is free, the caller's whole remaining budget elapses at once.
+        val permits = object : Semaphore(cap) {
+            override fun tryAcquire(timeout: Long, unit: TimeUnit): Boolean {
+                if (tryAcquire()) return true
+                now.addAndGet(unit.toNanos(timeout))
+                return false
+            }
+        }
+        val workers = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+        val threads = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-jena-prepare").also { workers.add(it) } }
+        val reasoner = JenaReasoner(ReasonerConfig.rdfs().copy(timeout = timeout), now::get, stuckPrepare, permits, threads)
         val graph = chain(3, 3)
         try {
-            assertTimeoutPreemptively(Duration.ofSeconds(30)) {
-                repeat(cap) {
-                    val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
-                    assertTrue(error.message!!.contains("timed out"), error.message)
-                }
-                repeat(5) {
-                    val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
-                    assertTrue(error.message!!.contains("too many rule preparations"), error.message)
-                    assertTrue(liveWorkers() <= cap, "abandoned preparations must not pile up: ${liveWorkers()}")
-                }
+            repeat(cap) {
+                val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
+                assertTrue(error.message!!.contains("timed out"), error.message)
+                assertFalse(error.message!!.contains("too many rule preparations"), error.message)
+            }
+            assertEquals(cap, workers.size, "each timed-out call abandoned one preparation")
+            assertTrue(workers.all { it.isAlive }, "abandoned preparations go on in the background")
+            assertEquals(0, permits.availablePermits(), "abandoned preparations keep their permits while they run")
+            repeat(5) {
+                val error = assertThrows(IllegalStateException::class.java) { reasoner.getInferredTriples(graph) }
+                assertTrue(error.message!!.contains("too many rule preparations"), error.message)
+                assertEquals(cap, workers.size, "abandoned preparations must not pile up")
             }
             assertEquals(cap, started.get(), "rejected calls must not start more preparations")
         } finally {
             release.countDown()
         }
-        assertTimeoutPreemptively(Duration.ofSeconds(20)) {
-            while (permits.availablePermits() < cap) Thread.onSpinWait()
-        }
+        workers.forEach { it.join() }
+        assertEquals(cap, permits.availablePermits(), "every abandoned preparation returns its permit when it finishes")
         assertFalse(JenaReasoner(ReasonerConfig.rdfs(), System::nanoTime, { it.prepare() }, permits).getInferredTriples(graph).isEmpty(), "permits are released")
     }
 

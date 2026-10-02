@@ -229,6 +229,9 @@ class JenaRepository private constructor(
         /** Most graph keys [lastWrite] holds; beyond it every graph counts as written and tracking starts over. */
         private const val MAX_TRACKED_GRAPHS = 10_000
 
+        /** The start of a SPARQL codepoint escape (a backslash and `u`; the `U` form is matched ignoring case). */
+        private val UNICODE_ESCAPE: String = Char(92) + "u"
+
         /** Prefix of the graph names Jena reserves (see "Special graph names" in the class documentation). */
         private const val RESERVED_GRAPH_PREFIX = "urn:x-arq:"
 
@@ -1133,16 +1136,32 @@ class JenaRepository private constructor(
      * RDF4J provider use ([blankNodeIdOfSkolemGraph] decodes it). Only the graph name changes: the blank node itself,
      * used as a subject or object, stays a blank node. Blank-node graphs that were in the store before the request
      * (written to a TDB2 location by other software) are left alone. Requests that cannot create such a graph (no
-     * `LOAD` without `INTO GRAPH`, no `INSERT` template with a graph variable) are not checked at all.
+     * `LOAD` without `INTO GRAPH`, no `INSERT` template with a graph variable) are not checked at all, and a request
+     * whose text rules it out is executed while it is parsed, as before (so a large `INSERT DATA` is never held in
+     * memory as a parsed request).
      */
     override fun update(query: UpdateQuery): Unit = withWrite {
         queryOperation(query.sparql) {
-            val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
-            val foreign = if (mayCreateBlankGraph(request)) blankGraphNames() else null
-            org.apache.jena.update.UpdateAction.execute(request, dataset)
-            if (foreign != null) skolemizeBlankGraphs(foreign)
+            if (!textMayCreateBlankGraph(query.sparql)) {
+                org.apache.jena.update.UpdateAction.parseExecute(query.sparql, dataset)
+            } else {
+                val request = org.apache.jena.update.UpdateFactory.create(query.sparql)
+                val foreign = if (mayCreateBlankGraph(request)) blankGraphNames() else null
+                org.apache.jena.update.UpdateAction.execute(request, dataset)
+                if (foreign != null) skolemizeBlankGraphs(foreign)
+            }
         }
     }
+
+    /**
+     * A cheap, conservative look at the text of an update request: false only when it certainly has neither a `LOAD`
+     * nor a `GRAPH` with a variable (the two ways of naming a graph by a blank node). Codepoint escapes could spell
+     * either keyword, so a text with a backslash-u escape always counts as "may".
+     */
+    private fun textMayCreateBlankGraph(sparql: String): Boolean =
+        sparql.contains("LOAD", ignoreCase = true) ||
+            sparql.contains(UNICODE_ESCAPE, ignoreCase = true) ||
+            (sparql.contains("GRAPH", ignoreCase = true) && (sparql.contains('?') || sparql.contains('$')))
 
     /** Whether [request] can create a graph named by a blank node (see [update]). */
     private fun mayCreateBlankGraph(request: org.apache.jena.update.UpdateRequest): Boolean = request.operations.any { operation ->
