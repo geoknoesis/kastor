@@ -13,11 +13,12 @@ import java.io.Closeable
  *    graphs, is queried in place. Queries without `GRAPH` run unchanged. Run as written, a `GRAPH` pattern
  *    would read the repository's named graphs, and no dataset clause can express "this store's default graph
  *    and no named graphs" (`FROM NAMED` alone empties the default graph, and the store's default graph has no
- *    IRI for `FROM`), so every `GRAPH` pattern is rewritten to an empty pattern that keeps its variables in scope
- *    ([SparqlDatasetClauses.withoutNamedGraphs]); `GRAPH` inside `SERVICE` is left alone, because it addresses the
- *    remote endpoint's dataset. The store is never copied. A query that cannot be analysed (a `GRAPH` or `SERVICE`
- *    that is not followed by a name and a balanced group, an unterminated string, or codepoint escapes whose
- *    meaning depends on the engine, see below) is rejected with [IllegalArgumentException].
+ *    IRI for `FROM`), so every `GRAPH` pattern is rewritten to an empty table that keeps its variables in scope and,
+ *    where those variables can be listed, is not evaluated at all ([SparqlDatasetClauses.withoutNamedGraphs]);
+ *    `GRAPH` inside `SERVICE` is left alone, because it addresses the remote endpoint's dataset. The store is never
+ *    copied. A query that uses `GRAPH` and cannot be analysed (a `GRAPH` or `SERVICE` that is not followed by a name
+ *    and a balanced group, an unterminated string, or codepoint escapes that change how the query reads, see below)
+ *    is rejected with [IllegalArgumentException].
  * 3. Everything else - graphs from different repositories, untracked graphs, or the store's
  *    default graph mixed with other graphs (it has no IRI, and any FROM clause would replace it) -
  *    is materialized into a temporary repository
@@ -27,17 +28,29 @@ import java.io.Closeable
  * (Run in place, such a query would read any graph of the source repository and escape the dataset;
  * materialized, it would see different graphs - so there is no consistent meaning to give it.)
  *
- * **Codepoint escapes:** SPARQL decodes `\uXXXX` / `\UXXXXXXXX` before it parses a query, so an escape can spell a
- * keyword (`\u0047RAPH`). Queries are therefore analysed, and sent to the repository, in decoded form
- * ([SparqlDatasetClauses.canonical]). A query is unanalysable when an escape decodes to a quote, a backslash or a
- * line break, is not a Unicode scalar value, or follows another backslash: engines disagree on such text (some decode
- * escapes only inside strings and IRIs). Write those characters with the string escapes `\"`, `\\`, `\n` instead.
+ * **Codepoint escapes:** the SPARQL grammar decodes `\uXXXX` / `\UXXXXXXXX` before it parses a query, while engines
+ * (Jena among them) decode them inside strings and IRIs after tokenizing. Both readings are analysed:
+ * - An escape inside a string, an IRI or a comment is left as written. Nearly always it changes nothing about where
+ *   that token ends (`"""a\u000Ab"""`, `"\\u0041"`, `"a\u0022b"`), the two readings have the same tokens, and the
+ *   query is sent exactly as the caller wrote it unless a rewrite is needed.
+ * - An escape anywhere else can only be read by the grammar's rule. It may spell part of a name (`\u0047RAPH`); the
+ *   query is then analysed, and sent, with those escapes decoded. Any other character there makes the query
+ *   unanalysable.
+ * - When the two readings have different tokens (`"a\u0022 # " GRAPH ...`: one string followed by `GRAPH`, or a
+ *   shorter string followed by a comment), a keyword counts if either reading has it. Such a query still runs in
+ *   place when no rewrite depends on the difference: on path 2 when neither reading has `GRAPH`, on path 1 when the
+ *   readings agree up to the place where the dataset clauses are inserted. Otherwise it is unanalysable.
+ *
  * A dataset on path 1 materializes an unanalysable query; on path 2 it is rejected.
  *
  * **DESCRIBE:** the Jena and RDF4J providers describe resources from the default graph of the query's dataset. What
  * an engine describes is implementation-defined, though, and another repository may describe from graphs outside
  * the query's dataset. Results of a `DESCRIBE` run in place are therefore restricted to triples that are in a graph
- * of this dataset (one `hasTriple` lookup per described triple).
+ * of this dataset, unless the repository is a [DescribesQueryDataset]. The query and the lookups run in one read
+ * transaction of the repository (where it has them) and the result is complete when `describe` returns. The lookups
+ * are one `find` per described subject and graph, or one `hasTriple` per triple for a subject with only a few
+ * described triples. They compare blank nodes by identity, so on a store that labels blank nodes anew for every
+ * request, described triples with blank nodes are dropped unless the repository is a [DescribesQueryDataset].
  *
  * **Cost of the materialized path:** every query copies all referenced graphs into a fresh in-memory
  * repository (one batched write per target graph inside a single transaction) and discards it
@@ -59,6 +72,11 @@ internal class DatasetImpl(
     private class QueryPlan(val repository: RdfRepository, val from: List<Iri>, val fromNamed: List<Iri>) {
         /** The dataset is the store's own default graph and no named graphs (no dataset clause can say that). */
         val storeDefaultGraphOnly: Boolean get() = from.isEmpty() && fromNamed.isEmpty()
+    }
+
+    private companion object {
+        /** Fewest described triples of one subject that are checked with one `find` instead of one lookup each. */
+        const val DESCRIBE_BATCH_THRESHOLD = 4
     }
 
     /** A query to run against the source repository itself. */
@@ -117,13 +135,54 @@ internal class DatasetImpl(
     override fun describe(query: SparqlDescribe): Sequence<RdfTriple> {
         val inPlace = inPlace(query.sparql)
             ?: return executeOnMaterializedUnion { repo -> repo.describe(query).toList() }.asSequence()
-        val described = inPlace.repository.describe(if (inPlace.sparql == query.sparql) query else SparqlDescribeQuery(inPlace.sparql))
+        val repository = inPlace.repository
+        val toRun = if (inPlace.sparql == query.sparql) query else SparqlDescribeQuery(inPlace.sparql)
         // What DESCRIBE returns is implementation-defined, and an engine may describe a resource from graphs of the
         // store that are not in the query's dataset (Jena's own describe handler reads the store's default graph and
         // every named graph of it, whatever the dataset clauses say; the Jena and RDF4J providers describe from the
         // default graph of the query's dataset): keep only triples that are in a graph of this dataset.
+        fun run(): List<RdfTriple> {
+            val described = repository.describe(toRun).toList()
+            return if (repository is DescribesQueryDataset) described else withinDataset(described)
+        }
+        // One read transaction for the query and the lookups, so both see the same state of the store.
+        var result: List<RdfTriple>? = null
+        var entered = false
+        try {
+            repository.readTransaction {
+                entered = true
+                result = run()
+            }
+        } catch (e: UnsupportedOperationException) {
+            // A repository without read transactions (a remote endpoint): there is no atomicity to be had.
+            if (entered) throw e
+            result = run()
+        }
+        return result.orEmpty().asSequence()
+    }
+
+    /**
+     * The triples of [described] that are in a graph of this dataset, in their order. A subject with several
+     * described triples costs one `find` per graph (and a `hasTriple` for each triple that `find` did not return, so
+     * `hasTriple` stays the reference); a subject with only a few costs one `hasTriple` per triple.
+     */
+    private fun withinDataset(described: List<RdfTriple>): List<RdfTriple> {
+        if (described.isEmpty()) return described
         val graphs = listOf(defaultGraph) + namedGraphRefs.values
-        return described.filter { triple -> graphs.any { it.hasTriple(triple) } }
+        val confirmed = HashSet<RdfTriple>()
+        val bySubject = described.groupByTo(LinkedHashMap()) { it.subject }
+        for (graph in graphs) {
+            for ((subject, triples) in bySubject) {
+                val open = triples.filterNot { it in confirmed }.distinct()
+                if (open.isEmpty()) continue
+                val unseen = if (open.size < DESCRIBE_BATCH_THRESHOLD) open else {
+                    val present = graph.find(subject, null, null).toHashSet()
+                    open.filterNot { triple -> (triple in present).also { if (it) confirmed.add(triple) } }
+                }
+                unseen.filterTo(confirmed) { graph.hasTriple(it) }
+            }
+        }
+        return described.filter { it in confirmed }
     }
 
     override fun close() {
@@ -158,30 +217,28 @@ internal class DatasetImpl(
     }
 
     /**
-     * Returns the query text to send to the plan's repository, or null if the query cannot be analysed
-     * (the caller then materializes). Callers reject queries with their own dataset clauses first.
+     * Returns the query text to send to the plan's repository - [queryText] itself when nothing has to change - or
+     * null if the query cannot be analysed (the caller then materializes). Callers reject queries with their own
+     * dataset clauses first.
      */
     private fun rewrite(queryText: String, plan: QueryPlan): String? {
-        // Decoded form: what is analysed is exactly what the repository parses, whatever it does with escapes.
-        val canonical = SparqlDatasetClauses.canonical(queryText)
         if (plan.storeDefaultGraphOnly) {
-            if (canonical != null && !SparqlDatasetClauses.usesGraphPattern(canonical)) return canonical
             // The dataset has no named graphs, but run in place GRAPH would read every named graph of the
             // repository. Dataset clauses cannot express "the store's default graph, no named graphs": FROM NAMED
             // without FROM makes the default graph empty (SPARQL 1.1 section 13.2), and the store's default graph
             // has no IRI to name in a FROM clause. Copying the store instead would be uncached, network-heavy for
             // remote stores and need an in-memory provider, so the GRAPH patterns are rewritten to match nothing.
-            return canonical?.let(SparqlDatasetClauses::withoutNamedGraphs) ?: throw IllegalArgumentException(
+            // A query without GRAPH comes back as it is.
+            return SparqlDatasetClauses.withoutNamedGraphs(queryText) ?: throw IllegalArgumentException(
                 "The query cannot be analysed by Kastor: GRAPH (and SERVICE) must be followed by a variable or IRI " +
-                    "and a { ... } group, strings must be terminated, and codepoint escapes (\\uXXXX) must not spell " +
-                    "quotes, backslashes or line breaks. This dataset has no named graphs, so GRAPH patterns must " +
-                    "match nothing; fix the query or query the source repository directly."
+                    "and a { ... } group, strings must be terminated, and codepoint escapes (\\uXXXX) must not " +
+                    "change where a string, an IRI or a comment ends. This dataset has no named graphs, so GRAPH " +
+                    "patterns must match nothing; fix the query or query the source repository directly."
             )
         }
-        canonical ?: return null
         val clauses = (plan.from.map { "FROM <${it.value}>" } + plan.fromNamed.map { "FROM NAMED <${it.value}>" })
             .joinToString("\n")
-        return SparqlDatasetClauses.insert(canonical, clauses)
+        return SparqlDatasetClauses.insert(queryText, clauses)
     }
 
     // Materialized execution fallback
@@ -225,8 +282,11 @@ internal class DatasetImpl(
  * The scanner is token-aware: string literals, IRIs, comments, language tags and prefixed names (including escaped
  * characters in local names) are skipped, numbers and booleans are separated from a keyword that follows them
  * (`1.GRAPH`), only the top-level query form is considered when inserting (sub-selects are left untouched), and
- * `PREFIX :`, `BASE` and `VERSION` prologue declarations are supported. Codepoint escapes are decoded first
- * ([canonical]), as the SPARQL grammar requires, so an escaped keyword is still found.
+ * `PREFIX :`, `BASE` and `VERSION` prologue declarations are supported.
+ *
+ * Codepoint escapes (`\uXXXX`, `\UXXXXXXXX`) are read both ways engines read them: decoded before tokenizing, as
+ * the SPARQL grammar says (the "early" reading), and decoded inside strings and IRIs after tokenizing, as Jena does
+ * (the "late" reading). See [canonical] and the notes on [DatasetImpl].
  */
 internal object SparqlDatasetClauses {
     private enum class Kind { WORD, IRI, STRING, VAR, PUNCT }
@@ -234,86 +294,181 @@ internal object SparqlDatasetClauses {
 
     private val SOLUTION_MODIFIERS = setOf("ORDER", "GROUP", "HAVING", "LIMIT", "OFFSET", "VALUES")
 
+    /** Words, besides `a`, numbers and prefixed names, of a pattern whose written variables are all in scope. */
+    private val SIMPLE_PATTERN_WORDS = setOf("OPTIONAL", "UNION", "GRAPH", "TRUE", "FALSE")
+
     /** A SPARQL codepoint escape: `\u` + 4 hex digits or `\U` + 8 hex digits. */
     private val CODEPOINT_ESCAPE = Regex("""\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})""")
 
+    /** Stands in the early reading for an escape above U+10FFFF, which has no character. */
+    private val REPLACEMENT_CHARACTER = 0xFFFD.toChar()
+
     /**
-     * [query] with its codepoint escapes (`\uXXXX`, `\UXXXXXXXX`) decoded, as SPARQL does before parsing (SPARQL 1.1
-     * section 19.2); [query] itself if it has none. The result contains no codepoint escape, so it reads the same
-     * for an engine that decodes escapes everywhere and for one that decodes them only in strings and IRIs.
+     * A query in the two readings of its codepoint escapes.
      *
-     * @return null if the query cannot be given one meaning: an escape decodes to a quote, a backslash or a line
-     *   break (which would end a string or a comment only for some engines), is not a Unicode scalar value, directly
-     *   follows another backslash (`\\u0041`: an escaped backslash for some engines), or decoding yields a new escape.
+     * - [text] is the query with the escapes outside strings, IRIs and comments decoded (they spell parts of
+     *   names), and [tokens] are its tokens when the remaining escapes stay inside their tokens: the late reading.
+     * - [earlyText] is [text] with every escape decoded and [earlyTokens] are its tokens: the early reading. They
+     *   are null when that text has an unterminated string, which no engine reading the query that way accepts, so
+     *   only the late reading can run. [origin] maps an offset of [earlyText] to the offset of [text] it came from.
+     *
+     * For a query without escapes the two readings are the same object.
      */
-    fun canonical(query: String): String? {
-        if (!CODEPOINT_ESCAPE.containsMatchIn(query)) return query
-        val out = StringBuilder(query.length)
-        var last = 0
-        for (match in CODEPOINT_ESCAPE.findAll(query)) {
-            val start = match.range.first
-            if (start > 0 && query[start - 1] == '\\') return null
-            val codePoint = query.substring(start + 2, match.range.last + 1).toLong(16)
-            if (codePoint > Character.MAX_CODE_POINT || codePoint in 0xD800..0xDFFF) return null
-            if (codePoint.toInt() in AMBIGUOUS_WHEN_ESCAPED) return null
-            out.append(query, last, start).appendCodePoint(codePoint.toInt())
-            last = match.range.last + 1
+    private class Analysis(
+        val text: String,
+        val tokens: List<Token>,
+        val earlyText: String,
+        val earlyTokens: List<Token>?,
+        private val origin: IntArray?,
+    ) {
+        /** True if both readings have the same tokens before offset [before] of [text] (by default: everywhere). */
+        fun agree(before: Int = Int.MAX_VALUE): Boolean {
+            val early = earlyTokens ?: return true
+            if (early === tokens) return true
+            val map = origin ?: return false
+            var k = 0
+            while (k < tokens.size && tokens[k].start < before) {
+                val late = tokens[k]
+                val other = early.getOrNull(k) ?: return false
+                if (other.kind != late.kind || map[other.start] != late.start || map[other.end] != late.end) return false
+                k++
+            }
+            val next = early.getOrNull(k) ?: return true
+            return map[next.start] >= before
         }
-        out.append(query, last, query.length)
-        return out.toString().takeUnless { CODEPOINT_ESCAPE.containsMatchIn(it) }
+
+        /** True if either reading has [keyword] as a keyword token. */
+        fun hasKeyword(keyword: String): Boolean =
+            tokens.any { isKeyword(text, it, keyword) } ||
+                (earlyTokens != null && earlyTokens !== tokens && earlyTokens.any { isKeyword(earlyText, it, keyword) })
     }
 
-    /** Characters that delimit strings and comments: `"`, `'`, `\`, line feed and carriage return. */
-    private val AMBIGUOUS_WHEN_ESCAPED = setOf('"'.code, '\''.code, '\\'.code, '\n'.code, '\r'.code)
+    /** The two readings of [query], or null if it has an unterminated string or an escape that cannot be placed. */
+    private fun analyse(query: String): Analysis? {
+        if (!CODEPOINT_ESCAPE.containsMatchIn(query)) {
+            val tokens = tokenize(query) ?: return null
+            return Analysis(query, tokens, query, tokens, null)
+        }
+        // 1. Escapes outside strings, IRIs and comments are decoded: only the grammar's rule can read them.
+        val opaque = ArrayList<Token>()
+        tokenize(query, opaque) ?: return null
+        val text = decodeOutside(query, opaque) ?: return null
+        opaque.clear()
+        val tokens = tokenize(text, opaque) ?: return null
+        val escapes = CODEPOINT_ESCAPE.findAll(text).toList()
+        if (escapes.isEmpty()) return Analysis(text, tokens, text, tokens, null)
+        // Decoding must not have put a new escape together (a decoded 'u' after a backslash).
+        if (escapes.any { !inside(opaque, it.range) }) return null
+        // 2. The early reading: every remaining escape decoded, with the way back to the offsets of the text.
+        val early = StringBuilder(text.length)
+        val origin = IntArray(text.length + 1)
+        var copied = 0
+        for (escape in escapes) {
+            for (k in copied until escape.range.first) {
+                origin[early.length] = k
+                early.append(text[k])
+            }
+            val codePoint = text.substring(escape.range.first + 2, escape.range.last + 1).toLong(16)
+            val start = early.length
+            if (codePoint > Character.MAX_CODE_POINT) early.append(REPLACEMENT_CHARACTER) else early.appendCodePoint(codePoint.toInt())
+            for (k in start until early.length) origin[k] = escape.range.first
+            copied = escape.range.last + 1
+        }
+        for (k in copied until text.length) {
+            origin[early.length] = k
+            early.append(text[k])
+        }
+        origin[early.length] = text.length
+        val earlyText = early.toString()
+        return Analysis(text, tokens, earlyText, tokenize(earlyText), origin)
+    }
+
+    /** True if [range] lies within one of the [regions] (strings, IRIs and comments). */
+    private fun inside(regions: List<Token>, range: IntRange): Boolean =
+        regions.any { it.start <= range.first && range.last < it.end }
+
+    /**
+     * [query] with the escapes outside the [opaque] regions decoded; [query] itself if there are none. Null if such
+     * an escape is anything but a letter, a digit or `_`: there it can only spell part of a keyword or a name.
+     */
+    private fun decodeOutside(query: String, opaque: List<Token>): String? {
+        var out: StringBuilder? = null
+        var copied = 0
+        for (escape in CODEPOINT_ESCAPE.findAll(query)) {
+            if (inside(opaque, escape.range)) continue
+            val codePoint = query.substring(escape.range.first + 2, escape.range.last + 1).toLong(16)
+            if (codePoint > Character.MAX_CODE_POINT) return null
+            if (codePoint.toInt() != '_'.code && !Character.isLetterOrDigit(codePoint.toInt())) return null
+            val builder = out ?: StringBuilder(query.length).also { out = it }
+            builder.append(query, copied, escape.range.first).appendCodePoint(codePoint.toInt())
+            copied = escape.range.last + 1
+        }
+        return out?.append(query, copied, query.length)?.toString() ?: query
+    }
+
+    /**
+     * The one text both readings of [query] agree on: [query] itself when its codepoint escapes are all inside
+     * strings, IRIs and comments (they are left as written), otherwise [query] with the escapes outside them
+     * decoded (`\u0047RAPH` becomes `GRAPH`).
+     *
+     * @return null if the readings differ - an escape ends a string, an IRI or a comment early for an engine that
+     *   decodes escapes first (`"a\u0022 # "`), or lets a string run on (`"\u005C"`) - if an escape outside
+     *   strings, IRIs and comments is not a letter, a digit or `_`, or if the query has an unterminated string.
+     */
+    fun canonical(query: String): String? = analyse(query)?.takeIf { it.agree() }?.text
 
     private fun isKeyword(query: String, token: Token, keyword: String): Boolean =
         token.kind == Kind.WORD && token.end - token.start == keyword.length &&
             query.regionMatches(token.start, keyword, 0, keyword.length, ignoreCase = true)
 
     /**
-     * True if [query] contains a `FROM` keyword, i.e. declares `FROM` or `FROM NAMED` dataset clauses.
-     * `FROM` inside strings, IRIs, comments, variables, language tags and prefixed names does not count; `FROM` is
-     * not used by any other SPARQL construct. False for a query that cannot be analysed (callers never run such a
-     * query in place without rewriting it, which fails).
+     * True if [query] contains a `FROM` keyword in either reading of its escapes, i.e. declares `FROM` or
+     * `FROM NAMED` dataset clauses. `FROM` inside strings, IRIs, comments, variables, language tags and prefixed
+     * names does not count; `FROM` is not used by any other SPARQL construct. False for a query that cannot be
+     * analysed (callers never run such a query in place without rewriting it, which fails).
      */
-    fun declaresDataset(query: String): Boolean {
-        val text = canonical(query) ?: return false
-        val tokens = tokenize(text) ?: return false
-        return tokens.any { isKeyword(text, it, "FROM") }
-    }
+    fun declaresDataset(query: String): Boolean = analyse(query)?.hasKeyword("FROM") ?: false
 
     /**
-     * True if [query] contains the `GRAPH` keyword (a graph pattern, or a graph reference in an update).
-     * `GRAPH` inside strings, IRIs, comments, variables, language tags and prefixed names does not count. A query
-     * that cannot be analysed (unterminated string, ambiguous codepoint escapes) counts as using `GRAPH`.
+     * True if [query] contains the `GRAPH` keyword (a graph pattern, or a graph reference in an update) in either
+     * reading of its escapes. `GRAPH` inside strings, IRIs, comments, variables, language tags and prefixed names
+     * does not count. A query that cannot be analysed (unterminated string, misplaced escapes) counts as using
+     * `GRAPH`.
      */
-    fun usesGraphPattern(query: String): Boolean {
-        val text = canonical(query) ?: return true
-        val tokens = tokenize(text) ?: return true
-        return tokens.any { isKeyword(text, it, "GRAPH") }
-    }
+    fun usesGraphPattern(query: String): Boolean = analyse(query)?.hasKeyword("GRAPH") ?: true
 
     /**
      * Rewrites [query] so that every top-level-or-nested `GRAPH` pattern of its WHERE clause evaluates as it would
      * against an empty named-graph set - no solutions - while the default graph is still read in place:
      *
-     * - `GRAPH ?g { P }` becomes `{ VALUES ?g { } { P } }` (an empty table keeps `?g` and the variables of `P`
-     *   in scope, so `SELECT *` projects the same variables)
-     * - `GRAPH <iri> { P }` (or a prefixed name) becomes `{ { P } FILTER(false) }`
+     * - `GRAPH name { P }`, where `P` consists of triple patterns, `OPTIONAL`, `UNION`, nested groups and `GRAPH`
+     *   patterns only, becomes `{ VALUES (vars) { } FILTER EXISTS { P } }` over the graph variable and every
+     *   variable written in `P`: exactly the variables `GRAPH name { P }` has in scope. The empty table has no
+     *   solution for the filter to test, so `P` is never evaluated; it stays in the query, so the engine still
+     *   checks its syntax.
+     * - Any other `GRAPH ?g { P }` (with `FILTER`, `BIND`, `MINUS`, `VALUES`, a sub-select or `SERVICE`, whose
+     *   variables are not all in scope) becomes `{ VALUES ?g { } { P } }`.
+     * - Any other `GRAPH <iri> { P }` (or a prefixed name), including one without variables, becomes
+     *   `{ { P } FILTER(false) }`.
      *
-     * Both replacements are standard SPARQL 1.1 and produce no solutions, exactly as a GRAPH pattern does when the
+     * All replacements are standard SPARQL 1.1 and produce no solutions, exactly as a GRAPH pattern does when the
      * dataset has no named graphs; joins, `OPTIONAL`, `UNION`, `MINUS` and `[NOT] EXISTS` around them therefore
      * behave as specified. A `CONSTRUCT` template is left untouched (only the pattern is rewritten), and so is
      * everything inside `SERVICE [SILENT] name { ... }`: that group is evaluated by the remote endpoint against its
-     * own dataset. Codepoint escapes are decoded in the result ([canonical]).
+     * own dataset.
      *
-     * @return the rewritten query, or null if a `GRAPH` keyword is not followed by a variable or IRI and a
-     *   balanced group, a `SERVICE` keyword is not followed by a name and a balanced group, the query has an
-     *   unterminated string or ambiguous codepoint escapes, or it uses `GRAPH` in a `CONSTRUCT WHERE` short form.
+     * @return [query] itself if it has no `GRAPH` in either reading of its escapes (with escapes outside strings,
+     *   IRIs and comments decoded, see [canonical]); the rewritten query; or null if a `GRAPH` keyword is not
+     *   followed by a variable or IRI and a balanced group, a `SERVICE` keyword is not followed by a name and a
+     *   balanced group, the query has an unterminated string or its readings differ, or it uses `GRAPH` in a
+     *   `CONSTRUCT WHERE` short form.
      */
     fun withoutNamedGraphs(query: String): String? {
-        val text = canonical(query) ?: return null
-        val tokens = tokenize(text) ?: return null
+        val analysis = analyse(query) ?: return null
+        val text = analysis.text
+        if (!analysis.hasKeyword("GRAPH")) return if (text == query) query else text
+        if (!analysis.agree()) return null
+        val tokens = analysis.tokens
         fun isGraph(t: Token) = isKeyword(text, t, "GRAPH")
         fun punct(t: Token, c: Char) = t.kind == Kind.PUNCT && text[t.start] == c
         fun isName(t: Token) = t.kind == Kind.VAR || t.kind == Kind.IRI || (t.kind == Kind.WORD && isPrefixedName(text, t))
@@ -350,12 +505,26 @@ internal object SparqlDatasetClauses {
                 val open = tokens.getOrNull(i + 2) ?: return null
                 if (!isName(term) || !punct(open, '{')) return null
                 val close = matchingBrace(tokens, i + 2, text) ?: return null
-                if (term.kind == Kind.VAR) {
-                    edits.add(Edit(token.start, term.end, "{ VALUES ${text.substring(term.start, term.end)} { }"))
-                    edits.add(Edit(tokens[close].end, tokens[close].end, " }"))
-                } else {
-                    edits.add(Edit(token.start, term.end, "{"))
-                    edits.add(Edit(tokens[close].end, tokens[close].end, " FILTER(false) }"))
+                val graphVariable = if (term.kind == Kind.VAR) text.substring(term.start, term.end) else null
+                val variables = patternVariables(text, tokens, i + 3, close)
+                    ?.let { written -> (listOfNotNull(graphVariable) + written).distinctBy { it.substring(1) } }
+                when {
+                    !variables.isNullOrEmpty() -> {
+                        // An empty table over the variables in scope. A filter is asked once per solution, of which
+                        // there are none, so P is parsed but never evaluated. Nested GRAPH patterns are still
+                        // rewritten below, like everywhere else.
+                        val table = if (variables.size == 1) variables[0] else variables.joinToString(" ", "(", ")")
+                        edits.add(Edit(token.start, open.end, "{ VALUES $table { } FILTER EXISTS {"))
+                        edits.add(Edit(tokens[close].end, tokens[close].end, " }"))
+                    }
+                    graphVariable != null -> {
+                        edits.add(Edit(token.start, term.end, "{ VALUES $graphVariable { }"))
+                        edits.add(Edit(tokens[close].end, tokens[close].end, " }"))
+                    }
+                    else -> {
+                        edits.add(Edit(token.start, term.end, "{"))
+                        edits.add(Edit(tokens[close].end, tokens[close].end, " FILTER(false) }"))
+                    }
                 }
             }
             i++
@@ -369,6 +538,33 @@ internal object SparqlDatasetClauses {
             copied = edit.end
         }
         return out.append(text, copied, text.length).toString()
+    }
+
+    /**
+     * The variables written in the tokens [from] until [until] - the inside of a group - in order of appearance, if
+     * every one of them is in scope of the group: the tokens are triple patterns (with paths, blank node property
+     * lists, collections and triple terms), nested groups, `OPTIONAL`, `UNION` and `GRAPH` only. Null if any other
+     * word occurs (`FILTER`, `BIND`, `MINUS`, `VALUES`, `SELECT`, `SERVICE`, a function): the variables of such
+     * constructs are not all in scope, and telling which are takes a parser.
+     */
+    private fun patternVariables(text: String, tokens: List<Token>, from: Int, until: Int): List<String>? {
+        val variables = ArrayList<String>()
+        for (k in from until until) {
+            val token = tokens[k]
+            when (token.kind) {
+                Kind.VAR -> variables.add(text.substring(token.start, token.end))
+                Kind.WORD -> {
+                    val first = text[token.start]
+                    val numberOrName = first in '0'..'9' || first == '.' || isPrefixedName(text, token)
+                    if (!numberOrName) {
+                        val word = text.substring(token.start, token.end)
+                        if (word != "a" && word.uppercase() !in SIMPLE_PATTERN_WORDS) return null
+                    }
+                }
+                else -> Unit
+            }
+        }
+        return variables
     }
 
     /** Index of the `}` token closing the `{` at [openIndex], or null if unbalanced. */
@@ -386,14 +582,17 @@ internal object SparqlDatasetClauses {
     }
 
     /**
-     * Inserts the dataset [clauses] into [query] (in decoded form, see [canonical]).
+     * Inserts the dataset [clauses] into [query] (with escapes outside strings, IRIs and comments decoded, see
+     * [canonical]).
      *
-     * @return the rewritten query; the decoded query itself if it already declares a dataset; or null if no
-     *   insertion point could be found or the query cannot be analysed.
+     * @return the rewritten query; the query itself if it already declares a dataset; or null if no insertion point
+     *   could be found, the query cannot be analysed, or the two readings of its escapes differ before the insertion
+     *   point or about a `FROM` keyword.
      */
     fun insert(query: String, clauses: String): String? {
-        val text = canonical(query) ?: return null
-        val tokens = tokenize(text) ?: return null
+        val analysis = analyse(query) ?: return null
+        val text = analysis.text
+        val tokens = analysis.tokens
         fun word(t: Token) = if (t.kind == Kind.WORD) text.substring(t.start, t.end).uppercase() else null
         fun punct(t: Token, c: Char) = t.kind == Kind.PUNCT && text[t.start] == c
 
@@ -430,6 +629,9 @@ internal object SparqlDatasetClauses {
             if (form != "DESCRIBE") return null
             insertAt = text.length
         }
+        // What follows the clauses may read differently (the engine then accepts one reading or none), but not what
+        // decides where they go, and neither reading may bring dataset clauses of its own.
+        if (analysis.hasKeyword("FROM") || !analysis.agree(insertAt)) return null
         return text.substring(0, insertAt) + "\n" + clauses + "\n" + text.substring(insertAt)
     }
 
@@ -454,17 +656,32 @@ internal object SparqlDatasetClauses {
         return if (k > digits) k else -1
     }
 
+    /** End of the codepoint escape that starts with the backslash at [from], or -1 if there is none. */
+    private fun escapeEnd(q: String, from: Int): Int {
+        val digits = when (q.getOrNull(from + 1)) {
+            'u' -> 4
+            'U' -> 8
+            else -> return -1
+        }
+        val end = from + 2 + digits
+        if (end > q.length) return -1
+        for (k in from + 2 until end) if (Character.digit(q[k], 16) < 0) return -1
+        return end
+    }
+
     /**
-     * Tokenizes enough of SPARQL (after codepoint escapes were decoded) to find keywords and balanced groups;
-     * returns null on an unterminated string.
+     * Tokenizes enough of SPARQL to find keywords and balanced groups; returns null on an unterminated string.
+     * Codepoint escapes are left alone: one inside a string or an IRI belongs to it, like any other character.
      *
      * WORD tokens are keywords and booleans (letters, digits and `_` only), numbers, and prefixed names or blank
      * node labels (the only words that contain a colon). As in the SPARQL grammar, a dot belongs to a number only
      * when a digit or an exponent follows it and to a prefixed name only when it is not its last character, so
      * `1.GRAPH`, `true.GRAPH` and `ex:o. GRAPH` end before the dot; `\`-escaped characters belong to a local name;
      * a language tag (`@en-US`) is one token that is never a keyword.
+     *
+     * [opaque], when given, receives the regions whose text is not SPARQL syntax: strings, IRIs and comments.
      */
-    private fun tokenize(q: String): List<Token>? {
+    private fun tokenize(q: String, opaque: MutableList<Token>? = null): List<Token>? {
         val tokens = ArrayList<Token>()
         var i = 0
         val n = q.length
@@ -472,7 +689,11 @@ internal object SparqlDatasetClauses {
             val c = q[i]
             when {
                 c.isWhitespace() -> i++
-                c == '#' -> while (i < n && q[i] != '\n' && q[i] != '\r') i++
+                c == '#' -> {
+                    val start = i
+                    while (i < n && q[i] != '\n' && q[i] != '\r') i++
+                    opaque?.add(Token(Kind.PUNCT, start, i))
+                }
                 c == '"' || c == '\'' -> {
                     val start = i
                     val long = i + 2 < n && q[i + 1] == c && q[i + 2] == c
@@ -490,13 +711,20 @@ internal object SparqlDatasetClauses {
                         i++
                     }
                     if (!closed) return null
-                    tokens.add(Token(Kind.STRING, start, i))
+                    tokens.add(Token(Kind.STRING, start, i).also { opaque?.add(it) })
                 }
                 c == '<' -> {
                     var j = i + 1
-                    while (j < n && q[j] > ' ' && q[j] !in "<>\"{}|^`\\") j++
+                    while (j < n) {
+                        val d = q[j]
+                        if (d == '\\') {
+                            val end = escapeEnd(q, j)
+                            if (end < 0) break
+                            j = end
+                        } else if (d > ' ' && d !in "<>\"{}|^`") j++ else break
+                    }
                     if (j < n && q[j] == '>') {
-                        tokens.add(Token(Kind.IRI, i, j + 1)); i = j + 1
+                        tokens.add(Token(Kind.IRI, i, j + 1).also { opaque?.add(it) }); i = j + 1
                     } else {
                         tokens.add(Token(Kind.PUNCT, i, i + 1)); i++
                     }
