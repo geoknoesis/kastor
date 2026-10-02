@@ -103,7 +103,10 @@ object ConformanceAllowlist {
  * Set the system property `conformance.allowlistProposal` (Gradle property `conformanceAllowlistProposal`)
  * to a file path to append a proposed allowlist row for every failing or skipped test.
  *
- * The runner is self-skipping when the W3C test data under `rdf/conformance/test-data/` is absent.
+ * **Missing corpus.** [forRoot] runs the full W3C corpus. When the test data under `rdf/conformance/test-data/` (or
+ * the directory named by `conformance.dataDir`) is absent, incomplete or yields no test, it **fails**: a suite that
+ * skips itself goes green without having run anything. Skipping instead is an explicit opt-out: the system property
+ * `conformance.allowMissingData=true` (Gradle: `-PconformanceAllowMissingData=true`).
  */
 object Rdf12ConformanceRunner {
 
@@ -150,35 +153,61 @@ object Rdf12ConformanceRunner {
         return DynamicContainer.dynamicContainer("$displayName (${cases.size} tests)", nodes)
     }
 
+    /** System property that turns a missing corpus into a skip instead of a failure (see [forRoot]). */
+    const val ALLOW_MISSING_DATA_PROPERTY = "conformance.allowMissingData"
+
     /**
      * Walks the top-level RDF 1.2 manifest at `[rootDir]/rdf12/manifest.ttl`
      * (which itself `mf:include`s the per-format sub-manifests) and returns a
      * single container of every test row it transitively names.
+     *
+     * When the corpus is not there (no directory, no manifest, or a manifest without a single recognised test) the
+     * result is one **failing** test that says how to get the data, unless [allowMissingData] is set (by default
+     * from the system property [ALLOW_MISSING_DATA_PROPERTY]), in which case it is one skipped test.
      */
-    fun forRoot(conformer: Conformer, rootDir: Path): List<DynamicNode> {
+    fun forRoot(
+        conformer: Conformer,
+        rootDir: Path,
+        allowMissingData: Boolean = System.getProperty(ALLOW_MISSING_DATA_PROPERTY) == "true",
+    ): List<DynamicNode> {
         if (!Files.isDirectory(rootDir)) {
-            return listOf(
-                dynamicTest("submodule not initialised") {
-                    Assumptions.assumeTrue(
-                        false,
-                        "W3C test data not present at $rootDir. Run " +
-                            "`git submodule update --init --recursive` to enable.",
-                    )
-                }
-            )
+            return listOf(missingCorpus("corpus not present", "W3C test data not present at $rootDir.", allowMissingData))
         }
         val rdf12Manifest = rootDir.resolve("rdf12").resolve("manifest.ttl")
         if (!Files.isRegularFile(rdf12Manifest)) {
             return listOf(
-                dynamicTest("rdf12/manifest.ttl missing") {
-                    Assumptions.assumeTrue(
-                        false,
-                        "$rdf12Manifest not found - the submodule may be checked out at an incompatible tag",
-                    )
-                }
+                missingCorpus(
+                    "rdf12/manifest.ttl missing",
+                    "$rdf12Manifest not found - the corpus may be checked out at an incompatible revision.",
+                    allowMissingData,
+                ),
+            )
+        }
+        val cases = try {
+            Rdf12ManifestParser.parse(rdf12Manifest)
+        } catch (e: Exception) {
+            return listOf(dynamicTest("manifest parse error") { throw e })
+        }
+        if (cases.isEmpty()) {
+            return listOf(
+                missingCorpus("no RDF 1.2 syntax tests in manifest", "The manifest at $rdf12Manifest has no recognised RDF 1.2 entries.", allowMissingData),
             )
         }
         return listOf(forManifest(conformer, "rdf12", rdf12Manifest))
+    }
+
+    /**
+     * The single test that stands for a corpus that is not there: failing, so that the full-corpus task cannot go green
+     * without running, or skipped when the caller opted out with [ALLOW_MISSING_DATA_PROPERTY].
+     */
+    private fun missingCorpus(name: String, problem: String, allowMissingData: Boolean): DynamicTest = dynamicTest(name) {
+        val howToFix = "Fetch the corpus with `python scripts/fetch-conformance-data.py` (or point " +
+            "-PconformanceDataDir=<dir> at a checkout of w3c/rdf-tests)."
+        Assumptions.assumeFalse(allowMissingData, "$problem $howToFix (skipped: $ALLOW_MISSING_DATA_PROPERTY=true)")
+        throw AssertionError(
+            "$problem The RDF 1.2 conformance suite did not run. $howToFix To skip the suite on purpose, pass " +
+                "-PconformanceAllowMissingData=true (system property $ALLOW_MISSING_DATA_PROPERTY=true).",
+        )
     }
 
     private fun asDynamicTest(conformer: Conformer, case: W3cTestCase): DynamicTest =

@@ -17,24 +17,39 @@ import kotlin.test.assertTrue
 
 /** Lifecycle of Jena's background triple stream, and batched dataset loads into foreign repositories. */
 class JenaTripleStreamLifecycleTest {
-    private val parserThread = "AsyncParser"
-    private fun liveParsers(): Set<Thread> = Thread.getAllStackTraces().keys.filter { it.name == parserThread && it.isAlive }.toSet()
+    /**
+     * An input that remembers which threads read it: the parser thread of a stream is the background thread that
+     * reads **its** input, so the tests never look at other parser threads of the JVM.
+     */
+    private class TracedInput(text: String) : java.io.FilterInputStream(text.byteInputStream()) {
+        private val readers = java.util.concurrent.ConcurrentHashMap.newKeySet<Thread>()
+        override fun read(): Int {
+            readers.add(Thread.currentThread())
+            return super.read()
+        }
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            readers.add(Thread.currentThread())
+            return super.read(b, off, len)
+        }
+
+        fun parserThread(): Thread = readers.single { it !== Thread.currentThread() }
+    }
 
     private val document = (0 until 200_000).joinToString("\n") { "<http://example.org/s$it> <http://example.org/p> \"$it\" ." }
 
     @Test
     @Timeout(60)
     fun `the cleanup of an abandoned unclosed stream stops its parser thread`() {
-        val before = liveParsers()
         var cleanup: Runnable? = null
         val registrar: (Any, Runnable) -> Cleaner.Cleanable = { _, action ->
             cleanup = action
             Cleaner.Cleanable { action.run() }
         }
         fun openAndAbandon(): Thread {
-            val stream = JenaProvider().openTripleStreamWithBase(document.byteInputStream(), "N-TRIPLES", null, registrar)
+            val input = TracedInput(document)
+            val stream = JenaProvider().openTripleStreamWithBase(input, "N-TRIPLES", null, registrar)
             stream.iterator().next() // never closed, never fully consumed
-            return (liveParsers() - before).single()
+            return input.parserThread()
         }
         val parser = openAndAbandon()
         assertTrue(parser.isAlive, "the parser thread blocks on its full queue while nobody reads")
@@ -47,16 +62,16 @@ class JenaTripleStreamLifecycleTest {
         action.run() // what the Cleaner does once the stream is unreachable
         parser.join(10_000)
         assertTrue(!parser.isAlive, "parser thread must terminate")
-        assertEquals(before, liveParsers())
     }
 
     @Test
     @Timeout(60)
     fun `streams are registered with the shared cleaner and close stops the parser`() {
-        val before = liveParsers()
-        val stream = JenaProvider().openTripleStream(document.byteInputStream(), "N-TRIPLES")
+        val input = TracedInput(document)
+        val stream = JenaProvider().openTripleStream(input, "N-TRIPLES")
         stream.iterator().next()
-        val parser = (liveParsers() - before).single()
+        val parser = input.parserThread()
+        assertTrue(parser.isAlive, "the parser thread blocks on its full queue while nobody reads")
         stream.close()
         parser.join(10_000)
         assertTrue(!parser.isAlive)

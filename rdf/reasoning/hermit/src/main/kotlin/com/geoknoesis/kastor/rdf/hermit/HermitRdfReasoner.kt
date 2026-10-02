@@ -10,8 +10,6 @@ import org.semanticweb.owlapi.model.IRI
 import org.semanticweb.owlapi.reasoner.OWLReasoner
 import org.semanticweb.owlapi.util.*
 import java.time.Duration
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,6 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * HermiT (OWL 2 DL) reasoning with explicit engine disposal and bounded serialization/materialization.
  *
  * **Timeout:** [ReasonerConfig.timeout] is a wall-clock budget for the whole call, enforced at every stage:
+ * - the input graph is serialized on the caller's thread (so that an enclosing transaction's view is used); the
+ *   budget is checked before it starts, every [SERIALIZATION_CHECK_INTERVAL] triples while the serializer reads the
+ *   graph, and again when it ends, so a slow graph cannot spend more than the budget unnoticed (writing the document
+ *   out of the triples already read is not interruptible);
  * - OWL API loading **and engine creation** (HermiT's preprocessing, which ignores interrupts) run on a daemon
  *   loader thread that the caller waits for only until the deadline; a load that misses it is abandoned, finishes in
  *   the background, disposes the engine it created and is discarded;
@@ -27,12 +29,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   loads in progress" error;
  * - a watchdog runs from the start of the call; once the deadline passes it calls [OWLReasoner.interrupt]
  *   **repeatedly** on the engine (as soon as one exists) until the reasoner call returns, because HermiT clears a
- *   pending interrupt whenever it starts a new internal task;
+ *   pending interrupt whenever it starts a new internal task. All calls share **one** daemon scheduler thread
+ *   (`kastor-hermit-watchdog`); a call's watchdog is cancelled and leaves the scheduler's queue when the call ends;
  * - every call into the reasoner, including the many per-entity calls made inside OWL API inferred-axiom
  *   generators, first checks the remaining budget, and materialization checks it per axiom.
  *
  * HermiT's own per-task timeout is fixed when the engine is created, so it is set to the budget remaining at
  * that point; the checks above bound every later task. A timed-out call fails with [IllegalStateException].
+ *
+ * **Only a timeout is reported as a timeout.** A failure that is not one (the materialization threshold, an error of
+ * the engine or of an inferred-axiom generator) keeps its own exception also when the deadline has passed in the
+ * meantime; the timeout is then attached to it as a suppressed exception.
  *
  * **Inferred triples** are computed at the axiom level: each OWL API inferred-axiom generator runs in
  * turn, axioms already asserted in the input ontology are discarded, and the remaining axioms over named
@@ -50,6 +57,12 @@ class HermitRdfReasoner internal constructor(
     private val threads: java.util.concurrent.ThreadFactory = java.util.concurrent.ThreadFactory { task -> Thread(task, "kastor-hermit-loader") },
     /** Monotonic clock in nanoseconds that the budget is measured with; replaceable in tests. */
     private val clock: () -> Long = System::nanoTime,
+    /**
+     * Schedules a call's watchdog: runs the task after the first delay and then again after every repeat delay (both
+     * in milliseconds) until the returned future is cancelled. The default is the scheduler shared by every call;
+     * replaceable in tests, which can then run the task themselves.
+     */
+    private val scheduleWatchdog: (Long, Long, Runnable) -> java.util.concurrent.Future<*> = Watchdog::schedule,
 ) : RdfReasoner {
 
     internal constructor(
@@ -65,6 +78,20 @@ class HermitRdfReasoner internal constructor(
         const val RUNNING = 0
         const val FINISHED = 1
         const val ABANDONED = 2
+    }
+
+    /**
+     * The one scheduler of every call's watchdog: a single daemon thread, started with the first HermiT call. A
+     * watchdog only sets a flag and calls [OWLReasoner.interrupt], so one thread serves any number of calls; cancelled
+     * watchdogs leave the queue at once, so it holds at most one entry per call in progress.
+     */
+    internal object Watchdog {
+        private val scheduler = java.util.concurrent.ScheduledThreadPoolExecutor(1) { task ->
+            Thread(task, "kastor-hermit-watchdog").apply { isDaemon = true }
+        }.apply { removeOnCancelPolicy = true }
+
+        fun schedule(delayMillis: Long, repeatMillis: Long, task: Runnable): java.util.concurrent.Future<*> =
+            scheduler.scheduleWithFixedDelay(task, delayMillis, repeatMillis, TimeUnit.MILLISECONDS)
     }
 
     /** Thrown when a load is abandoned at the deadline; the loader thread then owns the manager and the engine. */
@@ -86,8 +113,10 @@ class HermitRdfReasoner internal constructor(
         val deadline = start + config.timeout.toNanos()
         val timedOut = AtomicBoolean(false)
         fun checkBudget() {
-            if (timedOut.get() || clock() - deadline >= 0) timedOut.set(true)
-            check(!timedOut.get() && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
+            // What this check sees decides alone: a watchdog that fires while it runs is noticed by the next one.
+            val expired = timedOut.get() || clock() - deadline >= 0
+            if (expired) timedOut.set(true)
+            check(!expired && !Thread.currentThread().isInterrupted) { TIMEOUT_MESSAGE }
         }
         fun remainingMillis() = TimeUnit.NANOSECONDS.toMillis(deadline - clock()).coerceAtLeast(1)
         // Conservative admission estimate; an in-process engine cannot offer a hard per-request JVM heap quota.
@@ -96,16 +125,18 @@ class HermitRdfReasoner internal constructor(
         var reasoner: OWLReasoner? = null
         var ownsResources = true
         val engineRef = java.util.concurrent.atomic.AtomicReference<OWLReasoner?>()
-        val watchdog: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "kastor-hermit-watchdog").apply { isDaemon = true } }
+        val ended = AtomicBoolean(false)
+        var watchdog: java.util.concurrent.Future<*>? = null
         try {
             // Started before the engine exists: once the deadline passes, keep interrupting whichever engine is live,
             // because HermiT resets a pending interrupt when a new task starts.
-            watchdog.scheduleWithFixedDelay({
+            watchdog = scheduleWatchdog(remainingMillis(), INTERRUPT_REPEAT_MILLIS, Runnable {
+                if (ended.get()) return@Runnable
                 timedOut.set(true)
                 engineRef.get()?.interrupt()
-            }, remainingMillis(), INTERRUPT_REPEAT_MILLIS, TimeUnit.MILLISECONDS)
+            })
             val (ontology, engine) = try {
-                loadWithinDeadline(graph, manager, deadline, timedOut, engineRef)
+                loadWithinDeadline(graph, manager, deadline, timedOut, engineRef, ::checkBudget)
             } catch (abandoned: LoadAbandoned) {
                 ownsResources = false // the loader thread disposes the engine and releases the manager
                 throw IllegalStateException(TIMEOUT_MESSAGE, abandoned.cause)
@@ -128,21 +159,62 @@ class HermitRdfReasoner internal constructor(
                         ontology.objectPropertiesInSignature.size + ontology.dataPropertiesInSignature.size,
                         mapOf("hermit" to inferred.size), Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() }, elapsed))
             } catch (e: RuntimeException) {
-                if (e is IllegalStateException && e.message == TIMEOUT_MESSAGE) throw e
-                // HermiT signals interrupt()/task timeouts with OWL API runtime exceptions.
-                if (timedOut.get() || e is org.semanticweb.owlapi.reasoner.ReasonerInterruptedException ||
-                    e is org.semanticweb.owlapi.reasoner.TimeOutException) {
-                    throw IllegalStateException(TIMEOUT_MESSAGE, e)
-                }
-                throw e
+                throw reported(e, timedOut.get())
             }
         } finally {
+            ended.set(true)
             try {
-                watchdog.shutdownNow()
+                watchdog?.cancel(false)
             } finally {
                 if (ownsResources) {
                     try { reasoner?.dispose() } finally { manager.ontologies.toList().forEach { manager.removeOntology(it) } }
                 }
+            }
+        }
+    }
+
+    /**
+     * What a failure [e] of the reasoning stage is reported as. Only a timeout is a timeout: our own budget check, or
+     * HermiT's signal that a task was interrupted or ran out of time (anywhere in the cause chain, since OWL API
+     * generators wrap exceptions). Any other failure is reported as itself, also when the deadline has passed
+     * ([deadlinePassed]): the timeout is then only attached as a suppressed exception.
+     */
+    private fun reported(e: RuntimeException, deadlinePassed: Boolean): RuntimeException {
+        if (e is IllegalStateException && e.message == TIMEOUT_MESSAGE) return e
+        if (isTimeout(e)) return IllegalStateException(TIMEOUT_MESSAGE, e)
+        if (deadlinePassed) e.addSuppressed(IllegalStateException(TIMEOUT_MESSAGE))
+        return e
+    }
+
+    private fun isTimeout(e: Throwable): Boolean = generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH).any {
+        it is org.semanticweb.owlapi.reasoner.ReasonerInterruptedException ||
+            it is org.semanticweb.owlapi.reasoner.TimeOutException ||
+            (it is IllegalStateException && it.message == TIMEOUT_MESSAGE)
+    }
+
+    /** [graph] as the serializer reads it: handing out its triples checks the budget every few triples. */
+    private class BudgetedGraph(private val graph: RdfGraph, private val checkBudget: () -> Unit) : RdfGraph by graph {
+        override fun getTriples(): List<RdfTriple> = BudgetedTriples(graph.getTriples(), checkBudget)
+        override fun getTriplesSequence(): Sequence<RdfTriple> = getTriples().asSequence()
+        override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
+            BudgetedTriples(graph.find(subject, predicate, obj), checkBudget)
+    }
+
+    private class BudgetedTriples(private val source: List<RdfTriple>, private val checkBudget: () -> Unit) : AbstractList<RdfTriple>() {
+        override val size: Int get() = source.size
+
+        override fun get(index: Int): RdfTriple {
+            if (index % SERIALIZATION_CHECK_INTERVAL == 0) checkBudget()
+            return source[index]
+        }
+
+        override fun iterator(): Iterator<RdfTriple> = object : Iterator<RdfTriple> {
+            private val triples = source.iterator()
+            private var handedOut = 0
+            override fun hasNext(): Boolean = triples.hasNext()
+            override fun next(): RdfTriple {
+                if (handedOut++ % SERIALIZATION_CHECK_INTERVAL == 0) checkBudget()
+                return triples.next()
             }
         }
     }
@@ -173,7 +245,8 @@ class HermitRdfReasoner internal constructor(
     }
 
     /**
-     * Serializes [graph] (on the caller's thread, so an enclosing transaction's view is used), then loads it with the
+     * Serializes [graph] (on the caller's thread, so an enclosing transaction's view is used; the budget is checked
+     * before, while the serializer reads the graph, and after), then loads it with the
      * OWL API **and creates the engine** on a daemon loader thread, waiting at most until [deadline]. Neither step is
      * interruptible. A load that misses the deadline is abandoned ([LoadAbandoned]): it keeps its permit until it
      * finishes, then disposes the engine it created and releases the manager's ontologies itself.
@@ -187,8 +260,19 @@ class HermitRdfReasoner internal constructor(
         deadline: Long,
         timedOut: AtomicBoolean,
         engineRef: java.util.concurrent.atomic.AtomicReference<OWLReasoner?>,
+        checkBudget: () -> Unit,
     ): Pair<OWLOntology, OWLReasoner> {
-        val turtle = graph.serialize(RdfFormat.TURTLE)
+        // Serialization is part of the budget: nothing is read once the deadline has passed (admission may have used
+        // it up), reading the graph stops at the deadline, and an overrun is a timeout, not a later failure.
+        checkBudget()
+        val turtle = try {
+            BudgetedGraph(graph, checkBudget).serialize(RdfFormat.TURTLE)
+        } catch (e: Exception) {
+            // The serializer wraps what the graph throws.
+            if (isTimeout(e) && !(e is IllegalStateException && e.message == TIMEOUT_MESSAGE)) throw IllegalStateException(TIMEOUT_MESSAGE, e)
+            throw e
+        }
+        checkBudget()
         require(turtle.length.toLong() * 2 <= config.maxMemoryUsage / 2) { "Serialized ontology exceeds memory budget" }
         fun remainingNanos() = deadline - clock()
         if (remainingNanos() <= 0) {
@@ -444,6 +528,10 @@ class HermitRdfReasoner internal constructor(
         val MAX_IN_FLIGHT_LOADS: Int = maxOf(2, Runtime.getRuntime().availableProcessors())
         /** Interval at which the watchdog re-issues `interrupt()` after the deadline. */
         const val INTERRUPT_REPEAT_MILLIS = 25L
+        /** Triples handed to the serializer between two budget checks. */
+        const val SERIALIZATION_CHECK_INTERVAL = 256
+        /** How far down a cause chain a timeout signal is looked for. */
+        const val MAX_CAUSE_DEPTH = 32
         /** Longest single wait for the loader before the budget is re-checked. */
         val WAIT_SLICE_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(20)
         const val OWL = "http://www.w3.org/2002/07/owl#"

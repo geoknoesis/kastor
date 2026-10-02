@@ -38,7 +38,23 @@ internal open class JenaGraph(
 
     internal val isRepositoryBacked: Boolean get() = repository != null
 
-    private fun <T> write(block: () -> T): T = if (repository != null) repository.withWrite(graphKey, block) else block()
+    /** Whether writes through this handle are refused (the union graph of a repository, see [JenaRepository.getGraph]). */
+    protected open val readOnly: Boolean get() = false
+
+    /**
+     * The Jena model handed to callers of `JenaBridge.getJenaModel` / `getJenaGraph`: [model] itself for a standalone
+     * graph. For a repository graph it is a model over an [AccountedStoreGraph], never the store's own model, so that
+     * every write made through the Jena API is a write of the repository (see [AccountedStoreGraph]).
+     */
+    internal val nativeModel: Model by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        if (repository == null) model
+        else org.apache.jena.rdf.model.ModelFactory.createModelForGraph(AccountedStoreGraph(model.graph, repository, graphKey, readOnly))
+    }
+
+    private fun <T> write(block: () -> T): T {
+        if (readOnly) throw UnsupportedOperationException(UNION_GRAPH_READ_ONLY)
+        return if (repository != null) repository.withWrite(graphKey, block) else block()
+    }
 
     override fun addTriple(triple: RdfTriple): Unit = write {
         model.graph.add(JenaTerms.toJenaTriple(triple))
@@ -168,6 +184,7 @@ internal class JenaRepositoryGraph(
     model: Model,
     private val owner: JenaRepository,
     private val key: String,
+    override val readOnly: Boolean = false,
 ) : JenaGraph(model, owner, key), VersionedRdfGraph {
 
     override val modificationStamp: Long get() = owner.modificationStamp()
@@ -178,4 +195,91 @@ internal class JenaRepositoryGraph(
     override fun hashCode(): Int = 31 * System.identityHashCode(owner) + key.hashCode()
 
     override fun toString(): String = "JenaRepositoryGraph(${if (key.isEmpty()) "default graph" else key})"
+}
+
+internal const val UNION_GRAPH_READ_ONLY = "The union graph is read-only: write to the graph the triple belongs to"
+
+/**
+ * The Jena graph of a [JenaRepository] graph as it is handed to callers (`JenaBridge.getJenaModel`, `getJenaGraph`).
+ *
+ * The repository's modification stamps, its commit generations and the bookkeeping of its inference views all rely
+ * on every write being one of the repository's own write transactions. This graph therefore never exposes the
+ * store's graph object: it forwards reads to it and turns **every mutation** into a repository write of [graphKey]:
+ * - `add`, `delete`, `remove(s, p, o)` and `clear` (and with them everything Jena builds on those: `Model.add`,
+ *   `Model.remove`, `Model.removeAll`, `GraphUtil` bulk operations, `Statement` / `Resource` mutators) run in
+ *   [JenaRepository.withWrite]: outside a repository transaction each call is its own write transaction (what Jena's
+ *   auto-commit did before), inside `repository.transaction { }` it joins that transaction;
+ * - iterators do not support `remove()`;
+ * - the transaction handler never begins a transaction on the store directly: `execute` / `calculate` (and so
+ *   `Model.executeInTxn` / `calculateInTxn`) run their action in a repository write transaction, while `begin`,
+ *   `commit` and `abort` are refused (use `repository.transaction { }`);
+ * - `close()` does nothing: the store graph belongs to the repository.
+ *
+ * It deliberately is **not** a Jena `GraphWrapper` / `WrappedGraph` / `GraphView`: those hand out the graph they
+ * wrap or its dataset.
+ */
+internal class AccountedStoreGraph(
+    private val base: org.apache.jena.graph.Graph,
+    private val repository: JenaRepository,
+    private val graphKey: String,
+    private val readOnly: Boolean,
+) : org.apache.jena.graph.Graph {
+
+    private fun <T> write(block: () -> T): T {
+        if (readOnly) throw UnsupportedOperationException(UNION_GRAPH_READ_ONLY)
+        return repository.withWrite(graphKey, block)
+    }
+
+    private val transactions = object : org.apache.jena.graph.TransactionHandler {
+        override fun transactionsSupported(): Boolean = false
+        override fun begin() = refuse("begin")
+        override fun abort() = refuse("abort")
+        override fun commit() = refuse("commit")
+        override fun execute(action: Runnable) = repository.inWriteTransaction { action.run() }
+        override fun executeAlways(action: Runnable) = execute(action)
+        override fun <T> calculate(action: java.util.function.Supplier<T>): T = repository.inWriteTransaction { action.get() }
+        override fun <T> calculateAlways(action: java.util.function.Supplier<T>): T = calculate(action)
+
+        private fun refuse(operation: String): Nothing = throw UnsupportedOperationException(
+            "$operation(): transactions of a Kastor repository graph are not started through the Jena API. " +
+                "Use repository.transaction { } (or Model.executeInTxn / calculateInTxn).",
+        )
+    }
+
+    override fun getTransactionHandler(): org.apache.jena.graph.TransactionHandler = transactions
+    override fun getEventManager(): org.apache.jena.graph.GraphEventManager = base.eventManager
+    override fun getPrefixMapping(): org.apache.jena.shared.PrefixMapping = base.prefixMapping
+
+    override fun add(triple: org.apache.jena.graph.Triple): Unit = write { base.add(triple) }
+    override fun delete(triple: org.apache.jena.graph.Triple): Unit = write { base.delete(triple) }
+    override fun remove(s: Node?, p: Node?, o: Node?): Unit = write { base.remove(s, p, o) }
+    override fun clear(): Unit = write { base.clear() }
+
+    override fun find(triple: org.apache.jena.graph.Triple): org.apache.jena.util.iterator.ExtendedIterator<org.apache.jena.graph.Triple> =
+        readOnlyIterator(base.find(triple))
+
+    override fun find(s: Node?, p: Node?, o: Node?): org.apache.jena.util.iterator.ExtendedIterator<org.apache.jena.graph.Triple> =
+        readOnlyIterator(base.find(s, p, o))
+
+    private fun readOnlyIterator(
+        source: org.apache.jena.util.iterator.ExtendedIterator<org.apache.jena.graph.Triple>,
+    ): org.apache.jena.util.iterator.ExtendedIterator<org.apache.jena.graph.Triple> =
+        object : org.apache.jena.util.iterator.NiceIterator<org.apache.jena.graph.Triple>() {
+            override fun hasNext(): Boolean = source.hasNext()
+            override fun next(): org.apache.jena.graph.Triple = source.next()
+            override fun close() = source.close()
+            override fun remove(): Unit = throw UnsupportedOperationException(
+                "Iterators of a Kastor repository graph are read-only: delete the triple through the graph or the model",
+            )
+        }
+
+    override fun isIsomorphicWith(other: org.apache.jena.graph.Graph): Boolean = base.isIsomorphicWith(other)
+    override fun contains(s: Node?, p: Node?, o: Node?): Boolean = base.contains(s, p, o)
+    override fun contains(triple: org.apache.jena.graph.Triple): Boolean = base.contains(triple)
+    override fun close() = Unit
+    override fun isEmpty(): Boolean = base.isEmpty
+    override fun size(): Int = base.size()
+    override fun isClosed(): Boolean = base.isClosed
+
+    override fun toString(): String = "AccountedStoreGraph(${if (graphKey.isEmpty()) "default graph" else graphKey})"
 }

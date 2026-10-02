@@ -35,9 +35,9 @@ internal object InferenceCancellation {
         }
     }
 
-    /** Runs [block] cancelled once [deadlineNanos] (a [System.nanoTime] value) has passed or the thread is interrupted. */
-    fun <T> withDeadline(deadlineNanos: Long, block: () -> T): T =
-        withCheck({ Thread.currentThread().isInterrupted || System.nanoTime() - deadlineNanos > 0 }, block)
+    /** Runs [block] cancelled once [deadlineNanos] (a value of [clock]) has passed or the thread is interrupted. */
+    fun <T> withDeadline(deadlineNanos: Long, clock: () -> Long = System::nanoTime, block: () -> T): T =
+        withCheck({ Thread.currentThread().isInterrupted || clock() - deadlineNanos > 0 }, block)
 
     /**
      * A **clean** cancellation point of a step running on an inference worker: a place where the reasoner is not in
@@ -134,6 +134,9 @@ internal interface InferenceExecutor {
      * between two results it takes from the reasoner, so that a cancelled step ends even when it needs no store read.
      */
     fun checkpoint() = InferenceCancellation.checkpoint()
+
+    /** Called by a running step each time it has taken a result from the reasoner (a test seam). */
+    fun resultTaken() {}
 }
 
 /**
@@ -150,6 +153,12 @@ internal class JenaInferenceHooks {
      */
     @Volatile var onStepCheckpoint: () -> Unit = {}
 
+    /** Runs on the worker each time a step has taken a result from the reasoner (the next checkpoint is "between two results"). */
+    @Volatile var onStepResult: () -> Unit = {}
+
+    /** Runs on a reader's thread right after it handed a step to the worker of a shared view (the step is queued or running). */
+    @Volatile var onStepSubmitted: () -> Unit = {}
+
     /**
      * How long a reader that cancels a step which is already running waits for that step to reach a cancellation
      * point, before it declares the step stuck and gives the view up (see "Poisoned views" in [JenaRepository]).
@@ -163,7 +172,7 @@ internal class JenaInferenceHooks {
     @Volatile var schedule: (Long, Runnable) -> java.util.concurrent.ScheduledFuture<*> =
         { nanos, task -> IDLE_TIMER.schedule(task, nanos, java.util.concurrent.TimeUnit.NANOSECONDS) }
 
-    /** Monotonic clock in nanoseconds used for idle bookkeeping. */
+    /** Monotonic clock in nanoseconds used for idle bookkeeping and for the deadline of timed queries. */
     @Volatile var clock: () -> Long = System::nanoTime
 
     /** Longest time `close()` waits for readers to release their inference views (set from the repository's options). */
@@ -266,15 +275,28 @@ internal class InferenceStep<T>(private val block: () -> T) : java.util.concurre
  * In every case the caller then gets a `QueryCancelledException`. A step that fails delivers its exception to the
  * caller unchanged.
  */
-internal class InferenceWorker(name: String) {
+internal class InferenceWorker(
+    name: String,
+    /**
+     * The owner's registry of its running worker threads, if it keeps one: a thread is added when it is created and
+     * removes itself when its work is done, so the owner can tell which of **its** workers are alive.
+     */
+    private val registry: MutableSet<Thread>? = null,
+) {
     /** Threads started by [executor] (at most one at a time), so [awaitTermination] can wait for them to exit. */
     private val threads = java.util.concurrent.CopyOnWriteArrayList<Thread>()
 
     private val executor = java.util.concurrent.ThreadPoolExecutor(
         1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue(),
-    ) { task -> Thread(task, name).apply { isDaemon = true; threads.add(this) } }
+    ) { task ->
+        Thread({ try { task.run() } finally { registry?.remove(Thread.currentThread()) } }, name).apply {
+            isDaemon = true
+            threads.add(this)
+            registry?.add(this)
+        }
+    }
 
-    fun <T> call(cancelGraceNanos: Long, onStuck: () -> Unit, block: () -> T): T {
+    fun <T> call(cancelGraceNanos: Long, onStuck: () -> Unit, onSubmitted: () -> Unit = {}, block: () -> T): T {
         InferenceCancellation.checkNotCancelled()
         val step = InferenceStep(block)
         val future = try {
@@ -282,6 +304,7 @@ internal class InferenceWorker(name: String) {
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             throw IllegalStateException("Inference view is closed", e)
         }
+        onSubmitted()
         while (true) {
             try {
                 return future.get(POLL_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -363,6 +386,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
                 owner.checkpoint()
                 if (!iterator.hasNext()) break
                 iterator.next()
+                owner.resultTaken()
                 count++
             }
             count
@@ -385,10 +409,20 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
 
         /** No further step will be made: the results ended, the iterator was closed, or a step failed. */
         private var exhausted = false
+
+        /**
+         * What ended the find before its results did (a failed or cancelled step). The iterator **stays failed**:
+         * once the results fetched before are consumed, every further `hasNext()` / `next()` throws it again, so a
+         * caller that catches the failure and goes on can never take the truncated result for a complete one.
+         */
+        private var failure: Throwable? = null
+        private var closed = false
         private var chunkSize = FIRST_CHUNK
 
         override fun hasNext(): Boolean {
+            if (closed) return false
             if (buffer.isNotEmpty()) return true
+            failure?.let { throw it }
             if (exhausted) return false
             val size = chunkSize
             val chunk = try {
@@ -399,6 +433,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
                         owner.checkpoint()
                         if (!iterator.hasNext()) break
                         out.add(iterator.next())
+                        owner.resultTaken()
                     }
                     if (out.size < size) {
                         iterator.close()
@@ -410,6 +445,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
                 // The step failed, or its reader stopped waiting for it (cancellation): the step may still have
                 // opened the reasoner's iterator, which only the owner can close.
                 exhausted = true
+                failure = e
                 releaseSource()
                 throw e
             }
@@ -426,6 +462,7 @@ internal class SharedInferenceGraph(val inf: org.apache.jena.reasoner.InfGraph, 
 
         override fun close() {
             buffer.clear()
+            closed = true
             if (exhausted) return
             exhausted = true
             releaseSource()
