@@ -12,8 +12,10 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  *
  * Patterns are evaluated with `java.util.regex`. **The rule**: a pattern is read as an XPath / XML Schema regular
  * expression. XML Schema syntax is translated to its `java.util.regex` equivalent; `java.util.regex` syntax that
- * XPath does not have is passed through when it means the same after translation, and **rejected** with a
- * [ShapeCompileException] when it would not — a pattern is never silently given another meaning.
+ * XPath does not have is passed through when it means the same after translation, a few common idioms of other
+ * regular expression dialects are translated with the meaning their author intends (see "Compatibility"), and
+ * everything else that would not mean the same is **rejected** with a [ShapeCompileException] — a pattern is never
+ * silently given another meaning.
  *
  * Translated ([XPathRegexTranslator]):
  * - `$` matches at the end of input only, or with `m` before a line feed. Java's `$` also matches before a final
@@ -37,33 +39,69 @@ import com.geoknoesis.kastor.rdf.shacl.ShapeCompileException
  * - Unicode block escapes `\p{IsBlock}` become `\p{InBlock}`. The block must be a Unicode block known to the JVM
  *   under its XML Schema name (the Unicode name without spaces; `PrivateUse` is mapped to `PrivateUseArea`).
  *
+ * Character classes are parsed as XML Schema `charClassExpr`:
+ * - a class cannot be empty and `]` is never a member unless escaped: `[]`, `[^]`, `[].]` and `[^].]` are rejected
+ *   (`java.util.regex` and POSIX read a `]` right after the opening bracket as a member; write `\]`);
+ * - `-` is a literal at the start or at the end of a class, after a range (`[a-c-e]`) and next to a multi-character
+ *   escape (`[\w-.]`); between two single characters it makes a range, whose endpoints may be escapes
+ *   (`[\x41-\x5A]`, `[!-\]]`) but never an unescaped hyphen (`[a--b]`, `[+--]`, `[--a]` are rejected: XML Schema 1.1
+ *   forbids them and `java.util.regex` reads them as ranges; write `\-`);
+ * - `-[` always starts a subtraction, which needs a non-empty base (`[-[a]]` is rejected);
+ * - an unterminated class is rejected.
+ *
+ * The `i` flag follows XPath F&O 5.6.2: a character, a character range (also in a negated class or a subtraction) and
+ * a back-reference match case-insensitively; "all other constructs are unaffected by the i flag. For example, `\p{Lu}`
+ * continues to match upper-case letters only". `java.util.regex` makes `\p{Lu}`, `\p{Ll}`, `\p{Lt}` and the POSIX
+ * `Upper` / `Lower` classes match every cased letter under `CASE_INSENSITIVE`, so category, block and script escapes,
+ * the name escapes and POSIX classes are compiled outside the scope of the flag (`(?-i:…)`), also as members of a
+ * character class (a class with such members and ordinary characters becomes an alternation of the two parts).
+ *
  * Passed through, because the meaning is the same: lazy and possessive quantifiers, back-references, non-capturing
  * and named groups, lookarounds, atomic groups, general-category escapes (`\p{Lu}`) and `\Q…\E` quoting (a quoted
  * section is copied verbatim, so `$`, `^` and `.` inside it stay literal). `$`, `^`, `.` and the class escapes
- * inside such groups are still translated. Escapes that only `java.util.regex` has (`\b`, `\A`, `\z`, `\h`…) keep
- * their Java meaning; note that `\b` uses Java's own (ASCII) notion of a word character, not the `\w` above.
- * Portable shapes should stick to the XML Schema subset.
+ * inside such groups are still translated. Escapes that only `java.util.regex` has (`\b`, `\A`, `\z`, `\h`, `\xHH`,
+ * `\uHHHH`…) keep their Java meaning; note that `\b` uses Java's own (ASCII) notion of a word character, not the
+ * `\w` above. Portable shapes should stick to the XML Schema subset.
+ *
+ * **Compatibility**: idioms that XPath does not have but that shapes written for other engines use, translated with
+ * the meaning their author intends. They work unconditionally (there is no switch).
+ * - A **leading inline flag group**: one or more groups `(?flags)` at the very start of the pattern, with flags among
+ *   `i`, `m`, `s`, `x`, are removed from the pattern and their flags are added to those of `sh:flags`: `(?i)^abc$`
+ *   is the pattern `^abc$` with `sh:flags "i"`. The flags then have their XPath meaning (`i` is Unicode-aware, `m`
+ *   and `$` only know the line feed). For a leading `x`, the two things Java's comments mode reads differently are
+ *   rejected: an unescaped `#` (a comment in Java, a literal in XPath) and whitespace inside a character class
+ *   (ignored in Java, kept in XPath).
+ * - **Script names**: `\p{IsX}` is a block when `X` is a block name (as in XML Schema); otherwise, when `X` is a
+ *   Unicode script name that the JVM knows (`\p{IsLatin}`, `\p{IsHan}`), it is that script, as in `java.util.regex`.
+ *   Names that are both (`Greek`, `Cyrillic`, `Arabic`…) are blocks: `\p{IsGreek}` is U+0370..U+03FF and does not
+ *   contain the Greek Extended block, which the script does.
+ * - **POSIX bracket expressions** inside a character class: `[:alpha:]`, `[:digit:]`, `[:alnum:]`, `[:upper:]`,
+ *   `[:lower:]`, `[:space:]`, `[:punct:]`, `[:xdigit:]`, `[:blank:]`, `[:cntrl:]`, `[:graph:]` and `[:print:]`
+ *   become the `java.util.regex` classes `\p{Alpha}`, `\p{Digit}`… (US-ASCII, as in the POSIX locale), e.g.
+ *   `[[:alpha:]_-]`. Other names (`[:word:]`, `[:^alpha:]`) are rejected.
  *
  * Rejected, because `java.util.regex` would read them differently from what the author of a Java-style pattern
  * means, or because the translation cannot honour them:
  * - `&&` inside a character class (Java class intersection; use `[base-[excluded]]`, or `\&` for a literal);
- * - an unescaped `[` inside a character class (Java nested classes and unions such as `[a-c[x-z]]`, POSIX
- *   `[[:alpha:]]`; use `\[` for a literal bracket);
- * - inline flag groups `(?i)`, `(?m)`, `(?s)`, `(?x)`, `(?i:…)`, `(?-i)`…: `$`, `^`, `.` and whitespace are
- *   translated according to `sh:flags`, which an inline flag would bypass (use `sh:flags`);
- * - `\p{IsX}` where `X` is not a Unicode block (Java reads `\p{IsLatin}` as a script and `\p{IsAlphabetic}` as a
- *   binary property; XML Schema has neither).
+ * - an unescaped `[` inside a character class other than a POSIX bracket expression (Java nested classes and unions
+ *   such as `[a-c[x-z]]`, POSIX collating symbols `[[.a.]]`; use `\[` for a literal bracket);
+ * - inline flag groups anywhere but at the start (`a(?i)b`), scoped (`(?i:…)`), negated (`(?-i)`) or with flags
+ *   other than `i`, `m`, `s`, `x` (`(?u)`, `(?d)`, `(?U)`): `$`, `^`, `.` and whitespace are translated according to
+ *   the flags of the whole pattern, which such a group would bypass (use `sh:flags`);
+ * - `\p{IsX}` where `X` is neither a Unicode block nor a Unicode script (Java binary properties such as
+ *   `\p{IsAlphabetic}`; XML Schema has none).
  */
 internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
-    val options = mutableSetOf<RegexOption>()
+    var ignoreCase = false
     var quote = false
     var extended = false
     var multiLine = false
+    var dotAll = false
     flags?.forEach { c ->
         when (c) {
-            'i' -> options.add(RegexOption.IGNORE_CASE)
+            'i' -> ignoreCase = true
             'm' -> multiLine = true
-            's' -> options.add(RegexOption.DOT_MATCHES_ALL)
+            's' -> dotAll = true
             'x' -> extended = true
             'q' -> quote = true
             else -> throw ShapeCompileException("Unsupported sh:flags character '$c' in \"$flags\"")
@@ -73,8 +111,37 @@ internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
         if (quote) {
             Regex.escape(pattern)
         } else {
-            XPathRegexTranslator(pattern, extended, multiLine, dotAll = RegexOption.DOT_MATCHES_ALL in options).translate()
+            // Leading inline flag groups: "(?" + one or more of i, m, s, x + ")", repeated, at the very start.
+            var start = 0
+            var inlineExtended = false
+            while (pattern.startsWith("(?", start)) {
+                var end = start + 2
+                while (end < pattern.length && pattern[end] in LEADING_INLINE_FLAGS) end++
+                if (end == start + 2 || end >= pattern.length || pattern[end] != ')') break
+                for (k in start + 2 until end) {
+                    when (pattern[k]) {
+                        'i' -> ignoreCase = true
+                        'm' -> multiLine = true
+                        's' -> dotAll = true
+                        else -> inlineExtended = true
+                    }
+                }
+                start = end + 1
+            }
+            XPathRegexTranslator(
+                p = pattern,
+                start = start,
+                extended = extended || inlineExtended,
+                javaComments = inlineExtended,
+                multiLine = multiLine,
+                dotAll = dotAll,
+                ignoreCase = ignoreCase,
+            ).translate()
         }
+    val options = buildSet {
+        if (ignoreCase) add(RegexOption.IGNORE_CASE)
+        if (dotAll) add(RegexOption.DOT_MATCHES_ALL)
+    }
     return try {
         Regex(source, options)
     } catch (e: java.util.regex.PatternSyntaxException) {
@@ -82,14 +149,41 @@ internal fun compileShaclPattern(pattern: String, flags: String?): Regex {
     }
 }
 
-/** Translates one XPath / XML Schema regular expression to `java.util.regex` syntax (see [compileShaclPattern]). */
+/** Flags a leading inline flag group may set (see [compileShaclPattern]). */
+private const val LEADING_INLINE_FLAGS = "imsx"
+
+/**
+ * Translates one XPath / XML Schema regular expression to `java.util.regex` syntax (see [compileShaclPattern]),
+ * from index [start] of [p]. [extended] removes whitespace outside character classes (the `x` flag); [javaComments]
+ * says that the flag came from a leading `(?x)`, where what Java's comments mode reads differently is rejected.
+ */
 private class XPathRegexTranslator(
     private val p: String,
+    start: Int,
     private val extended: Boolean,
+    private val javaComments: Boolean,
     private val multiLine: Boolean,
     private val dotAll: Boolean,
+    private val ignoreCase: Boolean,
 ) {
-    private var i = 0
+    private var i = start
+
+    /** What the last [escape] was (it sets this as a second result). */
+    private var escapeKind = EscapeKind.SINGLE
+
+    private enum class EscapeKind {
+        /** One character: `\n`, `\\`, `\]`, `\-`, `\x41`… It can be the endpoint of a range. */
+        SINGLE,
+
+        /** A set of characters that the `i` flag cannot change: `\d`, `\s`, `\w` and their complements, `\Q…\E`. */
+        SET,
+
+        /** A set of characters that `java.util.regex` changes under `CASE_INSENSITIVE` although XPath does not. */
+        CASE_SENSITIVE_SET,
+    }
+
+    /** A translated character class: [text] matches exactly one character; [plain] says it is a Java class `[…]`. */
+    private class ClassExpr(val text: String, val plain: Boolean)
 
     private fun reject(reason: String): Nothing = throw ShapeCompileException("Invalid sh:pattern \"$p\": $reason")
 
@@ -98,8 +192,12 @@ private class XPathRegexTranslator(
         while (i < p.length) {
             val c = p[i]
             when {
-                c == '\\' && i + 1 < p.length -> out.append(escape())
-                c == '[' -> out.append(charClass())
+                c == '\\' && i + 1 < p.length -> {
+                    val text = escape()
+                    // XPath F&O 5.6.2: only characters, ranges and back-references are affected by the i flag.
+                    if (ignoreCase && escapeKind == EscapeKind.CASE_SENSITIVE_SET) out.append("(?-i:").append(text).append(')') else out.append(text)
+                }
+                c == '[' -> out.append(charClass().text)
                 c == '(' -> {
                     rejectInlineFlags()
                     out.append(c)
@@ -117,7 +215,11 @@ private class XPathRegexTranslator(
                     out.append("[^\\n\\r]")
                     i++
                 }
-                extended && (c == ' ' || c == '\t' || c == '\n' || c == '\r') -> i++
+                extended && isPatternWhitespace(c) -> i++
+                javaComments && c == '#' -> reject(
+                    "unescaped '#' at index $i after a leading (?x): java.util.regex reads it as the start of a comment, " +
+                        "XPath regular expressions as a literal; write \\# for a literal, or remove the comment",
+                )
                 else -> {
                     out.append(c)
                     i++
@@ -127,9 +229,12 @@ private class XPathRegexTranslator(
         return out.toString()
     }
 
+    private fun isPatternWhitespace(c: Char): Boolean = c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
     /**
      * Rejects the inline flag group starting at [i] (`(`), if it is one: `(?` followed by at least one of the
      * `java.util.regex` flag letters or `-`, then `)` or `:`. `(?:`, lookarounds and named groups are not flag groups.
+     * Leading groups of `i`, `m`, `s`, `x` never get here: [compileShaclPattern] consumes them.
      */
     private fun rejectInlineFlags() {
         if (!p.startsWith("(?", i)) return
@@ -138,83 +243,197 @@ private class XPathRegexTranslator(
         if (end == i + 2 || end >= p.length || (p[end] != ')' && p[end] != ':')) return
         reject(
             "inline flag group \"${p.substring(i, end + 1)}\" at index $i is java.util.regex syntax that XPath regular " +
-                "expressions do not have, and the anchors and the dot are translated according to sh:flags; set sh:flags " +
-                "(i, m, s, x) on the shape instead",
+                "expressions do not have, and the anchors and the dot are translated according to the flags of the whole " +
+                "pattern. Only groups of the flags i, m, s, x at the very start of the pattern are supported, e.g. " +
+                "(?i)^abc\$ (they are merged with sh:flags); otherwise set sh:flags (i, m, s, x) on the shape instead",
         )
     }
 
-    /** Translates the escape starting at [i] (a backslash with a following character) and moves past it. */
+    /**
+     * Translates the escape starting at [i] (a backslash with a following character), moves past it and sets
+     * [escapeKind].
+     */
     private fun escape(): String {
         val n = p[i + 1]
         if (n == 'Q') {
             // Java literal quoting (not XPath syntax): copied verbatim up to and including `\E`, or to the end.
             val end = p.indexOf("\\E", i + 2)
             val stop = if (end < 0) p.length else end + 2
+            escapeKind = EscapeKind.SET
             return p.substring(i, stop).also { i = stop }
         }
-        if ((n == 'p' || n == 'P') && p.startsWith("{Is", i + 2)) return blockEscape(n)
+        if (n == 'p' || n == 'P') {
+            escapeKind = EscapeKind.CASE_SENSITIVE_SET
+            if (p.startsWith("{Is", i + 2)) return blockOrScriptEscape(n)
+            // `\p{Name}` is copied whole, so that the name is never read as pattern text; Java also has `\pL`.
+            val from = i
+            i += 2
+            if (i < p.length && p[i] == '{') {
+                val close = p.indexOf('}', i)
+                if (close < 0) reject("the category escape at index $from is not terminated: '}' expected")
+                i = close + 1
+            } else if (i < p.length) {
+                i++
+            }
+            return p.substring(from, i)
+        }
+        val from = i
         i += 2
         // Multi-character escapes are self-contained classes: inside a character class they are union members, so a
         // neighbouring hyphen (`[\w-.]`, `[+-\w]`) is a literal and never forms a range with their first or last member.
-        return when (n) {
-            'd' -> "\\p{Nd}"
-            'D' -> "\\P{Nd}"
-            'w' -> "[$WORD]"
-            'W' -> "[^$WORD]"
-            's' -> "[$SPACE]"
-            'S' -> "[^$SPACE]"
-            'i' -> "[$NAME_START]"
-            'I' -> "[^$NAME_START]"
-            'c' -> "[$NAME_CHAR]"
-            'C' -> "[^$NAME_CHAR]"
-            else -> "\\" + n
+        escapeKind = EscapeKind.SET
+        when (n) {
+            'd' -> return "\\p{Nd}"
+            'D' -> return "\\P{Nd}"
+            'w' -> return "[$WORD]"
+            'W' -> return "[^$WORD]"
+            's' -> return "[$SPACE]"
+            'S' -> return "[^$SPACE]"
+        }
+        // The name classes are code point ranges: Java would add the case variants of their members under `i`.
+        escapeKind = EscapeKind.CASE_SENSITIVE_SET
+        when (n) {
+            'i' -> return "[$NAME_START]"
+            'I' -> return "[^$NAME_START]"
+            'c' -> return "[$NAME_CHAR]"
+            'C' -> return "[^$NAME_CHAR]"
+        }
+        escapeKind = EscapeKind.SINGLE
+        // Java's numeric character escapes are copied with their digits, so that the digits are not read as members.
+        when (n) {
+            'x' ->
+                if (i < p.length && p[i] == '{') {
+                    val close = p.indexOf('}', i)
+                    if (close >= 0) i = close + 1
+                } else {
+                    skipWhile(2) { it.isHexDigit() }
+                }
+            'u' -> skipWhile(4) { it.isHexDigit() }
+            '0' -> skipWhile(3) { it in '0'..'7' }
+        }
+        return p.substring(from, i)
+    }
+
+    private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+
+    private inline fun skipWhile(max: Int, accept: (Char) -> Boolean) {
+        var n = 0
+        while (n < max && i < p.length && accept(p[i])) {
+            i++
+            n++
         }
     }
 
-    /** Translates the block escape `\p{IsName}` / `\P{IsName}` starting at [i] and moves past it. */
-    private fun blockEscape(kind: Char): String {
+    /**
+     * Translates `\p{IsName}` / `\P{IsName}` starting at [i] and moves past it: a block when `Name` is a block name
+     * (XML Schema), otherwise a script when it is a script name (`java.util.regex`).
+     */
+    private fun blockOrScriptEscape(kind: Char): String {
         val close = p.indexOf('}', i + 5)
         if (close < 0) reject("the block escape at index $i is not terminated: '}' expected")
         val name = p.substring(i + 5, close)
         val block = XSD_BLOCK_ALIASES[name] ?: name
-        val known = try {
+        val isBlock = try {
             Character.UnicodeBlock.forName(block)
             true
         } catch (e: IllegalArgumentException) {
             false
         }
-        if (!known) {
+        val isScript = !isBlock && try {
+            Character.UnicodeScript.forName(name)
+            true
+        } catch (e: IllegalArgumentException) {
+            false
+        }
+        if (!isBlock && !isScript) {
             reject(
-                "\\$kind{Is$name} at index $i: \"$name\" is not a Unicode block. In XML Schema regular expressions " +
-                    "\\p{IsX} names a block (the Unicode block name without spaces, e.g. \\p{IsBasicLatin}, " +
-                    "\\p{IsGreek}, \\p{IsLatin-1Supplement}); java.util.regex scripts and binary properties " +
-                    "(\\p{IsLatin}, \\p{IsAlphabetic}) are not supported",
+                "\\$kind{Is$name} at index $i: \"$name\" is neither a Unicode block nor a Unicode script. In XML Schema " +
+                    "regular expressions \\p{IsX} names a block (the Unicode block name without spaces, e.g. " +
+                    "\\p{IsBasicLatin}, \\p{IsGreek}, \\p{IsLatin-1Supplement}); a java.util.regex script name is also " +
+                    "accepted (\\p{IsLatin}, \\p{IsHan}); java.util.regex binary properties (\\p{IsAlphabetic}) are not " +
+                    "supported",
             )
         }
         i = close + 1
-        return "\\$kind{In$block}"
+        return if (isBlock) "\\$kind{In$block}" else "\\$kind{Is$name}"
     }
 
     /**
-     * Translates the character class expression starting at [i] (`[`) into a self-contained Java class and moves
-     * past its closing `]`. An unterminated class is returned unterminated so that compiling it fails.
+     * Translates the POSIX bracket expression `[:name:]` starting at [i] (inside a character class) and moves past it.
      */
-    private fun charClass(): String {
+    private fun posixClass(): String {
+        val close = p.indexOf(":]", i + 2)
+        val name = if (close < 0) null else p.substring(i + 2, close)
+        val java = name?.let { POSIX_CLASSES[it] } ?: reject(
+            "\"${if (close < 0) p.substring(i) else p.substring(i, close + 2)}\" at index $i is not a POSIX bracket " +
+                "expression that can be translated: the supported names are ${POSIX_CLASSES.keys.joinToString(", ") { "[:$it:]" }} " +
+                "(inside a character class, e.g. [[:alpha:]_]); write \\[ for a literal bracket",
+        )
+        i = close + 2
+        return "\\p{$java}"
+    }
+
+    /**
+     * Translates the character class expression starting at [i] (`[`) into an expression that matches one character
+     * and moves past its closing `]`.
+     */
+    private fun charClass(): ClassExpr {
+        val open = i
         i++ // [
         val negated = i < p.length && p[i] == '^'
         if (negated) i++
-        val group = StringBuilder()
+        // Members that follow the i flag (characters and ranges; sets it cannot change) and, under the i flag only,
+        // the members it must not change (see EscapeKind.CASE_SENSITIVE_SET).
+        val members = StringBuilder()
+        val caseSensitive = StringBuilder()
+        var count = 0
+        // Whether the previous member is a single character (it can start a range), and an unescaped hyphen.
+        var single = false
+        var hyphen = false
+        fun member(text: CharSequence, isSingle: Boolean, sensitive: Boolean = false) {
+            (if (sensitive && ignoreCase) caseSensitive else members).append(text)
+            count++
+            single = isSingle
+            hyphen = false
+        }
+        fun close(): ClassExpr {
+            val not = if (negated) "^" else ""
+            return when {
+                caseSensitive.isEmpty() -> ClassExpr("[$not$members]", plain = true)
+                members.isEmpty() -> ClassExpr("(?-i:[$not$caseSensitive])", plain = false)
+                // Not a case-sensitive member and not one of the others.
+                negated -> ClassExpr("(?:(?!(?-i:[$caseSensitive]))[^$members])", plain = false)
+                else -> ClassExpr("(?:[$members]|(?-i:[$caseSensitive]))", plain = false)
+            }
+        }
         while (i < p.length) {
             val c = p[i]
+            val next = if (i + 1 < p.length) p[i + 1] else null
             when {
                 c == ']' -> {
+                    if (count == 0) {
+                        reject(
+                            "']' at index $i right after \"${p.substring(open, i)}\": an XML Schema character class cannot " +
+                                "be empty and an unescaped ']' is never a member (java.util.regex and POSIX would read it " +
+                                "as a member here); write \\] for a literal bracket",
+                        )
+                    }
                     i++
-                    return if (negated) "[^$group]" else "[$group]"
+                    return close()
                 }
-                c == '\\' && i + 1 < p.length -> group.append(escape())
-                c == '-' && i + 1 < p.length && p[i + 1] == '[' -> {
+                c == '\\' && next != null -> {
+                    val text = escape()
+                    member(text, isSingle = escapeKind == EscapeKind.SINGLE, sensitive = escapeKind == EscapeKind.CASE_SENSITIVE_SET)
+                }
+                c == '-' && next == '[' -> {
                     // XML Schema: charClassSub ::= ( posCharGroup | negCharGroup ) '-' charClassExpr, then ']'.
                     val at = i
+                    if (count == 0) {
+                        reject(
+                            "the character class subtraction at index $at has nothing to subtract from (XML Schema: " +
+                                "[base-[excluded]]); write \\- for a literal hyphen and \\[ for a literal bracket",
+                        )
+                    }
                     i++
                     val excluded = charClass()
                     if (i >= p.length || p[i] != ']') {
@@ -224,30 +443,81 @@ private class XPathRegexTranslator(
                         )
                     }
                     i++
-                    val base = if (negated) "[^$group]" else "[$group]"
-                    return "[$base&&[^$excluded]]"
+                    val base = close()
+                    return if (base.plain && excluded.plain) {
+                        ClassExpr("[${base.text}&&[^${excluded.text}]]", plain = true)
+                    } else {
+                        // One character that the subtrahend does not match and the base does.
+                        ClassExpr("(?:(?!${excluded.text})${base.text})", plain = false)
+                    }
                 }
+                c == '[' && next == ':' -> member(posixClass(), isSingle = false, sensitive = true)
                 c == '[' -> reject(
-                    "unescaped '[' inside a character class at index $i: nested classes and unions ([a-c[x-z]], " +
-                        "[[:alpha:]]) are java.util.regex syntax that XPath regular expressions do not have; write \\[ " +
-                        "for a literal bracket, or [base-[excluded]] for a class subtraction",
+                    "unescaped '[' inside a character class at index $i: nested classes and unions ([a-c[x-z]]) are " +
+                        "java.util.regex syntax that XPath regular expressions do not have; write \\[ for a literal " +
+                        "bracket, [base-[excluded]] for a class subtraction, or [[:alpha:]] for a POSIX class",
                 )
-                c == '&' && i + 1 < p.length && p[i + 1] == '&' -> reject(
+                c == '&' && next == '&' -> reject(
                     "'&&' inside a character class at index $i: class intersection is java.util.regex syntax that " +
                         "XPath regular expressions do not have; write [base-[excluded]] for a class subtraction, or " +
                         "\\& for a literal ampersand",
                 )
                 c == '&' -> {
-                    group.append("\\&")
+                    member("\\&", isSingle = true)
                     i++
                 }
+                c == '-' -> {
+                    val literal = when {
+                        // At the start or at the end of the class, and after a range or a multi-character escape.
+                        count == 0 || next == ']' || next == null || !single -> true
+                        // Before a multi-character escape: `[+-\w]` (it cannot end a range).
+                        next == '\\' && i + 2 < p.length && p[i + 2] in SET_ESCAPE_LETTERS -> true
+                        else -> false
+                    }
+                    if (literal) {
+                        val first = count == 0
+                        member("\\-", isSingle = first)
+                        hyphen = first
+                        i++
+                    } else {
+                        if (hyphen || next == '-') {
+                            reject(
+                                "unescaped '-' as an endpoint of the character range at index $i: XML Schema does not " +
+                                    "allow it and java.util.regex would read a range from or to the hyphen; write \\- " +
+                                    "for a literal hyphen",
+                            )
+                        }
+                        // A range: the operator and its second endpoint, a character or a single-character escape.
+                        members.append('-')
+                        i++
+                        if (p[i] == '\\' && i + 1 < p.length) {
+                            members.append(escape())
+                        } else {
+                            rejectClassWhitespace(p[i])
+                            members.append(if (p[i] == '&') "\\&" else p[i].toString())
+                            i++
+                        }
+                        single = false
+                        hyphen = false
+                    }
+                }
                 else -> {
-                    group.append(c)
+                    rejectClassWhitespace(c)
+                    member(c.toString(), isSingle = true)
                     i++
                 }
             }
         }
-        return (if (negated) "[^" else "[") + group
+        reject("the character class starting at index $open is not terminated: ']' expected")
+    }
+
+    private fun rejectClassWhitespace(c: Char) {
+        if (javaComments && isPatternWhitespace(c)) {
+            reject(
+                "whitespace inside a character class at index $i after a leading (?x): java.util.regex ignores it, XPath " +
+                    "regular expressions keep it as a member; escape it (\\x20, \\t) or remove it",
+            )
+        }
     }
 
     private companion object {
@@ -261,6 +531,16 @@ private class XPathRegexTranslator(
 
         /** `java.util.regex` inline flag letters (`(?idmsuxU-idmsuxU)`). */
         const val INLINE_FLAG_CHARACTERS = "idmsuxU-"
+
+        /** The letters of the escapes that stand for a set of characters (they cannot be the endpoint of a range). */
+        const val SET_ESCAPE_LETTERS = "dDwWsSiIcCpPQ"
+
+        /** POSIX bracket expression names and the `java.util.regex` POSIX character classes (US-ASCII) they become. */
+        val POSIX_CLASSES: Map<String, String> = linkedMapOf(
+            "alpha" to "Alpha", "digit" to "Digit", "alnum" to "Alnum", "upper" to "Upper", "lower" to "Lower",
+            "space" to "Space", "punct" to "Punct", "xdigit" to "XDigit", "blank" to "Blank", "cntrl" to "Cntrl",
+            "graph" to "Graph", "print" to "Print",
+        )
 
         /** Members of a Java character class for the code point [ranges] (`\x{h}` notation, no raw characters). */
         private fun members(vararg ranges: IntRange): String =

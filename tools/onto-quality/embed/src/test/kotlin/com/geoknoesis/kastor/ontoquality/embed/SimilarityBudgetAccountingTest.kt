@@ -12,15 +12,32 @@ import kotlin.test.assertTrue
 class SimilarityBudgetAccountingTest {
     private fun index() = SimilarityIndex((0 until 8).associate { Iri("urn:$it") to floatArrayOf(1f, 0f) })
 
+    private fun index(clock: () -> Long) = SimilarityIndex((0 until 8).associate { Iri("urn:$it") to floatArrayOf(1f, 0f) }, clock)
+
     @Test
     fun `time the consumer spends between results does not count against the deadline`() {
+        // A fake clock that only the consumer advances: the search itself takes no time at all.
+        var now = 0L
         val limits = SimilaritySearchLimits(timeout = Duration.ofMillis(300))
         var consumed = 0
-        for (pair in index().pairsAboveThreshold(0.9, limits)) {
-            Thread.sleep(25) // 28 pairs x 25 ms = 700 ms of consumer time
+        for (pair in index { now }.pairsAboveThreshold(0.9, limits)) {
+            now += Duration.ofMillis(25).toNanos() // 28 pairs x 25 ms = 700 ms of consumer time
             consumed++
         }
         assertEquals(28, consumed)
+        assertEquals(Duration.ofMillis(700).toNanos(), now)
+    }
+
+    @Test
+    fun `time the search itself spends counts against the deadline`() {
+        // Every reading of the clock by the search takes one millisecond; the consumer takes none.
+        var now = 0L
+        val limits = SimilaritySearchLimits(timeout = Duration.ofMillis(20))
+        val failure =
+            assertFailsWith<SimilaritySearchBudgetExceededException> {
+                index { now += 1_000_000; now }.pairsAboveThreshold(0.9, limits).toList()
+            }
+        assertEquals(SimilaritySearchBudgetExceededException.Limit.DEADLINE, failure.limit)
     }
 
     @Test

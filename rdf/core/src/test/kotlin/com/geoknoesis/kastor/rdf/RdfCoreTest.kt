@@ -69,16 +69,16 @@ class RdfCoreTest {
     }
     
     @Test
-    fun `repository method with custom configuration works`() {
-        val repo = Rdf.repository {
-            providerId = "memory"
-            variantId = "memory"
-            inference = true
+    fun `repository method refuses inference from a provider that has none`() {
+        // The graph-only memory provider cannot infer: asking it to is an error, not a silent no-op.
+        val error = assertThrows(RdfProviderException::class.java) {
+            Rdf.repository {
+                providerId = "memory"
+                variantId = "memory"
+                inference = true
+            }
         }
-        
-        assertNotNull(repo, "Factory-created repository should be created")
-        assertFalse(repo.isClosed(), "Repository should not be closed initially")
-        assertNotNull(repo.defaultGraph, "Repository should have a default graph")
+        assertTrue(error.message!!.contains("inference"), error.message)
     }
     
     @Test
@@ -116,7 +116,9 @@ class RdfCoreTest {
         assertEquals("/test/location", builder.location, "Location should be settable")
         assertTrue(builder.inference, "Inference should be settable")
         
-        // Test building repository
+        // The graph-only memory provider has no inference: building with it requested fails loudly.
+        assertThrows(RdfProviderException::class.java) { builder.build() }
+        builder.inference = false
         val repo = builder.build()
         assertNotNull(repo, "Built repository should not be null")
     }

@@ -10,8 +10,7 @@ import kotlin.test.assertTrue
 class ShaclPatternTranslationTest {
 
     private fun matches(pattern: String, flags: String?, input: String): Boolean =
-        Regex(ShaclPatterns.toJava(pattern, flags), ShaclPatterns.options(flags).map { RegexOption.valueOf(it) }.toSet())
-            .containsMatchIn(input)
+        ShaclPatterns.compile(pattern, flags).containsMatchIn(input)
 
     @Test
     fun `dollar matches only at the very end of the input unless the m flag is set`() {

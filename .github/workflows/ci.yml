@@ -23,6 +23,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # A hung test must not hold a runner for the 6-hour default; a normal run takes 45-60 minutes.
+    timeout-minutes: 120
     env:
       # Skip embedding/semantic tests that download the all-MiniLM-L6-v2 ONNX model
       # from HuggingFace — the model is unavailable on the CI runner. These tests are
@@ -64,6 +66,16 @@ jobs:
         run: ./gradlew check --no-daemon -x :rdf:conformance:test
         shell: bash
 
+      # A Windows run once failed with "No buffer space available (maximum connections reached?)" on a loopback
+      # connect. If a run fails, record the socket state so the next occurrence can be explained.
+      - name: Network diagnostics (Windows, on failure)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          netsh int ipv4 show dynamicport tcp
+          netsh int ipv4 show excludedportrange protocol=tcp
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
+
       - name: Dependency health (advisory)
         id: build-health
         # Advisory only: a failure here must not skip the conformance, test-count and coverage gates below.
@@ -90,9 +102,9 @@ jobs:
 
       - name: Verify executed test counts and skips
         # Floor is ~90% of the executed count without the RDF corpus and with the bundled SHACL fixture
-        # (2,410 on 2026-10-01 after round six, about 2,800 after round seven); raise it as tests are added.
+        # (2,797 on 2026-10-02 after round seven, about 3,370 after round eight); raise it as tests are added.
         # New skips must be listed in scripts/test-skip-allowlist.json.
-        run: python scripts/check-test-results.py build/modules --minimum 2500 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Coverage reports
         run: ./gradlew jacocoTestReport --no-daemon
@@ -177,7 +189,7 @@ jobs:
         shell: bash
 
       - name: Verify executed test counts and skips
-        run: python3 scripts/check-test-results.py build/modules --minimum 2300 --skip-allowlist scripts/test-skip-allowlist.json
+        run: python3 scripts/check-test-results.py build/modules --minimum 3000 --skip-allowlist scripts/test-skip-allowlist.json
 
       - name: Upload verification reports
         if: always()

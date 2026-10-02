@@ -15,7 +15,9 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import com.geoknoesis.kastor.rdf.RdfQueryException
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -235,6 +237,72 @@ class Rdf4jBlankGraphSkolemTest {
                 conn.contextIDs.use { ids -> while (ids.hasNext()) ids.next().let { if (it is org.eclipse.rdf4j.model.BNode) blank.add(it) } }
                 assertEquals(listOf<org.eclipse.rdf4j.model.Resource>(vf.createBNode("ctx")), blank)
             }
+        }
+    }
+
+    @Test
+    fun `a request that fails after creating a blank-node graph leaves none in an outer transaction`() {
+        Rdf4jRepository.MemoryRepository().use { repo ->
+            val url = quadFile("partial.nq")
+            val missing = tmp.resolve("missing.nq").toFile().toURI().toString()
+            repo.transaction {
+                // The first operation of the request loads the quads; the second fails. The caller carries on.
+                assertFailsWith<RdfQueryException> { update(UpdateQuery("LOAD <$url> ; LOAD <$missing>")) }
+                assertEquals(listOf("${ex}g=iri", "skolem=blank"), literals(graphOnly), "inside the transaction")
+            }
+            assertEquals(1, skolemGraphs(repo).size)
+            assertEquals(listOf("${ex}g=iri", "skolem=blank"), repo.literals(graphOnly), "a query that only reads inside GRAPH")
+            assertEquals(listOf("${ex}g=iri", "skolem=blank"), repo.literals(mixed))
+            assertEquals(emptyList(), blankContexts(repo.getRdf4jRepository()))
+        }
+    }
+
+    private fun blankContexts(store: org.eclipse.rdf4j.repository.Repository): List<org.eclipse.rdf4j.model.Resource> = store.connection.use { conn ->
+        val blank = ArrayList<org.eclipse.rdf4j.model.Resource>()
+        conn.contextIDs.use { ids -> while (ids.hasNext()) ids.next().let { if (it is org.eclipse.rdf4j.model.BNode) blank.add(it) } }
+        blank
+    }
+
+    @Test
+    fun `a reopened native store keeps the blank-node contexts other code wrote`() {
+        val location = tmp.resolve("reopened").toFile()
+        SailRepository(org.eclipse.rdf4j.sail.nativerdf.NativeStore(location)).apply {
+            init()
+            connection.use { conn ->
+                conn.add(vf.createIRI(ex + "s"), vf.createIRI(ex + "p"), vf.createLiteral("foreign"), vf.createBNode("ctx"))
+                conn.add(vf.createIRI(ex + "s"), vf.createIRI(ex + "p"), vf.createLiteral("named"), vf.createIRI(ex + "n"))
+            }
+            shutDown()
+        }
+        Rdf4jRepository.NativeRepository(location.toString()).use { repo ->
+            val foreign = blankContexts(repo.getRdf4jRepository())
+            assertEquals(1, foreign.size)
+            // Invisible, like on a wrapped store, also to a query that only reads inside GRAPH.
+            assertEquals(listOf("${ex}n=named"), repo.literals(graphOnly))
+            repo.update(UpdateQuery("INSERT { GRAPH <${ex}copy> { ?s ?p ?o } } WHERE { GRAPH ?g { ?s ?p ?o } }"))
+            assertEquals(listOf(RdfTriple(Iri(ex + "s"), Iri(ex + "p"), Literal("named"))), repo.getGraph(Iri(ex + "copy")).getTriples())
+            repo.update(UpdateQuery("DROP GRAPH <${ex}copy>"))
+
+            repo.update(UpdateQuery("LOAD <${quadFile("reopened.nq")}>"))
+            assertEquals(foreign, blankContexts(repo.getRdf4jRepository()), "the context of other code is neither renamed nor joined")
+            repo.getRdf4jRepository().connection.use { conn -> assertEquals(1, conn.size(foreign.single())) }
+            assertEquals(1, repo.getGraph(skolemGraphs(repo).single()).size(), "only the graph of the request is skolemized")
+            assertEquals(listOf("${ex}g=iri", "${ex}n=named", "skolem=blank"), repo.literals(graphOnly))
+        }
+    }
+
+    @Test
+    fun `INSERT into a blank-node context of other code stays in that context`() {
+        // The remaining rule: a blank-node context that existed before the request is never renamed, so what the
+        // request adds to it is as invisible as the rest of that context.
+        val store = wrapped()
+        store.connection.use { conn -> conn.add(vf.createBNode("ctx"), vf.createIRI(ex + "p"), vf.createLiteral("x")) }
+        Rdf4jRepository(store).use { repo ->
+            repo.update(UpdateQuery("INSERT { GRAPH ?s { ?s <${ex}q> ?o } } WHERE { ?s ?p ?o FILTER(isBlank(?s)) }"))
+            assertEquals(emptyList(), skolemGraphs(repo))
+            assertEquals(listOf(Iri(ex + "g")), repo.listGraphs())
+            assertEquals(listOf("${ex}g=named"), repo.literals(graphOnly))
+            store.connection.use { conn -> assertEquals(2, conn.size(vf.createBNode("ctx"))) }
         }
     }
 }

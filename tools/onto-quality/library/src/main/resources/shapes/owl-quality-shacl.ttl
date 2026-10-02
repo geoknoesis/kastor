@@ -13,6 +13,16 @@
 #  Embedded SPARQL uses explicit PREFIX lines and SELECT variables (not $this
 #  in the SELECT clause) so it runs on Kastor’s SHACL engine (Jena ARQ).
 #
+#  Every finding is reported on the offending resource: shapes target the
+#  resources they check (sh:targetClass, sh:targetSubjectsOf, sh:targetObjectsOf)
+#  and bind them as $this. The one detector that has to scan the whole graph
+#  (P35: SHACL has no target for predicates) projects the offender as ?value
+#  and interpolates it in the message.
+#
+#  Every shape declares the graph it evaluates when a reasoner is on
+#  (oqsh:evaluatedOn). All shapes of this catalogue are structural and
+#  evaluate the asserted graph.
+#
 #  Namespace:
 #    oqsh:  http://example.org/owl-quality-shacl#
 # ============================================================================
@@ -65,6 +75,19 @@ oqsh:category
     rdfs:comment    "Object is an oqsh category resource (rdfs:Class and skos:Concept) grouping related SHACL checks." ;
     rdfs:domain     sh:Shape ;
     rdfs:range      rdfs:Class .
+
+oqsh:evaluatedOn
+    a               rdf:Property ;
+    rdfs:label      "evaluated on" ;
+    rdfs:comment    "The graph a targeted shape evaluates when a reasoner is on: oqsh:AssertedGraph for detectors that look at what the author wrote (hierarchy shape and cycles, missing or malformed declarations and annotations, naming, redundancy), oqsh:EntailedGraph for detectors that are meant to see inferred triples (class membership, disjointness, value typing). A shape without the property evaluates the entailed graph. Without a reasoner both graphs are the same." ;
+    rdfs:domain     sh:Shape .
+
+oqsh:AssertedGraph a rdfs:Resource ;
+    rdfs:label "asserted graph"@en ;
+    rdfs:comment "The ontology as parsed, without any inferred triple."@en .
+oqsh:EntailedGraph a rdfs:Resource ;
+    rdfs:label "entailed graph"@en ;
+    rdfs:comment "The asserted triples plus the triples the selected reasoner profile infers."@en .
 
 #  SKOS taxonomy for oqsh:category tags (flat scheme; sibling top concepts).
 
@@ -151,6 +174,8 @@ oqsh:VocabularyIntegrity a rdfs:Class, skos:Concept ;
 
 oqsh:OntologyMetadataShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "P09" ;
     rdfs:label      "An owl:Ontology should carry rdfs:label, rdfs:comment and dct:creator" ;
@@ -170,6 +195,8 @@ oqsh:OntologyMetadataShape
 
 oqsh:OntologyVersionShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "An owl:Ontology should declare an owl:versionIRI or owl:versionInfo" ;
@@ -182,6 +209,8 @@ oqsh:OntologyVersionShape
 
 oqsh:OntologyLicenseShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "P41" ;
     rdfs:label      "An owl:Ontology should declare a license" ;
@@ -198,6 +227,8 @@ oqsh:OntologyLicenseShape
 
 oqsh:ClassHasLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:Class should have rdfs:label" ;
@@ -210,6 +241,8 @@ oqsh:ClassHasLabelShape
 
 oqsh:ObjectPropertyHasLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:ObjectProperty should have rdfs:label" ;
@@ -221,6 +254,8 @@ oqsh:ObjectPropertyHasLabelShape
 
 oqsh:DatatypePropertyHasLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:DatatypeProperty should have rdfs:label" ;
@@ -232,6 +267,8 @@ oqsh:DatatypePropertyHasLabelShape
 
 oqsh:ClassHasDefinitionShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P08" ;
     rdfs:label      "Every owl:Class should carry rdfs:comment or skos:definition" ;
@@ -244,6 +281,8 @@ oqsh:ClassHasDefinitionShape
 
 oqsh:ClassLabelUniqueLangShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "A class has at most one rdfs:label per language tag" ;
@@ -259,6 +298,8 @@ oqsh:ClassLabelUniqueLangShape
 
 oqsh:ObjectPropertyHasDomainShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:ObjectProperty should declare rdfs:domain" ;
@@ -271,6 +312,8 @@ oqsh:ObjectPropertyHasDomainShape
 
 oqsh:ObjectPropertyHasRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:ObjectProperty should declare rdfs:range" ;
@@ -282,6 +325,8 @@ oqsh:ObjectPropertyHasRangeShape
 
 oqsh:DatatypePropertyHasDomainShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:domain" ;
@@ -293,6 +338,8 @@ oqsh:DatatypePropertyHasDomainShape
 
 oqsh:DatatypePropertyHasRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P11" ;
     rdfs:label      "Every owl:DatatypeProperty should declare rdfs:range" ;
@@ -304,6 +351,8 @@ oqsh:DatatypePropertyHasRangeShape
 
 oqsh:SingleDomainShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P19" ;
     rdfs:label      "Properties should not declare more than one rdfs:domain" ;
@@ -316,6 +365,8 @@ oqsh:SingleDomainShape
 
 oqsh:SingleRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P19" ;
     rdfs:label      "Properties should not declare more than one rdfs:range" ;
@@ -328,18 +379,22 @@ oqsh:SingleRangeShape
 # ---------- P27: owl:equivalentProperty but incompatible rdfs:domain / rdfs:range (OOPS) --
 oqsh:WrongEquivalentPropertiesShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P27" ;
     rdfs:label      "Equivalent properties should agree on rdfs:domain and rdfs:range" ;
     rdfs:comment    "OOPS! P27 'Defining wrong equivalent properties': if two properties are owl:equivalentProperty, asserting different rdfs:domain or rdfs:range values breaks the intended semantics." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetSubjectsOf owl:equivalentProperty ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "owl:equivalentProperty pair has mismatched rdfs:domain and/or rdfs:range." ;
-                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE { ?p owl:equivalentProperty ?q . FILTER ( isIRI(?p) && isIRI(?q) ) { ?p rdfs:domain ?d1 . ?q rdfs:domain ?d2 . FILTER ( ?d1 != ?d2 ) } UNION { ?p rdfs:range ?r1 . ?q rdfs:range ?r2 . FILTER ( ?r1 != ?r2 ) } BIND(1 AS ?v) }""" ] ;
+                      sh:message "Property {$this} is owl:equivalentProperty to {?value} but their rdfs:domain and/or rdfs:range differ." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?value WHERE { $this owl:equivalentProperty ?value . FILTER ( isIRI($this) && isIRI(?value) ) { $this rdfs:domain ?d1 . ?value rdfs:domain ?d2 . FILTER ( ?d1 != ?d2 ) } UNION { $this rdfs:range ?r1 . ?value rdfs:range ?r2 . FILTER ( ?r1 != ?r2 ) } }""" ] ;
     sh:severity     sh:Warning .
 
 oqsh:DomainIsClassShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "rdfs:domain values should be declared classes" ;
@@ -352,6 +407,8 @@ oqsh:DomainIsClassShape
 
 oqsh:ObjectPropertyRangeIsClassShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "rdfs:range of an owl:ObjectProperty should be a class" ;
@@ -365,6 +422,8 @@ oqsh:ObjectPropertyRangeIsClassShape
 
 oqsh:NonTrivialDomainShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "rdfs:domain should not be owl:Thing or rdfs:Resource" ;
@@ -381,27 +440,34 @@ oqsh:NonTrivialDomainShape
 
 oqsh:NoSubClassCycleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the hierarchy as the author wrote it; a closure is reflexive and transitive.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "P06" ;
     rdfs:label      "No cycles in the rdfs:subClassOf hierarchy" ;
-    rdfs:comment    "OOPS! P06. Strictly, A subClassOf A is permitted (reflexive) and a cycle just makes every class in the cycle equivalent — but that's almost never the intent. Flag and let the author decide." ;
+    rdfs:comment    "OOPS! P06. A cycle makes every class in it equivalent, which is almost never the intent. Flag and let the author decide. A cycle goes through at least one other class: a bare A rdfs:subClassOf A is a tautology (rdfs:subClassOf is reflexive, and every reasoner entails it for every class), so it is not reported." ;
     sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Class appears in an rdfs:subClassOf cycle." ;
-                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { $this rdfs:subClassOf+ $this . FILTER ( $this != owl:Thing ) BIND(1 AS ?v) }" ] .
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT DISTINCT ?v WHERE { $this rdfs:subClassOf+ ?mid . FILTER ( ?mid != $this ) ?mid rdfs:subClassOf+ $this . FILTER ( $this != owl:Thing ) BIND(1 AS ?v) }" ] .
 
 oqsh:NoSubPropertyCycleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the hierarchy as the author wrote it; a closure is reflexive and transitive.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "P06" ;
     rdfs:label      "No cycles in the rdfs:subPropertyOf hierarchy" ;
+    rdfs:comment    "OOPS! P06 for properties. As for classes, a cycle goes through at least one other property: the reflexive P rdfs:subPropertyOf P is not reported." ;
     sh:targetSubjectsOf rdfs:subPropertyOf ;
     sh:sparql       [ a sh:SPARQLConstraint ;
                       sh:message "Property appears in an rdfs:subPropertyOf cycle." ;
-                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE { $this rdfs:subPropertyOf+ $this . BIND(1 AS ?v) }" ] .
+                      sh:select "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?v WHERE { $this rdfs:subPropertyOf+ ?mid . FILTER ( ?mid != $this ) ?mid rdfs:subPropertyOf+ $this . BIND(1 AS ?v) }" ] .
 
 oqsh:EquivalenceVsSubclassShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the hierarchy as the author wrote it; a closure is reflexive and transitive.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "Avoid combining owl:equivalentClass with rdfs:subClassOf for the same pair" ;
@@ -418,28 +484,35 @@ oqsh:EquivalenceVsSubclassShape
 
 oqsh:UntypedClassShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed typing hides a missing declaration.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P34" ;
     rdfs:label      "Classes referenced as classes are declared as owl:Class" ;
     rdfs:comment    "OOPS! P34. Implicit class declarations work in OWL Full but break OWL DL tooling." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetObjectsOf rdfs:subClassOf , rdf:type , owl:equivalentClass , owl:disjointWith , rdfs:domain , rdfs:range ;
+    sh:targetSubjectsOf rdfs:subClassOf , owl:equivalentClass , owl:disjointWith ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "IRI is used as a class but is not declared as owl:Class or rdfs:Class." ;
-                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?class WHERE { { ?x rdfs:subClassOf ?class } UNION { ?class rdfs:subClassOf ?x } UNION { ?x rdf:type ?class } UNION { ?x owl:equivalentClass ?class } UNION { ?class owl:equivalentClass ?x } UNION { ?x owl:disjointWith ?class } UNION { ?class owl:disjointWith ?x } UNION { ?p rdfs:domain ?class } UNION { ?p rdfs:range ?class } FILTER ( isIRI(?class) ) FILTER NOT EXISTS { ?class rdf:type owl:Class } FILTER NOT EXISTS { ?class rdf:type rdfs:Class } FILTER NOT EXISTS { ?class rdf:type owl:DeprecatedClass } FILTER ( !strstarts(str(?class), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2001/XMLSchema#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?class), "http://www.w3.org/ns/shacl#") ) }""" ] .
+                      sh:message "IRI {$this} is used as a class but is not declared as owl:Class or rdfs:Class." ;
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE { FILTER ( isIRI($this) ) FILTER NOT EXISTS { $this rdf:type owl:Class } FILTER NOT EXISTS { $this rdf:type rdfs:Class } FILTER NOT EXISTS { $this rdf:type owl:DeprecatedClass } FILTER ( !strstarts(str($this), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2001/XMLSchema#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str($this), "http://www.w3.org/ns/shacl#") ) BIND(1 AS ?v) }""" ] .
 
 oqsh:UntypedPropertyShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed typing hides a missing declaration.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P35" ;
     rdfs:label      "Properties used as predicates are declared as properties" ;
-    rdfs:comment    "OOPS! P35. Same logic as P34 but for predicates." ;
+    rdfs:comment    "OOPS! P35. Same logic as P34 but for predicates. SHACL has no target for predicates, so this shape scans the whole graph from one focus node and reports each offending predicate once, as sh:value and in the message." ;
     sh:targetNode   owl:Thing ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "IRI is used as a predicate but is not declared as a property." ;
-                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?prop WHERE { ?s ?prop ?o . FILTER NOT EXISTS { ?prop rdf:type owl:ObjectProperty } FILTER NOT EXISTS { ?prop rdf:type owl:DatatypeProperty } FILTER NOT EXISTS { ?prop rdf:type owl:AnnotationProperty } FILTER NOT EXISTS { ?prop rdf:type rdf:Property } FILTER NOT EXISTS { ?prop rdf:type owl:DeprecatedProperty } FILTER ( !strstarts(str(?prop), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?prop), "http://purl.org/dc/terms/") ) FILTER ( !strstarts(str(?prop), "http://www.w3.org/ns/shacl#") ) }""" ] .
+                      sh:message "IRI {?value} is used as a predicate but is not declared as a property." ;
+                      sh:select """PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT DISTINCT ?value WHERE { ?s ?value ?o . FILTER NOT EXISTS { ?value rdf:type owl:ObjectProperty } FILTER NOT EXISTS { ?value rdf:type owl:DatatypeProperty } FILTER NOT EXISTS { ?value rdf:type owl:AnnotationProperty } FILTER NOT EXISTS { ?value rdf:type rdf:Property } FILTER NOT EXISTS { ?value rdf:type owl:DeprecatedProperty } FILTER ( !strstarts(str(?value), "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2000/01/rdf-schema#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2002/07/owl#") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/2004/02/skos/core#") ) FILTER ( !strstarts(str(?value), "http://purl.org/dc/terms/") ) FILTER ( !strstarts(str(?value), "http://www.w3.org/ns/shacl#") ) }""" ] .
 
 oqsh:OrphanClassShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed typing hides a missing declaration.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P04" ;
     rdfs:label      "Classes should connect to the rest of the ontology" ;
@@ -456,6 +529,8 @@ oqsh:OrphanClassShape
 
 oqsh:NoSelfInverseShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: inverse and symmetry axioms as the author wrote them; a reasoner adds the entailed inverses.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Inverses ;
     oqsh:pitfall    "P25" ;
     rdfs:label      "A property should not be its own owl:inverseOf" ;
@@ -468,6 +543,8 @@ oqsh:NoSelfInverseShape
 
 oqsh:NoInverseForSymmetricShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: inverse and symmetry axioms as the author wrote them; a reasoner adds the entailed inverses.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Inverses ;
     oqsh:pitfall    "P26" ;
     rdfs:label      "An owl:SymmetricProperty must not declare owl:inverseOf to another property" ;
@@ -484,14 +561,16 @@ oqsh:NoInverseForSymmetricShape
 
 oqsh:DeprecatedNotInUseShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: references as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Deprecation ;
     oqsh:pitfall    "convention" ;
     rdfs:label      "Deprecated classes/properties should not be referenced elsewhere in the ontology" ;
     rdfs:comment    "An entity marked owl:deprecated true is signalling that it should not be used." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetSubjectsOf owl:deprecated ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "Deprecated entity is still referenced." ;
-                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> SELECT ?dep ?ref ?p WHERE { ?dep owl:deprecated true . ?ref ?p ?dep . FILTER ( ?p NOT IN ( owl:deprecated, rdfs:label, rdfs:comment, skos:definition, dct:description, owl:versionInfo, rdfs:isDefinedBy ) ) FILTER ( ?ref != ?dep ) }""" ] ;
+                      sh:message "Deprecated entity {$this} is still referenced by {?value} through {?p}." ;
+                      sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> PREFIX dct: <http://purl.org/dc/terms/> SELECT DISTINCT ?value ?p WHERE { $this owl:deprecated true . ?value ?p $this . FILTER ( ?p NOT IN ( owl:deprecated, rdfs:label, rdfs:comment, skos:definition, dct:description, owl:versionInfo, rdfs:isDefinedBy ) ) FILTER ( ?value != $this ) }""" ] ;
     sh:severity     sh:Warning .
 
 # =============================================================================
@@ -500,6 +579,8 @@ oqsh:DeprecatedNotInUseShape
 
 oqsh:ClassNameUpperCamelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: names of the entities the author declared, not of the built-in vocabulary a reasoner types.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Naming ;
     oqsh:pitfall    "P22" ;
     rdfs:label      "Classes should use UpperCamelCase local names" ;
@@ -513,6 +594,8 @@ oqsh:ClassNameUpperCamelShape
 
 oqsh:PropertyNameLowerCamelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: names of the entities the author declared, not of the built-in vocabulary a reasoner types.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Naming ;
     oqsh:pitfall    "P22" ;
     rdfs:label      "Properties should use lowerCamelCase local names" ;
@@ -529,6 +612,8 @@ oqsh:PropertyNameLowerCamelShape
 # ---------- P03: meta-relationship predicates (local name is/is-a/has…) ----------
 oqsh:NoMetaPredicateNameShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: names of the entities the author declared, not of the built-in vocabulary a reasoner types.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Naming ;
     oqsh:pitfall    "P03" ;
     rdfs:label      "Object/datatype properties should not mimic built-in instantiation (is/has reified as sole local name)" ;
@@ -552,6 +637,8 @@ oqsh:NoMetaPredicateNameShape
 # ---------- P13: missing inverse declarations (semi-automated heuristic) -----
 oqsh:CandidateMissingInverseShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: inverse and symmetry axioms as the author wrote them; a reasoner adds the entailed inverses.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Inverses ;
     oqsh:pitfall    "P13" ;
     rdfs:label      "Object properties with domain/range but no owl:inverseOf (suggestion)" ;
@@ -580,44 +667,38 @@ oqsh:CandidateMissingInverseShape
 # ---------- P20: misused textual annotations -------------------------------
 oqsh:MisusedDocumentationAnnotationsShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: annotations are never entailed, and a reasoner types the built-in vocabulary as classes and properties.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Annotations ;
     oqsh:pitfall    "P20" ;
     rdfs:label      "rdfs:label / rdfs:comment misuse (empty literals or duplication)" ;
     rdfs:comment    "OOPS! P20 reference suite models empty labels/comments and redundant/equal literals. Embedding-based synonym analysis is postponed to v0.2; structural checks mirror the RDF-level mistakes OOPS asserts." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetClass  owl:Class , owl:ObjectProperty , owl:DatatypeProperty ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "Entity has malformed documentation annotations (see OOPS P20)." ;
+                      sh:message "Entity {$this} has malformed documentation annotations: an empty rdfs:label or rdfs:comment, or a comment that repeats the label (see OOPS P20)." ;
                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                        SELECT ?x WHERE {
+                        SELECT DISTINCT ?v WHERE {
                           {
-                            ?x rdfs:label ?l .
+                            $this rdfs:label ?l .
                             FILTER (strlen(str(?l)) = 0)
-                            ?x rdf:type owl:Class .
                           } UNION {
-                            ?x rdfs:comment ?c .
+                            $this rdfs:comment ?c .
                             FILTER (strlen(str(?c)) = 0)
-                            ?x rdf:type owl:Class .
                           } UNION {
-                            ?x rdfs:label ?l .
-                            FILTER (strlen(str(?l)) = 0)
-                            { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
-                          } UNION {
-                            ?x rdfs:comment ?c .
-                            FILTER (strlen(str(?c)) = 0)
-                            { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
-                          } UNION {
-                            ?x rdfs:label ?lb .
-                            ?x rdfs:comment ?cm .
+                            $this rdfs:label ?lb .
+                            $this rdfs:comment ?cm .
                             FILTER (strlen(str(?lb)) > 3)
                             FILTER (str(?lb) = str(?cm))
-                            { ?x rdf:type owl:Class } UNION { ?x rdf:type owl:ObjectProperty } UNION { ?x rdf:type owl:DatatypeProperty }
                           }
+                          BIND (1 AS ?v)
                         }""" ] ;
     sh:severity     sh:Warning .
 
 # ---------- P24: recursive class / domain definitions -----------------------
 oqsh:RecursiveClassExpressionShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the hierarchy as the author wrote it; a closure is reflexive and transitive.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "P24" ;
     rdfs:label      "Class participates recursively in owl:equivalentClass / rdfs:subClassOf class expressions" ;
@@ -656,6 +737,8 @@ oqsh:RecursiveClassExpressionShape
 
 oqsh:RecursivePropertyDomainRestrictionShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed domains, ranges and typing would hide or multiply them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:PropertyDeclarations ;
     oqsh:pitfall    "P24" ;
     rdfs:label      "Property domain restricts to expressions that recurse on the property itself" ;
@@ -674,6 +757,8 @@ oqsh:RecursivePropertyDomainRestrictionShape
 # ---------- P33: singleton owl:propertyChainAxiom ---------------------------
 oqsh:SingletonPropertyChainShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the hierarchy as the author wrote it; a closure is reflexive and transitive.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Hierarchy ;
     oqsh:pitfall    "P33" ;
     rdfs:label      "owl:propertyChainAxiom lists should declare at least two properties" ;
@@ -692,6 +777,8 @@ oqsh:SingletonPropertyChainShape
 # ---------- P36 — ontology URI embeds serialization filename extension -----
 oqsh:OntologyIriEndsWithSerializationSuffixShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "P36" ;
     rdfs:label      "owl:Ontology IRI embeds file-serialisation suffixes such as '.owl'" ;
@@ -711,6 +798,8 @@ oqsh:OntologyIriEndsWithSerializationSuffixShape
 # ---------- P38 — missing owl:Ontology declarations ------------------------
 oqsh:OntologyDeclarationShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "P38" ;
     rdfs:label      "Document graph should declare an owl:Ontology whenever it asserts OWL axioms" ;
@@ -751,6 +840,8 @@ oqsh:OntologyDeclarationShape
 # ---------- P39 — anonymous ontology head ---------------------------------
 oqsh:AnonymousOntologyHeadShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "P39" ;
     rdfs:label      "owl:Ontology head should carry a canonical IRI" ;
@@ -774,34 +865,34 @@ oqsh:AnonymousOntologyHeadShape
 # ---------- P40 — external namespace terminology minted --------------------
 oqsh:NamespaceMismatchShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed typing hides a missing declaration.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P40" ;
     rdfs:label      "Classes/properties should not be coined under a vocabulary namespace differing from their declaring ontology hosts" ;
     rdfs:comment    "OOPS! P40 / namespace hijacking: the bundled fixture asserts FOAF-aligned IRIs inside a document whose canonical ontology announces a distant host." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetClass  owl:Class , owl:ObjectProperty , owl:DatatypeProperty ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "A named ontology declares classes/properties whose HTTP host differs — possible vocabulary hijacking (OOPS P40)." ;
+                      sh:message "{$this} is declared in ontology {?value}, whose HTTP host differs — possible vocabulary hijacking (OOPS P40)." ;
                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                        SELECT ?ont WHERE {
-                          ?ont rdf:type owl:Ontology .
-                          FILTER isIRI(?ont)
-                          FILTER REGEX(STR(?ont), \"^https?://\", \"i\")
-                          ?entity rdf:type ?ptype .
-                          FILTER (?ptype IN (owl:Class, owl:ObjectProperty, owl:DatatypeProperty))
-                          FILTER isIRI(?entity)
-                          FILTER REGEX(STR(?entity), \"^https?://\", \"i\")
-                          FILTER (?entity NOT IN (owl:Thing, owl:Nothing, rdfs:Resource))
-                          BIND (REPLACE(REPLACE(STR(?ont), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?ontHostNorm)
-                          BIND (REPLACE(REPLACE(STR(?entity), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?clsHostNorm)
-                          FILTER (?ontHostNorm != ?clsHostNorm)
-                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2002/07/owl#\")))
-                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/1999/02/22-rdf-syntax-ns#\")))
-                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2000/01/rdf-schema#\")))
-                          FILTER (!(STRSTARTS(STR(?entity), \"http://www.w3.org/2001/XMLSchema#\")))
+                        SELECT DISTINCT ?value WHERE {
+                          ?value rdf:type owl:Ontology .
+                          FILTER isIRI(?value)
+                          FILTER REGEX(STR(?value), \"^https?://\", \"i\")
+                          FILTER isIRI($this)
+                          FILTER REGEX(STR($this), \"^https?://\", \"i\")
+                          FILTER ($this NOT IN (owl:Thing, owl:Nothing, rdfs:Resource))
+                          BIND (REPLACE(REPLACE(STR(?value), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?valueHostNorm)
+                          BIND (REPLACE(REPLACE(STR($this), \"^https?://\", \"\", \"i\"), \"/.*$\", \"\") AS ?clsHostNorm)
+                          FILTER (?valueHostNorm != ?clsHostNorm)
+                          FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/2002/07/owl#\")))
+                          FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/1999/02/22-rdf-syntax-ns#\")))
+                          FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/2000/01/rdf-schema#\")))
+                          FILTER (!(STRSTARTS(STR($this), \"http://www.w3.org/2001/XMLSchema#\")))
                           FILTER NOT EXISTS {
-                            ?ont owl:imports ?imp .
+                            ?value owl:imports ?imp .
                             FILTER isIRI(?imp)
-                            FILTER STRSTARTS(STR(?entity), STR(?imp))
+                            FILTER STRSTARTS(STR($this), STR(?imp))
                           }
                         }""" ] ;
     sh:severity     sh:Warning .
@@ -813,25 +904,30 @@ oqsh:NamespaceMismatchShape
 # ---------- P01 — same IRI as class and property (polysemy / non-DL) ----------
 oqsh:PolysemousClassAndPropertyShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations and labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Semantics ;
     oqsh:pitfall    "P01" ;
     rdfs:label      "OWL entity should not be both a class and an object/datatype property" ;
     rdfs:comment    "OOPS! P01 (narrow structural proxy): an IRI declared owl:Class and owl:ObjectProperty or owl:DatatypeProperty is rarely intended and breaks typical OWL DL parsing expectations." ;
-    sh:targetNode   owl:Thing ;
+    sh:targetClass  owl:Class ;
     sh:sparql       [ a sh:SPARQLConstraint ;
-                      sh:message "IRI is both a class and a datatype/object property — polysemous entity (OOPS P01 structural proxy)." ;
+                      sh:message "IRI {$this} is both a class and a datatype/object property — polysemous entity (OOPS P01 structural proxy)." ;
                       sh:select """PREFIX owl: <http://www.w3.org/2002/07/owl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-                        SELECT ?x WHERE {
-                          { ?x a owl:Class . ?x a owl:ObjectProperty . }
+                        SELECT DISTINCT ?v WHERE {
+                          { $this a owl:ObjectProperty . }
                           UNION
-                          { ?x a owl:Class . ?x a owl:DatatypeProperty . }
-                          FILTER isIRI(?x)
+                          { $this a owl:DatatypeProperty . }
+                          FILTER isIRI($this)
+                          BIND (1 AS ?v)
                         }""" ] ;
     sh:severity     sh:Violation .
 
 # ---------- P23 — class mirroring XSD datatype local names (heuristic) -------
 oqsh:DatatypeMirrorClassNameShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: declarations as the author wrote them; entailed typing hides a missing declaration.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:VocabularyIntegrity ;
     oqsh:pitfall    "P23" ;
     rdfs:label      "Classes should not mirror built-in XSD datatype local names" ;
@@ -857,6 +953,8 @@ oqsh:DatatypeMirrorClassNameShape
 # ---------- N01 — owl:imports cycle (Kastor extension) ----------------------
 oqsh:OwlImportsCycleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Metadata ;
     oqsh:pitfall    "K01" ;
     rdfs:label      "owl:Ontology import graph must be acyclic" ;

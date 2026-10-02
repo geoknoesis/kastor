@@ -5,26 +5,44 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.ollama.client.OllamaModels
+import com.geoknoesis.kastor.ontoquality.SecretRedaction
 import java.time.Duration
 
-/** Backing LLM vendor (Koog client selection). */
-/** `scheme://user:password@host` in running text; the credentials are group 2. */
-private val URL_CREDENTIALS = Regex("([A-Za-z][A-Za-z0-9+.\\-]*://)([^/\\s?#]*)@")
-
 /** [text] with the user name and password of every URL replaced by `***` (the part between `://` and `@`). */
-internal fun redactUrlCredentials(text: String): String =
-    if (!text.contains("://")) text else URL_CREDENTIALS.replace(text) { "${it.groupValues[1]}***@" }
+internal fun redactUrlCredentials(text: String): String = SecretRedaction.redactUrlCredentials(text)
 
 /** The credentials of [url] (`user:password`, and the password alone), or nothing when it has none. */
-internal fun urlCredentials(url: String?): List<String> {
-    val userInfo = url?.let { URL_CREDENTIALS.find(it) }?.groupValues?.get(2)?.takeIf { it.isNotEmpty() } ?: return emptyList()
-    return listOf(userInfo, userInfo.substringAfter(':', "")).filter { it.isNotBlank() }
-}
+internal fun urlCredentials(url: String?): List<String> = SecretRedaction.urlCredentials(url)
 
+/**
+ * Backing LLM vendor (Koog client selection).
+ *
+ * | Provider | [LlmExplanationConfig.maxOutputTokens] | Truncated reply |
+ * | --- | --- | --- |
+ * | [OPENAI] | sent as the maximum of completion tokens of the request | recognised (finish reason `length`) |
+ * | [ANTHROPIC] | sent as `max_tokens` | recognised (stop reason `max_tokens`) |
+ * | [OLLAMA] | **not sent**: the Koog 0.8.0 Ollama client only passes `temperature` and `num_ctx` | not reported by the client |
+ *
+ * Whatever the provider, a reply is also bounded by the request timeout and by the reply caps of
+ * [DefaultQualityExplanationEnricher] (500,000 characters per reply, 2,000 per text field).
+ */
 enum class LlmProvider {
     OPENAI,
     ANTHROPIC,
     OLLAMA,
+    ;
+
+    /** Whether requests to this provider carry [LlmExplanationConfig.maxOutputTokens] (see the table above). */
+    val honoursMaxOutputTokens: Boolean get() = this != OLLAMA
+
+    /** Environment variable holding the API key of this provider; null when it needs none (Ollama). */
+    val apiKeyVariable: String?
+        get() =
+            when (this) {
+                OPENAI -> LlmExplanationConfig.OPENAI_API_KEY
+                ANTHROPIC -> LlmExplanationConfig.ANTHROPIC_API_KEY
+                OLLAMA -> null
+            }
 }
 
 /**
@@ -82,6 +100,10 @@ data class LlmExplanationConfig @JvmOverloads constructor(
     /**
      * Most tokens the model may generate for one request (sent as the provider's "max tokens" parameter), so a reply
      * cannot grow without bound. A batch of 12 findings needs about 2,000; raise it for larger batches.
+     *
+     * Not every provider honours it: see [LlmProvider.honoursMaxOutputTokens] and [maxOutputTokensNotice]. A reply
+     * that a provider reports as cut at the limit fails its batch with "reply truncated at N tokens" and is not
+     * followed by a JSON repair request, which would be cut at the same limit.
      */
     val maxOutputTokens: Int = DEFAULT_MAX_OUTPUT_TOKENS,
 ) {
@@ -99,6 +121,19 @@ data class LlmExplanationConfig @JvmOverloads constructor(
             "modelId=$modelId, modelPreset=$modelPreset, requestTimeout=$requestTimeout, maxRetries=$maxRetries, " +
             "retryBackoff=$retryBackoff, maxTotalDuration=$maxTotalDuration, circuitBreakerThreshold=$circuitBreakerThreshold, " +
             "maxOutputTokens=$maxOutputTokens)"
+
+    /**
+     * One line saying that [maxOutputTokens] cannot be enforced for [provider], or null when the provider honours
+     * it. Callers print it once (the `onto-qa` CLI does, on stderr and in its `--explain-dry-run` output).
+     */
+    fun maxOutputTokensNotice(): String? =
+        if (provider.honoursMaxOutputTokens) {
+            null
+        } else {
+            "the limit of $maxOutputTokens output tokens is not sent to ${provider.name.lowercase()} (the bundled Koog client passes only " +
+                "temperature and num_ctx to Ollama); replies are bounded by the model, the request timeout " +
+                "(${requestTimeout.seconds} s) and the reply cap of ${DefaultQualityExplanationEnricher.MAX_REPLY_CHARS} characters"
+        }
 
     companion object {
         const val OPENAI_API_KEY = "OPENAI_API_KEY"

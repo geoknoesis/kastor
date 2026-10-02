@@ -1,3 +1,5 @@
+@file:OptIn(KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.runtime
 
 import com.geoknoesis.kastor.rdf.Iri
@@ -102,7 +104,20 @@ class GraphStateCacheContractTest {
 
     @Test
     fun `temporary states are bounded - further graphs wait for a state to become free`() {
-        val cache = cache(1)
+        val waiting = CountDownLatch(1)
+        val cache = GraphStateCache<Set<RdfTriple>>(
+            maxEntries = 1,
+            exclusive = true,
+            load = { triples, _ -> triples.toSet() },
+            release = { },
+            owner = "TestCache",
+            // No overflow: the bound on the number of states is strict, a further call waits.
+            settings = GraphStateCache.Settings(
+                overflowWaitMillis = null,
+                temporaryWaitMillis = 60_000,
+                probe = { event -> if (event == GraphStateCache.Event.SLOT_WAIT) waiting.countDown() },
+            ),
+        )
         val pool = daemonPool()
         val finish = List(3) { CountDownLatch(1) }
         val entered = List(3) { CountDownLatch(1) }
@@ -116,8 +131,9 @@ class GraphStateCacheContractTest {
             assertTrue(entered[1].await(10, TimeUnit.SECONDS))
             assertEquals(1, cache.temporaryCount)
             val third = start(2) // one cached and one temporary state are in use: no third copy is built
-            assertFalse(entered[2].await(500, TimeUnit.MILLISECONDS), "a third state was built while two were in use")
-            assertEquals(2, cache.loadCount)
+            assertTrue(waiting.await(10, TimeUnit.SECONDS), "the third call waits for a free state")
+            assertEquals(2, cache.loadCount, "a third state was built while two were in use")
+            assertEquals(1L, entered[2].count)
             finish[1].countDown()
             assertEquals(setOf(triple(1)), second.get(10, TimeUnit.SECONDS))
             assertTrue(entered[2].await(10, TimeUnit.SECONDS), "the waiting call proceeds once a state is free")

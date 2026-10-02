@@ -171,30 +171,28 @@ added later). Because the source directory is the task's output, compiling Kotli
   directory, then `src/main/resources`). The first existing file is chosen when the task runs, so editing
   an ontology file, or adding one at the preferred location, re-runs the task without invalidating the
   configuration cache. `shaclInput` / `contextInput` return the file that will be read.
-- `shaclFile` / `contextFile` — optional `@InputFile` properties, unset by default; set one to name the file
-  directly instead of through a path.
+- `shaclFile` / `contextFile` — optional `@InputFile` properties. Set one to name the file directly instead of
+  through a path (it then takes precedence over `shaclPath` / `contextPath`). By **convention** each is the
+  file its path resolves to: the first of the candidate locations that exists. Build scripts can read
+  `task.shaclFile.get()`, `task.shaclFile.asFile.get()` and `task.contextFile.get()`.
 
-  > **Incompatible change between 0.3.0 snapshots (no deprecation period).** These two properties do not exist
-  > in 0.2.x. The 0.3.0 snapshots built before 2026-10-01 gave them a *convention*: the file that `shaclPath` /
-  > `contextPath` resolved to while the build was configured. That convention is gone: unless your build script
-  > sets the property, `shaclFile.get()`, `shaclFile.asFile.get()` and `contextFile.get()` now fail with
-  > Gradle's "Cannot query the value of task ':generateOntology…' property 'shaclFile' because it has no value
-  > available", and `shaclFile.isPresent` / `orNull` report "no value". The convention was not kept as a
-  > deprecated fallback on purpose: a convention of an `@InputFile` property is evaluated by Gradle when it
-  > stores the configuration cache, which would freeze the choice between the project directory and
-  > `src/main/resources` again - the defect the change fixed.
-  >
-  > Migrate build logic that **reads** the resolved file:
-  >
-  > | Before | Now |
-  > |---|---|
-  > | `task.shaclFile.get().asFile`, `task.shaclFile.asFile.get()` | `task.shaclInput` (a `File`; call it at execution time, e.g. in `doLast`, it throws when the file is missing) |
-  > | `task.contextFile.get().asFile` | `task.contextInput` (throws when no context is configured) |
-  > | `task.contextFile.isPresent` to test "is a context configured?" | `!task.contextCandidates.isEmpty` (or `task.contextPath.isPresent`) |
-  > | `inputs.file(task.shaclFile)` / `from(task.shaclFile)` in another task | `inputs.files(task.shaclCandidates)` (all candidate locations), or depend on the generation task's `outputDirectory` |
-  >
-  > Build logic that **sets** `shaclFile` / `contextFile` (`shaclFile.set(layout.projectDirectory.file("…"))`)
-  > keeps working unchanged, and a value set this way still takes precedence over `shaclPath` / `contextPath`.
+  - The convention has **no value** when no file exists at any candidate location, or (for `contextFile`)
+    when no context is configured: `isPresent` is false, `orNull` is null, `get()` fails with Gradle's
+    "has no value available". `shaclInput` / `contextInput` fail with a message that names the locations
+    that were searched instead.
+  - The convention is looked up **when the value is asked for**, never while the task is configured. It is
+    backed by a Gradle `ValueSource`, so a value read at execution time (by the task, or in a `doLast` of
+    your own) is computed in that build and is not stored in the configuration cache: a file that appears
+    at, or disappears from, a candidate location is picked up although the configuration is reused.
+  - Reading it while the build is being **configured** (`val f = task.shaclFile.get()` at the top level of a
+    build script) works too, and makes the lookup an input of the configuration cache: Gradle repeats it on
+    every build and configures again when the answer changed. Prefer wiring the provider
+    (`tasks.named<OntologyGenerationTask>("generateOntologyDcat").flatMap { it.shaclFile }`) and reading it
+    in a task action.
+
+  > **0.3.0 snapshots built between 2026-10-01 and this change** had no convention for these two
+  > properties (`shaclFile.get()` failed unless the build script set the property). The convention is back;
+  > build logic written for those snapshots (`task.shaclInput`, `task.shaclCandidates`) keeps working.
 - `@CacheableTask`; execution does not touch `Project`, so the task is configuration-cache compatible.
 - **All-or-nothing:** every file is generated in memory first. SHACL/JSON-LD parse errors, name
   collisions, invalid packages or missing required settings fail the task *before* the output directory is

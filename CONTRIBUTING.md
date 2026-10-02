@@ -68,7 +68,7 @@ Check that new checksums belong to the artifacts the PR updates. This step is de
 
 Known skips (backend limitations, opt-in native/remote tests) are listed in [`scripts/test-skip-allowlist.json`](scripts/test-skip-allowlist.json), keyed by test class and test name. CI fails when a test skips without being listed. If you add an intentionally skipping test, add it to the allowlist with a reason. Every entry needs a non-empty reason without absolute machine paths (`file:///`, `C:\`, `/home/...`); `scripts/check-test-results.py` enforces this. If you fix a limitation, remove its entry; the gate reports allowlisted tests that now run.
 
-Suites that must never disappear are named with `--require-suite CLASS=MIN`. The suite must execute at least `MIN` tests, and only allowlisted skips are tolerated. This is how CI detects the W3C SHACL harness silently falling back to its 4-case bundled fixture (`Shacl12NativeConformanceTest=140`).
+Suites that must never disappear are named with `--require-suite CLASS=MIN`. The suite must execute at least `MIN` tests, and only allowlisted skips are tolerated. This is how CI detects the W3C SHACL harness silently falling back to its 4-case bundled fixture (`Shacl12NativeConformanceTest=150`).
 
 ### Automation reference
 
@@ -115,7 +115,7 @@ Useful variants:
 - **GitHub settings** (release environment, secrets, tag and branch rulesets, Pages source, Dependabot alerts and security updates, secret scanning with push protection, private vulnerability reporting) are applied by [`scripts/configure-github-release.sh`](scripts/configure-github-release.sh). It prints every call by default; pass `--apply` to change the repository.
 - To release:
   1. Commit `version=X.Y.Z` and the dated `CHANGELOG.md` section.
-  2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, refuses versions already on Maven Central, builds the signed Central Portal bundle (`./gradlew centralBundle`), uploads it once the `release` environment is approved, and waits until the Central Portal reports it `VALIDATED` (or fails with the portal's errors). Release the validated deployment manually in the portal.
+  2. Push the tag `vX.Y.Z`. [`publish.yml`](.github/workflows/publish.yml) reruns release readiness, refuses versions already on Maven Central, signs the artifacts that the readiness steps of the same run staged, bundles them for the Central Portal, uploads the bundle once the `release` environment is approved, and waits until the Central Portal reports it `VALIDATED` (or fails with the portal's errors). Release the validated deployment manually in the portal.
   3. Bump `main` to the next `-SNAPSHOT`.
 - The build refuses `centralBundle` for `-SNAPSHOT` versions or without a non-blank `KASTOR_SIGNING_KEY`.
 

@@ -80,15 +80,50 @@ internal object NamingUtils {
     private fun words(raw: String): List<String> =
         raw.split(Regex("[^\\p{L}\\p{Nd}]+")).filter { it.isNotEmpty() }
 
-    /** PascalCase type identifier: non-identifier characters split words; a leading digit gets `_`. */
-    fun toTypeIdentifier(raw: String): String {
+    /**
+     * Type names that Kotlin imports by default (`kotlin.*`, `kotlin.collections.*`, `kotlin.text.*`, `java.lang.*`,
+     * ...) and that generated code refers to by their simple name. A generated type with one of these names would
+     * shadow the built-in in every file of its package (declarations of the package win over default imports), so
+     * `val label: String` would mean the generated interface.
+     */
+    private val DEFAULT_IMPORTED_TYPE_NAMES = setOf(
+        "Any", "Nothing", "Unit", "String", "Char", "CharSequence", "Boolean", "Byte", "Short", "Int", "Long", "Float",
+        "Double", "Number", "Array", "Enum", "Annotation", "Comparable", "Comparator", "Pair", "Triple", "Result",
+        "Lazy", "Function", "Throwable", "Exception", "Error", "RuntimeException", "IllegalArgumentException",
+        "IllegalStateException", "NoSuchElementException", "UnsupportedOperationException", "Deprecated", "Suppress",
+        "Iterable", "Collection", "List", "Set", "Map", "MutableIterable", "MutableCollection", "MutableList",
+        "MutableSet", "MutableMap", "Iterator", "Sequence", "Regex", "Class", "Object", "Integer", "Math", "System",
+        "Thread", "Void", "Override", "Record",
+    )
+
+    /** PascalCase type identifier before the check against default-imported names. */
+    private fun rawTypeIdentifier(raw: String): String {
         val joined = words(raw).joinToString("") { w -> w.replaceFirstChar { it.uppercaseChar() } }
-        val safe = when {
+        return when {
             joined.isEmpty() -> "Type"
             joined.first().isDigit() -> "_$joined"
             else -> joined
         }
-        return safe
+    }
+
+    /**
+     * PascalCase type identifier: non-identifier characters split words; a leading digit gets `_`; a name that Kotlin
+     * imports by default (`String`, `Pair`, `List`, ...) gets the suffix `Type` so that it does not shadow the
+     * built-in type in generated code (see [shadowedBuiltin]).
+     */
+    fun toTypeIdentifier(raw: String): String {
+        val safe = rawTypeIdentifier(raw)
+        return if (safe in DEFAULT_IMPORTED_TYPE_NAMES) "${safe}Type" else safe
+    }
+
+    /**
+     * The default-imported Kotlin type name that the type generated for [iri] would have had (and is therefore
+     * generated as that name plus `Type`), or null when its name shadows nothing.
+     */
+    fun shadowedBuiltin(iri: String, context: JsonLdContext): String? {
+        val raw = context.typeMappings.entries.filter { it.value.value == iri }.minByOrNull { it.key }?.key
+            ?: iri.substringAfterLast('/').substringAfterLast('#')
+        return rawTypeIdentifier(raw).takeIf { it in DEFAULT_IMPORTED_TYPE_NAMES }
     }
 
     /**

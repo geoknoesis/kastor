@@ -4,6 +4,7 @@ import com.geoknoesis.kastor.ontoquality.OutputSanitizer
 import com.geoknoesis.kastor.ontoquality.PitfallReference
 import com.geoknoesis.kastor.ontoquality.QualityFinding
 import com.geoknoesis.kastor.ontoquality.QualityReport
+import com.geoknoesis.kastor.ontoquality.SecretRedaction
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
 import com.geoknoesis.kastor.ontoquality.explanation.ExplanationFailure
 import com.geoknoesis.kastor.ontoquality.explanation.ExplanationOptions
@@ -60,9 +61,13 @@ import java.util.concurrent.ThreadLocalRandom
  *   to 20,000 characters. Cutting does not change a finding's [FindingRef].
  * - Replies: a request asks for at most [LlmExplanationConfig.maxOutputTokens] tokens; a reply of more than 500,000
  *   characters fails its batch; every text field of a reply is cut to 2,000 characters and the suggested actions to 10.
+ * - Truncated replies: when the provider reports that a reply was cut at the output-token limit (finish reason
+ *   `length` / `max_tokens`) and it does not parse, the batch fails with "reply truncated at N tokens; raise
+ *   --llm-max-output-tokens" and **no repair request is sent** (it would be cut at the same limit). Ollama does not
+ *   report it and does not receive the limit at all ([LlmProvider.honoursMaxOutputTokens]); the caps above still apply.
  * - Failure reasons: provider error text is copied into [ExplanationFailure.reason] on one line, with control and
- *   bidi characters made visible, the API key (whatever its length) and URL credentials (`http://user:password@host`)
- *   replaced by `***`, and at most 500 characters. The original exception
+ *   bidi characters made visible, the API key of the active provider and URL credentials (`http://user:password@host`)
+ *   replaced by `***` (a key shorter than 8 characters only where it stands as a credential), and at most 500 characters. The original exception
  *   is kept in [ExplanationFailure.cause] (never written to reports) for `--debug` style diagnostics.
  *
  * Blank nodes appear in prompts, and in the `promptRunId`, by their parse-independent key
@@ -189,15 +194,34 @@ class DefaultQualityExplanationEnricher internal constructor(
         userMessage: String,
         budget: RunBudget,
     ): LlmExplanationPayload {
-        val raw = completeWithRetry(session, userMessage, budget)
-        if (raw.isNullOrBlank()) throw BatchFailure("LLM returned an empty reply")
+        val reply = completeWithRetry(session, userMessage, budget)
+        val raw = reply.text
+        if (raw.isNullOrBlank()) {
+            if (reply.truncatedAtLimit) throw truncated(reply)
+            throw BatchFailure("LLM returned an empty reply")
+        }
         requireReplyWithinLimit(raw)
         parseLlmJson(stripMarkdownFence(raw))?.let { return it }
-        val repaired = completeWithRetry(session, buildRepairMessage(raw), budget).orEmpty()
+        // A reply cut at the output-token limit cannot be repaired under the same limit: no second paid request.
+        if (reply.truncatedAtLimit) throw truncated(reply)
+        val repairedReply = completeWithRetry(session, buildRepairMessage(raw), budget)
+        val repaired = repairedReply.text.orEmpty()
         requireReplyWithinLimit(repaired)
         return parseLlmJson(stripMarkdownFence(repaired))
-            ?: throw BatchFailure("LLM reply was not valid explanation JSON (after one repair attempt)")
+            ?: throw if (repairedReply.truncatedAtLimit) truncated(repairedReply) else BatchFailure("LLM reply was not valid explanation JSON (after one repair attempt)")
     }
+
+    /**
+     * The failure of a batch whose reply the provider cut at the output-token limit. Every further batch of the same
+     * size would be cut too, so it carries a circuit signature: after the configured number of consecutive truncated
+     * batches the rest is not sent.
+     */
+    private fun truncated(reply: LlmReply): BatchFailure =
+        BatchFailure(
+            "reply truncated at ${reply.outputTokens ?: config.maxOutputTokens} tokens; raise --llm-max-output-tokens " +
+                "(LlmExplanationConfig.maxOutputTokens, now ${config.maxOutputTokens}) or use a smaller batch; no repair request was sent",
+            circuitSignature = "reply truncated at the output-token limit",
+        )
 
     private fun requireReplyWithinLimit(reply: String) {
         if (reply.length > MAX_REPLY_CHARS) {
@@ -209,7 +233,7 @@ class DefaultQualityExplanationEnricher internal constructor(
         session: ExplanationLlmSession,
         userMessage: String,
         budget: RunBudget,
-    ): String? {
+    ): LlmReply {
         var attempt = 0
         while (true) {
             val remainingMillis = budget.remainingMillis()
@@ -220,7 +244,7 @@ class DefaultQualityExplanationEnricher internal constructor(
             val failure: Exception =
                 try {
                     return withTimeout(timeoutMillis) {
-                        session.complete(SYSTEM_PROMPT, userMessage)
+                        session.completeReply(SYSTEM_PROMPT, userMessage)
                     }
                 } catch (e: TimeoutCancellationException) {
                     e
@@ -362,28 +386,27 @@ class DefaultQualityExplanationEnricher internal constructor(
         }
 
         /**
-         * Secrets that must never appear in a failure reason: the configured API key and the provider variables,
-         * whatever their length, and the credentials of [LlmExplanationConfig.baseUrl]. Longest first, so a secret
-         * that contains another is replaced as a whole.
+         * Secrets that must never appear in a failure reason: the API key of the **active** provider (the configured
+         * one, else the environment variable of the provider; a key of another provider is not a secret of this run)
+         * and the credentials of [LlmExplanationConfig.baseUrl]. Longest first, so a secret that contains another is
+         * replaced as a whole.
          */
-        fun secretsToRedact(config: LlmExplanationConfig): List<String> =
+        fun secretsToRedact(config: LlmExplanationConfig, env: (String) -> String? = System::getenv): List<String> =
             (
-                listOfNotNull(
-                    config.apiKey,
-                    System.getenv(LlmExplanationConfig.OPENAI_API_KEY),
-                    System.getenv(LlmExplanationConfig.ANTHROPIC_API_KEY),
-                ) + urlCredentials(config.baseUrl)
+                listOfNotNull(config.apiKey?.takeIf { it.isNotBlank() } ?: config.provider.apiKeyVariable?.let(env)) +
+                    urlCredentials(config.baseUrl)
             ).filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
 
         private val WHITESPACE_RUN = Regex("\\s+")
 
         /**
-         * A failure reason safe to store and print: [secrets] and the credentials of any URL replaced by `***`, one
-         * line, control and bidi characters made visible, at most [MAX_FAILURE_REASON_CHARS] characters.
+         * A failure reason safe to store and print: [secrets] and the credentials of any URL replaced by `***`
+         * ([SecretRedaction]: a secret shorter than 8 characters only where it stands as a credential, so a key such
+         * as `1` cannot turn "HTTP 401" into "HTTP 40***"), one line, control and bidi characters made visible, at
+         * most [MAX_FAILURE_REASON_CHARS] characters.
          */
         fun failureReason(text: String, secrets: List<String>): String {
-            var out = redactUrlCredentials(text)
-            for (secret in secrets) out = out.replace(secret, "***")
+            var out = SecretRedaction.redact(text, secrets)
             // Bound the work on huge provider bodies before the regular expression runs.
             out = out.take(MAX_FAILURE_REASON_CHARS * 8)
             out = OutputSanitizer.terminal(WHITESPACE_RUN.replace(out, " ").trim())

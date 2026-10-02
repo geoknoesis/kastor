@@ -25,6 +25,8 @@ import kotlin.random.Random
  *   and to what a general JSON parser reads.
  * - A mutated document is either rejected with the documented [IllegalStateException], or accepted
  *   with the result a general JSON parser gives for it. Nothing else may be thrown.
+ * - A valid result into which rows with one defect each are inserted is rejected; when the defects
+ *   are terms the RDF model refuses and such rows are to be skipped, exactly those rows are missing.
  */
 class JsonBindingRowsFuzzTest {
 
@@ -45,6 +47,37 @@ class JsonBindingRowsFuzzTest {
 
     private fun decode(bytes: ByteArray, random: Random): List<Map<String, RdfTerm>> =
         JsonBindingRows(Chunked(bytes, random)).rows().map { it.asMap() }.toList()
+
+    /** One way a row can be wrong: [members] are inserted into it. A [skippable] defect is a term the RDF model refuses. */
+    private class Defect(val name: String, val skippable: Boolean, val members: String)
+
+    private fun escape(code: Int): String = "%cu%04X".format(92.toChar(), code)
+
+    private val sound = """{"type":"uri","value":"urn:sound"}"""
+
+    private val defects = listOf(
+        Defect("relative IRI", true, """"bad":{"type":"uri","value":"relative/path"}"""),
+        Defect("IRI with a space", true, """"bad":{"value":"http://example.org/a b","type":"uri"}"""),
+        Defect("empty IRI", true, """"bad":{"type":"uri","value":""}"""),
+        Defect("invalid datatype IRI", true, """"bad":{"type":"literal","value":"v","datatype":"{dt}"}"""),
+        Defect("invalid language tag", true, """"bad":{"type":"literal","xml:lang":"en_GB","value":"v"}"""),
+        Defect("blank node without a label", true, """"bad":{"type":"bnode","value":""}"""),
+        Defect("unpaired high surrogate", true, """"bad":{"type":"literal","value":"cut ${escape(0xD83D)}"}"""),
+        Defect("unpaired low surrogate", true, """"bad":{"type":"uri","value":"urn:x:${escape(0xDE00)}:y"}"""),
+        Defect("repeated member", false, """"bad":{"type":"uri","value":"urn:x","type":"uri"}"""),
+        Defect("repeated value", false, """"bad":{"value":"urn:x","type":"uri","value":"urn:x"}"""),
+        Defect("repeated variable", false, """"bad":$sound,"bad":$sound"""),
+        Defect("undeclared variable", false, """"undeclared":$sound"""),
+        Defect("number as value", false, """"bad":{"type":"literal","value":7}"""),
+        Defect("null as datatype", false, """"bad":{"type":"literal","value":"v","datatype":null}"""),
+        Defect("boolean as language", false, """"bad":{"type":"literal","value":"v","xml:lang":false}"""),
+        Defect("null as type", false, """"bad":{"type":null,"value":"v"}"""),
+        Defect("language tag and datatype", false, """"bad":{"type":"literal","value":"v","xml:lang":"en","datatype":"urn:dt"}"""),
+        Defect("raw control character", false, """"bad":{"type":"literal","value":"a${0x0B.toChar()}b"}"""),
+        Defect("unknown type", false, """"bad":{"type":"thing","value":"v"}"""),
+        Defect("triple term", false, """"bad":{"type":"triple","value":{"subject":$sound}}"""),
+        Defect("base direction", false, """"bad":{"type":"literal","value":"v","xml:lang":"ar","its:dir":"rtl"}"""),
+    )
 
     private class Generator(private val random: Random) {
         private val datatypes = listOf(XSD.integer.value, XSD.date.value, "http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON", "urn:dt:\u00E9")
@@ -141,6 +174,7 @@ class JsonBindingRowsFuzzTest {
                     member("type", string("literal"))
                     member("value", string(literal.lexical))
                     member("xml:lang", string(literal.lang))
+                    if (chance(20)) member("datatype", string("http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"))
                     literal
                 }
                 3 -> {
@@ -149,14 +183,14 @@ class JsonBindingRowsFuzzTest {
                     member("type", string(if (chance(50)) "literal" else "typed-literal"))
                     member("value", string(lexical))
                     member("datatype", string(datatype))
-                    if (chance(20)) member("xml:lang", if (chance(50)) "null" else "\"\"")
+                    if (chance(20)) member("xml:lang", "\"\"")
                     Literal(lexical, Iri(datatype))
                 }
                 else -> {
                     val lexical = text(if (chance(5)) 20_000 else 12)
                     member("type", string("literal"))
                     member("value", string(lexical))
-                    if (chance(20)) member("datatype", "null")
+                    if (chance(20)) member("datatype", string(XSD.string.value))
                     Literal(lexical, XSD.string)
                 }
             }
@@ -215,6 +249,58 @@ class JsonBindingRowsFuzzTest {
             rows += expected.size
         }
         assertTrue(rows > 800, "only $rows rows were generated")
+    }
+
+    @Test
+    fun `rows with a defect fail the result or are skipped when the defect is a malformed term`() {
+        val random = Random(SEED + 3)
+        val generator = Generator(random)
+        var failed = 0
+        var skipped = 0L
+        var intact = 0
+        repeat(600) { index ->
+            val rows = (0 until 1 + random.nextInt(5)).map { generator.row() }
+            // Most documents get a defect in one or two rows; the others show that the scaffolding itself is sound.
+            val broken = rows.indices.associateWith { if (generator.chance(35)) defects.random(random) else null }.filterValues { it != null }
+            val written = rows.mapIndexed { i, (_, json) ->
+                val defect = broken[i] ?: return@mapIndexed json
+                "{" + defect.members + (if (json == "{}") "" else ",") + json.substring(1)
+            }
+            val vars = (rows.flatMap { it.first.keys } + "bad").distinct().joinToString(",") { generator.string(it) }
+            val text = """{"head":{"vars":[$vars]},"results":{"bindings":[${written.joinToString(",")}]}}"""
+            val label = "document #$index (${broken.values.joinToString { it!!.name }}): $text"
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            fun decode(policy: MalformedTermPolicy): Pair<List<Map<String, RdfTerm>>, Long>? = try {
+                val decoder = JsonBindingRows(Chunked(bytes, random), malformedTerms = policy)
+                decoder.rows().map { it.asMap() }.toList() to decoder.skippedRows
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message!!.length < 400, "an error message of ${e.message!!.length} characters for $label")
+                null
+            } catch (e: Throwable) {
+                fail("${e.javaClass.name} instead of the documented IllegalStateException for $label", e)
+            }
+
+            val strict = decode(MalformedTermPolicy.FAIL)
+            val lenient = decode(MalformedTermPolicy.SKIP_ROW)
+            if (broken.isEmpty()) {
+                intact++
+                assertEquals(rows.map { it.first } to 0L, strict, label)
+                assertEquals(strict, lenient, label)
+            } else {
+                assertEquals(null, strict, "a defect was accepted: $label")
+                if (broken.values.all { it!!.skippable }) {
+                    assertEquals(rows.filterIndexed { i, _ -> i !in broken }.map { it.first } to broken.size.toLong(), lenient, label)
+                    skipped += broken.size
+                } else {
+                    assertEquals(null, lenient, "a defect that is not a malformed term was skipped: $label")
+                    failed++
+                }
+            }
+        }
+        // All three outcomes occur, or the test shows nothing.
+        assertTrue(intact > 50, "only $intact documents without a defect")
+        assertTrue(failed > 100, "only $failed documents with a defect that always fails")
+        assertTrue(skipped > 100, "only $skipped rows were skipped")
     }
 
     private val interesting = "{}[]\",:\\/ \t\n\rtfnu0123456789.eE+-\u00A0\u2028\uFEFF\u0000\u001F\u00E9\uD83D\uDE00"

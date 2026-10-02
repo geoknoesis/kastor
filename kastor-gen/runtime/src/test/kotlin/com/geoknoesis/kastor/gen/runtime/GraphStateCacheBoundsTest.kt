@@ -1,3 +1,5 @@
+@file:OptIn(KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.runtime
 
 import com.geoknoesis.kastor.rdf.Iri
@@ -80,12 +82,23 @@ class GraphStateCacheBoundsTest {
 
     private fun daemonPool() = Executors.newCachedThreadPool { r -> Thread(r).apply { isDaemon = true } }
 
-    private fun awaitTrue(what: String, condition: () -> Boolean) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
-        while (!condition()) {
-            check(System.nanoTime() < deadline) { "timed out waiting until $what" }
-            System.gc()
-            Thread.sleep(20)
+    /**
+     * Records the reference the cache keeps to every handle, so that a test can clear it as the garbage collector
+     * does when the handle is unreachable - without depending on when (or whether) a collection runs.
+     */
+    private class Handles(cache: GraphStateCache<*>) {
+        private val references = java.util.IdentityHashMap<RdfGraph, ArrayList<java.lang.ref.Reference<RdfGraph>>>()
+
+        init {
+            cache.referenceFactory = { graph, _ ->
+                WeakReference(graph).also { reference ->
+                    synchronized(references) { references.getOrPut(graph) { ArrayList() } += reference }
+                }
+            }
+        }
+
+        fun collect(graph: RdfGraph) {
+            synchronized(references) { references.remove(graph).orEmpty() }.forEach { it.clear() }
         }
     }
 
@@ -139,22 +152,23 @@ class GraphStateCacheBoundsTest {
     @Test
     fun `obsolete versions left by fresh handles without equality expire and are evicted first`() {
         val f = Fixture(4, settings = GraphStateCache.Settings(orphanIdleMillis = 1_000))
+        val handles = Handles(f.cache)
         val now = AtomicLong(0)
         f.cache.clock = { now.get() }
         val inner = graph(0)
         // Each version is read through a fresh handle that nothing links to the previous one: three entries.
-        fun useFresh(): WeakReference<RdfGraph> {
+        fun useFresh(): RdfGraph {
             val handle = PlainGraph(inner)
             f.cache.use(handle) { }
-            return WeakReference(handle)
+            return handle
         }
-        val witnesses = ArrayList<WeakReference<RdfGraph>>()
+        val witnesses = ArrayList<RdfGraph>()
         repeat(3) { version ->
             if (version > 0) inner.addTriple(triple(version))
             witnesses += useFresh()
         }
         assertEquals(3, f.cache.loadCount)
-        awaitTrue("the handles are collected") { witnesses.all { it.get() == null } }
+        witnesses.forEach(handles::collect)
         assertEquals(3, f.cache.size, "content entries survive the collection of their handle")
         witnesses += useFresh()
         assertEquals(3, f.cache.loadCount, "a fresh handle with the same content still hits")
@@ -163,7 +177,7 @@ class GraphStateCacheBoundsTest {
         val live = graph(100)
         val live2 = graph(101)
         f.cache.use(live) { }
-        awaitTrue("the handles are collected") { witnesses.all { it.get() == null } }
+        witnesses.forEach(handles::collect)
         now.set(TimeUnit.MILLISECONDS.toNanos(500))
         f.cache.use(live2) { }
         assertEquals(4, f.cache.size)
@@ -182,18 +196,14 @@ class GraphStateCacheBoundsTest {
     @Test
     fun `an entry found by handle equality is released once its handle is collected`() {
         val f = Fixture(4)
-        // Soft references are only cleared under memory pressure; weak ones make that observable here.
-        f.cache.equalHandleReference = { WeakReference(it) }
+        val handles = Handles(f.cache)
         val inner = graph(1)
-        fun useOnce(): WeakReference<RdfGraph> {
-            val handle = KeyedGraph("g", inner)
-            f.cache.use(handle) { }
-            return WeakReference(handle)
-        }
-        val witness = useOnce()
+        val witness = KeyedGraph("g", inner)
+        f.cache.use(witness) { }
         val keep = KeyedGraph("kept", graph(2))
         f.cache.use(keep) { }
-        awaitTrue("the handle is collected") { witness.get() == null }
+        assertEquals(2, f.cache.size)
+        handles.collect(witness)
         assertEquals(1, f.cache.size, "an unstamped entry found by handle is dropped, not only stamped ones")
         assertEquals(listOf(setOf(triple(1))), f.released.map { it.triples })
         f.cache.use(keep) { }
@@ -202,7 +212,10 @@ class GraphStateCacheBoundsTest {
 
     @Test
     fun `a saturated cache fails with a clear exception after the wait`() {
-        val f = Fixture(1, settings = GraphStateCache.Settings(maxTemporaryStates = 1, temporaryWaitMillis = 100))
+        val f = Fixture(
+            1,
+            settings = GraphStateCache.Settings(maxTemporaryStates = 1, temporaryWaitMillis = 100, overflowWaitMillis = null),
+        )
         val pool = daemonPool()
         val finish = CountDownLatch(1)
         val entered = List(2) { CountDownLatch(1) }
@@ -223,7 +236,10 @@ class GraphStateCacheBoundsTest {
         }
 
         // Temporary states can be switched off: a full cache whose entries are in use then fails at once.
-        val none = Fixture(1, settings = GraphStateCache.Settings(maxTemporaryStates = 0, temporaryWaitMillis = 0))
+        val none = Fixture(
+            1,
+            settings = GraphStateCache.Settings(maxTemporaryStates = 0, temporaryWaitMillis = 0, overflowWaitMillis = null),
+        )
         none.cache.use(graph(1)) {
             assertThrows(GraphStateCacheSaturatedException::class.java) { none.cache.use(graph(2)) { } }
         }
@@ -232,7 +248,16 @@ class GraphStateCacheBoundsTest {
 
     @Test
     fun `close wakes a call that waits for a free state`() {
-        val f = Fixture(1, settings = GraphStateCache.Settings(maxTemporaryStates = 0, temporaryWaitMillis = 30_000))
+        val waiting = CountDownLatch(1)
+        val f = Fixture(
+            1,
+            settings = GraphStateCache.Settings(
+                maxTemporaryStates = 0,
+                temporaryWaitMillis = 30_000,
+                overflowWaitMillis = null,
+                probe = { event -> if (event == GraphStateCache.Event.SLOT_WAIT) waiting.countDown() },
+            ),
+        )
         val pool = daemonPool()
         val finish = CountDownLatch(1)
         val entered = CountDownLatch(1)
@@ -240,7 +265,7 @@ class GraphStateCacheBoundsTest {
             val user = pool.submit { f.cache.use(graph(1)) { entered.countDown(); finish.await(30, TimeUnit.SECONDS) } }
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             val waiter = pool.submit { f.cache.use(graph(2)) { } }
-            Thread.sleep(100)
+            assertTrue(waiting.await(10, TimeUnit.SECONDS), "the second call waits for a free state")
             f.cache.close()
             val failure = assertThrows(java.util.concurrent.ExecutionException::class.java) { waiter.get(10, TimeUnit.SECONDS) }
             assertEquals("TestCache has been closed", failure.cause!!.message)
@@ -250,6 +275,73 @@ class GraphStateCacheBoundsTest {
             finish.countDown()
             pool.shutdownNow()
         }
+    }
+
+    @Test
+    fun `a saturated cache validates in a private state beyond the cap after a short wait`() {
+        val f = Fixture(1, settings = GraphStateCache.Settings(maxTemporaryStates = 1, overflowWaitMillis = 1))
+        val pool = daemonPool()
+        val finish = CountDownLatch(1)
+        val entered = List(2) { CountDownLatch(1) }
+        try {
+            val users = List(2) { i ->
+                pool.submit { f.cache.use(graph(i)) { entered[i].countDown(); finish.await(30, TimeUnit.SECONDS) } }
+                    .also { assertTrue(entered[i].await(10, TimeUnit.SECONDS)) }
+            }
+            // The cached state and the temporary state stay in use (their users may be waiting for a lock this
+            // caller holds): the call must neither stall nor fail.
+            val state = f.cache.use(graph(2)) { it }
+            assertEquals(setOf(triple(2)), state.triples)
+            assertTrue(state.released, "the private state is released when its use ends")
+            assertEquals(1, f.cache.count(GraphStateCache.Event.OVERFLOW))
+            assertEquals(1, f.cache.temporaryCount, "the cap on temporary states is not raised")
+            assertEquals(1, f.cache.size)
+            finish.countDown()
+            users.forEach { it.get(10, TimeUnit.SECONDS) }
+        } finally {
+            finish.countDown()
+            pool.shutdownNow()
+        }
+        f.cache.close()
+    }
+
+    @Test
+    fun `an interrupted wait for a free state restores the interrupt and fails clearly`() {
+        val f = Fixture(
+            1,
+            settings = GraphStateCache.Settings(maxTemporaryStates = 0, temporaryWaitMillis = 30_000, overflowWaitMillis = null),
+        )
+        try {
+            f.cache.use(graph(1)) {
+                // An interrupt that is already pending makes the wait fail at once: no timing is involved.
+                Thread.currentThread().interrupt()
+                val failure = assertThrows(GraphStateCacheInterruptedException::class.java) { f.cache.use(graph(2)) { } }
+                assertTrue(Thread.interrupted(), "the interrupt status is restored for the caller")
+                assertTrue(failure.message!!.startsWith("TestCache: interrupted while waiting"), failure.message)
+            }
+        } finally {
+            Thread.interrupted()
+        }
+        assertEquals(1, f.cache.loadCount)
+        f.cache.close()
+    }
+
+    @Test
+    fun `under assumeImmutable a graph with the content of another entry is found by its handle afterwards`() {
+        val f = Fixture(4, settings = GraphStateCache.Settings(assumeImmutable = true))
+        val readsA = AtomicInteger()
+        val readsB = AtomicInteger()
+        // Two distinct graphs with equal content (two empty graphs are the common case).
+        val a = PlainGraph(graph(), readsA)
+        val b = PlainGraph(graph(), readsB)
+        f.cache.use(a) { }
+        repeat(4) { f.cache.use(b) { assertTrue(it.triples.isEmpty()) } }
+        assertEquals(1, readsB.get(), "found by content once, then by its handle: not read on every call")
+        repeat(4) { f.cache.use(a) { } }
+        assertEquals(1, readsA.get(), "the first graph is still found by its handle")
+        assertEquals(1, f.cache.loadCount)
+        assertEquals(1, f.cache.size)
+        f.cache.close()
     }
 
     @Test

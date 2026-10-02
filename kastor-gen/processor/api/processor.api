@@ -409,6 +409,20 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/InstanceDslRequ
 public abstract interface class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
 }
 
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Graph : com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Graph;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Id : com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Id;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Index : com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Index;
 	public fun equals (Ljava/lang/Object;)Z
@@ -437,6 +451,13 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Type : com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Type;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer$Unknown : com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer {
 	public fun <init> (Ljava/lang/String;)V
 	public final fun component1 ()Ljava/lang/String;
@@ -449,17 +470,19 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer
 }
 
 public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContext {
-	public synthetic fun <init> (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/util/Map;
 	public final fun component2-UX4i1w8 ()Ljava/lang/String;
 	public final fun component3-UX4i1w8 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/util/Map;
 	public final fun component5 ()Ljava/util/Map;
-	public final fun copy-nLEitx4 (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
-	public static synthetic fun copy-nLEitx4$default (Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
+	public final fun component6 ()Ljava/util/Map;
+	public final fun copy-MvE_ves (Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
+	public static synthetic fun copy-MvE_ves$default (Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Ljava/util/Map;Ljava/util/Map;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBaseIri-UX4i1w8 ()Ljava/lang/String;
+	public final fun getKeywordAliases ()Ljava/util/Map;
 	public final fun getPrefixes ()Ljava/util/Map;
 	public final fun getPropertyMappings ()Ljava/util/Map;
 	public final fun getTypeMappings ()Ljava/util/Map;
@@ -469,16 +492,22 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdContext {
 }
 
 public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty {
-	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;Ljava/util/List;ZLcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;Ljava/util/List;ZLcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-tqZU9bw ()Ljava/lang/String;
 	public final fun component2 ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;
 	public final fun component3 ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;
-	public final fun copy-MUGSDsY (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;
-	public static synthetic fun copy-MUGSDsY$default (Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Z
+	public final fun component6 ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
+	public final fun copy-fNhpqaQ (Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;Ljava/util/List;ZLcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;
+	public static synthetic fun copy-fNhpqaQ$default (Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;Ljava/util/List;ZLcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdProperty;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContainer ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContainer;
+	public final fun getContainers ()Ljava/util/List;
 	public final fun getId-tqZU9bw ()Ljava/lang/String;
+	public final fun getReverse ()Z
+	public final fun getScopedContext ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
 	public final fun getType ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -501,6 +530,27 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Iri 
 	public static synthetic fun copy-J_zqV-w$default (Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Iri;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Iri;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getIri-tqZU9bw ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Json : com/geoknoesis/kastor/gen/processor/api/model/JsonLdType {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Json;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdType$None : com/geoknoesis/kastor/gen/processor/api/model/JsonLdType {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType$None;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Vocab : com/geoknoesis/kastor/gen/processor/api/model/JsonLdType {
+	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdType$Vocab;
+	public fun equals (Ljava/lang/Object;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -601,8 +651,8 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyBuilder
 public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints {
 	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints$Companion;
 	public fun <init> ()V
-	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;Ljava/util/List;Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;Ljava/util/List;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/Integer;
 	public final fun component10 ()Ljava/lang/String;
 	public final fun component11 ()Ljava/lang/String;
@@ -610,6 +660,9 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstra
 	public final fun component13 ()Ljava/lang/Integer;
 	public final fun component14 ()Ljava/lang/Integer;
 	public final fun component15 ()Ljava/util/List;
+	public final fun component16 ()Ljava/util/List;
+	public final fun component17 ()Ljava/util/List;
+	public final fun component18 ()Z
 	public final fun component2 ()Ljava/lang/Integer;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
@@ -618,10 +671,13 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstra
 	public final fun component7 ()Ljava/math/BigDecimal;
 	public final fun component8 ()Ljava/math/BigDecimal;
 	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;Ljava/util/List;Ljava/util/List;Z)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/util/List;Ljava/util/List;Ljava/util/List;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyConstraints;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAdditionalHasValues ()Ljava/util/List;
+	public final fun getAdditionalPatterns ()Ljava/util/List;
 	public final fun getHasValue ()Ljava/lang/String;
+	public final fun getHasValues ()Ljava/util/List;
 	public final fun getInValues ()Ljava/util/List;
 	public final fun getInValuesTyped ()Ljava/util/List;
 	public final fun getMaxExclusive ()Ljava/math/BigDecimal;
@@ -631,8 +687,10 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/PropertyConstra
 	public final fun getMinInclusive ()Ljava/math/BigDecimal;
 	public final fun getMinLength ()Ljava/lang/Integer;
 	public final fun getNodeKind ()Ljava/lang/String;
+	public final fun getNodeKindUnsatisfiable ()Z
 	public final fun getPattern ()Ljava/lang/String;
 	public final fun getPatternFlags ()Ljava/lang/String;
+	public final fun getPatterns ()Ljava/util/List;
 	public final fun getQualifiedMaxCount ()Ljava/lang/Integer;
 	public final fun getQualifiedMinCount ()Ljava/lang/Integer;
 	public final fun getQualifiedValueShape ()Ljava/lang/String;
@@ -683,9 +741,23 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclInValue {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclPattern {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclPattern;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclPattern;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclPattern;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFlags ()Ljava/lang/String;
+	public final fun getPattern ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclProperty {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Z)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Ljava/lang/String;
 	public final fun component11 ()Ljava/lang/String;
@@ -705,6 +777,9 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclProperty {
 	public final fun component24 ()Ljava/lang/String;
 	public final fun component25 ()Ljava/lang/String;
 	public final fun component26 ()Z
+	public final fun component27 ()Ljava/util/List;
+	public final fun component28 ()Ljava/util/List;
+	public final fun component29 ()Z
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
 	public final fun component5 ()Ljava/lang/String;
@@ -712,14 +787,17 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclProperty {
 	public final fun component7 ()Ljava/lang/Integer;
 	public final fun component8 ()Ljava/lang/Integer;
 	public final fun component9 ()Ljava/lang/Integer;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Z)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;Z)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;
+	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/util/List;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ZLjava/util/List;Ljava/util/List;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclProperty;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAdditionalHasValues ()Ljava/util/List;
+	public final fun getAdditionalPatterns ()Ljava/util/List;
 	public final fun getDatatype ()Ljava/lang/String;
 	public final fun getDeactivated ()Z
 	public final fun getDescription ()Ljava/lang/String;
 	public final fun getEnumName ()Ljava/lang/String;
 	public final fun getHasValue ()Ljava/lang/String;
+	public final fun getHasValues ()Ljava/util/List;
 	public final fun getInValues ()Ljava/util/List;
 	public final fun getInValuesTyped ()Ljava/util/List;
 	public final fun getMaxCount ()Ljava/lang/Integer;
@@ -733,9 +811,11 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ShaclProperty {
 	public final fun getMinLength ()Ljava/lang/Integer;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getNodeKind ()Ljava/lang/String;
+	public final fun getNodeKindUnsatisfiable ()Z
 	public final fun getPath ()Ljava/lang/String;
 	public final fun getPattern ()Ljava/lang/String;
 	public final fun getPatternFlags ()Ljava/lang/String;
+	public final fun getPatterns ()Ljava/util/List;
 	public final fun getQualifiedMaxCount ()Ljava/lang/Integer;
 	public final fun getQualifiedMinCount ()Ljava/lang/Integer;
 	public final fun getQualifiedValueShape ()Ljava/lang/String;
@@ -776,307 +856,5 @@ public final class com/geoknoesis/kastor/gen/processor/api/model/ValidationConfi
 	public final fun setMode (Lcom/geoknoesis/kastor/gen/annotations/ValidationMode;)V
 	public final fun setStrict (Z)V
 	public final fun setValidateOnBuild (Z)V
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/DataClassFactoryGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/annotations/NestedMode;Lcom/geoknoesis/kastor/gen/processor/internal/codegen/DataClassWriterGenerator;)V
-	public synthetic fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/annotations/NestedMode;Lcom/geoknoesis/kastor/gen/processor/internal/codegen/DataClassWriterGenerator;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun generateFactories (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Z)Ljava/util/Map;
-	public static synthetic fun generateFactories$default (Lcom/geoknoesis/kastor/gen/processor/internal/codegen/DataClassFactoryGenerator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;ZILjava/lang/Object;)Ljava/util/Map;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/DataClassGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/annotations/NestedMode;ZLcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;)V
-	public final fun generateDataClasses (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Z)Ljava/util/Map;
-	public static synthetic fun generateDataClasses$default (Lcom/geoknoesis/kastor/gen/processor/internal/codegen/DataClassGenerator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;ZILjava/lang/Object;)Ljava/util/Map;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/DataClassWriterGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/annotations/NestedMode;)V
-	public final fun buildToTriplesFunction (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclShape;Ljava/lang/String;Lcom/squareup/kotlinpoet/ClassName;Ljava/util/Map;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;Ljava/util/Set;Ljava/util/List;)Lcom/squareup/kotlinpoet/FunSpec;
-	public static synthetic fun buildToTriplesFunction$default (Lcom/geoknoesis/kastor/gen/processor/internal/codegen/DataClassWriterGenerator;Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclShape;Ljava/lang/String;Lcom/squareup/kotlinpoet/ClassName;Ljava/util/Map;Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;Ljava/util/Set;Ljava/util/List;ILjava/lang/Object;)Lcom/squareup/kotlinpoet/FunSpec;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/InstanceDslGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
-	public final fun generate (Lcom/geoknoesis/kastor/gen/processor/api/model/InstanceDslRequest;)Lcom/squareup/kotlinpoet/FileSpec;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/InterfaceGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;)V
-	public synthetic fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun generateInterfaces (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Z)Ljava/util/Map;
-	public static synthetic fun generateInterfaces$default (Lcom/geoknoesis/kastor/gen/processor/internal/codegen/InterfaceGenerator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;ZILjava/lang/Object;)Ljava/util/Map;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/OntologyWrapperGenerator {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Lcom/geoknoesis/kastor/gen/annotations/ValidationMode;Ljava/lang/String;)V
-	public synthetic fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Lcom/geoknoesis/kastor/gen/annotations/ValidationMode;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun generateWrappers (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Ljava/lang/String;Z)Ljava/util/Map;
-	public static synthetic fun generateWrappers$default (Lcom/geoknoesis/kastor/gen/processor/internal/codegen/OntologyWrapperGenerator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Ljava/util/Map;
-}
-
-public abstract class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$Companion;
-	public abstract fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$BooleanStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$BooleanStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$Companion {
-	public final fun from (Lcom/squareup/kotlinpoet/TypeName;)Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$DoubleStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$DoubleStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$EnumStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$EnumStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$IntStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$IntStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$IriStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$IriStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$StringStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$StringStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$TypedLiteralStrategy : com/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/codegen/PropertyTypeStrategy$TypedLiteralStrategy;
-	public fun generateMethods (Lcom/geoknoesis/kastor/gen/processor/api/model/PropertyBuilderModel;Lcom/squareup/kotlinpoet/CodeBlock;Lcom/geoknoesis/kastor/gen/processor/api/model/DslGenerationOptions;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$Companion;
-	public static final field RDF_ANNOTATION Ljava/lang/String;
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
-	public final fun parseInstanceDslFromRdf (Lcom/google/devtools/ksp/symbol/KSAnnotation;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$InstanceDslGenerationRequest;
-	public final fun parseOntologyFromRdf (Lcom/google/devtools/ksp/symbol/KSAnnotation;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$OntologyGenerationRequest;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$Companion {
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$InstanceDslGenerationRequest {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Ljava/lang/String;
-	public final fun component5 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$InstanceDslGenerationRequest;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$InstanceDslGenerationRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$InstanceDslGenerationRequest;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getContextPath ()Ljava/lang/String;
-	public final fun getDslName ()Ljava/lang/String;
-	public final fun getOntologyPath ()Ljava/lang/String;
-	public final fun getShaclPath ()Ljava/lang/String;
-	public final fun getTargetPackage ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$OntologyGenerationRequest {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;Z)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component10 ()Ljava/lang/String;
-	public final fun component11 ()Z
-	public final fun component12 ()Lcom/geoknoesis/kastor/gen/annotations/NestedMode;
-	public final fun component13 ()Z
-	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Z
-	public final fun component5 ()Z
-	public final fun component6 ()Lcom/geoknoesis/kastor/gen/annotations/ValidationMode;
-	public final fun component7 ()Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;
-	public final fun component8 ()Ljava/lang/String;
-	public final fun component9 ()Z
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;Z)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$OntologyGenerationRequest;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$OntologyGenerationRequest;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;ZILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/internal/core/AnnotationParser$OntologyGenerationRequest;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getContextPath ()Ljava/lang/String;
-	public final fun getDataClassImplementsInterface ()Z
-	public final fun getDataClassSuffix ()Ljava/lang/String;
-	public final fun getExternalValidatorClass ()Ljava/lang/String;
-	public final fun getGenerateDataClass ()Z
-	public final fun getGenerateInterfaces ()Z
-	public final fun getGenerateWrappers ()Z
-	public final fun getGenerateWriteSupport ()Z
-	public final fun getNestedMode ()Lcom/geoknoesis/kastor/gen/annotations/NestedMode;
-	public final fun getShaclPath ()Ljava/lang/String;
-	public final fun getTargetPackage ()Ljava/lang/String;
-	public final fun getValidationAnnotations ()Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;
-	public final fun getValidationMode ()Lcom/geoknoesis/kastor/gen/annotations/ValidationMode;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/GenerationCoordinator {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/GenerationCoordinator$Companion;
-	public static final field DEFAULT_DATA_CLASS_SUFFIX Ljava/lang/String;
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Lcom/google/devtools/ksp/processing/CodeGenerator;)V
-	public final fun generateFromOntology (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;ZLjava/util/List;)V
-	public static synthetic fun generateFromOntology$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/GenerationCoordinator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;ZZLcom/geoknoesis/kastor/gen/annotations/ValidationMode;Lcom/geoknoesis/kastor/gen/annotations/ValidationAnnotations;Ljava/lang/String;ZLjava/lang/String;ZLcom/geoknoesis/kastor/gen/annotations/NestedMode;ZLjava/util/List;ILjava/lang/Object;)V
-	public final fun generateInstanceDsl (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
-	public static synthetic fun generateInstanceDsl$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/GenerationCoordinator;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)V
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/GenerationCoordinator$Companion {
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor : com/google/devtools/ksp/processing/SymbolProcessor {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor$Companion;
-	public static final field MATERIALIZABLE_TYPES_OPTION Ljava/lang/String;
-	public fun <init> (Lcom/google/devtools/ksp/processing/CodeGenerator;Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/Map;)V
-	public fun finish ()V
-	public fun onError ()V
-	public fun process (Lcom/google/devtools/ksp/processing/Resolver;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessor$Companion {
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntoMapperProcessorProvider : com/google/devtools/ksp/processing/SymbolProcessorProvider {
-	public fun <init> ()V
-	public fun create (Lcom/google/devtools/ksp/processing/SymbolProcessorEnvironment;)Lcom/google/devtools/ksp/processing/SymbolProcessor;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/List;)V
-	public synthetic fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun candidates (Ljava/lang/String;Ljava/io/File;)Ljava/util/List;
-	public static synthetic fun candidates$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Ljava/util/List;
-	public final fun createClassesFromShapes (Ljava/util/List;)Ljava/util/List;
-	public final fun createEmptyContext ()Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
-	public final fun loadOntologyClasses (Ljava/lang/String;Ljava/io/File;)Ljava/util/List;
-	public static synthetic fun loadOntologyClasses$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Ljava/util/List;
-	public final fun loadOntologyModel (Ljava/lang/String;Ljava/lang/String;Ljava/io/File;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
-	public static synthetic fun loadOntologyModel$default (Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyFileReader;Ljava/lang/String;Ljava/lang/String;Ljava/io/File;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor : com/google/devtools/ksp/processing/SymbolProcessor {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor$Companion;
-	public static final field PROJECT_DIR_OPTION Ljava/lang/String;
-	public static final field RESOURCES_OPTION Ljava/lang/String;
-	public static final field RESOURCES_TRACKED_OPTION Ljava/lang/String;
-	public fun <init> (Lcom/google/devtools/ksp/processing/CodeGenerator;Lcom/google/devtools/ksp/processing/KSPLogger;Ljava/util/Map;)V
-	public fun finish ()V
-	public fun onError ()V
-	public fun process (Lcom/google/devtools/ksp/processing/Resolver;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessor$Companion {
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/core/OntologyProcessorProvider : com/google/devtools/ksp/processing/SymbolProcessorProvider {
-	public fun <init> ()V
-	public fun create (Lcom/google/devtools/ksp/processing/SymbolProcessorEnvironment;)Lcom/google/devtools/ksp/processing/SymbolProcessor;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/model/ClassModel {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Ljava/lang/String;
-	public final fun component5 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)Lcom/geoknoesis/kastor/gen/processor/internal/model/ClassModel;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/internal/model/ClassModel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/internal/model/ClassModel;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getClassIri ()Ljava/lang/String;
-	public final fun getPackageName ()Ljava/lang/String;
-	public final fun getProperties ()Ljava/util/List;
-	public final fun getQualifiedName ()Ljava/lang/String;
-	public final fun getSimpleName ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/model/PropertyModel {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;ZZLcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;ZZLcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public final fun component5 ()Z
-	public final fun component6 ()Z
-	public final fun component7 ()Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public final fun component8 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;ZZLcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyModel;
-	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyModel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;ZZLcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;Ljava/lang/String;ILjava/lang/Object;)Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyModel;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getEnumKind ()Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public final fun getKotlinType ()Ljava/lang/String;
-	public final fun getMutable ()Z
-	public final fun getName ()Ljava/lang/String;
-	public final fun getNullable ()Z
-	public final fun getPredicateIri ()Ljava/lang/String;
-	public final fun getType ()Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public final fun getTypePackage ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/model/PropertyType : java/lang/Enum {
-	public static final field LITERAL Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public static final field OBJECT Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public static final field OBJECT_LIST Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public static final field TERM Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-	public static fun values ()[Lcom/geoknoesis/kastor/gen/processor/internal/model/PropertyType;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind : java/lang/Enum {
-	public static final field CODE Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public static final field IRI Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public static final field NAME Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-	public static fun values ()[Lcom/geoknoesis/kastor/gen/processor/internal/model/RdfEnumKind;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/parsers/JsonLdContextParser {
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
-	public final fun parseContext (Ljava/io/InputStream;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
-	public final fun parseContextContent (Ljava/lang/String;)Lcom/geoknoesis/kastor/gen/processor/api/model/JsonLdContext;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/parsers/ShaclParser {
-	public static final field Companion Lcom/geoknoesis/kastor/gen/processor/internal/parsers/ShaclParser$Companion;
-	public fun <init> (Lcom/google/devtools/ksp/processing/KSPLogger;)V
-	public final fun parseShacl (Ljava/io/InputStream;)Ljava/util/List;
-	public final fun parseShaclContent (Ljava/lang/String;)Ljava/util/List;
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/parsers/ShaclParser$Companion {
-}
-
-public final class com/geoknoesis/kastor/gen/processor/internal/utils/GenerationNames {
-	public static final field INSTANCE Lcom/geoknoesis/kastor/gen/processor/internal/utils/GenerationNames;
-	public final fun checkCollisions (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;)V
-	public final fun checkUniqueFiles (Ljava/util/Collection;)V
-	public final fun effectiveProperties (Lcom/geoknoesis/kastor/gen/processor/api/model/ShaclShape;Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;)Ljava/util/List;
-	public final fun isKeyword (Ljava/lang/String;)Z
-	public final fun knownTypes (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;)Ljava/util/Set;
-	public final fun memberIdentifier (Ljava/lang/String;)Ljava/lang/String;
-	public final fun superTypes (Lcom/geoknoesis/kastor/gen/processor/api/model/OntologyModel;)Ljava/util/Map;
-	public final fun typeIdentifier (Ljava/lang/String;)Ljava/lang/String;
 }
 

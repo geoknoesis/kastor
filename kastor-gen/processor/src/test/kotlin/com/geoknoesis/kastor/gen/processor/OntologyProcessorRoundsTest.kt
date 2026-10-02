@@ -64,9 +64,29 @@ class OntologyProcessorRoundsTest {
     }
 
     private fun annotatedFile(path: File, vararg args: Pair<String, Any>): KSFile {
+        // The processor identifies @Rdf by the qualified name of the resolved annotation class, not by its short name.
+        val annotationClass: com.google.devtools.ksp.symbol.KSDeclaration = proxy { m, _ ->
+            when (m) {
+                "getQualifiedName" -> name("com.geoknoesis.kastor.gen.annotations.Rdf")
+                else -> throw UnsupportedOperationException(m)
+            }
+        }
+        val annotationType: com.google.devtools.ksp.symbol.KSType = proxy { m, _ ->
+            when (m) {
+                "getDeclaration" -> annotationClass
+                else -> throw UnsupportedOperationException(m)
+            }
+        }
+        val annotationTypeReference: com.google.devtools.ksp.symbol.KSTypeReference = proxy { m, _ ->
+            when (m) {
+                "resolve" -> annotationType
+                else -> throw UnsupportedOperationException(m)
+            }
+        }
         val annotation: KSAnnotation = proxy { m, _ ->
             when (m) {
                 "getShortName" -> name("Rdf")
+                "getAnnotationType" -> annotationTypeReference
                 "getArguments" -> args.map { (k, v) -> argument(k, v) }
                 else -> throw UnsupportedOperationException(m)
             }

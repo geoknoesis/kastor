@@ -11,7 +11,7 @@ private const val NO_EFFECT = "This option has no effect: no engine reads it. It
  *
  * Options that no bundled engine implements are either rejected ([parallelValidation], [streamingMode]) or
  * deprecated because they have no effect (`batchSize`, `enableExplanations`, `enableSuggestions`,
- * `validateInactiveShapes`).
+ * `validateInactiveShapes`, `customParameters`, `streaming`).
  */
 data class ValidationConfig(
     val profile: ValidationProfile = ValidationProfile.SHACL_CORE,
@@ -53,6 +53,8 @@ data class ValidationConfig(
     /** No effect: shapes with `sh:deactivated true` are never validated (every node conforms to them, as SHACL requires). */
     @Deprecated(NO_EFFECT)
     val validateInactiveShapes: Boolean = false,
+    /** No effect: no engine reads these parameters. */
+    @Deprecated(NO_EFFECT)
     val customParameters: Map<String, Any> = emptyMap(),
     /**
      * Forces a specific provider; must match [ShaclValidatorProvider.getType] (e.g. `kastor`, `rdf4j`). The legacy
@@ -70,6 +72,8 @@ data class ValidationConfig(
     val maxRecursionDepth: Int = 64,
     val cache: CacheConfig = CacheConfig(),
     val imports: ImportConfig = ImportConfig(),
+    /** No effect: no engine validates in streaming mode ([streamingMode] is rejected), so these controls are never read. */
+    @Deprecated(NO_EFFECT)
     val streaming: StreamingConfigExtension = StreamingConfigExtension(),
     val dataset: DatasetValidationConfig = DatasetValidationConfig(),
     /** When false (default P1a), triple terms inside `sh:in` / `sh:hasValue` cause compile failure. */
@@ -102,15 +106,29 @@ data class ValidationConfig(
      */
     val conformanceDisallows: Set<Iri>? = null,
     /**
-     * Time budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native
-     * engine). Regular expressions with nested quantifiers can backtrack exponentially on short inputs; without this
-     * budget such an evaluation is only stopped by the run-wide [timeout]. A value on which a pattern exceeds it is
-     * **reported**: the constraint is undecided for that value, which yields a result naming the pattern, marked
-     * [ValidationViolation.isPatternTimeout] (`ksh:resultStatus ksh:PatternTimeout` in RDF), with the shape's
-     * severity, so the value is not accepted and the report cannot conform because of it. Validation continues with
-     * the other values and focus nodes; only [timeout] aborts a run. A pattern on which the regular expression
-     * engine runs out of stack is reported the same way ([ValidationViolation.isPatternTooComplex]). With
-     * [strictMode] both fail validation with a [ShaclValidationException] naming the pattern instead. Must be
+     * Budget of **one** `sh:pattern` evaluation, i.e. matching one pattern against one value node (native engine).
+     * Regular expressions with nested quantifiers can backtrack exponentially on short inputs; without this budget
+     * such an evaluation is only stopped by the run-wide [timeout].
+     *
+     * The budget is **counted in steps** of the regular expression engine (character reads), at 50,000 steps per
+     * millisecond of this duration: the default of one second is fifty million steps, which current hardware performs
+     * in a fraction of a second. Counting steps instead of measuring time makes the outcome deterministic: the same
+     * pattern and value are decided, or not, on every machine, under any load and across garbage collection pauses.
+     * The wall clock is only a backstop: an evaluation is also stopped when ten times this duration has passed.
+     *
+     * A value on which a pattern exceeds the budget is **reported**: the constraint is undecided for that value,
+     * which yields a result naming the pattern, marked [ValidationViolation.isPatternTimeout] (`ksh:resultStatus
+     * ksh:PatternTimeout` in RDF), with the shape's severity, so the value is not accepted and the report cannot
+     * conform because of it. Validation continues with the other values and focus nodes; only [timeout] aborts a run.
+     *
+     * A pattern on which the regular expression engine runs out of stack (an alternation under a quantifier such as
+     * `(a|b)*` on a very long value) is reported the same way ([ValidationViolation.isPatternTooComplex]). Whether
+     * that happens does not depend on the stack size of the calling thread or on how deeply the shape is nested:
+     * values of 1,024 characters or more are matched on a dedicated thread with a fixed stack of 16 MiB (one per
+     * validation run, created when first needed), and a shorter value whose match overflows the calling thread's
+     * stack is matched there again.
+     *
+     * With [strictMode] both fail validation with a [ShaclValidationException] naming the pattern instead. Must be
      * positive; it never extends [timeout].
      */
     val patternTimeout: Duration = Duration.ofSeconds(1),

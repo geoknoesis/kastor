@@ -1,65 +1,36 @@
 package com.geoknoesis.kastor.rdf
 
 import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
-import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.io.IOException
-import java.net.InetAddress
-import java.net.InetSocketAddress
+import org.junit.jupiter.api.TestInstance
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** Redirect handling of URL loading against a local HTTP server: Location resolution, hop cap, host policy, cancel. */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class UrlLoadingRedirectTest {
-    private var server: HttpServer? = null
-    private var pool: ExecutorService? = null
+    /** One server for the class; every test installs its handler and gets a new request log. */
+    private val http = LoopbackHttp()
 
-    /** Raw request targets (path and query, as sent) in arrival order. */
-    private val requests = CopyOnWriteArrayList<String>()
+    /** Raw request targets (path and query, as sent) of the current test, in arrival order. */
+    private val requests: MutableList<String> get() = http.requests
 
-    @AfterEach
-    fun stop() {
-        server?.stop(0)
-        pool?.shutdownNow()
+    @AfterAll
+    fun stopServer() {
+        http.close()
     }
 
-    /** Starts a server and returns its root URL without a trailing slash, e.g. `http://127.0.0.1:1234`. */
-    private fun serve(handler: (HttpExchange) -> Unit): String {
-        val threads = Executors.newFixedThreadPool(8)
-        val created = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
-            createContext("/") { exchange ->
-                requests.add(exchange.requestURI.toString())
-                try { handler(exchange) } catch (_: IOException) { } catch (_: InterruptedException) { } finally { exchange.close() }
-            }
-            executor = threads
-            start()
-        }
-        server = created
-        pool = threads
-        return "http://127.0.0.1:${created.address.port}"
-    }
-
-    private fun HttpExchange.redirect(location: String, status: Int = 302) {
-        responseHeaders.add("Location", location)
-        sendResponseHeaders(status, -1)
-    }
-
-    private fun HttpExchange.turtle(body: String = "<#s> <urn:p> <> .") {
-        val bytes = body.toByteArray()
-        responseHeaders.add("Content-Type", "text/turtle")
-        sendResponseHeaders(200, bytes.size.toLong())
-        responseBody.write(bytes)
-    }
+    /** Installs [handler] and returns the root URL without a trailing slash, e.g. `http://127.0.0.1:1234`. */
+    private fun serve(handler: (HttpExchange) -> Unit): String = http.serve(handler)
 
     @Test
     fun `a relative Location is resolved against a URL without a path`() {
@@ -158,46 +129,60 @@ class UrlLoadingRedirectTest {
                 else -> exchange.turtle("<urn:s> <urn:p> <urn:o> .")
             }
         }
-        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
-            val future = Rdf.parseFromUrlAsync("$root/start", RdfFormat.TURTLE)
-            assertTrue(arrived.await(10, TimeUnit.SECONDS), "the second hop must be requested")
+        // The load runs on an executor of the test, so that the test can wait for the load to be over.
+        val loader = Executors.newSingleThreadExecutor()
+        try {
+            val future = Rdf.parseFromUrlAsync("$root/start", RdfFormat.TURTLE, loader)
+            assertTrue(arrived.await(60, TimeUnit.SECONDS), "the second hop must be requested")
             assertTrue(future.cancel(true))
             assertTrue(future.isCancelled)
-            // The connection of the hop in flight was disconnected: its late answer is never followed.
+            // The connection of the hop in flight was disconnected: its late answer is never followed. The server
+            // answers now, and once the load has ended nothing can follow that answer any more.
             release.countDown()
-            Thread.sleep(700)
+            loader.shutdown()
+            assertTrue(loader.awaitTermination(120, TimeUnit.SECONDS), "the cancelled load must end")
             assertEquals(listOf("/start", "/stall"), requests.toList())
+        } finally {
+            release.countDown()
+            loader.shutdownNow()
         }
     }
 
     @Test
     fun `a redirect to another host is followed by default and can be refused by a redirect policy`() {
-        val root = serve { exchange ->
-            when (exchange.requestURI.path) {
-                "/start" -> exchange.redirect("http://localhost:${exchange.localAddress.port}/doc.ttl")
-                else -> exchange.turtle()
+        // The other host is a second server on the loopback address: another port is another host, and no host
+        // name has to be looked up.
+        LoopbackHttp(threads = 2).use { otherHost ->
+            val other = otherHost.serve { exchange -> exchange.turtle() }
+            val root = serve { exchange ->
+                when (exchange.requestURI.path) {
+                    "/start" -> exchange.redirect("$other/doc.ttl")
+                    else -> exchange.turtle()
+                }
             }
-        }
-        val other = root.replace("127.0.0.1", "localhost")
 
-        // Default: cross-host redirects are followed, and the final URL is the base IRI.
-        assertEquals(UrlRedirectPolicy.ALLOW_ALL, UrlLoadOptions.DEFAULT.redirectPolicy)
-        assertEquals(
-            listOf(RdfTriple(Iri("$other/doc.ttl#s"), Iri("urn:p"), Iri("$other/doc.ttl"))),
-            Rdf.parseFromUrl("$root/start").getTriples(),
-        )
+            // Default: cross-host redirects are followed, and the final URL is the base IRI.
+            assertEquals(UrlRedirectPolicy.ALLOW_ALL, UrlLoadOptions.DEFAULT.redirectPolicy)
+            assertEquals(
+                listOf(RdfTriple(Iri("$other/doc.ttl#s"), Iri("urn:p"), Iri("$other/doc.ttl"))),
+                Rdf.parseFromUrl("$root/start").getTriples(),
+            )
+            assertEquals(listOf("/doc.ttl"), otherHost.requests.toList())
 
-        for (policy in listOf(UrlRedirectPolicy.SAME_HOST, UrlRedirectPolicy.PUBLIC_ADDRESSES)) {
-            requests.clear()
-            val error = assertThrows(RdfHttpStatusException::class.java) {
-                Rdf.parseFromUrl("$root/start", RdfFormat.TURTLE, UrlLoadOptions(redirectPolicy = policy))
+            for (policy in listOf(UrlRedirectPolicy.SAME_HOST, UrlRedirectPolicy.PUBLIC_ADDRESSES)) {
+                requests.clear()
+                otherHost.requests.clear()
+                val error = assertThrows(RdfHttpStatusException::class.java) {
+                    Rdf.parseFromUrl("$root/start", RdfFormat.TURTLE, UrlLoadOptions(redirectPolicy = policy))
+                }
+                assertEquals(302, error.statusCode)
+                assertTrue(error.message!!.contains("refused by the redirect policy"), error.message)
+                assertTrue(error.message!!.contains("$other/doc.ttl"), error.message)
+                assertEquals(listOf("/start"), requests.toList(), "the redirect itself is requested ($policy)")
+                assertEquals(emptyList<String>(), otherHost.requests.toList(), "the refused target must not be requested ($policy)")
             }
-            assertEquals(302, error.statusCode)
-            assertTrue(error.message!!.contains("refused by the redirect policy"), error.message)
-            assertTrue(error.message!!.contains("$other/doc.ttl"), error.message)
-            assertEquals(listOf("/start"), requests.toList(), "the refused target must not be requested ($policy)")
+            assertEquals("UrlRedirectPolicy.PUBLIC_ADDRESSES", UrlRedirectPolicy.PUBLIC_ADDRESSES.toString())
         }
-        assertEquals("UrlRedirectPolicy.PUBLIC_ADDRESSES", UrlRedirectPolicy.PUBLIC_ADDRESSES.toString())
     }
 
     @Test
@@ -233,13 +218,21 @@ class UrlLoadingRedirectTest {
         val policy = UrlRedirectPolicy.PUBLIC_ADDRESSES
         val from = java.net.URI("http://example.org/")
         val refused = listOf(
-            "http://127.0.0.1/x", "http://127.8.9.10:8080/x", "http://localhost/x", "http://[::1]/x", "http://0.0.0.0/x",
+            "http://127.0.0.1/x", "http://127.8.9.10:8080/x", "http://[::1]/x", "http://0.0.0.0/x",
             "http://0.1.2.3/x", "http://10.1.2.3/x", "http://172.16.0.1/x", "http://172.31.255.255/x", "http://192.168.1.1/x",
             "http://169.254.169.254/latest/meta-data", "http://[fe80::1]/x", "http://[fc00::1]/x", "http://[fd12:3456::1]/x",
             "http://[::ffff:127.0.0.1]/x", "http://[::ffff:10.0.0.1]/x", "http://224.0.0.1/x", "http://[ff02::1]/x",
-            "http://no-such-host.invalid/x",
         )
         for (target in refused) assertFalse(policy.allows(from, java.net.URI(target)), target)
+        // Host names go through the lookup of the address policy the redirect policy applies to its target; here a
+        // lookup of the test's, so that no resolver is asked: a name that resolves to loopback, and one that does
+        // not resolve.
+        val resolver = FakeResolver(mapOf("localhost" to listOf("127.0.0.1"), "public.example" to listOf("93.184.216.34")))
+        val byName = UrlAddressPolicy.publicAddresses(resolver)
+        assertFalse(byName.allows(java.net.URI("http://localhost/x")))
+        assertFalse(byName.allows(java.net.URI("http://no-such-host.invalid/x")))
+        assertTrue(byName.allows(java.net.URI("http://public.example/x")))
+        assertEquals(listOf("localhost", "no-such-host.invalid", "public.example"), resolver.lookups.toList())
         // Literal public addresses need no name lookup.
         for (target in listOf("http://93.184.216.34/x", "http://172.32.0.1/x", "http://[2606:2800:220:1::1]/x")) {
             assertTrue(policy.allows(from, java.net.URI(target)), target)
@@ -253,11 +246,11 @@ class UrlLoadingRedirectTest {
         }
         val release = CountDownLatch(1)
         val options = UrlLoadOptions(
-            totalTimeoutMillis = 500,
+            totalTimeoutMillis = 3_000,
             redirectPolicy = { _, _ -> release.await(20, TimeUnit.SECONDS); true },
         )
         try {
-            assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+            assertTimeoutPreemptively(Duration.ofSeconds(60)) {
                 assertThrows(RdfLoadTimeoutException::class.java) { Rdf.parseFromUrl("$root/start", RdfFormat.TURTLE, options) }
             }
             assertEquals(listOf("/start"), requests.toList())

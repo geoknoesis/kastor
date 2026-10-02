@@ -13,6 +13,11 @@ import java.io.StringReader
 /**
  * Extracts classes from OWL/RDFS ontology files.
  * Uses Apache Jena for proper RDF parsing.
+ *
+ * Only **named** classes are generation targets. Anonymous class expressions (`[ a owl:Class ; owl:unionOf (...) ]`,
+ * `[ a owl:Restriction ; ... ]`, `owl:complementOf`, ...) have no IRI to name a Kotlin type after: they are skipped,
+ * both as classes and as superclasses, and what was skipped is reported at info level. The model never holds a class
+ * or a superclass without an IRI.
  */
 internal class OntologyExtractor(private val logger: KSPLogger) {
 
@@ -56,8 +61,16 @@ internal class OntologyExtractor(private val logger: KSPLogger) {
             val owlClasses = model.listSubjectsWithProperty(RDF.type, owlClass).toList()
             val rdfsClasses = model.listSubjectsWithProperty(RDF.type, rdfsClass).toList()
             
-            val allClassResources = (owlClasses + rdfsClasses).distinctBy { it.uri }
+            val declared = (owlClasses + rdfsClasses).distinct()
+            val allClassResources = declared.filter { it.isURIResource }.distinctBy { it.uri }
             logger.info("Found ${allClassResources.size} classes")
+            val anonymous = declared.size - declared.count { it.isURIResource }
+            if (anonymous > 0) {
+                logger.info(
+                    "Skipped $anonymous anonymous class expression(s) (owl:unionOf, owl:Restriction, ...): " +
+                        "only named classes are generation targets"
+                )
+            }
             
             // Extract subClassOf relationships
             val subClassOfProp = model.createProperty("${RDFS_NS}subClassOf")
@@ -68,9 +81,14 @@ internal class OntologyExtractor(private val logger: KSPLogger) {
                 
                 // Extract super classes
                 val superClasses = mutableListOf<String>()
+                var skippedSuperClasses = 0
                 classResource.listProperties(subClassOfProp).forEach { stmt ->
-                    val superClass = stmt.`object`.asResource().uri
-                    superClasses.add(superClass)
+                    val superClass = stmt.`object`
+                    // A restriction or another class expression (or a literal, in a broken ontology) is not a type.
+                    if (superClass.isURIResource) superClasses.add(superClass.asResource().uri) else skippedSuperClasses++
+                }
+                if (skippedSuperClasses > 0) {
+                    logger.info("Skipped $skippedSuperClasses anonymous superclass expression(s) of $classIri")
                 }
                 
                 classes.add(OntologyClass(

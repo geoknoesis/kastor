@@ -61,8 +61,9 @@ abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> internal constructor() 
     /** Mutable sink for vocabulary DSL extensions in this module that emit triples directly. */
     internal val tripleSink: MutableList<RdfTriple> get() = collected
 
-    // Prefix mappings for QName resolution, initialised with built-in prefixes for common vocabularies
-    private val prefixMappings = builtInPrefixes()
+    // Prefix mappings for QName resolution, initialised with built-in prefixes for common vocabularies. The map
+    // remembers which prefixes the user declared: those always win, see QNameResolver.resolve.
+    private val prefixMappings = PrefixMappings(builtInPrefixes())
 
     @Suppress("UNCHECKED_CAST")
     private val self: D get() = this as D
@@ -101,6 +102,14 @@ abstract class TripleBuilderDsl<D : TripleBuilderDsl<D>> internal constructor() 
      * ```kotlin
      * val nameIri = qname("foaf:name")  // Resolves to http://xmlns.com/foaf/0.1/name
      * ```
+     *
+     * A prefix declared with [prefix] or [prefixes] always wins, also over a URI scheme of the same name
+     * (`prefix("data", "http://ex/data/")` makes `data:item1` `http://ex/data/item1`). Without such a declaration,
+     * `scheme://...` and the well-known URI schemes are absolute IRIs (`urn:isbn:0451450523`,
+     * `mailto:a@example.org`, `tel:+1-201-555-0123`, `data:...`, `file:...`), and the built-in `geo` prefix
+     * (GeoSPARQL) expands names such as `geo:asWKT` but leaves a `geo:` URI such as `geo:37.7,-122.4` alone.
+     *
+     * @throws IllegalArgumentException for an unknown prefix
      */
     fun qname(iriOrQName: String): Iri = Iri(QNameResolver.resolve(iriOrQName, prefixMappings))
 

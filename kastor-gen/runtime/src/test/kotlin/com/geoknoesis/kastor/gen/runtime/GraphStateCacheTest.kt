@@ -1,3 +1,5 @@
+@file:OptIn(KastorGenInternalApi::class)
+
 package com.geoknoesis.kastor.gen.runtime
 
 import com.geoknoesis.kastor.rdf.Iri
@@ -54,7 +56,7 @@ class GraphStateCacheTest {
         val g = graph(1)
         repeat(5) { f.cache.use(g) { assertEquals(setOf(triple(1)), it.triples) } }
         assertEquals(1, f.cache.loadCount)
-        assertEquals(0, f.cache.digestCount)
+        assertEquals(1, f.cache.digestCount, "a stamped graph is digested when it is loaded, never on a hit")
         g.addTriple(triple(2))
         f.cache.use(g) { assertEquals(setOf(triple(1), triple(2)), it.triples) }
         assertEquals(2, f.cache.loadCount)
@@ -203,14 +205,15 @@ class GraphStateCacheTest {
     @Test
     fun `the state of a stamped graph that was garbage collected is released on the next call`() {
         val f = Fixture(4)
-        f.cache.use(graph(1)) { } // the only reference to this graph is gone after the call
+        // The cache learns that a handle was collected from its reference; the test clears it, as the collector does.
+        val references = java.util.IdentityHashMap<RdfGraph, java.lang.ref.Reference<RdfGraph>>()
+        f.cache.referenceFactory = { graph, _ -> java.lang.ref.WeakReference(graph).also { references[graph] = it } }
+        val gone = graph(1)
+        f.cache.use(gone) { }
         val keep = graph(2)
         f.cache.use(keep) { }
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
-        while (f.cache.size != 1 && System.nanoTime() < deadline) {
-            System.gc()
-            Thread.sleep(20)
-        }
+        assertEquals(2, f.cache.size)
+        references.getValue(gone).clear()
         assertEquals(1, f.cache.size, "the dead entry is dropped without waiting for a cache miss")
         assertEquals(listOf(setOf(triple(1))), f.released.map { it.triples })
         f.cache.use(keep) { }

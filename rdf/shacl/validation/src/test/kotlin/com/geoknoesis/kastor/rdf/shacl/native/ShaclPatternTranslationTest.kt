@@ -74,24 +74,25 @@ class ShaclPatternTranslationTest {
     @Test
     fun `java nested classes and unions are rejected instead of being read as literal brackets`() {
         assertRejected("[a-c[x-z]]", null, "[")
-        assertRejected("^[[:alpha:]]+$", null, "[")
         assertRejected("[^a[b]]", null, "[")
+        // A POSIX bracket expression is not a nested class: it is translated (ShaclPatternCompatibilityTest).
+        assertTrue(matches("^[[:alpha:]]+$", null, "abc"))
         // An escaped bracket is a literal.
         assertTrue(matches("^[a\\[\\]b]+$", null, "a[]b"))
     }
 
     @Test
-    fun `inline flag groups are rejected because the translation depends on sh flags`() {
-        // (?m) would be ignored by the translated `$`, (?s) by the translated `.`, (?x) by the whitespace handling,
-        // and (?i) would be ASCII-only.
-        assertRejected("(?m)^a$", null, "(?m)", "sh:flags")
-        assertRejected("(?s)a.b", null, "(?s)", "sh:flags")
-        assertRejected("(?i)abc", null, "(?i)", "sh:flags")
+    fun `inline flag groups are rejected except a leading one`() {
+        // A flag group inside a pattern would switch the meaning of `$`, `^`, `.` and of whitespace half-way, which the
+        // translation (driven by the flags of the whole pattern) cannot follow.
         assertRejected("a(?x) b", null, "(?x)", "sh:flags")
-        assertRejected("(?im)^a$", null, "(?im)")
+        assertRejected("^a(?m)$", null, "(?m)", "sh:flags")
+        assertRejected("a(?s).b", null, "(?s)", "sh:flags")
         assertRejected("(?-i)a", "i", "(?-i)")
         assertRejected("a(?i:b)c", null, "(?i:")
-        assertRejected("(?m)^a$", "m", "(?m)")
+        // A leading group of i, m, s, x is read as sh:flags (ShaclPatternCompatibilityTest).
+        assertTrue(matches("(?m)^b$", null, "a\nb"))
+        assertTrue(matches("(?m)^b$", "m", "a\nb"))
         // The flags themselves work through sh:flags.
         assertTrue(matches("^b$", "m", "a\nb"))
         assertTrue(matches("^ABC$", "i", "abc"))
@@ -251,8 +252,8 @@ class ShaclPatternTranslationTest {
     @Test
     fun `unknown block names are rejected with the name`() {
         assertRejected("\\p{IsNoSuchBlock}", null, "NoSuchBlock", "block")
-        // java.util.regex reads \p{IsLatin} as a script and \p{IsAlphabetic} as a binary property; XML Schema has neither.
-        assertRejected("^\\p{IsLatin}+$", null, "Latin", "block")
+        // java.util.regex reads \p{IsAlphabetic} as a binary property; XML Schema has none. A script name such as
+        // \p{IsLatin} is passed through as a script (ShaclPatternCompatibilityTest).
         assertRejected("^\\p{IsAlphabetic}+$", null, "Alphabetic", "block")
         assertRejected("\\P{IsLetter}", null, "Letter")
         assertRejected("\\p{IsGreek", null, "}")

@@ -309,7 +309,7 @@ property("http://example.org/email") {
 
 **What it does:**
 - Validates that the string matches the specified regular expression
-- `flags`: Optional regex flags (e.g., "i" for case-insensitive, "m" for multiline)
+- `flags`: Optional regex flags: `i` (case-insensitive), `m` (multi-line), `s` (dot matches all), `x` (ignore whitespace in the pattern), `q` (literal text)
 - Uses XPath regular expression syntax (XML Schema regular expressions), which is what SHACL prescribes
 - The pattern above accepts `john_doe@example.org` and `John.Doe-x@mail.example.com`, and rejects `john doe@example.org`
 
@@ -328,10 +328,30 @@ Everything else follows XPath. A pattern therefore still behaves differently on 
 | `$` | the end of the value only; with flag `m`, also before a line feed | also before a final line terminator: `^\d+$` accepts `"123\n"` |
 | `^` with flag `m` | the start of the value and after a line feed | also after carriage return, U+0085, U+2028 and U+2029 |
 | `.` | every character except line feed and carriage return (every character with flag `s`) | also excludes U+0085, U+2028 and U+2029 |
+| `i` flag and `\p{Lu}`, `\p{Ll}` | the flag does not change category escapes: `\p{Lu}` matches upper-case letters only (XPath F&O 5.6.2) | `\p{Lu}` matches every cased letter under `CASE_INSENSITIVE` |
+| `\p{IsGreek}` | the Unicode **block** U+0370..U+03FF | the **script**, which also has the Greek Extended block |
+| `(?i)` at the start | the `i` flag, Unicode-aware: `(?i)é` matches `É` | US-ASCII only unless `(?iu)` |
 
 Write `[A-Za-z0-9_]`, `[0-9]` or an explicit class when a pattern must mean the same on every engine.
 
-Java-only syntax that would change meaning is rejected when the shapes are compiled (`ShapeCompileException`), never reinterpreted: class intersection (`[a-z&&[^aeiou]]`; write the XML Schema subtraction `[a-z-[aeiou]]`), nested classes (`[a-c[x-z]]`; write `[a-cx-z]`, or `\[` for a literal bracket) and inline flags (`(?i)`, `(?m)`; set `flags` instead). See [Conformance semantics](../features/shacl-validation.md#conformance-semantics) for the full rule.
+**Idioms from other regular expression dialects.** Three things XPath does not have are common in shapes written for Jena, RDF4J or TopBraid. The native validator accepts them with the meaning their author intends; there is no switch to turn this off:
+
+| Idiom | Read as |
+|-------|---------|
+| A leading inline flag group: `(?i)^abc$`, `(?im)…`, `(?s)…`, `(?x)…` | the same flags in `sh:flags`. Only at the very start of the pattern, only the flags `i`, `m`, `s`, `x` (several groups in a row are allowed), and merged with `flags` if both are given. After a leading `(?x)`, an unescaped `#` and whitespace inside a character class are rejected: Java's comments mode reads them differently from the XPath `x` flag. |
+| A script name: `\p{IsLatin}`, `\p{IsHan}` | the Unicode script, when the name is not a Unicode block name. A name that is both (`Greek`, `Cyrillic`, `Arabic`, …) is the block, as in XML Schema. |
+| A POSIX bracket expression inside a class: `[[:alpha:]_-]`, `[^[:space:]]` | the US-ASCII class of that name. The twelve standard names are supported: `alpha`, `digit`, `alnum`, `upper`, `lower`, `space`, `punct`, `xdigit`, `blank`, `cntrl`, `graph`, `print`. |
+
+Syntax that would otherwise change meaning is rejected when the shapes are compiled (`ShapeCompileException`), never reinterpreted:
+
+- class intersection (`[a-z&&[^aeiou]]`; write the XML Schema subtraction `[a-z-[aeiou]]`);
+- nested classes (`[a-c[x-z]]`; write `[a-cx-z]`, or `\[` for a literal bracket) and unknown POSIX names (`[[:word:]]`);
+- an inline flag group that is not at the start (`a(?i)b`), is scoped (`(?i:…)`), negated (`(?-i)`) or has other flags (`(?u)`, `(?d)`); set `flags` instead;
+- `\p{IsX}` where `X` is neither a block nor a script (Java binary properties such as `\p{IsAlphabetic}`);
+- a `]` right after `[` or `[^` (`[].]`, `[^]]`): Java and POSIX read it as a member, XML Schema does not allow it; write `\]`;
+- an unescaped `-` as an endpoint of a range (`[a--b]`, `[+--]`); write `\-`. A `-` at the start or at the end of a class is a literal.
+
+See [Conformance semantics](../features/shacl-validation.md#conformance-semantics) for the full rule.
 
 **Example validation:**
 ```kotlin

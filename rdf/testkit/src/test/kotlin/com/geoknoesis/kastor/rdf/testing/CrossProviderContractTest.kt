@@ -105,7 +105,24 @@ class CrossProviderContractTest {
             }
             val left = MemoryGraph(triples.toList())
             val right = MemoryGraph(copy.toList())
-            assertEquals(RdfGraphIsomorphism.isIsomorphic(left, right), left.isIsomorphicTo(right), "seed=$seed")
+            // Jena's matcher is the oracle, for core's check and for the testkit's (which is built on core's).
+            val oracle = jenaIsomorphic(left, right)
+            assertEquals(oracle, left.isIsomorphicTo(right), "seed=$seed")
+            assertEquals(oracle, RdfGraphIsomorphism.isIsomorphic(left, right), "seed=$seed")
+        }
+    }
+
+    private fun jenaIsomorphic(left: RdfGraph, right: RdfGraph): Boolean {
+        val first = com.geoknoesis.kastor.rdf.jena.JenaBridge.copyToJenaModel(left)
+        try {
+            val second = com.geoknoesis.kastor.rdf.jena.JenaBridge.copyToJenaModel(right)
+            try {
+                return first.isIsomorphicWith(second)
+            } finally {
+                second.close()
+            }
+        } finally {
+            first.close()
         }
     }
 }

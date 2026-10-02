@@ -21,7 +21,8 @@ import org.junit.jupiter.api.TestFactory
  *
  * @see com.geoknoesis.kastor.rdf.conformance.jena.JenaConformanceTest
  *
- * Tagged **`w3c-rdf12-full`** — excluded from the **`conformanceSmokeTest`** task; requires W3C submodule.
+ * Tagged **`w3c-rdf12-full`** — excluded from the **`conformanceSmokeTest`** task; requires the W3C corpus
+ * (without it the suite fails, or is skipped with `-PconformanceAllowMissingData=true`).
  */
 @Tag("w3c-rdf12-full")
 class Rdf4jConformanceTest {

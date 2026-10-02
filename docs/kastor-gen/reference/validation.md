@@ -213,13 +213,25 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 
 ### Graph cache
 
-Both adapters keep the converted copy of recently validated data graphs (`GraphStateCache` in
-`kastor-gen:runtime`; the Jena adapter for every graph except standalone Jena graphs).
+Both adapters keep the converted copy of recently validated data graphs (the Jena adapter for every graph
+except standalone Jena graphs). The cache itself (`GraphStateCache` in `kastor-gen:runtime`) is internal API,
+shared by the two adapters only: it is marked `@KastorGenInternalApi` (an opt-in at error level), is not part
+of the binary compatibility dumps and may change in any release. What follows describes what a validator does
+with it.
 
 - **What a call costs.**
   - Graphs that implement `VersionedRdfGraph` (`MemoryGraph`, the named graphs of the memory repository, the
     graphs of repositories whose provider stamps them) are checked in O(1) by their modification stamp; the
     triples are not read.
+    - The stamp of a repository usually moves when **any** of its graphs is written. When the stamp of a graph
+      moved, the graph is read once and its content digest is compared with the one of the copy: if this graph
+      did not change, the copy is kept and only the new stamp is recorded - a write to one graph does not
+      reload the copies of all the others. (The digest is computed on such a reload only, never on a hit.)
+    - Reloads are **single-flight**: when several callers find the copy of a graph stale at the same time, the
+      first one reads the graph and the others wait for it and use its result, instead of each running a full
+      `getTriples()`. A caller that reads another version of the graph (another stamp, e.g. inside its own
+      transaction) does not wait, and a wait is bounded (two seconds), after which the caller reads the graph
+      itself: a caller that holds a repository lock is delayed, never deadlocked.
   - **Graphs without a stamp are read in full on every `validate` call**: `getTriples()` - a complete download
     for a SPARQL-endpoint graph - plus a digest of every triple (one SHA-256 each), because nothing cheaper
     proves that the content is unchanged. Only the conversion, the store writes and the shapes parse are saved
@@ -234,10 +246,12 @@ Both adapters keep the converted copy of recently validated data graphs (`GraphS
 - **Which copy belongs to a graph.** First by handle: the same graph object, or an *equal handle*
   (`repository.getGraph(name)` returns a new object per call). Handle equality is an explicit contract: a graph
   is compared with `equals` only when it overrides `equals`/`hashCode` and implements `VersionedRdfGraph` or
-  `HandleEqualGraph` (a marker interface in `kastor-gen:runtime` for your own graph classes), or is one of
+  `HandleEqualGraph` (a marker interface in `kastor-gen:runtime`, internal API like the cache), or is one of
   Kastor's own graph classes. Data classes, Java records and other foreign classes are never compared with
   `equals`. `equals` never runs under a lock of the cache. Then, for graphs without a stamp, by content: a
-  copy built for the same digest is reused whichever handle it was built for.
+  copy built for the same digest is reused whichever handle it was built for. With `assumeImmutable = true`
+  the handle of a graph found by content is remembered too, so a second graph with the same content (two
+  empty graphs, say) is not read again on its next call either.
 - **A changing graph keeps one copy** when it is found by handle: the copy is replaced in place. A changing
   graph without a stamp that is read through fresh handles without handle equality cannot be linked to its
   previous copy; the obsolete copies are evicted first when the cache is full and expire after a minute
@@ -255,17 +269,36 @@ Both adapters keep the converted copy of recently validated data graphs (`GraphS
   `com.geoknoesis.kastor.gen.runtime.GraphStateCache` and the default is used). When the cache is full the
   least recently used copy that no call is using is released, copies whose handle was garbage collected first.
 - **Saturation.** When every copy is in use, a call validates in a private temporary copy that is released
-  when the call returns, instead of waiting for the validation of another graph. Temporary copies are bounded
-  too: at most `maxCachedGraphs` at a time. Beyond that (more than `2 x maxCachedGraphs` distinct graphs being
-  validated at the same moment) a call waits up to 10 seconds for a copy to become free and then fails with
-  `GraphStateCacheSaturatedException` (an `IllegalStateException`) that says so. Size the cache to the number of
-  graphs that are validated repeatedly (every miss converts and loads the whole graph).
+  when the call returns, instead of waiting for the validation of another graph. At most `maxCachedGraphs`
+  temporary copies are made that way at a time. Beyond that (more than `2 x maxCachedGraphs` distinct graphs
+  being validated at the same moment) a call waits a quarter of a second for a copy to become free and then
+  makes a private copy all the same: under such a load a validation is slowed down, it neither stalls nor
+  fails. (The users of the other copies may be waiting for a repository lock that the caller holds; a long
+  wait there used to end in a `GraphStateCacheSaturatedException` after 10 seconds. The validators no longer
+  throw it.) Size the cache to the number of graphs that are validated repeatedly (every miss converts and
+  loads the whole graph).
+- **Interruption.** A thread that is interrupted while it waits for another caller gets a
+  `GraphStateCacheInterruptedException` (an `IllegalStateException`); its interrupt status stays set.
 - **Release.** Copies that can no longer be found by their handle are released on the next call: those of
   stamped graphs and of handle-equal handles once the handle was garbage collected (handle-equal handles are
   softly referenced, i.e. dropped under memory pressure), and content-identified copies whose handle was
   garbage collected after a minute without use. The rest stays until it is evicted or the validator is closed.
 - **Locking.** The data graph is read only while the validator holds no lock, so `validate` can be called
   inside `repository.transaction { }` while other threads validate the same graph.
+- **Transactions.** The stamp and the content are read on the calling thread, and a copy is only ever used
+  for a caller whose own stamp it was made for. With providers whose stamps identify what the calling thread
+  reads (a thread with uncommitted writes gets stamps no other thread sees; everyone else keeps the committed
+  stamp until the commit), `validate` inside a transaction validates that thread's uncommitted content, and no
+  other thread is ever served it; a thread inside its transaction is never served the committed content it has
+  changed. A copy made for a transaction is not kept when the provider says the stamp is private to the
+  transaction (`TransactionScopedGraph`, internal API); otherwise it takes the place of the graph's copy and is
+  replaced by the next caller - there is one copy per graph at all times, never one per stamp.
+- **Closed repositories.** When reading the stamp fails (a closed repository), the copy kept for that graph is
+  released at once and the failure is rethrown; it does not stay until it is evicted.
+- **Jena-backed graphs** of a repository are copied natively by `JenaValidation` (Jena graph to Jena graph,
+  in one read transaction), not through Kastor's term model: a store that holds a statement Kastor's strict
+  reads reject (a language tag with a subtag longer than eight characters, legal in Turtle) is validated like
+  any other.
 
 ## Usage
 

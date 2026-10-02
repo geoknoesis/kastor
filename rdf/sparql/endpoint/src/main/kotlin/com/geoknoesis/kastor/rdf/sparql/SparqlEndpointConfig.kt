@@ -29,6 +29,35 @@ enum class SparqlUpdateMethod {
 }
 
 /**
+ * What happens to a SELECT result row that holds a term the RDF model refuses: an IRI (of a `uri`
+ * binding or of a literal's `datatype`) that is not an absolute IRI or contains characters an IRI
+ * must not contain, a language tag that is not well-formed, a blank node without a label, or text
+ * with an unpaired surrogate escape. Endpoints do return such terms: they store what was loaded,
+ * relative IRIs and IRIs with spaces included.
+ *
+ * The policy only concerns terms. A response that is not JSON, or not a SPARQL 1.1 JSON result
+ * (missing or repeated members, members of the wrong type, variables that `head` does not declare,
+ * RDF 1.2 terms), fails under every policy, as do I/O errors and the size limits.
+ */
+enum class MalformedTermPolicy {
+    /** The query fails with [com.geoknoesis.kastor.rdf.RdfQueryException] at the first such row (default). */
+    FAIL,
+
+    /**
+     * The whole row is left out of the result and the remaining rows are delivered. A row is never
+     * delivered with the offending variable unbound, because that would be indistinguishable from a
+     * solution in which the variable really is unbound (an `OPTIONAL` that did not match). The
+     * adapter logs one warning per query (logger `com.geoknoesis.kastor.rdf.sparql.SparqlRepository`)
+     * with the number of rows skipped and the first offending term.
+     *
+     * Skipped rows are not counted or reported in any other way: aggregates computed by the endpoint
+     * (`COUNT`, and therefore [SparqlGraph.size]) still include them, and `LIMIT`/`OFFSET` apply
+     * before they are skipped, so a page may hold fewer rows than requested.
+     */
+    SKIP_ROW,
+}
+
+/**
  * Connection settings for [SparqlRepository].
  *
  * @property endpoint query endpoint (`http` or `https`, without a `#fragment`). Credentials embedded in the URL
@@ -57,7 +86,14 @@ enum class SparqlUpdateMethod {
  * @property headers extra HTTP headers sent with every request (e.g. API keys). Never sent to a
  *   different origin after a redirect. Names must be RFC 9110 tokens; values may hold visible ASCII,
  *   ISO-8859-1 characters, and spaces or tabs between them (no other control character, and no
- *   leading or trailing white space). Both are checked when the configuration is created.
+ *   leading or trailing white space). The headers the adapter or the HTTP client sets itself are
+ *   refused: `Accept` and `Content-Type` (a custom value would make every request or response
+ *   unreadable), `Content-Length`, `Transfer-Encoding`, `Host`, `Connection`, `Expect` and
+ *   `Upgrade`. An `Authorization` header (a bearer token, say) is allowed, but not together with
+ *   [username] or with credentials in an endpoint URL. All of this is checked when the
+ *   configuration is created. A warning is logged once per endpoint when a header whose name says
+ *   that it carries a credential (`Authorization`, `Cookie`, `X-API-Key`, ...) would be sent over
+ *   plain `http`.
  * @property username HTTP Basic user; requires [password]. A warning is logged once per endpoint
  *   when Basic credentials would be sent over plain `http`.
  * @property insertBatchSize maximum triples per `INSERT DATA`/`DELETE DATA` request. Triples joined
@@ -87,8 +123,9 @@ enum class SparqlUpdateMethod {
  *   this size is accepted; a longer one fails with [com.geoknoesis.kastor.rdf.RdfQueryException].
  *   Default 4 Mi characters. A row is decoded once, straight from the stream, and only what its
  *   bindings need is kept: the variable names and each term's `type`, `value`, `xml:lang` and
- *   `datatype`. `head`, unknown members and nested values are checked and skipped without being
- *   stored, however large they are. The heap a row needs is therefore that of its decoded strings
+ *   `datatype`. Of `head` only the variable names of `vars` are kept (`head` is one value, so they
+ *   are bounded by this limit too); unknown members and nested values are checked and skipped
+ *   without being stored, however large they are. The heap a row needs is therefore that of its decoded strings
  *   (at most two bytes per character of the row, 8 MB at the default), plus roughly 200 bytes for
  *   every variable it binds (a binding takes at least 27 characters, so a row made of nothing but
  *   minimal bindings stays below 8 bytes per character, about 32 MB at the default), plus a scratch
@@ -102,6 +139,11 @@ enum class SparqlUpdateMethod {
  *   server that labels its JSON results `text/json`, `application/javascript` or similar: the
  *   Content-Type is then ignored and the body is parsed as SPARQL JSON results (a body that is not
  *   such JSON still fails, as a result-format error).
+ * @property malformedTerms what happens to a SELECT result row with a term the RDF model refuses
+ *   (an invalid IRI, for example). Default [MalformedTermPolicy.FAIL]: the query fails at that row,
+ *   which for a streamed result is after the rows before it were delivered.
+ *   [MalformedTermPolicy.SKIP_ROW] leaves such rows out and logs one warning per query; it is the
+ *   counterpart of the RDF4J provider's `lenientRead` for graph reads. See [MalformedTermPolicy].
  */
 data class SparqlEndpointConfig(
     val endpoint: String,
@@ -124,6 +166,7 @@ data class SparqlEndpointConfig(
     val maxBlankNodeComponentTriples: Int = DEFAULT_MAX_BLANK_NODE_COMPONENT_TRIPLES,
     val maxResultRowChars: Int = DEFAULT_MAX_RESULT_ROW_CHARS,
     val strictContentType: Boolean = true,
+    val malformedTerms: MalformedTermPolicy = MalformedTermPolicy.FAIL,
 ) {
     init {
         HttpTarget.parse(endpoint)
@@ -140,10 +183,18 @@ data class SparqlEndpointConfig(
         require(maxBlankNodeComponentTriples > 0) { "maxBlankNodeComponentTriples must be positive" }
         require(maxResultRowChars > 0) { "maxResultRowChars must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
+        if (headers.keys.any { it.equals("Authorization", ignoreCase = true) }) {
+            // Two sources for one header: neither is silently dropped.
+            require(username == null) { "Set either username and password or an Authorization header, not both" }
+            require(listOfNotNull(endpoint, updateEndpoint).none { HttpTarget.parse(it).userInfoAuthorization != null }) {
+                "Set either credentials in the endpoint URL or an Authorization header, not both"
+            }
+        }
         headers.forEach { (name, value) ->
             // Checked here in full, so that a request is never refused when it is built.
             require(HEADER_NAME.matches(name)) { "Invalid HTTP header name: '${printable(name)}'" }
             require(name.lowercase() !in RESTRICTED_HEADERS) { "HTTP header '$name' is managed by the HTTP client and cannot be set" }
+            ADAPTER_HEADERS[name.lowercase()]?.let { why -> throw IllegalArgumentException("HTTP header '$name' cannot be set: $why") }
             require(value.none { it == '\r' || it == '\n' }) { "HTTP header '$name' must not contain line breaks" }
             require(value.all(::isFieldValueChar)) {
                 "HTTP header '$name' has an invalid value: only visible ASCII, space, tab and ISO-8859-1 characters are allowed (RFC 9110)"
@@ -152,6 +203,16 @@ data class SparqlEndpointConfig(
                 "HTTP header '$name' has an invalid value: it must not start or end with a space or tab (RFC 9110)"
             }
         }
+    }
+
+    /**
+     * The names of the custom [headers] that carry a credential, judging by the name: `Authorization`,
+     * `Proxy-Authorization`, `Cookie`, and any name with `auth`, `key`, `token`, `secret`, `password`,
+     * `credential` or `session` in it (`X-API-Key`, `X-Auth-Token`, ...).
+     */
+    internal fun credentialHeaders(): List<String> = headers.keys.filter { name ->
+        val lower = name.lowercase()
+        lower == "cookie" || CREDENTIAL_WORDS.any { it in lower }
     }
 
     /** Never prints passwords or credentials embedded in endpoint URLs. */
@@ -163,7 +224,7 @@ data class SparqlEndpointConfig(
             "queryMethod=$queryMethod, updateMethod=$updateMethod, insertBatchSize=$insertBatchSize, " +
             "streamingRequestTimeout=$streamingRequestTimeout, followCrossOriginRedirects=$followCrossOriginRedirects, " +
             "maxRedirects=$maxRedirects, maxGetUrlLength=$maxGetUrlLength, maxBlankNodeComponentTriples=$maxBlankNodeComponentTriples, " +
-            "maxResultRowChars=$maxResultRowChars, strictContentType=$strictContentType)"
+            "maxResultRowChars=$maxResultRowChars, strictContentType=$strictContentType, malformedTerms=$malformedTerms)"
 
     companion object {
         const val DEFAULT_MAX_RESPONSE_BYTES: Long = 32L * 1024 * 1024
@@ -185,7 +246,15 @@ data class SparqlEndpointConfig(
         private fun isFieldValueChar(c: Char) = isFieldSpace(c) || c.code in 0x21..0x7E || c.code in 0x80..0xFF
 
         private fun printable(text: String) = text.map { if (it.code in 0x20..0x7E) it else '?' }.joinToString("")
-        private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade")
+        private val RESTRICTED_HEADERS = setOf("connection", "content-length", "expect", "host", "upgrade", "transfer-encoding")
+
+        /** Headers the adapter sets on every request, with the reason a custom value is refused. */
+        private val ADAPTER_HEADERS = mapOf(
+            "accept" to "the adapter asks for application/sparql-results+json, the only result format it reads",
+            "content-type" to "the adapter sets it to the media type of the request body it sends (see queryMethod and updateMethod)",
+        )
+
+        private val CREDENTIAL_WORDS = listOf("auth", "key", "token", "secret", "password", "credential", "session")
 
         /**
          * Build a configuration from provider options ([com.geoknoesis.kastor.rdf.RdfConfig.options]):
@@ -195,7 +264,7 @@ data class SparqlEndpointConfig(
          * (`POST`/`POST_FORM`/`GET`), `updateMethod` (`POST`/`POST_FORM`), `insertBatchSize`,
          * `followCrossOriginRedirects` (`true`/`false`), `maxRedirects`, `maxGetUrlLength`,
          * `maxBlankNodeComponentTriples`, `maxResultRowChars`, `strictContentType` (`true`/`false`),
-         * and `header.<Name>` for custom headers.
+         * `malformedTerms` (`FAIL`/`SKIP_ROW`), and `header.<Name>` for custom headers.
          * `maxStreamedResponseBytes`, `requestTimeoutMillis` and `streamingRequestTimeoutMillis`
          * accept `none` for unbounded.
          */
@@ -241,6 +310,7 @@ data class SparqlEndpointConfig(
                     ?: defaults.maxBlankNodeComponentTriples,
                 maxResultRowChars = long("maxResultRowChars")?.let(Math::toIntExact) ?: defaults.maxResultRowChars,
                 strictContentType = boolean("strictContentType", defaults.strictContentType),
+                malformedTerms = enum("malformedTerms", MalformedTermPolicy.values(), defaults.malformedTerms),
             )
         }
 

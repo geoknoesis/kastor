@@ -45,6 +45,7 @@
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 @prefix dct:    <http://purl.org/dc/terms/> .
 @prefix skos:   <http://www.w3.org/2004/02/skos/core#> .
+@prefix oqsh:   <http://example.org/owl-quality-shacl#> .
 @prefix skvsh:  <http://example.org/skos-validation-shacl#> .
 
 # ----------------------------------------------------------------------------
@@ -95,6 +96,8 @@ skvsh:Notations            a rdfs:Class ; rdfs:label "notations" .
 
 skvsh:ConceptNotSchemeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: class disjointness must see entailed class membership (domains, ranges, subclasses).
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ClassStructure ;
     skvsh:rule      "S9" ;
     rdfs:label      "A skos:Concept must not also be a skos:ConceptScheme" ;
@@ -105,6 +108,8 @@ skvsh:ConceptNotSchemeShape
 
 skvsh:SchemeNotConceptShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: class disjointness must see entailed class membership (domains, ranges, subclasses).
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ClassStructure ;
     skvsh:rule      "S9" ;
     rdfs:label      "A skos:ConceptScheme must not also be a skos:Concept" ;
@@ -117,6 +122,8 @@ skvsh:SchemeNotConceptShape
 
 skvsh:ConceptNotCollectionShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: class disjointness must see entailed class membership.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ClassStructure ;
     skvsh:rule      "convention" ;
     rdfs:label      "A skos:Concept should not also be a skos:Collection" ;
@@ -136,6 +143,8 @@ skvsh:ConceptNotCollectionShape
 
 skvsh:LabelDisjointness_PrefAlt_Shape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: label disjointness holds for labels entailed through sub-properties too.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "S13" ;
     rdfs:label      "skos:prefLabel and skos:altLabel are pairwise disjoint" ;
@@ -146,6 +155,8 @@ skvsh:LabelDisjointness_PrefAlt_Shape
 
 skvsh:LabelDisjointness_PrefHidden_Shape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: label disjointness holds for labels entailed through sub-properties too.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "S13" ;
     rdfs:label      "skos:prefLabel and skos:hiddenLabel are pairwise disjoint" ;
@@ -156,6 +167,8 @@ skvsh:LabelDisjointness_PrefHidden_Shape
 
 skvsh:LabelDisjointness_AltHidden_Shape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: label disjointness holds for labels entailed through sub-properties too.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "S13" ;
     rdfs:label      "skos:altLabel and skos:hiddenLabel are pairwise disjoint" ;
@@ -169,6 +182,8 @@ skvsh:LabelDisjointness_AltHidden_Shape
 
 skvsh:UniquePrefLabelPerLangShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: an integrity condition on every preferred label, entailed ones included.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "S14" ;
     rdfs:label      "A concept has at most one skos:prefLabel per language tag" ;
@@ -181,6 +196,8 @@ skvsh:UniquePrefLabelPerLangShape
 
 skvsh:HasPrefLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: a label entailed through a sub-property of skos:prefLabel counts, and entailed concepts are checked.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "convention" ;
     rdfs:label      "A concept should carry at least one skos:prefLabel" ;
@@ -195,6 +212,8 @@ skvsh:HasPrefLabelShape
 
 skvsh:NonEmptyLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: lexical hygiene of the literals the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "convention" ;
     rdfs:label      "SKOS labels must not be empty strings" ;
@@ -213,6 +232,8 @@ skvsh:NonEmptyLabelShape
 
 skvsh:NoWhitespaceLabelShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: lexical hygiene of the literals the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:Labels ;
     skvsh:rule      "convention" ;
     rdfs:label      "Labels must not start or end with whitespace" ;
@@ -240,6 +261,8 @@ skvsh:NoWhitespaceLabelShape
 
 skvsh:RelatedBroaderTransitiveDisjointShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: disjointness of skos:related with the entailed transitive hierarchy.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "S27" ;
     rdfs:label      "skos:related disjoint with skos:broaderTransitive" ;
@@ -267,6 +290,8 @@ skvsh:RelatedBroaderTransitiveDisjointShape
 
 skvsh:RelatedSymmetryShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: serialisation hygiene: a reasoner adds the symmetric triple and would hide every one-sided assertion.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "convention" ;
     rdfs:label      "skos:related should be asserted in both directions" ;
@@ -281,6 +306,8 @@ skvsh:RelatedSymmetryShape
 
 skvsh:NoSelfReferentialSemanticRelationShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: self-links the author wrote, not reflexive entailments.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "convention" ;
     rdfs:label      "A concept must not point its own broader/narrower/related at itself" ;
@@ -300,6 +327,8 @@ skvsh:NoSelfReferentialSemanticRelationShape
 
 skvsh:NoBroaderCycleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: cycles in the hierarchy the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "convention" ;
     rdfs:label      "No cycles in the skos:broader hierarchy" ;
@@ -321,6 +350,8 @@ skvsh:NoBroaderCycleShape
 
 skvsh:SemanticRelationRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: value typing must see entailed class membership.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:SemanticRelations ;
     skvsh:rule      "S25" ;
     rdfs:label      "Values of semantic-relation properties are skos:Concept" ;
@@ -343,6 +374,8 @@ skvsh:SemanticRelationRangeShape
 
 skvsh:HasTopConceptRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: value typing must see entailed class membership.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ConceptSchemes ;
     skvsh:rule      "S6" ;
     rdfs:label      "Values of skos:hasTopConcept are skos:Concept instances" ;
@@ -355,6 +388,8 @@ skvsh:HasTopConceptRangeShape
 
 skvsh:InSchemeRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: value typing must see entailed class membership.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ConceptSchemes ;
     skvsh:rule      "S4" ;
     rdfs:label      "Values of skos:inScheme are skos:ConceptScheme instances" ;
@@ -369,6 +404,8 @@ skvsh:InSchemeRangeShape
 
 skvsh:TopConceptInSchemeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: scheme membership entailed through skos:topConceptOf or its inverse counts.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ConceptSchemes ;
     skvsh:rule      "convention" ;
     rdfs:label      "Top concepts should also be members of their scheme" ;
@@ -393,6 +430,8 @@ skvsh:TopConceptInSchemeShape
 
 skvsh:ConceptInSchemeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: scheme membership entailed through sub-properties counts.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:ConceptSchemes ;
     skvsh:rule      "convention" ;
     rdfs:label      "Every concept should be a member of at least one scheme" ;
@@ -412,6 +451,8 @@ skvsh:ConceptInSchemeShape
 
 skvsh:ExactMatchBroadDisjointShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: mapping disjointness must see entailed (symmetric, transitive, inverse) mapping links.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Mapping ;
     skvsh:rule      "S46" ;
     rdfs:label      "skos:exactMatch disjoint with skos:broadMatch" ;
@@ -422,6 +463,8 @@ skvsh:ExactMatchBroadDisjointShape
 
 skvsh:ExactMatchNarrowDisjointShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: mapping disjointness must see entailed (symmetric, transitive, inverse) mapping links.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Mapping ;
     skvsh:rule      "S46" ;
     rdfs:label      "skos:exactMatch disjoint with skos:narrowMatch" ;
@@ -432,6 +475,8 @@ skvsh:ExactMatchNarrowDisjointShape
 
 skvsh:ExactMatchRelatedDisjointShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: mapping disjointness must see entailed (symmetric, transitive, inverse) mapping links.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Mapping ;
     skvsh:rule      "S46" ;
     rdfs:label      "skos:exactMatch disjoint with skos:relatedMatch" ;
@@ -447,6 +492,8 @@ skvsh:ExactMatchRelatedDisjointShape
 
 skvsh:MappingAcrossSchemesShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: mapping links the author wrote; entailed super-property links would report each link several times.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:Mapping ;
     skvsh:rule      "convention" ;
     rdfs:label      "Mapping properties should connect concepts in different schemes" ;
@@ -475,6 +522,8 @@ skvsh:MappingAcrossSchemesShape
 
 skvsh:MemberRangeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: value typing must see entailed class membership.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Collections ;
     skvsh:rule      "S32" ;
     rdfs:label      "Values of skos:member are skos:Concept or skos:Collection" ;
@@ -488,6 +537,8 @@ skvsh:MemberRangeShape
 
 skvsh:OrderedCollectionMemberListShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: presence of the member list the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     skvsh:category  skvsh:Collections ;
     skvsh:rule      "convention" ;
     rdfs:label      "Ordered collections should carry skos:memberList" ;
@@ -508,6 +559,8 @@ skvsh:OrderedCollectionMemberListShape
 
 skvsh:UniqueNotationInSchemeShape
     a               sh:NodeShape ;
+    # Evaluated on the entailed graph: scheme membership entailed through skos:topConceptOf counts.
+    oqsh:evaluatedOn oqsh:EntailedGraph ;
     skvsh:category  skvsh:Notations ;
     skvsh:rule      "convention" ;
     rdfs:label      "Notations should be unique within a concept scheme" ;

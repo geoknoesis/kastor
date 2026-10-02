@@ -1,6 +1,9 @@
 package com.geoknoesis.kastor.ontoquality.metrics.compute
 
+import com.geoknoesis.kastor.ontoquality.metrics.MetricsConfig
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetrics
+import com.geoknoesis.kastor.ontoquality.metrics.integration.DescendantCountStats
+import com.geoknoesis.kastor.ontoquality.metrics.integration.countTransitiveDescendants
 import com.geoknoesis.kastor.ontoquality.metrics.integration.KastorMetricsProvider
 import com.geoknoesis.kastor.rdf.Iri
 import com.geoknoesis.kastor.rdf.RdfTriple
@@ -9,14 +12,16 @@ import com.geoknoesis.kastor.rdf.vocab.OWL
 import com.geoknoesis.kastor.rdf.vocab.RDF
 import com.geoknoesis.kastor.rdf.vocab.RDFS
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Timeout
-import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
  * Regression tests for hierarchy traversal: depth/path computations must be iterative (no call-stack
  * growth per level) and path counting must be a memoized DP (no root-to-leaf path enumeration).
+ *
+ * The bound is on the work done, counted by the traversal itself
+ * ([IntermediateQuantities.hierarchyTraversalSteps], [DescendantCountStats]): a wall-clock timeout would depend on
+ * the machine and on what else it is running.
  */
 class HierarchyScaleRegressionTest {
     private fun cls(name: String) = Iri("http://example.org/scale#$name")
@@ -24,7 +29,6 @@ class HierarchyScaleRegressionTest {
     private fun classTriples(names: Iterable<String>): List<RdfTriple> = names.map { RdfTriple(cls(it), RDF.type, OWL.Class) }
 
     @Test
-    @Timeout(value = 120, unit = TimeUnit.SECONDS)
     fun `50k class chain computes metrics without StackOverflowError`() {
         val n = 50_000
         val triples = ArrayList<RdfTriple>(2 * n)
@@ -41,15 +45,23 @@ class HierarchyScaleRegressionTest {
         assertEquals(n.toDouble(), oq.lackOfCohesionInMethods.rawValue, 1e-9)
         // n-1 parents with exactly one direct subclass each.
         assertEquals(1.0, oq.numberOfChildren.rawValue, 1e-9)
+        // n classes dequeued once, n - 1 edges followed once.
+        val steps = GraphScanner.scan(graph, MetricsConfig()).intermediate.hierarchyTraversalSteps
+        assertEquals(2L * n - 1, steps)
 
         // Importance scoring over the same chain must also finish (bottom-up descendant counts).
         val context = KastorMetricsProvider().compute(graph)
         assertEquals(n, context.entityImportance.size)
         assertEquals("1 direct subclasses; ${n - 1} transitive descendants", context.entityHints.getValue(cls("C0").value))
+        // A chain is a tree: descendant counts add up, no descendant set is kept.
+        val stats = DescendantCountStats()
+        val chain = (0 until n).map { cls("C$it").value }
+        val children = (0 until n - 1).associate { chain[it] to setOf(chain[it + 1]) }
+        assertEquals(n - 1, countTransitiveDescendants(chain.toSet(), children, stats = stats).getValue(chain[0]))
+        assertEquals(0L, stats.setsRetained)
     }
 
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS)
     fun `tangled 40-layer lattice with 2^40 root-to-leaf paths completes`() {
         val layers = 40
         val triples = ArrayList<RdfTriple>()
@@ -61,7 +73,10 @@ class HierarchyScaleRegressionTest {
                 }
             }
         }
-        val report = VocabularyMetrics.compute(MemoryGraph(triples))
+        val graph = MemoryGraph(triples)
+        // 2^40 paths, but 80 classes and 4 * 39 edges: the pass is linear in the graph, not in the paths.
+        assertEquals(80L + 4 * 39, GraphScanner.scan(graph, MetricsConfig()).intermediate.hierarchyTraversalSteps)
+        val report = VocabularyMetrics.compute(graph)
         val oq = report.owl.oquare
         // Roots are at depth 1 below owl:Thing.
         assertEquals(layers.toDouble(), oq.depthOfInheritanceTree.rawValue)
@@ -74,7 +89,6 @@ class HierarchyScaleRegressionTest {
     }
 
     @Test
-    @Timeout(value = 60, unit = TimeUnit.SECONDS)
     fun `200-layer lattice saturates path counts instead of overflowing`() {
         val layers = 200
         val triples = ArrayList<RdfTriple>()
@@ -86,7 +100,8 @@ class HierarchyScaleRegressionTest {
                 }
             }
         }
-        val bundle = GraphScanner.scan(MemoryGraph(triples), com.geoknoesis.kastor.ontoquality.metrics.MetricsConfig())
+        val bundle = GraphScanner.scan(MemoryGraph(triples), MetricsConfig())
+        assertEquals(400L + 4 * 199, bundle.intermediate.hierarchyTraversalSteps)
         assertEquals(Long.MAX_VALUE, bundle.intermediate.pathsFromThingToLeaves)
         val lcom = OquareCalculators.lackOfCohesionInMethods(bundle.intermediate, scores = true)
         assertTrue(lcom.computable)

@@ -233,4 +233,43 @@ class Rdf4jDescribeParityTest {
             )
         }
     }
+
+    @Test
+    fun `a resource bound to an RDF-star subject is described as its reifier node`() {
+        val z = string("z")
+        Rdf4jRepository.MemoryRepository().use { repo ->
+            Rdf4jProvider().parseDataset(repo, "<< <urn:a> <urn:b> <urn:c> >> <urn:q> \"z\" .".byteInputStream(), "TURTLE")
+            val graph = repo.defaultGraph
+            val reifier = graph.find(null, q, z).single().subject as BlankNode
+            val view = setOf(RdfTriple(reifier, q, z), RdfTriple(reifier, RDF.reifies, quoted))
+            assertEquals(view, graph.getTriples().toSet())
+            // The WHERE clause binds ?r to the quoted triple: the graph view calls that subject the reifier node.
+            assertEquals(view, repo.describe(SparqlDescribeQuery("DESCRIBE ?r WHERE { ?r <urn:q> \"z\" }")).toSet())
+            assertEquals(view, repo.describe(SparqlDescribeQuery("DESCRIBE * WHERE { ?r <urn:q> \"z\" }")).toSet())
+            assertEquals(view, repo.describe(SparqlDescribeQuery("DESCRIBE ?r WHERE { ?r <urn:q> ?o }")).toSet())
+
+            // The Jena provider stores the reified form itself and describes the same shape.
+            val jena = JenaRepository.MemoryRepository().use { other ->
+                val r = BlankNode("r")
+                other.editDefaultGraph().addTriples(listOf(RdfTriple(r, RDF.reifies, quoted), RdfTriple(r, q, z)))
+                other.describe(SparqlDescribeQuery("DESCRIBE ?r WHERE { ?r <urn:q> \"z\" }")).toList()
+            }
+            assertEquals(1, jena.map { it.subject }.distinct().size)
+            assertTrue(jena.all { it.subject is BlankNode })
+            assertEquals(view.map { it.predicate to it.obj }.toSet(), jena.map { it.predicate to it.obj }.toSet())
+        }
+    }
+
+    @Test
+    fun `a triple term that is only an object is not a resource to describe`() {
+        fun describe(factory: () -> RdfRepository): List<RdfTriple> = factory().use { repo ->
+            val r = BlankNode("r")
+            repo.editDefaultGraph().addTriples(
+                listOf(RdfTriple(r, RDF.reifies, quoted), RdfTriple(r, q, string("z")), RdfTriple(s, Iri("urn:r"), quoted)),
+            )
+            repo.describe(SparqlDescribeQuery("DESCRIBE ?o WHERE { <urn:s> <urn:r> ?o }")).toList()
+        }
+        assertEquals(emptyList(), describe(providers.getValue("jena")))
+        assertEquals(emptyList(), describe(providers.getValue("rdf4j")))
+    }
 }

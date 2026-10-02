@@ -21,7 +21,8 @@ import java.time.LocalDate
  *  - xsd:dateTime / xsd:dateTimeStamp, xsd:date and xsd:time, each only within its own family, using the XSD
  *    partial order for values with and without timezone (±14:00 indeterminacy window).
  * Anything else (language-tagged strings, ill-formed lexical forms, NaN, mixed families) is incomparable,
- * which the SHACL comparison components treat as a violation.
+ * which the SHACL comparison components treat as a violation: the comparison cannot be made true.
+ * sh:in and sh:hasValue do not use this order: SHACL defines them by RDF term equality.
  */
 
 private fun xsd(local: String) = Iri(XSD.namespace + local)
@@ -49,8 +50,12 @@ private val integerLexical = Regex("[+-]?\\d+")
 private val decimalLexical = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)")
 private val floatLexical = Regex("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([Ee][+-]?\\d+)?|[+-]?INF|NaN")
 
+/**
+ * A numeric value in its XPath type class: xs:decimal (which includes the integer types), xs:float or xs:double.
+ */
 private sealed interface NumericValue {
     data class Exact(val value: BigDecimal) : NumericValue
+    data class Single(val value: Float) : NumericValue
     data class Approx(val value: Double) : NumericValue
 }
 
@@ -73,6 +78,17 @@ private fun parseApprox(lex: String): Double? {
     }
 }
 
+/** The float nearest to the lexical form (not the double nearest to it, rounded again). */
+private fun parseSingle(lex: String): Float? {
+    if (!floatLexical.matches(lex)) return null
+    return when (lex) {
+        "INF", "+INF" -> Float.POSITIVE_INFINITY
+        "-INF" -> Float.NEGATIVE_INFINITY
+        "NaN" -> Float.NaN
+        else -> lex.toFloat()
+    }
+}
+
 private fun parseNumeric(lit: Literal): NumericValue? {
     val dt = lit.datatype
     val lex = lit.lexical
@@ -80,17 +96,44 @@ private fun parseNumeric(lit: Literal): NumericValue? {
         dt in integerRanges -> parseInteger(lex, dt)?.let { NumericValue.Exact(BigDecimal(it)) }
         dt == XSD.decimal -> if (decimalLexical.matches(lex)) NumericValue.Exact(BigDecimal(lex)) else null
         dt == XSD.double -> parseApprox(lex)?.let { NumericValue.Approx(it) }
-        dt == XSD.float -> parseApprox(lex)?.let { NumericValue.Approx(it.toFloat().toDouble()) }
+        dt == XSD.float -> parseSingle(lex)?.let { NumericValue.Single(it) }
         else -> null
     }
 }
 
+// The casts xs:decimal -> xs:float / xs:double go through the decimal's text, which the JDK parses to the nearest
+// value (BigDecimal.toFloat / toDouble were not correctly rounded before JDK 21).
+private fun BigDecimal.nearestFloat(): Float = toString().toFloat()
+
+private fun BigDecimal.nearestDouble(): Double = toString().toDouble()
+
+private fun NumericValue.asDouble(): Double =
+    when (this) {
+        is NumericValue.Exact -> value.nearestDouble()
+        is NumericValue.Single -> value.toDouble()
+        is NumericValue.Approx -> value
+    }
+
+/**
+ * Numeric comparison per the XPath / SPARQL operator mapping (`op:numeric-less-than`, `op:numeric-equal`) after
+ * numeric type promotion (XPath 2.0 B.1): two decimals are compared exactly; when one operand is an xs:float and
+ * the other a decimal or a float, the decimal is promoted to xs:float and they are compared as floats; when either
+ * operand is an xs:double, the other is promoted to xs:double. So `"0.1"^^xsd:float` equals the decimal `0.1` (both
+ * are the float nearest to 0.1) and is above `"0.1"^^xsd:double` (widening a float is exact).
+ *
+ * The comparison is the IEEE 754 one, not [Double.compareTo]: negative zero **equals** positive zero, and NaN is not
+ * comparable to anything, itself included (`null`), so no range or order constraint holds for it.
+ */
 private fun compareNumeric(a: NumericValue, b: NumericValue): Int? {
     if (a is NumericValue.Exact && b is NumericValue.Exact) return a.value.compareTo(b.value)
-    val x = if (a is NumericValue.Exact) a.value.toDouble() else (a as NumericValue.Approx).value
-    val y = if (b is NumericValue.Exact) b.value.toDouble() else (b as NumericValue.Approx).value
-    if (x.isNaN() || y.isNaN()) return null
-    return x.compareTo(y)
+    if (a !is NumericValue.Approx && b !is NumericValue.Approx) {
+        val x = if (a is NumericValue.Exact) a.value.nearestFloat() else (a as NumericValue.Single).value
+        val y = if (b is NumericValue.Exact) b.value.nearestFloat() else (b as NumericValue.Single).value
+        return if (x < y) -1 else if (x > y) 1 else if (x == y) 0 else null
+    }
+    val x = a.asDouble()
+    val y = b.asDouble()
+    return if (x < y) -1 else if (x > y) 1 else if (x == y) 0 else null
 }
 
 // --- XSD date/time -------------------------------------------------------------------------------------------
@@ -225,6 +268,8 @@ private fun totalOrderClass(term: RdfTerm): Any? {
     parseNumeric(lit)?.let { n ->
         return when (n) {
             is NumericValue.Exact -> "exact"
+            // Floats and doubles are one total order: widening a float is exact and keeps the order.
+            is NumericValue.Single -> if (n.value.isNaN()) null else "approximate"
             is NumericValue.Approx -> if (n.value.isNaN()) null else "approximate"
         }
     }

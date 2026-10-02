@@ -3,15 +3,17 @@ package com.geoknoesis.kastor.ontoquality.explanation
 import com.geoknoesis.kastor.ontoquality.QualityFinding
 import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.LangString
 import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.RdfTerm
+import com.geoknoesis.kastor.rdf.vocab.XSD
 import java.security.MessageDigest
 
 /**
  * Stable SHA-256 key for joining LLM explanations to a [QualityFinding].
  *
  * The digest is derived from finding content (severity, message, shape, focus, paths, pitfall metadata,
- * constraint type, violation codes), **not** from row position in [com.geoknoesis.kastor.ontoquality.QualityReport.findings],
+ * constraint type, violation codes; a literal value with its datatype and language), **not** from row position in [com.geoknoesis.kastor.ontoquality.QualityReport.findings],
  * so importance-based reordering does not change refs.
  *
  * Blank nodes are keyed by [QualityFinding.blankNodeKeys] (a hash of the structure and the owner chain of the node,
@@ -95,8 +97,30 @@ value class FindingRef(val hexSha256: String) {
             when (term) {
                 is Iri -> term.value
                 is BlankNode -> finding.blankNodeKeys[term] ?: term.toString()
-                is Literal -> term.lexical
+                is Literal -> literalKey(term)
                 else -> term.toString()
             }
+
+        /** Marks a literal written with its datatype and language; never the first character of a plain string key. */
+        private const val TYPED_LITERAL = "\u001d"
+
+        /**
+         * A literal is identified by its lexical form, datatype, language and base direction: `"x"@en`, `"x"@fr`,
+         * `"1"` and `"1"^^xsd:integer` are four values. A plain `xsd:string` keeps its lexical form as key (as
+         * before, so refs of findings on plain strings did not change); every other literal is written with a
+         * marker and a length-prefixed lexical form, which no plain string key can imitate.
+         */
+        private fun literalKey(literal: Literal): String {
+            val tagged = literal as? LangString
+            if (tagged == null && literal.datatype == XSD.string && !literal.lexical.startsWith(TYPED_LITERAL)) return literal.lexical
+            return buildString {
+                append(TYPED_LITERAL).append(literal.lexical.length).append(':').append(literal.lexical)
+                append("^^").append(literal.datatype.value)
+                if (tagged != null) {
+                    append('@').append(tagged.normalizedLang)
+                    tagged.direction?.let { append("--").append(it.name) }
+                }
+            }
+        }
     }
 }

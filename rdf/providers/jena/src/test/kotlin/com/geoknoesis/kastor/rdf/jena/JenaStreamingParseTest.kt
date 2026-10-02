@@ -50,14 +50,26 @@ class JenaStreamingParseTest {
     assertEquals(3, triples.count(), "a materialised sequence can be iterated again")
   }
 
-  /** Counts bytes read by Jena's background parser thread; read from the test thread, hence atomic. */
+  /**
+   * Counts bytes read by Jena's background parser thread (read from the test thread, hence atomic) and remembers
+   * which threads read: the parser thread of **this** stream is the one that reads its input, so no other parser
+   * thread of the JVM can be mistaken for it.
+   */
   private class CountingInput(bytes: ByteArray) : FilterInputStream(ByteArrayInputStream(bytes)) {
     val bytesRead = java.util.concurrent.atomic.AtomicLong()
-    override fun read(): Int = super.read().also { if (it >= 0) bytesRead.incrementAndGet() }
-    override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) bytesRead.addAndGet(it.toLong()) }
-  }
+    private val readers = java.util.concurrent.ConcurrentHashMap.newKeySet<Thread>()
+    override fun read(): Int {
+      readers.add(Thread.currentThread())
+      return super.read().also { if (it >= 0) bytesRead.incrementAndGet() }
+    }
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+      readers.add(Thread.currentThread())
+      return super.read(b, off, len).also { if (it > 0) bytesRead.addAndGet(it.toLong()) }
+    }
 
-  private fun parserThreads(): Set<Thread> = Thread.getAllStackTraces().keys.filter { it.name == "AsyncParser" && it.isAlive }.toSet()
+    /** The background thread that reads this input (the caller's own thread does not count). */
+    fun parserThread(): Thread = readers.single { it !== Thread.currentThread() }
+  }
 
   /**
    * Waits (condition-based, no fixed sleep) until the stream's parser thread has read ahead as far as it will: it is
@@ -83,10 +95,9 @@ class JenaStreamingParseTest {
   fun `openTripleStream is lazy - the first triple arrives before the input is read to the end`() {
     val lines = (0 until 200_000).joinToString("\n") { "<http://example.org/s$it> <http://example.org/p> \"$it\" ." }.toByteArray()
     val counting = CountingInput(lines)
-    val before = parserThreads()
     JenaProvider().openTripleStream(counting, "N-TRIPLES").use { stream ->
       assertEquals(Iri("http://example.org/s0"), stream.iterator().next().subject)
-      awaitReadAheadLimit((parserThreads() - before).single(), counting, lines.size)
+      awaitReadAheadLimit(counting.parserThread(), counting, lines.size)
       assertTrue(counting.bytesRead.get() < lines.size / 2, "read-ahead must be bounded: read ${counting.bytesRead.get()} of ${lines.size} bytes")
     }
   }
@@ -108,12 +119,11 @@ class JenaStreamingParseTest {
     val document = (0 until 200_000).joinToString("\n") { "<s$it> <p> \"$it\" ." }.toByteArray()
     val counting = CountingInput(document)
     val provider: com.geoknoesis.kastor.rdf.RdfProvider = JenaProvider()
-    val before = parserThreads()
     provider.openTripleStream(counting, "TURTLE", "http://example.org/base/").use { stream ->
       val first = stream.iterator().next()
       assertEquals(Iri("http://example.org/base/s0"), first.subject)
       assertEquals(Iri("http://example.org/base/p"), first.predicate)
-      awaitReadAheadLimit((parserThreads() - before).single(), counting, document.size)
+      awaitReadAheadLimit(counting.parserThread(), counting, document.size)
       assertTrue(counting.bytesRead.get() < document.size / 2, "must not materialise the document: read ${counting.bytesRead.get()} of ${document.size} bytes")
     }
     val eager = provider.parseStreaming("<s> <p> <o> .".byteInputStream(), "TURTLE", "http://example.org/base/").toList()

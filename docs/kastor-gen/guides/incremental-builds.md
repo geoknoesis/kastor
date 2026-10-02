@@ -87,7 +87,7 @@ Each configured ontology gets an `OntologyGenerationTask` (`generateOntology<Nam
 |---|---|---|
 | `shaclCandidates` | `@InputFiles`, `@PathSensitive(RELATIVE)` | the locations `shaclPath` may resolve to (project directory, then `src/main/resources`); the first existing one is chosen when the task runs |
 | `contextCandidates` | `@InputFiles`, `@PathSensitive(RELATIVE)` | the same for `contextPath`; empty when no context is configured |
-| `shaclFile`, `contextFile` | `@InputFile`, `@Optional`, `@PathSensitive(RELATIVE)` | unset by default (they no longer have a convention: read `shaclInput` / `contextInput` instead, see the [migration note](../reference/gradle-plugin.md#ontologygenerationtask)); set one to name the file directly instead of a path |
+| `shaclFile`, `contextFile` | `@InputFile`, `@Optional`, `@PathSensitive(RELATIVE)` | by convention the first existing candidate of the path, looked up when the value is asked for (not frozen in the configuration cache, see the [task reference](../reference/gradle-plugin.md#ontologygenerationtask)); set one to name the file directly instead of a path |
 | `interfacePackage`, `wrapperPackage`, `vocabularyPackage`, `dslPackage` | `@Input @Optional` | |
 | `generateInterfaces`, `generateWrappers`, `generateVocabulary`, `generateDsl` | `@Input @Optional` | |
 | `vocabularyName`, `vocabularyNamespace`, `vocabularyPrefix`, `dslName` | `@Input @Optional` | |

@@ -127,9 +127,10 @@ class JenaInferenceViewRobustnessTest {
             val running = Attempt { repo.defaultGraph.find(null, type, cls(3)).size }
             assertTrue(blocked.inRead.await(30, TimeUnit.SECONDS))
 
+            val submitted = CountDownLatch(1)
+            repo.hooks.onStepSubmitted = { submitted.countDown() }
             val queued = Attempt { repo.defaultGraph.hasTriple(RdfTriple(instance(1), type, cls(4))) }
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
-            while (repo.queuedInferenceSteps() == 0 && System.nanoTime() < deadline) Thread.sleep(5)
+            assertTrue(submitted.await(30, TimeUnit.SECONDS), "the second reader must hand its step to the worker")
             assertEquals(1, repo.queuedInferenceSteps(), "the second reader's step waits behind the blocked one")
             queued.thread.interrupt()
             queued.join()

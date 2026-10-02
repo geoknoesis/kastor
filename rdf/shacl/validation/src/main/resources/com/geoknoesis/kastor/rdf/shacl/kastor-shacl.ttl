@@ -5,18 +5,25 @@
 # nothing is minted in the sh: namespace, and consumers of the standard vocabulary can ignore them.
 #
 # Kotlin constants: com.geoknoesis.kastor.rdf.shacl.KastorShaclVocabulary.
+#
+# Versioning: the namespace IRI <https://kastor.geoknoesis.com/ns/shacl#> is stable and carries no version. Terms are
+# only ever added; a published term is never removed, renamed or given another meaning. owl:versionInfo below
+# (KastorShaclVocabulary.VERSION) is raised when terms are added.
 
 @prefix ksh:  <https://kastor.geoknoesis.com/ns/shacl#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 
 <https://kastor.geoknoesis.com/ns/shacl>
     a owl:Ontology ;
     rdfs:label "Kastor SHACL extension vocabulary"@en ;
-    rdfs:comment "Extension terms used by the Kastor native SHACL engine in validation reports: the status of results that report an undecided constraint rather than a failure, the failing reifier of a sh:reifierShape result, and report-level warnings."@en .
+    rdfs:comment "Extension terms used by the Kastor native SHACL engine in validation reports: the status of results that report an undecided constraint rather than a failure, the failing reifier of a sh:reifierShape result, and report-level warnings."@en ;
+    owl:versionInfo "1.0.0" ;
+    skos:historyNote "Versioning policy: the namespace IRI is stable and carries no version. Terms are only ever added; a published term is never removed, renamed or given another meaning, so a consumer written against an earlier version keeps working. owl:versionInfo is raised when terms are added. Version 1.0.0: ksh:resultStatus, ksh:ResultStatus, ksh:UndefinedRecursion, ksh:PatternTimeout, ksh:PatternTooComplex, ksh:reifier, ksh:warning."@en .
 
 ksh:resultStatus
     a rdf:Property , owl:ObjectProperty ;
@@ -35,13 +42,13 @@ ksh:ResultStatus
 ksh:UndefinedRecursion
     a ksh:ResultStatus ;
     rdfs:label "Undefined recursion"@en ;
-    rdfs:comment "The constraint depends on a recursive shape dependency through a non-monotone operator (sh:not, sh:xone, sh:qualifiedMaxCount, disjoint qualified value shapes), which SHACL leaves undefined."@en ;
+    rdfs:comment "The constraint depends on a recursive shape dependency through a non-monotone operator (sh:not, sh:xone, sh:qualifiedMaxCount, disjoint qualified value shapes), which SHACL leaves undefined. A result has one status: this one is also used when the constraint is undecided for a second reason (a pattern that could not be evaluated), which the result message then names."@en ;
     rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
 
 ksh:PatternTimeout
     a ksh:ResultStatus ;
     rdfs:label "Pattern timeout"@en ;
-    rdfs:comment "One sh:pattern evaluation used up its time budget (ValidationConfig.patternTimeout) on a value, typically because the regular expression backtracks catastrophically. Whether the value matches is unknown; it is not accepted as conforming."@en ;
+    rdfs:comment "One sh:pattern evaluation used up its budget (ValidationConfig.patternTimeout, counted in steps of the regular expression engine) on a value, typically because the regular expression backtracks catastrophically. Whether the value matches is unknown; it is not accepted as conforming."@en ;
     rdfs:isDefinedBy <https://kastor.geoknoesis.com/ns/shacl> .
 
 ksh:PatternTooComplex

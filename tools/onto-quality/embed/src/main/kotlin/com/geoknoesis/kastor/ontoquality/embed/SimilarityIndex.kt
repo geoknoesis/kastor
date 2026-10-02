@@ -12,7 +12,13 @@ import java.util.concurrent.locks.ReentrantLock
  * Keys must be [Iri]s: similarity results are materialised as `oqsh:semanticallyCloseTo` triples between
  * stable resources, and blank-node identifiers are not stable across graphs, so blank-node keys are rejected.
  */
-class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
+class SimilarityIndex internal constructor(
+    embeddings: Map<RdfResource, FloatArray>,
+    /** Nanosecond clock of the search deadline; tests advance a fake one instead of sleeping. */
+    private val nanoClock: () -> Long,
+) {
+    constructor(embeddings: Map<RdfResource, FloatArray>) : this(embeddings, System::nanoTime)
+
     private val entries: List<Pair<Iri, FloatArray>>
     init {
         val blank = embeddings.keys.filterNot { it is Iri }
@@ -36,19 +42,19 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
      * Counts only time spent searching: the clock is paused while the lazy sequence is suspended at `yield`,
      * so slow consumers between results do not exhaust the deadline.
      */
-    private class Budget(val limits: SimilaritySearchLimits) {
+    private class Budget(val limits: SimilaritySearchLimits, private val clock: () -> Long) {
         private val timeout = try { limits.timeout.toNanos() } catch (_: ArithmeticException) { Long.MAX_VALUE }
         private var accumulated = 0L
-        private var runningSince = System.nanoTime()
+        private var runningSince = clock()
         private var paused = false
         private var evaluations = 0L
         fun pause() {
-            if (!paused) { accumulated += System.nanoTime() - runningSince; paused = true }
+            if (!paused) { accumulated += clock() - runningSince; paused = true }
         }
         fun resume() {
-            if (paused) { runningSince = System.nanoTime(); paused = false }
+            if (paused) { runningSince = clock(); paused = false }
         }
-        private fun elapsed(): Long = accumulated + if (paused) 0L else System.nanoTime() - runningSince
+        private fun elapsed(): Long = accumulated + if (paused) 0L else clock() - runningSince
         fun check() {
             kotlin.check(!Thread.currentThread().isInterrupted) { "Similarity search interrupted" }
             if (elapsed() >= timeout) throw SimilaritySearchBudgetExceededException("Similarity search deadline exceeded", SimilaritySearchBudgetExceededException.Limit.DEADLINE)
@@ -132,7 +138,7 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
     ): Sequence<Pair<Iri, Iri>> {
         require(threshold.isFinite() && threshold in -1.0..1.0)
         return sequence {
-            val budget = Budget(limits)
+            val budget = Budget(limits, nanoClock)
             val n = entries.size
             if (n < 2) return@sequence
             val dimension = entries[0].second.size
@@ -194,7 +200,7 @@ class SimilarityIndex(embeddings: Map<RdfResource, FloatArray>) {
     fun pairsAboveThreshold(threshold: Double, limits: SimilaritySearchLimits): Sequence<Pair<Iri, Iri>> {
         require(threshold.isFinite() && threshold in -1.0..1.0)
         return sequence {
-            val budget = Budget(limits)
+            val budget = Budget(limits, nanoClock)
             val searchRoot = tree(budget)
             var pairs = 0
             // The norm tolerance is included in the radius to avoid discarding boundary candidates.

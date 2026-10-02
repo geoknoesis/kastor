@@ -11,6 +11,7 @@ import java.lang.reflect.Proxy
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -53,9 +54,14 @@ class SharedInferenceGraphCloseTest {
         // The step ran (it opened the reasoner's iterator), but its reader was cancelled while waiting for it.
         val executor = InlineExecutor(afterStep = { throw QueryCancelledException() })
         val iterator = SharedInferenceGraph(infGraph(source), executor).find(Triple.ANY)
-        assertFailsWith<QueryCancelledException> { iterator.hasNext() }
+        val failure = assertFailsWith<QueryCancelledException> { iterator.hasNext() }
         assertTrue(source.closed, "the reasoner's iterator must be closed on the owner after a cancelled step")
-        assertFalse(iterator.hasNext(), "a failed iterator is finished")
+        // A failed iterator stays failed: it must never end as if its results were complete.
+        executor.afterStep = {}
+        assertSame(failure, assertFailsWith<QueryCancelledException> { iterator.hasNext() })
+        assertSame(failure, assertFailsWith<QueryCancelledException> { iterator.next() })
+        iterator.close()
+        assertFalse(iterator.hasNext(), "a closed iterator is finished")
     }
 
     @Test

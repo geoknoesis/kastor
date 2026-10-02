@@ -3,38 +3,35 @@ package com.geoknoesis.kastor.gen.gradle
 import com.geoknoesis.kastor.gen.runtime.RdfHandle
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.SparqlSelect
-import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
-/** Shared TestKit directory so nested daemons are reused across tests and runs (set by the Gradle test task). */
-internal fun testKitDir(): File =
-    File(System.getProperty("kastor.testkit.dir") ?: File(System.getProperty("java.io.tmpdir"), "kastor-testkit").path)
-        .apply { mkdirs() }
-
+/**
+ * A real consumer build: applies the Kotlin and Kastor Gen plugins, generates, compiles and runs. It resolves nothing
+ * from the network (see [ConsumerBuild]).
+ */
 class GenerationConsumerTest {
     @TempDir lateinit var dir: File
-    @Test fun `consumer compiles renamed cross package types and regenerates changed inputs`() {
-        File(dir, "settings.gradle").writeText("rootProject.name = 'consumer'")
-        File(dir, "gradle.properties").writeText("""
-            org.gradle.workers.max=1
-            org.gradle.jvmargs=-Xmx512m -XX:MaxMetaspaceSize=256m -XX:ActiveProcessorCount=2
-            kotlin.compiler.execution.strategy=in-process
-            kotlin.internal.collectFUSMetrics=false
-        """.trimIndent())
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.MINUTES)
+    fun `consumer compiles renamed cross package types and regenerates changed inputs`() {
+        File(dir, "settings.gradle").writeText(ConsumerBuild.settings("consumer"))
+        File(dir, "gradle.properties").writeText(ConsumerBuild.properties)
         val classpath = listOf(Rdf::class.java, RdfHandle::class.java, SparqlSelect::class.java)
             .map { File(it.protectionDomain.codeSource.location.toURI()).invariantSeparatorsPath }.distinct()
             .joinToString(",") { "\"$it\"" }
         File(dir, "build.gradle.kts").writeText("""
             plugins {
-                kotlin("jvm") version "2.4.20"
+                kotlin("jvm")
                 id("com.geoknoesis.kastor.gen")
                 application
             }
-            repositories { mavenCentral() }
             kotlin { jvmToolchain(21) }
             dependencies { implementation(files($classpath)) }
             application { mainClass.set("MainKt") }
@@ -79,9 +76,7 @@ class GenerationConsumerTest {
                 println("consumer-ok")
             }
         """.trimIndent())
-        fun run(vararg args: String) = GradleRunner.create().withProjectDir(dir).withTestKitDir(testKitDir()).withPluginClasspath().forwardOutput()
-            .withEnvironment(System.getenv() + ("JAVA_HOME" to System.getProperty("java.home")))
-            .withArguments(*args, "--stacktrace", "--no-build-cache", "--configuration-cache", "--configuration-cache-problems=fail").build()
+        fun run(vararg args: String) = ConsumerBuild.build(dir, *args)
         assertTrue(run("run").output.contains("consumer-ok"))
         val cached = run("run")
         assertTrue(cached.output.contains("Reusing configuration cache"), cached.output)

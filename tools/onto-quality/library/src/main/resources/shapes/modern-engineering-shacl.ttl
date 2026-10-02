@@ -61,6 +61,8 @@ oqsh:Maintainability   a rdfs:Class ; rdfs:label "maintainability" .
 
 oqsh:PersistentIdentifierShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:FairCompliance ;
     oqsh:pitfall    "N03" ;
     rdfs:label      "Ontology IRIs should use a persistent identifier service" ;
@@ -99,6 +101,8 @@ oqsh:PersistentIdentifierShape
 
 oqsh:MachineReadableLicenseShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:FairCompliance ;
     oqsh:pitfall    "N04" ;
     rdfs:label      "License should be declared with a resolvable URI, not just prose" ;
@@ -130,6 +134,8 @@ oqsh:MachineReadableLicenseShape
 
 oqsh:ContactPointShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:FairCompliance ;
     oqsh:pitfall    "N06" ;
     rdfs:label      "Ontology should declare a contact point for maintainers" ;
@@ -158,6 +164,8 @@ oqsh:ContactPointShape
 
 oqsh:VersionedImportShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the ontology header as the author wrote it.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:FairCompliance ;
     oqsh:pitfall    "N07" ;
     rdfs:label      "owl:imports should target a versioned IRI when possible" ;
@@ -187,6 +195,8 @@ oqsh:VersionedImportShape
 
 oqsh:ConsistentNamespaceStyleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: IRIs of the entities the author declared.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:UriHygiene ;
     oqsh:pitfall    "N09" ;
     rdfs:label      "Ontology should use a consistent hash-namespace OR slash-namespace style" ;
@@ -234,6 +244,8 @@ oqsh:ConsistentNamespaceStyleShape
 
 oqsh:ReadableLocalNameShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: labels and names as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:LlmConsumability ;
     oqsh:pitfall    "N16" ;
     rdfs:label      "Class local names should be readable, not opaque identifiers" ;
@@ -287,6 +299,8 @@ oqsh:ReadableLocalNameShape
 
 oqsh:LabelNotSentenceShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: labels and names as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:LlmConsumability ;
     oqsh:pitfall    "N17" ;
     rdfs:label      "Labels should be noun phrases, not full sentences" ;
@@ -318,6 +332,8 @@ oqsh:LabelNotSentenceShape
 
 oqsh:HasExampleShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: labels and names as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:LlmConsumability ;
     oqsh:pitfall    "N20" ;
     rdfs:label      "Classes should provide at least one example" ;
@@ -353,6 +369,8 @@ oqsh:HasExampleShape
 
 oqsh:NoClassAsInstanceShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: typing as the author wrote it; a reasoner types every class with entailed classes.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:OwlAntiPatterns ;
     oqsh:pitfall    "N23" ;
     rdfs:label      "A resource should not be both a class and an instance of a user-defined class" ;
@@ -389,6 +407,8 @@ oqsh:NoClassAsInstanceShape
 
 oqsh:UnusedImportShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: imports and references as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Reuse ;
     oqsh:pitfall    "N26" ;
     rdfs:label      "owl:imports should not declare unused dependencies" ;
@@ -425,6 +445,8 @@ oqsh:UnusedImportShape
 
 oqsh:LanguageTagConsistencyShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: labels as the author wrote them.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Multilingual ;
     oqsh:pitfall    "N32" ;
     rdfs:label      "Untagged literals should not coexist with language-tagged literals on the same property of the same entity" ;
@@ -454,6 +476,8 @@ oqsh:LanguageTagConsistencyShape
 
 oqsh:NamedEntityNotBnodeShape
     a               sh:NodeShape ;
+    # Evaluated on the asserted graph: the structure the author wrote.
+    oqsh:evaluatedOn oqsh:AssertedGraph ;
     oqsh:category   oqsh:Maintainability ;
     oqsh:pitfall    "N34" ;
     rdfs:label      "Entities with labels should have IRIs, not be blank nodes" ;

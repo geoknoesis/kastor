@@ -351,13 +351,13 @@ class SparqlRendererGrammarTest {
     }
 
     @Test
-    fun `invalid negated sets and non-standard ranges are rejected`() {
+    fun `invalid negated sets are rejected and bounded repetition is written out`() {
         assertThrows(IllegalArgumentException::class.java) {
             select("s") { where { propertyPath(s, (path(a) sequence path(b)).negation(), o) } }
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            select("s") { where { propertyPath(s, path(a).between(2, 4), o) } }
-        }
+        // SPARQL has no `{2,4}`; the repetition is spelled out (see SparqlLangHardeningTest).
+        val ranged = assertParsesQuery(select("s") { where { propertyPath(s, path(a).between(2, 4), o) } }.sparql)
+        assertTrue(ranged.contains("<urn:a>/<urn:a>/<urn:a>?/<urn:a>?"), ranged)
     }
 
     // ---------------------------------------------------------------- RDF 1.2

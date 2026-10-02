@@ -63,6 +63,7 @@ public final class com/geoknoesis/kastor/ontoquality/llm/LlmExplanationConfig {
 	public final fun getRequestTimeout ()Ljava/time/Duration;
 	public final fun getRetryBackoff ()Ljava/time/Duration;
 	public fun hashCode ()I
+	public final fun maxOutputTokensNotice ()Ljava/lang/String;
 	public fun toString ()Ljava/lang/String;
 }
 
@@ -73,7 +74,9 @@ public final class com/geoknoesis/kastor/ontoquality/llm/LlmProvider : java/lang
 	public static final field ANTHROPIC Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
 	public static final field OLLAMA Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
 	public static final field OPENAI Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
+	public final fun getApiKeyVariable ()Ljava/lang/String;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getHonoursMaxOutputTokens ()Z
 	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
 	public static fun values ()[Lcom/geoknoesis/kastor/ontoquality/llm/LlmProvider;
 }

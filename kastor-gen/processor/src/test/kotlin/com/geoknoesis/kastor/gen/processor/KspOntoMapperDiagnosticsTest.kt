@@ -210,4 +210,61 @@ class KspOntoMapperDiagnosticsTest {
         val output = compiled.classLoader().loadClass("com.acme.alias.ProbeKt").getMethod("probe").invoke(null)
         assertEquals("M|[a]|5000000000|null|Ann|[Ann]", output)
     }
+
+    @Test
+    fun `an annotation of another package that is also named Rdf is not the Kastor annotation`() {
+        val foreign = """
+            package org.other
+
+            annotation class Rdf(val iri: String = "")
+        """.trimIndent()
+        // Buddy carries only the foreign annotation: it has no wrapper, so a member of that type cannot be read.
+        val source = """
+            package com.acme.fqn
+
+            import com.geoknoesis.kastor.gen.annotations.Rdf
+
+            @org.other.Rdf(iri = "https://example.test/Buddy")
+            interface Buddy {
+                val name: String
+            }
+
+            @Rdf(iri = "https://example.test/Doc")
+            interface Doc {
+                @Rdf(iri = "https://example.test/buddy")
+                val buddy: Buddy?
+            }
+        """.trimIndent()
+        val result = run("org/other/Rdf.kt" to foreign, "com/acme/fqn/Doc.kt" to source)
+        val error = result.errors.singleOrNull { "com.acme.fqn.Buddy" in it }
+        assertTrue(error != null, "the member type is not an @Rdf type: " + result.errors)
+        assertTrue("which generated wrappers cannot read" in error, error)
+        assertFalse(result.generated.keys.any { "BuddyWrapper" in it }, result.generated.keys.toString())
+    }
+
+    @Test
+    fun `a member annotated with a foreign Rdf annotation is not mapped`() {
+        val foreign = """
+            package org.other
+
+            annotation class Rdf(val iri: String = "")
+        """.trimIndent()
+        val source = """
+            package com.acme.fqn2
+
+            import com.geoknoesis.kastor.gen.annotations.Rdf
+
+            @Rdf(iri = "https://example.test/Doc")
+            interface Doc {
+                @Rdf(iri = "https://example.test/title")
+                val title: String
+                @org.other.Rdf(iri = "https://example.test/other")
+                val other: String
+            }
+        """.trimIndent()
+        val result = run("org/other/Rdf.kt" to foreign, "com/acme/fqn2/Doc.kt" to source)
+        // `other` is abstract and has no Kastor @Rdf: the wrapper cannot implement it, which is reported as such.
+        assertTrue(result.errors.any { "'other'" in it && "com.acme.fqn2.Doc" in it && "@Rdf" in it }, result.errors.toString())
+        assertFalse(result.generated.values.any { "https://example.test/other" in it }, "the foreign annotation's IRI is not used")
+    }
 }

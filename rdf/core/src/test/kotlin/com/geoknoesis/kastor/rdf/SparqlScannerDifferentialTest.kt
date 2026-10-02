@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Test
 import java.lang.reflect.InvocationTargetException
 
 /**
- * Differential test of the keyword scanner ([SparqlDatasetClauses]) against Jena's SPARQL parser, on a generated
- * corpus: queries of every form, with and without dataset clauses and `GRAPH` patterns, minified or not, and full of
+ * Differential test of the keyword scanner ([SparqlDatasetClauses]) against Jena's SPARQL parser, on generated
+ * corpora of several seeds: queries of every form, with and without dataset clauses and `GRAPH` patterns, minified or not, and full of
  * look-alikes - `GRAPH` and `FROM` in strings, long strings, comments, IRIs, prefixed names, variables and language
  * tags, numbers and booleans glued to a keyword, and codepoint escapes inside strings and IRIs.
  *
@@ -17,7 +17,8 @@ import java.lang.reflect.InvocationTargetException
  * whether a rewritten query is still SPARQL. Jena does not read a codepoint escape outside strings and IRIs, so a
  * query with an escaped keyword is judged by the same query with the keyword written out.
  *
- * Jena is on the test runtime class path only, hence the reflection.
+ * Jena is on the test runtime class path only, hence the reflection. `SparqlScannerRdf4jOracleTest` in `rdf:testkit`
+ * runs the scanner against a second, independent oracle: RDF4J's parser, which reads codepoint escapes the other way.
  */
 class SparqlScannerDifferentialTest {
     /** A backslash followed by `u`, put together so that no codepoint escape is written in this file. */
@@ -143,9 +144,16 @@ class SparqlScannerDifferentialTest {
         }
     }
 
+    /** One corpus per seed: a finding of one seed must not hide behind the luck of another. */
+    private val seeds = listOf(20261001L, 1L, 42L, 8675309L, 314159265L, 2718281828L)
+
     @Test
-    fun `the scanner agrees with Jena's parser on a generated corpus`() {
-        val generator = Generator(20261001L)
+    fun `the scanner agrees with Jena's parser on generated corpora of several seeds`() {
+        for (seed in seeds) checkCorpus(seed)
+    }
+
+    private fun checkCorpus(seed: Long) {
+        val generator = Generator(seed)
         val corpus = List(260) { generator.query() }
         var withGraph = 0
         var withDataset = 0
@@ -187,9 +195,9 @@ class SparqlScannerDifferentialTest {
             }
         }
         // The corpus exercises what it is meant to.
-        assertTrue(withGraph in 60..230, "queries with GRAPH: $withGraph")
-        assertTrue(withDataset in 40..120, "queries with dataset clauses: $withDataset")
-        assertTrue(withEscapes >= 60, "queries with codepoint escapes: $withEscapes")
-        assertTrue(escapedKeywords >= 15, "queries with an escaped keyword: $escapedKeywords")
+        assertTrue(withGraph in 50..235, "seed $seed: queries with GRAPH: $withGraph")
+        assertTrue(withDataset in 35..125, "seed $seed: queries with dataset clauses: $withDataset")
+        assertTrue(withEscapes >= 50, "seed $seed: queries with codepoint escapes: $withEscapes")
+        assertTrue(escapedKeywords >= 10, "seed $seed: queries with an escaped keyword: $escapedKeywords")
     }
 }

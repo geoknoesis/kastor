@@ -247,7 +247,17 @@ class JenaReasoner internal constructor(
             throw t
         }
         try {
-            outcome.get(budget.remainingNanos().coerceAtLeast(1), java.util.concurrent.TimeUnit.NANOSECONDS)
+            // Waits in slices so that the deadline follows the (injectable) budget clock.
+            while (true) {
+                val remaining = budget.remainingNanos()
+                if (remaining <= 0) throw java.util.concurrent.TimeoutException()
+                try {
+                    outcome.get(minOf(remaining, WAIT_SLICE_NANOS), java.util.concurrent.TimeUnit.NANOSECONDS)
+                    break
+                } catch (_: java.util.concurrent.TimeoutException) {
+                    // re-check the budget
+                }
+            }
         } catch (e: java.util.concurrent.TimeoutException) {
             abandonOrFail(state, cause = e)
         } catch (e: InterruptedException) {
@@ -503,6 +513,9 @@ class JenaReasoner internal constructor(
         const val SUB_PROPERTY_OF = "http://www.w3.org/2000/01/rdf-schema#subPropertyOf"
 
         const val TIMEOUT_MESSAGE = "Jena reasoning timed out or was cancelled"
+
+        /** Longest single wait for a preparation before the budget is re-checked. */
+        val WAIT_SLICE_NANOS: Long = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(20)
 
         /** Name of the daemon threads that run Jena's (uninterruptible) rule preparation. */
         const val PREPARE_THREAD = "kastor-jena-prepare"

@@ -10,8 +10,12 @@ import org.apache.jena.graph.Node
 import org.apache.jena.query.Query
 import org.apache.jena.query.QueryFactory
 import org.apache.jena.query.Syntax
+import org.apache.jena.sparql.expr.E_NotExists
 import org.apache.jena.sparql.expr.Expr
 import org.apache.jena.sparql.expr.ExprAggregator
+import org.apache.jena.sparql.expr.ExprFunctionOp
+import org.apache.jena.sparql.syntax.Element
+import org.apache.jena.sparql.syntax.ElementPathBlock
 import org.apache.jena.sparql.syntax.ElementBind
 import org.apache.jena.sparql.syntax.ElementFilter
 import org.apache.jena.sparql.syntax.ElementGroup
@@ -60,6 +64,9 @@ class SparqlExpressionPrecedenceTest {
         is AndExpressionAst -> "(&& ${shape(expr.left)} ${shape(expr.right)})"
         is OrExpressionAst -> "(|| ${shape(expr.left)} ${shape(expr.right)})"
         is NotExpressionAst -> "(! ${shape(expr.expression)})"
+        is UnaryMinusExpressionAst -> "(- ${shape(expr.expression)})"
+        is InExpressionAst -> (listOf(if (expr.negated) "notin" else "in", shape(expr.expression)) + expr.values.map(::shape)).joinToString(" ", "(", ")")
+        is ExistsExpressionAst -> "(${if (expr.negated) "notexists" else "exists"} ${shape(expr.pattern)})"
         is FunctionCallAst -> (listOf(expr.name.removeSurrounding("<", ">").lowercase()) + expr.arguments.map(::shape)).joinToString(" ", "(", ")")
         is ConditionalExpressionAst -> "(if ${shape(expr.condition)} ${shape(expr.thenValue)} ${shape(expr.elseValue)})"
         is AggregateExpressionAst ->
@@ -67,8 +74,24 @@ class SparqlExpressionPrecedenceTest {
                 listOfNotNull(expr.expression?.let(::shape))).joinToString(" ", "(", ")")
     }
 
+    /** The pattern of an EXISTS: triple patterns and filters, in the order they are written. */
+    private fun shape(pattern: GraphPatternAst): String = when (pattern) {
+        is GroupPatternAst -> pattern.patterns.joinToString(" ", "{", "}") { shape(it) }
+        is TriplePatternAst -> "[${term(pattern.subject)} ${term(pattern.predicate)} ${term(pattern.obj)}]"
+        is FilterPatternAst -> "(filter ${shape(pattern.expression)})"
+        else -> error("not generated: $pattern")
+    }
+
+    private fun shape(element: Element): String = when (element) {
+        is ElementGroup -> element.elements.joinToString(" ", "{", "}") { shape(it) }
+        is ElementPathBlock -> element.pattern.list.joinToString(" ") { "[${node(it.subject)} ${node(it.predicate)} ${node(it.`object`)}]" }
+        is ElementFilter -> "(filter ${shape(element.expr)})"
+        else -> error("unexpected element ${element.javaClass.name}: $element")
+    }
+
     /** What Jena parsed, in the same notation. */
     private fun shape(expr: Expr): String = when {
+        expr is ExprFunctionOp -> "(${if (expr is E_NotExists) "notexists" else "exists"} ${shape(expr.element)})"
         expr is ExprAggregator -> {
             val aggregator = expr.aggregator
             // AggCount, AggCountVar, AggCountVarDistinct, AggSumDistinct, AggGroupConcat, ...
@@ -121,6 +144,20 @@ class SparqlExpressionPrecedenceTest {
         return condition.expression
     }
 
+    /** `GROUP BY (expr AS ?r)` and, with a name of the parser's own, `GROUP BY (expr)`. */
+    private fun grouped(expr: ExpressionAst, named: Boolean): Expr {
+        val query = if (named) {
+            SelectQueryAst(listOf(VariableSelectItemAst(Var("r"))), where = pattern, groupByExpressions = listOf(GroupConditionAst(expr, Var("r"))))
+        } else {
+            val count = AliasedSelectItemAst(AggregateExpressionAst(AggregateFunction.COUNT, null), "n")
+            SelectQueryAst(listOf(count), where = pattern, groupByExpressions = listOf(GroupConditionAst(expr)))
+        }
+        val conditions = parse(SparqlRenderer.render(query), "GROUP BY").groupBy
+        val variable = conditions.vars.single()
+        // A condition that is a variable in brackets is held as that variable, without an expression.
+        return conditions.getExpr(variable) ?: org.apache.jena.sparql.expr.ExprVar(variable)
+    }
+
     private fun having(expr: FilterExpressionAst): Expr {
         val text = SparqlRenderer.render(
             SelectQueryAst(listOf(VariableSelectItemAst(g)), where = GroupPatternAst(listOf(TriplePatternAst(g, p, b))), groupBy = listOf(g), having = listOf(expr))
@@ -140,6 +177,8 @@ class SparqlExpressionPrecedenceTest {
             parsed["BIND"] = bound(expr)
             parsed["ORDER BY ASC"] = ordered(expr, OrderDirection.ASC)
             parsed["ORDER BY DESC"] = ordered(expr, OrderDirection.DESC)
+            parsed["GROUP BY AS"] = grouped(expr, named = true)
+            parsed["GROUP BY"] = grouped(expr, named = false)
             if (expr is FilterExpressionAst) parsed["FILTER"] = filtered(expr)
         }
         for ((place, actual) in parsed) assertEquals(expected, shape(actual), "$label in $place")
@@ -159,15 +198,16 @@ class SparqlExpressionPrecedenceTest {
         /** Any expression; [inAggregate] forbids a nested aggregate. */
         fun expression(depth: Int, inAggregate: Boolean = false): ExpressionAst {
             if (depth <= 0) return leaf()
-            return when (random.nextInt(if (aggregates && !inAggregate) 9 else 8)) {
+            return when (random.nextInt(if (aggregates && !inAggregate) 10 else 9)) {
                 0 -> leaf()
+                5 -> UnaryMinusExpressionAst(expression(depth - 1, inAggregate))
                 1, 2 -> ArithmeticExpressionAst(expression(depth - 1, inAggregate), ArithmeticOperator.values().random(random), expression(depth - 1, inAggregate))
                 3 -> {
                     val name = listOf("STR", "COALESCE", "CONCAT", "urn:fn", "<urn:other>").random(random)
                     FunctionCallAst(name, List(if (name == "STR") 1 else 1 + random.nextInt(3)) { expression(depth - 1, inAggregate) })
                 }
                 4 -> ConditionalExpressionAst(filter(depth - 1, inAggregate), expression(depth - 1, inAggregate), expression(depth - 1, inAggregate))
-                8 -> {
+                9 -> {
                     val function = AggregateFunction.values().random(random)
                     val star = function == AggregateFunction.COUNT && random.nextInt(4) == 0
                     AggregateExpressionAst(
@@ -182,11 +222,22 @@ class SparqlExpressionPrecedenceTest {
         }
 
         /** A boolean-valued expression. */
-        fun filter(depth: Int, inAggregate: Boolean = false): FilterExpressionAst = when (if (depth <= 0) 0 else random.nextInt(7)) {
+        fun filter(depth: Int, inAggregate: Boolean = false): FilterExpressionAst = when (if (depth <= 0) 0 else random.nextInt(9)) {
             0, 1, 2 -> ComparisonExpressionAst(expression(depth - 1, inAggregate), ComparisonOperator.values().random(random), expression(depth - 1, inAggregate))
             3 -> AndExpressionAst(filter(depth - 1, inAggregate), filter(depth - 1, inAggregate))
             4 -> OrExpressionAst(filter(depth - 1, inAggregate), filter(depth - 1, inAggregate))
             5 -> NotExpressionAst(filter(depth - 1, inAggregate))
+            6 -> InExpressionAst(expression(depth - 1, inAggregate), List(random.nextInt(4)) { expression(depth - 1, inAggregate) }, negated = random.nextBoolean())
+            // A pattern has no place in a grouped projection or HAVING; there a comparison stands in.
+            7 -> if (aggregates) {
+                ComparisonExpressionAst(expression(depth - 1, inAggregate), ComparisonOperator.values().random(random), expression(depth - 1, inAggregate))
+            } else {
+                val triples = List(1 + random.nextInt(2)) {
+                    TriplePatternAst(variables.random(random), Iri("urn:p"), if (random.nextBoolean()) variables.random(random) else Iri("urn:o"))
+                }
+                val filters = if (random.nextBoolean()) listOf(FilterPatternAst(filter(depth - 1))) else emptyList()
+                ExistsExpressionAst(GroupPatternAst(triples + filters), negated = random.nextBoolean())
+            }
             else -> FunctionCallAst(listOf("COALESCE", "urn:fn").random(random), List(1 + random.nextInt(2)) { expression(depth - 1, inAggregate) })
         }
     }
@@ -217,6 +268,12 @@ class SparqlExpressionPrecedenceTest {
             NotExpressionAst(comparison),
             FunctionCallAst("STR", listOf(leaf)),
             ConditionalExpressionAst(comparison, leaf, TermExpressionAst(b)),
+            UnaryMinusExpressionAst(leaf),
+            UnaryMinusExpressionAst(UnaryMinusExpressionAst(leaf)),
+            InExpressionAst(leaf, listOf(TermExpressionAst(b), TermExpressionAst(Literal("1", XSD.integer)))),
+            InExpressionAst(leaf, emptyList(), negated = true),
+            ExistsExpressionAst(GroupPatternAst(listOf(TriplePatternAst(a, p, c), FilterPatternAst(comparison)))),
+            ExistsExpressionAst(GroupPatternAst(listOf(TriplePatternAst(a, p, c))), negated = true),
         )
         var checked = 0
         for (x in operands) for (y in operands) {
@@ -225,6 +282,10 @@ class SparqlExpressionPrecedenceTest {
             ComparisonOperator.values().forEach { parents += ComparisonExpressionAst(x, it, y) }
             parents += FunctionCallAst("COALESCE", listOf(x, y))
             parents += ConditionalExpressionAst(comparison, x, y)
+            parents += UnaryMinusExpressionAst(x)
+            parents += InExpressionAst(x, listOf(y, leaf))
+            parents += InExpressionAst(x, listOf(y), negated = true)
+            parents += ExistsExpressionAst(GroupPatternAst(listOf(TriplePatternAst(a, p, b), FilterPatternAst(ComparisonExpressionAst(x, ComparisonOperator.EQ, y)))))
             if (x is FilterExpressionAst) {
                 parents += NotExpressionAst(x)
                 parents += ConditionalExpressionAst(x, y, leaf)

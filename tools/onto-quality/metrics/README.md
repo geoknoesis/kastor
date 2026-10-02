@@ -64,7 +64,10 @@ named classes; `Root` = classes without a named (non-cycle) superclass;
 counted once); `Assoc_C` = named classes associated with C through a
 property (`rdfs:range` of a property whose `rdfs:domain` is C, or the
 `owl:someValuesFrom` / `owl:allValuesFrom` / `owl:onClass` filler of a
-restriction on C). Paths run from **owl:Thing** to a leaf over the acyclic
+restriction on C). A restriction is "on C" when it is attached with
+`rdfs:subClassOf` / `owl:equivalentClass` directly or as an operand of an
+`owl:intersectionOf` / `owl:unionOf` class expression, nested to any depth
+(the usual form of a defined class). Paths run from **owl:Thing** to a leaf over the acyclic
 hierarchy: owl:Thing has depth 0, every root has depth 1, and an isolated
 class (no superclass, no subclass) is one path of length 1. Cycle
 participants are excluded and reported separately.
@@ -155,7 +158,12 @@ println(report.describeMarkdown())
 ## Output formats
 
 - JSON: convenience for CI dashboards
-- Turtle: VoID + kastor-m: vocabulary for triple stores
+- Turtle: VoID + kastor-m: vocabulary for triple stores. Each metric is
+  written with the datatype its property declares in `kastor-metrics.ttl`,
+  whatever its value: `xsd:integer` for `depthOfInheritanceTree` and the
+  SKOS counts (`conceptCount`, `orphanConceptCount`, `siblingCohortCount`,
+  `maxSiblingCohortSize`), `xsd:decimal` with four decimals for every
+  ratio and mean (`"2.0000"^^xsd:decimal`, never a bare `2`)
 - Markdown: human-readable reports
 
 ## CLI
@@ -171,6 +179,22 @@ the SHACL module free of a dependency on this metrics artifact.
 
 The metrics APIs remain usable on their own for CI dashboards and other
 non-SHACL workflows.
+
+### Descendant counts at scale
+
+Importance uses the number of transitive subclasses of each class. It is
+computed without one descendant set per class:
+
+- classes with a single parent are counted by adding subtree sizes (exact,
+  one integer per class): a tree-shaped taxonomy of any size needs no set;
+- above a class with several parents, the set of *shared* classes reached
+  is kept (sparse array or bit set over the shared classes only) and
+  released once the last parent has used it (exact);
+- if those sets would exceed 64 MiB, the shared part is estimated with
+  HyperLogLog sketches sized to fit the budget (relative standard error
+  1.04 / sqrt(2^p), 3.25 % at the default p = 10; deterministic). The hint
+  then reads "about N transitive descendants". Classes that reach no
+  shared class stay exact.
 
 ## OQuaRE version
 

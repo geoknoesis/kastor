@@ -20,6 +20,13 @@ object KastorShaclVocabulary {
     /** Conventional prefix for [NAMESPACE]. */
     const val PREFIX: String = "ksh"
 
+    /**
+     * Version of the vocabulary document (its `owl:versionInfo`). The namespace IRI never changes with the version:
+     * terms are only ever added, and the meaning of a published term does not change, so a consumer written against
+     * an older version keeps working. The version tells which terms a document can contain.
+     */
+    const val VERSION: String = "1.0.0"
+
     /** Classpath resource (Turtle) that declares every term of this vocabulary. */
     const val VOCABULARY_RESOURCE: String = "/com/geoknoesis/kastor/rdf/shacl/kastor-shacl.ttl"
 
@@ -38,13 +45,16 @@ object KastorShaclVocabulary {
      * `ksh:UndefinedRecursion`: the result reports that the constraint could **not be decided** because it depends
      * on a recursive shape dependency through a non-monotone operator (`sh:not`, `sh:xone`, `sh:qualifiedMaxCount`,
      * disjoint qualified value shapes), which SHACL leaves undefined ([ValidationViolation.isUndefinedRecursion]).
-     * The result keeps the severity and constraint component a failure would have.
+     * The result keeps the severity and constraint component a failure would have. A result has one status: when a
+     * constraint is undecided both because of undefined recursion and because of a pattern that could not be
+     * evaluated, the status is this one and the message also names the pattern.
      */
     val UndefinedRecursion: Iri = Iri(NAMESPACE + "UndefinedRecursion")
 
     /**
      * `ksh:PatternTimeout`: the constraint could not be decided because one `sh:pattern` evaluation used up
-     * [ValidationConfig.patternTimeout] on a value ([ValidationViolation.isPatternTimeout]). Whether the value
+     * its budget ([ValidationConfig.patternTimeout], counted in steps of the regular expression engine) on a value
+     * ([ValidationViolation.isPatternTimeout]). Whether the value
      * matches is unknown; it is not accepted as conforming.
      */
     val PatternTimeout: Iri = Iri(NAMESPACE + "PatternTimeout")

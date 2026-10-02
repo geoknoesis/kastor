@@ -5,6 +5,7 @@ import com.geoknoesis.kastor.ontoquality.QualityChecker
 import com.geoknoesis.kastor.ontoquality.QualityReport
 import com.geoknoesis.kastor.ontoquality.MarkdownReportOptions
 import com.geoknoesis.kastor.ontoquality.OutputSanitizer
+import com.geoknoesis.kastor.ontoquality.SecretRedaction
 import com.geoknoesis.kastor.ontoquality.catalog.BundledCatalogs
 import com.geoknoesis.kastor.ontoquality.explanation.ExplainedQualityReport
 import com.geoknoesis.kastor.ontoquality.explanation.ExplanationFailure
@@ -99,20 +100,83 @@ fun main(args: Array<String>) {
  * Output redirected to a file or a pipe is UTF-8 whatever the platform charset: a Windows code page would turn
  * unmappable characters into `?` (`onto-qa check --format json > report.json`). An interactive console is written in
  * its own charset, or it would show UTF-8 bytes as garbage unless the user had switched it to UTF-8 (`chcp 65001`).
+ *
+ * The two streams are decided independently ([standardStreamCharsets]): `onto-qa check > report.json` writes the
+ * report in UTF-8 and its messages, still on the console, in the console charset.
  */
 internal fun installStandardStreams() {
-    val charset = standardStreamCharset(interactiveConsoleCharset())
-    System.setOut(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.out)), true, charset))
-    System.setErr(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.err)), true, charset))
+    val charsets = standardStreamCharsets(StandardStreamFacts.ofThisJvm())
+    System.setOut(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.out)), true, charsets.out))
+    System.setErr(PrintStream(BufferedOutputStream(FileOutputStream(FileDescriptor.err)), true, charsets.err))
 }
 
-/** The charset for stdout and stderr: the console's when there is an interactive one, else UTF-8. */
+/** The charsets of stdout and stderr. */
+internal data class StandardStreamCharsets(val out: Charset, val err: Charset)
+
+/**
+ * What the JVM knows about its standard streams.
+ *
+ * @param stdoutTerminalEncoding `sun.stdout.encoding`: set by the JVM only when stdout is a terminal (its encoding).
+ * @param stderrTerminalEncoding `sun.stderr.encoding`: the same for stderr.
+ * @param consoleCharset the charset of the interactive console ([interactiveConsoleCharset]), null without one.
+ */
+internal class StandardStreamFacts(
+    val stdoutTerminalEncoding: String?,
+    val stderrTerminalEncoding: String?,
+    val consoleCharset: Charset?,
+) {
+    companion object {
+        fun ofThisJvm(): StandardStreamFacts =
+            StandardStreamFacts(
+                stdoutTerminalEncoding = property("sun.stdout.encoding"),
+                stderrTerminalEncoding = property("sun.stderr.encoding"),
+                consoleCharset = interactiveConsoleCharset(),
+            )
+
+        private fun property(name: String): String? =
+            try {
+                System.getProperty(name)?.takeIf { it.isNotBlank() }
+            } catch (_: SecurityException) {
+                null
+            }
+    }
+}
+
+/**
+ * The charset of each standard stream, decided per stream: the console charset when **that** stream is a terminal,
+ * UTF-8 when it is redirected.
+ *
+ * The JVM tells which stream is a terminal through `sun.stdout.encoding` / `sun.stderr.encoding` (it sets each one
+ * only when the stream is attached to a terminal). When neither is set but there is an interactive console (a JVM
+ * that does not provide the properties), the console only tells that stdin and stdout are terminals; stderr is then
+ * written like stdout.
+ */
+internal fun standardStreamCharsets(facts: StandardStreamFacts): StandardStreamCharsets {
+    val perStream = facts.stdoutTerminalEncoding != null || facts.stderrTerminalEncoding != null
+
+    fun charset(terminalEncoding: String?): Charset =
+        when {
+            terminalEncoding != null -> charsetOrNull(terminalEncoding) ?: facts.consoleCharset ?: Charsets.UTF_8
+            perStream -> Charsets.UTF_8
+            else -> standardStreamCharset(facts.consoleCharset)
+        }
+    return StandardStreamCharsets(out = charset(facts.stdoutTerminalEncoding), err = charset(facts.stderrTerminalEncoding))
+}
+
+private fun charsetOrNull(name: String): Charset? =
+    try {
+        Charset.forName(name)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+/** The charset of a stream when only the console is known: the charset of the console when there is one, else UTF-8. */
 internal fun standardStreamCharset(consoleCharset: Charset?): Charset = consoleCharset ?: Charsets.UTF_8
 
 /**
- * The charset of the interactive console this JVM is attached to, or null when output is redirected (or the charset
- * cannot be determined). `System.console()` is null when the standard streams are redirected; on JDK 22 and later it
- * can be non-null even then, and `Console.isTerminal()` tells.
+ * The charset of the interactive console this JVM is attached to, or null when there is none (or the charset cannot
+ * be determined). `System.console()` is null when the standard streams are redirected; on JDK 22 and later it can be
+ * non-null even then, and `Console.isTerminal()` (called reflectively, it does not exist before) tells.
  */
 internal fun interactiveConsoleCharset(): Charset? {
     val console = System.console() ?: return null
@@ -158,7 +222,7 @@ private const val EXIT_STATUS_HELP =
         "kastor-rdf uses a different convention: 0 success; 1 usage or input error; 2 diff found the inputs not isomorphic; " +
         "3 runtime error.\n\n" +
         "Output redirected to a file or a pipe is UTF-8, whatever the platform charset; an interactive console is written " +
-        "in its own charset. --output files are written atomically (temporary file, then move); parent directories are " +
+        "in its own charset (stdout and stderr are decided separately). --output files are written atomically (temporary file, then move); parent directories are " +
         "created and an existing file is replaced. An --output that cannot be written is refused before anything is run."
 
 private const val OUTPUT_HELP =
@@ -278,6 +342,8 @@ internal class CliEnvironment(
     val enricherFactory: PipelineEnricherFactory = OnnxPipelineEnricherFactory,
     val explanationEnricherFactory: (LlmExplanationConfig) -> QualityExplanationEnricher = ::qualityExplanationEnricher,
     val env: (String) -> String? = System::getenv,
+    /** File-system questions of the `--output` pre-check. */
+    val outputFileSystem: OutputFileSystem = OutputFileSystem(),
     /** Whether a `--reasoner` profile can run here (HermiT needs its OWL API classes on the classpath). */
     val reasonerAvailable: (OntoQualityReasoningProfile) -> Boolean = ::reasonerAvailableOnClasspath,
 )
@@ -297,7 +363,7 @@ internal fun ontoQualityApp(environment: CliEnvironment = CliEnvironment()): Cli
         CheckCommand(environment),
         EnrichCommand(environment),
         PipelineCommand(environment),
-        MetricsCommand(),
+        MetricsCommand(environment),
     )
 
 /**
@@ -318,25 +384,16 @@ internal fun runOntoQa(
         app.parse(argv)
         EXIT_OK
     } catch (e: CliktError) {
-        val secrets = secretsOf(environment, baseUrl = ollamaBaseOf(argv))
+        val secrets = secretsOf(environment, llmProviderOf(argv), baseUrl = ollamaBaseOf(argv))
         app.getFormattedHelp(e)?.let { if (e.printError) err(redact(it, secrets)) else println(it) }
         if (debug) e.cause?.let { printStackTrace(it, secrets, err) }
         exitStatusFor(e)
     } catch (e: Throwable) {
-        val secrets = secretsOf(environment, baseUrl = ollamaBaseOf(argv))
+        val secrets = secretsOf(environment, llmProviderOf(argv), baseUrl = ollamaBaseOf(argv))
         err(safeLine("onto-qa: internal error: ${e.javaClass.simpleName}: ${e.message ?: "(no message)"}", secrets))
         if (debug) printStackTrace(e, secrets, err)
         EXIT_RUNTIME_ERROR
     }
-}
-
-/** `scheme://user:password@host` in running text; the credentials are group 2. */
-private val URL_CREDENTIALS = Regex("([A-Za-z][A-Za-z0-9+.\\-]*://)([^/\\s?#]*)@")
-
-/** The credentials of [url] (`user:password`, and the password alone), or nothing when it has none. */
-private fun urlCredentials(url: String?): List<String> {
-    val userInfo = url?.let { URL_CREDENTIALS.find(it) }?.groupValues?.get(2)?.takeIf { it.isNotEmpty() } ?: return emptyList()
-    return listOf(userInfo, userInfo.substringAfter(':', "")).filter { it.isNotBlank() }
 }
 
 /** The value of `--ollama-base` in [argv], for redaction where the parsed options are not at hand. */
@@ -345,22 +402,33 @@ private fun ollamaBaseOf(argv: List<String>): String? {
     return if (index >= 0) argv.getOrNull(index + 1) else argv.firstOrNull { it.startsWith("--ollama-base=") }?.substringAfter('=')
 }
 
+/** The value of `--llm-provider` in [argv] (default `openai`), for redaction where the parsed options are not at hand. */
+private fun llmProviderOf(argv: List<String>): LlmProvider? {
+    val index = argv.indexOf("--llm-provider")
+    val value = if (index >= 0) argv.getOrNull(index + 1) else argv.firstOrNull { it.startsWith("--llm-provider=") }?.substringAfter('=')
+    return when (value?.lowercase()) {
+        null, "openai" -> LlmProvider.OPENAI
+        "anthropic" -> LlmProvider.ANTHROPIC
+        "ollama" -> LlmProvider.OLLAMA
+        else -> null
+    }
+}
+
 /**
- * Secrets visible to this run: the provider API keys, whatever their length, and the credentials of the
- * `--ollama-base` URL ([baseUrl]). They are replaced by `***` in everything the CLI prints or writes. Longest first, so
- * a secret that contains another is replaced as a whole.
+ * Secrets of this run: the API key of the **active** [provider] (a key of another provider is not in use and is not
+ * redacted) and the credentials of the `--ollama-base` URL ([baseUrl]). They are replaced by `***` in everything the
+ * CLI prints or writes ([SecretRedaction]): a secret of 8 characters or more wherever it occurs, a shorter one only
+ * where it stands as a credential (a header, a `key=` value), so a key such as `1` cannot turn "HTTP 401" into
+ * "HTTP 40***". Longest first, so a secret that contains another is replaced as a whole.
  */
-internal fun secretsOf(environment: CliEnvironment, extra: String? = null, baseUrl: String? = null): List<String> =
-    (listOfNotNull(extra, environment.env(LlmExplanationConfig.OPENAI_API_KEY), environment.env(LlmExplanationConfig.ANTHROPIC_API_KEY)) + urlCredentials(baseUrl))
+internal fun secretsOf(environment: CliEnvironment, provider: LlmProvider?, extra: String? = null, baseUrl: String? = null): List<String> =
+    (listOfNotNull(extra, provider?.apiKeyVariable?.let { environment.env(it) }) + SecretRedaction.urlCredentials(baseUrl))
         .filter { it.isNotBlank() }
         .distinct()
         .sortedByDescending { it.length }
 
 /** [text] without [secrets] and without the credentials of any URL (the part between `://` and `@`). */
-private fun redact(text: String, secrets: List<String>): String {
-    val withoutUrlCredentials = if (text.contains("://")) URL_CREDENTIALS.replace(text) { "${it.groupValues[1]}***@" } else text
-    return secrets.fold(withoutUrlCredentials) { acc, secret -> acc.replace(secret, "***") }
-}
+private fun redact(text: String, secrets: List<String>): String = SecretRedaction.redact(text, secrets)
 
 /** Most lines of one `--debug` stack trace; the rest is counted. */
 internal const val MAX_DEBUG_TRACE_LINES = 120
@@ -464,7 +532,7 @@ private class OntoQualityApp : CliktCommand(name = "onto-qa") {
  * Base for subcommands: [execute] runs under a guard that turns unexpected exceptions into [EXIT_RUNTIME_ERROR]
  * with a concise message (the cause is kept for `--debug`), so no failure falls back to the JVM's status 1.
  */
-private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
+private abstract class OntoQaCommand(name: String, private val outputFileSystem: OutputFileSystem) : CliktCommand(name = name) {
     /** Also accepted after the command name; [runOntoQa] reads it from argv in either position. */
     private val debugOpt by option("--debug", help = "Print stack traces for runtime errors and LLM explanation failures").flag(default = false)
 
@@ -486,7 +554,7 @@ private abstract class OntoQaCommand(name: String) : CliktCommand(name = name) {
         if (!overwriteInputOpt && isSameFile(input, output)) {
             throw usageError("--output is the input file (${sanitize(input.toString())}); choose another path or pass --overwrite-input")
         }
-        outputProblem(output)?.let { throw CliktError("Cannot write --output ${sanitize(output.toString())}: ${sanitize(it)}", null, EXIT_RUNTIME_ERROR) }
+        outputProblem(output, outputFileSystem)?.let { throw CliktError("Cannot write --output ${sanitize(output.toString())}: ${sanitize(it)}", null, EXIT_RUNTIME_ERROR) }
     }
 
     override fun helpEpilog(context: Context): String = EXIT_STATUS_HELP
@@ -593,14 +661,74 @@ private class IoTrackingInputStream(delegate: InputStream) : FilterInputStream(d
 }
 
 /**
- * Why [output] cannot be written, or null when it can: it is a directory, an existing file that is not writable, or
- * its nearest existing parent is not a writable directory (missing parent directories are created when the file is
- * written). Nothing is created or changed.
+ * File-system questions of the `--output` pre-check. Tests answer them for situations a test cannot set up on every
+ * platform (symbolic links, a file owned by another user).
  */
-internal fun outputProblem(output: Path): String? {
-    val target = output.toAbsolutePath().normalize()
+internal open class OutputFileSystem {
+    open fun isSymbolicLink(path: Path): Boolean = Files.isSymbolicLink(path)
+
+    /** The file a symbolic link leads to; fails when a link of the chain is dangling or the chain loops. */
+    @Throws(IOException::class)
+    open fun realPath(path: Path): Path = path.toRealPath()
+
+    /**
+     * Why the existing file [target] cannot be replaced by a new file that keeps its POSIX permissions and owner, or
+     * null when it can (or the file system has no POSIX permissions). A probe file is created next to [target], given
+     * the permissions of [target], compared by owner and removed: exactly what the atomic write does later.
+     */
+    open fun replacementProblem(target: Path): String? {
+        val permissions =
+            try {
+                Files.getPosixFilePermissions(target)
+            } catch (_: UnsupportedOperationException) {
+                return null
+            } catch (e: IOException) {
+                return "its permissions cannot be read (${e.javaClass.simpleName})"
+            }
+        val parent = target.parent ?: return null
+        val probe = parent.resolve(".${target.fileName}.${java.util.UUID.randomUUID()}.probe")
+        return try {
+            Files.newOutputStream(probe, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).close()
+            val owner = Files.getOwner(target)
+            if (owner != Files.getOwner(probe)) {
+                return "the file is owned by another user (${owner.name}): replacing it would change its owner; choose another path"
+            }
+            Files.setPosixFilePermissions(probe, permissions)
+            null
+        } catch (_: UnsupportedOperationException) {
+            null
+        } catch (e: IOException) {
+            "a replacement file with the same permissions cannot be created in $parent (${e.javaClass.simpleName}: ${e.message})"
+        } finally {
+            try {
+                Files.deleteIfExists(probe)
+            } catch (_: IOException) {
+                // Best effort: the probe is empty.
+            }
+        }
+    }
+}
+
+/**
+ * Why [output] cannot be written, or null when it can: it is a symbolic link that cannot be resolved (dangling, or a
+ * loop), a directory, an existing file that is not writable or that cannot be replaced by a file with the same owner
+ * and permissions ([OutputFileSystem.replacementProblem]), or its nearest existing parent is not a writable directory
+ * (missing parent directories are created when the file is written). Everything [writeFileAtomically] can stumble
+ * on is found here, before any work. Nothing is changed (a probe file next to an existing target is removed again).
+ */
+internal fun outputProblem(output: Path, fileSystem: OutputFileSystem = OutputFileSystem()): String? {
+    var target = output.toAbsolutePath().normalize()
+    if (fileSystem.isSymbolicLink(target)) {
+        target =
+            try {
+                fileSystem.realPath(target)
+            } catch (e: IOException) {
+                return "it is a symbolic link whose target does not exist or cannot be resolved (${e.javaClass.simpleName}); " +
+                    "create the target or choose another path"
+            }
+    }
     if (Files.isDirectory(target)) return "it is a directory"
-    if (Files.exists(target)) return if (Files.isWritable(target)) null else "the file is not writable"
+    if (Files.exists(target)) return if (Files.isWritable(target)) fileSystem.replacementProblem(target) else "the file is not writable"
     var ancestor = target.parent ?: return "it has no parent directory"
     while (!Files.exists(ancestor)) ancestor = ancestor.parent ?: return "none of its parent directories exists"
     if (!Files.isDirectory(ancestor)) return "$ancestor is not a directory"
@@ -619,7 +747,7 @@ internal fun isSameFile(a: Path, b: Path): Boolean {
     }
 }
 
-private class MetricsCommand : OntoQaCommand(name = "metrics") {
+private class MetricsCommand(environment: CliEnvironment) : OntoQaCommand(name = "metrics", environment.outputFileSystem) {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val formatOpt by option("--format", help = "text | markdown | json | turtle").choice(*FORMAT_CHOICES, ignoreCase = true).default("text")
@@ -700,7 +828,7 @@ private fun openEnricher(environment: CliEnvironment, options: EmbeddingCliOptio
         throw CliktError("Failed to load embedding model ${options.modelId}: ${describeFailure(e)}", e, EXIT_RUNTIME_ERROR)
     }
 
-private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "enrich") {
+private class EnrichCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "enrich", environment.outputFileSystem) {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
@@ -846,7 +974,8 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
     val llmMaxOutputTokens by
         option(
             "--llm-max-output-tokens",
-            help = "Most tokens the model may generate per LLM request (default ${LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS}); raise it with a large --explain-batch",
+            help = "Most tokens the model may generate per LLM request (default ${LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS}); raise it with a large " +
+                "--explain-batch, or when a reply is reported as truncated. Sent to OpenAI and Anthropic; not to Ollama (a note says so)",
         ).int().restrictTo(1..LlmExplanationConfig.MAX_OUTPUT_TOKENS_LIMIT).default(LlmExplanationConfig.DEFAULT_MAX_OUTPUT_TOKENS)
     val llmMaxDurationSeconds by
         option(
@@ -898,7 +1027,7 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
         }
 }
 
-private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline") {
+private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline", environment.outputFileSystem) {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val embedding by EmbeddingOptionGroup()
@@ -966,7 +1095,7 @@ private class PipelineCommand(private val environment: CliEnvironment) : OntoQaC
     }
 }
 
-private class CheckCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "check") {
+private class CheckCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "check", environment.outputFileSystem) {
     private val ontologyArg by argument("ontology", help = "Path to the ontology file").path(mustExist = true, canBeDir = false)
     private val inputFormatOpt by option("--input-format", help = INPUT_FORMAT_HELP)
     private val reportOptions by ReportOptionGroup()
@@ -1085,12 +1214,7 @@ internal data class LlmExplainCli(
 }
 
 /** Environment variable holding the API key for [provider]; null when none is needed (Ollama). */
-private fun apiKeyEnv(provider: LlmProvider): String? =
-    when (provider) {
-        LlmProvider.OPENAI -> LlmExplanationConfig.OPENAI_API_KEY
-        LlmProvider.ANTHROPIC -> LlmExplanationConfig.ANTHROPIC_API_KEY
-        LlmProvider.OLLAMA -> null
-    }
+private fun apiKeyEnv(provider: LlmProvider): String? = provider.apiKeyVariable
 
 /**
  * Checks the LLM prerequisites ([LLM_EXPLAIN_ENV] opt-in, provider API key) before any expensive work. A dry run needs
@@ -1107,7 +1231,15 @@ private fun preflightLlm(llm: LlmExplainCli?, environment: CliEnvironment, err: 
                 "$LLM_EXPLAIN_ENV is not set to true (required by --explain)"
             keyEnv != null && key == null ->
                 "$keyEnv is not set (required by --explain --llm-provider ${llm.provider.name.lowercase()})"
-            else -> return llm.copy(apiKey = key)
+            else -> {
+                if (keyEnv != null && key != null && SecretRedaction.isShort(key)) {
+                    err(
+                        "onto-qa: warning: $keyEnv has only ${key.length} character${if (key.length == 1) "" else "s"}, which is unusual for an API key; " +
+                            "it is redacted only where it stands as a credential (a header, a key= value), not inside other text.",
+                    )
+                }
+                return llm.copy(apiKey = key)
+            }
         }
     if (llm.failOnError) {
         err("onto-qa: error: LLM explanations skipped: $problem; failing because of --fail-on-explain-error.")
@@ -1179,10 +1311,13 @@ private fun maybeExplainReport(
         val modelDesc =
             llm.modelId
                 ?: "${llm.modelPreset.name.lowercase()} (preset)"
-        err("LLM explain dry-run: would send up to $n findings (provider=${llm.provider}, model=$modelDesc)")
+        err("LLM explain dry-run: would send up to $n findings (provider=${llm.provider}, model=$modelDesc, max output tokens=${llm.maxOutputTokens})")
+        LlmExplanationConfig(provider = llm.provider, requestTimeout = llm.requestTimeout, maxOutputTokens = llm.maxOutputTokens)
+            .maxOutputTokensNotice()
+            ?.let { err("onto-qa: note: $it") }
         return ExplainOutcome(null, failed = false)
     }
-    val secrets = secretsOf(environment, llm.apiKey, llm.ollamaBase)
+    val secrets = secretsOf(environment, llm.provider, llm.apiKey, llm.ollamaBase)
     return try {
         val cfg =
             LlmExplanationConfig(
@@ -1196,6 +1331,8 @@ private fun maybeExplainReport(
                 maxTotalDuration = llm.maxTotalDuration,
                 maxOutputTokens = llm.maxOutputTokens,
             )
+        // Said once, before the first request: the provider cannot be given the limit (Ollama).
+        cfg.maxOutputTokensNotice()?.let { err("onto-qa: note: $it") }
         val enricher = environment.explanationEnricherFactory(cfg)
         val opts =
             ExplanationOptions(
@@ -1326,7 +1463,14 @@ private fun buildChecker(
  */
 internal fun writeFileAtomically(output: Path, text: String) {
     var target = output.toAbsolutePath().normalize()
-    if (Files.isSymbolicLink(target)) target = target.toRealPath()
+    if (Files.isSymbolicLink(target)) {
+        target =
+            try {
+                target.toRealPath()
+            } catch (e: IOException) {
+                throw IOException("$output is a symbolic link whose target does not exist or cannot be resolved (${e.javaClass.simpleName})", e)
+            }
+    }
     if (Files.isDirectory(target)) throw IOException("$output is a directory")
     val parent = target.parent ?: throw IOException("$output has no parent directory")
     Files.createDirectories(parent)
@@ -1339,6 +1483,9 @@ internal fun writeFileAtomically(output: Path, text: String) {
                 Files.setPosixFilePermissions(temp, Files.getPosixFilePermissions(target))
             } catch (_: UnsupportedOperationException) {
                 // Not a POSIX file system.
+            } catch (e: IOException) {
+                // Normally found by outputProblem before any work; a replacement with other permissions is not written.
+                throw IOException("the permissions of $output cannot be kept on its replacement (${e.javaClass.simpleName}: ${e.message})", e)
             }
         }
         try {

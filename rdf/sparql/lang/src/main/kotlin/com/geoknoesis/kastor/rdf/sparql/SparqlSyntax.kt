@@ -40,9 +40,19 @@ internal object SparqlSyntax {
 
     fun prefixLabel(prefix: String): String = SparqlLexical.prefixLabel(prefix)
 
-    /** Render `PREFIX label: <namespace>` with both parts validated. */
+    /**
+     * Render `PREFIX label: <namespace>` with both parts validated. The empty prefix (`PREFIX : <ns>`)
+     * is declared with the label [EMPTY_PREFIX], because [PrefixDeclaration] refuses a blank one.
+     */
     fun prefixDecl(decl: PrefixDeclaration): String =
-        "PREFIX ${prefixLabel(decl.prefix)}: ${iriRef(decl.namespace)}"
+        "PREFIX ${prefixLabel(if (decl.prefix == EMPTY_PREFIX) "" else decl.prefix)}: ${iriRef(decl.namespace)}"
+
+    /** How the empty prefix is held in a [PrefixDeclaration]: a colon, which no prefix label can contain. */
+    const val EMPTY_PREFIX = ":"
+
+    /** The declaration of [prefix] for [namespace]; `""` (or `":"`) declares the empty prefix. */
+    fun prefixDeclaration(prefix: String, namespace: String): PrefixDeclaration =
+        PrefixDeclaration(if (prefix.isEmpty()) EMPTY_PREFIX else prefix, namespace)
 
     fun versionDecl(version: String): String = SparqlLexical.versionDecl(version)
 

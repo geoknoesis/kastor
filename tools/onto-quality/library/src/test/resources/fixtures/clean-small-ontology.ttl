@@ -1,0 +1,83 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix ex:   <http://example.org/clean#> .
+
+<http://example.org/clean> a owl:Ontology ;
+    rdfs:label "Clean library ontology"@en ;
+    rdfs:comment "A small ontology without planted pitfalls, used to compare reasoner profiles."@en ;
+    dct:creator "Kastor tests" ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    owl:versionInfo "1.0.0" .
+
+ex:Document a owl:Class ;
+    rdfs:label "Document"@en ;
+    rdfs:comment "A written work held by the library."@en .
+
+ex:Book a owl:Class ;
+    rdfs:subClassOf ex:Document ;
+    rdfs:label "Book"@en ;
+    rdfs:comment "A bound document."@en .
+
+ex:Novel a owl:Class ;
+    rdfs:subClassOf ex:Book ;
+    rdfs:label "Novel"@en ;
+    rdfs:comment "A book of long narrative fiction."@en .
+
+ex:Person a owl:Class ;
+    rdfs:label "Person"@en ;
+    rdfs:comment "A human being."@en ;
+    owl:disjointWith ex:Document .
+
+ex:Author a owl:Class ;
+    rdfs:subClassOf ex:Person ,
+        [ a owl:Restriction ; owl:onProperty ex:wrote ; owl:someValuesFrom ex:Document ] ;
+    rdfs:label "Author"@en ;
+    rdfs:comment "A person who wrote at least one document."@en .
+
+ex:wrote a owl:ObjectProperty ;
+    rdfs:label "wrote"@en ;
+    rdfs:comment "Relates a person to a document they wrote."@en ;
+    rdfs:domain ex:Person ;
+    rdfs:range ex:Document ;
+    owl:inverseOf ex:writtenBy .
+
+ex:writtenBy a owl:ObjectProperty ;
+    rdfs:label "written by"@en ;
+    rdfs:comment "Relates a document to a person who wrote it."@en ;
+    rdfs:domain ex:Document ;
+    rdfs:range ex:Person ;
+    owl:inverseOf ex:wrote .
+
+ex:pageCount a owl:DatatypeProperty ;
+    rdfs:label "page count"@en ;
+    rdfs:comment "Number of pages of a document."@en ;
+    rdfs:domain ex:Document ;
+    rdfs:range xsd:integer .
+
+ex:Genres a skos:ConceptScheme ;
+    rdfs:label "Genres"@en ;
+    skos:prefLabel "Genres"@en ;
+    skos:hasTopConcept ex:fiction .
+
+ex:fiction a skos:Concept ;
+    skos:prefLabel "fiction"@en ;
+    skos:inScheme ex:Genres ;
+    skos:topConceptOf ex:Genres ;
+    skos:narrower ex:crime .
+
+ex:crime a skos:Concept ;
+    skos:prefLabel "crime fiction"@en ;
+    skos:inScheme ex:Genres ;
+    skos:broader ex:fiction .
+
+ex:orwell a ex:Author ;
+    rdfs:label "George Orwell"@en ;
+    ex:wrote ex:nineteenEightyFour .
+
+ex:nineteenEightyFour a ex:Novel ;
+    rdfs:label "Nineteen Eighty-Four"@en ;
+    ex:pageCount 328 .

@@ -2,6 +2,7 @@ public final class com/geoknoesis/kastor/rdf/testing/RdfDatasetIsomorphism {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/testing/RdfDatasetIsomorphism;
 	public final fun isIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfRepository;Lcom/geoknoesis/kastor/rdf/RdfRepository;)Z
 	public final fun isIsomorphic (Ljava/util/Map;Ljava/util/Map;)Z
+	public final fun isIsomorphic (Ljava/util/Map;Ljava/util/Map;Ljava/lang/Long;Ljava/time/Duration;)Z
 }
 
 public final class com/geoknoesis/kastor/rdf/testing/RdfGraphAssertionsKt {
@@ -16,6 +17,7 @@ public final class com/geoknoesis/kastor/rdf/testing/RdfGraphAssertionsKt {
 public final class com/geoknoesis/kastor/rdf/testing/RdfGraphIsomorphism {
 	public static final field INSTANCE Lcom/geoknoesis/kastor/rdf/testing/RdfGraphIsomorphism;
 	public final fun isIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;)Z
+	public final fun isIsomorphic (Lcom/geoknoesis/kastor/rdf/RdfGraph;Lcom/geoknoesis/kastor/rdf/RdfGraph;Ljava/lang/Long;Ljava/time/Duration;)Z
 }
 
 public final class com/geoknoesis/kastor/rdf/testing/RdfGraphSnapshots {
