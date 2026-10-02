@@ -154,33 +154,33 @@ object OntoMapper {
   @JvmStatic
   fun <T : Any> register(type: Class<T>, replace: Boolean, factory: (RdfHandle) -> T) {
     val slot = factories.get(type)
-    while (true) {
+    var replacedReload: Class<*>? = null
+    // The factory and the list of registered types change together (see unregister): the slot is the lock of its type.
+    synchronized(slot) {
       val previous = slot.get()
       if (previous === factory) return
-      if (previous == null || replace) {
-        if (!slot.compareAndSet(previous, factory)) continue
-        registered.add(type)
-        return
+      if (previous != null && !replace) {
+        val previousClass = previous.javaClass
+        val factoryClass = factory.javaClass
+        val reloaded = previousClass !== factoryClass && previousClass.classLoader !== factoryClass.classLoader &&
+          factoryOrigin(previousClass) == factoryOrigin(factoryClass)
+        check(previousClass === factoryClass || reloaded) {
+          "A different factory is already registered for ${type.name}: ${previousClass.name} " +
+            "(class loader ${previousClass.classLoader}); cannot register ${factoryClass.name} " +
+            "(class loader ${factoryClass.classLoader}). A type has one factory: call " +
+            "OntoMapper.register(type, replace = true, factory) to replace it deliberately, or OntoMapper.unregister(type) first"
+        }
+        if (reloaded) replacedReload = previousClass
       }
-      val previousClass = previous.javaClass
-      val factoryClass = factory.javaClass
-      val reloaded = previousClass !== factoryClass && previousClass.classLoader !== factoryClass.classLoader &&
-        factoryOrigin(previousClass) == factoryOrigin(factoryClass)
-      check(previousClass === factoryClass || reloaded) {
-        "A different factory is already registered for ${type.name}: ${previousClass.name} " +
-          "(class loader ${previousClass.classLoader}); cannot register ${factoryClass.name} " +
-          "(class loader ${factoryClass.classLoader}). A type has one factory: call " +
-          "OntoMapper.register(type, replace = true, factory) to replace it deliberately, or OntoMapper.unregister(type) first"
-      }
-      if (!slot.compareAndSet(previous, factory)) continue
-      if (reloaded) {
-        ReplacementLog.logger.warn(
-          "Replacing the factory {} for {} registered from class loader {} with the same-named factory from class " +
-            "loader {} (a reloaded module, or two live modules that bundle the same wrapper: the last one wins)",
-          factoryOrigin(previousClass), type.name, previousClass.classLoader, factoryClass.classLoader,
-        )
-      }
-      return
+      slot.set(factory)
+      registered.add(type)
+    }
+    replacedReload?.let { previousClass ->
+      ReplacementLog.logger.warn(
+        "Replacing the factory {} for {} registered from class loader {} with the same-named factory from class " +
+          "loader {} (a reloaded module, or two live modules that bundle the same wrapper: the last one wins)",
+        factoryOrigin(previousClass), type.name, previousClass.classLoader, factory.javaClass.classLoader,
+      )
     }
   }
 
@@ -202,12 +202,19 @@ object OntoMapper {
     val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(OntoMapper::class.java)
   }
 
-  /** Removes the factory for [type]; returns true when one was registered. */
+  /**
+   * Removes the factory for [type]; returns true when one was registered. Atomic with respect to [register]: after
+   * concurrent calls of both, [registeredTypes] lists [type] exactly when it has a factory.
+   */
   @JvmStatic
   fun unregister(type: Class<*>): Boolean {
-    val removed = factories.get(type).getAndSet(null) != null
-    registered.remove(type)
-    return removed
+    val slot = factories.get(type)
+    // Atomic with register: a registration that completes is never left out of registeredTypes().
+    synchronized(slot) {
+      val removed = slot.getAndSet(null) != null
+      registered.remove(type)
+      return removed
+    }
   }
 
   /** Whether a factory is currently registered for [type]. */
