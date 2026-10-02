@@ -454,6 +454,9 @@ class Rdf4jRepository(
                     operation.datasetClauseList.any { it !== with }
                 }
 
+        /** Default of [constructReifiesWindow]: bounds the memory of a streamed `CONSTRUCT` to this many triples. */
+        internal const val DEFAULT_CONSTRUCT_REIFIES_WINDOW: Int = 65_536
+
         private val DIRECTIONAL_LITERAL =Regex("[\"']@[A-Za-z]+(?:-[A-Za-z0-9]+)*--(?:ltr|rtl)(?![A-Za-z0-9-])")
     }
 
@@ -562,19 +565,42 @@ class Rdf4jRepository(
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
-        result.use { consume(it.viewTriples().guardedBy(query.sparql)) }
+        result.use { consume(it.viewTriples(constructReifiesWindow).guardedBy(query.sparql)) }
     }
 
     /**
-     * The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). Every
-     * `_:r rdf:reifies <<( s p o )>>` triple is returned once, whether it comes from a stored statement (an explicit
-     * one), is implied by a statement about the quoted triple, or both; only those triples are remembered for that.
+     * How many `rdf:reifies` triples a streamed `CONSTRUCT` ([withConstructTriples]) remembers to return each of them
+     * once, see [viewTriples]. Internal: changed by tests only.
      */
-    private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(): Sequence<RdfTriple> {
-        val reifies = HashSet<RdfTriple>()
+    @Volatile internal var constructReifiesWindow: Int = DEFAULT_CONSTRUCT_REIFIES_WINDOW
+
+    /**
+     * The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). A
+     * `_:r rdf:reifies <<( s p o )>>` triple may come from a stored statement (an explicit one), be implied by a
+     * statement about the quoted triple, or both, and by every statement about that quoted triple; it is returned
+     * once. Only those triples are remembered for that, and how many is bounded:
+     *
+     * - with a [window], the most recently seen `window` of them are remembered (least recently seen first out), so a
+     *   result of any size is streamed in bounded memory. A `rdf:reifies` triple whose statements are further apart in
+     *   the result than `window` other reified triples is returned again (as SPARQL allows for `CONSTRUCT`, whose
+     *   result a streaming consumer has to treat as a bag anyway);
+     * - without one (`null`: results that are materialized as a whole anyway) every one is remembered and the
+     *   de-duplication is exact.
+     */
+    private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(window: Int? = null): Sequence<RdfTriple> {
+        val seen: (RdfTriple) -> Boolean = if (window == null) {
+            val reifies = HashSet<RdfTriple>();
+            { triple -> !reifies.add(triple) }
+        } else {
+            val recent = object : LinkedHashMap<RdfTriple, Unit>(16, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RdfTriple, Unit>?): Boolean = size > window
+            };
+            // containsKey does not count as an access: get does.
+            { triple -> (recent.get(triple) != null).also { known -> if (!known) recent[triple] = Unit } }
+        }
         return iterator().asSequence()
             .flatMap { statement -> Rdf4jTerms.triplesOf(statement, null, hashedReifiersRead) }
-            .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || reifies.add(it) }
+            .filter { it.predicate != com.geoknoesis.kastor.rdf.vocab.RDF.reifies || it.obj !is TripleTerm || !seen(it) }
     }
 
     /**
