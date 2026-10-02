@@ -299,20 +299,35 @@ internal object Rdf4jFormatSupport {
      * parser and closes [inputStream].
      */
     fun openTripleStream(inputStream: InputStream, format: String, baseIri: String? = null): TripleStream =
-        openTripleStream(inputStream, format, baseIri) { stream, action -> Rdf4jTripleStream.CLEANER.register(stream, action) }
+        openTripleStream(inputStream, format, baseIri, hooks = StreamHooks.NONE)
+
+    /**
+     * What a test observes of the producer of a triple stream, instead of looking for its thread among the threads of
+     * the JVM or polling for its progress.
+     *
+     * @property producerCreated told the producer thread of the stream, before it is started.
+     * @property queueFull called on the producer thread each time it has a triple the full queue does not take: the
+     *   producer reads no further input until the consumer takes a triple (or the stream is closed).
+     */
+    internal class StreamHooks(val producerCreated: (Thread) -> Unit = {}, val queueFull: () -> Unit = {}) {
+        companion object {
+            val NONE = StreamHooks()
+        }
+    }
 
     /**
      * [openTripleStream] with an injectable cleanup registrar, so tests can run the cleanup of an abandoned stream
-     * deterministically instead of waiting for garbage collection.
+     * deterministically instead of waiting for garbage collection, and with [hooks] to observe its producer.
      */
     internal fun openTripleStream(
         inputStream: InputStream,
         format: String,
         baseIri: String?,
-        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+        registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable = { stream, action -> Rdf4jTripleStream.CLEANER.register(stream, action) },
+        hooks: StreamHooks = StreamHooks.NONE,
     ): TripleStream {
         val rdf4jFormat = graphFormat(format)
-        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "", registerCleanup)
+        return Rdf4jTripleStream(inputStream, rdf4jFormat, format, baseIri ?: "", registerCleanup, hooks)
     }
 
     /**
@@ -332,6 +347,7 @@ internal object Rdf4jFormatSupport {
         private val formatName: String,
         baseIri: String,
         registerCleanup: (Any, Runnable) -> java.lang.ref.Cleaner.Cleanable,
+        hooks: StreamHooks,
     ) : TripleStream {
         private class Failure(val error: Throwable)
         private class Cancelled : RuntimeException(null, null, false, false)
@@ -363,7 +379,7 @@ internal object Rdf4jFormatSupport {
 
         init {
             val shared = state
-            Thread({ produce(shared, rdf4jFormat, baseIri) }, PRODUCER_THREAD).apply { isDaemon = true }.start()
+            Thread({ produce(shared, rdf4jFormat, baseIri, hooks) }, PRODUCER_THREAD).apply { isDaemon = true }.also(hooks.producerCreated).start()
         }
 
         private fun advance(): Boolean {
@@ -415,11 +431,11 @@ internal object Rdf4jFormatSupport {
             /** Delivered when the producer died and not even a [Failure] could be allocated (e.g. out of memory). */
             val PRODUCER_DIED = Failure(IllegalStateException("RDF4J stream parser thread terminated abnormally"))
 
-            fun produce(state: State, format: RDFFormat, baseIri: String) {
+            fun produce(state: State, format: RDFFormat, baseIri: String, hooks: StreamHooks) {
                 var terminal: Any = PRODUCER_DIED
                 try {
                     val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                    parser(format) { statement -> checkedTriples(statement, seen).forEach { offer(state, it) } }.parse(state.input, baseIri)
+                    parser(format) { statement -> checkedTriples(statement, seen).forEach { offer(state, it, hooks) } }.parse(state.input, baseIri)
                     terminal = END
                 } catch (_: Cancelled) {
                     // closed: the close action already woke the consumer
@@ -432,9 +448,14 @@ internal object Rdf4jFormatSupport {
                 }
             }
 
-            fun offer(state: State, item: Any) {
+            fun offer(state: State, item: Any, hooks: StreamHooks) {
+                var full = false
                 while (!state.queue.offer(item, POLL_MILLIS, TimeUnit.MILLISECONDS)) {
                     if (state.closed) throw Cancelled()
+                    if (!full) {
+                        full = true
+                        hooks.queueFull()
+                    }
                 }
                 if (state.closed) throw Cancelled()
             }

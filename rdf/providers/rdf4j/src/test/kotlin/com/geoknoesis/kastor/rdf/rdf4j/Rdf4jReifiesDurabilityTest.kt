@@ -10,11 +10,9 @@ import com.geoknoesis.kastor.rdf.vocab.RDF
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.eclipse.rdf4j.repository.sail.SailRepository
 import org.eclipse.rdf4j.sail.memory.MemoryStore
-import org.junit.jupiter.api.RepeatedTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -169,59 +167,41 @@ class Rdf4jReifiesDurabilityTest {
         assertEquals(emptySet(), graph.getTriples().toSet())
     }
 
-    @RepeatedTest(10)
+    /**
+     * Runs [step] on another thread and waits for it to finish, so the caller decides exactly where in its own
+     * transaction the other writer runs (the timeout only turns a writer that blocks on the open transaction into a
+     * failure instead of a hang).
+     */
+    private fun onAnotherThread(step: () -> Unit) {
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            pool.submit(task(step)).get(60, TimeUnit.SECONDS)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun `an explicit rdf-reifies added in an open transaction survives a concurrent removal of the last annotation`() {
         Rdf4jRepository.MemoryRepository().use { repo ->
             repo.editDefaultGraph().addTriple(annotation)
-            val added = CountDownLatch(1)
-            val removed = CountDownLatch(1)
-            onTwoThreads { pool ->
-                val adder = pool.submit(task {
-                    repo.transaction {
-                        editDefaultGraph().addTriple(reifies)
-                        added.countDown()
-                        check(removed.await(20, TimeUnit.SECONDS)) { "the removal did not finish" }
-                    }
-                })
-                val remover = pool.submit(task {
-                    try {
-                        check(added.await(20, TimeUnit.SECONDS)) { "the add did not happen" }
-                        repo.editDefaultGraph().removeTriple(annotation)
-                    } finally {
-                        removed.countDown()
-                    }
-                })
-                adder.get(60, TimeUnit.SECONDS)
-                remover.get(60, TimeUnit.SECONDS)
+            repo.transaction {
+                editDefaultGraph().addTriple(reifies)
+                // The other writer removes the annotation, and commits, while this transaction is still open.
+                onAnotherThread { repo.editDefaultGraph().removeTriple(annotation) }
             }
             assertOnlyReifiesRemains(repo)
         }
     }
 
-    @RepeatedTest(10)
+    @Test
     fun `an explicit rdf-reifies added while the last annotation is being removed in an open transaction survives`() {
         Rdf4jRepository.MemoryRepository().use { repo ->
             repo.editDefaultGraph().addTriple(annotation)
-            val removed = CountDownLatch(1)
-            val added = CountDownLatch(1)
-            onTwoThreads { pool ->
-                val remover = pool.submit(task {
-                    repo.transaction {
-                        editDefaultGraph().removeTriple(annotation)
-                        removed.countDown()
-                        check(added.await(20, TimeUnit.SECONDS)) { "the add did not finish" }
-                    }
-                })
-                val adder = pool.submit(task {
-                    try {
-                        check(removed.await(20, TimeUnit.SECONDS)) { "the removal did not happen" }
-                        repo.editDefaultGraph().addTriple(reifies)
-                    } finally {
-                        added.countDown()
-                    }
-                })
-                remover.get(60, TimeUnit.SECONDS)
-                adder.get(60, TimeUnit.SECONDS)
+            repo.transaction {
+                editDefaultGraph().removeTriple(annotation)
+                // The other writer adds the explicit triple, and commits, before this transaction does.
+                onAnotherThread { repo.editDefaultGraph().addTriple(reifies) }
             }
             assertOnlyReifiesRemains(repo)
         }
