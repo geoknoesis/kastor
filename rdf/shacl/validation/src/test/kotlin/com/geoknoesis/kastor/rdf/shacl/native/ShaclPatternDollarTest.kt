@@ -11,7 +11,11 @@ import org.junit.jupiter.api.Test
  * - `$` matches at the end of input only, or (flag `m`) before a line feed; never before a final newline;
  * - `^` (flag `m`) matches at the start of input and after a line feed only;
  * - `.` matches everything except line feed and carriage return (everything with flag `s`);
- * - `\d`, `\w`, `\s` and their negations are the XML Schema (Unicode) classes.
+ * - `\d`, `\w`, `\s` and their negations are the XML Schema (Unicode) classes, except that `\w` also accepts `_`
+ *   (as in `java.util.regex`, which the other SHACL engines use), so `\W` does not match it.
+ *
+ * The class name is historical: it started as the test of `$`. Syntax translation and rejected `java.util.regex`
+ * idioms are covered by [ShaclPatternTranslationTest].
  */
 class ShaclPatternDollarTest {
     private fun matches(pattern: String, flags: String?, value: String) = compileShaclPattern(pattern, flags).containsMatchIn(value)
@@ -117,16 +121,23 @@ class ShaclPatternDollarTest {
     // --- \d \w \s --------------------------------------------------------------------------------------------------
 
     @Test
-    fun `word characters are Unicode letters, marks, digits and symbols`() {
+    fun `word characters are Unicode letters, marks, digits, symbols and the underscore`() {
         assertTrue(matches("^\\w+$", null, "José"))
         assertTrue(matches("^\\w+$", null, "東京"))
         assertTrue(matches("^\\w+$", null, "é"), "combining marks are word characters")
         assertTrue(matches("^\\w+$", null, "a1+\$"), "symbols are word characters in XML Schema")
         assertFalse(matches("^\\w+$", null, "a b"))
         assertFalse(matches("^\\w+$", null, "a-b"))
-        // XML Schema: \w is everything except punctuation, separators and "other"; '_' is connector punctuation.
-        assertFalse(matches("^\\w+$", null, "a_b"))
-        assertTrue(matches("^\\W+$", null, "-_ !"))
+        // XML Schema: \w is everything except punctuation, separators and "other". '_' is connector punctuation, but
+        // it is accepted as in java.util.regex: shapes are usually written against engines that use Java regex.
+        assertTrue(matches("^\\w+$", null, "a_b"))
+        assertTrue(matches("^\\w+$", null, "_"))
+        assertTrue(matches("^\\W+$", null, "- !"))
+        assertFalse(matches("^\\W+$", null, "-_ !"))
+        assertFalse(matches("^\\W$", null, "_"))
+        // Only U+005F is added: the other connector punctuation characters stay non-word characters.
+        assertFalse(matches("^\\w$", null, "\u203F"))
+        assertTrue(matches("^\\W$", null, "\u203F"))
         assertFalse(matches("^\\W+$", null, "é"))
     }
 
@@ -155,7 +166,12 @@ class ShaclPatternDollarTest {
         assertFalse(matches("^[\\w-]+$", null, "a b"))
         assertTrue(matches("^[^\\w]$", null, "-"))
         assertFalse(matches("^[^\\w]$", null, "é"))
-        assertTrue(matches("^[\\W]$", null, "_"))
+        assertFalse(matches("^[\\W]$", null, "_"))
+        assertTrue(matches("^[\\W]$", null, "-"))
+        assertFalse(matches("^[^\\w]$", null, "_"))
+        assertTrue(matches("^[^\\W]$", null, "_"))
+        assertTrue(matches("^[\\W_]+$", null, "-_"))
+        assertFalse(matches("^[^\\W-]$", null, "-"))
         assertTrue(matches("^[\\s,]+$", null, " ,\t"))
         assertFalse(matches("^[\\s,]+$", null, "\u000B"))
         assertTrue(matches("^[\\S]+$", null, "ab"))
@@ -170,8 +186,12 @@ class ShaclPatternDollarTest {
         val email = "^[\\w-\\.]+@([\\w-]+\\.)+[\\w-]{2,4}$"
         assertTrue(matches(email, null, "john.doe-x@mail.example.com"))
         assertFalse(matches(email, null, "john doe@example.com"))
-        assertFalse(matches(email, null, "john_doe@example.com"), "'_' is not an XML Schema word character")
+        assertTrue(matches(email, null, "john_doe@example.org"), "'_' is a word character")
         assertTrue(matches("^[\\w_.-]+$", null, "john_doe"))
+        // A class escape next to a hyphen never forms a range with its neighbours.
+        assertTrue(matches("^[+-\\w]+$", null, "+-a_"))
+        assertFalse(matches("^[+-\\w]+$", null, ","))
+        assertTrue(matches("^[\\s-\\w]+$", null, "a -_"))
     }
 
     @Test
@@ -194,7 +214,7 @@ class ShaclPatternDollarTest {
         assertTrue(matches("^\\p{IsBasicLatin}+$", null, "abc"))
         assertFalse(matches("^\\p{IsBasicLatin}+$", null, "é"))
         assertTrue(matches("^[a&b]+$", null, "a&b"))
-        assertTrue(matches("^[a[b]+$", null, "a[b"))
+        assertTrue(matches("^[a\\[b]+$", null, "a[b"))
     }
 
     // --- flags -----------------------------------------------------------------------------------------------------

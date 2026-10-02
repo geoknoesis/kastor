@@ -150,6 +150,16 @@ internal class NativeShaclValidator(
      */
     @Volatile internal var dropRecordedRead: ((RdfTerm, RdfResource) -> Boolean)? = null
 
+    /**
+     * Test seam: the clock of the per-pattern budget ([ValidationConfig.patternTimeout]), a `System.nanoTime`-like
+     * source. Tests inject a deterministic clock so that they do not depend on wall-clock time. Never set in
+     * production code.
+     */
+    @Volatile internal var patternClock: () -> Long = System::nanoTime
+
+    /** Test instrumentation: `sh:pattern` evaluations actually run against the regular expression engine. */
+    @Volatile internal var patternEvaluations = 0L
+
     private fun digestOf(triples: List<RdfTriple>, budget: ValidationBudget): String {
         synchronized(digestMemo) {
             digestMemo[triples]?.let { digestMemoHits++; return it }

@@ -137,15 +137,54 @@ data class ValidationViolation(
      */
     val isUndefinedRecursion: Boolean get() = violationCode == UNDEFINED_RECURSION_CODE
 
+    /**
+     * True when this result reports that a constraint could not be decided because one `sh:pattern` evaluation used
+     * up [ValidationConfig.patternTimeout] ([violationCode] is [PATTERN_TIMEOUT_CODE]). The value is not accepted as
+     * conforming: the result has the source shape's severity and blocks conformance as a failure would.
+     */
+    val isPatternTimeout: Boolean get() = violationCode == PATTERN_TIMEOUT_CODE
+
+    /**
+     * True when this result reports that a constraint could not be decided because the regular expression engine ran
+     * out of stack while matching a `sh:pattern` ([violationCode] is [PATTERN_TOO_COMPLEX_CODE]). Like
+     * [isPatternTimeout], it blocks conformance as a failure would.
+     */
+    val isPatternTooComplex: Boolean get() = violationCode == PATTERN_TOO_COMPLEX_CODE
+
+    /**
+     * True when this result does not report a definite failure but a constraint the engine could **not decide**
+     * ([isUndefinedRecursion], [isPatternTimeout] or [isPatternTooComplex]); [resultStatus] says which.
+     */
+    val isUndecided: Boolean get() = resultStatus != null
+
+    /**
+     * The `ksh:resultStatus` of this result ([KastorShaclVocabulary.UndefinedRecursion],
+     * [KastorShaclVocabulary.PatternTimeout] or [KastorShaclVocabulary.PatternTooComplex]), or `null` for an ordinary
+     * failure. Exported by [toShaclValidationReportRdf].
+     */
+    val resultStatus: Iri?
+        get() = when (violationCode) {
+            UNDEFINED_RECURSION_CODE -> KastorShaclVocabulary.UndefinedRecursion
+            PATTERN_TIMEOUT_CODE -> KastorShaclVocabulary.PatternTimeout
+            PATTERN_TOO_COMPLEX_CODE -> KastorShaclVocabulary.PatternTooComplex
+            else -> null
+        }
+
     companion object {
         /** [violationCode] of results about undefined recursive shape dependencies (see [isUndefinedRecursion]). */
         const val UNDEFINED_RECURSION_CODE: String = "kastor:UndefinedRecursion"
 
+        /** [violationCode] of results about a `sh:pattern` evaluation that exceeded its time budget (see [isPatternTimeout]). */
+        const val PATTERN_TIMEOUT_CODE: String = "kastor:PatternTimeout"
+
+        /** [violationCode] of results about a `sh:pattern` evaluation that exhausted the stack (see [isPatternTooComplex]). */
+        const val PATTERN_TOO_COMPLEX_CODE: String = "kastor:PatternTooComplex"
+
         /**
-         * Key of the [context] entry that holds the failing reifier (an [RdfResource]) on results of
-         * `sh:reifierShape`: [value] of such a result is the object of the reified triple, so several failing
-         * reifiers of one triple are told apart by this entry (exported as `ksh:reifier`, see
-         * [KastorShaclVocabulary.reifier]).
+         * Key of the [context] entry that holds the reifier (an [RdfResource]) on results of `sh:reifierShape` — the
+         * reifier that fails the shape, or whose conformance could not be decided ([isUndecided]). [value] of such a
+         * result is the object of the reified triple, so several reifiers of one triple are told apart by this entry
+         * (exported as `ksh:reifier`, see [KastorShaclVocabulary.reifier]).
          */
         const val REIFIER_CONTEXT_KEY: String = "reifier"
     }
