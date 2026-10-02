@@ -23,6 +23,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # A hung test must not hold a runner for the 6-hour default; a normal run takes 45-60 minutes.
+    timeout-minutes: 120
     env:
       # Skip embedding/semantic tests that download the all-MiniLM-L6-v2 ONNX model
       # from HuggingFace — the model is unavailable on the CI runner. These tests are
@@ -63,6 +65,16 @@ jobs:
       - name: Gradle check (tests, ABI, BOM coverage, coverage floors)
         run: ./gradlew check --no-daemon -x :rdf:conformance:test
         shell: bash
+
+      # A Windows run once failed with "No buffer space available (maximum connections reached?)" on a loopback
+      # connect. If a run fails, record the socket state so the next occurrence can be explained.
+      - name: Network diagnostics (Windows, on failure)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          netsh int ipv4 show dynamicport tcp
+          netsh int ipv4 show excludedportrange protocol=tcp
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
       - name: Dependency health (advisory)
         id: build-health

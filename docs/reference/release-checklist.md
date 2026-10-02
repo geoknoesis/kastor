@@ -1,6 +1,6 @@
 # Release checklist
 
-This is the exact procedure for the first release from the hardened build. None of the release workflows (`release-readiness.yml`, `publish.yml`) has run on GitHub yet. Every step below must run for real before a tag is pushed. Local runs do not replace them.
+This is the exact procedure for the first release from the hardened build. `release-readiness.yml` has run green on `main`; `publish.yml` has never run (nothing is published yet). Every step below must run for real before a tag is pushed. Local runs do not replace them.
 
 Expected runtimes: CI about 45–60 minutes per OS; release readiness about 60–90 minutes per OS plus 25–40 minutes for the signing job; publish about 20 minutes plus Central Portal validation (up to 30 minutes).
 
@@ -40,7 +40,7 @@ The workflows and scripts are committed, but the GitHub settings they depend on 
 
 2. Verify in the run:
    - `staged-consumer (ubuntu-latest)` and `staged-consumer (windows-latest)` both pass, then `local-signing` passes.
-   - The *Verify executed test counts and skips* step prints the counts above the floors (overall 3,350; RDF corpus 1,700; SHACL module 250 with `Shacl12NativeConformanceTest=150`).
+   - The *Verify executed test counts and skips* step prints the counts above the floors (overall 3,500; RDF corpus 1,700; SHACL module 285 with `Shacl12NativeConformanceTest=150`).
    - The *Inspect metadata and documentation jars* step prints `Validated metadata, required artifacts and SBOMs for N staged publications`.
    - The *Verify plugin configuration cache reuse* step passes (`Reusing configuration cache`).
 3. Download and inspect the artifacts (`gh run download <run-id>`):
