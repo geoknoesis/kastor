@@ -100,7 +100,12 @@ class JenaReasonerProvider : RdfReasonerProvider {
  *   defined by [RdfsAxioms.isEntailedByEmptyGraph]: datatype axioms of the recognised datatypes (after
  *   `ex:age rdfs:range xsd:integer`: `xsd:integer a rdfs:Class`, `xsd:integer rdfs:subClassOf rdfs:Resource`, ...)
  *   and reflexive / typing statements about RDF and RDFS vocabulary terms (`rdfs:label rdfs:subPropertyOf
- *   rdfs:label`), plus their OWL counterparts for the OWL rule sets.
+ *   rdfs:label`, `rdf:nil a rdf:List`, `rdf:_1 rdfs:subPropertyOf rdfs:member`), plus their OWL counterparts for the
+ *   OWL rule sets.
+ *
+ * This applies to the rule sets that entail those axioms: the complete RDFS rule set and the OWL rule sets. A
+ * **subset of the RDFS rule groups** and custom rules have no axioms, so nothing is dropped there: a triple they
+ * derive from the data is reported even when the complete rule set would entail it from the empty graph.
  *
  * Every other inferred triple is reported, **also when all three of its terms are vocabulary terms**: for example
  * `owl:FunctionalProperty rdfs:subClassOf rdf:Property` derived from asserted `rdfs:subClassOf` statements, or
@@ -460,11 +465,25 @@ class JenaReasoner internal constructor(
     private val owlRules = config.reasonerType == ReasonerType.OWL_MICRO || config.reasonerType == ReasonerType.OWL_RL
 
     /**
+     * Whether the rule set in use entails the RDFS axioms at all: Jena's complete RDFS reasoner and its OWL reasoners
+     * do. A selection of RDFS rule groups (run as plain entailment rules, like the memory reasoner) and custom rules
+     * have no axioms: every triple they derive follows from the data, also one that the complete rule set would
+     * entail from the empty graph (e.g. `rdf:Bag rdfs:subClassOf rdfs:Resource` derived by rdfs11 from two asserted
+     * statements).
+     */
+    private val entailsRdfsAxioms: Boolean = when (config.reasonerType) {
+        ReasonerType.RDFS -> config.enabledRules.containsAll(RDFS_RULE_GROUPS.keys)
+        ReasonerType.OWL_MICRO, ReasonerType.OWL_RL -> true
+        else -> false
+    }
+
+    /**
      * True when [triple] belongs to the closure of the empty graph although Jena derives it only once the data
-     * mentions its subject (see [RdfsAxioms.isEntailedByEmptyGraph]). Custom rule sets have no such axioms.
+     * mentions its subject (see [RdfsAxioms.isEntailedByEmptyGraph]). Only rule sets that entail the RDFS axioms have
+     * such triples (see [entailsRdfsAxioms]).
      */
     private fun isLazyAxiom(triple: org.apache.jena.graph.Triple): Boolean =
-        config.reasonerType != ReasonerType.CUSTOM && triple.subject.isURI && triple.predicate.isURI && triple.`object`.isURI &&
+        entailsRdfsAxioms && triple.subject.isURI && triple.predicate.isURI && triple.`object`.isURI &&
             RdfsAxioms.isEntailedByEmptyGraph(triple.subject.uri, triple.predicate.uri, triple.`object`.uri, owlRules)
 
     private fun countTyped(model: Model, type: String): Int =
