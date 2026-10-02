@@ -125,7 +125,7 @@ class JenaRepository private constructor(
     closeTimeout: java.time.Duration = DEFAULT_CLOSE_TIMEOUT,
     /** Longest time [close] then waits for the workers it stopped under those readers. */
     closeGrace: java.time.Duration = DEFAULT_CLOSE_GRACE,
-) : RdfRepository {
+) : RdfRepository, com.geoknoesis.kastor.rdf.DescribesQueryDataset {
     private val closed = AtomicBoolean(false)
 
     /** Released when the `close()` call that won [closed] has closed the store (or failed to). */

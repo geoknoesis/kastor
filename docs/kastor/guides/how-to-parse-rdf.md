@@ -73,18 +73,18 @@ val local = Rdf.parseFromUrl(
 )
 ```
 
-HTTP redirects are followed (up to 10 hops, never from `https` down to `http`), including redirects to another host. When the URL comes from untrusted input and your process can reach hosts the caller must not (loopback, cloud metadata, other internal addresses), pass a redirect policy:
+HTTP redirects are followed (up to 10 hops, never from `https` down to `http`), including redirects to another host. When the URL comes from untrusted input and your process can reach hosts the caller must not (loopback, cloud metadata, other internal addresses), pass an address policy. It is asked about the URL the load starts with and about every redirect target:
 
 ```kotlin
 val graph = Rdf.parseFromUrl(
     userSuppliedUrl,
     format = "TURTLE",
-    // or UrlRedirectPolicy.SAME_HOST, or your own { from, to -> to.host in allowedHosts }
-    options = UrlLoadOptions(redirectPolicy = UrlRedirectPolicy.PUBLIC_ADDRESSES)
+    // or your own: UrlAddressPolicy { url -> url.host in allowedHosts }
+    options = UrlLoadOptions(addressPolicy = UrlAddressPolicy.PUBLIC_ADDRESSES)
 )
 ```
 
-`PUBLIC_ADDRESSES` refuses targets that are, or resolve to, loopback, link-local, private, unique-local, wildcard or multicast addresses. A refused redirect fails with `RdfHttpStatusException` (the redirect status). The policy is asked about redirects only: validate the first URL yourself (for example with `UrlRedirectPolicy.PUBLIC_ADDRESSES.allows(uri, uri)`). It looks host names up when it is asked, and the connection looks them up again, so it does not stop DNS rebinding; use network-level controls where that matters.
+`UrlAddressPolicy.PUBLIC_ADDRESSES` allows a URL only if its host is, or resolves only to, public unicast addresses. It refuses loopback, link-local, private, carrier-grade NAT, unique-local, documentation, reserved, wildcard and multicast ranges, also when an IPv4 address is embedded in an IPv6 one (IPv4-mapped, NAT64, 6to4). A refused URL fails with `RdfAddressRefusedException`. It narrows what a URL can reach; it is not a guarantee: host names are looked up when the policy is asked and again by the connection, so it does not stop DNS rebinding, and behind an HTTP proxy the local lookup says nothing about where the proxy connects. Use network-level controls where that matters. `UrlLoadOptions.redirectPolicy` remains for rules about redirects only (for example `UrlRedirectPolicy.SAME_HOST`).
 
 ### Step 4: Add parsed graph to a repository
 

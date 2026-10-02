@@ -76,7 +76,7 @@ class Rdf4jRepository(
     private val repository: Repository,
     internal val inference: Boolean,
     lenientRead: Boolean,
-) : RdfRepository {
+) : RdfRepository, com.geoknoesis.kastor.rdf.DescribesQueryDataset {
 
     /** Wraps [repository]; graph reads are strict (see [lenientRead]). */
     constructor(repository: Repository, inference: Boolean = false) : this(repository, inference, false)
