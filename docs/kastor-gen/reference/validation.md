@@ -14,12 +14,21 @@ All in package `com.geoknoesis.kastor.gen.runtime`.
 ```kotlin
 interface ValidationContext : AutoCloseable {
     fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult
+    fun validateAll(data: RdfGraph, focuses: Collection<RdfTerm>): Map<RdfTerm, ValidationResult>
     override fun close() {}   // default: nothing to release
 }
+
+// one validateAll call per data graph for a collection of wrappers
+fun <T : RdfBacked> ValidationContext.validateAll(instances: Iterable<T>): List<Pair<T, ValidationResult>>
 ```
 
 - `data` — the graph holding the data to check.
 - `focus` — the focus node (an `Iri` or `BlankNode`).
+- `validateAll` — validates several nodes against **one** state of the graph and returns the result of each
+  in the order given. The default implementation calls `validate` per node; the bundled adapters check the
+  graph for changes (and, for a graph without a modification stamp, read it) **once** for the whole batch. Use
+  it instead of a loop of `validate` calls, see [Graph cache](#graph-cache). The extension for wrappers groups
+  the instances by the graph object of their handle and calls `validateAll` once per graph.
 - `close()` — validators may hold resources (an RDF4J repository, parsed shapes). Whoever creates a
   context should close it (`use { }`); the default implementation does nothing, so custom contexts only
   override it when they own resources.
@@ -135,7 +144,9 @@ class JenaValidation : ValidationContext {
     constructor()                      // shapes read from the data graph
     constructor(shapes: RdfGraph)      // separate shapes graph
     constructor(shapes: RdfGraph?, maxCachedGraphs: Int)
+    constructor(shapes: RdfGraph? = null, maxCachedGraphs: Int = /* configured */, assumeImmutable: Boolean)
     val maxCachedGraphs: Int
+    val assumeImmutable: Boolean
     companion object {
         const val DEFAULT_MAX_CACHED_GRAPHS = 16
         const val MAX_CACHED_GRAPHS_PROPERTY = "kastor.validation.jena.maxCachedGraphs"
@@ -146,9 +157,13 @@ class JenaValidation : ValidationContext {
 ```
 
 - Backed by Jena's `ShaclValidator`.
-- Jena-backed Kastor graphs are validated directly. Other graphs are converted to a Jena graph, and the converted
-  copy is cached with the rules described under [Graph cache](#graph-cache): it is converted again only when the
-  graph is new or its content changed.
+- A **standalone** Jena graph (`JenaBridge.fromJenaModel(...)`, a graph parsed by the Jena provider) is validated
+  in place: nothing is copied or cached.
+- **Every other graph, including the graphs of a `JenaRepository`**, is copied into a Jena graph (a repository's
+  store is only readable inside a transaction, so the engine needs a detached copy), and the copy - together
+  with the shapes parsed from it, for embedded shapes - is cached with the rules described under
+  [Graph cache](#graph-cache): it is copied (and its shapes parsed) again only when the graph is new or its
+  content changed.
 
 ### Rdf4jValidation
 
@@ -160,7 +175,9 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
     constructor()                      // shapes read from the data graph
     constructor(shapes: RdfGraph)      // separate shapes graph
     constructor(shapes: RdfGraph?, maxCachedGraphs: Int)
+    constructor(shapes: RdfGraph? = null, maxCachedGraphs: Int = /* configured */, assumeImmutable: Boolean)
     val maxCachedGraphs: Int
+    val assumeImmutable: Boolean
     companion object {
         const val DEFAULT_MAX_CACHED_GRAPHS = 16
         const val MAX_CACHED_GRAPHS_PROPERTY = "kastor.validation.rdf4j.maxCachedGraphs"
@@ -197,27 +214,56 @@ class Rdf4jValidation : ValidationContext, AutoCloseable {
 ### Graph cache
 
 Both adapters keep the converted copy of recently validated data graphs (`GraphStateCache` in
-`kastor-gen:runtime`; the Jena adapter only for graphs that are not Jena-backed).
+`kastor-gen:runtime`; the Jena adapter for every graph except standalone Jena graphs).
 
-- **Change detection.** Graphs that implement `VersionedRdfGraph` (`MemoryGraph`, the named graphs of the memory
-  repository) are checked in O(1) by their modification stamp. Other graphs (e.g. graphs of an RDF4J or Jena
-  repository) are identified by an order-independent digest of their triples: the SHA-256 of an unambiguous
-  encoding of each triple, summed modulo 2^256, together with the triple count. Computing it costs one pass
-  over the triples per call but no conversion or store writes, and unlike a sum of `hashCode()`s it does not
-  miss changes such as a literal `"Aa"` becoming `"BB"`.
-- **New handles hit the cache.** `repository.getGraph(name)` returns a new handle object per call. A stamped
-  handle is matched with `equals` when its class defines handle equality (the memory repository's named graphs
-  do), otherwise by identity; unstamped graphs are matched by content, whichever handle is used. So
-  `repo.getGraph(name).materialize<T>(node).validate()` in a loop converts the graph once.
+- **What a call costs.**
+  - Graphs that implement `VersionedRdfGraph` (`MemoryGraph`, the named graphs of the memory repository, the
+    graphs of repositories whose provider stamps them) are checked in O(1) by their modification stamp; the
+    triples are not read.
+  - **Graphs without a stamp are read in full on every `validate` call**: `getTriples()` - a complete download
+    for a SPARQL-endpoint graph - plus a digest of every triple (one SHA-256 each), because nothing cheaper
+    proves that the content is unchanged. Only the conversion, the store writes and the shapes parse are saved
+    when the digest matches. A loop of N `validate` calls over such a graph therefore reads it N times. Two
+    ways to avoid that:
+    - `validator.validateAll(graph, nodes)` (or `validator.validateAll(wrappers)`): **one** read for all nodes;
+    - `Rdf4jValidation(shapes, assumeImmutable = true)` / `JenaValidation(shapes, assumeImmutable = true)`:
+      you guarantee that graphs without a stamp do not change while the validator lives. A graph that is
+      passed again (the same object, or an equal handle) is then not read again. A change of such a graph is
+      **not detected** - results keep describing the content first seen - so use it for immutable snapshots
+      and batch jobs only. Graphs with a stamp are still checked.
+- **Which copy belongs to a graph.** First by handle: the same graph object, or an *equal handle*
+  (`repository.getGraph(name)` returns a new object per call). Handle equality is an explicit contract: a graph
+  is compared with `equals` only when it overrides `equals`/`hashCode` and implements `VersionedRdfGraph` or
+  `HandleEqualGraph` (a marker interface in `kastor-gen:runtime` for your own graph classes), or is one of
+  Kastor's own graph classes. Data classes, Java records and other foreign classes are never compared with
+  `equals`. `equals` never runs under a lock of the cache. Then, for graphs without a stamp, by content: a
+  copy built for the same digest is reused whichever handle it was built for.
+- **A changing graph keeps one copy** when it is found by handle: the copy is replaced in place. A changing
+  graph without a stamp that is read through fresh handles without handle equality cannot be linked to its
+  previous copy; the obsolete copies are evicted first when the cache is full and expire after a minute
+  without use once their handle was garbage collected.
+- **The digest** is the sum modulo 2^256 of `SHA-256(salt || encoding of the triple)` over the triples, plus the
+  triple count: order independent, one pass, and unlike a sum of `hashCode()`s it does not miss changes such as
+  a literal `"Aa"` becoming `"BB"`. A plain sum of hashes can be attacked with crafted data (generalised
+  birthday attack), so each validator uses its own random 32-byte salt that never leaves the process: the
+  per-triple values cannot be computed by someone who only controls the data, and a collision cannot be
+  prepared in advance. The digest is not a stable or public fingerprint.
 - **Size.** At most `maxCachedGraphs` copies are kept (default 16). Set it with the constructor argument, or
   process-wide - which is how to size the validators shared by generated wrappers - with the system properties
-  `kastor.validation.rdf4j.maxCachedGraphs` / `kastor.validation.jena.maxCachedGraphs`. When the cache is full
-  the least recently used copy that no call is using is released. A call never waits for the validation of
-  another graph: when every copy is in use it validates in a private temporary copy that is released when the
-  call returns. Size the cache to the number of graphs that are validated repeatedly (every miss converts and
-  loads the whole graph).
-- **Release.** Copies of stamped graphs whose handle was garbage collected are released on the next call.
-  Copies identified by content stay until they are evicted or the validator is closed.
+  `kastor.validation.rdf4j.maxCachedGraphs` / `kastor.validation.jena.maxCachedGraphs` (a positive integer; any
+  other value, such as `0` or `abc`, is reported once with a WARN entry on the `System.Logger`
+  `com.geoknoesis.kastor.gen.runtime.GraphStateCache` and the default is used). When the cache is full the
+  least recently used copy that no call is using is released, copies whose handle was garbage collected first.
+- **Saturation.** When every copy is in use, a call validates in a private temporary copy that is released
+  when the call returns, instead of waiting for the validation of another graph. Temporary copies are bounded
+  too: at most `maxCachedGraphs` at a time. Beyond that (more than `2 x maxCachedGraphs` distinct graphs being
+  validated at the same moment) a call waits up to 10 seconds for a copy to become free and then fails with
+  `GraphStateCacheSaturatedException` (an `IllegalStateException`) that says so. Size the cache to the number of
+  graphs that are validated repeatedly (every miss converts and loads the whole graph).
+- **Release.** Copies that can no longer be found by their handle are released on the next call: those of
+  stamped graphs and of handle-equal handles once the handle was garbage collected (handle-equal handles are
+  softly referenced, i.e. dropped under memory pressure), and content-identified copies whose handle was
+  garbage collected after a minute without use. The rest stays until it is evicted or the validator is closed.
 - **Locking.** The data graph is read only while the validator holds no lock, so `validate` can be called
   inside `repository.transaction { }` while other threads validate the same graph.
 

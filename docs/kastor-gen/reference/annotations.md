@@ -259,12 +259,25 @@ internal class PersonWrapper(override val rdf: RdfHandle) : Person, RdfBacked {
    wrapper is generated for the affected interface:
    - *error* - a member type without a reader: anything not listed above, e.g. `Short`, `java.time.Instant`,
      or a class that is not `@Rdf`-annotated (and has no `<Type>Wrapper` / `<Type>Factory`), which would
-     otherwise fail at the first read with `No wrapper factory registered`;
+     otherwise fail at the first read with `No wrapper factory registered`. **Opt-in for hand-registered
+     types:** when the application registers the factory of a member type itself
+     (`OntoMapper.register(Address::class.java) { handle -> AddressView(handle) }`, under any class name),
+     tell the processor so, either by annotating the type with `@RdfMaterializable`
+     (`com.geoknoesis.kastor.gen.annotations`), or, for a type that cannot be annotated (a library type), by
+     listing its qualified name in the KSP option `kastor.gen.materializableTypes`
+     (`ksp { arg("kastor.gen.materializableTypes", "com.acme.Address,com.lib.Legacy") }`). The processor then
+     accepts the member; registering the factory before the first read stays the application's job;
    - *error* - an abstract property or function without `@Rdf`, which the wrapper could not implement
-     (members with a default implementation are fine; an override inherits the `@Rdf` of the property it
-     overrides);
+     (members with a default implementation are fine, also when they are inherited from a library interface;
+     an override inherits the `@Rdf` of the property it overrides). `rdf` of `RdfBacked` is exempt: every
+     wrapper implements it, so `@Rdf interface Person : RdfBacked` is supported and gives `person.rdf` without
+     a cast;
    - *error* - two `@Rdf` types that map to one wrapper class, e.g. a nested `Outer.Inner` and a top-level
      `Outer_Inner` (both `Outer_InnerWrapper`);
+   - *error* - two `@Rdf` types whose wrapper classes differ only in case, e.g. `Foo` and `FOO` in one package
+     (`FooWrapper.kt` and `FOOWrapper.kt`). The classes are distinct, but their source and class files are one
+     file on a case-insensitive file system (Windows, macOS), so the build would only work on a case-sensitive
+     one; the message says so. Types whose wrapper names differ by more than case never collide;
    - *warning* - a class named `<Type>Wrapper` already exists but is not an `RdfBacked` implementation of the
      interface, so no wrapper is generated. An existing `RdfBacked` implementation (generated from SHACL, or
      hand-written on purpose) is used without a warning.

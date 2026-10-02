@@ -330,11 +330,16 @@ private fun addImmediateValidation(
         }
     }
 
-    c.inValues?.takeIf { it.isNotEmpty() }?.let { values ->
-        functionBuilder.addStatement(
-            "require(%L in listOf(%L)) { %S }",
-            lexical, values.map { CodeBlock.of("%S", it) }.joinToCode(", "), "$name must be one of: ${values.joinToString()}"
-        )
+    c.inValues?.let { values ->
+        if (values.isEmpty()) {
+            // sh:in without members (e.g. inherited and restated lists without a common member): nothing is allowed.
+            functionBuilder.addStatement("require(false) { %S }", "$name has an sh:in without members: no value is allowed")
+        } else {
+            functionBuilder.addStatement(
+                "require(%L in listOf(%L)) { %S }",
+                lexical, values.map { CodeBlock.of("%S", it) }.joinToCode(", "), "$name must be one of: ${values.joinToString()}"
+            )
+        }
     }
 
     c.hasValue?.let {

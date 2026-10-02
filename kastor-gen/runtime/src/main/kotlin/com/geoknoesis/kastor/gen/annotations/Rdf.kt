@@ -63,6 +63,25 @@ annotation class Rdf(
   val generateWriteSupport: Boolean = false,
 )
 
+/**
+ * Declares that instances of the annotated type are materialized by a factory the application registers itself
+ * (`OntoMapper.register(Type::class.java) { handle -> ... }`), under whatever class name it likes.
+ *
+ * A member of an `@Rdf` interface whose type is neither a literal, an enum, an RDF term nor an `@Rdf` type is read
+ * through `OntoMapper`, which needs a factory for it. The processor accepts such a member only when it can see where
+ * the factory comes from: the type is `@Rdf`-annotated, a `<Type>Wrapper` / `<Type>Factory` class exists, or the type
+ * carries this annotation. Without one of these the member is a compile-time error (instead of a "No wrapper factory
+ * registered" failure at the first read). With this annotation the processor trusts the declaration: registering the
+ * factory before the first read is the application's responsibility.
+ *
+ * For a type that cannot be annotated (a library type), list its qualified name in the KSP option
+ * `kastor.gen.materializableTypes` (comma separated) instead.
+ */
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.BINARY)
+@MustBeDocumented
+annotation class RdfMaterializable
+
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.SOURCE)
 annotation class Prefix(
@@ -107,3 +126,6 @@ enum class NestedMode {
 
 /** Stable qualified name for KSP lookup. */
 const val RDF_ANNOTATION_FQN: String = "com.geoknoesis.kastor.gen.annotations.Rdf"
+
+/** Stable qualified name of [RdfMaterializable] for KSP lookup. */
+const val RDF_MATERIALIZABLE_ANNOTATION_FQN: String = "com.geoknoesis.kastor.gen.annotations.RdfMaterializable"

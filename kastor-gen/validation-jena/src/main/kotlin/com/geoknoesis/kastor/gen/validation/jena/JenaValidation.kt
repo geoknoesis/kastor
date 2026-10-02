@@ -16,6 +16,7 @@ import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.RdfTriple
 import com.geoknoesis.kastor.rdf.TripleTerm
 import com.geoknoesis.kastor.rdf.TypedLiteral
+import com.geoknoesis.kastor.rdf.VersionedRdfGraph
 import com.geoknoesis.kastor.rdf.jena.JenaBridge
 import org.apache.jena.graph.Graph
 import org.apache.jena.graph.GraphUtil
@@ -27,6 +28,7 @@ import org.apache.jena.shacl.ShaclValidator
 import org.apache.jena.shacl.Shapes
 import org.apache.jena.shacl.validation.ReportEntry
 import org.apache.jena.shacl.validation.Severity
+import org.apache.jena.sparql.core.GraphView
 import org.apache.jena.sparql.graph.GraphFactory
 import org.apache.jena.sparql.path.P_Link
 import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
@@ -45,45 +47,73 @@ import com.geoknoesis.kastor.rdf.vocab.SHACL as KSHACL
  * whose `sh:focusNode` is that node.
  *
  * ## Cost model
- * Jena-backed Kastor graphs are validated directly (a standalone Jena graph in place, a graph of a Jena repository
- * through the provider's native copy of its read view). Other graphs are converted to a Jena graph, and the
- * converted copy (with the shapes parsed from it, for embedded shapes) is cached per data graph, for up to
- * [maxCachedGraphs] graphs, with the rules of [GraphStateCache]: a graph is converted again only when it is new or
- * its content changed. Graphs with a modification stamp (`MemoryGraph`, named graphs of the memory repository) are
- * checked in O(1) and a new handle of the same named graph finds the copy of an equal handle; other graphs are
- * identified by a digest of their triples (one pass per call, no conversion). The data graph is read while the
- * validator holds no lock, so [validate] may be called inside a repository transaction. Validations of one graph run
- * concurrently on its converted copy.
+ * - A **standalone Jena graph** (`JenaBridge.fromJenaModel`, a graph parsed by the Jena provider) is validated in
+ *   place: nothing is copied, nothing is cached (embedded shapes are parsed per call; use [validateAll] for many
+ *   nodes).
+ * - **Every other graph** - a graph of a Jena repository (whose store is only readable inside a transaction, so the
+ *   engine needs a detached copy), a graph of another provider - is copied into a Jena graph, and the copy (with the
+ *   shapes parsed from it, for embedded shapes) is cached per data graph, for up to [maxCachedGraphs] graphs, with
+ *   the rules of [GraphStateCache]: a graph is copied again only when it is new or its content changed.
+ *   - Graphs with a modification stamp ([VersionedRdfGraph]: `MemoryGraph`, the named graphs of the memory
+ *     repository, repositories whose provider stamps its graphs) are checked in O(1), and a new handle of the same
+ *     graph finds the copy of an equal handle.
+ *   - Graphs without a stamp are **read in full on every call** (`getTriples()`, a digest of every triple) to find
+ *     out whether the copy is still current; only the copy and the shapes parse are saved. Validate many nodes of
+ *     such a graph with one [validateAll] call (one read), or create the validator with `assumeImmutable = true`
+ *     when the graphs do not change while the validator lives (a graph found again by its handle is then not read
+ *     again; changes are not detected).
+ *
+ * The data graph is read while the validator holds no lock, so [validate] may be called inside a repository
+ * transaction. Validations of one graph run concurrently on its copy.
  *
  * The cache size defaults to [DEFAULT_MAX_CACHED_GRAPHS]; set it with the constructor argument or process-wide with
  * the system property [MAX_CACHED_GRAPHS_PROPERTY] (read when a validator is created). When every cached copy is in
- * use, a call converts into a private temporary copy instead of waiting. [close] drops the cached copies.
+ * use, a call converts into a private temporary copy instead of waiting; at most [maxCachedGraphs] temporary copies
+ * exist at a time, further calls wait for a free copy and fail with
+ * [com.geoknoesis.kastor.gen.runtime.GraphStateCacheSaturatedException] after 10 seconds. [close] drops the cached
+ * copies.
  *
  * Engine failures (malformed shapes, unsupported focus terms, ...) are thrown rather than being
  * reported as violations or silently accepted.
  */
 class JenaValidation private constructor(
   private val fixedShapes: Shapes?,
-  /** Maximum number of non-Jena data graphs whose converted copy is kept. */
+  /** Maximum number of data graphs whose converted copy is kept. */
   val maxCachedGraphs: Int,
+  /** Whether graphs without a modification stamp are assumed not to change while this validator lives. */
+  val assumeImmutable: Boolean,
 ) : ValidationContext {
 
   /** Validates against SHACL shapes found in the data graph passed to [validate]. */
-  constructor() : this(null as Shapes?, configuredMaxCachedGraphs())
+  constructor() : this(null as Shapes?, configuredMaxCachedGraphs(), false)
 
   /** Validates against the SHACL shapes in [shapes] (copied and parsed once). */
-  constructor(shapes: RdfGraph) : this(parseShapes(copyOf(JenaBridge.toJenaGraph(shapes))), configuredMaxCachedGraphs())
+  constructor(shapes: RdfGraph) : this(parseShapes(copyOf(JenaBridge.toJenaGraph(shapes))), configuredMaxCachedGraphs(), false)
 
   /**
    * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph), keeping the
-   * converted copies of at most [maxCachedGraphs] non-Jena data graphs.
+   * converted copies of at most [maxCachedGraphs] data graphs.
    *
    * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
    */
-  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) :
-    this(shapes?.let { parseShapes(copyOf(JenaBridge.toJenaGraph(it))) }, maxCachedGraphs)
+  constructor(shapes: RdfGraph?, maxCachedGraphs: Int) : this(shapes, maxCachedGraphs, false)
 
-  /** The Jena copy of a non-Jena data graph, with the shapes embedded in it (parsed on first use). */
+  /**
+   * Validates against the SHACL shapes in [shapes] (or, when null, those embedded in the data graph).
+   *
+   * @param maxCachedGraphs maximum number of data graphs whose converted copy is kept (by default the configured
+   *   size, see [MAX_CACHED_GRAPHS_PROPERTY])
+   * @param assumeImmutable the caller guarantees that data graphs **without a modification stamp** do not change
+   *   while this validator lives: such a graph, once copied, is not read again when it is passed again (the same
+   *   graph object, or a handle equal to it), instead of being read in full on every call to detect changes. A
+   *   change of such a graph is then **not detected**: results keep describing the content first seen. Graphs with
+   *   a modification stamp are still checked on every call.
+   * @throws IllegalArgumentException when [maxCachedGraphs] is less than 1
+   */
+  constructor(shapes: RdfGraph? = null, maxCachedGraphs: Int = configuredMaxCachedGraphs(), assumeImmutable: Boolean) :
+    this(shapes?.let { parseShapes(copyOf(JenaBridge.toJenaGraph(it))) }, maxCachedGraphs, assumeImmutable)
+
+  /** The Jena copy of a data graph, with the shapes embedded in it (parsed on first use). */
   private class Converted(val graph: Graph) {
     val embeddedShapes: Shapes? by lazy { if (declaresShapes(graph)) parseShapes(graph) else null }
   }
@@ -103,6 +133,7 @@ class JenaValidation private constructor(
     // Nothing to release: an in-memory Jena graph is reclaimed by the garbage collector (and may still be read).
     release = { },
     owner = "JenaValidation",
+    settings = GraphStateCache.Settings(assumeImmutable = assumeImmutable),
   )
 
   /** Test hook: number of graphs converted. */
@@ -125,17 +156,18 @@ class JenaValidation private constructor(
     )
     private val SH_MESSAGE: Node = NodeFactory.createURI("${SH}message")
 
-    /** Default maximum number of non-Jena data graphs whose converted copy is kept. */
+    /** Default maximum number of data graphs whose converted copy is kept. */
     const val DEFAULT_MAX_CACHED_GRAPHS: Int = 16
 
     /**
-     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size
-     * (a positive integer; other values are ignored).
+     * System property that overrides [DEFAULT_MAX_CACHED_GRAPHS] for validators created without an explicit size: a
+     * positive integer. Any other value (`0`, `abc`) is reported once with a WARN log entry (`System.Logger`
+     * `com.geoknoesis.kastor.gen.runtime.GraphStateCache`) and the default is used.
      */
     const val MAX_CACHED_GRAPHS_PROPERTY: String = "kastor.validation.jena.maxCachedGraphs"
 
     private fun configuredMaxCachedGraphs(): Int =
-      System.getProperty(MAX_CACHED_GRAPHS_PROPERTY)?.trim()?.toIntOrNull()?.takeIf { it >= 1 } ?: DEFAULT_MAX_CACHED_GRAPHS
+      GraphStateCache.configuredMaxEntries(MAX_CACHED_GRAPHS_PROPERTY, DEFAULT_MAX_CACHED_GRAPHS)
 
     private fun declaresShapes(graph: Graph): Boolean =
       SHAPE_MARKERS.any { (p, o) -> graph.contains(Node.ANY, p, o ?: Node.ANY) }
@@ -144,10 +176,18 @@ class JenaValidation private constructor(
     @JvmStatic
     fun fromTurtle(shapesTurtle: String): JenaValidation {
       val graph = RDFParser.create().fromString(shapesTurtle).lang(Lang.TURTLE).toGraph()
-      return JenaValidation(parseShapes(graph), configuredMaxCachedGraphs())
+      return JenaValidation(parseShapes(graph), configuredMaxCachedGraphs(), false)
     }
 
-    private fun parseShapes(graph: Graph): Shapes = Shapes.parse(graph)
+    private val shapeParses = java.util.concurrent.atomic.AtomicInteger()
+
+    /** Test hook: number of shapes graphs parsed so far in this process. */
+    internal val shapeParseCount: Int get() = shapeParses.get()
+
+    private fun parseShapes(graph: Graph): Shapes {
+      shapeParses.incrementAndGet()
+      return Shapes.parse(graph)
+    }
 
     private fun copyOf(graph: Graph): Graph =
       GraphFactory.createDefaultGraph().also { GraphUtil.addInto(it, graph) }
@@ -155,19 +195,41 @@ class JenaValidation private constructor(
 
   override fun validate(data: RdfGraph, focus: RdfTerm): ValidationResult {
     val focusNode = toFocusNode(focus)
-    if (JenaBridge.isJenaBacked(data)) {
-      val dataGraph = JenaBridge.toJenaGraph(data)
-      val shapes = fixedShapes ?: run {
-        if (!declaresShapes(dataGraph)) return ValidationResult.Ok
-        parseShapes(dataGraph)
-      }
-      return validate(shapes, dataGraph, focusNode)
+    return withData(data) { shapes, graph -> if (shapes == null) ValidationResult.Ok else validate(shapes, graph, focusNode) }
+  }
+
+  /**
+   * Validates every node of [focuses] against one state of [data]: the graph is checked for changes (and, without a
+   * modification stamp, read) once for all of them, and embedded shapes are parsed at most once.
+   */
+  override fun validateAll(data: RdfGraph, focuses: Collection<RdfTerm>): Map<RdfTerm, ValidationResult> {
+    val nodes = LinkedHashMap<RdfTerm, Node>()
+    focuses.forEach { focus -> if (focus !in nodes) nodes[focus] = toFocusNode(focus) }
+    if (nodes.isEmpty()) return emptyMap()
+    return withData(data) { shapes, graph ->
+      nodes.mapValuesTo(LinkedHashMap()) { (_, node) -> if (shapes == null) ValidationResult.Ok else validate(shapes, graph, node) }
+    }
+  }
+
+  /** Runs [block] with the shapes (null when the data declares none) and a Jena graph holding the content of [data]. */
+  private fun <R> withData(data: RdfGraph, block: (Shapes?, Graph) -> R): R {
+    val direct = standaloneJenaGraph(data)
+    if (direct != null) {
+      return block(fixedShapes ?: if (declaresShapes(direct)) parseShapes(direct) else null, direct)
     }
     // The cache reads the data graph (stamp or triples) before it takes any lock.
-    return cache.use(data) { converted ->
-      val shapes = fixedShapes ?: converted.embeddedShapes
-      if (shapes == null) ValidationResult.Ok else validate(shapes, converted.graph, focusNode)
-    }
+    return cache.use(data) { converted -> block(fixedShapes ?: converted.embeddedShapes, converted.graph) }
+  }
+
+  /**
+   * The Jena graph behind a standalone Jena-backed Kastor graph, which the engine can read in place; null for every
+   * graph that needs a copy. A graph of a Jena repository is a view of a dataset ([GraphView]) that is only readable
+   * inside a transaction: `JenaBridge.toJenaGraph` would copy it in full on every call, so it goes through the cache
+   * like the graphs of other providers.
+   */
+  private fun standaloneJenaGraph(data: RdfGraph): Graph? {
+    if (data is VersionedRdfGraph || !JenaBridge.isJenaBacked(data)) return null
+    return JenaBridge.getJenaGraph(data)?.takeUnless { it is GraphView }
   }
 
   /** Drops the cached copies of converted data graphs. */
