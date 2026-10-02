@@ -33,7 +33,7 @@ import org.apache.jena.riot.RiotException
  *     skolemized only as the graph name. Rewriting the triple occurrences too would need a second pass (while
  *     streaming, a blank node seen in a triple may only later turn out to name a graph) or would turn every blank
  *     node of the document into an IRI. The link is not lost: the term's [BlankNode.id] is the `<blank node id>`
- *     part of the graph name ([JenaParsing.blankNodeIdOfSkolemGraph] recovers it).
+ *     part of the graph name (the public function [blankNodeIdOfSkolemGraph] recovers it).
  */
 class JenaProvider : RdfProvider {
 
@@ -333,6 +333,32 @@ class JenaProvider : RdfProvider {
     }
 }
 
+/**
+ * Recognises and decodes the name of a **skolem graph**: the IRI that replaces a blank-node graph name when a dataset
+ * is loaded into a repository (see [JenaProvider] and `parseDataset`).
+ *
+ * Returns the id of the blank node the graph name stands for, that is the [BlankNode.id] of that node's occurrences
+ * as a term in the triples of the same load, or `null` when [graphName] is not a skolem graph name.
+ *
+ * A skolem graph name has exactly this form (the RDF4J provider produces the same one, so this function decodes its
+ * graph names too):
+ *
+ * ```
+ * urn:kastor:skolem:<load>:<id>
+ * ```
+ * - `<load>`: 32 lowercase hexadecimal digits, a random 128-bit id drawn once per load;
+ * - `<id>`: the blank node id as UTF-8, where every byte other than `A-Z a-z 0-9 . _ -` is written as `%` and two
+ *   uppercase hexadecimal digits; never empty.
+ *
+ * ```kotlin
+ * for (graph in repository.listGraphs()) {
+ *     val blankNodeId = blankNodeIdOfSkolemGraph(graph) ?: continue   // an ordinary named graph
+ *     // BlankNode(blankNodeId) is the node that named this graph in the loaded document
+ * }
+ * ```
+ */
+fun blankNodeIdOfSkolemGraph(graphName: Iri): String? = JenaParsing.blankNodeIdOfSkolemGraph(graphName.value)
+
 /** Shared Jena parsing helpers: format resolution, base-IRI policy and error mapping. */
 internal object JenaParsing {
         val FORMATS = listOf(
@@ -406,7 +432,8 @@ internal object JenaParsing {
         /** Prefix of the IRIs that replace blank-node graph names when a dataset is loaded into a repository. */
         const val SKOLEM_GRAPH_PREFIX = "urn:kastor:skolem:"
 
-        private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:([A-Za-z0-9._%-]+)")
+        /** Exactly what [skolemGraphName] produces: unreserved characters, or `%` and two uppercase hex digits. */
+        private val SKOLEM_GRAPH_NAME = Regex(Regex.escape(SKOLEM_GRAPH_PREFIX) + "[0-9a-f]{32}:((?:[A-Za-z0-9._-]|%[0-9A-F]{2})+)")
 
         /**
          * The id of the blank node that the skolem graph name [graphIri] stands for (the [BlankNode.id] of its
