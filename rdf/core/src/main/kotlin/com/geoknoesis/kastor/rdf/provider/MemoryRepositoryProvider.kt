@@ -94,8 +94,12 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
      * value when its backing graph is removed, re-created or restored by a rollback.
      */
     private val stamps = java.util.concurrent.atomic.AtomicLong()
-    /** Stamp of each removed named graph while it has no backing graph. Guarded by [lock]. */
-    private val absentStamps = HashMap<Iri, Long>()
+    /**
+     * The current stamp of every named graph that ever had a backing graph: the stamp of that graph or, while the
+     * name has none, the stamp taken when it was removed. Written while holding the write lock, each time with a
+     * fresh value of [stamps]; read without a lock, so a stamp read never waits for a writer.
+     */
+    private val namedStamps = java.util.concurrent.ConcurrentHashMap<Iri, Long>()
 
     // Access is checked before taking a lock: a write attempted while holding the read lock
     // (inside readTransaction) must fail rather than deadlock on lock upgrade.
@@ -108,19 +112,21 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         undoLog?.add(undo)
     }
 
-    private fun newGraph() = MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo, stamps::incrementAndGet)
+    /** A backing graph for [name] (null: the default graph); every stamp it takes is published for its name. */
+    private fun newGraph(name: Iri?) = MemoryGraph(emptyList(), lock, ::checkAccess, ::recordUndo) {
+        stamps.incrementAndGet().also { stamp -> if (name != null) namedStamps[name] = stamp }
+    }
 
     /** Records that [name] lost its backing graph; called while holding the write lock. */
-    private fun markAbsent(name: Iri) { absentStamps[name] = stamps.incrementAndGet() }
+    private fun markAbsent(name: Iri) { namedStamps[name] = stamps.incrementAndGet() }
 
     /** Puts [graph] back as [name] (rollback) with a fresh stamp; called while holding the write lock. */
     private fun restore(name: Iri, graph: MemoryGraph) {
         graphs[name] = graph
-        absentStamps.remove(name)
         graph.touch()
     }
 
-    private val default = newGraph()
+    private val default = newGraph(null)
 
     override val defaultGraph: RdfGraph get() { checkAccess(false); return default }
     override fun getGraph(name: Iri): RdfGraph { checkAccess(false); return NamedGraphView(name) }
@@ -131,8 +137,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         checkAccess(true)
         lock.write {
             if (name !in graphs) {
-                graphs[name] = newGraph()
-                absentStamps.remove(name)
+                graphs[name] = newGraph(name)
                 recordUndo { lock.write { graphs.remove(name); markAbsent(name) } }
             }
             if (createdGraphs.add(name)) recordUndo { lock.write { createdGraphs.remove(name) } }
@@ -229,7 +234,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     /**
      * Live view of a named graph; resolves the backing graph on every call. Its [modificationStamp] is the backing
      * graph's (stamps are unique across the repository), or the stamp recorded when the graph was removed.
-     * It is read like the stamp of the default graph: under the read lock, failing once the repository is closed.
+     * It is read like the stamp of the default graph: without taking the lock, failing once the repository is closed.
      */
     private inner class NamedGraphView(private val name: Iri) : MutableRdfGraph, VersionedRdfGraph {
         private val repository: MemoryRepository get() = this@MemoryRepository
@@ -239,11 +244,11 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         private inline fun <T> writing(create: Boolean, block: (MemoryGraph?) -> T): T {
             checkAccess(true)
             return lock.write {
-                block(if (create) graphs.getOrPut(name) { absentStamps.remove(name); newGraph() } else graphs[name])
+                block(if (create) graphs.getOrPut(name) { newGraph(name) } else graphs[name])
             }
         }
 
-        override val modificationStamp: Long get() = reading { it?.modificationStamp ?: absentStamps[name] ?: 0L }
+        override val modificationStamp: Long get() { checkAccess(false); return namedStamps[name] ?: 0L }
 
         override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
             reading { it?.find(subject, predicate, obj) ?: emptyList() }
@@ -285,13 +290,17 @@ class MemoryGraph internal constructor(
     private val subjects = mutableMapOf<RdfResource, MutableSet<RdfTriple>>()
     private val predicates = mutableMapOf<Iri, MutableSet<RdfTriple>>()
     private val objects = mutableMapOf<RdfTerm, MutableSet<RdfTriple>>()
-    /** Incremented (under the write lock) by every change of the content, including transaction rollbacks. */
+    /** Moved (under the write lock) by every change of the content, including transaction rollbacks. */
     @Volatile private var stamp = nextStamp?.invoke() ?: 0L
     /**
-     * Read under the read lock, like the content: it waits for a write or transaction of another thread, so it
-     * never reports a stamp from the middle of one, and it fails once the owning repository is closed.
+     * Read without taking the lock, so it never waits for a write or a transaction of another thread: a cache
+     * keyed by the stamp keeps serving a graph that a long transaction has not touched. For a graph the open
+     * transaction of another thread did change, it is the stamp of the latest change so far, a value no earlier
+     * read returned; read **before** the content, as [VersionedRdfGraph] requires, it cannot produce a stale cache
+     * hit. It fails with [IllegalStateException] once the owning repository is closed, like a read of the content
+     * (a stand-alone graph has no repository and never fails).
      */
-    override val modificationStamp: Long get() { access(false); return lock.read { stamp } }
+    override val modificationStamp: Long get() { access(false); return stamp }
 
     /** Moves the stamp to a new value; called while holding the write lock. */
     internal fun touch() { stamp = nextStamp?.invoke() ?: (stamp + 1) }
