@@ -349,6 +349,9 @@ class Rdf4jRepository(
     
     override val defaultGraph: RdfGraph = Rdf4jGraph(this, null)
 
+    /** A handle of the graph stored in [context] (the default graph for null). */
+    private fun graphHandle(context: org.eclipse.rdf4j.model.Resource?): Rdf4jGraph = Rdf4jGraph(this, context)
+
     override fun getGraph(name: Iri): RdfGraph =
         Rdf4jGraph(this, valueFactory.createIRI(name.value))
 
@@ -406,10 +409,13 @@ class Rdf4jRepository(
 
     override fun <T> withConstructTriples(query: SparqlConstruct, consume: (Sequence<RdfTriple>) -> T): T = withConnection { conn ->
         val result = queryOperation(query.sparql) { conn.prepareGraphQuery(QueryLanguage.SPARQL, query.sparql).onKastorDataset(conn).evaluate() }
-        result.use {
-            val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-            consume(it.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.guardedBy(query.sparql))
-        }
+        result.use { consume(it.viewTriples().guardedBy(query.sparql)) }
+    }
+
+    /** The statements of a graph query result as RDF 1.2 triples (see [Rdf4jTerms.triplesOf]). */
+    private fun org.eclipse.rdf4j.query.GraphQueryResult.viewTriples(): Sequence<RdfTriple> {
+        val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
+        return iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }
     }
 
     /**
@@ -724,33 +730,115 @@ class Rdf4jRepository(
         result
     }
 
-    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> =
-        graphQuery("CONSTRUCT", query.sparql)
-
-    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> =
-        graphQuery("DESCRIBE", query.sparql)
-
     /**
-     * Shared CONSTRUCT/DESCRIBE execution. The result is materialized to a list inside
-     * the connection scope because the borrowed connection (and its GraphQueryResult
-     * cursor) is closed as soon as [withConnection] returns - a lazy sequence over a
-     * closed connection would fail. Callers that need lazy streaming over large graphs
-     * should use a scoped query API. Failures while preparing, evaluating or iterating
-     * the result surface as [RdfQueryException] (see [queryOperation]).
+     * The result is materialized to a list inside the connection scope because the borrowed connection (and its
+     * GraphQueryResult cursor) is closed as soon as [withConnection] returns - a lazy sequence over a closed
+     * connection would fail. Callers that need lazy streaming over large graphs should use [withConstructTriples].
+     * Failures while preparing, evaluating or iterating the result surface as [RdfQueryException] (see
+     * [queryOperation]).
      */
-    private fun graphQuery(kind: String, sparql: String): Sequence<RdfTriple> = withConnection { conn ->
+    override fun construct(query: SparqlConstruct): Sequence<RdfTriple> = withConnection { conn ->
+        val sparql = query.sparql
         val startTime = System.currentTimeMillis()
-        val prepared = queryOperation(sparql, "Failed to prepare SPARQL $kind query", kind) {
+        val prepared = queryOperation(sparql, "Failed to prepare SPARQL CONSTRUCT query", "CONSTRUCT") {
             conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql).onKastorDataset(conn)
         }
-        val triples = queryOperation(sparql, "Failed to execute SPARQL $kind query", kind) {
-            prepared.evaluate().use { graphResult ->
-                val seen = HashSet<org.eclipse.rdf4j.model.Triple>()
-                graphResult.iterator().asSequence().flatMap { statement -> Rdf4jTerms.triplesOf(statement, seen) }.toList()
+        val triples = queryOperation(sparql, "Failed to execute SPARQL CONSTRUCT query", "CONSTRUCT") {
+            prepared.evaluate().use { it.viewTriples().toList() }
+        }
+        RdfDebug.logQueryTrace("CONSTRUCT", sparql, null, System.currentTimeMillis() - startTime, triples.size)
+        triples.asSequence()
+    }
+
+    /**
+     * Describes the resources a `DESCRIBE` query selects with their **concise bounded description**, exactly as the
+     * Jena provider does: the statements whose subject is the resource and, recursively, the statements whose subject
+     * is a blank node that is the object of a described statement. Statements that merely point at the resource are
+     * not part of it. (RDF4J's own `DESCRIBE` is symmetric: it also returns the incoming statements, so it is not
+     * used.)
+     *
+     * - **Resources:** the IRIs listed in the `DESCRIBE` clause (whatever the `WHERE` clause matches) and the IRIs and
+     *   blank nodes that the `WHERE` clause, with its solution modifiers, binds to the described variables (every
+     *   variable for `DESCRIBE *`). It is evaluated by RDF4J against the dataset every query gets (see
+     *   [onKastorDataset]). Literals and triple terms are not resources and are skipped.
+     * - **Source:** the description is read from the default graph of the query's dataset: the repository's default
+     *   graph, or the merge of the `FROM` graphs (nothing with only `FROM NAMED`). Named graphs are read by the
+     *   `WHERE` clause inside `GRAPH`, never by the description.
+     * - **Triples:** the ones the graph API returns for that graph ([Rdf4jGraph]): an RDF-star subject is read as its
+     *   reifier blank node with its `rdf:reifies` triple (once), triple terms are objects and are not followed, and
+     *   an inference repository includes entailed statements. Blank node cycles end.
+     *
+     * A wrapped repository that is not evaluated by an RDF4J Sail (HTTP repository, SPARQL endpoint) returns the
+     * description its server computes.
+     */
+    override fun describe(query: SparqlDescribe): Sequence<RdfTriple> = withConnection { conn ->
+        val sparql = query.sparql
+        val startTime = System.currentTimeMillis()
+        val prepared = queryOperation(sparql, "Failed to prepare SPARQL DESCRIBE query", "DESCRIBE") {
+            conn.prepareGraphQuery(QueryLanguage.SPARQL, sparql)
+        }
+        val triples = queryOperation(sparql, "Failed to execute SPARQL DESCRIBE query", "DESCRIBE") {
+            boundedDescription(conn, sparql, prepared) ?: prepared.onKastorDataset(conn).evaluate().use { it.viewTriples().toList() }
+        }
+        RdfDebug.logQueryTrace("DESCRIBE", sparql, null, System.currentTimeMillis() - startTime, triples.size)
+        triples.asSequence()
+    }
+
+    /** The description [describe] documents, or null when [prepared] is not a `DESCRIBE` query evaluated by a Sail. */
+    private fun boundedDescription(conn: RepositoryConnection, sparql: String, prepared: GraphQuery): List<RdfTriple>? {
+        val parsed = (prepared as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return null
+        var operator: org.eclipse.rdf4j.query.algebra.DescribeOperator? = null
+        parsed.tupleExpr.visit(object : org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+            override fun meet(node: org.eclipse.rdf4j.query.algebra.DescribeOperator) { operator = node }
+        })
+        // The rows of this expression hold the resources to describe: RDF4J parses `DESCRIBE <iri> ?v WHERE { P }` as
+        // DescribeOperator(Projection(Extension(P, <iri> AS _describe_N), [_describe_N, v])).
+        val selection = operator?.arg ?: return null
+        val select = conn.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * {}")
+        val selectParsed = (select as? org.eclipse.rdf4j.repository.sail.SailQuery)?.parsedQuery ?: return null
+
+        val resources = LinkedHashSet<RdfResource>()
+        // The IRIs of the DESCRIBE clause are described also when the WHERE clause has no solution. Their generated
+        // names cannot be variables of the query: those occur in its text.
+        ((selection as? org.eclipse.rdf4j.query.algebra.Projection)?.arg as? org.eclipse.rdf4j.query.algebra.Extension)?.elements?.forEach { element ->
+            val constant = (element.expr as? org.eclipse.rdf4j.query.algebra.ValueConstant)?.value
+            if (constant is IRI && element.name.startsWith("_describe_") && !sparql.contains(element.name)) {
+                resources.add(Iri(constant.stringValue()))
             }
         }
-        RdfDebug.logQueryTrace(kind, sparql, null, System.currentTimeMillis() - startTime, triples.size)
-        triples.asSequence()
+        selectParsed.tupleExpr = selection.clone()
+        val declared = parsed.dataset
+        if (declared != null) select.dataset = declared else select.onKastorDataset(conn)
+        select.evaluate().use { rows ->
+            for (row in rows) {
+                for (binding in row) {
+                    when (val value = binding.value) {
+                        is IRI -> resources.add(Iri(value.stringValue()))
+                        is org.eclipse.rdf4j.model.BNode -> resources.add(BlankNode(value.id))
+                        else -> Unit
+                    }
+                }
+            }
+        }
+
+        val nil = setOf<IRI>(org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL, org.eclipse.rdf4j.model.vocabulary.SESAME.NIL)
+        val sources: List<Rdf4jGraph> =
+            if (declared == null) listOf(graphHandle(null)) else declared.defaultGraphs.map { graphHandle(if (it in nil) null else it) }
+        val description = LinkedHashSet<RdfTriple>()
+        val visited = HashSet<RdfResource>()
+        val pending = ArrayDeque<RdfResource>(resources)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            if (!visited.add(node)) continue
+            for (source in sources) {
+                for (triple in source.outgoing(conn, node)) {
+                    description.add(triple)
+                    val obj = triple.obj
+                    if (obj is BlankNode && obj !in visited) pending.addLast(obj)
+                }
+            }
+        }
+        return description.toList()
     }
 
     /**

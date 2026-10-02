@@ -244,6 +244,9 @@ internal class Rdf4jGraph(
     override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> =
         repo.withConnection { conn -> matching(conn, subject, predicate, obj) }
 
+    /** The triples of this graph with the subject [subject], read through [conn] (for `DESCRIBE`). */
+    internal fun outgoing(conn: RepositoryConnection, subject: RdfResource): List<RdfTriple> = matching(conn, subject, null, null)
+
     /** Triples of the RDF 1.2 view matching the pattern, de-duplicated, in store order. */
     private fun matching(conn: RepositoryConnection, subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
         resolveHashedReifiers(conn, subject, obj)
