@@ -1,11 +1,14 @@
 package com.geoknoesis.kastor.rdf.shacl
 
+import com.geoknoesis.kastor.rdf.BlankNode
 import com.geoknoesis.kastor.rdf.Iri
+import com.geoknoesis.kastor.rdf.Literal
 import com.geoknoesis.kastor.rdf.Rdf
 import com.geoknoesis.kastor.rdf.RdfFormat
 import com.geoknoesis.kastor.rdf.RdfGraph
 import com.geoknoesis.kastor.rdf.RdfTerm
 import com.geoknoesis.kastor.rdf.shacl.providers.NativeShaclValidator
+import com.geoknoesis.kastor.rdf.vocab.RDF
 import java.util.Random
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,21 +20,27 @@ import org.junit.jupiter.api.Test
  * documented semantics by brute force: every round it rebuilds the dependency graph of the unsettled questions and
  * re-evaluates every member of a bottom group until nothing changes.
  *
- * The cases are small random shape graphs whose shapes reference each other through monotone (`sh:node`, `sh:or`,
- * `sh:qualifiedMinCount`) and non-monotone (`sh:not`, `sh:xone`, `sh:qualifiedMaxCount`) operators over small random
- * data graphs. Seeds are fixed, so a failure is reproducible from its message.
+ * The cases are small random shape graphs whose shapes reference each other through monotone (`sh:node`, `sh:and`,
+ * `sh:or`, `sh:qualifiedMinCount`) and non-monotone (`sh:not`, `sh:xone`, `sh:qualifiedMaxCount`, a minimum and a
+ * maximum on the same qualified shape, `sh:qualifiedValueShapesDisjoint`) operators over small random data graphs
+ * whose nodes are IRIs, blank nodes and literals. The comparison covers the **content** of the report — for every
+ * target, each result's source shape, constraint component, value and whether it is definite or undefined — and not
+ * only the three-valued answer. Seeds are fixed, so a failure is reproducible from its message.
  */
 class RecursionSolverDifferentialTest {
 
     /** Three-valued answer in truth order. */
     private enum class V { F, U, C }
 
+    private enum class Kind { IRI, BLANK, LITERAL }
+
     private sealed class Conjunct {
         object HasName : Conjunct()
         data class All(val pred: String, val shape: Int) : Conjunct()
         data class None(val pred: String, val shape: Int) : Conjunct()
-        data class Some(val pred: String, val shape: Int) : Conjunct()
-        data class AtMost(val pred: String, val shape: Int, val max: Int) : Conjunct()
+        /** `sh:qualifiedValueShape` with an optional minimum, an optional maximum (at least one) and optional sibling exclusion. */
+        data class Qualified(val pred: String, val shape: Int, val min: Int?, val max: Int?, val disjoint: Boolean) : Conjunct()
+        data class And(val a: Int, val b: Int) : Conjunct()
         data class Or(val a: Int, val b: Int) : Conjunct()
         data class Xone(val a: Int, val b: Int) : Conjunct()
         data class Not(val shape: Int) : Conjunct()
@@ -41,17 +50,35 @@ class RecursionSolverDifferentialTest {
     private data class Atom(val node: Int, val shape: Int)
     private data class Edge(val to: Atom, val negative: Boolean)
 
-    private class Case(val seed: Long, val nodes: Int, val named: Set<Int>, val edges: Map<Pair<Int, String>, List<Int>>, val shapes: List<List<Conjunct>>) {
+    /** One validation result: its focus node, source shape, constraint component, value and definiteness. */
+    private data class Row(val node: Int, val source: String, val type: ConstraintType, val value: Int?, val undefined: Boolean)
+
+    private class Case(
+        val seed: Long,
+        val kinds: List<Kind>,
+        val named: Set<Int>,
+        val edges: Map<Pair<Int, String>, List<Int>>,
+        val shapes: List<List<Conjunct>>,
+    ) {
+        val nodes: Int get() = kinds.size
+
         fun values(node: Int, pred: String): List<Int> = edges[node to pred].orEmpty()
+
+        /** SHACL 4.7.3: the other `sh:qualifiedValueShape` values of the parent shape's properties, minus the own one. */
+        fun siblings(shape: Int, c: Conjunct.Qualified): List<Int> =
+            if (!c.disjoint) emptyList() else shapes[shape].filterIsInstance<Conjunct.Qualified>().map { it.shape }.distinct().filter { it != c.shape }
 
         fun dependencies(atom: Atom): List<Edge> =
             shapes[atom.shape].flatMap { c ->
                 when (c) {
                     Conjunct.HasName -> emptyList()
                     is Conjunct.All -> values(atom.node, c.pred).map { Edge(Atom(it, c.shape), false) }
-                    is Conjunct.Some -> values(atom.node, c.pred).map { Edge(Atom(it, c.shape), false) }
                     is Conjunct.None -> values(atom.node, c.pred).map { Edge(Atom(it, c.shape), true) }
-                    is Conjunct.AtMost -> values(atom.node, c.pred).map { Edge(Atom(it, c.shape), true) }
+                    // A maximum makes the qualified shape a negative dependency; sibling exclusion always is one.
+                    is Conjunct.Qualified -> values(atom.node, c.pred).flatMap { v ->
+                        listOf(Edge(Atom(v, c.shape), c.max != null)) + siblings(atom.shape, c).map { Edge(Atom(v, it), true) }
+                    }
+                    is Conjunct.And -> listOf(Edge(Atom(atom.node, c.a), false), Edge(Atom(atom.node, c.b), false))
                     is Conjunct.Or -> listOf(Edge(Atom(atom.node, c.a), false), Edge(Atom(atom.node, c.b), false))
                     is Conjunct.Xone -> listOf(Edge(Atom(atom.node, c.a), true), Edge(Atom(atom.node, c.b), true))
                     is Conjunct.Not -> listOf(Edge(Atom(atom.node, c.shape), true))
@@ -59,43 +86,76 @@ class RecursionSolverDifferentialTest {
                 }
             }
 
-        /** Kleene evaluation of one question given the answers of the questions it reads. */
-        fun evaluate(atom: Atom, answer: (Atom) -> V): V =
-            shapes[atom.shape].minOf { c ->
-                when (c) {
-                    Conjunct.HasName -> if (atom.node in named) V.C else V.F
-                    is Conjunct.All -> values(atom.node, c.pred).minOfOrNull { answer(Atom(it, c.shape)) } ?: V.C
-                    is Conjunct.None -> values(atom.node, c.pred).minOfOrNull { invert(answer(Atom(it, c.shape))) } ?: V.C
-                    is Conjunct.Some -> {
-                        val answers = values(atom.node, c.pred).map { answer(Atom(it, c.shape)) }
+        /**
+         * The results of conjunct [index] of [atom]'s shape given the answers of the questions it reads (Kleene
+         * logic). No result: the conjunct conforms. An undefined result: its outcome depends on an undefined answer.
+         */
+        fun rows(atom: Atom, index: Int, answer: (Atom) -> V): List<Row> {
+            val node = atom.node
+            val shape = "S${atom.shape}"
+            val property = "S${atom.shape}_c$index"
+            fun row(source: String, type: ConstraintType, value: Int?, outcome: V): List<Row> =
+                if (outcome == V.C) emptyList() else listOf(Row(node, source, type, value, outcome == V.U))
+            return when (val c = shapes[atom.shape][index]) {
+                Conjunct.HasName -> row(property, ConstraintType.MIN_COUNT, null, if (node in named) V.C else V.F)
+                is Conjunct.All -> values(node, c.pred).flatMap { v -> row(property, ConstraintType.NODE, v, answer(Atom(v, c.shape))) }
+                is Conjunct.None -> values(node, c.pred).flatMap { v -> row(property, ConstraintType.NOT, v, invert(answer(Atom(v, c.shape)))) }
+                is Conjunct.Qualified -> {
+                    val siblings = siblings(atom.shape, c)
+                    val counted = values(node, c.pred).map { v ->
+                        val own = answer(Atom(v, c.shape))
+                        val others = siblings.map { answer(Atom(v, it)) }
                         when {
-                            answers.none { it != V.F } -> V.F
-                            answers.none { it == V.C } -> V.U
+                            own == V.F || others.any { it == V.C } -> V.F
+                            own == V.U || others.any { it == V.U } -> V.U
                             else -> V.C
                         }
                     }
-                    is Conjunct.AtMost -> {
-                        val answers = values(atom.node, c.pred).map { answer(Atom(it, c.shape)) }
-                        when {
-                            answers.count { it == V.C } > c.max -> V.F
-                            answers.count { it != V.F } > c.max -> V.U
-                            else -> V.C
-                        }
+                    // The count lies between the values that definitely count and those that possibly count.
+                    val definite = counted.count { it == V.C }
+                    val possible = counted.count { it != V.F }
+                    val minimum = when {
+                        c.min == null -> V.C
+                        possible < c.min -> V.F
+                        definite < c.min -> V.U
+                        else -> V.C
                     }
-                    is Conjunct.Or -> maxOf(answer(Atom(atom.node, c.a)), answer(Atom(atom.node, c.b)))
-                    is Conjunct.Xone -> {
-                        val answers = listOf(answer(Atom(atom.node, c.a)), answer(Atom(atom.node, c.b)))
-                        when {
-                            answers.count { it == V.C } > 1 -> V.F
-                            answers.any { it == V.U } -> V.U
-                            answers.none { it == V.C } -> V.F
-                            else -> V.C
-                        }
+                    val maximum = when {
+                        c.max == null -> V.C
+                        definite > c.max -> V.F
+                        possible > c.max -> V.U
+                        else -> V.C
                     }
-                    is Conjunct.Not -> invert(answer(Atom(atom.node, c.shape)))
-                    is Conjunct.Node -> answer(Atom(atom.node, c.shape))
+                    row(property, ConstraintType.QUALIFIED_MIN_COUNT, null, minimum) + row(property, ConstraintType.QUALIFIED_MAX_COUNT, null, maximum)
                 }
+                is Conjunct.And -> row(shape, ConstraintType.AND, node, minOf(answer(Atom(node, c.a)), answer(Atom(node, c.b))))
+                is Conjunct.Or -> row(shape, ConstraintType.OR, node, maxOf(answer(Atom(node, c.a)), answer(Atom(node, c.b))))
+                is Conjunct.Xone -> {
+                    val answers = listOf(answer(Atom(node, c.a)), answer(Atom(node, c.b)))
+                    val outcome = when {
+                        answers.count { it == V.C } > 1 -> V.F
+                        answers.any { it == V.U } -> V.U
+                        answers.none { it == V.C } -> V.F
+                        else -> V.C
+                    }
+                    row(shape, ConstraintType.XONE, node, outcome)
+                }
+                is Conjunct.Not -> row(shape, ConstraintType.NOT, node, invert(answer(Atom(node, c.shape))))
+                is Conjunct.Node -> row(shape, ConstraintType.NODE, node, answer(Atom(node, c.shape)))
             }
+        }
+
+        fun rows(atom: Atom, answer: (Atom) -> V): List<Row> = shapes[atom.shape].indices.flatMap { rows(atom, it, answer) }
+
+        /** Kleene evaluation of one question: fails with a definite result, undefined with only undefined ones. */
+        fun evaluate(atom: Atom, answer: (Atom) -> V): V {
+            val rows = rows(atom, answer)
+            return when {
+                rows.any { !it.undefined } -> V.F
+                rows.isNotEmpty() -> V.U
+                else -> V.C
+            }
+        }
 
         // --- naive oracle ------------------------------------------------------------------------------------------
 
@@ -168,33 +228,52 @@ class RecursionSolverDifferentialTest {
 
         // --- RDF --------------------------------------------------------------------------------------------------
 
+        private fun term(node: Int): String =
+            when (kinds[node]) {
+                Kind.IRI -> "ex:n$node"
+                Kind.BLANK -> "_:n$node"
+                Kind.LITERAL -> "'n$node'"
+            }
+
         fun dataGraph(): RdfGraph {
             val sb = StringBuilder(PREFIXES)
             for (n in 0 until nodes) {
-                // Every node is declared, so that a node without edges still exists in the data graph.
-                sb.append("ex:n$n a ex:Thing .\n")
-                if (n in named) sb.append("ex:n$n ex:name 'n$n' .\n")
+                // Every resource is declared, so that a node without edges still exists in the data graph. A blank
+                // node is typed with a class of its own, which is how a shape targets it.
+                when (kinds[n]) {
+                    Kind.IRI -> sb.append("ex:n$n a ex:Thing .\n")
+                    Kind.BLANK -> sb.append("_:n$n a ex:C$n .\n")
+                    Kind.LITERAL -> Unit
+                }
+                if (n in named) sb.append("${term(n)} ex:name 'name of n$n' .\n")
             }
-            for ((key, targets) in edges) for (t in targets) sb.append("ex:n${key.first} ex:${key.second} ex:n$t .\n")
+            for ((key, targets) in edges) for (t in targets) sb.append("${term(key.first)} ex:${key.second} ${term(t)} .\n")
             return Rdf.parse(sb.toString(), RdfFormat.TURTLE)
         }
 
-        /** Shapes graph in which [targets] maps a shape to the nodes it targets (`sh:targetNode`). */
+        /** Shapes graph in which [targets] maps a shape to the nodes it targets. */
         fun shapesGraph(targets: Map<Int, List<Int>>): RdfGraph {
             val sb = StringBuilder(PREFIXES)
             shapes.forEachIndexed { s, conjuncts ->
                 sb.append("ex:S$s a sh:NodeShape .\n")
-                targets[s].orEmpty().forEach { sb.append("ex:S$s sh:targetNode ex:n$it .\n") }
+                for (n in targets[s].orEmpty()) {
+                    // IRIs and literals are sh:targetNode values; a blank node of the data graph is targeted by its class.
+                    if (kinds[n] == Kind.BLANK) sb.append("ex:S$s sh:targetClass ex:C$n .\n") else sb.append("ex:S$s sh:targetNode ${term(n)} .\n")
+                }
                 conjuncts.forEachIndexed { i, c ->
                     val ps = "ex:S${s}_c$i"
                     when (c) {
                         Conjunct.HasName -> sb.append("ex:S$s sh:property $ps . $ps sh:path ex:name ; sh:minCount 1 .\n")
                         is Conjunct.All -> sb.append("ex:S$s sh:property $ps . $ps sh:path ex:${c.pred} ; sh:node ex:S${c.shape} .\n")
                         is Conjunct.None -> sb.append("ex:S$s sh:property $ps . $ps sh:path ex:${c.pred} ; sh:not ex:S${c.shape} .\n")
-                        is Conjunct.Some ->
-                            sb.append("ex:S$s sh:property $ps . $ps sh:path ex:${c.pred} ; sh:qualifiedValueShape ex:S${c.shape} ; sh:qualifiedMinCount 1 .\n")
-                        is Conjunct.AtMost ->
-                            sb.append("ex:S$s sh:property $ps . $ps sh:path ex:${c.pred} ; sh:qualifiedValueShape ex:S${c.shape} ; sh:qualifiedMaxCount ${c.max} .\n")
+                        is Conjunct.Qualified -> {
+                            sb.append("ex:S$s sh:property $ps . $ps sh:path ex:${c.pred} ; sh:qualifiedValueShape ex:S${c.shape}")
+                            c.min?.let { sb.append(" ; sh:qualifiedMinCount $it") }
+                            c.max?.let { sb.append(" ; sh:qualifiedMaxCount $it") }
+                            if (c.disjoint) sb.append(" ; sh:qualifiedValueShapesDisjoint true")
+                            sb.append(" .\n")
+                        }
+                        is Conjunct.And -> sb.append("ex:S$s sh:and ( ex:S${c.a} ex:S${c.b} ) .\n")
                         is Conjunct.Or -> sb.append("ex:S$s sh:or ( ex:S${c.a} ex:S${c.b} ) .\n")
                         is Conjunct.Xone -> sb.append("ex:S$s sh:xone ( ex:S${c.a} ex:S${c.b} ) .\n")
                         is Conjunct.Not -> sb.append("ex:S$s sh:not ex:S${c.shape} .\n")
@@ -205,53 +284,75 @@ class RecursionSolverDifferentialTest {
             return Rdf.parse(sb.toString(), RdfFormat.TURTLE)
         }
 
-        fun describe(): String = "seed=$seed nodes=$nodes named=$named edges=$edges shapes=$shapes"
+        fun describe(): String = "seed=$seed kinds=$kinds named=$named edges=$edges shapes=$shapes"
     }
 
     private fun generate(seed: Long): Case {
         val random = Random(seed)
-        val nodes = 1 + random.nextInt(4)
-        val shapeCount = 1 + random.nextInt(3)
-        val named = (0 until nodes).filter { random.nextInt(3) != 0 }.toSet()
+        val nodes = 1 + random.nextInt(6)
+        val shapeCount = 1 + random.nextInt(4)
+        val kinds = List(nodes) {
+            when (random.nextInt(10)) {
+                in 0..5 -> Kind.IRI
+                in 6..7 -> Kind.BLANK
+                else -> Kind.LITERAL
+            }
+        }
+        // A literal is never a subject: it has no name and no outgoing edge.
+        val named = (0 until nodes).filter { kinds[it] != Kind.LITERAL && random.nextInt(3) != 0 }.toSet()
         val predicates = listOf("p", "q")
         val edges = LinkedHashMap<Pair<Int, String>, List<Int>>()
         for (n in 0 until nodes) for (pred in predicates) {
-            val targets = (0 until nodes).filter { random.nextInt(100) < 35 }
-            if (targets.isNotEmpty()) edges[n to pred] = targets
+            val targets = (0 until nodes).filter { random.nextInt(100) < 30 }
+            if (targets.isNotEmpty() && kinds[n] != Kind.LITERAL) edges[n to pred] = targets
         }
         fun shape() = random.nextInt(shapeCount)
         fun pred() = predicates[random.nextInt(predicates.size)]
         val shapes = List(shapeCount) {
             List(1 + random.nextInt(3)) {
-                when (random.nextInt(11)) {
+                when (random.nextInt(16)) {
                     0, 1 -> Conjunct.HasName
                     2, 3 -> Conjunct.All(pred(), shape())
                     4, 5 -> Conjunct.None(pred(), shape())
-                    6 -> Conjunct.Some(pred(), shape())
-                    7 -> Conjunct.AtMost(pred(), shape(), random.nextInt(2))
-                    8 -> Conjunct.Or(shape(), shape())
-                    9 -> Conjunct.Xone(shape(), shape())
-                    else -> if (random.nextBoolean()) Conjunct.Not(shape()) else Conjunct.Node(shape())
+                    6 -> Conjunct.Qualified(pred(), shape(), min = 1 + random.nextInt(2), max = null, disjoint = false)
+                    7 -> Conjunct.Qualified(pred(), shape(), min = null, max = random.nextInt(2), disjoint = false)
+                    // A minimum and a maximum on the same qualified shape.
+                    8 -> Conjunct.Qualified(pred(), shape(), min = 1, max = 1 + random.nextInt(2), disjoint = false)
+                    // Sibling exclusion (it only has siblings when the shape has another qualified conjunct).
+                    9, 10 -> {
+                        val min = if (random.nextBoolean()) 1 else null
+                        Conjunct.Qualified(pred(), shape(), min = min, max = if (min == null || random.nextBoolean()) random.nextInt(2) else null, disjoint = true)
+                    }
+                    11 -> Conjunct.And(shape(), shape())
+                    12 -> Conjunct.Or(shape(), shape())
+                    13 -> Conjunct.Xone(shape(), shape())
+                    14 -> Conjunct.Not(shape())
+                    else -> Conjunct.Node(shape())
                 }
             }.distinct()
         }
-        return Case(seed, nodes, named, edges, shapes)
+        return Case(seed, kinds, named, edges, shapes)
     }
 
-    /** The engine's three-valued answer for every (focus node, top-level shape) of [report]. */
-    private fun engineAnswers(report: ValidationReport, questions: Collection<Atom>): Map<Atom, V> {
-        fun node(term: RdfTerm) = (term as Iri).value.substringAfterLast("/n").toInt()
-        fun shape(uri: String) = uri.substringAfterLast("/S").substringBefore("_").toInt()
-        val results = report.violations.groupBy { Atom(node(it.focusNode), shape(it.shapeUri!!)) }
-        return questions.associateWith { q ->
-            val rows = results[q].orEmpty()
-            when {
-                rows.isEmpty() -> V.C
-                rows.all { it.isUndefinedRecursion } -> V.U
-                else -> V.F
+    /** The engine's results as rows. Blank nodes are identified through the class the data graph gives each of them. */
+    private fun engineRows(report: ValidationReport, data: RdfGraph): List<Row> {
+        val blankNodes = HashMap<RdfTerm, Int>()
+        for (t in data.getTriples()) {
+            val type = t.obj as? Iri ?: continue
+            if (t.subject is BlankNode && t.predicate == RDF.type) blankNodes[t.subject] = type.value.substringAfterLast("/C").toInt()
+        }
+        fun node(term: RdfTerm): Int =
+            when (term) {
+                is Iri -> term.value.substringAfterLast("/n").toInt()
+                is Literal -> term.lexical.removePrefix("n").toInt()
+                else -> blankNodes.getValue(term)
             }
+        return report.violations.map { v ->
+            Row(node(v.focusNode), v.shapeUri!!.substringAfterLast("/"), v.constraint.constraintType, v.value?.let { node(it) }, v.isUndefinedRecursion)
         }
     }
+
+    private fun sorted(rows: List<Row>): List<String> = rows.map { it.toString() }.sorted()
 
     private fun validator() = NativeShaclValidator(ValidationConfig(maxViolations = 100_000))
 
@@ -260,28 +361,61 @@ class RecursionSolverDifferentialTest {
         var undefined = 0
         var failing = 0
         var questions = 0
+        val rowsByType = HashMap<Pair<ConstraintType, Boolean>, Int>()
+        val valueKinds = HashMap<Kind, Int>()
+        val focusKinds = HashMap<Kind, Int>()
+        var disjointWithSiblings = 0
         for (seed in 1L..400L) {
             val case = generate(seed)
             val expected = case.oracle()
+            val answer = { atom: Atom -> expected.getValue(atom) }
             val data = case.dataGraph()
             val atoms = expected.keys
             // 1. Every shape targets every node: the questions are answered in one run and share the memo.
             val allTargets = case.shapes.indices.associateWith { (0 until case.nodes).toList() }
-            val together = engineAnswers(validator().validate(data, case.shapesGraph(allTargets)), atoms)
-            assertEquals(expected, together, "all targets in one run: ${case.describe()}")
-            // 2. Each question alone, solved from a cold start.
-            for (atom in atoms) {
-                val alone = engineAnswers(validator().validate(data, case.shapesGraph(mapOf(atom.shape to listOf(atom.node)))), listOf(atom))
-                assertEquals(expected.getValue(atom), alone.getValue(atom), "single target $atom: ${case.describe()}")
+            val expectedRows = atoms.flatMap { case.rows(it, answer) }
+            val together = engineRows(validator().validate(data, case.shapesGraph(allTargets)), data)
+            assertEquals(sorted(expectedRows), sorted(together), "all targets in one run: ${case.describe()}")
+            // 2. Questions alone, solved from a cold start: all of them for one case in four, a seeded sample otherwise.
+            val sample = if (seed % 4 == 0L) atoms.toList() else atoms.toList().shuffled(Random(seed)).take(3)
+            for (atom in sample) {
+                val alone = engineRows(validator().validate(data, case.shapesGraph(mapOf(atom.shape to listOf(atom.node)))), data)
+                assertEquals(sorted(case.rows(atom, answer)), sorted(alone), "single target $atom: ${case.describe()}")
             }
             questions += atoms.size
             undefined += expected.values.count { it == V.U }
             failing += expected.values.count { it == V.F }
+            for (row in expectedRows) {
+                rowsByType.merge(row.type to row.undefined, 1, Int::plus)
+                focusKinds.merge(case.kinds[row.node], 1, Int::plus)
+                row.value?.let { valueKinds.merge(case.kinds[it], 1, Int::plus) }
+            }
+            case.shapes.forEachIndexed { s, conjuncts ->
+                disjointWithSiblings += conjuncts.filterIsInstance<Conjunct.Qualified>().count { case.siblings(s, it).isNotEmpty() }
+            }
         }
         // The generator must actually reach the interesting regions (deterministic for the fixed seeds).
-        assertTrue(undefined >= 50, "undefined answers: $undefined of $questions")
-        assertTrue(failing >= 200, "failing answers: $failing of $questions")
-        assertTrue(questions - undefined - failing >= 200, "conforming answers: ${questions - undefined - failing} of $questions")
+        val coverage = "questions=$questions undefined=$undefined failing=$failing rows=$rowsByType focus=$focusKinds values=$valueKinds " +
+            "disjointWithSiblings=$disjointWithSiblings"
+        assertTrue(undefined >= 100, coverage)
+        assertTrue(failing >= 500, coverage)
+        assertTrue(questions - undefined - failing >= 500, coverage)
+        // Every operator yields definite and undefined results somewhere, in particular the qualified counts and sh:and.
+        val operators = listOf(
+            ConstraintType.NODE, ConstraintType.NOT, ConstraintType.AND, ConstraintType.OR, ConstraintType.XONE,
+            ConstraintType.QUALIFIED_MIN_COUNT, ConstraintType.QUALIFIED_MAX_COUNT,
+        )
+        for (type in operators) {
+            assertTrue((rowsByType[type to false] ?: 0) >= 5, "definite $type results: $coverage")
+            assertTrue((rowsByType[type to true] ?: 0) >= 5, "undefined $type results: $coverage")
+        }
+        assertTrue((rowsByType[ConstraintType.MIN_COUNT to false] ?: 0) >= 50, coverage)
+        // Focus nodes and value nodes of every kind occur in results.
+        for (kind in Kind.values()) {
+            assertTrue((focusKinds[kind] ?: 0) >= 20, "$kind focus nodes: $coverage")
+            assertTrue((valueKinds[kind] ?: 0) >= 20, "$kind values: $coverage")
+        }
+        assertTrue(disjointWithSiblings >= 20, coverage)
     }
 
     // --- restart recovery --------------------------------------------------------------------------------------------
