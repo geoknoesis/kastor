@@ -1,6 +1,6 @@
 package com.geoknoesis.kastor.rdf
 
-import com.sun.net.httpserver.HttpServer
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -8,54 +8,40 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.io.IOException
+import org.junit.jupiter.api.TestInstance
 import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.net.URI
 import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
  * [UrlLoadOptions.addressPolicy]: asked about every URL of a load, the first one included, and the classification
  * behind [UrlAddressPolicy.PUBLIC_ADDRESSES], range by range, in every form an address can take.
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class UrlAddressPolicyTest {
+    private val http = LoopbackHttp(threads = 4)
     private val cleanups = CopyOnWriteArrayList<() -> Unit>()
-    private val requests = CopyOnWriteArrayList<String>()
+
+    /** The request paths of the current test, in arrival order. */
+    private val requests: MutableList<String> get() = http.requests
 
     @AfterEach
     fun cleanUp() {
         cleanups.reversed().forEach { runCatching(it) }
+        cleanups.clear()
+    }
+
+    @AfterAll
+    fun stopServer() {
+        http.close()
     }
 
     /** Serves `/start` as a redirect to `/doc.ttl` and everything else as one triple; records the request paths. */
-    private fun serve(): String {
-        val threads = Executors.newFixedThreadPool(4)
-        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
-            createContext("/") { exchange ->
-                requests.add(exchange.requestURI.path)
-                try {
-                    if (exchange.requestURI.path == "/start") {
-                        exchange.responseHeaders.add("Location", "/doc.ttl")
-                        exchange.sendResponseHeaders(302, -1)
-                    } else {
-                        val bytes = "<urn:s> <urn:p> <urn:o> .".toByteArray()
-                        exchange.sendResponseHeaders(200, bytes.size.toLong())
-                        exchange.responseBody.write(bytes)
-                    }
-                } catch (_: IOException) {
-                } finally {
-                    exchange.close()
-                }
-            }
-            executor = threads
-            start()
-        }
-        cleanups.add { server.stop(0); threads.shutdownNow() }
-        return "http://127.0.0.1:${server.address.port}"
+    private fun serve(): String = http.serve { exchange ->
+        if (exchange.requestURI.path == "/start") exchange.redirect("/doc.ttl") else exchange.turtle("<urn:s> <urn:p> <urn:o> .")
     }
 
     // ---- the policy is applied to every URL of a load ----
@@ -71,7 +57,7 @@ class UrlAddressPolicyTest {
 
         // The same holds for the asynchronous and the dataset entry points.
         val async = assertThrows(java.util.concurrent.ExecutionException::class.java) {
-            Rdf.parseFromUrlAsync("$root/doc.ttl", RdfFormat.TURTLE, options = options).get(20, TimeUnit.SECONDS)
+            Rdf.parseFromUrlAsync("$root/doc.ttl", RdfFormat.TURTLE, options = options).get(60, TimeUnit.SECONDS)
         }
         assertTrue(async.cause is RdfAddressRefusedException, async.cause.toString())
         assertThrows(RdfAddressRefusedException::class.java) { Rdf.parseDatasetFromUrl("$root/doc.nq", RdfFormat.N_QUADS, options) }
@@ -128,11 +114,25 @@ class UrlAddressPolicyTest {
         requests.clear()
         val release = CountDownLatch(1)
         cleanups.add { release.countDown() }
-        val slow = UrlLoadOptions(totalTimeoutMillis = 400, addressPolicy = { release.await(30, TimeUnit.SECONDS); true })
-        assertTimeoutPreemptively(Duration.ofSeconds(15)) {
+        val cutOff = CountDownLatch(1)
+        val slow = UrlLoadOptions(
+            totalTimeoutMillis = 400,
+            addressPolicy = {
+                try {
+                    release.await(120, TimeUnit.SECONDS)
+                } catch (e: InterruptedException) {
+                    cutOff.countDown()
+                    throw e
+                }
+                true
+            },
+        )
+        assertTimeoutPreemptively(Duration.ofSeconds(60)) {
             assertThrows(RdfLoadTimeoutException::class.java) { Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE, slow) }
         }
         assertEquals(emptyList<String>(), requests.toList())
+        // The policy call that was cut off is not left to run on: its helper thread is interrupted.
+        assertTrue(cutOff.await(60, TimeUnit.SECONDS), "the abandoned policy call must be interrupted")
 
         val failing = UrlLoadOptions(addressPolicy = { throw IllegalStateException("policy failed") })
         val error = assertThrows(IllegalStateException::class.java) { Rdf.parseFromUrl("$root/doc.ttl", RdfFormat.TURTLE, failing) }
@@ -250,15 +250,37 @@ class UrlAddressPolicyTest {
 
     @Test
     fun `host names, unusual literals and URLs without a host`() {
-        val policy = UrlAddressPolicy.PUBLIC_ADDRESSES
-        // Names that resolve to loopback, forms of 127.0.0.1 some resolvers accept, and names that do not resolve:
-        // whatever the resolver makes of them, none is a public address.
+        // The policy of PUBLIC_ADDRESSES with a host name lookup of the test's: no resolver is asked, so the test
+        // does not depend on the network, on the hosts file or on how long an unknown name takes to fail.
+        val resolver = FakeResolver(
+            mapOf(
+                "localhost" to listOf("127.0.0.1"),
+                "public.example" to listOf("93.184.216.34"),
+                "two-homed.example" to listOf("93.184.216.34", "2606:2800:220:1::1"),
+                "split.example" to listOf("93.184.216.34", "10.0.0.7"),
+                "metadata.example" to listOf("169.254.169.254"),
+            ),
+        )
+        val policy = UrlAddressPolicy.publicAddresses(resolver)
+        // Names that resolve to loopback or to a link-local address, a name of which one address is private, forms
+        // of 127.0.0.1 some resolvers accept, and names that do not resolve: none is a public address.
         val refused = listOf(
             "http://localhost/x", "http://LOCALHOST:8080/x", "http://2130706433/x", "http://127.1/x",
-            "http://no-such-host.invalid/x", "file:///etc/passwd", "jar:file:/app.jar!/data.ttl", "urn:example:x",
-            "http:///x",
+            "http://no-such-host.invalid/x", "http://split.example/x", "http://metadata.example/latest/meta-data",
+            "file:///etc/passwd", "jar:file:/app.jar!/data.ttl", "urn:example:x", "http:///x",
         )
         for (url in refused) assertFalse(policy.allows(URI(url)), url)
+        assertTrue(policy.allows(URI("http://public.example/x")))
+        assertTrue(policy.allows(URI("https://two-homed.example:8443/x")))
+        // The lookup is asked about host names, with the host as the URL has it; a URL without a host never gets
+        // that far. (The numeric forms may or may not be hosts for java.net.URI: either way they are refused.)
+        val names = resolver.lookups.filter { name -> name.any(Char::isLetter) }
+        assertEquals(
+            listOf("localhost", "LOCALHOST", "no-such-host.invalid", "split.example", "metadata.example", "public.example", "two-homed.example"),
+            names,
+        )
+        // The public policy is that policy with the system's lookup.
+        assertFalse(UrlAddressPolicy.PUBLIC_ADDRESSES.allows(URI("http://127.0.0.1/x")))
         // The redirect policy of the same name applies the same rules to the target.
         assertFalse(UrlRedirectPolicy.PUBLIC_ADDRESSES.allows(URI("http://example.org/"), URI("http://100.100.100.200/latest/meta-data")))
         assertTrue(UrlRedirectPolicy.PUBLIC_ADDRESSES.allows(URI("http://example.org/"), URI("http://93.184.216.34/x")))

@@ -117,14 +117,24 @@ object Rdf {
      * full, a new load is rejected: its future completes exceptionally with
      * [java.util.concurrent.RejectedExecutionException]. A load never runs on the calling thread.
      */
-    private val urlIoExecutor: Executor = java.util.concurrent.ThreadPoolExecutor(
-        URL_IO_THREADS, URL_IO_THREADS, 30L, java.util.concurrent.TimeUnit.SECONDS,
-        java.util.concurrent.ArrayBlockingQueue(URL_IO_QUEUE_CAPACITY),
+    private val urlIoExecutor: Executor = newUrlIoExecutor()
+
+    /**
+     * An executor of the kind [parseFromUrlAsync] uses by default: [threads] daemon threads that end when idle, a
+     * queue of [queueCapacity] pending loads, and rejection (never the calling thread) beyond that. Tests create
+     * small ones, so that saturating one takes a handful of loads.
+     */
+    internal fun newUrlIoExecutor(
+        threads: Int = URL_IO_THREADS,
+        queueCapacity: Int = URL_IO_QUEUE_CAPACITY,
+    ): java.util.concurrent.ThreadPoolExecutor = java.util.concurrent.ThreadPoolExecutor(
+        threads, threads, 30L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue(queueCapacity),
         java.util.concurrent.ThreadFactory { runnable -> Thread(runnable, "kastor-url-io").apply { isDaemon = true } },
         java.util.concurrent.RejectedExecutionHandler { _, _ ->
             throw java.util.concurrent.RejectedExecutionException(
-                "The default Rdf.parseFromUrlAsync executor is saturated ($URL_IO_THREADS loads running, " +
-                    "$URL_IO_QUEUE_CAPACITY queued); retry later or pass an executor sized for this workload"
+                "The default Rdf.parseFromUrlAsync executor is saturated ($threads loads running, " +
+                    "$queueCapacity queued); retry later or pass an executor sized for this workload"
             )
         },
     ).apply { allowCoreThreadTimeOut(true) }
