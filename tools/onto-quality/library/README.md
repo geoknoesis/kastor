@@ -189,7 +189,7 @@ A reply that the provider reports as cut at the limit, and that does not parse, 
 
 ## RDF reasoning before validation
 
-Optional **materialization** merges asserted triples with **Jena** RDFS or OWL RL rule inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated by the detectors that are meant to see entailments (the structural ones keep the asserted graph), and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
+Optional **materialization** merges asserted triples with **Jena** RDFS or OWL RL rule inferences before SHACL, so validation can align with stores that apply the same entailment. **HermiT** runs a single OWL DL **`reason()`** pass: the expanded graph is validated by the detectors that are meant to see entailments (the structural ones keep the asserted graph), and a **globally inconsistent** ontology adds **Kastor K07** rows into the same **`QualityReport`** (pitfall copy from **`OOPS_PITFALL_REGISTRY`**, included in **`QualityChecker.default()`**). See [Reasoning in Kastor](../../../docs/kastor/design/reasoning-in-kastor.md) and [Reasoning ontology pitfalls](../../../docs/kastor/design/reasoning-ontology-pitfalls.md).
 
 **Library:**
 
