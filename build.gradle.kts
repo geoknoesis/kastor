@@ -32,21 +32,21 @@ val platformProjects = setOf(":bom", ":build-platform")
  * Non-published modules (examples, benchmarks, :rdf:conformance, :rdf:examples) are not gated.
  */
 val coverageFloors = mapOf(
-  ":rdf:core" to "0.55",
+  ":rdf:core" to "0.75", // measured 80.7% with serialization dispatch and round-trip contract tests
   ":rdf:jena" to "0.45",
   ":rdf:rdf4j" to "0.50",
   ":rdf:reasoning" to "0.65",
   ":rdf:reasoning-hermit" to "0.50",
   ":rdf:shacl-dsl" to "0.60",
   ":rdf:shacl-validation" to "0.50",
-  ":rdf:sparql-lang" to "0.35",
+  ":rdf:sparql-lang" to "0.85", // measured 88.7% with DSL execution contract tests
   ":rdf:sparql" to "0.55",
   ":rdf:testkit" to "0.75",
   ":rdf:jena-reasoning" to "0.80", // measured 92.5%
   ":rdf:rdf4j-reasoning" to "0.85", // measured 94.3%
   ":rdf:cli" to "0.70", // measured 80.5%
   ":kastor-gen:processor" to "0.50",
-  ":kastor-gen:runtime" to "0.35",
+  ":kastor-gen:runtime" to "0.75", // measured 79.8% after predicate-write and property-delegate contract tests
   ":kastor-gen:validation-jena" to "0.70",
   ":kastor-gen:validation-rdf4j" to "0.55",
   ":tools:onto-quality" to "0.75",

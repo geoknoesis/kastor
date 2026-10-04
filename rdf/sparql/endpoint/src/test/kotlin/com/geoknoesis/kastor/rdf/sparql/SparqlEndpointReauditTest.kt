@@ -34,6 +34,36 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Regression tests for the second audit of the SPARQL HTTP endpoint adapter. */
 class SparqlEndpointReauditTest {
 
+    @Test
+    fun `graph size rejects missing and non-literal counts instead of reporting an empty graph`() {
+        for (bindings in listOf(
+            "[]",
+            "[{}]",
+            """[{"count":{"type":"uri","value":"urn:count"}}]""",
+            """[{"count":{"type":"bnode","value":"count"}}]""",
+        )) {
+            TestEndpoint { exchange, _ ->
+                exchange.respond(200, """{"head":{"vars":["count"]},"results":{"bindings":$bindings}}""")
+            }.use { endpoint ->
+                SparqlRepository(endpoint.url).use { repo ->
+                    for (graph in listOf(repo.defaultGraph, repo.getGraph(Iri("urn:graph")))) {
+                        val error = assertThrows(RdfQueryException::class.java) { graph.size() }
+                        assertTrue(error.message.orEmpty().contains("triple count"))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `graph size accepts an explicit zero count`() {
+        TestEndpoint { exchange, _ ->
+            exchange.respond(200, """{"head":{"vars":["count"]},"results":{"bindings":[{"count":{"type":"literal","datatype":"http://www.w3.org/2001/XMLSchema#integer","value":"0"}}]}}""")
+        }.use { endpoint ->
+            SparqlRepository(endpoint.url).use { repo -> assertEquals(0, repo.defaultGraph.size()) }
+        }
+    }
+
     private class Recorded(
         val method: String,
         val path: String,

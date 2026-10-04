@@ -116,7 +116,8 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     private var transactionStamps: HashMap<Any, Long>? = null
 
     // Access is checked before taking a lock: a write attempted while holding the read lock
-    // (inside readTransaction) must fail rather than deadlock on lock upgrade.
+    // (inside readTransaction) must fail rather than deadlock on lock upgrade. Check again inside
+    // the lock, since close() may have run while this operation waited to acquire it.
     private fun checkAccess(write: Boolean) {
         check(!closed) { "Repository is closed" }
         check(!write || transactionMode.get() != false) { "Cannot write inside a read transaction" }
@@ -172,6 +173,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override fun createGraph(name: Iri): RdfGraph {
         checkAccess(true)
         lock.write {
+            checkAccess(true)
             if (name !in graphs) {
                 graphs[name] = newGraph(name)
                 recordUndo { lock.write { graphs.remove(name); markAbsent(name) } }
@@ -183,6 +185,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override fun removeGraph(name: Iri): Boolean {
         checkAccess(true)
         return lock.write {
+            checkAccess(true)
             val wasCreated = createdGraphs.remove(name)
             val graph = graphs.remove(name)
             if (graph == null && !wasCreated) return@write false
@@ -248,6 +251,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         checkAccess(false)
         if (transactionMode.get() != null) { operations(this); return }
         lock.read {
+            checkAccess(false)
             transactionMode.set(false)
             try { operations(this) } finally { transactionMode.remove() }
         }
@@ -256,6 +260,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
     override fun clear(): Boolean {
         checkAccess(true)
         return lock.write {
+            checkAccess(true)
             var changed = default.clear()
             graphs.values.forEach { if (it.clear()) changed = true }
             val removed = LinkedHashMap(graphs)
@@ -296,6 +301,7 @@ class MemoryRepository(private val config: RdfConfig) : RdfRepository {
         private inline fun <T> writing(create: Boolean, block: (MemoryGraph?) -> T): T {
             checkAccess(true)
             return lock.write {
+                checkAccess(true)
                 block(if (create) graphs.getOrPut(name) { newGraph(name) } else graphs[name])
             }
         }
@@ -389,32 +395,35 @@ class MemoryGraph internal constructor(
         return true
     }
 
-    override fun addTriple(triple: RdfTriple) { access(true); lock.write { addUnlocked(triple) } }
-    override fun addTriples(triples: Collection<RdfTriple>) { access(true); lock.write { triples.forEach(::addUnlocked) } }
-    override fun removeTriple(triple: RdfTriple): Boolean { access(true); return lock.write { removeUnlocked(triple) } }
+    override fun addTriple(triple: RdfTriple) { access(true); lock.write { access(true); addUnlocked(triple) } }
+    override fun addTriples(triples: Collection<RdfTriple>) { access(true); lock.write { access(true); triples.forEach(::addUnlocked) } }
+    override fun removeTriple(triple: RdfTriple): Boolean { access(true); return lock.write { access(true); removeUnlocked(triple) } }
     override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
         access(true)
         return lock.write {
+            access(true)
             var changed = false
             triples.forEach { if (removeUnlocked(it)) changed = true }
             changed
         }
     }
-    override fun hasTriple(triple: RdfTriple): Boolean { access(false); return lock.read { triple in triples } }
-    override fun getTriples(): List<RdfTriple> { access(false); return lock.read { ArrayList(triples) } }
+    override fun hasTriple(triple: RdfTriple): Boolean { access(false); return lock.read { access(false); triple in triples } }
+    override fun getTriples(): List<RdfTriple> { access(false); return lock.read { access(false); ArrayList(triples) } }
     override fun getTriplesSequence(): Sequence<RdfTriple> = getTriples().asSequence()
     override fun find(subject: RdfResource?, predicate: Iri?, obj: RdfTerm?): List<RdfTriple> {
         access(false)
         return lock.read {
+            access(false)
             val candidates = listOfNotNull(subject?.let { subjects[it].orEmpty() }, predicate?.let { predicates[it].orEmpty() },
                 obj?.let { objects[it].orEmpty() }).minByOrNull { it.size } ?: triples
             candidates.filter { (subject == null || it.subject == subject) && (predicate == null || it.predicate == predicate) && (obj == null || it.obj == obj) }
         }
     }
-    override fun size(): Int { access(false); return lock.read { triples.size } }
+    override fun size(): Int { access(false); return lock.read { access(false); triples.size } }
     override fun clear(): Boolean {
         access(true)
         return lock.write {
+            access(true)
             if (triples.isEmpty()) return@write false
             val snapshot = triples.toList()
             triples.clear(); subjects.clear(); predicates.clear(); objects.clear()

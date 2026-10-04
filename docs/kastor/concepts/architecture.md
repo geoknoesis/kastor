@@ -2,6 +2,26 @@
 
 This page maps the **Kastor monorepo** Gradle modules so you can find code quickly and avoid circular assumptions when contributing.
 
+## Finding core implementation code
+
+The sources under `rdf/core/src/main/kotlin/com/geoknoesis/kastor/rdf/` are grouped by responsibility:
+
+| File | Responsibility |
+|------|----------------|
+| `Rdf.kt` | Public `Rdf` facade: repository factories, graph creation, and parsing entry points |
+| `RdfRepository.kt` | Repository interface and default operations |
+| `SparqlQueryResult.kt` | Query results, binding sets, and binding conversion |
+| `RdfProvider.kt` | Provider extension contract and format matching |
+| `RdfConfiguration.kt` | Repository configuration, provider requirements, and capability types |
+| `RdfProviderRegistry.kt` | Global registry facade and default-provider selection |
+| `RdfCore.kt` | Existing top-level factories and capability extensions; keeps the `RdfCoreKt` JVM entry points for compiled consumers |
+| `UrlLoadOptions.kt` | URL options, address/redirect policies, and loading exceptions |
+| `UrlLoading.kt` | Connection setup, redirects, response ownership, and request deadlines |
+| `UrlLoadHelpers.kt` | Bounded helper pool and blocking-work scheduling |
+| `UrlLoadStreams.kt` | Stream deadlines, byte limits, and byte counting |
+
+Keep connection orchestration separate from worker scheduling and stream accounting. Public top-level functions have a JVM owner derived from their filename; moving them requires preserving that owner, even when their Kotlin package and signature stay the same. `:rdf:core:checkKotlinAbi` verifies the published surface.
+
 ## Layers (dependency direction)
 
 Higher layers depend on lower ones; **`rdf:core`** stays provider-agnostic.

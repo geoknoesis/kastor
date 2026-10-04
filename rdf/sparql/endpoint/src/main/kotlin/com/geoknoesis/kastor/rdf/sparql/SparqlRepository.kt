@@ -1073,7 +1073,10 @@ class SparqlGraph(
     override fun size(): Int {
         val query = "SELECT (COUNT(*) AS ?count) WHERE { ${pattern("?s ?p ?o")} }"
         val result = repository.select(SparqlSelectQuery(query))
-        val term = result.firstOrNull()?.get("count") as? Literal ?: return 0
+        val term = result.firstOrNull()?.get("count") as? Literal ?: throw RdfQueryException(
+            "SPARQL endpoint returned a missing or non-literal triple count",
+            query = query,
+        )
         val count = term.lexical.trim().toLongOrNull()
         if (count == null || count < 0 || count > Int.MAX_VALUE) {
             throw RdfQueryException("SPARQL endpoint returned a triple count of '${term.lexical}', which is not a valid Int size", query = query)

@@ -14,6 +14,32 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Changed (core source organization)
+
+- Split the RDF facade, repository and query-result contracts, provider configuration, and registry into focused source files.
+- Separated URL-loading policies, connection handling, helper-thread scheduling, and stream limits. Existing public types and `RdfCoreKt` entry points retain their JVM names; no public API changes.
+
+### Changed (core serialization verification)
+
+- Added serialization contract tests for provider fallback, explicit output capabilities, legacy format declarations, error propagation, options, and rejection of graph-only dataset formats.
+- Added graph and dataset round trips covering escaped literals, language tags, datatypes, graph boundaries, and blank nodes shared across graphs.
+- Raised the `rdf:core` line-coverage floor from 55% to 75%; measured coverage is 80.7%.
+
+### Changed (SPARQL DSL verification)
+
+- Added execution tests against Jena for string functions, duplicate-sensitive aggregates, ordered pagination, graph copy/move/add operations, and ordered create/insert/delete/drop requests.
+- Raised the `rdf:sparql-lang` line-coverage floor from 35% to 85%; measured coverage is 88.7%.
+
+### Changed (runtime verification)
+
+- Added runtime contract tests for predicate writes (data preservation, read-only rejection, invalid subjects, and transaction rollback) and property delegates (IRI/object/language values, missing values, memoization, and captured materialization policy).
+- Raised the `kastor-gen:runtime` line-coverage floor from 35% to 75%; measured coverage is 79.8%.
+
+### Fixed (repository lifecycle and remote counts)
+
+- Memory repository operations waiting for a lock now reject access if the repository closes before they acquire it, including graph reads, writes, and transaction callbacks.
+- `SparqlGraph.size()` throws `RdfQueryException` when the endpoint returns no count or a non-literal count, instead of silently reporting an empty graph. An explicit integer zero remains valid.
+
 ### Changed (dependencies)
 
 - Runtime dependencies seen by consumers: kotlinx-coroutines 1.11.0, kotlinx-serialization-json 1.11.0, KotlinPoet 2.4.0, SLF4J 2.0.20, RDF4J 5.3.2, clikt 5.1.0, ONNX Runtime 1.30.0 with DJL tokenizers 0.38.0 (`onto-quality-embed`), httpcore5 5.4.4 and lz4-java 1.12.0.
