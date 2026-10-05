@@ -123,6 +123,27 @@ class KspOntologyProcessorTest {
     }
 
     @Test
+    fun `a second annotation for the same shapes is skipped when identical and reported when its options differ`() {
+        val same = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/people/Marker.kt" to marker, "gen/people/Again.kt" to marker),
+            options(),
+        )
+        assertEquals(emptyList(), same.errors)
+
+        val differing = marker.replace("ValidationAnnotations.NONE", "ValidationAnnotations.NONE, generateDataClass = true")
+        val result = KspRunner.run(
+            OntologyProcessorProvider(),
+            mapOf("gen/people/Marker.kt" to marker, "gen/people/Other.kt" to differing),
+            options(),
+        )
+        assertTrue(
+            result.errors.any { "differs from the first" in it && "generateDataClass=true" in it },
+            result.errors.toString(),
+        )
+    }
+
+    @Test
     fun `an ontology file that is not declared as tracked produces the staleness warning and a missing one an error`() {
         File(resources, "people.shacl.ttl").writeText(shapes)
         val untracked = KspRunner.run(

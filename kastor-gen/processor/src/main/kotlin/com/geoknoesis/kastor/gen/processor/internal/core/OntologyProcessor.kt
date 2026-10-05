@@ -32,8 +32,10 @@ public class OntologyProcessor internal constructor(
 
   private val annotationParser = AnnotationParser(logger)
   private val coordinator = GenerationCoordinator(logger, codeGenerator)
-  private val generatedOntologies = mutableSetOf<String>()
-  private val generatedDsls = mutableSetOf<String>()
+  // Requests already generated, by the output they would produce (package + source). A repeat of an identical request
+  // is skipped; a repeat that asks for different options would silently lose them, so it is reported instead.
+  private val generatedOntologies = mutableMapOf<String, Any>()
+  private val generatedDsls = mutableMapOf<String, Any>()
   private val warnedFiles = mutableSetOf<File>()
   private val resourcesTracked = options[RESOURCES_TRACKED_OPTION]?.trim()?.toBoolean() == true
   private var reader: OntologyFileReader? = null
@@ -81,7 +83,7 @@ public class OntologyProcessor internal constructor(
         annotationParser.parseInstanceDslFromRdf(ann, defaultPkg)?.let { request ->
           handled = true
           val key = "${request.targetPackage}|${request.dslName}|${request.shaclPath}"
-          if (!generatedDsls.add(key)) return@let
+          if (!firstOfKind(generatedDsls, key, request, symbol)) return@let
           try {
             val reader = fileReader()
             val model = reader.loadOntologyModel(
@@ -114,8 +116,8 @@ public class OntologyProcessor internal constructor(
 
         annotationParser.parseOntologyFromRdf(ann, defaultPkg)?.let { request ->
           handled = true
-          val key = "${request.targetPackage}|${request.shaclPath}|${request.contextPath}"
-          if (!generatedOntologies.add(key)) return@let
+          val key = "${request.targetPackage}|${request.shaclPath}"
+          if (!firstOfKind(generatedOntologies, key, request, symbol)) return@let
           try {
             val reader = fileReader()
             val model = reader.loadOntologyModel(
@@ -160,6 +162,22 @@ public class OntologyProcessor internal constructor(
     }
 
     return deferred
+  }
+
+  /**
+   * True when [request] is the first for [key]. A later request equal to the first is a harmless repeat; a different
+   * one (another context file or option) cannot be generated into the same package and is reported as an error.
+   */
+  private fun firstOfKind(seen: MutableMap<String, Any>, key: String, request: Any, symbol: KSAnnotated): Boolean {
+    val first = seen.putIfAbsent(key, request) ?: return true
+    if (first != request) {
+      logger.error(
+        "kastor-gen: a second @Rdf annotation for '$key' differs from the first and was ignored: $request " +
+          "(first: $first). Annotate the same shapes once, or use a different packageName.",
+        symbol,
+      )
+    }
+    return false
   }
 
   private fun warnUntracked(reader: OntologyFileReader) {
