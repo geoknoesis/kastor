@@ -143,6 +143,8 @@ class GraphStateCacheInterruptedException(message: String, cause: Throwable? = n
  *   in the caller's thread, which is released when its use ends. With `overflowWaitMillis = null` the limit is
  *   strict: the call waits up to [Settings.temporaryWaitMillis] and then fails with
  *   [GraphStateCacheSaturatedException], and at most `maxEntries + maxTemporaryStates` states exist at any time.
+ *   Temporary states keep their slot until they are released. Evicting an idle entry is best-effort: the victim is
+ *   released outside the lock (a release can be slow), so for that short time its replacement may coexist with it.
  * - Entries that can no longer be found by their handle are released without waiting for a cache miss, on the next
  *   call of [use] (or [size]): an entry whose handle was garbage collected and that was found by handle only (stamped
  *   graphs; handles with handle equality, which are softly referenced and so are dropped under memory pressure), and
@@ -794,16 +796,23 @@ class GraphStateCache<S : Any>(
             "number of concurrent callers"
 
     private fun unpin(entry: Entry<S>) {
+        val holdsTemporarySlot = entry.temporary && entry.counted
         val release = locked {
             entry.users--
             val idle = entry.users == 0
-            if (idle) {
-                if (entry.temporary && entry.counted) temporariesInUse--
-                stateFreed.signalAll()
-            }
+            // A temporary state frees its slot only after it is released (below), so a waiter never builds its
+            // replacement while this state is still alive.
+            if (idle && !holdsTemporarySlot) stateFreed.signalAll()
             idle && (entry.retired || entry.temporary)
         }
-        if (release) releaseAll(listOf(entry), rethrow = false)
+        try {
+            if (release) releaseAll(listOf(entry), rethrow = false)
+        } finally {
+            if (holdsTemporarySlot && release) locked {
+                temporariesInUse--
+                stateFreed.signalAll()
+            }
+        }
     }
 
     /**
