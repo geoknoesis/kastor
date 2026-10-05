@@ -86,11 +86,11 @@ class SparqlEndpointRound9Test {
 
     @Test
     fun `a Content-Type is sanitised and bounded in the message`() {
-        val hostile = "text/html; note=" + "a".repeat(5_000) + "\u0007‮\n[FORGED LOG LINE]"
+        val hostile = "text/html; note=" + "a".repeat(5_000) + "\u0007\u202e\n[FORGED LOG LINE]"
         val message = failure(SparqlEndpointConfig(url), responding(200, mapOf("Content-Type" to hostile), "<html/>"))
         assertTrue(message.contains("instead of SPARQL JSON results"), message)
         assertTrue(message.length < 1_500, "message has ${message.length} characters")
-        assertTrue(message.none { it == '\n' || it == '\u0007' || it == '‮' }, message)
+        assertTrue(message.none { it == '\n' || it == '\u0007' || it == '\u202e' }, message)
     }
 
     // ------------------------------------------------------------------ streaming cap
