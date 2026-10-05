@@ -3,10 +3,12 @@ package com.geoknoesis.kastor.benchmarks.shacl.era
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -104,5 +106,47 @@ class ShaclEraCliTest {
     fun `sanitize renders control and bidi characters visibly`() {
         assertEquals("a\\u001B[31m\\u202Eb\\u2066c\n\td", sanitize("a\u001B[31m\u202Eb\u2066c\n\td"))
         assertEquals("(no message)", sanitize(null))
+    }
+
+    @Test
+    fun `the report is written as UTF-8 and an existing report survives a failed run`() {
+        val report = dir.resolve("report.ttl")
+        writeReport(report, "# caf\u00e9 \u2713\n")
+        assertEquals("# caf\u00e9 \u2713\n", Files.readString(report, Charsets.UTF_8))
+        assertEquals(listOf("report.ttl"), Files.list(dir).use { s -> s.map { it.fileName.toString() }.toList() })
+
+        // A run that fails before the report is written must not truncate the previous one.
+        Files.writeString(report, "previous")
+        val bad = shapes("bad.ttl", "@prefix ex: <http://example.org/> .\nex:a ex:b")
+        assertEquals(EXIT_INPUT_ERROR, run(data().toString(), bad.toString(), report.toString()).status)
+        assertEquals("previous", Files.readString(report))
+        // A report path that is a directory fails without leaving a temporary file behind.
+        val target = Files.createDirectory(dir.resolve("out"))
+        Files.writeString(target.resolve("keep"), "x")
+        assertFailsWith<IOException> { writeReport(target, "text") }
+        assertEquals(listOf("keep"), Files.list(target).use { s -> s.map { it.fileName.toString() }.toList() })
+    }
+
+    @Test
+    fun `a read failure is a runtime error, not a parse error`() {
+        val unreadable = dir.resolve("data.ttl").also { Files.writeString(it, "ex:a a ex:Thing .") }
+        // The parser reports a read that fails half-way like a syntax error; the stream tells it was I/O.
+        val failing =
+            object : java.io.InputStream() {
+                override fun read(): Int {
+                    throw IOException("disk gone")
+                }
+            }
+        val e = assertFailsWith<EraCliException> { parseTurtleStream(failing, "data", unreadable.toString()) }
+        assertEquals(EXIT_RUNTIME_ERROR, e.status)
+        assertTrue(e.message!!.startsWith("failed to read data file"), e.message)
+    }
+
+    @Test
+    fun `an error such as OutOfMemoryError is one line and a runtime status, not a stack trace`() {
+        val err = ByteArrayOutputStream()
+        val status = runEraCli(listOf("a", "b", "c"), PrintStream(ByteArrayOutputStream()), PrintStream(err, true, Charsets.UTF_8), benchmark = { _, _, _, _ -> throw OutOfMemoryError("heap") })
+        assertEquals(EXIT_RUNTIME_ERROR, status)
+        assertEquals("shacl-era-cli: internal error: OutOfMemoryError: heap", err.toString(Charsets.UTF_8).trim())
     }
 }

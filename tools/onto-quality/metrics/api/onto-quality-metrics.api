@@ -255,6 +255,20 @@ public final class com/geoknoesis/kastor/ontoquality/metrics/MetricsConfig$Compa
 	public final fun getDEFAULT_EXCLUDED_NAMESPACES ()Ljava/util/Set;
 }
 
+public final class com/geoknoesis/kastor/ontoquality/metrics/MetricsSection : java/lang/Enum {
+	public static final field Companion Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection$Companion;
+	public static final field GRAPH Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection;
+	public static final field OWL Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection;
+	public static final field SKOS Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection;
+	public static fun values ()[Lcom/geoknoesis/kastor/ontoquality/metrics/MetricsSection;
+}
+
+public final class com/geoknoesis/kastor/ontoquality/metrics/MetricsSection$Companion {
+	public final fun getALL ()Ljava/util/Set;
+}
+
 public final class com/geoknoesis/kastor/ontoquality/metrics/OntologyHeader {
 	public fun <init> (Ljava/lang/String;ZZZZZ)V
 	public final fun component1 ()Ljava/lang/String;
@@ -548,7 +562,11 @@ public final class com/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsRe
 	public final fun copy (Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
 	public static synthetic fun copy$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/OwlMetricsSection;Lcom/geoknoesis/kastor/ontoquality/metrics/SkosMetricsSection;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;ILjava/lang/Object;)Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;
 	public final fun describeMarkdown ()Ljava/lang/String;
+	public final fun describeMarkdown (Ljava/util/Set;)Ljava/lang/String;
+	public static synthetic fun describeMarkdown$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;Ljava/util/Set;ILjava/lang/Object;)Ljava/lang/String;
 	public final fun describeText ()Ljava/lang/String;
+	public final fun describeText (Ljava/util/Set;)Ljava/lang/String;
+	public static synthetic fun describeText$default (Lcom/geoknoesis/kastor/ontoquality/metrics/VocabularyMetricsReport;Ljava/util/Set;ILjava/lang/Object;)Ljava/lang/String;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getComputedAt ()Ljava/time/Instant;
 	public final fun getGraph ()Lcom/geoknoesis/kastor/ontoquality/metrics/GraphMetricsSection;

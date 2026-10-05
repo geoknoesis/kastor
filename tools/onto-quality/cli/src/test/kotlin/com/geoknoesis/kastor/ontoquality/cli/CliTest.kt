@@ -38,6 +38,7 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -688,6 +689,13 @@ class CliTest {
         assertEquals(RdfFormat.JSON_LD, resolveInputFormat(Path.of("a.jsonld"), null))
         assertEquals(RdfFormat.TURTLE, resolveInputFormat(Path.of("a.ttl"), null))
         assertEquals(RdfFormat.TURTLE, resolveInputFormat(Path.of("a.owl"), "turtle"))
+        // Known formats that are not readable here are refused by name, not sent to the Turtle parser.
+        for (name in listOf("a.trig", "a.nq", "a.n3", "a.ttl.gz", "A.NQUADS")) {
+            val e = assertFailsWith<com.github.ajalt.clikt.core.UsageError> { resolveInputFormat(Path.of(name), null) }
+            assertTrue(e.message!!.contains("Unsupported input extension") && e.message!!.contains("--input-format"), "$name: ${e.message}")
+        }
+        assertEquals(RdfFormat.TURTLE, resolveInputFormat(Path.of("a.trig"), "turtle"))
+        assertEquals(RdfFormat.TURTLE, resolveInputFormat(Path.of("a.ontology"), null))
 
         val out = dir.resolve("metrics.json")
         val result = ontoQualityApp().test(listOf("metrics", owl.toString(), "--format", "json", "--output", out.toString()))

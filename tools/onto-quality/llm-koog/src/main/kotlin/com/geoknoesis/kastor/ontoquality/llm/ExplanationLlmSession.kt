@@ -72,24 +72,8 @@ internal class KoogExplanationLlmSession(config: LlmExplanationConfig) : Explana
     private companion object {
         fun createLlmClient(config: LlmExplanationConfig): LLMClient =
             when (config.provider) {
-                LlmProvider.OPENAI -> {
-                    val key =
-                        config.apiKey?.takeIf { it.isNotBlank() }
-                            ?: System.getenv(LlmExplanationConfig.OPENAI_API_KEY)
-                            ?: error(
-                                "OpenAI API key missing: set ${LlmExplanationConfig.OPENAI_API_KEY} or pass apiKey",
-                            )
-                    OpenAILLMClient(key)
-                }
-                LlmProvider.ANTHROPIC -> {
-                    val key =
-                        config.apiKey?.takeIf { it.isNotBlank() }
-                            ?: System.getenv(LlmExplanationConfig.ANTHROPIC_API_KEY)
-                            ?: error(
-                                "Anthropic API key missing: set ${LlmExplanationConfig.ANTHROPIC_API_KEY} or pass apiKey",
-                            )
-                    AnthropicLLMClient(key)
-                }
+                LlmProvider.OPENAI -> OpenAILLMClient(resolveApiKey(config))
+                LlmProvider.ANTHROPIC -> AnthropicLLMClient(resolveApiKey(config))
                 LlmProvider.OLLAMA -> {
                     val base = config.baseUrl?.trim()?.takeIf { it.isNotEmpty() } ?: "http://localhost:11434"
                     OllamaClient(base)
@@ -97,3 +81,16 @@ internal class KoogExplanationLlmSession(config: LlmExplanationConfig) : Explana
             }
     }
 }
+
+/**
+ * The API key of [config]'s provider, trimmed: [LlmExplanationConfig.apiKey], else the provider's environment variable
+ * (read through [env]). A blank value (an exported but empty variable) is a missing key, not a key to send.
+ */
+internal fun resolveApiKey(config: LlmExplanationConfig, env: (String) -> String? = System::getenv): String {
+    val variable = config.provider.apiKeyVariable ?: error("${config.provider.name.lowercase()} needs no API key")
+    val name = if (config.provider == LlmProvider.OPENAI) "OpenAI" else "Anthropic"
+    return config.apiKey?.trim()?.takeIf { it.isNotEmpty() }
+        ?: env(variable)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: error("$name API key missing: set $variable (it is unset or blank) or pass apiKey")
+}
+

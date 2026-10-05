@@ -234,6 +234,27 @@ class VocabularyMetricsTest {
         assertTrue(r.describeMarkdown().contains("OQuaRE"))
     }
 
+    @Test
+    fun `sections are sliced from the structured report, header kept, whole report equals all sections`() {
+        val r = VocabularyMetrics.compute(parse(loadFixture("linear-chain.ttl")))
+        val text = { s: Set<MetricsSection> -> r.describeText(s) }
+        assertEquals(r.describeText(), text(MetricsSection.ALL))
+        assertEquals(r.describeMarkdown(), r.describeMarkdown(MetricsSection.ALL))
+        for (render in listOf(text) + listOf { s: Set<MetricsSection> -> r.describeMarkdown(s) }) {
+            for (section in MetricsSection.entries) {
+                assertTrue(render(setOf(section)).contains("Computed at"), "$section keeps the header")
+            }
+        }
+        val graph = text(setOf(MetricsSection.GRAPH))
+        assertTrue(graph.contains("[Graph]") && !graph.contains("[OQuaRE]") && !graph.contains("[SKOS]"), graph)
+        val owl = text(setOf(MetricsSection.OWL))
+        assertTrue(owl.contains("[OQuaRE]") && owl.contains("[Kastor-adapted") && !owl.contains("[Graph]") && !owl.contains("[SKOS]"), owl)
+        val skos = text(setOf(MetricsSection.SKOS))
+        assertTrue(skos.contains("[SKOS]") && !skos.contains("[OQuaRE]") && !skos.contains("[Graph]"), skos)
+        val md = r.describeMarkdown(setOf(MetricsSection.OWL))
+        assertTrue(md.contains("### Structural") && !md.contains("## SKOS extensions") && !md.contains("VoID-style"), md)
+    }
+
     companion object {
         private const val EPS = 1e-9
     }

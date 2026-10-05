@@ -187,4 +187,50 @@ class KastorRdfCliTest {
         assertTrue(log.isWarnEnabled)
         assertFalse(log.isInfoEnabled)
     }
+
+    @Test
+    fun `every command answers --help with its own usage`() {
+        for (command in listOf("parse", "to-turtle", "diff")) {
+            for (flag in listOf("--help", "-h")) {
+                val result = run(command, flag)
+                assertEquals(EXIT_OK, result.code, "$command $flag: ${result.err}")
+                assertTrue(result.out.contains("Usage: kastor-rdf $command"), result.out)
+            }
+        }
+    }
+
+    @Test
+    fun `a double dash ends the options so a file name may start with a dash`() {
+        val a = dir.resolve("-a.ttl").also { Files.writeString(it, "<http://e/s> <http://e/p> <http://e/o> .\n") }
+        val b = dir.resolve("-b.ttl").also { Files.writeString(it, "<http://e/s> <http://e/p> <http://e/o> .\n") }
+        // Relative to the working directory, a dash-leading path cannot be told from an option without the terminator.
+        val diff = run("diff", "--", a.toString(), b.toString())
+        assertEquals(EXIT_OK, diff.code, diff.err)
+        assertEquals(EXIT_OK, run("parse", "--", a.toString()).code)
+        // Without the terminator the name is an unknown option; after it, a --help is a file name.
+        assertEquals(EXIT_USAGE, run("diff", "--bogus", a.toString(), b.toString()).code)
+        val help = run("diff", "--", "--help", a.toString())
+        assertEquals(EXIT_USAGE, help.code)
+        assertTrue(help.err.contains("Not a regular file"), help.err)
+    }
+
+    @Test
+    fun `a failed write to standard output is a runtime error even when the command succeeded`() {
+        val broken = PrintStream(object : java.io.OutputStream() {
+            override fun write(b: Int) {
+                throw java.io.IOException("broken pipe")
+            }
+        }, true, "UTF-8")
+        val err = ByteArrayOutputStream()
+        val ttl = file("a.ttl", "<http://e/s> <http://e/p> <http://e/o> .\n")
+        val code = runCli(listOf("parse", ttl), broken, PrintStream(err, true, "UTF-8"))
+        assertEquals(EXIT_OK, code) // the command itself cannot see the swallowed failure
+        val final = exitCodeAfterFlush(code, broken, PrintStream(err, true, "UTF-8"))
+        assertEquals(EXIT_RUNTIME_ERROR, final)
+        assertTrue(err.toString("UTF-8").contains("could not write to standard output"), err.toString("UTF-8"))
+
+        val healthy = PrintStream(ByteArrayOutputStream(), true, "UTF-8")
+        assertEquals(EXIT_OK, exitCodeAfterFlush(EXIT_OK, healthy, healthy))
+        assertEquals(EXIT_NOT_ISOMORPHIC, exitCodeAfterFlush(EXIT_NOT_ISOMORPHIC, healthy, healthy))
+    }
 }

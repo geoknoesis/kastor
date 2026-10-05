@@ -25,8 +25,10 @@ internal data class LlmFailureKind(
  * Koog 0.8 surfaces HTTP errors as `KoogHttpClientException` (with a `statusCode` property and an `errorBody`) or
  * as `LLMClientException` whose message contains `Status code: NNN`; the message fallback also understands HTTP
  * status lines (`HTTP/1.1 503`) and ktor's `Server error(POST https://…: 503 Service Unavailable…)`. Everything is
- * inspected along the cause chain. Response headers are not exposed, so `Retry-After` is honoured only when it appears
- * in the message or error body.
+ * inspected along the cause chain. A structured `statusCode` anywhere in the chain wins over scraping any message,
+ * and scraping reads only the part of a message before its error body (`Error body:` / `Text:`), which quotes the
+ * server's reply and may mention unrelated numbers. Response headers are not exposed, so `Retry-After` is honoured only
+ * when it appears in the message or error body as `Retry-After: N` / `Retry-After=N`.
  *
  * Not retried although they may arrive as HTTP 429 or as I/O exceptions: OpenAI `insufficient_quota` (the account has
  * no credit; waiting does not help) and TLS / certificate failures (`SSLException`, `CertificateException`,
@@ -36,7 +38,11 @@ internal data class LlmFailureKind(
 internal object LlmFailureClassifier {
     private const val MAX_CAUSE_DEPTH = 16
     private const val MAX_RETRY_AFTER_SECONDS = 3600.0
-    private val STATUS_IN_MESSAGE = Regex("""(?i)\b(?:status(?:\s*code)?|http)\s*[:=]?\s*(\d{3})\b""")
+    /** `Status code: 503` at the start of a line (not a "status 500" inside a sentence or a quoted body). */
+    private val STATUS_IN_MESSAGE = Regex("""(?im)^\s*(?:status(?:\s*code)?|http)\s*[:=]?\s*(\d{3})\b""")
+
+    /** Where a message starts quoting the server's reply. */
+    private val BODY_MARKER = Regex("""(?i)(?:\berror body\b|\bresponse body\b|\bbody\s*:|\bText:)""")
     private val HTTP_STATUS_LINE = Regex("""(?i)\bHTTP/\d(?:\.\d)?\s+(\d{3})\b""")
 
     /** ktor `ResponseException` messages: `Server error(POST https://host:443/path: 503 Service Unavailable. Text: …)`. */
@@ -51,14 +57,14 @@ internal object LlmFailureClassifier {
             "io.ktor.client.network.sockets.ConnectTimeoutException",
             "io.ktor.client.network.sockets.SocketTimeoutException",
         )
-    private val RETRY_AFTER = Regex("""(?i)retry-after["']?\s*[:=]?\s*(\d+(?:\.\d+)?)""")
+    private val RETRY_AFTER = Regex("""(?i)retry-after["']?\s*[:=]\s*(\d+(?:\.\d+)?)""")
     private val TRY_AGAIN_IN = Regex("""(?i)try again in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b""")
 
     fun classify(failure: Throwable): LlmFailureKind {
         if (failure is TimeoutCancellationException) return LlmFailureKind(retryable = true, signature = "timeout")
         val chain = generateSequence(failure) { t -> t.cause?.takeIf { it !== t } }.take(MAX_CAUSE_DEPTH).toList()
         val retryAfter = chain.firstNotNullOfOrNull(::retryAfterOf)
-        val status = chain.firstNotNullOfOrNull(::statusOf)
+        val status = chain.firstNotNullOfOrNull(::structuredStatusOf) ?: chain.firstNotNullOfOrNull(::statusInMessage)
         if (chain.any(::isInsufficientQuota)) {
             return LlmFailureKind(retryable = false, signature = if (status != null) "HTTP $status insufficient_quota" else "insufficient_quota")
         }
@@ -87,9 +93,11 @@ internal object LlmFailureClassifier {
     private fun isInsufficientQuota(t: Throwable): Boolean =
         listOfNotNull(t.message, property(t, "getErrorBody") as? String).any { INSUFFICIENT_QUOTA.containsMatchIn(it) }
 
-    private fun statusOf(t: Throwable): Int? {
-        (property(t, "getStatusCode") as? Number)?.toInt()?.takeIf { it in 100..599 }?.let { return it }
-        val message = t.message ?: return null
+    private fun structuredStatusOf(t: Throwable): Int? = (property(t, "getStatusCode") as? Number)?.toInt()?.takeIf { it in 100..599 }
+
+    private fun statusInMessage(t: Throwable): Int? {
+        val full = t.message ?: return null
+        val message = full.substring(0, BODY_MARKER.find(full)?.range?.first ?: full.length)
         return sequenceOf(STATUS_IN_MESSAGE, HTTP_STATUS_LINE, KTOR_RESPONSE_ERROR)
             .firstNotNullOfOrNull { it.find(message)?.groupValues?.get(1)?.toInt()?.takeIf { code -> code in 100..599 } }
     }

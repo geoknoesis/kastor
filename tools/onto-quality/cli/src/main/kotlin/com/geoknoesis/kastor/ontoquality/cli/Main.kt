@@ -18,6 +18,7 @@ import com.geoknoesis.kastor.ontoquality.llm.LlmExplanationConfig
 import com.geoknoesis.kastor.ontoquality.llm.LlmProvider
 import com.geoknoesis.kastor.ontoquality.llm.qualityExplanationEnricher
 import com.geoknoesis.kastor.ontoquality.metrics.MetricsConfig
+import com.geoknoesis.kastor.ontoquality.metrics.MetricsSection
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetrics
 import com.geoknoesis.kastor.ontoquality.metrics.VocabularyMetricsReport
 import com.geoknoesis.kastor.ontoquality.metrics.integration.KastorMetricsProvider
@@ -90,10 +91,25 @@ import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
     installStandardStreams()
-    val status = runOntoQa(args.toList())
-    System.out.flush()
-    System.err.flush()
+    val status = exitStatusAfterFlush(runOntoQa(args.toList()), System.out, System.err)
     exitProcess(status)
+}
+
+/**
+ * [status], unless standard output could not be written: a [PrintStream] swallows [java.io.IOException]s (a closed
+ * pipe, a full disk) and only [PrintStream.checkError] tells, so a report that never arrived must not exit 0 (or 1).
+ */
+internal fun exitStatusAfterFlush(status: Int, out: PrintStream, err: PrintStream): Int {
+    val outputLost = out.checkError() // flushes first
+    err.flush()
+    if (!outputLost) return status
+    try {
+        err.println("onto-qa: error: could not write to standard output")
+        err.flush()
+    } catch (_: Throwable) {
+        // Nothing more can be reported; the status still tells.
+    }
+    return EXIT_RUNTIME_ERROR
 }
 
 /**
@@ -282,7 +298,7 @@ private val PROVIDER_CHOICES = arrayOf("openai", "anthropic", "ollama")
 private val PRESET_CHOICES =
     arrayOf("auto", "gpt4o-mini", "gpt-4o-mini", "gpt4o", "gpt-4o", "sonnet", "sonnet-4-5", "claude-sonnet-4-5", "haiku", "haiku-4-5", "llama3.2", "llama-3.2")
 private const val INPUT_FORMAT_HELP =
-    "turtle | rdfxml | ntriples | jsonld (default: from file extension — .ttl, .owl/.rdf/.xml, .nt, .jsonld/.json; otherwise Turtle)"
+    "turtle | rdfxml | ntriples | jsonld (default: from file extension — .ttl, .owl/.rdf/.xml, .nt, .jsonld/.json; other extensions are read as Turtle, except .trig/.nq/.n3 and compressed files, which are refused)"
 
 /** Options for loading an embedding model (enrich / pipeline). */
 internal data class EmbeddingCliOptions(
@@ -577,6 +593,9 @@ private abstract class OntoQaCommand(name: String, private val outputFileSystem:
 
 private fun usageError(message: String): UsageError = UsageError(message, statusCode = EXIT_USAGE)
 
+/** Extensions of compressed or quad / N3 files, which [resolveInputFormat] must not take for Turtle. */
+private val UNSUPPORTED_INPUT_EXTENSIONS = listOf(".trig", ".nq", ".nquads", ".n3", ".trix", ".gz", ".bz2", ".xz", ".zip", ".zst")
+
 /** Picks the RDF syntax from `--input-format` or the file extension. */
 internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
     if (override != null) {
@@ -595,6 +614,14 @@ internal fun resolveInputFormat(path: Path, override: String?): RdfFormat {
         name.endsWith(".owl") || name.endsWith(".rdf") || name.endsWith(".xml") -> RdfFormat.RDF_XML
         name.endsWith(".nt") -> RdfFormat.N_TRIPLES
         name.endsWith(".jsonld") || name.endsWith(".json") -> RdfFormat.JSON_LD
+        name.endsWith(".ttl") || name.endsWith(".turtle") -> RdfFormat.TURTLE
+        // Known formats this tool cannot read as an ontology graph: Turtle would fail with a parse error that blames
+        // the content instead of the extension.
+        UNSUPPORTED_INPUT_EXTENSIONS.any { name.endsWith(it) } ->
+            throw usageError(
+                "Unsupported input extension '${sanitize(name.substringAfterLast('.', ""))}' of ${sanitize(name)}: " +
+                    "onto-qa reads $INPUT_FORMAT_HELP; decompress or convert the file, or force a syntax with --input-format",
+            )
         else -> RdfFormat.TURTLE
     }
 }
@@ -788,35 +815,20 @@ private fun emitMetricsCliReport(
     when (format) {
         "json" -> report.toJson()
         "turtle" -> report.toTurtle()
-        "text" ->
-            when (include) {
-                "all" -> report.describeText()
-                "graph" -> sliceReport(report.describeText(), "[Graph]", "[Graph]", "[OQuaRE]", "\n")
-                "owl" -> sliceReport(report.describeText(), "[Graph]", "[OQuaRE]", "[SKOS]", "\n")
-                "skos" -> sliceReport(report.describeText(), "[Graph]", "[SKOS]", null, "\n")
-                else -> throw usageError("Unknown --include $include (expected owl|skos|graph|all)")
-            }
-        "markdown" ->
-            when (include) {
-                "all" -> report.describeMarkdown()
-                "graph" -> sliceReport(report.describeMarkdown(), MD_GRAPH, MD_GRAPH, "### Structural", "\n\n")
-                "owl" -> sliceReport(report.describeMarkdown(), MD_GRAPH, "### Structural", "## SKOS extensions", "\n\n")
-                "skos" -> sliceReport(report.describeMarkdown(), MD_GRAPH, "## SKOS extensions", null, "\n\n")
-                else -> throw usageError("Unknown --include $include (expected owl|skos|graph|all)")
-            }
+        "text" -> report.describeText(metricsSectionsOf(include))
+        "markdown" -> report.describeMarkdown(metricsSectionsOf(include))
         else -> throw usageError("Unknown --format $format (expected text|markdown|json|turtle)")
     }
 
-private const val MD_GRAPH = "## VoID-style graph counts"
-
-/** Report header (text before [headerEnd]) followed by the section from [start] up to [end] (or the end). */
-internal fun sliceReport(full: String, headerEnd: String, start: String, end: String?, separator: String): String {
-    val headerIndex = full.indexOf(headerEnd)
-    val i0 = full.indexOf(start)
-    val i1 = if (end == null) full.length else full.indexOf(end)
-    check(headerIndex >= 0 && i0 >= 0 && i1 > i0) { "unexpected metrics report layout (missing '$start' section)" }
-    return full.substring(0, headerIndex).trimEnd() + separator + full.substring(i0, i1).trimEnd()
-}
+/** The sections `--include` selects, sliced from the structured report (not from its rendered text). */
+private fun metricsSectionsOf(include: String): Set<MetricsSection> =
+    when (include) {
+        "all" -> MetricsSection.ALL
+        "graph" -> setOf(MetricsSection.GRAPH)
+        "owl" -> setOf(MetricsSection.OWL)
+        "skos" -> setOf(MetricsSection.SKOS)
+        else -> throw usageError("Unknown --include $include (expected owl|skos|graph|all)")
+    }
 
 /** Opens the enrichment step; model download or loading failures are runtime errors, not usage errors. */
 private fun openEnricher(environment: CliEnvironment, options: EmbeddingCliOptions): PipelineEnricher =
@@ -1009,12 +1021,15 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
             if (explainDryRun) throw usageError("--explain-dry-run requires --explain")
             null
         } else {
+            // Checked for a dry run too: it exists to catch a bad configuration before a paid run.
+            val provider = parseLlmProvider(llmProvider)
+            if (llmModel != null && llmModel!!.isBlank()) throw usageError("--llm-model must not be blank")
             LlmExplainCli(
                 dryRun = explainDryRun,
-                provider = parseLlmProvider(llmProvider),
+                provider = provider,
                 modelId = llmModel?.trim()?.takeIf { it.isNotEmpty() },
                 modelPreset = parseExplanationModelPreset(llmModelPreset),
-                ollamaBase = ollamaBase?.trim()?.takeIf { it.isNotEmpty() },
+                ollamaBase = validatedOllamaBase(ollamaBase),
                 maxFindings = explainMax,
                 batchSize = explainBatch,
                 minSeverity = explainMinViolationSeverity(explainMinSeverity),
@@ -1025,6 +1040,17 @@ private class ReportOptionGroup : com.github.ajalt.clikt.parameters.groups.Optio
                 maxOutputTokens = llmMaxOutputTokens,
             )
         }
+}
+
+/** `--ollama-base` as an `http(s)` URL with a host; the value is not echoed (it may carry credentials). */
+internal fun validatedOllamaBase(value: String?): String? {
+    if (value == null) return null
+    val base = value.trim()
+    val uri = try { java.net.URI(base) } catch (_: java.net.URISyntaxException) { null }
+    if (uri == null || uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrEmpty()) {
+        throw usageError("--ollama-base must be an http or https URL with a host, for example http://localhost:11434")
+    }
+    return base
 }
 
 private class PipelineCommand(private val environment: CliEnvironment) : OntoQaCommand(name = "pipeline", environment.outputFileSystem) {
@@ -1222,9 +1248,13 @@ private fun apiKeyEnv(provider: LlmProvider): String? = provider.apiKeyVariable
  * warning is printed and the returned options are marked [LlmExplainCli.skipped].
  */
 private fun preflightLlm(llm: LlmExplainCli?, environment: CliEnvironment, err: (String) -> Unit): LlmExplainCli? {
-    if (llm == null || llm.dryRun) return llm
+    if (llm == null) return null
+    if (llm.ollamaBase != null && llm.provider != LlmProvider.OLLAMA) {
+        err("onto-qa: warning: --ollama-base is ignored: it only applies to --llm-provider ollama (the provider is ${llm.provider.name.lowercase()}).")
+    }
+    if (llm.dryRun) return llm
     val keyEnv = apiKeyEnv(llm.provider)
-    val key = keyEnv?.let { environment.env(it) }?.takeIf { it.isNotBlank() }
+    val key = keyEnv?.let { environment.env(it) }?.trim()?.takeIf { it.isNotEmpty() }
     val problem =
         when {
             !environment.env(LLM_EXPLAIN_ENV).equals("true", ignoreCase = true) ->
