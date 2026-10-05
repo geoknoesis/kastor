@@ -14,6 +14,42 @@ Version on `main`: `0.3.0-SNAPSHOT`. Nothing from this section has been publishe
 Tags: releases are tagged `vX.Y.Z`. The historical tag `0.2.1` (no `v` prefix) predates this convention
 and is kept as is; it was never published to Maven Central.
 
+### Fixed (round-nine audit)
+
+- Provider and reasoner discovery survives broken providers: a `ServiceConfigurationError` or `NoClassDefFoundError` from one
+  provider is recorded (`discoveryErrors`, new `ReasonerRegistry.discoveryErrors`) and discovery continues, instead of killing
+  the registry singleton. Reasoner discovery no longer overwrites a user-registered provider of the same type.
+- URL loading surfaces network I/O failures (resets, timeouts, interrupts) as `IOException` types instead of `ParseError`;
+  an async cancel before the connection opens now aborts the request.
+- Memory reasoner enforces its materialization cap and time budget inside a round and no longer copies lists per triple.
+  An empty write to a named graph no longer creates it or moves the modification stamp.
+- Jena reasoner timeouts now cover `validate()`, `isConsistent`, `validateOntology` and the first result. The RDF4J SHACL
+  validator caps concurrent and abandoned workers. Rollback failures are attached as suppressed exceptions. Jena keeps
+  `BlankNode("_:")` as `_:` (parity with RDF4J).
+- SPARQL endpoint: server-supplied `Location` and `Content-Type` text is sanitised in errors; Basic-auth user names with
+  `:` are rejected; the `Accept` header now also offers `application/json;q=0.8`; the expiry/read race in the streaming guard
+  is atomic. Host names with `_` are refused up front with a clear message (the JDK HTTP client cannot connect to them).
+- SHACL validator: per-run cap on pattern evaluation after repeated budget exhaustion, no volatile counters in the hot path
+  (internal `ShaclInstrumentation`), early exit in conformance mode, digest hashing outside the lock, in-flight compile cache
+  entries are never evicted, deep nesting raises `ShaclValidationException`, negative `nanoTime` no longer trips the pattern
+  deadline. The parity sort key format changed.
+- kastor-gen: identical duplicate `@Rdf` requests are skipped; duplicates that differ in options now fail with a KSP error;
+  expanded JSON-LD class terms are recorded as types; prefix detection follows JSON-LD 1.1; members of generic types fail
+  with a KSP error instead of generating uncompilable code; a throwing `transactionPrivate` predicate no longer discards
+  cached state.
+- CLIs: `kastor-rdf` and `onto-qa` exit non-zero when stdout cannot be written; `kastor-rdf` gains per-command `--help` and a
+  `--` terminator; `ShaclEraCli` writes reports atomically in UTF-8 and distinguishes I/O from parse errors; LLM failure
+  classification prefers structured status codes over message scraping; API keys are trimmed; `onto-qa` rejects `.trig`,
+  `.nq`, `.n3` and compressed inputs by name.
+- Build and docs: version banner and checker, release review page, checklist and SECURITY.md corrected; CI test floor raised
+  to 3,100 and more script tests run; `publish.yml` requires the tagged commit to be on `main` with a green CI run.
+
+### Changed (round-nine behaviour)
+
+- `SparqlEndpointConfig.streamingRequestTimeout` now defaults to 60 minutes (`null` opts out).
+- A missing W3C SHACL 1.2 suite now fails `Shacl12NativeConformanceTest` (opt out with `-Dshacl.w3c.allowMissingData=true`).
+- Public API added: `MetricsSection` and `describeText`/`describeMarkdown(sections)` in onto-quality metrics.
+
 ### Fixed (audit regressions)
 
 - Preserve numeric SHACL bound datatypes through parsing, inheritance, and generated setters/validation. Mixed
