@@ -394,7 +394,8 @@ public class OntoMapperProcessor(
     // Type aliases (of the member type and of a List element) are resolved to the types they stand for.
     val returnType = expandAliases(property.type.resolve())
     val isList = returnType.declaration.qualifiedName?.asString() == "kotlin.collections.List"
-    val elementDeclaration = (if (isList) returnType.arguments.firstOrNull()?.type?.resolve()?.let(::expandAliases) else returnType)?.declaration
+    val elementType = if (isList) returnType.arguments.firstOrNull()?.type?.resolve()?.let(::expandAliases) else returnType
+    val elementDeclaration = elementType?.declaration
     val container = listOf(returnType.declaration, elementDeclaration)
       .firstOrNull { RdfMemberTypes.isUnsupportedContainer(it?.qualifiedName?.asString()) }
     if (container != null) {
@@ -414,6 +415,17 @@ public class OntoMapperProcessor(
       // Neither a literal, an enum nor an RDF term: the value is materialized through OntoMapper, which needs a
       // wrapper or factory for the type. Reject anything else now instead of failing at the first read.
       val elementClass = elementDeclaration as? KSClassDeclaration
+      if (elementType != null && elementType.arguments.isNotEmpty()) {
+        // Wrappers are generated for the declaration, not for an instantiation: Foo<Bar> would be written as raw Foo
+        // and the generated code would not compile.
+        logger.error(
+          "@Rdf member '${property.simpleName.asString()}' of ${property.parentDeclaration?.qualifiedName?.asString()} has " +
+            "type $elementType, which generated wrappers cannot read: generic types are not supported (the wrapper " +
+            "would refer to the raw type). Declare a non-generic @Rdf interface for it.",
+          property,
+        )
+        return null
+      }
       if (elementClass == null || !isMaterializable(elementClass, resolver)) {
         val typeName = elementDeclaration?.qualifiedName?.asString() ?: property.type.toString()
         logger.error(

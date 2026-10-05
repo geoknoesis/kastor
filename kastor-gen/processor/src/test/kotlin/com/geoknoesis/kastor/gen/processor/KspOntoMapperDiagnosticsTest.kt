@@ -267,4 +267,30 @@ class KspOntoMapperDiagnosticsTest {
         assertTrue(result.errors.any { "'other'" in it && "com.acme.fqn2.Doc" in it && "@Rdf" in it }, result.errors.toString())
         assertFalse(result.generated.values.any { "https://example.test/other" in it }, "the foreign annotation's IRI is not used")
     }
+
+    @Test
+    fun `a member of a generic type is reported instead of generating a wrapper for the raw type`() {
+        val source = """
+            package com.acme.generic
+
+            import com.geoknoesis.kastor.gen.annotations.Rdf
+
+            @Rdf(iri = "https://example.test/Box")
+            interface Box<T> {
+                @Rdf(iri = "https://example.test/label")
+                val label: String
+            }
+
+            @Rdf(iri = "https://example.test/Holder")
+            interface Holder {
+                @Rdf(iri = "https://example.test/box")
+                val box: Box<String>
+                @Rdf(iri = "https://example.test/boxes")
+                val boxes: List<Box<String>>
+            }
+        """.trimIndent()
+        val result = run("com/acme/generic/Generic.kt" to source)
+        assertTrue(result.errors.any { "'box'" in it && "generic types are not supported" in it }, result.errors.toString())
+        assertTrue(result.errors.any { "'boxes'" in it && "generic types are not supported" in it }, result.errors.toString())
+    }
 }
