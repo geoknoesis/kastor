@@ -211,6 +211,22 @@ class GraphStateCacheBoundsTest {
     }
 
     @Test
+    fun `an entry in use is kept when the equal handle that replaced the in-use one is collected`() {
+        val f = Fixture(4)
+        val handles = Handles(f.cache)
+        val inner = graph(1)
+        val first = KeyedGraph("g", inner)
+        val second = KeyedGraph("g", inner)
+        f.cache.use(first) {
+            f.cache.use(second) { } // the newest equal handle replaces the one this block is using
+            handles.collect(second)
+            assertEquals(1, f.cache.size, "an entry that is in use is not retired, whichever handles are alive")
+            assertEquals(emptyList<Any>(), f.released, "its state is not released while the block runs")
+        }
+        assertEquals(1, f.cache.loadCount, "the state was built once")
+    }
+
+    @Test
     fun `a saturated cache fails with a clear exception after the wait`() {
         val f = Fixture(
             1,
