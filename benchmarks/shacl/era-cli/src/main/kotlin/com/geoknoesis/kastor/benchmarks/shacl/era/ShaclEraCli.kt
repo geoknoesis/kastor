@@ -9,9 +9,16 @@ import com.geoknoesis.kastor.rdf.shacl.ValidationConfig
 import com.geoknoesis.kastor.rdf.shacl.ValidationProfile
 import com.geoknoesis.kastor.rdf.shacl.toShaclValidationReportRdf
 import java.io.File
-import java.io.FileWriter
+import java.io.FilterInputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.PrintStream
+import java.io.UncheckedIOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.InvalidPathException
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.Locale
 import kotlin.system.exitProcess
 
@@ -54,19 +61,29 @@ fun main(args: Array<String>) {
 }
 
 /** Runs the CLI and returns its exit status instead of exiting. */
-internal fun runEraCli(args: List<String>, out: PrintStream, err: PrintStream): Int {
+internal fun runEraCli(
+  args: List<String>,
+  out: PrintStream,
+  err: PrintStream,
+  benchmark: (dataPath: String, shapesPath: String, reportPath: String, out: PrintStream) -> Unit = ::runEraBenchmark,
+): Int {
   if (args.size != 3) {
     err.println(USAGE)
     return EXIT_USAGE
   }
   return try {
-    runEraBenchmark(dataPath = args[0], shapesPath = args[1], reportPath = args[2], out = out)
+    benchmark(args[0], args[1], args[2], out)
     EXIT_OK
   } catch (e: EraCliException) {
     err.println("shacl-era-cli: ${sanitize(e.message)}")
     e.status
-  } catch (e: Exception) {
-    err.println("shacl-era-cli: internal error: ${e.javaClass.simpleName}: ${sanitize(e.message)}")
+  } catch (e: Throwable) {
+    // Errors as well (OutOfMemoryError, StackOverflowError): one line and a status, never a stack trace.
+    try {
+      err.println("shacl-era-cli: internal error: ${e.javaClass.simpleName}: ${sanitize(e.message)}")
+    } catch (_: Throwable) {
+      // Nothing more can be reported (for example no memory left to build the message); the status still tells.
+    }
     EXIT_RUNTIME_ERROR
   }
 }
@@ -99,19 +116,77 @@ internal fun runEraBenchmark(dataPath: String, shapesPath: String, reportPath: S
 
   val ttl = report.toShaclValidationReportRdf().serialize(RdfFormat.TURTLE)
   try {
-    FileWriter(reportPath).use { it.write(ttl) }
+    writeReport(Path.of(reportPath), ttl)
   } catch (e: IOException) {
     throw EraCliException(EXIT_RUNTIME_ERROR, "failed to write report $reportPath: ${e.message}", e)
+  } catch (e: InvalidPathException) {
+    throw EraCliException(EXIT_USAGE, "invalid report path: ${e.message}", e)
+  }
+}
+
+/**
+ * Writes [text] as UTF-8 to a temporary file next to [target] and moves it over [target], so a failed run leaves an
+ * existing report untouched instead of truncated, and the platform charset never changes the bytes.
+ */
+internal fun writeReport(target: Path, text: String) {
+  val absolute = target.toAbsolutePath()
+  val temp = Files.createTempFile(absolute.parent, absolute.fileName.toString().take(32), ".tmp")
+  try {
+    Files.writeString(temp, text, Charsets.UTF_8)
+    try {
+      Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    } catch (_: AtomicMoveNotSupportedException) {
+      Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING)
+    }
+  } finally {
+    Files.deleteIfExists(temp)
   }
 }
 
 private fun loadTurtle(path: String, role: String): RdfGraph {
   if (!File(path).isFile) throw EraCliException(EXIT_USAGE, "$role file not found or not a regular file: $path")
   return try {
-    Rdf.parseFromFile(path, "TURTLE")
+    File(path).inputStream().use { parseTurtleStream(it, role, path) }
+  } catch (e: EraCliException) {
+    throw e
+  } catch (e: IOException) {
+    throw EraCliException(EXIT_RUNTIME_ERROR, "failed to read $role file $path: ${e.message}", e)
+  }
+}
+
+internal fun parseTurtleStream(source: InputStream, role: String, path: String): RdfGraph {
+  val stream = IoTrackingInputStream(source)
+  return try {
+    Rdf.parseFromInputStream(stream, "TURTLE", File(path).absoluteFile.toURI().toString())
   } catch (e: Exception) {
+    // A parser reports a read that failed half-way like a syntax error; the file could not be read, which is a
+    // runtime failure, not an error in its content.
+    val failure = stream.failure ?: (e as? IOException) ?: (e as? UncheckedIOException)
+    if (failure != null) throw EraCliException(EXIT_RUNTIME_ERROR, "failed to read $role file $path: ${failure.message}", e)
     throw EraCliException(EXIT_INPUT_ERROR, "failed to parse $role file $path as Turtle: ${e.message}", e)
   }
+}
+
+/** Remembers an [IOException] raised while reading, so a read failure is not reported as a syntax error. */
+private class IoTrackingInputStream(delegate: InputStream) : FilterInputStream(delegate) {
+  var failure: IOException? = null
+    private set
+
+  override fun read(): Int =
+      try {
+        super.read()
+      } catch (e: IOException) {
+        failure = e
+        throw e
+      }
+
+  override fun read(b: ByteArray, off: Int, len: Int): Int =
+      try {
+        super.read(b, off, len)
+      } catch (e: IOException) {
+        failure = e
+        throw e
+      }
 }
 
 /** Nanoseconds as decimal seconds with six fractional digits (locale-independent `.` separator). */
