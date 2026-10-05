@@ -18,9 +18,11 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 private const val RESULTS_JSON = "application/sparql-results+json"
+/** What the adapter asks for: SPARQL JSON results, or plain JSON from servers that do not know that type. */
+private const val ACCEPT_RESULTS = "$RESULTS_JSON, application/json;q=0.8"
 private const val FORM_ENCODED = "application/x-www-form-urlencoded"
 private const val MAX_ERROR_BODY_BYTES = 4096
 private const val MAX_ERROR_DETAIL_CHARS = 512
@@ -100,6 +102,19 @@ internal fun errorDetail(body: String): String {
     return out.toString()
 }
 
+/**
+ * A URL taken from a response (a `Location` header) as it may appear in a message or log: without
+ * user information, query and fragment (they can carry credentials or signed tokens), and
+ * sanitised and truncated like an error body by [errorDetail].
+ */
+internal fun urlDetail(url: String): String {
+    val cut = url.indexOfFirst { it == '?' || it == '#' }
+    val withoutUserInfo = (if (cut < 0) url else url.substring(0, cut)).replace(USER_INFO, "***@")
+    return errorDetail(withoutUserInfo + if (cut < 0) "" else "?...")
+}
+
+internal val USER_INFO = Regex("(?<=//)[^/@]*@")
+
 private val BACKSLASH = 92.toChar()
 
 /** Tab, line feed, vertical tab, form feed, carriage return, next line, line separator, paragraph separator. */
@@ -120,12 +135,15 @@ private val INSECURE_AUTH_WARNED = ConcurrentHashMap.newKeySet<String>()
 /**
  * [RdfRepository] over a remote SPARQL 1.1 Protocol endpoint.
  *
- * - SELECT/ASK results are read as `application/sparql-results+json`. [select] buffers all rows and
+ * - SELECT/ASK results are read as `application/sparql-results+json` (the request also accepts
+ *   `application/json` at lower priority). [select] buffers all rows and
  *   is capped by [SparqlEndpointConfig.maxResponseBytes]; [withSelectRows] streams rows to the
- *   consumer and is capped by [SparqlEndpointConfig.maxStreamedResponseBytes] (unbounded by default).
+ *   consumer and is capped by [SparqlEndpointConfig.maxStreamedResponseBytes] (unbounded by default)
+ *   and, as a whole call, by [SparqlEndpointConfig.streamingRequestTimeout] (one hour by default,
+ *   so a server dripping one byte per read timeout cannot hold the thread forever).
  * - Timeouts: connect timeout, per-read timeout, [SparqlEndpointConfig.requestTimeout] (whole
  *   exchange for buffered calls, time to response headers for streams; without it the read timeout
- *   bounds the wait for headers), the optional [SparqlEndpointConfig.streamingRequestTimeout] for
+ *   bounds the wait for headers), [SparqlEndpointConfig.streamingRequestTimeout] (one hour by default, `null` for none) for
  *   streams, and the per-call timeout of `withSelectRows(query, bindings, timeout)`, which bounds
  *   the whole call. Whichever deadline ends first also ends the wait for the response headers. That
  *   wait is one budget for the whole call, redirects included. The adapter enforces all of these
@@ -207,6 +225,13 @@ class SparqlRepository internal constructor(
 
     override fun getGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
 
+    /**
+     * Whether the endpoint holds at least one triple in the graph. SPARQL 1.1 has no way to ask
+     * whether a named graph exists: stores that keep empty graphs (and those that create them on
+     * `CREATE GRAPH`) are indistinguishable from stores without them, so an existing but empty
+     * graph reports `false`, as does a graph just made with [createGraph]. [removeGraph] inherits
+     * this and returns `false` for such a graph (it is still dropped).
+     */
     override fun hasGraph(name: Iri): Boolean {
         val query = SparqlAskQuery("ASK { GRAPH ${SparqlTermFormat.iriRef(name.value)} { ?s ?p ?o } }")
         return ask(query)
@@ -222,8 +247,10 @@ class SparqlRepository internal constructor(
         }
     }
 
+    /** A view of the graph; nothing is sent, and the graph does not show in [hasGraph] or [listGraphs] until it holds a triple. */
     override fun createGraph(name: Iri): RdfGraph = SparqlGraph(this, name)
 
+    /** `DROP SILENT GRAPH`; returns whether the graph held triples beforehand (see [hasGraph]), checked in a separate request. */
     override fun removeGraph(name: Iri): Boolean {
         val existed = hasGraph(name)
         val updateQuery = UpdateQuery("DROP SILENT GRAPH ${SparqlTermFormat.iriRef(name.value)}")
@@ -530,7 +557,7 @@ class SparqlRepository internal constructor(
                     val contentType = response.headers().firstValue("Content-Type").orElse(null)
                     if (!acceptableResultType(contentType, plainTextAllowed)) {
                         throw RdfQueryException(
-                            "SPARQL endpoint returned Content-Type '$contentType' instead of SPARQL JSON results ($RESULTS_JSON); " +
+                            "SPARQL endpoint returned Content-Type '${errorDetail(contentType.orEmpty())}' instead of SPARQL JSON results ($RESULTS_JSON); " +
                                 "if the body is such JSON under another label, set strictContentType = false",
                             query = sparql,
                         )
@@ -561,7 +588,7 @@ class SparqlRepository internal constructor(
         val builder = HttpRequest.newBuilder(request.uri)
         // The configuration refuses custom headers with the names set here, so none of these is ever replaced.
         headers.forEach { (name, value) -> builder.setHeader(name, value) }
-        if (!update) builder.setHeader("Accept", RESULTS_JSON)
+        if (!update) builder.setHeader("Accept", ACCEPT_RESULTS)
         request.contentType?.let { builder.setHeader("Content-Type", it) }
         authorization?.let { builder.setHeader("Authorization", it) }
         val body = request.body
@@ -577,7 +604,7 @@ class SparqlRepository internal constructor(
             "SPARQL request failed: connect timed out" +
                 if (Durations.isUnbounded(config.connectTimeout)) "" else " after ${Durations.millis(config.connectTimeout)} ms"
         } else {
-            "SPARQL request failed: ${cause.message ?: cause.javaClass.simpleName}"
+            "SPARQL request failed: ${errorDetail(cause.message ?: cause.javaClass.simpleName)}"
         },
         query = sparql,
         cause = cause,
@@ -632,18 +659,24 @@ class SparqlRepository internal constructor(
         if (current.body != null && status !in setOf(307, 308)) {
             throw RdfQueryException(
                 "SPARQL endpoint answered a POST with HTTP $status; following it would silently turn the request into a GET " +
-                    "without the query. Configure the redirect target ($location) as the endpoint URL",
+                    "without the query. Configure the redirect target (${urlDetail(location)}) as the endpoint URL",
                 query = sparql,
             )
         }
         val next = try {
             current.uri.resolve(URI(location))
         } catch (e: Exception) {
-            throw RdfQueryException("SPARQL endpoint returned an invalid redirect Location: $location", query = sparql, cause = e)
+            throw RdfQueryException("SPARQL endpoint returned an invalid redirect Location: ${urlDetail(location)}", query = sparql, cause = e)
         }
         val scheme = next.scheme?.lowercase()
-        if ((scheme != "http" && scheme != "https") || next.host.isNullOrEmpty() || next.rawUserInfo != null) {
-            throw RdfQueryException("SPARQL endpoint redirected to an unsupported URL: ${origin(next)}", query = sparql)
+        if (scheme != "http" && scheme != "https") {
+            throw RdfQueryException("SPARQL endpoint redirected to an unsupported URL: ${urlDetail(next.toString())}", query = sparql)
+        }
+        HttpTarget.hostProblem(next)?.let { problem ->
+            throw RdfQueryException("SPARQL endpoint redirected to a URL that $problem: ${urlDetail(next.toString())}", query = sparql)
+        }
+        if (next.rawUserInfo != null) {
+            throw RdfQueryException("SPARQL endpoint redirected to an unsupported URL (it carries credentials): ${urlDetail(next.toString())}", query = sparql)
         }
         return next
     }
@@ -697,7 +730,7 @@ class SparqlRepository internal constructor(
      * past it, which unblocks the reader. Time between reads (the consumer's own work) counts
      * towards the overall deadline, checked on every read and by [checkDeadline].
      */
-    private class GuardedInputStream(
+    internal class GuardedInputStream(
         private val raw: InputStream,
         private val watchdog: ReadWatchdog,
         readTimeout: Duration,
@@ -708,9 +741,15 @@ class SparqlRepository internal constructor(
         private val readTimeoutMessage = "SPARQL response read timed out after ${Durations.millis(readTimeout)} ms"
         private val deadlineMessage = "SPARQL request exceeded its ${overall?.let(Durations::millis)} ms deadline"
 
-        /** Deadline of the read in progress: [IDLE] between reads, [EXPIRED] once the watchdog claimed it. */
-        private val readDeadline = AtomicLong(IDLE)
-        @Volatile private var readMessage = readTimeoutMessage
+        /** The deadline of a read, with the message that says what bounds it. */
+        private class PendingRead(val deadline: Long, val message: String)
+
+        /**
+         * The read in progress, or `null` between reads and once the watchdog claimed it. Whoever
+         * replaces it (the read when it ends, the watchdog when it is overdue) wins, so a read is
+         * either left alone or expired, never both, and the message that expires it is its own.
+         */
+        private val pending = AtomicReference<PendingRead?>(null)
 
         @Volatile var failure: String? = null
             private set
@@ -741,10 +780,10 @@ class SparqlRepository internal constructor(
             val byDeadline = untilDeadline < readTimeoutNanos
             // Nothing is published for a read that neither the read timeout nor a deadline bounds.
             val deadline = Durations.deadline(now, if (byDeadline) untilDeadline else readTimeoutNanos)
-            if (deadline != null) {
-                readMessage = if (byDeadline) deadlineMessage else readTimeoutMessage
-                readDeadline.set(deadline)
-                watchdog.published(deadline)
+            val mine = deadline?.let { PendingRead(it, if (byDeadline) deadlineMessage else readTimeoutMessage) }
+            if (mine != null) {
+                pending.set(mine)
+                watchdog.published(mine.deadline)
             }
             try {
                 return raw.read(b, off, len)
@@ -752,16 +791,20 @@ class SparqlRepository internal constructor(
                 failure?.let { throw IOException(it, e) }
                 throw e
             } finally {
-                readDeadline.set(IDLE)
+                // Losing this exchange means the watchdog claimed the read just as it ended: the stream is
+                // failed (or about to be) for the read's own reason, so the next read cannot start unnoticed.
+                if (mine != null && !pending.compareAndSet(mine, null)) {
+                    failure = failure ?: mine.message
+                    closeRaw()
+                }
             }
         }
 
         override fun expireIfDue(now: Long): Long {
-            val deadline = readDeadline.get()
-            if (deadline == IDLE || deadline == EXPIRED) return Long.MAX_VALUE
-            if (now < deadline) return deadline
-            if (readDeadline.compareAndSet(deadline, EXPIRED)) {
-                failure = readMessage
+            val read = pending.get() ?: return Long.MAX_VALUE
+            if (now < read.deadline) return read.deadline
+            if (pending.compareAndSet(read, null)) {
+                failure = failure ?: read.message
                 closeRaw()
             }
             return Long.MAX_VALUE
@@ -775,12 +818,6 @@ class SparqlRepository internal constructor(
         override fun close() {
             watchdog.unregister(this)
             raw.close()
-        }
-
-        private companion object {
-            /** Never a deadline: [Durations.deadline] returns neither value. */
-            const val IDLE = Long.MAX_VALUE
-            const val EXPIRED = Long.MIN_VALUE
         }
     }
 
@@ -1000,7 +1037,7 @@ class SparqlGraph(
      * `DELETE DATA` in batches of [SparqlEndpointConfig.insertBatchSize]. Returns `true` if at least
      * one triple existed before deletion; this is determined with a single `ASK ... VALUES` per batch
      * (skipped once a match is known) rather than one request per triple. The check and the delete
-     * are separate requests, so concurrent writers can race with them.
+     * are separate requests, so concurrent writers can race with them: the result is best-effort.
      */
     override fun removeTriples(triples: Collection<RdfTriple>): Boolean {
         if (triples.isEmpty()) return false

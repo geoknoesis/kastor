@@ -17,6 +17,7 @@ public final class com/geoknoesis/kastor/rdf/sparql/SparqlEndpointConfig {
 	public static final field DEFAULT_MAX_RESULT_ROW_CHARS I
 	public static final field DEFAULT_READ_TIMEOUT_MILLIS I
 	public static final field DEFAULT_REQUEST_TIMEOUT_MINUTES J
+	public static final field DEFAULT_STREAMING_REQUEST_TIMEOUT_MINUTES J
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/time/Duration;Ljava/time/Duration;Ljava/time/Duration;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryMethod;Lcom/geoknoesis/kastor/rdf/sparql/SparqlUpdateMethod;ILjava/time/Duration;ZIIIIZLcom/geoknoesis/kastor/rdf/sparql/MalformedTermPolicy;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/time/Duration;Ljava/time/Duration;Ljava/time/Duration;Ljava/util/Map;Ljava/lang/String;Ljava/lang/String;Lcom/geoknoesis/kastor/rdf/sparql/SparqlQueryMethod;Lcom/geoknoesis/kastor/rdf/sparql/SparqlUpdateMethod;ILjava/time/Duration;ZIIIIZLcom/geoknoesis/kastor/rdf/sparql/MalformedTermPolicy;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;

@@ -101,8 +101,10 @@ enum class MalformedTermPolicy {
  * @property streamingRequestTimeout optional overall deadline for a streamed
  *   [SparqlRepository.withSelectRows] call, including the wait for the response headers and the
  *   time the consumer spends on rows; when it is shorter than [requestTimeout] (or a per-call
- *   timeout) it also ends the header wait. `null` (default) means only [requestTimeout] (until
- *   headers) and [readTimeout] (per read) apply.
+ *   timeout) it also ends the header wait. Default one hour: without an overall cap a server that
+ *   sends one byte just inside every [readTimeout] would hold the calling thread forever, because
+ *   the per-read timeout is never exceeded. Raise it for streams that legitimately run longer. `null`
+ *   removes the cap (only [requestTimeout] until the headers and [readTimeout] per read apply).
  * @property followCrossOriginRedirects follow `307`/`308` (and, for GET, `301`/`302`/`303`)
  *   redirects to a different scheme, host or port. Custom [headers] and credentials are never sent
  *   to the other origin (a warning is logged when they are dropped). Default `false`: such
@@ -159,7 +161,7 @@ data class SparqlEndpointConfig(
     val queryMethod: SparqlQueryMethod = SparqlQueryMethod.POST,
     val updateMethod: SparqlUpdateMethod = SparqlUpdateMethod.POST,
     val insertBatchSize: Int = DEFAULT_INSERT_BATCH_SIZE,
-    val streamingRequestTimeout: Duration? = null,
+    val streamingRequestTimeout: Duration? = Duration.ofMinutes(DEFAULT_STREAMING_REQUEST_TIMEOUT_MINUTES),
     val followCrossOriginRedirects: Boolean = false,
     val maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
     val maxGetUrlLength: Int = DEFAULT_MAX_GET_URL_LENGTH,
@@ -183,6 +185,7 @@ data class SparqlEndpointConfig(
         require(maxBlankNodeComponentTriples > 0) { "maxBlankNodeComponentTriples must be positive" }
         require(maxResultRowChars > 0) { "maxResultRowChars must be positive" }
         require((username == null) == (password == null)) { "username and password must be set together" }
+        require(username == null || ':' !in username) { "username must not contain ':' (RFC 7617: it separates user and password)" }
         if (headers.keys.any { it.equals("Authorization", ignoreCase = true) }) {
             // Two sources for one header: neither is silently dropped.
             require(username == null) { "Set either username and password or an Authorization header, not both" }
@@ -231,6 +234,7 @@ data class SparqlEndpointConfig(
         const val DEFAULT_CONNECT_TIMEOUT_MILLIS: Int = 30_000
         const val DEFAULT_READ_TIMEOUT_MILLIS: Int = 60_000
         const val DEFAULT_REQUEST_TIMEOUT_MINUTES: Long = 5
+        const val DEFAULT_STREAMING_REQUEST_TIMEOUT_MINUTES: Long = 60
         const val DEFAULT_INSERT_BATCH_SIZE: Int = 5_000
         const val DEFAULT_MAX_REDIRECTS: Int = 5
         const val DEFAULT_MAX_GET_URL_LENGTH: Int = 2_000
@@ -250,7 +254,7 @@ data class SparqlEndpointConfig(
 
         /** Headers the adapter sets on every request, with the reason a custom value is refused. */
         private val ADAPTER_HEADERS = mapOf(
-            "accept" to "the adapter asks for application/sparql-results+json, the only result format it reads",
+            "accept" to "the adapter asks for application/sparql-results+json (or application/json), the only result formats it reads",
             "content-type" to "the adapter sets it to the media type of the request body it sends (see queryMethod and updateMethod)",
         )
 
@@ -302,7 +306,7 @@ data class SparqlEndpointConfig(
                 queryMethod = enum("queryMethod", SparqlQueryMethod.values(), defaults.queryMethod),
                 updateMethod = enum("updateMethod", SparqlUpdateMethod.values(), defaults.updateMethod),
                 insertBatchSize = long("insertBatchSize")?.let(Math::toIntExact) ?: defaults.insertBatchSize,
-                streamingRequestTimeout = optionalLong("streamingRequestTimeoutMillis", null)?.let(Duration::ofMillis),
+                streamingRequestTimeout = optionalLong("streamingRequestTimeoutMillis", defaults.streamingRequestTimeout?.toMillis())?.let(Duration::ofMillis),
                 followCrossOriginRedirects = boolean("followCrossOriginRedirects", defaults.followCrossOriginRedirects),
                 maxRedirects = long("maxRedirects")?.let(Math::toIntExact) ?: defaults.maxRedirects,
                 maxGetUrlLength = long("maxGetUrlLength")?.let(Math::toIntExact) ?: defaults.maxGetUrlLength,
@@ -365,11 +369,12 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
             require(scheme == "http" || scheme == "https") {
                 "SPARQL endpoint must be an http(s) URL, got '${redact(endpoint)}'"
             }
-            require(!uri.host.isNullOrEmpty()) { "SPARQL endpoint URL has no host: '${redact(endpoint)}'" }
+            hostProblem(uri)?.let { problem -> throw IllegalArgumentException("SPARQL endpoint URL $problem: '${redact(endpoint)}'") }
             // A fragment is never sent to the server, and a GET query parameter would be appended after it.
             require(uri.rawFragment == null) { "SPARQL endpoint URL must not contain a fragment ('#...'): '${redact(endpoint)}'" }
-            val authorization = uri.userInfo?.let { info ->
-                basicAuthorization(info.substringBefore(':'), if (':' in info) info.substringAfter(':') else "")
+            val authorization = uri.rawUserInfo?.let { info ->
+                // Split before decoding: an encoded ':' (%3A) in the user name is not the separator.
+                basicAuthorization(decode(info.substringBefore(':')), if (':' in info) decode(info.substringAfter(':')) else "")
             }
             val clean = uri.rawUserInfo?.let { endpoint.replaceFirst("$it@", "") } ?: endpoint
             return HttpTarget(URI(clean).toURL(), authorization)
@@ -377,11 +382,35 @@ internal class HttpTarget private constructor(val url: URL, val userInfoAuthoriz
 
         fun redact(endpoint: String): String {
             val userInfo = try { URI(endpoint).rawUserInfo } catch (_: URISyntaxException) { null }
-            return if (userInfo == null) endpoint else endpoint.replaceFirst("$userInfo@", "***@")
+            // Without parsed user information (an unparsable URL, a host name `java.net.URI` cannot read) it is cut out textually.
+            return if (userInfo == null) endpoint.replace(USER_INFO, "***@") else endpoint.replaceFirst("$userInfo@", "***@")
         }
 
-        fun basicAuthorization(user: String, password: String): String =
-            "Basic " + Base64.getEncoder().encodeToString("$user:$password".toByteArray(Charsets.UTF_8))
+        /** Percent-decodes [text] as UTF-8; unlike a form decoder, `+` stays `+`. */
+        private fun decode(text: String): String = java.net.URLDecoder.decode(text.replace("+", "%2B"), Charsets.UTF_8)
+
+        /**
+         * Why [uri] has no usable host (to complete "... URL <problem>"), or `null` when it has one.
+         * `java.net.URI` reads no host from an authority whose name has an underscore
+         * (`http://my_fuseki:3030/ds`), and the JDK HTTP client refuses such a URI ("unsupported
+         * URI"), so it is named here instead of failing on the first request.
+         */
+        fun hostProblem(uri: URI): String? {
+            if (!uri.host.isNullOrEmpty()) return null
+            val authority = uri.rawAuthority?.substringAfterLast('@')?.substringBeforeLast(':').orEmpty()
+            return when {
+                authority.isEmpty() -> "has no host"
+                '_' in authority ->
+                    "has the host name '${errorDetail(authority)}', which contains '_': the JDK HTTP client cannot connect to such a " +
+                        "name; use a name without '_' (a DNS alias or an /etc/hosts entry) or the IP address"
+                else -> "has no valid host name ('${errorDetail(authority)}')"
+            }
+        }
+
+        fun basicAuthorization(user: String, password: String): String {
+            require(':' !in user) { "A Basic authentication user name must not contain ':' (RFC 7617)" }
+            return "Basic " + Base64.getEncoder().encodeToString("$user:$password".toByteArray(Charsets.UTF_8))
+        }
 
         fun formEncode(value: String): String =
             java.net.URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")

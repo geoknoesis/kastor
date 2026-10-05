@@ -53,13 +53,13 @@ results.forEach { binding ->
 | `location` | `endpoint` (http/https; URL credentials become Basic auth) | required |
 | `updateLocation` | `updateEndpoint` | same as `location` |
 | `header.<Name>` | `headers` (extra HTTP headers on every request) | none |
-| `username` / `password` | HTTP Basic credentials (set both) | none |
+| `username` / `password` | HTTP Basic credentials (set both; the user name must not contain `:`, RFC 7617) | none |
 | `queryMethod` | `POST`, `POST_FORM` or `GET` | `POST` (`application/sparql-query`) |
 | `updateMethod` | `POST` or `POST_FORM` | `POST` (`application/sparql-update`) |
 | `connectTimeoutMillis` | `connectTimeout` | 30 s |
 | `readTimeoutMillis` | `readTimeout` (longest wait for a single read of the response body) | 60 s |
 | `requestTimeoutMillis` | `requestTimeout`: whole exchange for buffered calls; only the wait for response headers for streamed rows (`none` disables) | 5 min |
-| `streamingRequestTimeoutMillis` | `streamingRequestTimeout`: overall deadline for a streamed `withSelectRows` call, including time spent consuming rows (`none` = no deadline) | none |
+| `streamingRequestTimeoutMillis` | `streamingRequestTimeout`: overall deadline for a streamed `withSelectRows` call, including time spent consuming rows (`none` = no deadline) | 60 min |
 | `maxResponseBytes` | `maxResponseBytes`: cap for buffered calls (`select`, ASK, update responses) | 32 MiB |
 | `maxStreamedResponseBytes` | `maxStreamedResponseBytes`: cap for `withSelectRows` streaming (`none` = unbounded) | unbounded |
 | `insertBatchSize` | `insertBatchSize`: triples per `INSERT DATA` / `DELETE DATA` request | 5000 |
@@ -102,7 +102,9 @@ val direct = SparqlRepository(
 Configuration is validated when `SparqlEndpointConfig` is created (invalid values throw `IllegalArgumentException`):
 
 - Headers the HTTP client manages itself (`Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Expect`, `Upgrade`, in any letter case) cannot be set through `headers` / `header.<Name>`.
-- Neither can the two headers the adapter sets on every request, `Accept` (it asks for `application/sparql-results+json`, the only result format it reads) and `Content-Type` (the media type of the body it sends, which follows from `queryMethod` / `updateMethod`). A custom value would break every query, so it is refused with a message that says why.
+- Neither can the two headers the adapter sets on every request, `Accept` (it asks for `application/sparql-results+json`, and `application/json` at lower priority; these are the only result formats it reads) and `Content-Type` (the media type of the body it sends, which follows from `queryMethod` / `updateMethod`). A custom value would break every query, so it is refused with a message that says why.
+- Endpoint host names containing `_` (for example a Docker Compose service `my_fuseki`) are refused with a message saying so: `java.net.URI` reads no host from them and the JDK HTTP client rejects the URI. Use a name without `_` (a DNS alias) or the IP address. The same applies to a redirect `Location`.
+- `hasGraph` reports whether the graph holds a triple: SPARQL 1.1 cannot ask whether an empty named graph exists. A graph that exists but is empty, or was just made with `createGraph`, reports `false`, and `removeGraph` then returns `false` (the graph is still dropped).
 - An `Authorization` header (a bearer token, for example) can be set, but not together with `username`/`password` or with credentials in an endpoint URL: there would be two sources for one header.
 - Header names must be RFC 9110 tokens. Header values may contain visible ASCII, ISO-8859-1 characters, and spaces or tabs between them: no line breaks or other control characters, no characters beyond ISO-8859-1, and no leading or trailing white space. Because this is checked up front, a request is never refused later, when it is built.
 - Timeouts, byte caps, `maxResultRowChars`, `maxGetUrlLength`, `insertBatchSize` and `maxBlankNodeComponentTriples` must be positive; `maxRedirects` must not be negative (`0` disables redirects).
@@ -126,11 +128,11 @@ Which option bounds what:
 - **Connecting**: `connectTimeout`.
 - **Waiting for the response headers**: the earliest of `requestTimeout` and, for streams, `streamingRequestTimeout` or the per-call `timeout`; `readTimeout` when none of them is set. It is one budget for the whole call, measured from its start, however many redirects are followed.
 - **Each read of the response body**: `readTimeout`, cut short by a whole-call deadline that ends earlier.
-- **The whole call**: `requestTimeout` for buffered calls; `streamingRequestTimeout` and the per-call `timeout` for streams. An untimed stream has no whole-call deadline.
+- **The whole call**: `requestTimeout` for buffered calls; `streamingRequestTimeout` and the per-call `timeout` for streams. `streamingRequestTimeout` defaults to 60 minutes, so a server that sends one byte just inside every `readTimeout` cannot hold a thread forever; set it to `none` (or `null`) for a stream that may run unbounded.
 
 The adapter enforces all of these itself and sets no timeout on the HTTP request, so the behaviour is the same on every JDK. A deadline that is "unbounded" (see above) is simply not applied; the other limits still are. A call that hits a limit fails with `RdfQueryException` naming the limit, and the response is closed.
 
-Because `requestTimeout` stops at the response headers for untimed streams, a slow row consumer is never cut off by it. Set `streamingRequestTimeout` if a stream must finish within a fixed time, or use the timed `withSelectRows` overload. Time between reads counts towards the whole-call deadline and is checked on the next read and before each buffered row is handed to the consumer. With `requestTimeout = null`, a server that accepts the connection but never answers is still bounded by `readTimeout`.
+Because `requestTimeout` stops at the response headers for untimed streams, a slow row consumer is never cut off by it. Lower `streamingRequestTimeout` if a stream must finish sooner (raise it, or disable it, for one that may run longer than an hour), or use the timed `withSelectRows` overload. Time between reads counts towards the whole-call deadline and is checked on the next read and before each buffered row is handed to the consumer. With `requestTimeout = null`, a server that accepts the connection but never answers is still bounded by `readTimeout`.
 
 ## Redirects
 
