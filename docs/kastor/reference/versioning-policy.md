@@ -164,12 +164,12 @@ When upgrading Kastor versions:
 4. **Run Tests**: Ensure all tests pass with new version
 5. **Review Generated Code**: Regenerate code if using Kastor Gen
 
-### Example: Upgrading from 0.1.0 to 0.2.0
+### Example: Upgrading to a new release (replace `X.Y.Z`)
 
 ```kotlin
 // build.gradle.kts (prefer the BOM — see docs/kastor/getting-started/installation.md)
 dependencies {
-    implementation(platform("com.geoknoesis.kastor:kastor-bom:0.2.0"))
+    implementation(platform("com.geoknoesis.kastor:kastor-bom:X.Y.Z"))
     implementation("com.geoknoesis.kastor:rdf-core")
     implementation("com.geoknoesis.kastor:rdf-jena")
 }

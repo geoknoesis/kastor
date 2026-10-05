@@ -37,7 +37,7 @@ Use **`repo.addToGraph(graphIri) { … }`**, **`repo.createGraph`**, or SPARQL *
 ## RDF-star and RDF 1.2
 
 **Does quoted-triple / RDF-star style data work?**  
-Kastor **0.2.0** targets **RDF 1.2**; **`TripleTerm`** and reifiers replace illegal triple-term subjects. Capability flags include **`supportsTripleTerms`** ([Migrating to RDF 1.2](migrating-to-rdf-1.2.md)).
+Kastor targets **RDF 1.2** (since 0.2.0); **`TripleTerm`** and reifiers replace illegal triple-term subjects. Capability flags include **`supportsTripleTerms`** ([Migrating to RDF 1.2](migrating-to-rdf-1.2.md)).
 
 ## Related
 

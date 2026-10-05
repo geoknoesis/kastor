@@ -1,6 +1,6 @@
 # RDF-star (legacy) and RDF 1.2 triple terms in Kastor
 
-> **Kastor 0.2.0 update.** Kastor now follows the W3C RDF 1.2 model: triple
+> **RDF 1.2 update (since 0.2.0).** Kastor now follows the W3C RDF 1.2 model: triple
 > terms (`<<( s p o )>>`) are object-position-only and metadata is attached
 > through `rdf:reifies`. The RDF-star idioms below still parse on the
 > Jena/RDF4J side because both libraries' parsers accept the legacy syntax,
